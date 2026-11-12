@@ -36,6 +36,7 @@ interface SyntheticNativeLog {
   markAnswers: { markId: string; accepted: boolean }[];
   /** Media export jobs (no video is rendered: synthetic output paths only). */
   exports: string[];
+  jobEvents: { action: string; id: string }[];
 }
 
 /** A fake app window, drawn once: deterministic pixels for tiles, composites and hashes. */
@@ -92,7 +93,8 @@ function drawScreen(): DockCapturedPixels {
   };
 }
 
-function createSyntheticNative() {
+function createSyntheticNative(warmMedia = false) {
+  const completedExports = new Set<string>();
   const screen = drawScreen();
   const log: SyntheticNativeLog = {
     captures: 0,
@@ -106,6 +108,7 @@ function createSyntheticNative() {
     speech: { started: [], stopped: [], marks: [] },
     markAnswers: [],
     exports: [],
+    jobEvents: [],
   };
   const evidenceListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
   const speechListeners = new Set<
@@ -250,6 +253,8 @@ function createSyntheticNative() {
     // An edited recording's export: one video plus a frame per included edit mark.
     exportMedia: async (request) => {
       log.exports.push(request.jobId);
+      log.jobEvents.push({ action: 'export', id: request.jobId });
+      completedExports.add(request.jobId);
       const marks = request.media.saved?.marks.filter((mark) => mark.included) ?? [];
       return {
         ok: true as const,
@@ -282,7 +287,11 @@ function createSyntheticNative() {
         },
       };
     },
-    releaseMediaJob: async () => ({ ok: true as const, value: undefined }),
+    releaseMediaJob: async (jobId) => {
+      log.jobEvents.push({ action: 'release', id: jobId });
+      completedExports.delete(jobId);
+      return { ok: true as const, value: undefined };
+    },
     reportMarkAcceptance: async (_annotationId, markId, accepted) => {
       log.markAnswers.push({ markId, accepted });
       return { ok: true, value: undefined };
@@ -396,7 +405,21 @@ function createSyntheticNative() {
 
   return {
     log,
-    factory: () => ({ ...adapter, service: { ...service } }) as unknown as DockNativeAdapter,
+    factory: () =>
+      ({
+        ...adapter,
+        service: {
+          ...service,
+          ...(warmMedia
+            ? {
+                adoptMediaJob: async (jobId: string) => {
+                  log.jobEvents.push({ action: 'adopt', id: jobId });
+                  return { ok: true, value: completedExports.has(jobId) };
+                },
+              }
+            : {}),
+        },
+      }) as unknown as DockNativeAdapter,
     holdClipStops(value: boolean) {
       holdClipStops = value;
       if (!value) for (const resolve of heldClipStops.splice(0)) resolve();
@@ -482,8 +505,8 @@ function createSyntheticNative() {
 }
 
 /** Install a synthetic native for the next dock pair; returns its controls and an uninstall. */
-export function installSyntheticNative() {
-  const native = createSyntheticNative();
+export function installSyntheticNative(warmMedia = false) {
+  const native = createSyntheticNative(warmMedia);
   // The root native-session saga reads the factory when the pair opens.
   configureDockNativeFactory(native.factory);
   return { native, uninstall: () => configureDockNativeFactory(null) };

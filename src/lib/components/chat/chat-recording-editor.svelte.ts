@@ -21,6 +21,7 @@ export function createChatRecordingEditor(options: {
   disabled: () => boolean;
   onRemove: (id: string) => boolean;
   prepareOutput?: typeof readChatRecordingOutput;
+  beforeOpen?: () => Promise<void>;
 }) {
   let editing = $state.raw<{
     capture: ChatDraftCapture;
@@ -72,6 +73,8 @@ export function createChatRecordingEditor(options: {
     opening = true;
     problem = false;
     try {
+      await options.beforeOpen?.();
+      if (!active || generation !== ticket || !options.drafts.isCurrentDraft(clicked)) return;
       const output = await (options.prepareOutput ?? readChatRecordingOutput)(
         clicked,
         clip.media,

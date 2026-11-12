@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ChatRecordingAttachments from '../ChatRecordingAttachments.svelte';
+  import type { ChatDraftManager } from '../chat-panel-draft.svelte';
+  import { createChatRecordingWarm } from '../chat-recording-warm.svelte';
   import { store } from '$store/renderer/store';
   import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
   import {
@@ -45,6 +48,39 @@
   let platformProbe = $state<string[]>([]);
   let syntheticBridge: NonNullable<Window['electronAPI']>;
   const agentId = 'wire-main';
+  let warming = $state(false);
+  let exportCount = $state(0);
+  const captureNow = (): PreparedChatDraftCapture | null =>
+    ready
+      ? {
+          authority: getPrincipalActionContext(store.state)!,
+          ownerId: 'synthetic-main-editor',
+          workspaceId,
+          agentId,
+          text: draftText,
+          attachments: descriptors().attachments,
+          generation: 1,
+          attachmentEpoch: 0,
+        }
+      : null;
+  const drafts: ChatDraftManager = {
+    captureDraft: captureNow,
+    updateAttachmentScreen: () => null,
+    restorePending: false,
+    gateVisible: false,
+    invalidatePendingRestore: () => {},
+    gateActive: false,
+    isCurrentDraft: (value: PreparedChatDraftCapture) => value.text === draftText,
+    flushDraft: async (value: PreparedChatDraftCapture) => {
+      await persistSyntheticDraft(value);
+      return value.text === draftText;
+    },
+  };
+  const warm = createChatRecordingWarm({
+    capture: captureNow,
+    drafts,
+    active: () => warming && ready && result === 'idle',
+  });
   function descriptors() {
     const source: DockMediaSource = {
       id: 'screenshot-source',
@@ -209,13 +245,8 @@
       items,
       payload: { wsId: workspaceId, text: draftText, ...plan.fields },
       signal: controller.signal,
-      drafts: {
-        isCurrentDraft: (value) => value.text === draftText,
-        flushDraft: async (value) => {
-          await persistSyntheticDraft(value);
-          return value.text === draftText;
-        },
-      },
+      drafts,
+      warm: warming || mode === 'warm-review' ? warm : undefined,
     });
     window.electronAPI = syntheticBridge;
     result = admitted ? 'admitted' : 'retained';
@@ -264,11 +295,21 @@
         if (channel === C.CONTROL) {
           native = [...native, payload.control.action];
           if (payload.control.action === 'release') return { ok: true, value: undefined };
+          if (payload.control.action === 'adopt')
+            return { ok: true, value: mode !== 'warm-expired' };
+          if (payload.control.action === 'readiness')
+            return {
+              ok: true,
+              value: [{ sourceId: 'clip-source', ready: true, version: 2, formats: ['mp4'] }],
+            };
+          exportCount++;
           exportRequest = structuredClone(payload.control.request);
-          if (mode === 'retired')
+          if (mode === 'retired' || mode === 'warm-pending' || mode === 'warm-pending-failure')
             await new Promise<void>((resolve) => {
               release = resolve;
             });
+          if (mode === 'warm-pending-failure' || (mode === 'warm-failed' && exportCount === 1))
+            return { ok: false, error: 'failed' };
           return {
             ok: true,
             value: {
@@ -324,6 +365,7 @@
 <div
   data-testid="shared-media-send"
   data-ready={ready}
+  data-exports={exportCount}
   data-result={result}
   data-calls={JSON.stringify(calls)}
   data-native={JSON.stringify(native)}
@@ -339,13 +381,48 @@
     <option value="missing-preload">Missing preload</option><option value="browser-mock"
       >Browser mock</option
     >
+    <option value="warm-pending">Held warm export</option>
+    <option value="warm-pending-failure">Held failed warm export</option>
+    <option value="warm-failed">Failed background export</option>
+    <option value="warm-expired">Expired warm output</option>
+    <option value="warm-ttl">Local preparation expiry</option>
+    <option value="warm-review">Review in the recording editor</option>
     <option value="direct">Direct</option><option value="queued">Queued</option><option
       value="invalid">Invalid saved edit</option
     ><option value="unavailable">Unavailable export</option><option value="retired"
       >Retired during export</option
     >
   </select>
+  {#if mode === 'warm-review' && ready}
+    <ChatRecordingAttachments
+      capture={captureNow()}
+      {drafts}
+      onRemove={() => false}
+      beforeOpen={() => warm.beforeEditorOpen()}
+      onReviewChange={(opening, review) => {
+        warm.editorState(opening, review);
+        if (review) warming = true;
+      }}
+    />
+  {/if}
+  <button
+    onclick={() => {
+      draftText = 'Peer text [[mark:1]] remains current';
+    }}>Receive peer text</button
+  >
   <textarea aria-label="Draft" bind:value={draftText}></textarea>
+  <button
+    onclick={() => {
+      warming = true;
+    }}>Prepare while reviewing</button
+  >
+  <button onclick={() => release?.()}>Finish held export</button>
+  <button
+    onclick={() => {
+      warming = false;
+      void warm.cancel();
+    }}>Cancel preparation</button
+  >
   <button onclick={() => void send()}>Send prepared draft</button>
   <button
     onclick={() => {

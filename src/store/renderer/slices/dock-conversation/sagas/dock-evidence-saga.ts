@@ -1,3 +1,8 @@
+import {
+  createDockRecordingWarm,
+  type DockRecordingReview,
+} from '$features/hud/composer/dock-recording-warm';
+import type { DockMediaSendService } from '$features/hud/composer/dock-media-send';
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
 import { beginDockEditorHold, endDockEditorHold, showDockEditorShell } from './dock-editor-hold';
@@ -130,6 +135,7 @@ import {
 } from '../dock-conversation-slice';
 
 let nativeService: DockEvidenceNativeService | null = null;
+let recordingWarm: ReturnType<typeof createDockRecordingWarm> | null = null;
 /** A recording's dock hold (see the start of a recording), until its clip finishes. */
 const clipHolds = new Map<string, string>();
 /** A clip that never finishes (removed while recording) gives its hold back. */
@@ -142,6 +148,8 @@ const nativeListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
 
 /** Install (or remove) the native boundary. Events from a replaced service stop immediately. */
 export function configureDockEvidenceNative(service: DockEvidenceNativeService | null): void {
+  recordingWarm?.dispose();
+  recordingWarm = null;
   unsubscribeNative?.();
   unsubscribeNative = null;
   // Answers belong to the replaced native session, which releases its holds on retirement.
@@ -153,6 +161,7 @@ export function configureDockEvidenceNative(service: DockEvidenceNativeService |
     markAnswersOverflowed = false;
   }
   nativeService = service;
+  if (service) recordingWarm = createDockRecordingWarm(service);
   if (service)
     unsubscribeNative = service.subscribe((event) => {
       for (const listener of nativeListeners) listener(event);
@@ -190,8 +199,19 @@ export function setDockDictationMarkSink(sink: DictationMarkSink | null): void {
 }
 
 /** Same exact draft/principal-scoped adapter used by capture, never a new session. */
-export function dockMediaNativeService(): DockEvidenceNativeService | null {
-  return nativeService;
+export function dockRecordingReviewOpened(review: DockRecordingReview | null): void {
+  recordingWarm?.reviewOpened(review);
+}
+export function dockRecordingReviewEnded(openId: string): void {
+  recordingWarm?.reviewEnded(openId);
+}
+export function dockRecordingReviewReturn(openId: string, accepted?: boolean): void {
+  if (accepted === undefined) recordingWarm?.beginReturn(openId);
+  else recordingWarm?.finishReturn(openId, accepted);
+}
+export function dockMediaNativeService():
+  (DockEvidenceNativeService & DockMediaSendService) | null {
+  return recordingWarm?.service ?? nativeService;
 }
 
 export function evidenceOf(workspaceId: string, agentId: string): DockComposerEvidence | undefined {

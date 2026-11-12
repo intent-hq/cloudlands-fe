@@ -77,6 +77,7 @@ export function createChatMediaNative(
   }
   const service: DockMediaSendService = {
     exportMedia: (request) => control({ action: 'export', request }),
+    adoptMediaJob: (jobId) => control({ action: 'adopt', jobId }),
     transcribeMedia: (request) => control({ action: 'transcribe', request }),
     releaseMediaJob: async (jobId) => {
       if (!sessionId) return { ok: true, value: undefined };

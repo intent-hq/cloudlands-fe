@@ -1544,6 +1544,8 @@ export interface DockEvidenceNativeService {
   transcribeMedia?(
     request: import('./dock-media-output').DockMediaTranscribeRequest,
   ): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;
+  /** Revalidate and retain a completed output under this exact native owner. */
+  adoptMediaJob?(jobId: string): Promise<DockNativeResult<boolean>>;
   cancelMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   releaseMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   /** Absent means only `captureDisplay` is implemented (annotate and record stay disabled). */

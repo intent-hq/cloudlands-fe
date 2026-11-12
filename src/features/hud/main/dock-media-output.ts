@@ -124,6 +124,8 @@ interface Job {
   sessionId: string;
   id: string;
   fingerprint: string;
+  completed?: boolean;
+  adopted?: boolean;
   directory: string;
   child?: ChildProcessWithoutNullStreams;
   stopped: boolean;
@@ -225,23 +227,11 @@ async function createJob(
     [...jobs.values()].filter((job) => job.sessionId === context.scope.sessionId).length >= 2
   )
     throw new Error('media-job-busy');
-  const root = path.join(app.getPath('userData'), 'dock-media-jobs');
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  check(context);
-  const directory = await mkdtemp(path.join(root, 'job-'));
-  if (
-    !context.isCurrent() ||
-    jobs.has(key) ||
-    [...jobs.values()].filter((entry) => entry.sessionId === context.scope.sessionId).length >= 2
-  ) {
-    await rm(directory, { recursive: true, force: true });
-    throw new Error('media-job-busy');
-  }
   const job: Job = {
     sessionId: context.scope.sessionId,
     id,
     fingerprint,
-    directory,
+    directory: '',
     stopped: false,
     stopWatching: () => {},
     expiry: setTimeout(() => {
@@ -253,8 +243,32 @@ async function createJob(
   job.stopWatching = context.onDispose(() => {
     void releaseDockMediaJob(context.scope.sessionId, id);
   });
-  check(context, job);
-  return job;
+  // Reserve synchronously before filesystem/helper awaits, so cancellation cannot
+  // miss an export admitted while no temporary directory exists yet.
+  try {
+    const root = path.join(app.getPath('userData'), 'dock-media-jobs');
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    check(context, job);
+    job.directory = await mkdtemp(path.join(root, 'job-'));
+    check(context, job);
+    return job;
+  } catch (error) {
+    if (job.directory) await rm(job.directory, { recursive: true, force: true });
+    if (jobs.get(key) === job) await releaseDockMediaJob(context.scope.sessionId, id);
+    throw error;
+  }
+}
+/** Same-owner liveness handshake; no path or result crosses native session ownership. */
+export function adoptDockMediaJob(context: DockMediaJobContext, id: string): boolean {
+  const job = jobs.get(`${context.scope.sessionId}:${id}`);
+  if (!context.isCurrent() || !job || job.stopped || !job.completed || job.adopted) return false;
+  job.adopted = true;
+  clearTimeout(job.expiry);
+  job.expiry = setTimeout(() => {
+    void releaseDockMediaJob(context.scope.sessionId, id);
+  }, 10 * 60_000);
+  job.expiry.unref();
+  return true;
 }
 export async function releaseDockMediaJob(sessionId: string, id: string): Promise<void> {
   const key = `${sessionId}:${id}`,
@@ -270,7 +284,7 @@ export async function releaseDockMediaJob(sessionId: string, id: string): Promis
     await job.done?.catch(() => {});
     clearTimeout(force);
   }
-  await rm(job.directory, { recursive: true, force: true });
+  if (job.directory) await rm(job.directory, { recursive: true, force: true });
   if (jobs.get(key) === job) jobs.delete(key);
 }
 async function copySource(
@@ -461,13 +475,14 @@ export async function exportDockMedia(
       request.layers.reduce((sum, layer) => sum + layer.png.length, 0) > MAX_BYTES
     )
       throw new Error('media-layers');
-    enterStage('helper');
-    const binary = await helper('intent-dock-media-export');
-    enterStage('capability');
-    await requireExporterVersion(binary);
-    check(context);
     enterStage('job');
     job = await createJob(context, request.jobId, JSON.stringify(request));
+    enterStage('helper');
+    const binary = await helper('intent-dock-media-export');
+    check(context, job);
+    enterStage('capability');
+    await requireExporterVersion(binary);
+    check(context, job);
     enterStage('source');
     const file = await copySource(context, job, media);
     enterStage('layers');
@@ -547,6 +562,7 @@ export async function exportDockMedia(
       }),
     );
     check(context, job);
+    job.completed = true;
     succeeded = true;
     return {
       ok: true,

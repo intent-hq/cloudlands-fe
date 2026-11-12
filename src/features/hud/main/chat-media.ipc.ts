@@ -26,6 +26,7 @@ import {
 import {
   dockMediaOutputReady,
   exportDockMedia,
+  adoptDockMediaJob,
   transcribeDockMedia,
   releaseDockMediaJob,
   type DockMediaJobContext,
@@ -263,6 +264,14 @@ function createChatMediaLeases() {
       return { ok: true, value: undefined };
     }
     try {
+      if (command.action === 'adopt') {
+        await authorize(lease);
+        requireCurrent(lease);
+        return {
+          ok: true,
+          value: lease.jobs.has(command.jobId) && adoptDockMediaJob(lease.context, command.jobId),
+        };
+      }
       if (command.action === 'readiness') {
         await authorize(lease);
         requireCurrent(lease);
