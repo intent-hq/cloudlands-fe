@@ -8464,8 +8464,6 @@
   "dock_linkedTab_link_label": "Lier",
   "dock_linkedTab_unlink_label": "Délier",
   "dock_linkedTab_link_ariaLabel": "Lier {context} à {workspace}",
-  "dock_linkedTab_unlink_ariaLabel": "Délier {context} de {workspace}",
-  "dock_linkedTab_current_ariaLabel": "Actuel : {context}",
   "dock_overview_search_ariaLabel": "Rechercher des espaces",
   "dock_overview_search_placeholder": "Rechercher",
   "dock_overview_searchClear_ariaLabel": "Effacer la recherche",

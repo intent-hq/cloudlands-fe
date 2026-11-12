@@ -2,118 +2,117 @@
   import LinkSimpleIcon from 'phosphor-svelte/lib/LinkSimpleIcon';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
   import { store as appStore } from '$store/renderer/store';
   import { selectDockLinkedContext } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
     dockContextLinkRequested,
     dockContextUnlinkRequested,
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+  import type { DockContextLinkScope } from '$shared/dock-context-links';
 
   /**
-   * Link the current tab or app (the admitted linked context) to the open workspace, from its
-   * conversation header. A toggle: pressed while a saved link sends this context here, where a
-   * press unlinks it. Otherwise a press links (relinks from another workspace, or saves an
-   * inferred owner) when the context can be saved. Unknown or unsavable contexts show nothing.
-   * Link and unlink go through the canonical versioned actions; the pressed state follows only
-   * the confirmed snapshot.
+   * Link the current tab or app to the open workspace, from its conversation header. The
+   * icon is always there; it opens a menu with This tab and This app, each checked when
+   * that scope's saved link sends it here. A choice the current context cannot save
+   * (unknown, the dock itself, no exact tab or app) is shown disabled. Choosing links that
+   * scope here, or unlinks exactly that scope's saved link; never the effective link of
+   * another scope. The menu's popup is owned by the dock conversation (it keeps the dock
+   * open while used). Checked state follows only the confirmed snapshot.
    */
   let { workspaceId, title }: { workspaceId: string; title: string } = $props();
   const context$ = selectDockLinkedContext();
   const context = $derived($context$);
-  const ready = $derived(!!context && context.phase === 'ready');
-  const saved = $derived(
-    ready &&
-      context!.linkedWorkspaceId === workspaceId &&
-      !!context!.linkKey &&
-      context!.linkRevision > 0,
-  );
-  const shown = $derived(ready && (saved || context!.linkable));
-  const contextName = $derived(context?.label || '');
-  // The name says what a press does: unlink the saved link here, else link this context here.
-  const operation = $derived(
-    saved
-      ? m.dock_linkedTab_unlink_ariaLabel({ context: contextName, workspace: title })
-      : m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title }),
-  );
+  const SCOPES: readonly DockContextLinkScope[] = ['tab', 'app'];
+  type Operation = 'link' | 'unlink' | null;
+  /** What choosing `scope` would do now: null when the context cannot save it. */
+  function operationOf(scope: DockContextLinkScope): Operation {
+    const link = context?.phase === 'ready' ? context.linkScopes?.[scope] : undefined;
+    if (!link) return null;
+    if (link.savedWorkspaceId === workspaceId && link.revision > 0) return 'unlink';
+    return link.available && link.key ? 'link' : null;
+  }
+  const operations = $derived({ tab: operationOf('tab'), app: operationOf('app') });
+  const linkedHere = $derived(SCOPES.some((scope) => operations[scope] === 'unlink'));
+
+  let open = $state(false);
   /**
-   * A held gesture acts on what was on screen when it started. Pointer down or an Enter /
-   * Space key down captures the rendered {version, workspace, operation}; if the context or
-   * the button's role changes before the click, the gesture is cancelled and the click does
-   * nothing (no fallback to the new context). A click without a held gesture (assistive
-   * technology) acts on what is rendered at that moment.
+   * The menu acts on what it showed when it opened: {version, operation per scope}. If the
+   * context or a choice's operation changes meanwhile, that choice does nothing (no
+   * fallback to the new context); a new context closes the menu.
    */
-  type Tuple = { version: string; workspaceId: string; operation: 'link' | 'unlink' };
-  let held: Tuple | 'cancelled' | null = null;
-  const rendered = (button: HTMLElement): Tuple | null => {
-    const version = button.dataset.contextVersion;
-    const operation = button.dataset.dockLinkAction;
-    return version && (operation === 'link' || operation === 'unlink')
-      ? { version, workspaceId, operation }
-      : null;
-  };
-  const current = $derived(
-    shown && context?.contextVersion
-      ? `${context.contextVersion}\u0000${workspaceId}\u0000${saved ? 'unlink' : 'link'}`
-      : null,
-  );
+  let held: { version: string; operations: Record<DockContextLinkScope, Operation> } | null = null;
+  function opened(next: boolean): void {
+    held =
+      next && context?.contextVersion
+        ? { version: context.contextVersion, operations: { ...operations } }
+        : null;
+  }
   $effect(() => {
-    void current;
-    // Anything the held gesture captured changed: it may not complete.
-    if (held && held !== 'cancelled') held = 'cancelled';
+    const version = context?.contextVersion;
+    if (open && held && held.version !== version) open = false;
   });
-  function hold(event: PointerEvent | KeyboardEvent): void {
-    if (event instanceof KeyboardEvent) {
-      if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    } else if (event.button !== 0) return;
-    held = rendered(event.currentTarget as HTMLElement);
-  }
-  function release(): void {
-    held = null;
-  }
-  function act(event: MouseEvent): void {
+  function choose(id: string): void {
+    const scope = SCOPES.find((value) => value === id);
     const gesture = held;
-    held = null;
-    if (gesture === 'cancelled') return;
-    const now = rendered(event.currentTarget as HTMLElement);
-    if (!now) return;
-    if (
-      gesture &&
-      (gesture.version !== now.version ||
-        gesture.workspaceId !== now.workspaceId ||
-        gesture.operation !== now.operation)
-    )
-      return;
-    if (now.operation === 'unlink') appStore.dispatch(dockContextUnlinkRequested(now.version));
-    else appStore.dispatch(dockContextLinkRequested(now.version, now.workspaceId));
+    if (!scope || !gesture || context?.contextVersion !== gesture.version) return;
+    const now = operations[scope];
+    if (!now || now !== gesture.operations[scope]) return;
+    if (now === 'unlink') appStore.dispatch(dockContextUnlinkRequested(gesture.version, scope));
+    else appStore.dispatch(dockContextLinkRequested(gesture.version, workspaceId, scope));
   }
+  const actions = $derived(
+    defineActions(
+      SCOPES.map((scope) => ({
+        id: scope,
+        kind: 'checkbox' as const,
+        label:
+          scope === 'tab' ? m.dock_linkedTab_thisTab_label() : m.dock_linkedTab_thisApp_label(),
+        checked: operations[scope] === 'unlink',
+        disabled: operations[scope] === null,
+        // One choice per opening: the menu acts on what it showed when opened.
+        closeOnSelect: true,
+      })),
+    ),
+  );
+  const label = $derived(
+    m.dock_linkedTab_link_ariaLabel({ context: context?.label || '', workspace: title }),
+  );
 </script>
 
-{#if shown}
-  <Button
-    variant="ghost"
-    size="icon-sm"
-    class="dock-header-link"
-    data-dock-header-link
-    data-dock-link-action={saved ? 'unlink' : 'link'}
-    data-context-version={context?.contextVersion}
-    aria-pressed={saved}
-    aria-label={operation}
-    tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
-    tooltipSide="bottom"
-    tooltipAlign="end"
-    tooltip={operation}
-    onpointerdown={hold}
-    onpointercancel={release}
-    onblur={release}
-    onkeydown={hold}
-    onclick={act}><LinkSimpleIcon size={15} weight={saved ? 'bold' : 'regular'} /></Button
-  >
-{/if}
+<ActionMenu
+  bind:open
+  {actions}
+  ariaLabel={m.dock_linkedTab_link_label()}
+  align="end"
+  side="bottom"
+  class="dock-header-link-menu min-w-40"
+  onOpenChange={opened}
+  onAction={choose}
+>
+  {#snippet trigger({ props })}
+    <Button
+      {...props}
+      variant="ghost"
+      size="icon-sm"
+      class="dock-header-link"
+      data-dock-header-link
+      data-linked={linkedHere || undefined}
+      data-context-version={context?.contextVersion}
+      aria-label={context?.label ? label : m.dock_linkedTab_link_label()}
+      tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
+      tooltipSide="bottom"
+      tooltipAlign="end"
+      tooltip={context?.label ? label : m.dock_linkedTab_link_label()}
+      tooltipDisabled={open}
+      ><LinkSimpleIcon size={15} weight={linkedHere ? 'bold' : 'regular'} /></Button
+    >
+  {/snippet}
+</ActionMenu>
 
 <style>
-  /* Pressed: this tab or app is linked here; the same quiet accent as other dock state. */
-  :global(.dock-header-link[aria-pressed='true']) {
+  /* Linked: this tab or app is linked here; the same quiet accent as other dock state. */
+  :global(.dock-header-link[data-linked]) {
     color: hsl(var(--dock-accent, var(--foreground)));
     background-color: hsl(var(--dock-hover, var(--muted)));
   }

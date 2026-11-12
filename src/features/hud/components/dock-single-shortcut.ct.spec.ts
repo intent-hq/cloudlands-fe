@@ -209,23 +209,31 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await expect(overview).toBeVisible();
   await expect(search).toBeFocused();
   expect(await open()).toBeNull();
-  // Open the workspace from the index; its header offers Link for this tab.
+  // Open the workspace from the index; its header Link menu offers This tab / This app.
   await row('choice-1').locator('[data-workspace-id]').click();
   await expect.poll(open).toBe('choice-1');
   const headerLink = page.locator('[data-dock-header-link]');
-  await expect(headerLink).toHaveAttribute('aria-pressed', 'false');
+  const thisTab = page.getByRole('menuitemcheckbox', { name: 'This tab' });
+  const thisApp = page.getByRole('menuitemcheckbox', { name: 'This app' });
+  await expect(headerLink).not.toHaveAttribute('data-linked', /.*/);
   await expect(headerLink).toHaveAttribute(
     'aria-label',
     /Link github\.com to Synthetic workspace 1/,
   );
   await headerLink.click();
+  await expect(thisTab).toHaveAttribute('aria-checked', 'false');
+  await expect(thisApp).toBeVisible();
+  await thisTab.click();
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
-  await expect(headerLink).toHaveAttribute('aria-pressed', 'true');
-  await expect(headerLink).toHaveAttribute(
-    'aria-label',
-    /Unlink github\.com from Synthetic workspace 1/,
-  );
+  await expect.poll(() => read().then((s) => s?.linkScopes?.tab.savedWorkspaceId)).toBe('choice-1');
+  await expect(headerLink).toHaveAttribute('data-linked', 'true');
+  await headerLink.click();
+  await expect(thisTab).toHaveAttribute('aria-checked', 'true');
+  // The dock stays expanded while its menu is used.
+  await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-expanded', 'true');
   await page.screenshot({ path: info.outputPath('12-d-header-linked.png') });
+  await page.keyboard.press('Escape');
+  await expect(thisTab).toBeHidden();
   await blank();
   await press({ version: 'v1', url: A });
   await expect.poll(open).toBe('choice-1');
@@ -347,8 +355,8 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await leaveIndex();
   receipts.staleAndChooser = { staleAfterSeen: 'no change', mediaChooserKept: true };
 
-  // 7. An inferred owner (embedded tab of choice-2): pressing follows it; its header offers
-  // Link (not pressed: nothing saved), which saves it; pressed, a click unlinks again.
+  // 7. An inferred owner (embedded tab of choice-2): pressing follows it; its header menu
+  // offers This tab (not checked: nothing saved), which saves it; checked, it unlinks again.
   const C = 'https://github.com/example/embedded/pull/3';
   await observe('v3', C, 'choice-2');
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-2');
@@ -356,14 +364,19 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await press({ version: 'v3', url: C });
   await expect.poll(open).toBe('choice-2');
   const link = page.locator('[data-dock-header-link]');
-  await expect(link).toHaveAttribute('aria-pressed', 'false');
+  const tabChoice = page.getByRole('menuitemcheckbox', { name: 'This tab' });
+  await expect(link).not.toHaveAttribute('data-linked', /.*/);
   await link.click();
+  await expect(tabChoice).toHaveAttribute('aria-checked', 'false');
+  await tabChoice.click();
   await expect.poll(() => read().then((s) => s?.linkKey ?? null)).not.toBeNull();
-  await expect(link).toHaveAttribute('aria-pressed', 'true');
+  await expect(link).toHaveAttribute('data-linked', 'true');
   await page.screenshot({ path: info.outputPath('13-d-header-saved.png') });
   await link.click();
+  await expect(tabChoice).toHaveAttribute('aria-checked', 'true');
+  await tabChoice.click();
   await expect.poll(() => read().then((s) => s?.linkKey ?? null)).toBeNull();
-  await expect(link).toHaveAttribute('aria-pressed', 'false');
+  await expect(link).not.toHaveAttribute('data-linked', /.*/);
   // The inferred owner remains (unlink removes only the saved record).
   expect((await read())?.linkedWorkspaceId).toBe('choice-2');
   receipts.inferred = {
@@ -372,14 +385,13 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     unlinkedFromHeader: true,
   };
 
-  // 7b. A held press whose context changes before release does nothing.
-  const box = (await link.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
+  // 7b. A menu opened for one context closes, choosing nothing, when the context changes.
+  await link.click();
+  await expect(tabChoice).toBeVisible();
   const D2 = 'https://github.com/example/other/issues/77';
   await observe('v7', D2);
   await expect.poll(() => read().then((s) => s?.url)).toBe(D2);
-  await page.mouse.up();
+  await expect(tabChoice).toBeHidden();
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a cancelled press must not save anything afterwards
   await page.waitForTimeout(600);
   expect((await read())?.linkKey ?? null).toBeNull();

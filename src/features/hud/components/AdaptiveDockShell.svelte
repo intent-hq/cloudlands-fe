@@ -50,7 +50,6 @@
   import DockActionFeedback from './DockActionFeedback.svelte';
   import DockShellSilhouette from './DockShellSilhouette.svelte';
   import DockMachineMenu from './DockMachineMenu.svelte';
-  import DockContextLabel from './DockContextLabel.svelte';
   import type { DockMachineOption } from './dock-machine-types';
   let {
     workspaces,
@@ -1192,16 +1191,6 @@
           >
             <span class="grip-mark"><Logo width={16} /></span>
           </Button>
-          {#if !pinned && !edge && expanded}
-            <span
-              class="header-context"
-              style:max-width={notch && placement.cutout
-                ? `${Math.max(0, cameraLeft - 56)}px`
-                : undefined}
-            >
-              <DockContextLabel />
-            </span>
-          {/if}
           {#if recording}
             <div class="header-recording" class:vertical={edge} style:opacity={dragging ? 0 : 1}>
               <DockRecordingIndicator
@@ -1429,14 +1418,6 @@
   }
   .grip-pressed .grip-mark {
     opacity: 0.72;
-  }
-  /* The current tab/app beside the mark; it truncates before the camera wing or status. */
-  .header-context {
-    display: flex;
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    margin-left: 6px;
   }
   .header-recording {
     margin-left: auto;

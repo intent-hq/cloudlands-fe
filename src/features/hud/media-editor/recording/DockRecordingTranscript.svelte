@@ -86,7 +86,8 @@
 
   /** Delete or Backspace with words selected in the transcript cuts their stretch. */
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || !onCut || !list || locked || isTextEntryTarget(event.target)) return;
+    if (event.defaultPrevented || !onCut || !list || locked || isTextEntryTarget(event.target))
+      return;
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
@@ -107,18 +108,20 @@
 
   const ready = $derived(transcript?.status === 'ready' ? transcript : null);
   const layout = $derived(ready ? layoutTranscript(ready.words, batches, marks) : []);
-  const runs = $derived(layout.map((batch) => {
-    type Piece = (typeof batch.pieces)[number] | { kind: 'text'; words: Word[] };
-    const pieces: Piece[] = [];
-    for (const piece of batch.pieces) {
-      if (piece.kind === 'word' && (onWordEdits || onWordEdit) && !cutOf(piece.word)) {
-        const previous = pieces.at(-1);
-        if (previous?.kind === 'text') previous.words.push(piece.word);
-        else pieces.push({ kind: 'text', words: [piece.word] });
-      } else pieces.push(piece);
-    }
-    return { ...batch, pieces };
-  }));
+  const runs = $derived(
+    layout.map((batch) => {
+      type Piece = (typeof batch.pieces)[number] | { kind: 'text'; words: Word[] };
+      const pieces: Piece[] = [];
+      for (const piece of batch.pieces) {
+        if (piece.kind === 'word' && (onWordEdits || onWordEdit) && !cutOf(piece.word)) {
+          const previous = pieces.at(-1);
+          if (previous?.kind === 'text') previous.words.push(piece.word);
+          else pieces.push({ kind: 'text', words: [piece.word] });
+        } else pieces.push(piece);
+      }
+      return { ...batch, pieces };
+    }),
+  );
   const current = $derived(ready ? currentWordId(ready.words, currentMs) : null);
 
   let list = $state<HTMLElement | null>(null);
@@ -191,13 +194,7 @@
     <p class="status">{m.dock_captureEditor_transcript_noSpeech()}</p>
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- word clicks are a pointer shortcut; marks (buttons) and the timeline carry keyboard navigation -->
-    <div
-      class="batches"
-      role="group"
-      tabindex="-1"
-      bind:this={list}
-      onclick={onWordClick}
-    >
+    <div class="batches" role="group" tabindex="-1" bind:this={list} onclick={onWordClick}>
       {#each runs as batch (batch.id)}
         <div class="batch" data-batch={batch.n}>
           <p class="text">
@@ -238,14 +235,17 @@
                   disabled={locked}
                   onclick={() => onMark(piece.mark)}
                   onkeydown={(event: KeyboardEvent) => {
-                    if (locked || !onDeleteMark || (event.key !== 'Delete' && event.key !== 'Backspace'))
+                    if (
+                      locked ||
+                      !onDeleteMark ||
+                      (event.key !== 'Delete' && event.key !== 'Backspace')
+                    )
                       return;
                     event.preventDefault();
                     event.stopPropagation();
                     deletePill(piece.mark.id);
-                  }}
-                  >{formatInteger(numbers[piece.mark.id])}
-                </Button>{' '}
+                  }}>{formatInteger(numbers[piece.mark.id])}</Button
+                >{' '}
               {/if}
             {/each}
           </p>
@@ -262,7 +262,7 @@
     overflow: auto;
     padding: 0 4px 8px;
     font-size: 12px;
-    line-height: 1.6;
+    line-height: 1.7;
   }
   .transcript[data-dimmed] {
     opacity: 0.6;
@@ -294,15 +294,29 @@
   .word[data-untimed] {
     color: hsl(var(--muted-foreground));
   }
+  /* A number in the running text: a rounded, brighter chip that sits on the text's line
+     (no taller than it) with the same word gaps as the words around it. */
   .text :global(.mark-pill) {
     display: inline-flex;
-    gap: 4px;
-    height: 18px;
-    padding: 0 6px;
-    border-radius: 5px;
-    background: hsl(var(--secondary));
-    font-size: 11px;
-    vertical-align: baseline;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: hsl(var(--foreground) / 0.16);
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+    color: hsl(var(--foreground));
+    font-size: 10.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    vertical-align: 0.05em;
+  }
+  .text :global(.mark-pill:hover:not(:disabled)) {
+    background: hsl(var(--foreground) / 0.24);
   }
   .text :global(.mark-pill[data-active]) {
     background: hsl(var(--primary));

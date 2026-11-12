@@ -8464,8 +8464,6 @@
   "dock_linkedTab_link_label": "連結",
   "dock_linkedTab_unlink_label": "解除",
   "dock_linkedTab_link_ariaLabel": "將{context}連結到{workspace}",
-  "dock_linkedTab_unlink_ariaLabel": "取消{context}與{workspace}的連結",
-  "dock_linkedTab_current_ariaLabel": "目前：{context}",
   "dock_overview_search_ariaLabel": "搜尋空間",
   "dock_overview_search_placeholder": "搜尋",
   "dock_overview_searchClear_ariaLabel": "清除搜尋",

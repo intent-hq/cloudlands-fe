@@ -8470,8 +8470,6 @@
   "dock_linkedTab_link_label": "Link",
   "dock_linkedTab_unlink_label": "Unlink",
   "dock_linkedTab_link_ariaLabel": "Link {context} to {workspace}",
-  "dock_linkedTab_unlink_ariaLabel": "Unlink {context} from {workspace}",
-  "dock_linkedTab_current_ariaLabel": "Current: {context}",
   "dock_overview_search_ariaLabel": "Search workspaces",
   "dock_overview_search_placeholder": "Search",
   "dock_overview_searchClear_ariaLabel": "Clear search",

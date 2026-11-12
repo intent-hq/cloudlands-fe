@@ -8464,8 +8464,6 @@
   "dock_linkedTab_link_label": "Enlazar",
   "dock_linkedTab_unlink_label": "Quitar",
   "dock_linkedTab_link_ariaLabel": "Vincular {context} a {workspace}",
-  "dock_linkedTab_unlink_ariaLabel": "Desvincular {context} de {workspace}",
-  "dock_linkedTab_current_ariaLabel": "Actual: {context}",
   "dock_overview_search_ariaLabel": "Buscar espacios",
   "dock_overview_search_placeholder": "Buscar",
   "dock_overview_searchClear_ariaLabel": "Borrar búsqueda",

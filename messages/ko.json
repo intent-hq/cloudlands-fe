@@ -8464,8 +8464,6 @@
   "dock_linkedTab_link_label": "연결",
   "dock_linkedTab_unlink_label": "연결 해제",
   "dock_linkedTab_link_ariaLabel": "{context}을(를) {workspace}에 연결",
-  "dock_linkedTab_unlink_ariaLabel": "{context}과(와) {workspace}의 연결 해제",
-  "dock_linkedTab_current_ariaLabel": "현재: {context}",
   "dock_overview_search_ariaLabel": "스페이스 검색",
   "dock_overview_search_placeholder": "검색",
   "dock_overview_searchClear_ariaLabel": "검색 지우기",
