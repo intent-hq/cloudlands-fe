@@ -280,6 +280,7 @@
     "axe-core": "^4.13.0",
     "bits-ui": "^2.15.5",
     "canvas-confetti": "^1.9.4",
+    "cjs-module-lexer": "^2.3.0",
     "clsx": "^2.1.1",
     "concurrently": "^10.0.7",
     "cross-env": "^10.1.0",
