@@ -85,6 +85,7 @@
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
+  import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -988,6 +989,8 @@
 
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
+          <LabsSettings />
+
           <!-- Agent Backend -->
           <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">

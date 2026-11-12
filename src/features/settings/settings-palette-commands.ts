@@ -68,7 +68,8 @@ const SETTINGS_PAGES = {
     get label() {
       return m.settings_sidebar_advanced_label();
     },
-    searchText: 'advanced tool output retention agent backend connection data import reset',
+    searchText:
+      'advanced labs experimental tool output retention agent backend connection data import reset',
   },
   specialists: {
     get label() {

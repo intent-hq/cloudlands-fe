@@ -27,12 +27,10 @@ import {
   setStatsOverlayOpen,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { prefillForRepo } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
 import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import { runLabCommand } from './command-palette-labs';
 
 const logger = createLogger('CommandPalette');
 
@@ -54,7 +52,6 @@ export function runPaletteCommand(commandId: string, context: PaletteCommandCont
     navigateToSettings({ tab: settingsCommand.settingsTab });
     return true;
   }
-  if (runLabCommand(commandId)) return true;
   switch (commandId) {
     case 'new-workspace':
       if (selectWorkspaceCreationVisible.select(appStore.state)) {
@@ -64,12 +61,6 @@ export function runPaletteCommand(commandId: string, context: PaletteCommandCont
     case 'settings':
       appStore.dispatch(setShowCreateModal(false));
       navigateToSettings();
-      return true;
-    case 'enable-experimental-remote-agents':
-      appStore.dispatch(setLabsRemoteAgentsEnabled(true));
-      return true;
-    case 'disable-experimental-remote-agents':
-      appStore.dispatch(setLabsRemoteAgentsEnabled(false));
       return true;
     case 'new-agent':
       if (workspaceId && !context.hidesAgentLifecycleActions) {

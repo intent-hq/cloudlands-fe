@@ -5,7 +5,6 @@ import {
   faCommentDots,
   faFile,
   faFileAlt,
-  faFlask,
   faFolderOpen,
   faGlobe,
   faPaperclip,
@@ -44,118 +43,6 @@ export const COMMAND_PALETTE_COMMANDS = [
       return m.lib_commandPalette_agentChat_pill();
     },
     icon: faCommentDots,
-  },
-  {
-    id: 'enable-experimental-remote-agents',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalRemoteAgents_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-remote-agents',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalRemoteAgents_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-plain-folders',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalPlainFolders_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-plain-folders',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalPlainFolders_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-tab-groups',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalTabGroups_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-tab-groups',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalTabGroups_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-machine-rail',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalMachineRail_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-machine-rail',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalMachineRail_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-cloud-machines',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalCloudMachines_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-cloud-machines',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalCloudMachines_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-ssh-machine-setup',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalSshMachineSetup_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-ssh-machine-setup',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalSshMachineSetup_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-browser-access',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalBrowserAccess_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-browser-access',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalBrowserAccess_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-dock',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalDock_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-dock',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalDock_label();
-    },
-    icon: faFlask,
   },
   {
     id: 'new-terminal',

@@ -2,7 +2,7 @@
   /**
    * Browser access (Settings → Mobile), shown only in the desktop app because
    * main owns the setting and the server, and only while the experimental
-   * Labs flag is on (Cmd+K → Enable experimental browser access). The warning stays visible while the
+   * Labs flag is on (Settings → Labs → Browser access). The warning stays visible while the
    * feature is off so nobody turns it on without reading it.
    */
   import Fa from 'svelte-fa';
