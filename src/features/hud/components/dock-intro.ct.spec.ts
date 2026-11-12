@@ -153,7 +153,12 @@ test('a conversation opened from the intro collapses and preserves selection unt
   await component.update({ props: { focusRequest: 1 } });
   await expect(surface).toBeVisible();
   await expect(preview).toHaveAttribute('data-preview-conversation', workspaceId);
-  await surface.locator('[data-dock-conversation-back]').press('Enter');
+  await expect(shell).toHaveAttribute('data-reveal', '1');
+  await expect(surface.locator('[data-dock-conversation-composer]')).toBeFocused();
+  const back = surface.locator('[data-dock-conversation-back]');
+  await back.focus();
+  await expect(back).toBeFocused();
+  await back.press('Enter');
   await expect(preview).toHaveAttribute('data-preview-conversation', '');
   await expect(component.getByTestId('dock-intro')).toBeVisible();
   await component.locator('[data-dock-row]').first().click();
