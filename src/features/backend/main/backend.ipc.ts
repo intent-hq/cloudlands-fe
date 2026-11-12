@@ -5508,7 +5508,10 @@ async function performPublishSelfBackendOriginal(owner?: PoolOwner): Promise<Pub
   }
   // Publishing is explicit user intent to sync this machine, so force-clear
   // any per-backend exclusion on the record (mirrors clearing the marker).
-  const record = await upsertSelfRecord({ ...info, port: info.port }, { syncExcluded: false });
+  const record = await upsertSelfRecord(
+    { ...info, port: info.port },
+    { syncExcluded: false, request: (method) => localClient.request(method) },
+  );
   await setStoredSelfFingerprint(info.certFingerprint);
   await setAutoPublishSuppressed(false);
   await broadcastConnectionsChangedOwned(owner);
@@ -5534,7 +5537,7 @@ async function performPublishSelfBackendOriginal(owner?: PoolOwner): Promise<Pub
  */
 async function upsertSelfRecord(
   info: SelfPairingInfo & { port: number },
-  opts: { syncExcluded?: boolean } = {},
+  opts: { syncExcluded?: boolean; request: (method: string) => Promise<unknown> },
 ): Promise<ConnectionRecord> {
   const host = info.localIps[0] ?? info.tcAddress;
   if (!host) {
@@ -5561,12 +5564,23 @@ async function upsertSelfRecord(
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);
   }
-  // Persist the daemon's tunnel tc address conclusively: pairingInfo omits
-  // it whenever the tunnel is down, so `null` clears a stale address and a
-  // rotation propagates to the user's other devices via keychain sync.
-  await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  // pairingInfo also omits the tc address while the sidecar restarts, and a
+  // clear syncs to every device. The address is stable, so clear it only
+  // when this machine's tunnel setting is off; an unreadable setting keeps it.
+  if (info.tcAddress !== null || (await isLocalTunnelOff(opts.request))) {
+    await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  }
   await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, info.deviceKind);
   return record;
+}
+
+async function isLocalTunnelOff(request: (method: string) => Promise<unknown>): Promise<boolean> {
+  try {
+    const tunnel = await getConnectionTunnel(request);
+    return !tunnel.supported || !tunnel.enabled;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -5619,7 +5633,10 @@ async function refreshSelfBackendOriginal(owner?: PoolOwner): Promise<RefreshSel
   if (!published) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  await upsertSelfRecord({ ...info, port: info.port });
+  await upsertSelfRecord(
+    { ...info, port: info.port },
+    { request: (method) => localClient.request(method) },
+  );
   await setStoredSelfFingerprint(info.certFingerprint);
   await broadcastConnectionsChangedOwned(owner);
   return { refreshed: true } satisfies RefreshSelfResult;

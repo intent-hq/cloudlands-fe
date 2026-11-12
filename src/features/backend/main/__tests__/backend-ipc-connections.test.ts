@@ -3792,11 +3792,20 @@ describe('self-publish IPC', () => {
     isLocal: false,
   };
 
-  function installPairingInfo(overrides: Partial<typeof PAIRING_INFO> | null = {}) {
+  function installPairingInfo(
+    overrides: Partial<typeof PAIRING_INFO> | null = {},
+    tunnelEnabled?: boolean,
+  ) {
     rpc.handler = async (method) => {
       if (method === 'server.pairingInfo') {
         if (overrides === null) throw new Error('server.* methods are local-only');
         return { ...PAIRING_INFO, ...overrides };
+      }
+      if (method === 'settings.list' && tunnelEnabled !== undefined) {
+        return {
+          settings: [{ path: 'server.tunnel.enabled', type: 'boolean', value: tunnelEnabled }],
+          revision: 1,
+        };
       }
       return {};
     };
@@ -3927,18 +3936,34 @@ describe('self-publish IPC', () => {
     expect(store.setTcAddress).toHaveBeenCalledWith('self-1', TC_ADDRESS);
   });
 
-  it('connections:publish-self clears the tcAddress when pairingInfo omits it (tunnel down)', async () => {
-    installPairingInfo();
+  it('connections:publish-self clears the tcAddress when the local tunnel is off', async () => {
+    installPairingInfo({}, false);
     store.add.mockResolvedValue(SELF_RECORD);
     installWindow();
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
     await findHandler('connections:publish-self')!({}, undefined);
-    // pairingInfo omits the field whenever the tunnel is not running — a
-    // conclusive clear so a stale address never keeps syncing.
     expect(store.setTcAddress).toHaveBeenCalledWith('self-1', null);
   });
+
+  it.each([
+    ['on (sidecar restarting)', true],
+    ['unreadable', undefined],
+  ])(
+    'connections:publish-self keeps the tcAddress pairingInfo omits while the tunnel setting is %s',
+    async (_label, tunnelEnabled) => {
+      installPairingInfo({}, tunnelEnabled);
+      store.add.mockResolvedValue(SELF_RECORD);
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+
+      await findHandler('connections:publish-self')!({}, undefined);
+      expect(store.setHosts).toHaveBeenCalledWith('self-1', PAIRING_INFO.localIps);
+      expect(store.setTcAddress).not.toHaveBeenCalled();
+    },
+  );
 
   it('connections:publish-self re-publish clears the "do not auto-publish" marker', async () => {
     installPairingInfo();
@@ -4187,11 +4212,20 @@ describe('self-entry refresh IPC', () => {
     isLocal: false,
   };
 
-  function installPairingInfo(overrides: Partial<typeof PAIRING_INFO> | null = {}) {
+  function installPairingInfo(
+    overrides: Partial<typeof PAIRING_INFO> | null = {},
+    tunnelEnabled?: boolean,
+  ) {
     rpc.handler = async (method) => {
       if (method === 'server.pairingInfo') {
         if (overrides === null) throw new Error('server.* methods are local-only');
         return { ...PAIRING_INFO, ...overrides };
+      }
+      if (method === 'settings.list' && tunnelEnabled !== undefined) {
+        return {
+          settings: [{ path: 'server.tunnel.enabled', type: 'boolean', value: tunnelEnabled }],
+          revision: 1,
+        };
       }
       return {};
     };
@@ -4234,7 +4268,7 @@ describe('self-entry refresh IPC', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
-  it('refresh-self propagates a rotated tcAddress (and clears an omitted one)', async () => {
+  it('refresh-self propagates a rotated tcAddress and clears it only when the tunnel is off', async () => {
     installPairingInfo({ tcAddress: 'tc9d0c22.tailcat.net' });
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
     store.add.mockResolvedValue(SELF_RECORD);
@@ -4245,9 +4279,15 @@ describe('self-entry refresh IPC', () => {
     await findHandler('connections:refresh-self')!({}, undefined);
     expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc9d0c22.tailcat.net');
 
-    // A later refresh without the field (tunnel disabled) conclusively clears.
+    // A token rotation while the sidecar restarts omits the field: kept.
     store.setTcAddress.mockClear();
-    installPairingInfo();
+    installPairingInfo({ token: 'b'.repeat(64) }, true);
+    await findHandler('connections:refresh-self')!({}, undefined);
+    expect(store.add).toHaveBeenLastCalledWith(expect.objectContaining({ token: 'b'.repeat(64) }));
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+
+    // Turning the local tunnel off clears it.
+    installPairingInfo({}, false);
     await findHandler('connections:refresh-self')!({}, undefined);
     expect(store.setTcAddress).toHaveBeenCalledWith('self-1', null);
   });
