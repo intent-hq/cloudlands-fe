@@ -35,6 +35,7 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
+  clearHistorySegment,
   seedHistoryAround,
   setHistoryOldestReached,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -99,7 +100,10 @@ function sleep(ms: number): Promise<void> {
 type StoreStateView = {
   agentSessions?: {
     byAgentId: Record<string, { messages?: AgentMessage[] }>;
-    historySegmentsByAgentId?: Record<string, { messages: AgentMessage[] }>;
+    historySegmentsByAgentId?: Record<
+      string,
+      { messages: AgentMessage[]; detachedFromTail?: boolean }
+    >;
   };
   chatState?: {
     byAgentId: Record<string, { transcriptHydration?: 'loading' | 'settled' }>;
@@ -114,6 +118,21 @@ function isMessageInStore(agentId: string, messageId: string): boolean {
     messages?.some((message) => message.id === messageId) ||
     history?.some((message) => message.id === messageId),
   );
+}
+
+/**
+ * A loaded row the transcript does not render: a live-tail row behind a
+ * detached window. Revealing it means returning to the live tail, so the
+ * detached window is dropped (scrolling up reloads it).
+ */
+function revealHiddenTailMessage(agentId: string, messageId: string): void {
+  const state = appStore.state as StoreStateView;
+  const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+  if (segment?.detachedFromTail !== true) return;
+  if (segment.messages.some((message) => message.id === messageId)) return;
+  const tail = state.agentSessions?.byAgentId[agentId]?.messages;
+  if (!tail?.some((message) => message.id === messageId)) return;
+  appStore.dispatch(clearHistorySegment(agentId));
 }
 
 function hydrationStatus(agentId: string): 'loading' | 'settled' | undefined {
@@ -173,7 +192,10 @@ export async function seekConversationToMessage(
   }
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (!session || signal?.aborted) return false;
-  if (isMessageInStore(agentId, messageId)) return true;
+  if (isMessageInStore(agentId, messageId)) {
+    revealHiddenTailMessage(agentId, messageId);
+    return true;
+  }
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
   let tokens = {
@@ -275,9 +297,10 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 
-  const present = (await waitForMessage(agentId, messageId, signal))
-    ? true
-    : await seekConversationToMessage(agentId, messageId, workspaceId, signal);
+  const loaded = await waitForMessage(agentId, messageId, signal);
+  if (loaded) revealHiddenTailMessage(agentId, messageId);
+  const present =
+    loaded || (await seekConversationToMessage(agentId, messageId, workspaceId, signal));
   if (signal.aborted) return;
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {
