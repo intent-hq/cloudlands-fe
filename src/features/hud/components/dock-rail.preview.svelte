@@ -49,6 +49,7 @@
     conversationContent: conversationOverride,
     conversationController,
     recordingFixture,
+    recordingOverride,
     machineFixture = false,
     failMachineOnce = false,
     resizeAcknowledgement = 'accept',
@@ -540,7 +541,7 @@
     data-preview-commands={JSON.stringify(commands)}
   >
     <DockRail
-      recording={previewRecording}
+      recording={recordingOverride === undefined ? previewRecording : recordingOverride}
       recordingStopping={recordingFixture === 'stopping'}
       onStopRecording={() => {
         recordAction('recording:stop');

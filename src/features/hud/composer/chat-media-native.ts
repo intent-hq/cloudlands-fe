@@ -7,6 +7,7 @@ import {
 } from '$shared/chat-media-ipc';
 import type { DockNativeResult } from '$shared/dock-evidence';
 import type { DockMediaSendService } from './dock-media-send';
+import type { DockCaptureEditorSnapshot } from '$shared/dock-capture-editor';
 
 type Invoke = (
   channel: (typeof CHAT_MEDIA_CHANNELS)[keyof typeof CHAT_MEDIA_CHANNELS],
@@ -85,5 +86,12 @@ export function createChatMediaNative(
       })) as DockNativeResult<void>;
     },
   };
-  return { service, dispose };
+  return {
+    service,
+    dispose,
+    readiness: () =>
+      control<(NonNullable<DockCaptureEditorSnapshot['output']> & { sourceId: string })[]>({
+        action: 'readiness',
+      }),
+  };
 }

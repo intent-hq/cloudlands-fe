@@ -40,6 +40,7 @@
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
+    selectDockRecordingIndicator,
     selectDockCloseRequest,
     selectDockEditorCompactRequest,
     selectDockFocusRequest,
@@ -87,6 +88,7 @@
     legacyPickDraft?: boolean;
     nativePlacementFixture?: boolean;
   } = $props();
+  const recording$ = selectDockRecordingIndicator();
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
   const closeRequest$ = selectDockCloseRequest();
@@ -351,6 +353,7 @@
     {@const props = shell ?? dockRailPreview.states.notch.props}
     <DockRailPreview
       {...props}
+      recordingOverride={$recording$}
       focusRequest={request + $storeFocusRequest$}
       closeRequest={$closeRequest$}
       editorCompactRequest={$editorCompactRequest$}

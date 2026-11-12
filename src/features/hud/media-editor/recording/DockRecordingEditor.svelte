@@ -66,6 +66,7 @@
     onDiscardRequested,
     onKeepEditing,
     onSave,
+    shortcutDialog = null,
   }: {
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void | boolean | Promise<void | boolean>;
@@ -78,6 +79,7 @@
     onKeepEditing?: () => void;
     /** Persist the edit; offered only when sending honors saved edits of this source. */
     onSave?: (edit: DockMediaEdit) => Promise<DockCaptureEditorSaveResult | null>;
+    shortcutDialog?: HTMLElement | null;
   } = $props();
 
   // One session per mount (the page remounts the view for each open).
@@ -459,6 +461,12 @@
   }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    if (shortcutDialog && !(event.target instanceof Node && shortcutDialog.contains(event.target)))
+      return;
+    const dialog =
+      event.target instanceof Element &&
+      event.target.closest('[role="dialog"], [role="alertdialog"]');
+    if (dialog && dialog !== shortcutDialog) return;
     const shortcut = captureEditorToolShortcut(
       event,
       !active ||
@@ -471,6 +479,7 @@
         !source ||
         !edits ||
         !frameKept,
+      shortcutDialog,
     );
     if (shortcut && shortcut !== 'crop' && shortcut !== 'blur') {
       event.preventDefault();
@@ -492,7 +501,8 @@
       !isTextEntryTarget(event.target) &&
       !(
         event.target instanceof Element &&
-        event.target.closest('[role="dialog"], [role="alertdialog"]')
+        event.target.closest('[role="dialog"], [role="alertdialog"]') &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]') !== shortcutDialog
       ) &&
       (frameTool || selectedMarkId)
     ) {
@@ -515,6 +525,7 @@
 <svelte:window onkeydowncapture={onKeydown} />
 
 <DockCaptureEditorShell
+  {shortcutDialog}
   title={m.dock_captureEditor_recording_title({ duration: formatRecordingTime(durationMs) })}
   subtitle={snapshot.title}
   dirty={interactionPending || (edits?.dirty ?? false)}

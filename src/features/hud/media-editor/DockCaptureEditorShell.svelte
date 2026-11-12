@@ -41,6 +41,7 @@
     sidebarWidth = 300,
     sidebarLayout = 'panel',
     actionsPlacement = 'header',
+    shortcutDialog = null,
   }: {
     title: string;
     subtitle?: string;
@@ -79,6 +80,8 @@
      * the actions are pinned at the bottom of a flat sidebar.
      */
     actionsPlacement?: 'header' | 'sidebar';
+    /** When embedded, this dialog is the editor surface; nested dialogs still own their keys. */
+    shortcutDialog?: HTMLElement | null;
   } = $props();
   const busy = $derived(saving || deleting);
   const primaryLabel = $derived(
@@ -125,7 +128,18 @@
     fromMain = false;
   }
 
+  // A modal's focus layer stops Escape before it bubbles to window. Handle it
+  // on our own dialog after the editor's window-capture tools get first refusal.
+  $effect(() => {
+    const target = shortcutDialog;
+    if (!target) return;
+    target.addEventListener('keydown', onKeydown, true);
+    return () => target.removeEventListener('keydown', onKeydown, true);
+  });
+
   function onWindowShortcut(event: KeyboardEvent): void {
+    if (shortcutDialog && !(event.target instanceof Node && shortcutDialog.contains(event.target)))
+      return;
     const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
     if (!mod) return;
     if (event.key.toLowerCase() === 's') {
@@ -143,24 +157,31 @@
       !confirming &&
       !(
         event.target instanceof Element &&
-        event.target.closest('[role="dialog"], [role="alertdialog"]')
+        event.target.closest('[role="dialog"], [role="alertdialog"]') &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]') !== shortcutDialog
       )
     )
       requestClose();
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    if (shortcutDialog && !(event.target instanceof Node && shortcutDialog.contains(event.target)))
+      return;
     if (
       event.defaultPrevented ||
       confirming ||
       (event.target instanceof Element &&
-        event.target.closest('[role="dialog"], [role="alertdialog"]'))
+        event.target.closest('[role="dialog"], [role="alertdialog"]') &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]') !== shortcutDialog)
     )
       return;
     const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
     const key = event.key.toLowerCase();
     if (event.key === 'Escape') {
       event.preventDefault();
+      // Do not let the outer modal's Escape layer consume the same key after
+      // this handler opens the nested discard confirmation.
+      if (shortcutDialog) event.stopPropagation();
       requestClose();
     } else if (mod && key === 'enter' && onAttach && !isTextEntryTarget(event.target)) {
       event.preventDefault();

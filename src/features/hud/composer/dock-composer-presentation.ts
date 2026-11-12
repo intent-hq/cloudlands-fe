@@ -46,7 +46,7 @@ export function dockClipPlaybackUrl(
 }
 
 /** A saved recording edit's send choice, for the pill's second line. */
-function dockClipSendSummary(saved: {
+export function dockClipSendSummary(saved: {
   video: 'full' | 'highlights';
   voice: 'audio' | 'transcript' | 'off';
 }): string {
@@ -201,29 +201,31 @@ export function buildDockComposerMedia(input: {
         ...(local.previews[image.id] ? {} : { status: 'placing' as const }),
       })),
     // One tile per recording, in start order.
-    ...view.clips.map((clip): DockComposerAttachment => ({
-      kind: 'clip' as const,
-      // The context item exists once native returns the file; a live recording has only its id.
-      id: clip.contextItemId ?? clip.id,
-      duration: elapsed(
-        clip.status === 'recording' ? recordedMs(clip, local.now) : clip.durationMs,
-      ),
-      recording: clip.status === 'recording',
-      ...(clip.media?.saved ? { summary: dockClipSendSummary(clip.media.saved) } : {}),
-      ...(clip.status === 'ready' && dockClipPlaybackUrl(input.workspaceId, clip.path)
-        ? { url: dockClipPlaybackUrl(input.workspaceId, clip.path) }
-        : {}),
-      owner: 'evidence' as const,
-      ...(clip.status === 'placing' ? { status: 'placing' as const } : {}),
-      ...(clip.status === 'failed'
-        ? {
-            status: 'failed' as const,
-            // Codes are not copy: only a too-large clip has its own message;
-            // others use the tile's generic failure label.
-            ...(clip.error === 'limit' ? { error: m.dock_composer_clipTooLarge_error() } : {}),
-          }
-        : {}),
-    })),
+    ...view.clips
+      .filter((clip) => !clip.discarding)
+      .map((clip): DockComposerAttachment => ({
+        kind: 'clip' as const,
+        // The context item exists once native returns the file; a live recording has only its id.
+        id: clip.contextItemId ?? clip.id,
+        duration: elapsed(
+          clip.status === 'recording' ? recordedMs(clip, local.now) : clip.durationMs,
+        ),
+        recording: clip.status === 'recording',
+        ...(clip.media?.saved ? { summary: dockClipSendSummary(clip.media.saved) } : {}),
+        ...(clip.status === 'ready' && dockClipPlaybackUrl(input.workspaceId, clip.path)
+          ? { url: dockClipPlaybackUrl(input.workspaceId, clip.path) }
+          : {}),
+        owner: 'evidence' as const,
+        ...(clip.status === 'placing' ? { status: 'placing' as const } : {}),
+        ...(clip.status === 'failed'
+          ? {
+              status: 'failed' as const,
+              // Codes are not copy: only a too-large clip has its own message;
+              // others use the tile's generic failure label.
+              ...(clip.error === 'limit' ? { error: m.dock_composer_clipTooLarge_error() } : {}),
+            }
+          : {}),
+      })),
     ...items
       .filter((item) => !owned.has(item.id))
       .map((item): DockComposerAttachment => ({
@@ -278,9 +280,10 @@ export function buildDockComposerMedia(input: {
       tool: view.tool,
       toolUsed: view.toolUsed,
       annotationDisabled: !caps.annotate,
-      recording: view.recording,
+      recording: view.recording && !recordingClip?.discarding,
       // A finished clip uploads in the background; a new recording can start meanwhile.
-      recordingDisabled: !view.recording && (!caps.record || clipsFull),
+      recordingDisabled:
+        !!recordingClip?.discarding || (!view.recording && (!caps.record || clipsFull)),
       ...(clipsFull && !view.recording ? { recordingTooltip: labels.clipLimit } : {}),
       recordingTime: recordingClip ? elapsed(recordedMs(recordingClip, local.now)) : elapsed(0),
       dictating: !!view.dictation,

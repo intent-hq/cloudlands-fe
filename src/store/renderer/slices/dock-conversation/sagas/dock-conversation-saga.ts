@@ -1,3 +1,4 @@
+import { dockSendTimingFor } from '$store/renderer/utils/submission-timing';
 import { selectDockDraftSynchronization } from '../dock-conversation-selectors';
 import type { SharedDraftSnapshot } from '$shared/types/chat-draft-sync';
 import {
@@ -145,28 +146,29 @@ function* applySharedDraft(
   agentId: string,
   snapshot: SharedDraftSnapshot,
   revision: number,
-): SagaGenerator<void> {
+): SagaGenerator<SharedDraftSnapshot> {
   const items = deserializeDraftAttachments(snapshot.attachments);
-  yield* put(setComposerContextItems(workspaceId, agentId, items));
   const present = new Set(items.map((item) => item.id));
-  yield* put(
-    dockEvidenceShared(
-      workspaceId,
-      agentId,
-      fromDockDraftEvidence(
-        dockEvidenceId(workspaceId, agentId),
-        readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
-        items.map((item) => ({
-          contextItemId: item.id,
-          attachmentId: item.attachmentId,
-          path: item.path,
-        })),
-      ),
-    ),
+  const evidence = fromDockDraftEvidence(
+    dockEvidenceId(workspaceId, agentId),
+    readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
+    items.map((item) => ({
+      contextItemId: item.id,
+      attachmentId: item.attachmentId,
+      path: item.path,
+    })),
   );
+  yield* put(setComposerContextItems(workspaceId, agentId, items));
+  yield* put(dockEvidenceShared(workspaceId, agentId, evidence));
   yield* put(
     dockConversationDraftShared(workspaceId, agentId, snapshot.text, items.length > 0, revision),
   );
+  // The dirty baseline must use the same parsed projection as draftAttachments.
+  // Derive it from the requested snapshot, never from intervening local typing.
+  return {
+    text: snapshot.text,
+    attachments: serializeDraftAttachments(items, toDockDraftEvidence(evidence)),
+  };
 }
 function* saveDrafts(
   ownerId: string,
@@ -233,8 +235,9 @@ function* saveDrafts(
         else if (snapshot === baseline) {
           applyingShared = true;
           try {
-            yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision);
-            baseline = JSON.stringify(shared.snapshot);
+            baseline = JSON.stringify(
+              yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision),
+            );
           } finally {
             applyingShared = false;
           }
@@ -552,7 +555,9 @@ function* sendReply(
   yield* put(dockConversationSendState(generation, true, null));
   // Cancelling the saga also retires its async shared preparation continuation.
   let preparationActive = true;
+  const timing = dockSendTimingFor(prompt?.submissionId);
   try {
+    timing?.stage('target');
     const target = yield* call([appClient.agents, appClient.agents.get], agentId, workspaceId);
     if (!current(generation, authority)) return;
     if (
@@ -574,7 +579,9 @@ function* sendReply(
     // The click owns this immutable snapshot. Edits made during validation are
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
+    timing?.stage('preparation');
     const payload = yield* call(prepareEvidenceMessage, {
+      timing,
       workspaceId,
       agentId,
       evidence,
@@ -600,6 +607,7 @@ function* sendReply(
       userAppMessageId: appMessageId,
     });
     if (!admitted) throw new Error('not-admitted');
+    timing?.admit(admitted.scope, admitted.submission.id);
     // Register draft ownership before dispatch can produce a fast acknowledgement.
     yield* put(
       dockConversationDeliveryTracked(workspaceId, agentId, {
@@ -631,6 +639,7 @@ function* sendReply(
     yield* reconcileDeliveries();
   } catch (error) {
     // Stage and bounded code only: never the prompt, file names or ids.
+    timing?.finish('failed');
     sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'admission'));
     if (current(generation, authority))
       yield* put(
@@ -645,6 +654,7 @@ function* sendReply(
     return;
   } finally {
     preparationActive = false;
+    timing?.cancelBeforeAdmission();
     if (current(generation, authority) && appStore.state.dockConversation.sending)
       yield* put(dockConversationSendState(generation, false, null));
   }

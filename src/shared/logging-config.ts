@@ -39,6 +39,8 @@ export const LOGGING_CONFIG: LoggingConfig = {
   // Per-category log levels
   // These override the default level for specific components
   categories: {
+    // Bounded, content-free send timings must survive packaged main-process logging.
+    DockSendTiming: LogLevel.INFO,
     // File system operations - reduce noise
     FileExplorerStore: isDevelopment && !isDebugMode ? LogLevel.WARN : LogLevel.DEBUG,
     FileTrackingStore: isDevelopment && !isDebugMode ? LogLevel.WARN : LogLevel.DEBUG,

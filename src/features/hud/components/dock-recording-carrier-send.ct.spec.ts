@@ -218,6 +218,16 @@ test('an exported recording does not resend its markup screenshot; an explicit c
   mount,
   page,
 }, info) => {
+  const timings: Record<string, any>[] = [];
+  page.on('console', async (message) => {
+    // Read the actual formatted first argument; ConsoleMessage.text also appends the object argument.
+    const text = await message.args()[0]?.jsonValue();
+    if (typeof text !== 'string') return;
+    if (text.includes('[DockSendTiming]') && text.includes('Dock send timing')) {
+      const start = text.indexOf('{');
+      if (start >= 0) timings.push(JSON.parse(text.slice(start)));
+    }
+  });
   const component = await mount(ComposerE2EHarness);
   await recordWithMark(page, component);
   await (component.getByRole('button', { name: /^Capture the screen/ }) as any).click();
@@ -254,6 +264,47 @@ test('an exported recording does not resend its markup screenshot; an explicit c
       name.startsWith(`screenshot-${carrier.id.slice(0, 8)}`),
     ),
   ).toBe(false);
+  await expect.poll(() => timings.some((row) => row.stage === 'local-admission')).toBe(true);
+  // This wire deliberately holds its reply. Admission must not masquerade as an ACK.
+  expect(timings.some((row) => row.stage === 'daemon-result')).toBe(false);
+  await page.evaluate(() => (window as any).__dockComposerE2E.fixture.settle());
+  await expect.poll(() => timings.some((row) => row.stage === 'daemon-result')).toBe(true);
+  expect(timings.map((row) => row.stage)).toEqual([
+    'export-start',
+    'local-admission',
+    'daemon-result',
+  ]);
+  expect(new Set(timings.map((row) => row.attemptToken)).size).toBe(1);
+  const admission = timings[1],
+    result = timings[2];
+  expect(result.outcome).toBe('accepted');
+  expect(result.clickToResultMs).toBeGreaterThanOrEqual(admission.clickToAdmissionMs);
+  for (const stage of ['barrier', 'target', 'overlay-render', 'export', 'placement', 'release'])
+    expect(admission.durationsMs[stage]).toBeGreaterThanOrEqual(0);
+  const allowed = new Set([
+    'attemptToken',
+    'exportToken',
+    'stage',
+    'outcome',
+    'durationsMs',
+    'clickToAdmissionMs',
+    'clickToResultMs',
+    'admissionToResultMs',
+  ]);
+  for (const row of timings) {
+    expect(Object.keys(row).every((key) => allowed.has(key))).toBe(true);
+    expect(row.attemptToken).toMatch(/^[0-9a-f-]{36}$/);
+    for (const value of [
+      ...Object.values(row.durationsMs ?? {}),
+      ...Object.entries(row)
+        .filter(([key]) => key.endsWith('Ms') && key !== 'durationsMs')
+        .map(([, value]) => value),
+    ]) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+  }
+  await writeFile(info.outputPath('send-timing-receipt.json'), JSON.stringify(timings, null, 2));
   await writeFile(
     info.outputPath('carrier-exported-receipt.json'),
     JSON.stringify({ images, sent: { ...sent, context: undefined } }, null, 2),

@@ -129,3 +129,47 @@ for (const mode of [
     });
   });
 }
+
+for (const transcriptCase of ['full', 'trim'] as const) {
+  test(`shared transcript timing ${transcriptCase} preserves speech policy at the real send boundary`, async ({
+    mount,
+    page,
+  }, info) => {
+    const component = await mount(SharedMediaSendHarness, { props: { transcriptCase } });
+    const root = page.getByTestId('shared-media-send');
+    await expect(root).toHaveAttribute('data-ready', 'true');
+    await component.getByLabel('Draft').fill('Review this recording');
+    await component.getByRole('button', { name: 'Send prepared draft' }).click();
+    await expect(root).toHaveAttribute(
+      'data-result',
+      transcriptCase === 'full' ? 'admitted' : 'retained',
+    );
+    const calls = JSON.parse((await root.getAttribute('data-calls'))!);
+    const native = JSON.parse((await root.getAttribute('data-native'))!);
+    const sends = calls.filter((row: { method: string }) =>
+      ['agent.sendMessage', 'agent.queueMessage'].includes(row.method),
+    );
+    if (transcriptCase === 'full') {
+      expect(sends).toHaveLength(1);
+      expect(sends[0].params.messageMetadata.edited_captures[0].transcript).toBe(
+        'First middle last',
+      );
+      expect(sends[0].params.fileBlocks[0].attachmentId).toBe('prepared-video');
+      expect(native.filter((action: string) => action === 'export')).toHaveLength(1);
+      expect(JSON.parse((await root.getAttribute('data-export'))!).media.saved.voice).toBe(
+        'transcript',
+      );
+    } else {
+      expect(sends).toEqual([]);
+      expect(native).not.toContain('export');
+      expect(
+        calls.filter((row: { method: string }) => row.method === 'file.placeAttachment'),
+      ).toEqual([]);
+      await expect(component.getByLabel('Draft')).toHaveValue('Review this recording');
+    }
+    await info.attach('transcript-send-boundary', {
+      body: JSON.stringify({ transcriptCase, calls, native }),
+      contentType: 'application/json',
+    });
+  });
+}

@@ -29,6 +29,7 @@
   import { CHAT_MEDIA_CHANNELS as C } from '$shared/chat-media-ipc';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import type { ContextItem } from '../input/context-api';
+  let { transcriptCase }: { transcriptCase?: 'full' | 'trim' } = $props();
   let calls = $state<ConversationWireCall[]>([]),
     result = $state('idle'),
     ready = $state(false);
@@ -159,6 +160,25 @@
         },
       },
     };
+    if (transcriptCase) {
+      clip.transcript = {
+        status: 'ready',
+        revision: 1,
+        words: [
+          { id: 'a', text: 'First', startMs: 100, endMs: 200, alignment: 'word' },
+          { id: 'b', text: 'middle', startMs: null, endMs: null, alignment: 'untimed' },
+          { id: 'c', text: 'last', startMs: 900, endMs: 1030, alignment: 'word' },
+        ],
+      };
+      clip.saved = defaultDockMediaEdit(clipSource, [], clip.transcript);
+      if (transcriptCase === 'trim') clip.saved.trim.startMs = 150;
+      const clipItems = items.filter((item) => item.id === 'clip-item');
+      return {
+        items: clipItems,
+        attachments: serializeDraftAttachments(clipItems, { 'clip-item': screen['clip-item'] }),
+        clip,
+      };
+    }
     if (mode === 'invalid') media.saved!.sourceRevision = 99;
     return { items, attachments: serializeDraftAttachments(items, screen), clip };
   }
@@ -174,6 +194,7 @@
       text: draftText,
       attachments,
       generation: 1,
+      attachmentEpoch: 0,
     };
     const plan = planChatSend('composer', draftText, () => ({
       contextItems: items,

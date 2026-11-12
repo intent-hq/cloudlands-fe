@@ -26,6 +26,7 @@ export function ownedDockRecording(
   const clip = evidence.clips.find((clip) => clip.status === 'recording');
   if (
     !clip ||
+    clip.discarding ||
     !Number.isFinite(clip.startedAt) ||
     !Number.isFinite(clip.pausedMs ?? 0) ||
     (clip.pausedAt != null && !Number.isFinite(clip.pausedAt))
