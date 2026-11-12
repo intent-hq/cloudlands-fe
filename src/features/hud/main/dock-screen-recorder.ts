@@ -898,22 +898,20 @@ export function createDockScreenRecorder(
   };
 
   const ended = new Map<string, Promise<DockNativeResult<DockRecordedClip>>>();
+  // Result-cache pressure must not release files an upload may still be reading.
+  // Ownership lasts until explicit cancellation/release or recorder disposal.
+  const completedFiles = new Map<string, readonly string[]>();
 
-  const removeCompletedFiles = async (result: DockNativeResult<DockRecordedClip>): Promise<void> => {
-    if (!result.ok) return;
-    // finished() constructs both paths from main-owned temporary clip files.
-    // Durable daemon attachment paths never enter this recorder result.
-    const paths = new Set([
-      result.value.sourcePath,
-      ...(result.value.original ? [result.value.original.sourcePath] : []),
-    ]);
-    await Promise.all([...paths].map((file) => deps.removeFile(file).catch(() => undefined)));
+  const removeCompletedFiles = async (clipId: string): Promise<void> => {
+    const paths = completedFiles.get(clipId);
+    completedFiles.delete(clipId);
+    if (paths)
+      await Promise.all(paths.map((file) => deps.removeFile(file).catch(() => undefined)));
   };
 
   const retireEnded = async (clipId: string): Promise<void> => {
-    const result = ended.get(clipId);
     ended.delete(clipId);
-    if (result) await removeCompletedFiles(await result);
+    await removeCompletedFiles(clipId);
   };
 
   const stop = (clipId: string): Promise<DockNativeResult<DockRecordedClip>> => {
@@ -939,7 +937,7 @@ export function createDockScreenRecorder(
   const cancel = async (clipId: string): Promise<void> => {
     const clip = current(clipId);
     if (!clip) {
-      if (!ended.has(clipId)) {
+      if (!ended.has(clipId) && !completedFiles.has(clipId)) {
         abort(clipId);
         if (reservation?.clipId === clipId) await reservation.promise;
         return;
@@ -952,17 +950,25 @@ export function createDockScreenRecorder(
     if (send(clip, { cmd: 'cancel' }))
       later(clip, FINISH_TIMEOUT_MS, () => kill(clip, 'cancelled'));
     else kill(clip, 'cancelled');
-    const result = await clip.ended;
-    ended.delete(clipId);
-    await removeCompletedFiles(result);
+    await clip.ended;
+    await retireEnded(clipId);
     await deps.removeFile(clip.outputPath).catch(() => undefined);
     await deps.removeFile(clip.cleanPath).catch(() => undefined);
   };
 
   // Remember the last few outcomes so a late `stop` after an auto-limit still resolves.
   listeners.add((clipId, result) => {
+    if (result.ok) {
+      // finished() constructs these from main-owned temporary paths, never
+      // daemon durable attachment paths.
+      const paths = new Set([
+        result.value.sourcePath,
+        ...(result.value.original ? [result.value.original.sourcePath] : []),
+      ]);
+      completedFiles.set(clipId, [...paths]);
+    }
     ended.set(clipId, Promise.resolve(result));
-    while (ended.size > 4) void retireEnded(ended.keys().next().value as string);
+    while (ended.size > 4) ended.delete(ended.keys().next().value as string);
   });
 
   return {
@@ -990,7 +996,8 @@ export function createDockScreenRecorder(
     },
     async dispose() {
       if (active) await cancel(active.clipId);
-      await Promise.all([...ended.keys()].map(retireEnded));
+      await Promise.all([...completedFiles.keys()].map(retireEnded));
+      ended.clear();
     },
   };
 }
