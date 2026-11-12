@@ -64,21 +64,23 @@ test('one shared context API owns links, policy, stale actions and principal iso
   await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
   await emit('https://shared.example/project', { workspaceId: 'choice-1' });
   await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
-  await page.evaluate(() => {
+  await page.evaluate((sequence) => {
     const h = (window as any).__dockComposerE2E;
     h.shortcut({
       id: 'shared-prefix-shortcut',
       backendId: h.store.state.connections.windowBackendId,
       action: 'focus',
-      appId: 'company.thebrowser.dia',
+      appId: 'com.apple.Safari',
+      contextVersion: `context-${sequence}`,
+      identityKey: 'url:https://shared.example/project',
       url: 'https://shared.example/project',
       workspaceId: 'choice-1',
     });
-  });
+  }, sequence);
   await expect
     .poll(() =>
       page.evaluate(
-        () => (window as any).__dockComposerE2E.store.state.dockConversation.shortcut?.destination,
+        () => (window as any).__dockComposerE2E.store.state.dockConversation.workspaceId,
       ),
     )
     .toBe('choice-0');
