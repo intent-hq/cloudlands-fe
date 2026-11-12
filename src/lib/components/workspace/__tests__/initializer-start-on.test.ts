@@ -1,4 +1,7 @@
-import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import {
+  withBackendDaemonMode,
+  withLegacyPrincipal,
+} from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -41,6 +44,8 @@ const mocks = vi.hoisted(() => {
     writable,
     readable,
     principalState: {} as Record<string, unknown>,
+    /** The backend's auggie `models.list`; an orchestrator's is empty. */
+    backendModels: ['fable-5', 'opus4.6', 'user-picked-model'],
     remote: {
       labs: true,
       supported: true,
@@ -123,7 +128,7 @@ vi.mock('$store/renderer/store', async () => {
       providerModels: {
         byProviderId: {
           auggie: {
-            models: ['fable-5', 'opus4.6', 'user-picked-model'].map((value) => ({
+            models: mocks.backendModels.map((value) => ({
               value,
               effortLevels: ['low', 'high'],
             })),
@@ -439,6 +444,7 @@ async function submit(view: Awaited<ReturnType<typeof createWith>>) {
 describe('New Workspace → Start On', () => {
   beforeEach(() => {
     mocks.principalState = withLegacyPrincipal({});
+    mocks.backendModels = ['fable-5', 'opus4.6', 'user-picked-model'];
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
       createWorkspaceInitializationDispatchAdapter({
@@ -573,6 +579,22 @@ describe('New Workspace → Start On', () => {
     const agent = await submit(view);
     expect(agent).toMatchObject({ placement: { nodeId: 'node-mac' } });
     expect(agent.model).toBeUndefined();
+  });
+
+  // An orchestrator has no models of its own (`models.list` is empty): with
+  // "First available machine" the Model row and the saved override's check
+  // read the first machine in order, and no placement is sent.
+  it('keeps a saved model the first machine runs on an orchestrator', async () => {
+    mocks.principalState = withBackendDaemonMode(withLegacyPrincipal({}), 'orchestrator');
+    mocks.backendModels = [];
+    const view = await createWith();
+    await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
+    expect(screen.getByTestId('start-on-picker').textContent).toContain(
+      m.remoteMachines_startOn_firstAvailable_label(),
+    );
+    const agent = await submit(view);
+    expect(agent).toMatchObject({ model: 'opus4.6', provider: 'auggie' });
+    expect(agent).not.toHaveProperty('placement');
   });
 
   it('keeps a new repository on the backend: a remote agent needs a commit', async () => {

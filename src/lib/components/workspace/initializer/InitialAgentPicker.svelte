@@ -92,7 +92,10 @@
     selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
-  import { machineReportFreshness } from '$features/remote-machines/remote-model-picker';
+  import {
+    machineReportFreshness,
+    machineReportedModels,
+  } from '$features/remote-machines/remote-model-picker';
   import {
     machineModelFallback,
     resolveStartOn,
@@ -692,6 +695,12 @@
   function knownModelsForProvider(
     providerId: string,
   ): Array<{ value: string; effortLevels?: string[] }> | undefined {
+    // A chosen machine (or, on an orchestrator, the first machine in order)
+    // lists its own models; the backend's catalog is not the evidence there.
+    if (startOnMachine)
+      return machineReportedModels(startOnMachine, providerId, Date.now())?.map((value) => ({
+        value,
+      }));
     const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
     const cachedModels = $providerModelsCacheMap$[normalizedProviderId]?.models;
     if (cachedModels) return cachedModels;
