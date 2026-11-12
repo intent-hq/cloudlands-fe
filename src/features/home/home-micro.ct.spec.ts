@@ -88,7 +88,7 @@ test('Home board keyboard menu restores focus and preserves preview and open nav
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
-  await row.click({ modifiers: [modifier] });
+  await row.press(`${modifier}+Enter`);
   await expect
     .poll(() => page.evaluate(() => window.__homeWorkspacePreview!.navigation().currentTabId))
     .toBe('home-review');
