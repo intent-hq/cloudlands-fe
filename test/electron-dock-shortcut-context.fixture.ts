@@ -1,6 +1,6 @@
 /** Cold native foreground identity and real Electron guest provenance; no Intent profile or daemon. */
 import { _electron as electron, expect, test } from '@playwright/test';
-import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -9,6 +9,7 @@ import { build } from 'vite';
 test('cold shortcut context preserves native identity and first-use guest ownership', async ({}, info) => {
   test.setTimeout(60000);
   const root = await mkdtemp(join(tmpdir(), 'intent-shortcut-context-'));
+  const appPath = join(root, 'dist', 'main');
   await symlink(
     resolve('node_modules'),
     join(root, 'node_modules'),
@@ -24,6 +25,18 @@ test('cold shortcut context preserves native identity and first-use guest owners
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing fixture server');
     const url = `http://127.0.0.1:${address.port}/project/`;
+    // Launch a real app directory in the compiled layout: the production resolver must
+    // find the helper two levels above app.getAppPath(), without mutating Electron's app.
+    await mkdir(appPath, { recursive: true });
+    await writeFile(
+      join(appPath, 'package.json'),
+      JSON.stringify({ name: 'shortcut-context-fixture', version: '1.0.0', main: 'main.cjs' }),
+    );
+    await symlink(
+      resolve('resources'),
+      join(root, 'resources'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     const entry = join(root, 'entry.ts');
     await writeFile(
       entry,
@@ -58,7 +71,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
       ],
       build: {
         ssr: entry,
-        outDir: root,
+        outDir: appPath,
         emptyOutDir: false,
         minify: false,
         rollupOptions: {
@@ -68,11 +81,10 @@ test('cold shortcut context preserves native identity and first-use guest owners
       },
     });
     await writeFile(
-      join(root, 'main.cjs'),
+      join(appPath, 'main.cjs'),
       `
    const {app,BrowserWindow}=require('electron');
    app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
-   app.setAppPath(${JSON.stringify(resolve('dist/main'))});
    app.whenReady().then(async()=>{ const window=new BrowserWindow({show:false,webPreferences:{webviewTag:true,nodeIntegration:true,contextIsolation:false,sandbox:false}});globalThis.shortcutWindow=window;await window.loadURL('data:text/html,'+encodeURIComponent('<webview id="guest" src="${url}" style="width:400px;height:200px"></webview>'));globalThis.shortcutContext=require('./context.cjs');globalThis.shortcutContext.stampWindowWithBackend(window,'fixture-backend');}).catch(error=>{globalThis.shortcutStartupError=String(error.stack||error);});
   `,
     );
@@ -83,7 +95,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
       ),
     );
     application = await electron.launch({
-      args: [join(root, 'main.cjs')],
+      args: [appPath],
       env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
     await expect
@@ -116,7 +128,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
       )
       .toBe(url);
     const evidence = await application.evaluate(
-      async ({ webContents, app }, { guestId, projectRoot }) => {
+      async ({ webContents, app }, { guestId }) => {
         const {
           embeddedBrowserCdp: service,
           stampWindowWithBackend,
@@ -128,15 +140,11 @@ test('cold shortcut context preserves native identity and first-use guest owners
         const window = (globalThis as any).shortcutWindow;
         const compiledAppPath = app.getAppPath();
         const distMainAvailable = desktopNativeAvailable();
-        app.setAppPath(projectRoot);
-        const projectRootAvailable = desktopNativeAvailable();
-        app.setAppPath(compiledAppPath);
         const cold = await sampleDockForeground(getDesktopNativeAdapter());
         const nativeIdentity = {
           available: desktopNativeAvailable(),
           appLayout: compiledAppPath.endsWith('/dist/main') ? 'dist/main' : 'unexpected',
           distMainAvailable,
-          projectRootAvailable,
           identityOutcome: cold.identityOutcome,
           urlOutcome: cold.urlOutcome,
           elapsedMs: cold.elapsedMs,
@@ -163,7 +171,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
           url: null,
           icon: null,
         };
-        let held: (() => void) | null = null;
+        const held: { resolve?: () => void } = {};
         let hold = false;
         const changes: any[] = [];
         const feed = createDockContextFeed({
@@ -173,7 +181,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
           intervalMs: 60000,
           async read() {
             reads++;
-            if (hold) await new Promise<void>((resolve) => (held = resolve));
+            if (hold) await new Promise<void>((resolve) => (held.resolve = resolve));
             return structuredClone(next);
           },
           changed(value: any) {
@@ -199,7 +207,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
         const oneInFlight = pending === coalesced;
         scope = {};
         hold = false;
-        held?.();
+        held.resolve?.();
         const stale = await pending;
         next = { ...next, identityKey: 'app:synthetic-next', appId: 'synthetic-next' };
         const entered = await feed.read();
@@ -226,7 +234,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
         const afterBackendChange = service.focusedTabOwner(guestId);
         return {
           boundary:
-            'Real Electron webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
+            'Real Electron app directory in compiled dist/main layout, webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
           nativeIdentity,
           feedEvidence,
           degradedIdentityPreserved: !!degraded.snapshot.pid && !!degraded.snapshot.appName,
@@ -238,10 +246,9 @@ test('cold shortcut context preserves native identity and first-use guest owners
           guestType: webContents.fromId(guestId)?.getType(),
         };
       },
-      { guestId, projectRoot: resolve('.') },
+      { guestId },
     );
     expect(evidence.nativeIdentity.distMainAvailable).toBe(true);
-    expect(evidence.nativeIdentity.projectRootAvailable).toBe(true);
     expect(evidence.nativeIdentity.appLayout).toBe('dist/main');
     expect(evidence.nativeIdentity.available).toBe(true);
     expect(evidence.nativeIdentity.identityOutcome).toBe('ok');
