@@ -9,9 +9,10 @@ test('sidebar empty state keeps crop and bottom actions reachable', async ({
   const fixture = await mount(ScreenshotSidebarHarness);
   await expect(fixture.getByRole('listbox', { name: 'Annotations' })).toBeAttached();
   await expect(fixture.getByRole('option')).toHaveCount(0);
-  await expect(
-    fixture.getByText('Add a mark to leave a note. Blur regions are not numbered.'),
-  ).toBeVisible();
+  await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toBeEnabled();
+  await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toBeInViewport();
+  await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeInViewport();
+  await expect(fixture.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
   await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeEnabled();
   await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toHaveCount(1);
   await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(0);
