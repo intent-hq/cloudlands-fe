@@ -217,7 +217,11 @@ const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 /** Request methods whose results never reach traffic observers: `executor.mint` returns the executor token. */
-const REDACTED_RESULT_METHODS: ReadonlySet<string> = new Set(['executor.mint']);
+// `pairing.createLocalCode` returns the plaintext local pairing code (protocol §5.58).
+const REDACTED_RESULT_METHODS: ReadonlySet<string> = new Set([
+  'executor.mint',
+  'pairing.createLocalCode',
+]);
 
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
@@ -1394,6 +1398,7 @@ export class JsonRpcClient extends EventEmitter {
         LOCAL_PAIRING_REFUSED_RETRY_MS,
       );
       this.scheduleReconnect();
+      this.finishConnectionOwner();
       return;
     }
     if (error instanceof AuthRejectedError) {

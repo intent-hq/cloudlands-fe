@@ -279,6 +279,56 @@ describe('local pairing — code panel', () => {
     await vi.waitFor(() => expect(store.state.localPairing.failure).toBe('listener-failed'));
   });
 
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  it.each([
+    ['the panel closes', () => dispatch(localPairingCloseRequested())],
+    ['the lab is turned off', () => dispatch(setLabsLocalPairingEnabled(false))],
+  ])('cancels a code that arrives after %s instead of showing it', async (_label, close) => {
+    const created = deferred<unknown>();
+    daemon().onRequest('pairing.createLocalCode', () => created.promise);
+    await loaded();
+    dispatch(localPairingCodeRequested());
+    await vi.waitFor(() => expect(requests('pairing.createLocalCode')).toHaveLength(1));
+    close();
+    await vi.waitFor(() => expect(store.state.localPairing.step).toBe('closed'));
+    created.resolve({ code: 'KTP-82M', localCode: CODE });
+    await vi.waitFor(() =>
+      expect(requests('pairing.cancelLocalCode')).toEqual([
+        { method: 'pairing.cancelLocalCode', params: { codeId: 'code-1' }, options: LOCAL },
+      ]),
+    );
+    expect(store.state.localPairing.step).toBe('closed');
+    expect(store.state.localPairing.code).toBeNull();
+    expect(readLocalPairingCodeText()).toBeNull();
+  });
+
+  it('creates no code when the panel closes while the listener is turned on', async () => {
+    const backend = daemon();
+    const enabled = deferred<unknown>();
+    backend.onRequest('pairing.createLocalCode', () => {
+      throw rpc(-32603, { code: 'listener-down' });
+    });
+    backend.onRequest('settings.list', () => ({ settings: [] }));
+    backend.onRequest('settings.update', () => enabled.promise);
+    await loaded();
+    dispatch(localPairingCodeRequested());
+    await vi.waitFor(() => expect(store.state.localPairing.step).toBe('confirm-listener'));
+    dispatch(localPairingListenerConfirmed());
+    await vi.waitFor(() => expect(requests('settings.update')).toHaveLength(1));
+    dispatch(localPairingCloseRequested());
+    await vi.waitFor(() => expect(store.state.localPairing.step).toBe('closed'));
+    enabled.resolve({ applied: [] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requests('pairing.createLocalCode')).toHaveLength(1);
+    expect(store.state.localPairing.step).toBe('closed');
+    expect(store.state.localPairing.failure).toBeNull();
+  });
+
   it('reports a failed create', async () => {
     daemon().onRequest('pairing.createLocalCode', () => {
       throw rpc(-32603);

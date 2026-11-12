@@ -3977,7 +3977,8 @@ export async function resolveBackendRecord(id: string): Promise<{
       kind: 'owner',
       id,
       host: owner.host,
-      hosts: owner.hosts?.length ? owner.hosts : [owner.host],
+      // A local pairing credential dials only its saved loopback address.
+      hosts: owner.localPairing || !owner.hosts?.length ? [owner.host] : owner.hosts,
       port: owner.port,
       fingerprint: owner.fingerprint,
       tcAddress: owner.tcAddress ?? null,

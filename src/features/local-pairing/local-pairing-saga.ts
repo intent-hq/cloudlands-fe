@@ -102,15 +102,37 @@ function* refresh(): SagaGenerator<void> {
   yield* put(localPairingLoaded(support, credentials));
 }
 
+/**
+ * Bumped whenever the panel closes (Close, leaving Settings, Labs off). A code
+ * creation that started before the bump must not reopen the panel or leave a
+ * redeemable code behind.
+ */
+let panelGeneration = 0;
+
+/** Create a code for the panel opened at `generation`; cancel it if the panel closed meanwhile. */
+function* createForPanel(generation: number): SagaGenerator<void> {
+  const { code, localCode } = yield* call(createLocalCode);
+  if (generation !== panelGeneration) {
+    try {
+      yield* call(cancelLocalCode, localCode.codeId);
+    } catch {
+      // Best effort: the code still expires on its own within 10 minutes.
+    }
+    return;
+  }
+  receiveLocalPairingCodeText({ codeId: localCode.codeId, code });
+  yield* put(localPairingCodeCreated(localCode));
+}
+
 function* createCode(): SagaGenerator<void> {
   if (!offered()) return;
+  const generation = panelGeneration;
   const previous = store.state.localPairing.code;
   clearLocalPairingCodeText();
   try {
-    const { code, localCode } = yield* call(createLocalCode);
-    receiveLocalPairingCodeText({ codeId: localCode.codeId, code });
-    yield* put(localPairingCodeCreated(localCode));
+    yield* call(createForPanel, generation);
   } catch (error) {
+    if (generation !== panelGeneration) return;
     if (isListenerDown(error)) yield* put(localPairingListenerNeeded());
     else if (isRemoteAccessRefusal(error)) yield* put(localPairingPanelFailed('remote-access-on'));
     else yield* put(localPairingPanelFailed('create-failed'));
@@ -121,17 +143,19 @@ function* createCode(): SagaGenerator<void> {
 
 function* enableListenerAndCreate(): SagaGenerator<void> {
   if (!offered()) return;
+  const generation = panelGeneration;
   try {
     yield* call(enableLoopbackListener);
   } catch {
-    yield* put(localPairingPanelFailed('listener-failed'));
+    if (generation === panelGeneration) yield* put(localPairingPanelFailed('listener-failed'));
     return;
   }
+  // Closed while the listener was being turned on: create nothing.
+  if (generation !== panelGeneration) return;
   try {
-    const { code, localCode } = yield* call(createLocalCode);
-    receiveLocalPairingCodeText({ codeId: localCode.codeId, code });
-    yield* put(localPairingCodeCreated(localCode));
+    yield* call(createForPanel, generation);
   } catch (error) {
+    if (generation !== panelGeneration) return;
     yield* put(
       localPairingPanelFailed(
         isListenerDown(error)
@@ -158,6 +182,7 @@ function* cancelCode(): SagaGenerator<void> {
 
 /** Closing the panel or turning the lab off never leaves a usable code behind. */
 function* closePanel(): SagaGenerator<void> {
+  panelGeneration += 1;
   const code = store.state.localPairing.code;
   clearLocalPairingCodeText();
   yield* put(localPairingPanelClosed());

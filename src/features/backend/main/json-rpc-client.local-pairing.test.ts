@@ -16,10 +16,18 @@ class FakeSocket extends EventEmitter {
   destroy(): void {}
 }
 
-function make(config: BackendConnectionConfig) {
+function make(
+  config: BackendConnectionConfig,
+  lifecycle?: ConstructorParameters<typeof JsonRpcClient>[0] extends infer O
+    ? O extends { lifecycle?: infer L }
+      ? L
+      : never
+    : never,
+) {
   const sockets: FakeSocket[] = [];
   const client = new JsonRpcClient({
     config,
+    ...(lifecycle ? { lifecycle } : {}),
     socketFactory: () => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -54,6 +62,21 @@ describe('JsonRpcClient local pairing credential refusal', () => {
     expect(sockets).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(15_000);
     expect(sockets).toHaveLength(2);
+    client.dispose();
+  });
+
+  it('finishes the refused dial so retirement can drain', async () => {
+    const { client, sockets } = make(
+      { ...WSS, localPairingCredential: true },
+      { scope: Symbol('local-pairing-client'), generation: 1 },
+    );
+    client.start();
+    sockets[0].emit('error', new AuthRejectedError(401));
+    await vi.advanceTimersByTimeAsync(0);
+    const ticket = client.beginRetirement();
+    expect(ticket.isDrained()).toBe(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sockets).toHaveLength(1);
     client.dispose();
   });
 

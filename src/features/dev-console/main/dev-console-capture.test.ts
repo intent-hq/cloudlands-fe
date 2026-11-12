@@ -546,6 +546,30 @@ describe('DevConsoleCaptureService', () => {
     },
   );
 
+  it('never captures a plaintext local pairing code, even under full capture', async () => {
+    const service = new DevConsoleCaptureService();
+    const { client, socket } = connect(service);
+    const session = service.openSession('local');
+    const method = 'pairing.createLocalCode';
+    service.setFullCapture('local', session.sessionId, { ...requestSelection, method }, true);
+    const result = {
+      code: 'KTP-82M',
+      localCode: {
+        codeId: 'code-1',
+        state: 'active',
+        createdAt: '2026-11-12T10:00:00Z',
+        expiresAt: '2026-11-12T10:10:00Z',
+        attemptsRemaining: 5,
+      },
+    };
+    const pending = client.request(method, {});
+    socket.receive({ id: 1, result });
+    await expect(pending).resolves.toEqual(result);
+    const snapshot = service.getSnapshot('local', session.sessionId)!;
+    expect(snapshot.records[0].method).toBe(method);
+    expect(JSON.stringify(snapshot)).not.toContain('KTP-82M');
+  });
+
   it('isolates observer failures and subscriber failures from live RPC behavior', async () => {
     const service = new DevConsoleCaptureService();
     const { socket, client } = connect(service);

@@ -2012,6 +2012,25 @@ describe('connections-store keychain sync surface', () => {
     expect((await reloaded.list()).find((c) => c.id === rec.id)?.localPairing).toBeUndefined();
   });
 
+  it('drops LAN candidates when a machine is re-paired locally and dials only loopback', async () => {
+    const store = await import('../desktop-connections-store');
+    const owner = await store.add(sampleConn);
+    await store.setHosts(owner.id, ['10.0.0.5', '192.168.1.20']);
+    expect((await store.list()).find((c) => c.id === owner.id)?.hosts).toContain('10.0.0.5');
+    const local = await store.add({
+      ...sampleConn,
+      host: '127.0.0.1',
+      detectHosts: false,
+      syncExcluded: true,
+      localPairing: true,
+    });
+    expect(local.id).toBe(owner.id);
+    const record = (await store.list()).find((c) => c.id === owner.id);
+    expect(record?.hosts).toEqual(['127.0.0.1']);
+    expect(await store.setHosts(owner.id, ['10.0.0.5'])).toBe(false);
+    expect((await store.list()).find((c) => c.id === owner.id)?.hosts).toEqual(['127.0.0.1']);
+  });
+
   it('add without syncExcluded stays synced (flag false, listed to sync)', async () => {
     const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);

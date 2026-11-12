@@ -308,7 +308,8 @@ export function createConnectionsStore(options: {
         : null,
       deviceIcon: isDeviceIconChoice(stored.deviceIcon) ? stored.deviceIcon : 'auto',
       host: stored.host,
-      hosts: candidateHosts(stored),
+      // A local pairing credential is admitted only from loopback (protocol §5.58).
+      hosts: stored.localPairing === true ? dedupeHosts([stored.host]) : candidateHosts(stored),
       port: stored.port,
       fingerprint: stored.fingerprint,
       tcAddress: stored.tcAddress ?? null,
@@ -673,8 +674,13 @@ export function createConnectionsStore(options: {
         else if (fingerprintChanged) delete survivor.daemonMode;
         survivor.detectHosts = conn.detectHosts ?? true;
         survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
-        if (conn.localPairing === true) survivor.localPairing = true;
-        else delete survivor.localPairing;
+        if (conn.localPairing === true) {
+          // A local pairing credential is admitted only from loopback: LAN
+          // candidates kept from an earlier owner pairing would win the dial
+          // and be refused with 401.
+          survivor.localPairing = true;
+          survivor.hosts = [];
+        } else delete survivor.localPairing;
         survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
         survivor.updatedAt = stamp;
         carryPendingCloudDelete(survivor.syncExcluded === true);
