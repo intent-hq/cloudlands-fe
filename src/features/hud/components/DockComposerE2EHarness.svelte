@@ -1,25 +1,5 @@
 <script context="module" lang="ts">
-  import type { DockConversationDraft } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
-  import type {
-    PendingSubmission,
-    SubmissionScope,
-    SubmissionTombstone,
-  } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
-  import type { ChatDraftRestore } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
-  import type { DockComposerEvidence } from '$shared/dock-evidence';
-  import type { ComposerContextItem } from '$store/renderer/slices/transient-ui/transient-ui-types';
-  export interface ComposerDraftSnapshot {
-    workspaceId: string | null;
-    agentId: string | null;
-    draft: DockConversationDraft | undefined;
-    evidence: DockComposerEvidence | null;
-    restore: ChatDraftRestore | null;
-    scope: SubmissionScope | undefined;
-    submission: PendingSubmission | undefined;
-    tombstone: SubmissionTombstone | undefined;
-    contextItems: ComposerContextItem[];
-    recoveryItems: ComposerContextItem[];
-  }
+  export type { ComposerDraftSnapshot } from './dock-conversation-wire.preview-fixtures';
   import type { DockForegroundObservation } from '$shared/dock-context-links';
 </script>
 
@@ -31,11 +11,7 @@
     type DockMark,
   } from '$shared/dock-evidence';
   import { serializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
-  import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-  import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-  import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
   import type { ChatDraftSnapshot } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
-  import { selectDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import {
     dockContextLinkRequested,
@@ -83,6 +59,7 @@
   import DockConversationSurface from './DockConversationSurface.svelte';
   import {
     setupConversationWire,
+    readComposerDraftSnapshot,
     conversationWireWorkspace,
     type ConversationWireCall,
   } from './dock-conversation-wire.preview-fixtures';
@@ -232,44 +209,7 @@
       setCaption(text: string) {
         caption = text;
       },
-      draftSnapshot(): ComposerDraftSnapshot {
-        const { workspaceId, agentId } = store.state.dockConversation;
-        const draft =
-          workspaceId && agentId
-            ? getItem(store.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))
-            : undefined;
-        const reference = draft?.delivery?.reference;
-        const entry = reference
-          ? selectPendingSubmissionEntry.select(store.state, reference.scope)
-          : undefined;
-        const restore =
-          getItems(store.state.chatDrafts.owners).find(
-            (owner) =>
-              owner.id.startsWith('dock-conversation:') &&
-              owner.restore?.workspaceId === workspaceId &&
-              owner.restore.agentId === agentId,
-          )?.restore ?? null;
-        return {
-          workspaceId,
-          agentId,
-          draft,
-          restore,
-          evidence:
-            workspaceId && agentId
-              ? selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence
-              : null,
-          scope: entry?.scope,
-          submission: entry && reference ? getItem(entry.submissions, reference.id) : undefined,
-          tombstone: entry && reference ? getItem(entry.tombstones, reference.id) : undefined,
-          contextItems:
-            workspaceId && agentId
-              ? selectComposerContextItems.select(store.state, workspaceId, agentId)
-              : [],
-          recoveryItems: draft?.delivery?.recovery
-            ? getItems(draft.delivery.recovery.contextItems)
-            : [],
-        };
-      },
+      draftSnapshot: readComposerDraftSnapshot,
       context(value: DockForegroundObservation) {
         fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
       },

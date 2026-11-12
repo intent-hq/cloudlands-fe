@@ -1,3 +1,16 @@
+import type { DockConversationDraft } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
+import type {
+  PendingSubmission,
+  SubmissionScope,
+  SubmissionTombstone,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-types';
+import type { ChatDraftRestore } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
+import type { DockComposerEvidence } from '$shared/dock-evidence';
+import type { ComposerContextItem } from '$store/renderer/slices/transient-ui/transient-ui-types';
+import { dockEvidenceId } from '$shared/dock-evidence';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import { selectDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
 import type { ChatDraftSnapshot } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
 import type { AgentMessage, ContentBlock, QueuedMessage } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -8,7 +21,7 @@ import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { emitMockIpcEvent, overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
@@ -30,6 +43,56 @@ import { workspaceCatalogSaga } from '$store/renderer/slices/provider-catalog/wo
 import { providerModelsSaga } from '$store/renderer/slices/provider-models/sagas/provider-models-saga';
 import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+
+export interface ComposerDraftSnapshot {
+  workspaceId: string | null;
+  agentId: string | null;
+  draft: DockConversationDraft | undefined;
+  evidence: DockComposerEvidence | null;
+  restore: ChatDraftRestore | null;
+  scope: SubmissionScope | undefined;
+  submission: PendingSubmission | undefined;
+  tombstone: SubmissionTombstone | undefined;
+  contextItems: ComposerContextItem[];
+  recoveryItems: ComposerContextItem[];
+}
+
+export function readComposerDraftSnapshot(): ComposerDraftSnapshot {
+  const { workspaceId, agentId } = store.state.dockConversation;
+  const draft =
+    workspaceId && agentId
+      ? getItem(store.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))
+      : undefined;
+  const reference = draft?.delivery?.reference;
+  const entry = reference
+    ? selectPendingSubmissionEntry.select(store.state, reference.scope)
+    : undefined;
+  const restore =
+    getItems(store.state.chatDrafts.owners).find(
+      (owner) =>
+        owner.id.startsWith('dock-conversation:') &&
+        owner.restore?.workspaceId === workspaceId &&
+        owner.restore.agentId === agentId,
+    )?.restore ?? null;
+  return {
+    workspaceId,
+    agentId,
+    draft,
+    restore,
+    evidence:
+      workspaceId && agentId
+        ? selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence
+        : null,
+    scope: entry?.scope,
+    submission: entry && reference ? getItem(entry.submissions, reference.id) : undefined,
+    tombstone: entry && reference ? getItem(entry.tombstones, reference.id) : undefined,
+    contextItems:
+      workspaceId && agentId
+        ? selectComposerContextItems.select(store.state, workspaceId, agentId)
+        : [],
+    recoveryItems: draft?.delivery?.recovery ? getItems(draft.delivery.recovery.contextItems) : [],
+  };
+}
 
 export interface ConversationWireCall {
   method: string;
