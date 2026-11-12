@@ -94,7 +94,7 @@ function resolveRelative(fromFile, specifier, kind) {
   return REQUIRE_EXTENSIONS.map((suffix) => target + suffix).find(isFile) ?? null;
 }
 
-const ESM_CONDITIONS = new Set(['node', 'import', 'default']);
+const ESM_CONDITIONS = new Set(['node', 'import', 'module-sync', 'default']);
 
 function findUp(fromDir, relative) {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
@@ -178,10 +178,17 @@ function isCommonJs(file) {
 }
 
 /** Named exports Node's ESM loader sees in a CommonJS file, following reexports. */
-function commonJsExportNames(file, cache, seen = new Set()) {
-  if (cache.has(file)) return cache.get(file);
-  const names = new Set();
-  if (seen.has(file)) return names;
+function commonJsExportNames(file, cache) {
+  if (!cache.has(file)) {
+    const names = new Set();
+    collectCommonJsExportNames(file, names, new Set());
+    cache.set(file, names);
+  }
+  return cache.get(file);
+}
+
+function collectCommonJsExportNames(file, names, seen) {
+  if (seen.has(file)) return;
   seen.add(file);
   const { exports, reexports } = parseCommonJs(fs.readFileSync(file, 'utf8'), file);
   for (const name of exports) names.add(name);
@@ -192,11 +199,8 @@ function commonJsExportNames(file, cache, seen = new Set()) {
     } catch {
       continue;
     }
-    if (!isCommonJs(target)) continue;
-    for (const name of commonJsExportNames(target, cache, seen)) names.add(name);
+    if (isCommonJs(target)) collectCommonJsExportNames(target, names, seen);
   }
-  cache.set(file, names);
-  return names;
 }
 
 /**
