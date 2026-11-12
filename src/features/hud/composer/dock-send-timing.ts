@@ -1,4 +1,5 @@
 import { createLogger } from '$lib/utils/client-logger';
+import { sameSubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import type { SubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
 import type { DockSendStage } from './dock-send-diagnostics';
 
@@ -25,7 +26,7 @@ export class DockSendTiming {
   private currentStage: Stage = 'barrier';
   private durations: Partial<Record<Stage, number>> = {};
   private admittedAt: number | null = null;
-  private pending: { scope: string; id: string } | null = null;
+  private pending: { scope: Readonly<SubmissionScope>; id: string } | null = null;
   private done = false;
 
   constructor(readonly composerId: string) {}
@@ -48,7 +49,7 @@ export class DockSendTiming {
     if (this.done) return;
     this.stage('admission');
     this.admittedAt = performance.now();
-    this.pending = { scope: JSON.stringify(scope), id };
+    this.pending = { scope: Object.freeze({ ...scope }), id };
     report({
       attemptToken: this.token,
       stage: 'local-admission',
@@ -60,7 +61,7 @@ export class DockSendTiming {
   }
 
   matches(scope: SubmissionScope, id: string): boolean {
-    return this.pending?.id === id && this.pending.scope === JSON.stringify(scope);
+    return this.pending?.id === id && sameSubmissionScope(this.pending.scope, scope);
   }
 
   finish(outcome: Outcome): void {
