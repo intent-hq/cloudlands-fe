@@ -714,8 +714,9 @@ function* openEditorWith(
     startupLogger.info('Capture editor phases', phases);
     // Refused: say so where it was asked, and start no follow-up recognition for it.
     if (!opened?.ok) {
-      // Cancelled: the person closed its loading shell; nothing failed.
-      if (shownHere() && opened?.error !== 'cancelled')
+      // Cancelled (the person closed its loading shell) or superseded (a screenshot being
+      // prepared took the editor): nothing failed.
+      if (shownHere() && opened?.error !== 'cancelled' && opened?.error !== 'superseded')
         notify.warning(m.dock_captureEditor_openFailed_error());
       return;
     }

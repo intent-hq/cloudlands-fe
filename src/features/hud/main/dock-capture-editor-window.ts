@@ -279,6 +279,8 @@ function prewarmEditor(
   owner: { sender: Electron.WebContents; binding: object },
 ): void {
   if (usable(editor) || session || pending) return;
+  // The screenshot owns the editor until it is taken: an OPEN already waiting is refused.
+  openGeneration += 1;
   const window = createEditorWindow(backendId);
   editor = window;
   editorBackendId = backendId;
@@ -605,19 +607,20 @@ async function open(
     event.sender.mainFrame !== event.senderFrame ||
     getStrictBackendBindingForWebContents(event.sender) !== binding
   )
-    return unavailable();
+    // Overtaken by a screenshot being prepared: refused quietly, not a failure.
+    return unavailable(prewarm && prewarm.token !== holdToken ? 'superseded' : undefined);
 
   const owner = { window: dock, sender: event.sender, binding };
   // A preloaded window belongs to its own screenshot only: this OPEN takes it only for that
-  // capture's token and dock document. Any other OPEN (a pill, an earlier request finishing
-  // meanwhile) discards it unseen and opens as it would without one; that screenshot then
-  // opens without its early shell.
+  // capture's token and dock document. While a screenshot is being prepared, any other OPEN
+  // is refused (no editor shows during the capture); the screenshot's own OPEN or hold end
+  // settles the preload.
   const prepared =
     !!holdToken &&
     prewarm?.token === holdToken &&
     prewarm.owner.sender === event.sender &&
     prewarm.owner.binding === binding;
-  if (prewarm && !prepared) discardPrewarm(prewarm.token);
+  if (prewarm && !prepared) return unavailable('superseded');
   openedAtMark = Date.now();
   /** Every admitted editor holds its owner's dock: the capture's token, else one of main's. */
   const holdDockFor = (id: string): void => {
