@@ -1049,7 +1049,9 @@ function* removeClip({
     );
     endClipHold(clip.id);
     try {
-      yield* call([service, service.stopClip], clip.id);
+      const result = yield* call([service, service.stopClip], clip.id);
+      // The adapter resolves transport/authority failures without reaching native Stop.
+      if (!result.ok) return;
     } catch {
       // An unacknowledged Stop must not free the lease for another capture.
       return;
@@ -1253,13 +1255,22 @@ function* finishClip(
   agentId: string,
   clipId: string,
   result: DockNativeResult<DockClipFile>,
+  nativeEnded = false,
 ): SagaGenerator<void> {
   const current = clipOf(workspaceId, agentId, clipId);
   if (current?.discarding) {
+    // Unlike a failed command reply, this owned event certifies native termination,
+    // even when no file was produced. Never place a confirmed-discarded clip.
+    if (current.discarding === 'stopping' && nativeEnded && activePair(workspaceId, agentId)) {
+      endClipHold(clipId);
+      yield* put(dockEvidenceClipChanged(workspaceId, agentId, clipId, null));
+      return;
+    }
     // A natural end during Undo is retained by that exact discard, never presented.
     const sessionId = evidenceOf(workspaceId, agentId)?.annotation?.id;
     const held = sessionId ? discardWaits.get(sessionId) : undefined;
-    if (current.discarding === 'undo' && held?.clipId === clipId) held.result ??= result;
+    if (current.discarding === 'undo' && held?.clipId === clipId && (nativeEnded || result.ok))
+      held.result ??= result;
     return;
   }
   if (completingClips.has(clipId) || current?.status !== 'recording') return;
@@ -1947,7 +1958,7 @@ function* watchNative(): SagaGenerator<void> {
         );
         if (owner) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
-          yield* finishClip(workspaceId, agentId, event.clipId, event.result);
+          yield* finishClip(workspaceId, agentId, event.clipId, event.result, true);
         }
       }
     }

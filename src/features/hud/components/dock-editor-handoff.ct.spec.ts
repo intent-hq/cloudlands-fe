@@ -903,3 +903,122 @@ for (const recovery of ['failed pause', 'ended overlay'] as const) {
     );
   });
 }
+
+for (const terminalFailure of [false, true]) {
+  test(`resolved Stop failure retains hidden ownership until the exact native-ended event (failure=${terminalFailure})`, async ({
+    mount,
+    page,
+  }, info) => {
+    await mount(Harness, {
+      props: { shell: dockRailPreview.states.notch.props, nativePlacementFixture: true },
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            !!(window as any).__dockComposerE2E?.store.state.dockConversation.nativeCapabilities
+              ?.record,
+        ),
+      )
+      .toBe(true);
+    const snapshot = () =>
+      page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        const evidence = Object.values(d.evidence.map ?? {}).find(
+          (e: any) => e.id === JSON.stringify([d.workspaceId, d.agentId]),
+        ) as any;
+        return {
+          clips: evidence?.clips ?? [],
+          stopped: h.native.log.clips.stopped,
+          started: h.native.log.clips.started,
+          attachments: h.draftSnapshot().contextItems,
+        };
+      });
+    const toggle = (clipId?: string) =>
+      page.evaluate((clipId) => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        h.store.dispatch({
+          type: 'dockConversation/evidenceRecordToggleRequested',
+          payload: [d.workspaceId, d.agentId, clipId],
+        });
+      }, clipId);
+    await toggle();
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+    const id = (await snapshot()).clips[0].id;
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      h.native.failNextClipStop();
+      h.native.emitEvidence({
+        type: 'annotation-media',
+        sessionId: h.native.sessionId,
+        action: 'discard',
+        inputRevision: 1,
+      });
+    });
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    await expect.poll(async () => !!(await snapshot()).clips[0]?.pausedAt).toBe(true);
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      h.native.emitEvidence({
+        type: 'annotation-media',
+        sessionId: h.native.sessionId,
+        action: 'discard-confirm',
+      });
+    });
+    await expect.poll(async () => (await snapshot()).stopped).toEqual([id]);
+    await expect.poll(async () => (await snapshot()).clips[0]?.discarding).toBe('stopping');
+    await toggle();
+    await toggle(id);
+    expect((await snapshot()).started).toEqual([id]);
+    expect((await snapshot()).stopped).toEqual([id]);
+    expect((await snapshot()).attachments).toEqual([]);
+    // A failed STOP reply is not an end. Only this later native event retires the lease.
+    await page.evaluate(
+      ({ clipId, failed }) => (window as any).__dockComposerE2E.native.endClip(clipId, failed),
+      { clipId: id, failed: terminalFailure },
+    );
+    await expect.poll(async () => (await snapshot()).clips).toEqual([]);
+    expect((await snapshot()).attachments).toEqual([]);
+    await toggle();
+    await expect.poll(async () => (await snapshot()).started.length).toBe(2);
+    const successor = (await snapshot()).started[1];
+    await page.evaluate(
+      (clipId) =>
+        (window as any).__dockComposerE2E.native.emitEvidence({
+          type: 'clip-ended',
+          clipId,
+          result: { ok: false, error: 'failed', detail: 'cancelled' },
+        }),
+      id,
+    );
+    await toggle(id);
+    expect((await snapshot()).clips.map((clip: any) => clip.id)).toEqual([successor]);
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+    await writeFile(
+      info.outputPath('stop-result-fence-receipt.json'),
+      JSON.stringify(
+        {
+          oldClip: id,
+          successor,
+          final: await snapshot(),
+          terminalFailure,
+          native: 'synthetic; resolved false Stop without terminal event',
+        },
+        null,
+        2,
+      ),
+    );
+    // Clean up only the synthetic successor.
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      const d = h.store.state.dockConversation;
+      h.store.dispatch({
+        type: 'dockConversation/evidenceClipRemoveRequested',
+        payload: [d.workspaceId, d.agentId, h.native.log.clips.started[1]],
+      });
+    });
+    await expect.poll(async () => (await snapshot()).clips).toEqual([]);
+  });
+}

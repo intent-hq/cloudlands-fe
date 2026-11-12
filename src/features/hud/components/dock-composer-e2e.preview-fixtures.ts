@@ -124,6 +124,7 @@ function createSyntheticNative() {
   let holdClipStops = false;
   let holdClipPauses = false;
   let failNextClipPause = false;
+  let failNextClipStop = false;
   const heldClipStops: Array<() => void> = [];
   const heldClipPauses: Array<() => void> = [];
   // Held speech stops (the recognizer "finalizing"), released by the test.
@@ -209,6 +210,11 @@ function createSyntheticNative() {
     },
     stopClip: async (clipId) => {
       log.clips.stopped.push(clipId);
+      if (failNextClipStop) {
+        failNextClipStop = false;
+        // Like the production adapter: resolved failure, no native termination/event.
+        return { ok: false, error: 'transport' };
+      }
       if (holdClipStops) await new Promise<void>((resolve) => heldClipStops.push(resolve));
       const durationMs = clip?.id === clipId ? catalogNow() - clip.startedAt : 0;
       clip = null;
@@ -395,6 +401,9 @@ function createSyntheticNative() {
       holdClipStops = value;
       if (!value) for (const resolve of heldClipStops.splice(0)) resolve();
     },
+    failNextClipStop() {
+      failNextClipStop = true;
+    },
     failNextClipPause() {
       failNextClipPause = true;
     },
@@ -408,7 +417,13 @@ function createSyntheticNative() {
       recordingOriginal = value;
     },
     /** The recording ends by itself (a native limit): the dock is told, nobody pressed Stop. */
-    endClip(clipId: string) {
+    endClip(clipId: string, failed = false) {
+      if (failed) {
+        if (clip?.id === clipId) clip = null;
+        const result = { ok: false as const, error: 'failed' as const, detail: 'helper-ended' };
+        emitEvidence({ type: 'clip-ended', clipId, result });
+        return Promise.resolve(result);
+      }
       return service.stopClip!(clipId);
     },
     holdCaptures(value: boolean) {
