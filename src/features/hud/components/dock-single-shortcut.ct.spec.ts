@@ -25,13 +25,11 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
 
   // 1. One global binding; former dock defaults are gone; saved former overrides neither
   // break loading nor disappear from storage.
-  expect([...DOCK_SHORTCUT_IDS]).toEqual(['dock.focus']);
+  expect([...DOCK_SHORTCUT_IDS]).toEqual(['dock.focus', 'dock.capture', 'dock.record']);
   expect(SHORTCUT_DEFAULTS['dock.focus']).toBe('ctrl+shift+d');
-  const formerDefaults = ['dock.capture', 'dock.record', 'dock.dictate', 'dock.related'].filter(
-    (id) => id in SHORTCUT_DEFAULTS,
-  );
+  const formerDefaults = ['dock.dictate', 'dock.related'].filter((id) => id in SHORTCUT_DEFAULTS);
   expect(formerDefaults).toEqual([]);
-  expect(Object.keys(dockShortcutBindings())).toEqual(['focus']);
+  expect(Object.keys(dockShortcutBindings())).toEqual(['focus', 'capture', 'record']);
   const registered: string[] = [];
   const registration = createDockShortcutRegistration(
     {
@@ -64,14 +62,14 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   const afterEnable = prefs.snapshot();
   expect(afterEnable.issues).toEqual([]);
   expect(afterEnable.overrides).toEqual({ 'dock.focus': 'ctrl+alt+d' });
-  expect(afterEnable.registered).toEqual(['focus']);
-  expect(registered).toEqual(['Control+Alt+D']);
+  expect(afterEnable.registered).toEqual(['focus', 'capture', 'record']);
+  expect(registered).toEqual(['Control+Alt+D', 'Control+Shift+S', 'Control+Shift+R']);
   await prefs.update({
     id: 'dock.focus',
     key: 'ctrl+shift+d',
     expectedRevision: prefs.snapshot().revision,
   });
-  expect(writes.at(-1)).toEqual({ 'dock.capture': 'ctrl+shift+s', 'dock.related': 'ctrl+shift+a' });
+  expect(writes.at(-1)).toEqual({ 'dock.related': 'ctrl+shift+a' });
   receipts.registry = {
     ids: [...DOCK_SHORTCUT_IDS],
     defaultFocus: SHORTCUT_DEFAULTS['dock.focus'],
@@ -177,15 +175,20 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
         payload: [null],
       }),
     );
-    await expect(back).toBeVisible();
+  };
+  // No conversation selected (Back): the press routes to the linked conversation or index.
+  const blank = async () => {
+    await page.evaluate(() => (window as any).__dockComposerE2E.close());
+    await expect.poll(open).toBeNull();
   };
 
   // 3. No admitted context (unknown app / Intent itself): the index, search focused, nothing
   // opened, no row offers Link (the context is unknown).
+  await blank();
   await press();
   await expect(overview).toBeVisible();
   await expect(search).toBeFocused();
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   expect(await shortcutState()).toEqual({ destination: null, resolving: false });
   // The list has timestamps only: no link controls or tags in rows.
   await expect(
@@ -205,7 +208,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await press({ version: 'v1', url: A });
   await expect(overview).toBeVisible();
   await expect(search).toBeFocused();
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   // Open the workspace from the index; its header offers Link for this tab.
   await row('choice-1').locator('[data-workspace-id]').click();
   await expect.poll(open).toBe('choice-1');
@@ -223,15 +226,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     /Unlink github\.com from Synthetic workspace 1/,
   );
   await page.screenshot({ path: info.outputPath('12-d-header-linked.png') });
-  await page.evaluate(
-    (id) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/open',
-        payload: [id],
-      }),
-    origin,
-  );
-  await expect.poll(open).toBe(origin);
+  await blank();
   await press({ version: 'v1', url: A });
   await expect.poll(open).toBe('choice-1');
   await expect(back).toBeVisible();
@@ -245,6 +240,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await expect.poll(() => read().then((s) => s?.url)).toBe(E);
   await page.evaluate((id) => (window as any).__dockComposerE2E.contextAction('link', id), origin);
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe(origin);
+  await blank();
   await press({ version: 'v4', url: E });
   await expect.poll(open).toBe(origin);
   const composer = page.locator('.tiptap-editor').first();
@@ -266,36 +262,29 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     sourceDraftKept: true,
   };
 
+  // 4c. A selected conversation stays: with it open, a press (even for a linked tab) only
+  // opens the dock on it, its prompt focused and draft kept; no follow, no index.
+  await press({ version: 'v1', url: A });
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a press over a selected conversation must not route
+  await page.waitForTimeout(800);
+  expect(await open()).toBe(origin);
+  expect(await shortcutState()).toBeNull();
+  await expect(composer).toContainText(DRAFT);
+  receipts.selectedStays = { open: origin, routed: false };
+
   // 5. The linked snapshot publishes after the press: held (no index flash), then followed.
-  await page.evaluate(
-    (id) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/open',
-        payload: [id],
-      }),
-    origin,
-  );
-  await expect.poll(open).toBe(origin);
+  await blank();
   await press({ version: 'v2', url: A });
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the press waits for its version; nothing may change meanwhile
   await page.waitForTimeout(250);
   expect(await shortcutState()).toEqual({ destination: null, resolving: true });
-  await expect(back).toBeVisible();
   await observe('v2', A);
   await expect.poll(open).toBe('choice-1');
   receipts.latePublication = { heldWhileResolving: true, opened: 'choice-1' };
 
   // 5b. Ready but not yet linked at the press, then linked during the wait (as a late
   // service owner would): followed, never the index first.
-  await page.evaluate(
-    (id) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/open',
-        payload: [id],
-      }),
-    origin,
-  );
-  await expect.poll(open).toBe(origin);
+  await blank();
   const L = 'https://github.com/example/late/issues/6';
   await observe('v6', L);
   await expect.poll(() => read().then((s) => s?.url)).toBe(L);
@@ -309,18 +298,10 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
 
   // 6. A press for a version that never publishes (stale or moved on): the index, no follow.
   const follows = (await read())?.policy.follows;
-  await page.evaluate(
-    (id) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/open',
-        payload: [id],
-      }),
-    origin,
-  );
-  await expect.poll(open).toBe(origin);
+  await blank();
   await press({ version: 'v-stale', url: A });
   await expect(overview).toBeVisible({ timeout: 5000 });
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   expect((await read())?.policy.follows).toBe(follows);
   receipts.stale = { index: true, opened: null, followsUnchanged: true };
   await leaveIndex();
@@ -333,8 +314,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a stale press must not show the index or open anything
   await page.waitForTimeout(1800);
   expect(await shortcutState()).toBeNull();
-  expect(await open()).toBe(origin);
-  await expect(back).toBeVisible();
+  expect(await open()).toBeNull();
 
   // 6c. A pending media chooser (Window-menu Capture waiting for a workspace) is not taken over.
   await page.evaluate(() => {
@@ -405,15 +385,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   expect((await read())?.linkKey ?? null).toBeNull();
   expect((await read())?.linkedWorkspaceId ?? null).toBeNull();
   receipts.heldGesture = { cancelledOnContextChange: true };
-  await page.evaluate(
-    (id) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/open',
-        payload: [id],
-      }),
-    origin,
-  );
-  await expect.poll(open).toBe(origin);
+  await blank();
 
   // 8. Live input (push-to-talk recording): a press opens nothing and shows no index.
   await page.evaluate(() =>
@@ -425,9 +397,8 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await press({ version: 'v3', url: C });
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: live input must leave the dock as it is
   await page.waitForTimeout(1800);
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   expect(await shortcutState()).toBeNull();
-  await expect(back).toBeVisible();
   await page.evaluate(() =>
     (window as any).__dockComposerE2E.store.dispatch({
       type: 'hardwareConsole/pttRecordingStopped',
@@ -446,14 +417,14 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
       page.evaluate(() => (window as any).__dockComposerE2E.store.state.hud.dockCloseRequest),
     )
     .toBe(closeBefore + 1);
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   receipts.toggleClose = { closeRequested: true };
 
   // 10. A press from another machine's backend is ignored.
   await press({ version: 'v3', url: C }, { backendId: 'another-machine' });
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a foreign press must not change anything
   await page.waitForTimeout(800);
-  expect(await open()).toBe(origin);
+  expect(await open()).toBeNull();
   expect(await shortcutState()).toBeNull();
   expect(await draftLength(origin)).toBe(DRAFT.length);
   receipts.foreignBackend = { ignored: true, draftKept: true };

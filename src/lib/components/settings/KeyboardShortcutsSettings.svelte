@@ -141,9 +141,6 @@
           {category.title}
         </h3>
         {#if categoryId === 'dock'}
-          <p class="mt-2 type-caption text-muted-foreground">
-            {m.settings_keyboardShortcuts_dockGlobal_description()}
-          </p>
           {#if $dockSettings && !$dockSettings.enabled}<p
               role="status"
               class="mt-2 type-caption text-muted-foreground"

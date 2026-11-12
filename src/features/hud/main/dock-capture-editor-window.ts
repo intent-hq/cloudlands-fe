@@ -18,6 +18,8 @@ import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DOCK_CAPTURE_EDITOR_ROUTE,
   DockCaptureEditorCloseSchema,
+  DockCaptureEditorHoldSchema,
+  type DockCaptureEditorAttached,
   DockCaptureEditorDeleteResultSchema,
   type DockCaptureEditorDeleteRequest,
   DockCaptureEditorAnswerSchema,
@@ -49,7 +51,15 @@ import {
   getWindowTitleBarOptions,
 } from '../../../shared/main/window-appearance';
 import { fixWebContentsZoom } from '../../../main/fixed-zoom';
-import { getDockWindow } from '../../../main/dock-window';
+import {
+  adoptDockEditorHold,
+  beginDockEditorHold,
+  endDockEditorHold,
+  focusDockForEditorReturn,
+  getDockWindow,
+  releaseDockEditorHolds,
+  revealDockAfterEditor,
+} from '../../../main/dock-window';
 import {
   getDockMediaChoiceLocalPref,
   setDockMediaChoiceLocalPref,
@@ -226,14 +236,25 @@ function usable(window: BrowserWindow | null): window is BrowserWindow {
 }
 
 function dropPending(): void {
-  if (pending?.kind === 'retarget') pending.next.stopWatching();
+  if (pending?.kind === 'retarget') {
+    pending.next.stopWatching();
+    // That editor never opened: its capture's hold ends here.
+    releaseDockEditorHolds(pending.next.snapshot.openId, true);
+  }
   pending = null;
 }
+
+/** The session ending by the editor's Attach: its hold ends without revealing the dock. */
+let attachingOpenId: string | null = null;
 
 function endSession(): void {
   const ended = session;
   ended?.stopWatching();
   session = null;
+  // The editor's dock hold ends with it: Close/Cancel brings the dock back as it was; an
+  // Attach returns to its conversation instead (see the close handler).
+  if (ended)
+    releaseDockEditorHolds(ended.snapshot.openId, attachingOpenId !== ended.snapshot.openId);
   // Its saves can no longer reach the editor: they end as failed (the dock may still
   // finish writing; nothing here claims they were cancelled).
   // The editor is going: its note dictation stops (nobody is left to receive it).
@@ -253,7 +274,15 @@ function endSession(): void {
   }
 }
 
-function closeEditor(): void {
+function closeEditor(attach = false): void {
+  attachingOpenId = attach ? (session?.snapshot.openId ?? null) : null;
+  try {
+    closeEditorNow();
+  } finally {
+    attachingOpenId = null;
+  }
+}
+function closeEditorNow(): void {
   openGeneration += 1;
   dropPending();
   endSession();
@@ -418,7 +447,7 @@ async function open(
   if (!binding || binding.window !== dock) return unavailable();
   const parsed = DockCaptureEditorOpenSchema.safeParse(request);
   if (!parsed.success) return unavailable('invalid');
-  const { attachmentPath, ...rest } = parsed.data;
+  const { attachmentPath, holdToken, ...rest } = parsed.data;
   const canonical = canonicalDockAttachmentPath(attachmentPath);
   if (!canonical) return unavailable('invalid-path');
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
@@ -485,11 +514,14 @@ async function open(
     opened.source.revision === next.snapshot.source.revision
   ) {
     stopWatching();
+    if (holdToken) adoptDockEditorHold(holdToken, dock, opened.openId);
     bringEditorForward(editor);
     return { ok: true, openId: opened.openId };
   }
   // An open session is never replaced silently: the editor is asked (it answers at
   // once when it has no unsaved edits), and this opens on Discard.
+  // The capture's hold belongs to this editor session from now until it ends.
+  if (holdToken) adoptDockEditorHold(holdToken, dock, openId);
   if (usable(editor) && session) askDiscard({ kind: 'retarget', next });
   else showSession(next);
   return { ok: true, openId };
@@ -524,8 +556,57 @@ export function setupDockCaptureEditorIPC(): void {
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, (event, request: unknown) => {
     const parsed = DockCaptureEditorCloseSchema.safeParse(request);
     if (!parsed.success || !fromEditor(event)) return false;
-    if (session?.snapshot.openId !== parsed.data.openId || session?.deleting) return false;
-    closeEditor();
+    const current = session;
+    if (!current || current.snapshot.openId !== parsed.data.openId || current.deleting)
+      return false;
+    if (parsed.data.intent !== 'attach') {
+      closeEditor();
+      return true;
+    }
+    // Attach: only with no save of this session still in flight (its outcome decides).
+    const openId = current.snapshot.openId;
+    for (const waiting of pendingSaves.values()) if (waiting.openId === openId) return false;
+    const { owner, snapshot } = current;
+    const back: DockCaptureEditorAttached = {
+      openId,
+      workspaceId: snapshot.workspaceId,
+      agentId: snapshot.agentId,
+      attachmentId: snapshot.attachmentId,
+      sourceId: snapshot.source?.id ?? null,
+      sourceRevision: snapshot.source?.revision ?? null,
+    };
+    closeEditor(true);
+    // Back to exactly the opening dock document, on its own binding; else as a close.
+    const dock = getDockWindow();
+    const returned =
+      !!dock &&
+      !owner.sender.isDestroyed() &&
+      owner.sender === dock.webContents &&
+      getStrictBackendBindingForWebContents(owner.sender) === owner.binding &&
+      focusDockForEditorReturn(dock);
+    if (returned) owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.ATTACHED, back);
+    else if (dock) revealDockAfterEditor(dock);
+    return true;
+  });
+  // The dock's capture → editor handoff: hold before a capture that may open the editor,
+  // release when it did not (an opened editor adopts the hold and ends it itself).
+  const fromDock = (event: IpcMainInvokeEvent) => {
+    const dock = getDockWindow();
+    if (!dock || event.sender !== dock.webContents) return null;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return null;
+    const binding = getStrictBackendBindingForWebContents(event.sender);
+    return binding && binding.window === dock ? dock : null;
+  };
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_BEGIN, (event, request: unknown) => {
+    const parsed = DockCaptureEditorHoldSchema.safeParse(request);
+    const dock = fromDock(event);
+    return !!parsed.success && !!dock && beginDockEditorHold(dock, parsed.data.token);
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, (event, request: unknown) => {
+    const parsed = DockCaptureEditorHoldSchema.safeParse(request);
+    const dock = fromDock(event);
+    if (!parsed.success || !dock) return false;
+    endDockEditorHold(parsed.data.token, dock);
     return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, (event, value: unknown) =>

@@ -12,11 +12,13 @@ import {
 import { SHORTCUT_DEFAULTS } from './keyboard-shortcut-bindings';
 
 describe('dock global shortcuts', () => {
-  it('are the one open shortcut only', () => {
-    expect([...DOCK_SHORTCUT_IDS]).toEqual(['dock.focus']);
-    expect(Object.keys(dockShortcutBindings())).toEqual(['focus']);
+  it('are open, capture and record only', () => {
+    expect([...DOCK_SHORTCUT_IDS]).toEqual(['dock.focus', 'dock.capture', 'dock.record']);
+    expect(Object.keys(dockShortcutBindings())).toEqual(['focus', 'capture', 'record']);
     expect(Object.keys(SHORTCUT_DEFAULTS).filter((id) => id.startsWith('dock.'))).toEqual([
       'dock.focus',
+      'dock.capture',
+      'dock.record',
     ]);
     expect(SHORTCUT_DEFAULTS['dock.focus']).toBe('ctrl+shift+d');
   });

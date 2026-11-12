@@ -86,8 +86,8 @@ export async function initializeDockShortcutSettings(): Promise<void> {
 }
 /** The menu hint for an action's global key; null when the action has none. */
 export function dockShortcutMenuKey(action: DockShortcutContext['action']): string | null {
-  if (action !== 'focus') return null;
-  const key = dockShortcutBindings(preferences.snapshot().overrides).focus;
+  if (action === 'dictate') return null;
+  const key = dockShortcutBindings(preferences.snapshot().overrides)[action];
   return dockShortcutAccelerator(key, process.platform) ?? key;
 }
 

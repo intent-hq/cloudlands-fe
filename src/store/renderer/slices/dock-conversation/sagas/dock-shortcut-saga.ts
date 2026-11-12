@@ -73,7 +73,8 @@ const LINKED_WAIT_MS = 1500;
 let shortcutRequest = 0;
 
 /**
- * The global dock shortcut: the dock conversation of the workspace linked to the foreground tab
+ * The global dock shortcut with no conversation selected: the dock conversation of the
+ * workspace linked to the foreground tab
  * or app the context feed admitted at the press, read from the same admitted linked-context
  * snapshot as the UI; otherwise the searchable index (where that context can be linked). There
  * is no other fallback (no side, last, retained or guessed workspace).
@@ -93,6 +94,10 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   if (!authority) return;
   const pending = appStore.state.dockConversation.shortcut;
   if (pending && pending.context.action !== 'focus' && pending.destination === null) return;
+  // A selected conversation stays: the press only opens the dock on it (the press's own
+  // focus request puts the keyboard in its prompt, its draft untouched). The linked
+  // conversation or the index is for a dock with no conversation selected.
+  if (appStore.state.dockConversation.workspaceId) return;
   // A conversation opened meanwhile (by the person or another flow) is never replaced.
   const startedOn = appStore.state.dockConversation.workspaceId;
   const current = (): boolean => {

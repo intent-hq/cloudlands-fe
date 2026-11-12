@@ -118,8 +118,8 @@ export function createDockShortcutRegistration(
       return [];
     },
     available(name: DockShortcutAction) {
-      // Only the global action has a key; menu-only commands are never registered.
-      const key = name === 'focus' ? dockShortcutAccelerator(bindings.focus, platform) : null;
+      // Only global actions have keys; the menu-only dictate is never registered.
+      const key = name === 'dictate' ? null : dockShortcutAccelerator(bindings[name], platform);
       return enabled && !suspended && !!key && owned.has(key);
     },
   };

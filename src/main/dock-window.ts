@@ -722,8 +722,74 @@ function canRevealDock(window: BrowserWindow): boolean {
     !window.isDestroyed() &&
     !sessionPaused &&
     !captureHiddenWindows.has(window) &&
+    !editorHeld(window) &&
     rendererReady.has(window)
   );
+}
+
+/**
+ * Capture → editor handoff. The dock stays out of sight from a capture (or the stop of a
+ * recording) that opens the media editor until that editor ends: a hold, by token, that
+ * capture, selection and recording releases do not clear. The editor session that opened
+ * adopts the token; only its end (or the dock, when no editor opened) releases it. The
+ * dock document stays mounted throughout (its draft and save workers keep running).
+ */
+const editorHolds = new Map<string, { window: BrowserWindow; openId: string | null }>();
+function editorHeld(window: BrowserWindow): boolean {
+  for (const hold of editorHolds.values()) if (hold.window === window) return true;
+  return false;
+}
+export function beginDockEditorHold(window: BrowserWindow, token: string): boolean {
+  if (window !== getDockWindow() || window.isDestroyed() || editorHolds.has(token)) return false;
+  editorHolds.set(token, { window, openId: null });
+  return true;
+}
+/** The editor session `openId` opened for this handoff: it owns the hold now. */
+export function adoptDockEditorHold(token: string, window: BrowserWindow, openId: string): boolean {
+  const hold = editorHolds.get(token);
+  if (!hold || hold.window !== window || hold.openId !== null) return false;
+  hold.openId = openId;
+  return true;
+}
+/** No editor took this handoff (refused, failed, cancelled capture): release only it. */
+export function endDockEditorHold(token: string, window: BrowserWindow): void {
+  const hold = editorHolds.get(token);
+  if (!hold || hold.window !== window || hold.openId !== null) return;
+  editorHolds.delete(token);
+  revealAfterEditorHold(window);
+}
+/**
+ * The editor session `openId` ended. `reveal` brings the dock back as it was (collapsed,
+ * inactive) for a close or cancel; an attach passes false and returns to its own
+ * conversation instead.
+ */
+export function releaseDockEditorHolds(openId: string, reveal: boolean): void {
+  let window: BrowserWindow | null = null;
+  for (const [token, hold] of editorHolds)
+    if (hold.openId === openId) {
+      editorHolds.delete(token);
+      window = hold.window;
+    }
+  if (window && reveal) revealAfterEditorHold(window);
+}
+/**
+ * The editor attached: bring the dock forward with the keyboard so its conversation can
+ * take it. No shortcut routing, foreground sample or focus-dock request is involved.
+ */
+export function focusDockForEditorReturn(window: BrowserWindow): boolean {
+  if (window !== getDockWindow() || recordingHidden(window) || !canRevealDock(window)) return false;
+  dockFocusedByIntentAt = Date.now();
+  window.show();
+  window.focus();
+  return true;
+}
+/** Bring the dock back as it was after an editor hold, when nothing else holds it. */
+export function revealDockAfterEditor(window: BrowserWindow): void {
+  revealAfterEditorHold(window);
+}
+function revealAfterEditorHold(window: BrowserWindow): void {
+  if (window !== getDockWindow() || recordingHidden(window)) return;
+  if (canRevealDock(window) && !window.isVisible()) window.showInactive();
 }
 
 function armDockReadyFallback(window: BrowserWindow): void {
@@ -892,6 +958,8 @@ function restoreRecordingHide(): void {
   recordingHide = null;
   if (!held || held.window.isDestroyed()) return;
   const { window } = held;
+  // A capture → editor handoff keeps it out of sight: hidden first, so nothing paints.
+  if (editorHeld(window)) window.hide();
   // Focusable again, never focused: the person's current window keeps the keyboard.
   window.setFocusable(true);
   window.setOpacity(1);
@@ -993,7 +1061,7 @@ export function focusDockWindow(
   context?: import('../shared/dock-shortcuts').DockShortcutContext,
 ): void {
   const window = getDockWindow();
-  if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
+  if (!window || captureHiddenWindows.has(window) || editorHeld(window) || sessionPaused) return;
   if (recordingHidden(window)) {
     // Out of sight for a recording: never shown or focused, and a focus-only request
     // (or capture) does nothing meanwhile. Record and dictate reach the dock

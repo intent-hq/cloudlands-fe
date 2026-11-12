@@ -313,7 +313,14 @@ export const dockEvidenceRecordingBatchCleared = createAction<
 >('dockConversation/recordingBatchCleared');
 /** `capture`: opened by a new screenshot or recording, so the dock closes behind it. */
 export const dockMediaEditorOpenRequested = createAction<
-  [workspaceId: string, agentId: string, logicalAttachmentId: string, origin?: 'capture']
+  [
+    workspaceId: string,
+    agentId: string,
+    logicalAttachmentId: string,
+    origin?: 'capture',
+    /** The capture's dock hold, which the opened editor adopts (else it is ended). */
+    holdToken?: string,
+  ]
 >('dockConversation/mediaEditorOpenRequested');
 export const dockMediaEditSaveRequested = createAction<
   [requestId: string, request: DockMediaSaveRequest, authority: string]

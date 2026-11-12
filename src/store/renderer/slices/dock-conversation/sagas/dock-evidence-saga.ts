@@ -1,5 +1,6 @@
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
+import { beginDockEditorHold, endDockEditorHold } from './dock-editor-hold';
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import { dockMediaCaptureBatches, dockMediaCapturedMarks } from '$shared/dock-media-source';
 /**
@@ -332,6 +333,26 @@ function* capture({
   }
   // Annotation marks belong to the whole screen: an annotate session captures full screen.
   const mode = evidence?.annotation ? 'fullscreen' : appStore.state.dockConversation.captureMode;
+  // A screenshot may open straight in the editor: keep the dock out of sight from now
+  // until that editor ends (or, when it does not open, until this capture is done).
+  const hold = evidence?.annotation ? null : yield* beginDockEditorHold();
+  let handed = false;
+  try {
+    handed = yield* captureWithHold(workspaceId, agentId, service, mode, evidence, hold);
+  } finally {
+    if (!handed) endDockEditorHold(hold);
+  }
+}
+
+/** The capture itself; true when the editor was requested with `hold` (it owns it then). */
+function* captureWithHold(
+  workspaceId: string,
+  agentId: string,
+  service: DockEvidenceNativeService,
+  mode: Parameters<DockEvidenceNativeService['captureDisplay']>[0],
+  evidence: ReturnType<typeof evidenceOf>,
+  hold: string | null,
+): SagaGenerator<boolean> {
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
   try {
@@ -339,16 +360,16 @@ function* capture({
   } catch {
     result = { ok: false, error: 'failed' };
   }
-  if (nativeService !== service || !activePair(workspaceId, agentId)) return;
+  if (nativeService !== service || !activePair(workspaceId, agentId)) return false;
   if (!result.ok && result.detail === 'cancelled') {
     yield* put(dockEvidenceCaptureCancelled(workspaceId, agentId));
-    return;
+    return false;
   }
   if (!result.ok) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, result.error));
     if (result.error === 'permission')
       yield* notice(workspaceId, agentId, screenPermissionNotice('capture'));
-    return;
+    return false;
   }
   const known = new Set(evidenceOf(workspaceId, agentId)?.images.map((row) => row.id));
   const image = yield* addCapturedImage(workspaceId, agentId, result.value, 'capture');
@@ -363,8 +384,13 @@ function* capture({
     (workspaceId !== CHIEF_WORKSPACE_ID ||
       currentDockServerCapabilities(appStore.state)?.chiefAttachments === true) &&
     dockCaptureEditorPreviewEnabled()
-  )
-    yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id, 'capture'));
+  ) {
+    yield* put(
+      dockMediaEditorOpenRequested(workspaceId, agentId, image.id, 'capture', hold ?? undefined),
+    );
+    return !!hold;
+  }
+  return false;
 }
 
 function* startSession(
@@ -397,8 +423,7 @@ function* startSession(
   const ours = () => evidenceOf(workspaceId, agentId)?.annotation?.id === id;
   // The tool bar shows the composer's Screenshot/Record from its first frame.
   if (visible) yield* sendBarMedia(workspaceId, agentId);
-  if (nativeService !== service || !activePair(workspaceId, agentId) || !ours())
-    return 'cancelled';
+  if (nativeService !== service || !activePair(workspaceId, agentId) || !ours()) return 'cancelled';
   let result: DockNativeResult<void>;
   try {
     result = yield* call([service, service.startAnnotation], {
@@ -661,7 +686,8 @@ function* toggleAnnotation({
     if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
       if (!(yield* openRecordingBar(workspaceId, agentId))) return;
     } else if (
-      (yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId))) === 'cancelled'
+      (yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId))) ===
+      'cancelled'
     ) {
       return;
     }
@@ -680,7 +706,12 @@ function* toggleAnnotation({
 function* selectTool({
   payload: [workspaceId, agentId, tool],
 }: ReturnType<typeof dockEvidenceToolSelectRequested>): SagaGenerator<void> {
-  if (!activePair(workspaceId, agentId) || tool === 'pick' || discardedSessions.has(evidenceOf(workspaceId, agentId)?.annotation?.id ?? '')) return;
+  if (
+    !activePair(workspaceId, agentId) ||
+    tool === 'pick' ||
+    discardedSessions.has(evidenceOf(workspaceId, agentId)?.annotation?.id ?? '')
+  )
+    return;
   yield* put(dockEvidenceToolSet(workspaceId, tool));
   const session = evidenceOf(workspaceId, agentId)?.annotation;
   const service = nativeService;
@@ -897,7 +928,13 @@ function* onNativeMark(
     yield* rejectNativeMark(workspaceId, agentId, event.sessionId, nativeId);
     return;
   }
-  if (nativeService !== markService || markAuthority !== getPrincipalActionContext(appStore.state) || !activePair(workspaceId, agentId) || discardedSessions.has(event.sessionId) || generation !== (discardGenerations.get(event.sessionId) ?? 0)) {
+  if (
+    nativeService !== markService ||
+    markAuthority !== getPrincipalActionContext(appStore.state) ||
+    !activePair(workspaceId, agentId) ||
+    discardedSessions.has(event.sessionId) ||
+    generation !== (discardGenerations.get(event.sessionId) ?? 0)
+  ) {
     yield* rejectNativeMark(workspaceId, agentId, event.sessionId, nativeId);
     return;
   }
@@ -1048,7 +1085,8 @@ function* openRecordingBar(workspaceId: string, agentId: string): SagaGenerator<
     // The session already ended natively; the recording goes ahead without it.
   }
   return (
-    nativeService === service && activePair(workspaceId, agentId) &&
+    nativeService === service &&
+    activePair(workspaceId, agentId) &&
     evidenceOf(workspaceId, agentId)?.annotation?.id === opened.id
   );
 }
@@ -1066,20 +1104,33 @@ function* toggleRecording({
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
   const clip = recordingDockClip(evidence);
-  if (discardedSessions.has(evidence?.annotation?.id ?? '') && (!clip || expectedClipId !== clip.id)) return 'cancelled';
+  if (
+    discardedSessions.has(evidence?.annotation?.id ?? '') &&
+    (!clip || expectedClipId !== clip.id)
+  )
+    return 'cancelled';
   if (recordingToggleIntent(clip?.id, expectedClipId) === 'ignore') return;
   const service = nativeService;
   if (clip) {
     if (!service) return;
     stampRecordingInSpeech(workspaceId, agentId, clip.id, true);
-    let result: DockNativeResult<DockClipFile>;
+    // The finished recording may open straight in the editor: keep the dock out of sight
+    // from its stop until that editor ends (or, when it does not open, until placed).
+    const hold = yield* beginDockEditorHold();
+    const handoff = { hold, handed: false };
     try {
-      result = yield* call([service, service.stopClip], clip.id);
-    } catch {
-      result = { ok: false, error: 'failed' };
+      let result: DockNativeResult<DockClipFile>;
+      try {
+        result = yield* call([service, service.stopClip], clip.id);
+      } catch {
+        result = { ok: false, error: 'failed' };
+      }
+      if (nativeService === service)
+        yield* finishClip(workspaceId, agentId, clip.id, result, handoff);
+      if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
+    } finally {
+      if (!handoff.handed) endDockEditorHold(hold);
     }
-    if (nativeService === service) yield* finishClip(workspaceId, agentId, clip.id, result);
-    if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
     return;
   }
   // Each finished recording is its own attachment; a new one starts beside them.
@@ -1166,12 +1217,13 @@ function* finishClip(
   agentId: string,
   clipId: string,
   result: DockNativeResult<DockClipFile>,
+  handoff?: { hold: string | null; handed: boolean },
 ): SagaGenerator<void> {
   if (completingClips.has(clipId) || clipOf(workspaceId, agentId, clipId)?.status !== 'recording')
     return;
   completingClips.add(clipId);
   try {
-    yield* placeFinishedClip(workspaceId, agentId, clipId, result);
+    yield* placeFinishedClip(workspaceId, agentId, clipId, result, handoff);
   } finally {
     completingClips.delete(clipId);
   }
@@ -1183,6 +1235,7 @@ function* placeFinishedClip(
   agentId: string,
   clipId: string,
   result: DockNativeResult<DockClipFile>,
+  handoff?: { hold: string | null; handed: boolean },
 ): SagaGenerator<void> {
   const clip = clipOf(workspaceId, agentId, clipId);
   if (!clip || !activePair(workspaceId, agentId)) return;
@@ -1351,8 +1404,18 @@ function* placeFinishedClip(
       activePair(workspaceId, agentId) &&
       isDockBindingCurrent(binding) &&
       dockCaptureEditorPreviewEnabled()
-    )
-      yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, clipId, 'capture'));
+    ) {
+      yield* put(
+        dockMediaEditorOpenRequested(
+          workspaceId,
+          agentId,
+          clipId,
+          'capture',
+          handoff?.hold ?? undefined,
+        ),
+      );
+      if (handoff?.hold) handoff.handed = true;
+    }
     // The daemon now owns the bytes; native may drop its finished temp file (never re-stops).
     const releasing = service;
     if (releasing?.releaseClip)
@@ -1540,7 +1603,14 @@ function* setRecordingPaused(
     result = { ok: false, error: 'failed' };
   }
   const current = clipOf(workspaceId, agentId, clip.id);
-  if (nativeService !== service || !activePair(workspaceId, agentId) || !result.ok || !current || current.status !== 'recording') return false;
+  if (
+    nativeService !== service ||
+    !activePair(workspaceId, agentId) ||
+    !result.ok ||
+    !current ||
+    current.status !== 'recording'
+  )
+    return false;
   const now = Date.now();
   yield* put(
     dockEvidenceClipChanged(
@@ -1561,7 +1631,18 @@ function* setRecordingPaused(
 
 const discardedSessions = new Set<string>();
 const discardGenerations = new Map<string, number>();
-const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; undoRequested: boolean; inputRevision?: number; clipId: string | null }>();
+const discardWaits = new Map<
+  string,
+  {
+    done: Promise<void>;
+    service: DockEvidenceNativeService | null;
+    authority: string | null;
+    paused: boolean;
+    undoRequested: boolean;
+    inputRevision?: number;
+    clipId: string | null;
+  }
+>();
 
 /**
  * The recording tool bar. Done: the screen's marks go (they are in the clip already),
@@ -1576,8 +1657,14 @@ function* recordingToolbarAction(
   inputRevision?: number,
 ): SagaGenerator<void> {
   const lockedSessionId = evidenceOf(workspaceId, agentId)?.annotation?.id ?? '';
-  const recoveringDone = action === 'done' && discardWaits.get(lockedSessionId)?.undoRequested === true;
-  if (discardedSessions.has(lockedSessionId) && !recoveringDone && !['discard', 'discard-undo', 'discard-confirm'].includes(action)) return;
+  const recoveringDone =
+    action === 'done' && discardWaits.get(lockedSessionId)?.undoRequested === true;
+  if (
+    discardedSessions.has(lockedSessionId) &&
+    !recoveringDone &&
+    !['discard', 'discard-undo', 'discard-confirm'].includes(action)
+  )
+    return;
   if (action === 'pause' || action === 'resume') {
     yield* setRecordingPaused(workspaceId, agentId, action === 'pause');
     return;
@@ -1595,11 +1682,19 @@ function* recordingToolbarAction(
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
       !held.service ||
-      !held.paused || held.inputRevision === undefined || (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
+      !held.paused ||
+      held.inputRevision === undefined ||
+      (held.clipId !== null &&
+        recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
     )
       return;
     try {
-      yield* call([held.service, held.service.setAnnotationTool], session.id, toolFor(workspaceId), held.inputRevision);
+      yield* call(
+        [held.service, held.service.setAnnotationTool],
+        session.id,
+        toolFor(workspaceId),
+        held.inputRevision,
+      );
     } catch {
       return;
     }
@@ -1609,7 +1704,8 @@ function* recordingToolbarAction(
       getPrincipalActionContext(appStore.state) !== held.authority ||
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
-      (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
+      (held.clipId !== null &&
+        recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
     )
       return;
     discardedSessions.delete(session.id);
@@ -1636,9 +1732,18 @@ function* recordingToolbarAction(
     discardWaits.set(session.id, held);
     try {
       try {
-        if (held.service?.setAnnotationMouse) yield* call([held.service, held.service.setAnnotationMouse], session.id);
-      } catch { /* The main toolbar already disabled input; still pause the recording. */ }
-      if (nativeService !== held.service || getPrincipalActionContext(appStore.state) !== held.authority || !activePair(workspaceId, agentId) || evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id) return;
+        if (held.service?.setAnnotationMouse)
+          yield* call([held.service, held.service.setAnnotationMouse], session.id);
+      } catch {
+        /* The main toolbar already disabled input; still pause the recording. */
+      }
+      if (
+        nativeService !== held.service ||
+        getPrincipalActionContext(appStore.state) !== held.authority ||
+        !activePair(workspaceId, agentId) ||
+        evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id
+      )
+        return;
       held.paused = clip ? yield* setRecordingPaused(workspaceId, agentId, true) : true;
       // Keep the original marks and attachment intact until confirmation; Undo restores them.
     } catch {
@@ -1661,9 +1766,18 @@ function* recordingToolbarAction(
 function* watchNative(): SagaGenerator<void> {
   const channel = eventChannel<DockEvidenceNativeEvent>((emit) => {
     const receive = (event: DockEvidenceNativeEvent) => {
-      if (event.type === 'annotation-media' && event.action === 'discard' &&
-          getItems(appStore.state.dockConversation.evidence).some((row) => row.annotation?.id === event.sessionId)) {
-        if (!discardedSessions.has(event.sessionId)) discardGenerations.set(event.sessionId, (discardGenerations.get(event.sessionId) ?? 0) + 1);
+      if (
+        event.type === 'annotation-media' &&
+        event.action === 'discard' &&
+        getItems(appStore.state.dockConversation.evidence).some(
+          (row) => row.annotation?.id === event.sessionId,
+        )
+      ) {
+        if (!discardedSessions.has(event.sessionId))
+          discardGenerations.set(
+            event.sessionId,
+            (discardGenerations.get(event.sessionId) ?? 0) + 1,
+          );
         discardedSessions.add(event.sessionId);
       }
       emit(event);

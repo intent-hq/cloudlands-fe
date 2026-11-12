@@ -488,6 +488,12 @@ export const IPC_CHANNELS = {
     RETAKE: 'dock-capture-editor:retake',
     /** main → the opening dock send: capture and place a candidate (DockCaptureEditorRetakeRequested). */
     RETAKE_REQUESTED: 'dock-capture-editor:retake-requested',
+    /** dock → main: keep the dock out of sight from a capture until its editor ends ({ token }). */
+    HOLD_BEGIN: 'dock-capture-editor:hold-begin',
+    /** dock → main: the capture did not hand off to an editor; release that hold ({ token }). */
+    HOLD_END: 'dock-capture-editor:hold-end',
+    /** main → the opening dock send: its editor attached (DockCaptureEditorAttached). */
+    ATTACHED: 'dock-capture-editor:attached',
     /** dock → main: the placed candidate's canonical source, or failure (DockCaptureEditorRetakeResult). */
     RETAKE_RESULT: 'dock-capture-editor:retake-result',
     /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */
@@ -1250,6 +1256,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.RETAKE_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_UPDATE,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.ATTACHED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

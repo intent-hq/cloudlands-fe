@@ -55,6 +55,8 @@ export interface DockCaptureEditorMark {
 }
 
 export interface DockCaptureEditorOpenRequest {
+  /** The capture's dock hold (HOLD_BEGIN) this editor adopts while it is open. */
+  holdToken?: string;
   kind: DockCaptureEditorKind;
   workspaceId: string;
   agentId: string;
@@ -160,6 +162,8 @@ export const DockCaptureEditorOpenSchema = z
     originalSource: DockMediaSourceSchema.optional(),
     saved: DockMediaEditSchema.nullable().optional(),
     transcript: DockMediaTranscriptSchema.nullable().optional(),
+    /** The capture's dock hold (HOLD_BEGIN) this editor adopts while it is open. */
+    holdToken: z.string().uuid().optional(),
   })
   .strict()
   // The canonical source must describe this very attachment, and an edit this source.
@@ -189,7 +193,27 @@ export const DockCaptureEditorOpenSchema = z
   );
 
 /** Close (and Discard, Keep editing) name the session they mean; others are untouched. */
-export const DockCaptureEditorCloseSchema = z.object({ openId: z.string().uuid() }).strict();
+export const DockCaptureEditorCloseSchema = z
+  .object({
+    openId: z.string().uuid(),
+    /** The editor's Attach (after any save it needed succeeded), not Close or Cancel. */
+    intent: z.literal('attach').optional(),
+  })
+  .strict();
+/** A dock hold around a capture that may open the editor (HOLD_BEGIN / HOLD_END). */
+export const DockCaptureEditorHoldSchema = z.object({ token: z.string().uuid() }).strict();
+/**
+ * main → the opening dock: its editor attached. The dock returns to exactly this
+ * conversation only while this attachment's source is still the one the editor had.
+ */
+export interface DockCaptureEditorAttached {
+  openId: string;
+  workspaceId: string;
+  agentId: string;
+  attachmentId: string;
+  sourceId: string | null;
+  sourceRevision: number | null;
+}
 /**
  * The answer to one of main's "edits would be lost" requests: Discard does what was
  * waiting, Keep editing drops it. An answer to an older request does nothing.

@@ -1,4 +1,8 @@
-import { captureDockPlacementBinding, isDockBindingCurrent, placeDockMediaImage } from '$features/hud/composer/dock-evidence-placement';
+import {
+  captureDockPlacementBinding,
+  isDockBindingCurrent,
+  placeDockMediaImage,
+} from '$features/hud/composer/dock-evidence-placement';
 import { dockMediaCapturedMarks, dockMediaCaptureBatches } from '$shared/dock-media-source';
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import type { DockCaptureEditorOpenRequest } from '$shared/dock-capture-editor';
@@ -60,9 +64,15 @@ import {
   dockEvidenceImageRemoved,
   dockEvidenceClipChanged,
 } from '../dock-conversation-slice';
+import { endDockEditorHold } from './dock-editor-hold';
 import { evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
 import { dockInputLive } from './dock-live-input';
-import { dockCloseRequested } from '../../hud/hud-slice';
+import { dockCloseRequested, dockFocusRequested } from '../../hud/hud-slice';
+import {
+  dockConversationLoaded,
+  openDockConversationRequested,
+  selectDockConversationAgentRequested,
+} from '../dock-conversation-slice';
 
 const requestSchema = z
   .object({
@@ -122,9 +132,7 @@ function replaceMediaState(
   return true;
 }
 
-function* persist({
-  payload: [requestId, request, authority],
-}: SaveAction): SagaGenerator<void> {
+function* persist({ payload: [requestId, request, authority] }: SaveAction): SagaGenerator<void> {
   const { workspaceId, agentId } = request.pair;
   const result = (value: Omit<DockCaptureEditorSaveResult, 'requestId'>) =>
     dockMediaEditSaveSettled(requestId, { requestId, ...value });
@@ -144,9 +152,7 @@ function* persist({
   }
   const applied = applyDockMediaSave(previous, request);
   if (applied.status !== 'saved') {
-    yield* put(
-      result({ result: applied.status === 'invalid-edit' ? 'failed' : applied.status }),
-    );
+    yield* put(result({ result: applied.status === 'invalid-edit' ? 'failed' : applied.status }));
     return;
   }
   const ownerId = `dock-media-edit:${requestId}`;
@@ -215,9 +221,7 @@ function* persist({
     }
     yield* put(
       result(
-        current()
-          ? { result: 'saved', saved: applied.media.saved! }
-          : { result: 'stale-source' },
+        current() ? { result: 'saved', saved: applied.media.saved! } : { result: 'stale-source' },
       ),
     );
   } catch {
@@ -229,15 +233,38 @@ function* persist({
 }
 
 /** Re-read both ownership halves after every durable wait. */
-function publishedMediaItem(workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia, contextItemId?: string) {
+function publishedMediaItem(
+  workspaceId: string,
+  agentId: string,
+  logicalId: string,
+  expected: DockSavedMedia,
+  contextItemId?: string,
+) {
   const evidence = evidenceOf(workspaceId, agentId);
-  const row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find((entry) => entry.id === logicalId);
-  if (!row || row.mediaError || row.contextItemId !== contextItemId || JSON.stringify(row.media) !== JSON.stringify(expected)) return null;
-  const item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === contextItemId);
-  return item?.attachmentId === expected.source.attachmentId && item.path === expected.source.path ? item : null;
+  const row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find(
+    (entry) => entry.id === logicalId,
+  );
+  if (
+    !row ||
+    row.mediaError ||
+    row.contextItemId !== contextItemId ||
+    JSON.stringify(row.media) !== JSON.stringify(expected)
+  )
+    return null;
+  const item = selectComposerContextItems
+    .select(store.state, workspaceId, agentId)
+    .find((entry) => entry.id === contextItemId);
+  return item?.attachmentId === expected.source.attachmentId && item.path === expected.source.path
+    ? item
+    : null;
 }
 
-function* analyzeAndPublish(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
+function* analyzeAndPublish(
+  workspaceId: string,
+  agentId: string,
+  logicalId: string,
+  authority: string,
+): SagaGenerator<void> {
   const service = dockMediaNativeService();
   const row = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId);
   const initial = row?.media;
@@ -245,15 +272,36 @@ function* analyzeAndPublish(workspaceId: string, agentId: string, logicalId: str
   const jobId = crypto.randomUUID();
   try {
     const result = yield* call(() => service.analyzeMedia!({ jobId, media: initial }));
-    if (!result.ok || authority !== getPrincipalActionContext(store.state) || service !== dockMediaNativeService()) return;
-    const live = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId)?.media;
-    if (!live || JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
-        !publishedMediaItem(workspaceId, agentId, logicalId, live, row?.contextItemId) ||
-        result.value.sourceId !== live.source.id || result.value.sourceRevision !== live.source.revision) return;
-    yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.WAVEFORM_UPDATE,
-      { pair: { workspaceId, agentId }, sourceId: live.source.id, sourceRevision: live.source.revision, waveform: result.value }));
-  } catch { /* Missing/failed audio is left unavailable; never draw invented peaks. */ }
-  finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+    if (
+      !result.ok ||
+      authority !== getPrincipalActionContext(store.state) ||
+      service !== dockMediaNativeService()
+    )
+      return;
+    const live = evidenceOf(workspaceId, agentId)?.clips.find(
+      (entry) => entry.id === logicalId,
+    )?.media;
+    if (
+      !live ||
+      JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
+      !publishedMediaItem(workspaceId, agentId, logicalId, live, row?.contextItemId) ||
+      result.value.sourceId !== live.source.id ||
+      result.value.sourceRevision !== live.source.revision
+    )
+      return;
+    yield* call(() =>
+      window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.WAVEFORM_UPDATE, {
+        pair: { workspaceId, agentId },
+        sourceId: live.source.id,
+        sourceRevision: live.source.revision,
+        waveform: result.value,
+      }),
+    );
+  } catch {
+    /* Missing/failed audio is left unavailable; never draw invented peaks. */
+  } finally {
+    yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {}));
+  }
 }
 
 const recognitionFlights = new Set<{
@@ -262,18 +310,48 @@ const recognitionFlights = new Set<{
   binding: ReturnType<typeof captureDockPlacementBinding>;
 }>();
 
-function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string,
-  binding: ReturnType<typeof captureDockPlacementBinding>): SagaGenerator<void> {
+function* recognizeAndPersist(
+  workspaceId: string,
+  agentId: string,
+  logicalId: string,
+  authority: string,
+  binding: ReturnType<typeof captureDockPlacementBinding>,
+): SagaGenerator<void> {
   const service = dockMediaNativeService();
-  const initial = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
-  if (!initial || !service?.transcribeMedia || initial.source.audio === 'none' ||
-      initial.transcript?.status === 'ready' || initial.transcript?.status === 'no-speech') return;
-  const current = () => authority === getPrincipalActionContext(store.state) &&
-    service === dockMediaNativeService() && isDockBindingCurrent(binding);
+  const initial = evidenceOf(workspaceId, agentId)?.clips.find(
+    (row) => row.id === logicalId,
+  )?.media;
+  if (
+    !initial ||
+    !service?.transcribeMedia ||
+    initial.source.audio === 'none' ||
+    initial.transcript?.status === 'ready' ||
+    initial.transcript?.status === 'no-speech'
+  )
+    return;
+  const current = () =>
+    authority === getPrincipalActionContext(store.state) &&
+    service === dockMediaNativeService() &&
+    isDockBindingCurrent(binding);
   if (!current()) return;
-  const key = JSON.stringify([authority, workspaceId, agentId, logicalId, binding.backendId, binding.generation, initial.source]);
-  if ([...recognitionFlights].some((flight) => flight.key === key && flight.service === service &&
-      flight.binding.transport === binding.transport)) return;
+  const key = JSON.stringify([
+    authority,
+    workspaceId,
+    agentId,
+    logicalId,
+    binding.backendId,
+    binding.generation,
+    initial.source,
+  ]);
+  if (
+    [...recognitionFlights].some(
+      (flight) =>
+        flight.key === key &&
+        flight.service === service &&
+        flight.binding.transport === binding.transport,
+    )
+  )
+    return;
   const flight = { key, service, binding };
   // Reserve synchronously before the first yield: repeated Edit fronts the same
   // editor while this exact source continues its single background recognition.
@@ -284,157 +362,342 @@ function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: s
     if (!result.ok || !current()) return;
     const liveRow = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId);
     const live = liveRow?.media;
-    if (!live || JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
-        !publishedMediaItem(workspaceId, agentId, logicalId, live, liveRow?.contextItemId)) return;
+    if (
+      !live ||
+      JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
+      !publishedMediaItem(workspaceId, agentId, logicalId, live, liveRow?.contextItemId)
+    )
+      return;
     const transcript = { ...result.value, revision: (live.transcript?.revision ?? 0) + 1 };
     const next = { ...live, transcript };
     if (!replaceMediaState(workspaceId, agentId, logicalId, live, next)) return;
-    const ownerId = `dock-media-transcript:${jobId}`, requestId = crypto.randomUUID();
-    const settled = yield* actionChannel((action: ReturnType<typeof chatDraftSaveSettled>) =>
-      action.type === chatDraftSaveSettled.type && action.payload[0] === ownerId && action.payload[1] === requestId, buffers.expanding());
+    const ownerId = `dock-media-transcript:${jobId}`,
+      requestId = crypto.randomUUID();
+    const settled = yield* actionChannel(
+      (action: ReturnType<typeof chatDraftSaveSettled>) =>
+        action.type === chatDraftSaveSettled.type &&
+        action.payload[0] === ownerId &&
+        action.payload[1] === requestId,
+      buffers.expanding(),
+    );
     try {
-      const draft = getItem(store.state.dockConversation.drafts, JSON.stringify([workspaceId, agentId]));
+      const draft = getItem(
+        store.state.dockConversation.drafts,
+        JSON.stringify([workspaceId, agentId]),
+      );
       if (!draft?.restored) return;
       yield* put(chatDraftOwnerOpened(ownerId));
-      yield* put(chatDraftSaveScheduled(ownerId, requestId, { workspaceId, agentId, authority, text: draft.text,
-        attachments: serializeDraftAttachments(selectComposerContextItems.select(store.state, workspaceId, agentId), toDockDraftEvidence(evidenceOf(workspaceId, agentId))), rollback: null }));
+      yield* put(
+        chatDraftSaveScheduled(ownerId, requestId, {
+          workspaceId,
+          agentId,
+          authority,
+          text: draft.text,
+          attachments: serializeDraftAttachments(
+            selectComposerContextItems.select(store.state, workspaceId, agentId),
+            toDockDraftEvidence(evidenceOf(workspaceId, agentId)),
+          ),
+          rollback: null,
+        }),
+      );
       yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
       const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
-      if (written?.payload[2] === 'saved' && current() &&
-          publishedMediaItem(workspaceId, agentId, logicalId, next, liveRow?.contextItemId))
-        yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE,
-          { pair: { workspaceId, agentId }, sourceId: live.source.id, sourceRevision: live.source.revision, transcript }));
-    } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
+      if (
+        written?.payload[2] === 'saved' &&
+        current() &&
+        publishedMediaItem(workspaceId, agentId, logicalId, next, liveRow?.contextItemId)
+      )
+        yield* call(() =>
+          window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE, {
+            pair: { workspaceId, agentId },
+            sourceId: live.source.id,
+            sourceRevision: live.source.revision,
+            transcript,
+          }),
+        );
+    } finally {
+      settled.close();
+      yield* put(chatDraftOwnerReleased(ownerId));
+    }
   } finally {
-    try { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
-    finally { recognitionFlights.delete(flight); }
+    try {
+      yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {}));
+    } finally {
+      recognitionFlights.delete(flight);
+    }
   }
 }
 
 interface MediaPreparation {
-  workspaceId: string; agentId: string; logicalId: string; authority: string;
+  workspaceId: string;
+  agentId: string;
+  logicalId: string;
+  authority: string;
   binding: ReturnType<typeof captureDockPlacementBinding>;
 }
 
 /** The editor opens only after the source metadata has passed the same durable writer. */
-function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: ReturnType<typeof dockMediaEditorOpenRequested>,
-  preparation: Channel<MediaPreparation>): SagaGenerator<void> {
-  const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
+/**
+ * Open the editor for a capture or a pill. A capture's dock hold goes along with the
+ * request (the opened editor adopts it); whenever the editor does not open, it ends here.
+ */
+function* openEditor(
+  action: ReturnType<typeof dockMediaEditorOpenRequested>,
+  preparation: Channel<MediaPreparation>,
+): SagaGenerator<void> {
+  const held = { token: action.payload[4], adopted: false };
+  try {
+    yield* openEditorWith(action, preparation, held);
+  } finally {
+    if (!held.adopted) endDockEditorHold(held.token);
+  }
+}
+
+function* openEditorWith(
+  {
+    payload: [workspaceId, agentId, logicalId, origin],
+  }: ReturnType<typeof dockMediaEditorOpenRequested>,
+  preparation: Channel<MediaPreparation>,
+  held: { token?: string; adopted: boolean },
+): SagaGenerator<void> {
+  const authority = getPrincipalActionContext(store.state),
+    binding = captureDockPlacementBinding();
   if (!authority) return;
   // The Assistant workspace keeps capture sources only where the connection advertises
   // it (as for its other attachments): say so instead of trying and failing silently.
-  if (workspaceId === CHIEF_WORKSPACE_ID && currentDockServerCapabilities(store.state)?.chiefAttachments !== true) {
+  if (
+    workspaceId === CHIEF_WORKSPACE_ID &&
+    currentDockServerCapabilities(store.state)?.chiefAttachments !== true
+  ) {
     const dock = store.state.dockConversation;
     if (dock.workspaceId === workspaceId && dock.agentId === agentId)
       notify.warning(m.dock_captureEditor_assistantUnavailable_error());
     return;
   }
-  const current = () => getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding);
+  const current = () =>
+    getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding);
   /** Same principal and backend, and the conversation that asked is still the one shown. */
-  const shownHere = () => current() &&
-    store.state.dockConversation.workspaceId === workspaceId && store.state.dockConversation.agentId === agentId;
+  const shownHere = () =>
+    current() &&
+    store.state.dockConversation.workspaceId === workspaceId &&
+    store.state.dockConversation.agentId === agentId;
   let evidence = evidenceOf(workspaceId, agentId);
-  let row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find((item) => item.id === logicalId);
+  let row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find(
+    (item) => item.id === logicalId,
+  );
   if (!evidence || !row || row.mediaError) return;
-  let item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((item) => item.id === row!.contextItemId);
+  let item = selectComposerContextItems
+    .select(store.state, workspaceId, agentId)
+    .find((item) => item.id === row!.contextItemId);
   if (!item) return;
   if (!row.media && 'width' in row && item.imageData && item.imageMimeType) {
-    const before = JSON.stringify(row), pixels = item.imageData, mime = item.imageMimeType;
-    const placed = yield* call(placeDockMediaImage, workspaceId, `capture-original-${crypto.randomUUID()}.png`, { data: pixels, mimeType: mime }, binding);
+    const before = JSON.stringify(row),
+      pixels = item.imageData,
+      mime = item.imageMimeType;
+    const placed = yield* call(
+      placeDockMediaImage,
+      workspaceId,
+      `capture-original-${crypto.randomUUID()}.png`,
+      { data: pixels, mimeType: mime },
+      binding,
+    );
     if (!current()) return;
     evidence = evidenceOf(workspaceId, agentId);
     const live = evidence?.images.find((entry) => entry.id === logicalId);
     if (!evidence || !live || JSON.stringify(live) !== before) return;
-    const source = DockMediaSourceSchema.parse({ id: crypto.randomUUID(), revision: 0, kind: 'screenshot',
-      attachmentId: placed.attachmentId, path: placed.path, durationMs: 0,
-      width: live.width, height: live.height, ...(live.capture ? { capture: live.capture } : {}), audio: 'none', visuals: 'clean', batches: dockMediaCaptureBatches([], 0) });
+    const source = DockMediaSourceSchema.parse({
+      id: crypto.randomUUID(),
+      revision: 0,
+      kind: 'screenshot',
+      attachmentId: placed.attachmentId,
+      path: placed.path,
+      durationMs: 0,
+      width: live.width,
+      height: live.height,
+      ...(live.capture ? { capture: live.capture } : {}),
+      audio: 'none',
+      visuals: 'clean',
+      batches: dockMediaCaptureBatches([], 0),
+    });
     source.capturedMarks = dockMediaCapturedMarks(evidence, source, logicalId);
     const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
-    store.dispatch(setComposerContextItems(workspaceId, agentId, items.map((entry) => entry.id === item!.id
-      ? { ...entry, attachmentId: source.attachmentId, path: source.path, attachmentMimeType: placed.mimeType ?? mime,
-          attachmentSize: placed.size, placementStatus: 'placed' as const } : entry)));
-    store.dispatch(dockEvidenceMediaChanged(workspaceId, agentId, logicalId, null, { source, saved: null, transcript: null }));
+    store.dispatch(
+      setComposerContextItems(
+        workspaceId,
+        agentId,
+        items.map((entry) =>
+          entry.id === item!.id
+            ? {
+                ...entry,
+                attachmentId: source.attachmentId,
+                path: source.path,
+                attachmentMimeType: placed.mimeType ?? mime,
+                attachmentSize: placed.size,
+                placementStatus: 'placed' as const,
+              }
+            : entry,
+        ),
+      ),
+    );
+    store.dispatch(
+      dockEvidenceMediaChanged(workspaceId, agentId, logicalId, null, {
+        source,
+        saved: null,
+        transcript: null,
+      }),
+    );
     row = evidenceOf(workspaceId, agentId)?.images.find((entry) => entry.id === logicalId);
-    item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === item!.id);
+    item = selectComposerContextItems
+      .select(store.state, workspaceId, agentId)
+      .find((entry) => entry.id === item!.id);
   }
   if (!row || !item || !current()) return;
   // Repair historical mic flags from the exact original container, never from
   // an exported Voice Off file or from the annotated writer's append receipt.
-  const service = dockMediaNativeService(), beforeProbe = row.media;
-  if (beforeProbe?.source.kind === 'recording' && service?.probeMediaAudio &&
-      (beforeProbe.source.audio !== 'available' || beforeProbe.transcript?.error === 'no-audio-track')) {
+  const service = dockMediaNativeService(),
+    beforeProbe = row.media;
+  if (
+    beforeProbe?.source.kind === 'recording' &&
+    service?.probeMediaAudio &&
+    (beforeProbe.source.audio !== 'available' || beforeProbe.transcript?.error === 'no-audio-track')
+  ) {
     const jobId = crypto.randomUUID();
     let probed: Awaited<ReturnType<NonNullable<typeof service.probeMediaAudio>>> | undefined;
-    try { probed = yield* call(() => service.probeMediaAudio!({ jobId, media: beforeProbe })); }
-    catch { /* Missing/old helper leaves metadata unchanged; never guess audio. */ }
-    finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+    try {
+      probed = yield* call(() => service.probeMediaAudio!({ jobId, media: beforeProbe }));
+    } catch {
+      /* Missing/old helper leaves metadata unchanged; never guess audio. */
+    } finally {
+      yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {}));
+    }
     if (!current() || service !== dockMediaNativeService()) return;
-    const liveItem = publishedMediaItem(workspaceId, agentId, logicalId, beforeProbe, row.contextItemId);
+    const liveItem = publishedMediaItem(
+      workspaceId,
+      agentId,
+      logicalId,
+      beforeProbe,
+      row.contextItemId,
+    );
     if (!liveItem || liveItem.id !== item.id) return;
-    if (probed?.ok && probed.value.sourceId === beforeProbe.source.id &&
-        probed.value.sourceRevision === beforeProbe.source.revision) {
-      const audio = probed.value.populatedTrackCount > 0 ? 'available' as const : 'none' as const;
+    if (
+      probed?.ok &&
+      probed.value.sourceId === beforeProbe.source.id &&
+      probed.value.sourceRevision === beforeProbe.source.revision
+    ) {
+      const audio =
+        probed.value.populatedTrackCount > 0 ? ('available' as const) : ('none' as const);
       if (audio !== beforeProbe.source.audio) {
-        const correctedSource = { ...beforeProbe.source, audio, revision: beforeProbe.source.revision + 1 };
+        const correctedSource = {
+          ...beforeProbe.source,
+          audio,
+          revision: beforeProbe.source.revision + 1,
+        };
         const corrected: DockSavedMedia = {
           ...beforeProbe,
           source: correctedSource,
           ...(beforeProbe.originalSource?.id === beforeProbe.source.id &&
-              beforeProbe.originalSource.revision === beforeProbe.source.revision &&
-              beforeProbe.originalSource.path === beforeProbe.source.path
-            ? { originalSource: correctedSource } : {}),
+          beforeProbe.originalSource.revision === beforeProbe.source.revision &&
+          beforeProbe.originalSource.path === beforeProbe.source.path
+            ? { originalSource: correctedSource }
+            : {}),
           // Metadata correction does not change the user's saved Video/Voice choice.
-          saved: beforeProbe.saved ? { ...beforeProbe.saved, sourceRevision: correctedSource.revision } : null,
-          transcript: beforeProbe.transcript?.status === 'ready' ? beforeProbe.transcript : {
-            status: audio === 'available' ? 'pending' : 'unavailable',
-            revision: (beforeProbe.transcript?.revision ?? 0) + 1, words: [],
-            ...(audio === 'none' ? { error: 'no-audio-track' } : {}),
-          },
+          saved: beforeProbe.saved
+            ? { ...beforeProbe.saved, sourceRevision: correctedSource.revision }
+            : null,
+          transcript:
+            beforeProbe.transcript?.status === 'ready'
+              ? beforeProbe.transcript
+              : {
+                  status: audio === 'available' ? 'pending' : 'unavailable',
+                  revision: (beforeProbe.transcript?.revision ?? 0) + 1,
+                  words: [],
+                  ...(audio === 'none' ? { error: 'no-audio-track' } : {}),
+                },
         };
         if (!replaceMediaState(workspaceId, agentId, logicalId, beforeProbe, corrected)) return;
       }
     }
     row = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId);
-    item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === liveItem.id);
+    item = selectComposerContextItems
+      .select(store.state, workspaceId, agentId)
+      .find((entry) => entry.id === liveItem.id);
     if (!row || !item || !current()) return;
   }
   // Legacy recordings stay read-only; no guessed dimensions, batches or clean pixels.
-  const media = row.media, source = media?.source;
+  const media = row.media,
+    source = media?.source;
   if (!source || !media) return;
-  const ownerId = `dock-media-source:${crypto.randomUUID()}`, requestId = crypto.randomUUID();
-  const settled = yield* actionChannel((action: ReturnType<typeof chatDraftSaveSettled>) =>
-    action.type === chatDraftSaveSettled.type && action.payload[0] === ownerId && action.payload[1] === requestId, buffers.expanding());
+  const ownerId = `dock-media-source:${crypto.randomUUID()}`,
+    requestId = crypto.randomUUID();
+  const settled = yield* actionChannel(
+    (action: ReturnType<typeof chatDraftSaveSettled>) =>
+      action.type === chatDraftSaveSettled.type &&
+      action.payload[0] === ownerId &&
+      action.payload[1] === requestId,
+    buffers.expanding(),
+  );
   try {
-    const draft = getItem(store.state.dockConversation.drafts, JSON.stringify([workspaceId, agentId]));
+    const draft = getItem(
+      store.state.dockConversation.drafts,
+      JSON.stringify([workspaceId, agentId]),
+    );
     if (!draft?.restored) return;
     yield* put(chatDraftOwnerOpened(ownerId));
-    yield* put(chatDraftSaveScheduled(ownerId, requestId, { workspaceId, agentId, authority, text: draft.text,
-      attachments: serializeDraftAttachments(selectComposerContextItems.select(store.state, workspaceId, agentId), toDockDraftEvidence(evidenceOf(workspaceId, agentId))), rollback: null }));
+    yield* put(
+      chatDraftSaveScheduled(ownerId, requestId, {
+        workspaceId,
+        agentId,
+        authority,
+        text: draft.text,
+        attachments: serializeDraftAttachments(
+          selectComposerContextItems.select(store.state, workspaceId, agentId),
+          toDockDraftEvidence(evidenceOf(workspaceId, agentId)),
+        ),
+        rollback: null,
+      }),
+    );
     yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
     const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
     if (!written || written.payload[2] !== 'saved' || !current()) return;
     const published = publishedMediaItem(workspaceId, agentId, logicalId, media, row.contextItemId);
     if (!published || published.id !== item.id) return;
     const request: DockCaptureEditorOpenRequest = {
-      kind: source.kind, workspaceId, agentId, attachmentId: source.attachmentId,
-      sourceRevision: String(source.revision), attachmentPath: source.path, title: published.label,
-      width: source.width, height: source.height, durationMs: source.durationMs,
+      kind: source.kind,
+      workspaceId,
+      agentId,
+      attachmentId: source.attachmentId,
+      sourceRevision: String(source.revision),
+      attachmentPath: source.path,
+      title: published.label,
+      width: source.width,
+      height: source.height,
+      durationMs: source.durationMs,
       provenance: { hasMicAudio: source.audio === 'available', visuals: source.visuals },
-      marks: [], source, saved: media.saved, transcript: media.transcript,
+      marks: [],
+      source,
+      saved: media.saved,
+      transcript: media.transcript,
       ...(media.originalSource ? { originalSource: media.originalSource } : {}),
+      ...(held.token ? { holdToken: held.token } : {}),
     };
     // The capability may have been withdrawn while the draft was saved: never open then.
-    if (workspaceId === CHIEF_WORKSPACE_ID && currentDockServerCapabilities(store.state)?.chiefAttachments !== true) {
+    if (
+      workspaceId === CHIEF_WORKSPACE_ID &&
+      currentDockServerCapabilities(store.state)?.chiefAttachments !== true
+    ) {
       if (shownHere()) notify.warning(m.dock_captureEditor_assistantUnavailable_error());
       return;
     }
-    const opened = (yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request))) as
-      DockCaptureEditorOpenResult | undefined;
+    const opened = (yield* call(() =>
+      window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request),
+    )) as DockCaptureEditorOpenResult | undefined;
     // Refused: say so where it was asked, and start no follow-up recognition for it.
     if (!opened?.ok) {
       if (shownHere()) notify.warning(m.dock_captureEditor_openFailed_error());
       return;
     }
+    // The opened editor session owns the dock hold now; it ends when the editor does.
+    held.adopted = !!held.token;
     // A new capture's editor takes over: the dock closes behind it, as Escape would,
     // once the editor is open and only for the conversation still shown. Live input
     // (dictation, a recording, an annotate session, the mic) keeps it open.
@@ -442,7 +705,72 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: Ret
     // Root-owned background work is outside the per-pair Edit FIFO. Attached
     // forks here would still keep that FIFO call blocked until recognition ends.
     yield* put(preparation, { workspaceId, agentId, logicalId, authority, binding });
-  } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
+  } finally {
+    settled.close();
+    yield* put(chatDraftOwnerReleased(ownerId));
+  }
+}
+
+const attachedSchema = z
+  .object({
+    openId: z.string().uuid(),
+    workspaceId: z.string().min(1),
+    agentId: z.string().min(1),
+    attachmentId: z.string().min(1),
+    sourceId: z.string().min(1).nullable(),
+    sourceRevision: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+/**
+ * The editor attached (main already brought the dock forward): return to exactly that
+ * conversation and put the keyboard in its prompt. Only for the same principal and
+ * backend, while this attachment's source is still the one the editor had, and never
+ * over live input or a send. Drafts and attachments are untouched.
+ */
+function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerator<void> {
+  const { workspaceId, agentId, attachmentId, sourceId, sourceRevision } = value;
+  const authority = getPrincipalActionContext(store.state);
+  const backend = store.state.connections.windowBackendId;
+  if (!authority) return;
+  const fresh = (): boolean => {
+    if (getPrincipalActionContext(store.state) !== authority) return false;
+    if (store.state.connections.windowBackendId !== backend) return false;
+    const evidence = evidenceOf(workspaceId, agentId);
+    const rows: Array<{
+      media?: { source?: { attachmentId: string; id: string; revision: number } };
+    }> = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])];
+    return rows.some((row) => {
+      const source = row.media?.source;
+      return (
+        !!source &&
+        source.attachmentId === attachmentId &&
+        (sourceId === null || (source.id === sourceId && source.revision === sourceRevision))
+      );
+    });
+  };
+  if (!fresh() || dockInputLive() || store.state.dockConversation.sending) return;
+  // The dock opens by keyboard first (main already gave its window the keyboard), so the
+  // conversation mounts asked to focus its prompt; after it loads the prompt is asked again.
+  yield* put(dockFocusRequested());
+  if (store.state.dockConversation.workspaceId !== workspaceId)
+    yield* put(openDockConversationRequested(workspaceId));
+  let selected = false;
+  for (let waited = 0; waited < 10_000; waited += 100) {
+    const dock = store.state.dockConversation;
+    if (!fresh() || dock.workspaceId !== workspaceId || dock.error || dockInputLive()) return;
+    if (!dock.loading && dock.agentId) {
+      if (dock.agentId !== agentId) {
+        if (selected) return;
+        selected = true;
+        yield* put(selectDockConversationAgentRequested(agentId));
+      } else {
+        if (dock.authority === authority) yield* put(dockFocusRequested());
+        return;
+      }
+    }
+    yield* race({ loaded: take(dockConversationLoaded), tick: delay(100) });
+  }
 }
 
 const retakeSchema = z
@@ -464,43 +792,109 @@ const retakeSchema = z
  * over, so it is refused before anything is placed. Exactly one reply per request.
  */
 function* retakeCapture(request: z.infer<typeof retakeSchema>): SagaGenerator<void> {
-  const { requestId, pair: { workspaceId, agentId }, expected } = request;
-  const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
+  const {
+    requestId,
+    pair: { workspaceId, agentId },
+    expected,
+  } = request;
+  const authority = getPrincipalActionContext(store.state),
+    binding = captureDockPlacementBinding();
   const service = dockMediaNativeService();
-  const current = () => !!authority && authority === getPrincipalActionContext(store.state) &&
-    isDockBindingCurrent(binding) && service === dockMediaNativeService();
+  const current = () =>
+    !!authority &&
+    authority === getPrincipalActionContext(store.state) &&
+    isDockBindingCurrent(binding) &&
+    service === dockMediaNativeService();
   // The session's source must still be this pair's, unchanged, at every step.
-  const sourceNow = () => evidenceOf(workspaceId, agentId)?.images.find((row) =>
-    row.media?.source.id === expected.sourceId && row.media.source.revision === expected.sourceRevision)?.media?.source ?? null;
+  const sourceNow = () =>
+    evidenceOf(workspaceId, agentId)?.images.find(
+      (row) =>
+        row.media?.source.id === expected.sourceId &&
+        row.media.source.revision === expected.sourceRevision,
+    )?.media?.source ?? null;
   let reply: DockCaptureEditorRetakeResult = { requestId, ok: false, error: 'failed' };
   try {
-    const evidence = evidenceOf(workspaceId, agentId), original = sourceNow();
-    const mode = original?.capture?.mode, frame = original?.capture?.frame;
+    const evidence = evidenceOf(workspaceId, agentId),
+      original = sourceNow();
+    const mode = original?.capture?.mode,
+      frame = original?.capture?.frame;
     // One capture at a time, and never while a recording or annotate session holds the screen.
-    if (!current() || !service || !evidence || !original || original.kind !== 'screenshot' || !mode || !frame ||
-        evidence.capture.pending || evidence.annotation || recordingDockClip(evidence)) return;
+    if (
+      !current() ||
+      !service ||
+      !evidence ||
+      !original ||
+      original.kind !== 'screenshot' ||
+      !mode ||
+      !frame ||
+      evidence.capture.pending ||
+      evidence.annotation ||
+      recordingDockClip(evidence)
+    )
+      return;
     let result: DockNativeResult<DockCapturedPixels>;
-    try { result = yield* call([service, service.captureDisplay], mode); } catch { return; }
-    if (!current()) return;
-    if (!result.ok) {
-      reply = { requestId, ok: false,
-        error: result.detail === 'cancelled' ? 'cancelled' : result.error === 'permission' ? 'permission' : 'failed' };
+    try {
+      result = yield* call([service, service.captureDisplay], mode);
+    } catch {
       return;
     }
-    const pixels = result.value, taken = pixels.capture;
-    if (taken?.mode !== mode || !taken.frame || taken.frame.displayId !== frame.displayId || !sourceNow()) return;
+    if (!current()) return;
+    if (!result.ok) {
+      reply = {
+        requestId,
+        ok: false,
+        error:
+          result.detail === 'cancelled'
+            ? 'cancelled'
+            : result.error === 'permission'
+              ? 'permission'
+              : 'failed',
+      };
+      return;
+    }
+    const pixels = result.value,
+      taken = pixels.capture;
+    if (
+      taken?.mode !== mode ||
+      !taken.frame ||
+      taken.frame.displayId !== frame.displayId ||
+      !sourceNow()
+    )
+      return;
     const extension = pixels.mimeType.split('/')[1] ?? 'png';
-    const placed = yield* call(placeDockMediaImage, workspaceId, `capture-retake-${crypto.randomUUID()}.${extension}`,
-      { data: pixels.base64, mimeType: pixels.mimeType }, binding);
+    const placed = yield* call(
+      placeDockMediaImage,
+      workspaceId,
+      `capture-retake-${crypto.randomUUID()}.${extension}`,
+      { data: pixels.base64, mimeType: pixels.mimeType },
+      binding,
+    );
     if (!current() || !sourceNow()) return;
-    const source = DockMediaSourceSchema.safeParse({ id: crypto.randomUUID(), revision: 0, kind: 'screenshot',
-      attachmentId: placed.attachmentId, path: placed.path, durationMs: 0, width: pixels.width, height: pixels.height,
-      capture: taken, audio: 'none', visuals: 'clean', batches: dockMediaCaptureBatches([], 0) });
+    const source = DockMediaSourceSchema.safeParse({
+      id: crypto.randomUUID(),
+      revision: 0,
+      kind: 'screenshot',
+      attachmentId: placed.attachmentId,
+      path: placed.path,
+      durationMs: 0,
+      width: pixels.width,
+      height: pixels.height,
+      capture: taken,
+      audio: 'none',
+      visuals: 'clean',
+      batches: dockMediaCaptureBatches([], 0),
+    });
     if (source.success) reply = { requestId, ok: true, source: source.data };
-  } catch { /* Placement failed or the backend changed: the reply stays failed. */ }
-  finally {
-    try { yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_RESULT, reply)); }
-    catch { /* A retired main cannot receive it; its own timeout brings the editor back. */ }
+  } catch {
+    /* Placement failed or the backend changed: the reply stays failed. */
+  } finally {
+    try {
+      yield* call(() =>
+        window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_RESULT, reply),
+      );
+    } catch {
+      /* A retired main cannot receive it; its own timeout brings the editor back. */
+    }
   }
 }
 
@@ -546,7 +940,8 @@ export function* deleteEditorCapture(request: DockCaptureEditorDeleteRequest): S
     // Subscribe before dispatch: the canonical removal may complete synchronously.
     const changed = yield* actionChannel(
       (action: { type: string; payload?: unknown[] }) =>
-        (action.type === dockEvidenceImageRemoved.type || action.type === dockEvidenceClipChanged.type) ||
+        action.type === dockEvidenceImageRemoved.type ||
+        action.type === dockEvidenceClipChanged.type ||
         action.type === setComposerContextItems.type,
       buffers.sliding(1),
     );
@@ -600,34 +995,57 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
   yield* fork(function* prepareOpenedMedia(): SagaGenerator<void> {
     while (true) {
       const request = yield* take(preparation);
-      yield* fork(analyzeAndPublish, request.workspaceId, request.agentId, request.logicalId, request.authority);
+      yield* fork(
+        analyzeAndPublish,
+        request.workspaceId,
+        request.agentId,
+        request.logicalId,
+        request.authority,
+      );
       yield* fork(function* recognizeOpenedMedia(): SagaGenerator<void> {
         try {
-          yield* recognizeAndPersist(request.workspaceId, request.agentId, request.logicalId, request.authority, request.binding);
-        } catch { /* A retired/failed request must not cancel the root-owned worker. */ }
+          yield* recognizeAndPersist(
+            request.workspaceId,
+            request.agentId,
+            request.logicalId,
+            request.authority,
+            request.binding,
+          );
+        } catch {
+          /* A retired/failed request must not cancel the root-owned worker. */
+        }
       });
     }
   });
   const completed = yield* actionChannel(dockMediaEditSaveSettled, buffers.expanding());
-  yield* takeEveryByContextFIFO(dockMediaEditorOpenRequested,
-    ({ payload: [workspaceId, agentId] }: ReturnType<typeof dockMediaEditorOpenRequested>) => JSON.stringify([workspaceId, agentId]),
+  yield* takeEveryByContextFIFO(
+    dockMediaEditorOpenRequested,
+    ({ payload: [workspaceId, agentId] }: ReturnType<typeof dockMediaEditorOpenRequested>) =>
+      JSON.stringify([workspaceId, agentId]),
     function* (action) {
       const [workspaceId, agentId] = action.payload;
-      const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
-      try { yield* openEditor(action, preparation); }
-      catch {
+      const authority = getPrincipalActionContext(store.state),
+        binding = captureDockPlacementBinding();
+      try {
+        yield* openEditor(action, preparation);
+      } catch {
         // Source/placement errors keep the current draft. Only the conversation that asked,
         // still shown under the same principal and backend, is told; a stale request is not.
         const dock = store.state.dockConversation;
-        if (getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding) &&
-            dock.workspaceId === workspaceId && dock.agentId === agentId)
+        if (
+          getPrincipalActionContext(store.state) === authority &&
+          isDockBindingCurrent(binding) &&
+          dock.workspaceId === workspaceId &&
+          dock.agentId === agentId
+        )
           notify.warning(m.dock_captureEditor_openFailed_error());
       }
-    }, {});
+    },
+    {},
+  );
   yield* takeEveryByContextFIFO(
     dockMediaEditSaveRequested,
-    ({ payload: [, request, authority] }: SaveAction) =>
-      JSON.stringify([authority, request.pair]),
+    ({ payload: [, request, authority] }: SaveAction) => JSON.stringify([authority, request.pair]),
     persist,
     {},
   );
@@ -658,6 +1076,20 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
       bufferPolicy: {
         kind: 'lossless',
         rationale: 'Each bound removal requires a correlated result.',
+      },
+    },
+  );
+  yield* takeEveryFromElectronChannel<object>(
+    DOCK_CAPTURE_EDITOR_CHANNELS.ATTACHED,
+    function* (value) {
+      const parsed = attachedSchema.safeParse(value);
+      if (parsed.success) yield* returnAfterAttach(parsed.data);
+    },
+    {
+      bufferPolicy: {
+        kind: 'sliding',
+        limit: 1,
+        rationale: 'Only the newest attach decides where the dock returns.',
       },
     },
   );

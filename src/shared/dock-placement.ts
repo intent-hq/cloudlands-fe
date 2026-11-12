@@ -114,7 +114,12 @@ export interface DockDisplayGeometry {
 
 export const DEFAULT_DOCK_PLACEMENT: DockPlacement = { kind: 'notch', displayId: null };
 const DOCK_NOTCH_MIN_HEIGHT = 32;
-export const DOCK_NOTCH_MIN_WING_WIDTH = 36;
+/**
+ * A collapsed notch wing hugs its control: the mark's 28px grip button behind its 6px
+ * inset (the status wing grows from its dots, see dockCompactWingWidth). Native size,
+ * rendered shell and hit regions all derive from this one width.
+ */
+export const DOCK_NOTCH_MIN_WING_WIDTH = 34;
 export const DOCK_FLOATING_COMPACT_SIZE = { width: 224, height: 40 } as const;
 /** Conversation content size; horizontal shells add their compact header height. */
 export const DOCK_CONVERSATION_MIN_SIZE = { width: 320, height: 300 } as const;
@@ -400,9 +405,7 @@ export function dockWindowEnvelope(
       Math.max(
         surface.y + surface.height + margin,
         preview ? preview.y + preview.height : surface.y,
-        sideHoverEnvelope
-          ? display.workArea.y + display.workArea.height + panelMargin
-          : surface.y,
+        sideHoverEnvelope ? display.workArea.y + display.workArea.height + panelMargin : surface.y,
         sidePanel ? sidePanel.y + sidePanel.height + panelMargin : surface.y,
       ),
     ),

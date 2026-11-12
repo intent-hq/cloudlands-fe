@@ -54,7 +54,15 @@ vi.mock('../../../shared/main/window-appearance', () => ({
   getWindowTitleBarOptions: () => ({}),
 }));
 vi.mock('../../../main/fixed-zoom', () => ({ fixWebContentsZoom: () => {} }));
-vi.mock('../../../main/dock-window', () => ({ getDockWindow: () => io.dock }));
+vi.mock('../../../main/dock-window', () => ({
+  getDockWindow: () => io.dock,
+  adoptDockEditorHold: () => false,
+  beginDockEditorHold: () => false,
+  endDockEditorHold: () => {},
+  focusDockForEditorReturn: () => false,
+  releaseDockEditorHolds: () => {},
+  revealDockAfterEditor: () => {},
+}));
 vi.mock('../../../main/local-prefs', () => ({
   getDockMediaChoiceLocalPref: async () => null,
   setDockMediaChoiceLocalPref: async () => {},
@@ -212,11 +220,20 @@ describe('editor delete authority and save serialization', () => {
       const request = dock.webContents.sent.at(-1);
       expect(request.channel).toBe(C.RETAKE_REQUESTED);
       expect(await invoke(C.DELETE, editor, { openId })).toBe(false);
-      expect(await invoke(C.RETAKE_RESULT, dock, { requestId: request.payload.requestId, ok: false, error })).toBe(true);
+      expect(
+        await invoke(C.RETAKE_RESULT, dock, {
+          requestId: request.payload.requestId,
+          ok: false,
+          error,
+        }),
+      ).toBe(true);
       expect(await retaking).toEqual({ ok: false, error });
       expect(await invoke(C.GET, editor)).toMatchObject({ openId, attachmentId: 'file', source });
     }
-    expect(dock.webContents.sent.filter((message: { channel: string }) => message.channel === C.RETAKE_REQUESTED)).toHaveLength(2);
+    expect(
+      dock.webContents.sent.filter(
+        (message: { channel: string }) => message.channel === C.RETAKE_REQUESTED,
+      ),
+    ).toHaveLength(2);
   });
-
 });
