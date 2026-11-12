@@ -8,7 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
-import { NODE_LINK, setupNodesFixture, type NodesPreviewState } from '../../test/nodes-preview';
+import { setupNodesFixture, type NodesPreviewState } from '../../test/nodes-preview';
 import PairLinkField from './PairLinkField.svelte';
 
 let restore: (() => void) | null = null;
