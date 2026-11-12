@@ -111,7 +111,7 @@ export type DockAnnotationMediaAction =
   | 'discard-undo'
   | 'discard-confirm';
 
-export interface DockRecordingMarkArchive {
+interface DockRecordingMarkArchive {
   mark: DockMark;
   image: { id: string; width: number; height: number };
   included: boolean;

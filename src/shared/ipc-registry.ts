@@ -482,11 +482,11 @@ export const IPC_CHANNELS = {
     CONFIRM_DISCARD: 'dock-capture-editor:confirm-discard',
     /** editor → main: save this edit (DockMediaSaveRequest); resolves with the outcome. */
     SAVE: 'dock-capture-editor:save',
-    /** main → the opening dock send: persist this save (DockCaptureEditorSaveRequested). */
+    /** main → the opening dock send: persist this save ({ requestId, request: DockMediaSaveRequest }). */
     SAVE_REQUESTED: 'dock-capture-editor:save-requested',
     /** editor → main: capture the screenshot again (same mode); resolves with a candidate. */
     RETAKE: 'dock-capture-editor:retake',
-    /** main → the opening dock send: capture and place a candidate (DockCaptureEditorRetakeRequested). */
+    /** main → the opening dock send: capture and place a candidate ({ requestId, pair, expected }). */
     RETAKE_REQUESTED: 'dock-capture-editor:retake-requested',
     /** dock → main: keep the dock out of sight from a capture until its editor ends ({ token }). */
     HOLD_BEGIN: 'dock-capture-editor:hold-begin',
@@ -500,7 +500,7 @@ export const IPC_CHANNELS = {
     ATTACH_RETURN: 'dock-capture-editor:attach-return',
     /** dock → main: the placed candidate's canonical source, or failure (DockCaptureEditorRetakeResult). */
     RETAKE_RESULT: 'dock-capture-editor:retake-result',
-    /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */
+    /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdateSchema). */
     TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
     /** editor → main: start or stop dictating into one mark's note. */
     NOTE_DICTATION: 'dock-capture-editor:note-dictation',

@@ -983,7 +983,10 @@ function* retakeCapture(request: z.infer<typeof retakeSchema>): SagaGenerator<vo
   }
 }
 
-/** Remove through the same logical-id path as the Dock, never by a supplied file path. */
+/**
+ * Remove through the same logical-id path as the Dock, never by a supplied file path.
+ * @internal Direct saga seam for the capture-removal ownership contract tests.
+ */
 export function* deleteEditorCapture(request: DockCaptureEditorDeleteRequest): SagaGenerator<void> {
   const { workspaceId, agentId } = request.pair;
   let outcome: DockCaptureEditorDeleteResult['result'] = 'stale-source';

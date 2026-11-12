@@ -1,3 +1,4 @@
+import type { DockShortcutSelection, DockShortcutState } from '$shared/dock-shortcuts';
 import type { DockMediaSaveRequest, DockSavedMedia } from '$shared/dock-media-edit';
 import type { DockCaptureEditorSaveResult } from '$shared/dock-capture-editor';
 import type { DockMediaClipboardContent, DockPasteOrigin } from '$shared/dock-media-clipboard';
@@ -98,12 +99,12 @@ export const dockContextAutoDecisionRequested = createAction<
   [version: string, decision: 'yes' | 'no']
 >('dockConversation/contextAutoDecisionRequested');
 
-export const dockShortcutSelectionChanged = createAction<
-  [selection: import('$shared/dock-shortcuts').DockShortcutSelection | null]
->('dockConversation/shortcutSelectionChanged');
-export const dockShortcutChanged = createAction<
-  [state: import('$shared/dock-shortcuts').DockShortcutState | null]
->('dockConversation/shortcutChanged');
+export const dockShortcutSelectionChanged = createAction<[selection: DockShortcutSelection | null]>(
+  'dockConversation/shortcutSelectionChanged',
+);
+export const dockShortcutChanged = createAction<[state: DockShortcutState | null]>(
+  'dockConversation/shortcutChanged',
+);
 export const dockShortcutChosen = createAction<
   [workspaceId: string, scope?: import('$shared/dock-shortcuts').DockLinkScope]
 >('dockConversation/shortcutChosen');

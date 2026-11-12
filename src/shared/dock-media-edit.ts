@@ -16,11 +16,11 @@ export const DockMediaRectSchema = z
   .object({ x: finite, y: finite, w: finite.positive(), h: finite.positive() })
   .strict();
 export type DockMediaRect = z.infer<typeof DockMediaRectSchema>;
-export const DockMediaBlurRegionSchema = DockMediaRectSchema.extend({ id });
-export type DockMediaBlurRegion = z.infer<typeof DockMediaBlurRegionSchema>;
+const DockMediaBlurRegionSchema = DockMediaRectSchema.extend({ id });
+
 export const DOCK_MEDIA_BLUR_RADIUS = 16;
 export const DOCK_MEDIA_OUTPUT_VERSION = 2;
-export const DockMediaBlurStrokeSchema = z
+const DockMediaBlurStrokeSchema = z
   .object({
     id,
     radius: finite.positive().max(4096),
@@ -49,7 +49,7 @@ export function transformDockMediaBlurStroke(
     })),
   });
 }
-export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
+const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
   DockMediaRectSchema.extend({ kind: z.literal('rect') }),
   z.object({ kind: z.literal('point'), x: finite, y: finite }).strict(),
   z.object({ kind: z.literal('path'), points: z.array(point).min(1).max(4096) }).strict(),
@@ -146,7 +146,7 @@ export const DockMediaEditMarkSchema = z
   })
   .strict();
 export type DockMediaEditMark = z.infer<typeof DockMediaEditMarkSchema>;
-export const DockMediaBatchSchema = z
+const DockMediaBatchSchema = z
   .object({ id, atMs: ms, clearAtMs: ms.nullable() })
   .strict()
   .refine((batch) => batch.clearAtMs === null || batch.clearAtMs >= batch.atMs, 'Reversed batch');
@@ -331,7 +331,6 @@ export const DockMediaSaveRequestSchema = z
     'This edit requires an admitted output version',
   );
 export type DockMediaSaveRequest = z.infer<typeof DockMediaSaveRequestSchema>;
-export const DOCK_MEDIA_CHOICE_PREF = 'dock-media-last-saved-choice-v1';
 
 export type DockMediaOutputError =
   | 'stale-source'
@@ -756,21 +755,6 @@ export function applyDockMediaSave(
         ? { originalSource: media.originalSource ?? media.source, transcript: null }
         : {}),
       saved: { ...structuredClone(request.edit), revision: request.expectedEditRevision + 1 },
-    },
-  };
-}
-
-/** Reset cannot invent an empty baseline for an older attachment. */
-export function originalDockMediaEdit(
-  media: DockSavedMedia,
-): { source: DockMediaSource; edit: DockMediaEdit } | null {
-  const source = media.originalSource ?? media.source;
-  if (!source.capturedMarks) return null;
-  return {
-    source,
-    edit: {
-      ...defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null),
-      revision: media.saved?.revision ?? 0,
     },
   };
 }

@@ -12,7 +12,7 @@ export const DOCK_SHORTCUT_IDS = ['dock.focus', 'dock.capture', 'dock.record'] a
  * Former global dock shortcuts. A saved override for one is neither applied nor an error,
  * and it is kept as saved (never reset or deleted) when the dock shortcuts are written.
  */
-export const LEGACY_DOCK_SHORTCUT_IDS = ['dock.dictate', 'dock.related'] as const;
+const LEGACY_DOCK_SHORTCUT_IDS = ['dock.dictate', 'dock.related'] as const;
 export function isLegacyDockShortcutId(id: string): boolean {
   return (LEGACY_DOCK_SHORTCUT_IDS as readonly string[]).includes(id);
 }
@@ -21,7 +21,7 @@ export type DockShortcutOverrides = Partial<Record<DockShortcutId, string>>;
 /** The actions global shortcuts drive (dictate is a menu command only). */
 export type DockGlobalShortcutAction = 'focus' | 'capture' | 'record';
 export type DockShortcutBindings = Record<DockGlobalShortcutAction, string>;
-export type DockShortcutIssueCode =
+type DockShortcutIssueCode =
   | 'invalid'
   | 'duplicate'
   | 'app-conflict'
