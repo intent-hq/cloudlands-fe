@@ -1943,31 +1943,26 @@
           $workspaceAgents$,
           activeTab.ownerAgentName,
         )}
-        <Tooltip
-          class="min-w-0 max-w-[45%] shrink"
-          content={m.browser_embedded_ownerChip_tooltip({ name: ownerName })}
-          side="bottom"
-          delayDuration={300}
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          wrapContent={false}
+          class="panel-header-action-button"
+          aria-label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerName })}
+          tooltip={m.browser_tabNotice_agentControl_label({ name: ownerName })}
+          tooltipSide="bottom"
+          tooltipDelayDuration={300}
+          onclick={(event) => activeTab && openBrowserOwner(activeTab, event)}
+          data-browser-tab-agent-control={activeTab.ownerAgentId}
         >
-          <Button
-            variant="ghost-light"
-            size="sm"
-            wrapContent={false}
-            class="browser-owner-control h-9 min-w-9 max-w-full gap-1.5 px-1.5 text-muted-foreground hover:text-foreground"
-            aria-label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerName })}
-            onclick={(event) => activeTab && openBrowserOwner(activeTab, event)}
-            data-browser-tab-agent-control={activeTab.ownerAgentId}
+          <span
+            class="panel-header-leading-surface pointer-events-none flex shrink-0 items-center justify-center"
           >
-            <span class="panel-header-leading-surface flex shrink-0 items-center justify-center">
-              {#key activeTab.ownerAgentId}
-                <PanelHeaderAgentAvatar agentId={activeTab.ownerAgentId} />
-              {/key}
-            </span>
-            <span class="browser-owner-label min-w-0 truncate">
-              {m.browser_tabNotice_agentControl_label({ name: ownerName })}
-            </span>
-          </Button>
-        </Tooltip>
+            {#key activeTab.ownerAgentId}
+              <PanelHeaderAgentAvatar agentId={activeTab.ownerAgentId} />
+            {/key}
+          </span>
+        </Button>
       {/if}
 
       <!-- Right: all actions at the far edge in stable order. -->
@@ -2171,9 +2166,6 @@
     transform: rotate(270deg);
   }
   @container (max-width: 420px) {
-    .browser-owner-label {
-      display: none;
-    }
     .panel-header {
       padding-inline: 8px;
       gap: 4px;

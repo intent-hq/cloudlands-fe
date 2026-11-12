@@ -29,6 +29,11 @@ test('browser owner menu is keyboard accessible and viewport follows panel resiz
     .getByRole('button', { name: 'More', exact: true });
   const headerOwner = component.getByRole('button', { name: 'Open owning agent Browser agent' });
   await headerOwner.focus();
+  await expect(page.getByRole('tooltip')).toContainText('Controlled by Browser agent');
+  await testInfo.attach('browser-owner-tooltip', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await headerOwner.press('Enter');
   await expect(component).toHaveAttribute(
     'data-owner-request',

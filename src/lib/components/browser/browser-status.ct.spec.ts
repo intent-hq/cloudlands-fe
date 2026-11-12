@@ -21,6 +21,11 @@ test('host details follow disconnect and reconnect without losing recovery actio
   });
   const status = component.getByRole('button', { name: 'Runs on office-linux' });
   await status.focus();
+  await expect(page.getByRole('tooltip')).toContainText('office-linux');
+  await testInfo.attach('browser-host-tooltip', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await status.press('Enter');
   const details = page.locator('[data-slot="popover-content"]');
   await expect(details).toContainText('cookies and page state');

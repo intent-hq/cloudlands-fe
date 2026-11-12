@@ -50,18 +50,19 @@
         <Button
           {...props}
           variant="ghost-light"
-          size="sm"
+          size="icon-compact"
           wrapContent={false}
-          class="h-7 min-w-7 max-w-40 gap-1.5 px-1.5 {tone === 'error'
+          class={tone === 'error'
             ? 'text-danger'
             : tone === 'warning'
               ? 'text-warning-ink'
-              : 'text-muted-foreground'}"
+              : 'text-muted-foreground'}
           aria-label={ariaLabel}
           aria-describedby={descriptionId}
           tooltip={description}
           tooltipDisabled={open}
           tooltipSide="bottom"
+          tooltipDelayDuration={300}
         >
           <Fa
             icon={tone === 'error'
@@ -72,7 +73,6 @@
             size="xs"
             class="shrink-0"
           />
-          <span class="browser-status-label min-w-0 truncate">{label}</span>
         </Button>
       {/snippet}
     </Popover.Trigger>
@@ -99,11 +99,3 @@
     </Popover.Content>
   </Popover.Root>
 </span>
-
-<style>
-  @container browser-toolbar (max-width: 480px) {
-    .browser-status-label {
-      display: none;
-    }
-  }
-</style>
