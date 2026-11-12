@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 import noClassNameAssertionsInTests from './no-class-name-assertions-in-tests.js';
 import noFixedWaitTimeoutInTests from './no-fixed-wait-timeout-in-tests.js';
 import noHoverThenClickInCt from './no-hover-then-click-in-ct.js';
+import noSourceLiteralAssertionsInTests from './no-source-literal-assertions-in-tests.js';
 import noWaitForTimeoutInCt from './no-wait-for-timeout-in-ct.js';
+import noWallClockAssertionsInTests from './no-wall-clock-assertions-in-tests.js';
 
 const cases = [
   {
@@ -39,16 +41,32 @@ const cases = [
     prelude: '',
     offending: 'await waitFor(check, { timeout: 3000 });',
   },
+  {
+    name: 'no-wall-clock-assertions-in-tests',
+    rule: noWallClockAssertionsInTests,
+    filename: 'src/features/example/__tests__/example.test.ts',
+    prelude: '',
+    offending: 'expect(Date.now() - start).toBeLessThan(500);',
+  },
+  {
+    name: 'no-source-literal-assertions-in-tests',
+    rule: noSourceLiteralAssertionsInTests,
+    filename: 'src/features/example/__tests__/example.test.ts',
+    prelude: '',
+    offending: "readFileSync('../Foo.svelte', 'utf8');",
+  },
 ];
 
-const lint = ({ name, rule, filename, header = '' }, body) =>
+const lint = ({ name, rule, filename, header = '' }, body, allowed = 0) =>
   new Linter().verify(
     `${header}test('example', async () => {\n${body}\n});`,
     [
       {
         files: ['**/*.ts'],
         plugins: { intent: { rules: { [name]: rule } } },
-        rules: { [`intent/${name}`]: 'error' },
+        rules: {
+          [`intent/${name}`]: allowed ? ['error', { baseline: { [filename]: allowed } }] : 'error',
+        },
         linterOptions: { reportUnusedDisableDirectives: 'error' },
       },
     ],
@@ -66,6 +84,11 @@ describe.each(cases)('$name with reportUnusedDisableDirectives', (testCase) => {
   it('treats a directive over a finding as used', () => {
     const messages = lint(testCase, `${testCase.prelude}${directive}\n${testCase.offending}`);
     expect(messages).toEqual([]);
+  });
+
+  it('treats a directive as used without spending the allowance', () => {
+    const body = `${testCase.prelude}${directive}\n${testCase.offending}\n${testCase.offending}`;
+    expect(lint(testCase, body, 1)).toEqual([]);
   });
 
   it('reports a directive over a clean line as unused', () => {
