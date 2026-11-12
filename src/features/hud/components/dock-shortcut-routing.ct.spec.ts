@@ -3,13 +3,21 @@ import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 import type { DockShortcutContext } from '$shared/dock-shortcuts';
+import type {
+  DockForegroundObservation,
+  DockLinkedContextSnapshot,
+} from '$shared/dock-context-links';
 type Fixture = {
   shortcut(context: DockShortcutContext): void;
   close(): void;
+  context(value: DockForegroundObservation): void;
+  contextReady(): void;
+  contextSnapshot(): DockLinkedContextSnapshot | null;
   store: {
     state: {
       connections: { windowBackendId: string };
       dockConversation: {
+        workspaceId: string | null;
         shortcut?: { destination: string | null; context: DockShortcutContext };
         loading: boolean;
       };
@@ -48,6 +56,51 @@ async function home(page: import('@playwright/test').Page) {
   await expect(page.getByText('Foreground app unavailable')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Just once', exact: true })).toHaveCount(0);
 }
+const workspace = (page: import('@playwright/test').Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+        .dockConversation.workspaceId,
+  );
+async function observeOwner(
+  page: import('@playwright/test').Page,
+  workspaceId: string,
+  url: string,
+  version: string,
+) {
+  const identityKey = `url:${url}`;
+  const appId = 'synthetic.preview';
+  await page.evaluate(
+    ({ workspaceId, url, version, identityKey, appId }) => {
+      const h = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E;
+      h.contextReady();
+      h.context({
+        sequence: 1,
+        contextVersion: version,
+        backendId: h.store.state.connections.windowBackendId,
+        identityKey,
+        identityKind: 'url',
+        self: false,
+        appId,
+        appName: 'Synthetic preview',
+        url,
+        workspaceId,
+        icon: null,
+      });
+    },
+    { workspaceId, url, version, identityKey, appId },
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.contextSnapshot()
+            ?.linkedWorkspaceId,
+      ),
+    )
+    .toBe(workspaceId);
+  return { workspaceId, url, appId, identityKey, contextVersion: version };
+}
 for (const action of ['focus', 'capture', 'record', 'dictate'] as const) {
   test(`${action}: unresolved shortcut uses ordinary home row exactly once`, async ({
     mount,
@@ -63,6 +116,10 @@ for (const action of ['focus', 'capture', 'record', 'dictate'] as const) {
         ),
       )
       .toBe(false);
+    if (action === 'focus')
+      await page.evaluate(() =>
+        (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
+      );
     await send(page, action);
     await home(page);
     await page.screenshot({ path: info.outputPath(`${action}-home.png`) });
@@ -76,10 +133,20 @@ for (const action of ['focus', 'capture', 'record', 'dictate'] as const) {
         page.evaluate(
           () =>
             (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
-              .dockConversation.shortcut?.destination,
+              .dockConversation.workspaceId,
         ),
       )
       .toBe('conversation-wire');
+    if (action !== 'focus')
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+                .dockConversation.shortcut?.destination,
+          ),
+        )
+        .toBe('conversation-wire');
     const count = () =>
       page.evaluate((action) => {
         const l = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native
@@ -111,7 +178,7 @@ for (const action of ['focus', 'capture', 'record', 'dictate'] as const) {
   });
 }
 for (const cancel of ['close', 'escape', 'newer'] as const) {
-  test(`${cancel} cancels obsolete capture before a later ordinary row click`, async ({
+  test(`${cancel === 'newer' ? 'newer record supersedes capture after focus leaves it pending' : `${cancel} cancels obsolete capture before a later ordinary row click`}`, async ({
     mount,
     page,
   }, info) => {
@@ -137,7 +204,49 @@ for (const cancel of ['close', 'escape', 'newer'] as const) {
         .getByRole('button', { name: /Connected companion fixture/ })
         .focus();
       await page.keyboard.press('Escape');
-    } else await send(page, 'focus');
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+                .dockConversation.shortcut,
+          ),
+        )
+        .toBeNull();
+      const log = await page.evaluate(
+        () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native.log,
+      );
+      expect(log.captures).toBe(0);
+      expect(log.clips.started).toHaveLength(0);
+      await page.evaluate(() =>
+        (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
+      );
+    } else {
+      const pending = await page.evaluate(
+        () =>
+          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+            .dockConversation.shortcut?.context.id,
+      );
+      expect(pending).toBeTruthy();
+      await send(page, 'focus');
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+                .dockConversation.shortcut?.context.id,
+          ),
+        )
+        .toBe(pending);
+      expect(
+        await page.evaluate(
+          () =>
+            (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native.log
+              .captures,
+        ),
+      ).toBe(0);
+      await send(page, 'record');
+    }
     if (cancel !== 'newer') await send(page, 'focus');
     await home(page);
     await page
@@ -145,11 +254,22 @@ for (const cancel of ['close', 'escape', 'newer'] as const) {
       .getByRole('button', { name: /Connected companion fixture/ })
       .click();
     await expect(page.getByTestId('dock-conversation-surface')).toBeVisible();
+    if (cancel === 'newer')
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native.log
+                .clips.started.length,
+          ),
+        )
+        .toBe(1);
     const log = await page.evaluate(
       () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native.log,
     );
     expect(log.captures).toBe(0);
-    expect(log.clips.started).toHaveLength(0);
+    expect(log.clips.started).toHaveLength(cancel === 'newer' ? 1 : 0);
+    expect(log.speech.started).toHaveLength(0);
     await writeFile(info.outputPath(`${cancel}-cancelled.json`), JSON.stringify(log, null, 2));
   });
 }
@@ -187,19 +307,17 @@ test('known focused-tab owner skips home, while 340px fallback uses the existing
       ),
     )
     .toBe(false);
-  await send(page, 'focus', {
-    workspaceId: 'conversation-wire',
-    url: 'http://127.0.0.1:49954/synthetic',
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
-            .dockConversation.shortcut?.destination,
-      ),
-    )
-    .toBe('conversation-wire');
+  const owner = await observeOwner(
+    page,
+    'conversation-wire',
+    'http://127.0.0.1:49954/synthetic',
+    'known-preview-owner',
+  );
+  await send(page, 'focus', owner);
+  await expect.poll(() => workspace(page)).toBe('conversation-wire');
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
+  );
   await send(page, 'focus');
   await home(page);
   const row = page
@@ -221,7 +339,7 @@ test('known focused-tab owner skips home, while 340px fallback uses the existing
   );
 });
 
-test('explicit workspace survives close and missing context, newer choice replaces it, owned preview wins', async ({
+test('explicit choices stay manual after close, missing context retains selection, admitted owner follows', async ({
   mount,
   page,
 }, info) => {
@@ -235,6 +353,9 @@ test('explicit workspace survives close and missing context, newer choice replac
       ),
     )
     .toBe(false);
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
+  );
   await send(page, 'focus', { appId: 'synthetic.context' });
   await home(page);
   await page
@@ -246,16 +367,13 @@ test('explicit workspace survives close and missing context, newer choice replac
     (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
   );
   await send(page, 'focus');
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
-            .dockConversation.shortcut?.destination,
-      ),
-    )
-    .toBe('conversation-wire');
-  await expect(page.getByTestId('dock-overview')).toHaveCount(0);
+  await home(page);
+  expect(await workspace(page)).toBeNull();
+  await page
+    .getByTestId('dock-overview')
+    .getByRole('button', { name: /Connected companion fixture/ })
+    .click();
+  await expect.poll(() => workspace(page)).toBe('conversation-wire');
   await page.evaluate(() => {
     const h = (window as any).__dockComposerE2E;
     h.seedChoices(2);
@@ -267,30 +385,20 @@ test('explicit workspace survives close and missing context, newer choice replac
     .getByRole('button', { name: /Synthetic workspace 0/ })
     .click();
   await send(page, 'focus');
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
-            .dockConversation.shortcut?.destination,
-      ),
-    )
-    .toBe('choice-0');
-  await send(page, 'focus', { workspaceId: 'choice-1', url: 'http://127.0.0.1:49954/project/' });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
-            .dockConversation.shortcut?.destination,
-      ),
-    )
-    .toBe('choice-1');
+  await expect.poll(() => workspace(page)).toBe('choice-0');
+  const owner = await observeOwner(
+    page,
+    'choice-1',
+    'http://127.0.0.1:49954/project/',
+    'new-preview-owner',
+  );
+  await send(page, 'focus', owner);
+  await expect.poll(() => workspace(page)).toBe('choice-1');
   const evidence = await page.evaluate(() => {
     const h = (window as any).__dockComposerE2E;
     return {
       selection: h.store.state.dockConversation.shortcutSelection,
-      destination: h.store.state.dockConversation.shortcut.destination,
+      destination: h.store.state.dockConversation.workspaceId,
       native: h.native.log,
     };
   });
