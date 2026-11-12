@@ -514,3 +514,15 @@ export const selectDockLinkedContext = store.createSelector((state) => {
     autoSwitchEligible: false,
   };
 });
+
+/** Pair state observed by the conversation's draft-persistence lifetime. */
+export const selectDockDraftSynchronization = store.createSelector(
+  (state, workspaceId: string, agentId: string) => {
+    const id = dockEvidenceId(workspaceId, agentId);
+    return {
+      shared: state.chatDrafts.shared[id],
+      clearRevision: getItem(state.dockConversation.drafts, id)?.clearRevision ?? 0,
+      evidence: getItem(state.dockConversation.evidence, id),
+    };
+  },
+);

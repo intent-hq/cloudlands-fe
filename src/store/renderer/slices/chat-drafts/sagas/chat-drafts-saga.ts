@@ -105,8 +105,12 @@ export function* chatDraftsSaga(
 
   function* schedule(action: ReturnType<typeof chatDraftSaveScheduled>): SagaGenerator<void> {
     const [ownerId, requestId, submitted] = action.payload;
-    const authority = sync?.authority() ?? getPrincipalActionContext(store.state);
-    if (submitted.authority && submitted.authority !== authority) {
+    const authority = sync
+      ? sync.authority()
+      : submitted.authority
+        ? getPrincipalActionContext(store.state)
+        : undefined;
+    if ((sync && !authority) || (submitted.authority && submitted.authority !== authority)) {
       yield* put(chatDraftSaveSettled(ownerId, requestId, 'failed', 'draft-authority-changed'));
       return;
     }
@@ -215,7 +219,7 @@ export function* chatDraftsSaga(
     try {
       if (
         request.authority &&
-        request.authority !== (sync?.authority() ?? getPrincipalActionContext(store.state))
+        request.authority !== (sync ? sync.authority() : getPrincipalActionContext(store.state))
       )
         throw new Error('draft-authority-changed');
       if (sync) {
