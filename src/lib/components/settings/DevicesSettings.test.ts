@@ -286,9 +286,6 @@ describe('DevicesSettings', () => {
     await openAction('Connect');
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
-    await fireEvent.click(
-      await screen.findByRole('menuitem', { name: new RegExp(m.machineSetup_addMenu_label()) }),
-    );
     expect(dispatchSpy.mock.calls.map(([action]) => (action as { type: string }).type)).toContain(
       'machineSetup/opened',
     );

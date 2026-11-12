@@ -362,68 +362,84 @@
     </section>
   {/if}
 
+  {#snippet addLabel()}
+    <Fa icon={faPlus} class="mr-1.5" size="xs" />
+    {m.settings_devices_add_label()}
+  {/snippet}
+
   <div class="flex justify-end">
-    <Menu.Root bind:open={addMenuOpen}>
-      <Menu.Trigger>
-        {#snippet child({ props })}
-          <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
-            <Fa icon={faPlus} class="mr-1.5" size="xs" />
-            {m.settings_devices_add_label()}
-          </Button>
-        {/snippet}
-      </Menu.Trigger>
-      <Menu.Content align="end" class="w-80">
-        <Menu.Item
-          onSelect={() => appStore.dispatch(machineSetupOpened())}
-          data-testid="add-machine-setup"
-        >
-          {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
-          <span class="flex min-w-0 flex-col">
-            <span>{m.machineSetup_addMenu_label()}</span>
-            <span class="type-caption text-muted-foreground"
-              >{m.machineSetup_addMenu_description()}</span
-            >
-          </span>
-        </Menu.Item>
-        {#if canAddCloud && $cloudKinds$.length === 1}
-          <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
-            {#snippet leading()}<Fa icon={faCloud} />{/snippet}
+    {#if !canAddCloud}
+      <!-- Only one way to add a machine: open the wizard, no one-item menu. -->
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="add-machine-menu"
+        onclick={() => appStore.dispatch(machineSetupOpened())}
+      >
+        {@render addLabel()}
+      </Button>
+    {:else}
+      <Menu.Root bind:open={addMenuOpen}>
+        <Menu.Trigger>
+          {#snippet child({ props })}
+            <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
+              {@render addLabel()}
+            </Button>
+          {/snippet}
+        </Menu.Trigger>
+        <Menu.Content align="end" class="w-80">
+          <Menu.Item
+            onSelect={() => appStore.dispatch(machineSetupOpened())}
+            data-testid="add-machine-setup"
+          >
+            {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
             <span class="flex min-w-0 flex-col">
-              <span>{m.cloudMachines_addMenu_e2b_label()}</span>
+              <span>{m.machineSetup_addMenu_label()}</span>
               <span class="type-caption text-muted-foreground"
-                >{m.cloudMachines_addMenu_e2b_description()}</span
+                >{m.machineSetup_addMenu_description()}</span
               >
             </span>
           </Menu.Item>
-        {:else if canAddCloud}
-          <Menu.Sub bind:open={addCloudOpen}>
-            <Menu.SubTrigger data-testid="add-cloud-machine">
+          {#if $cloudKinds$.length === 1}
+            <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
               {#snippet leading()}<Fa icon={faCloud} />{/snippet}
               <span class="flex min-w-0 flex-col">
-                <span>{m.cloudMachines_addMenu_cloud_label()}</span>
+                <span>{m.cloudMachines_addMenu_e2b_label()}</span>
                 <span class="type-caption text-muted-foreground"
-                  >{m.cloudMachines_addMenu_cloud_description()}</span
+                  >{m.cloudMachines_addMenu_e2b_description()}</span
                 >
               </span>
-            </Menu.SubTrigger>
-            <Menu.SubContent class="w-80">
-              {#each $cloudKinds$ as kind (kind)}
-                <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
-                  <span class="flex min-w-0 flex-col">
-                    <span>{cloudProviderName(kind)}</span>
-                    <span class="type-caption text-muted-foreground"
-                      >{kind === 'northflank'
-                        ? m.cloudMachines_addMenu_northflank_description()
-                        : m.cloudMachines_addMenu_e2b_description()}</span
-                    >
-                  </span>
-                </Menu.Item>
-              {/each}
-            </Menu.SubContent>
-          </Menu.Sub>
-        {/if}
-      </Menu.Content>
-    </Menu.Root>
+            </Menu.Item>
+          {:else}
+            <Menu.Sub bind:open={addCloudOpen}>
+              <Menu.SubTrigger data-testid="add-cloud-machine">
+                {#snippet leading()}<Fa icon={faCloud} />{/snippet}
+                <span class="flex min-w-0 flex-col">
+                  <span>{m.cloudMachines_addMenu_cloud_label()}</span>
+                  <span class="type-caption text-muted-foreground"
+                    >{m.cloudMachines_addMenu_cloud_description()}</span
+                  >
+                </span>
+              </Menu.SubTrigger>
+              <Menu.SubContent class="w-80">
+                {#each $cloudKinds$ as kind (kind)}
+                  <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
+                    <span class="flex min-w-0 flex-col">
+                      <span>{cloudProviderName(kind)}</span>
+                      <span class="type-caption text-muted-foreground"
+                        >{kind === 'northflank'
+                          ? m.cloudMachines_addMenu_northflank_description()
+                          : m.cloudMachines_addMenu_e2b_description()}</span
+                      >
+                    </span>
+                  </Menu.Item>
+                {/each}
+              </Menu.SubContent>
+            </Menu.Sub>
+          {/if}
+        </Menu.Content>
+      </Menu.Root>
+    {/if}
   </div>
 
   {#if removeError}

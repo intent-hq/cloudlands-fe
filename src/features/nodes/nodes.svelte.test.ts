@@ -87,12 +87,12 @@ describe('Machines and Nodes', () => {
 });
 
 describe('Add machine menu', () => {
-  it('starts with Set up a new machine, which opens the wizard', async () => {
+  it('opens the wizard directly when there is no cloud choice', async () => {
     seed('no-nodes');
-    render(DevicesSettings, { initialAddMenuOpen: true });
-    await fireEvent.click(await screen.findByTestId('add-machine-setup'));
+    render(DevicesSettings);
+    await fireEvent.click(await screen.findByTestId('add-machine-menu'));
     expect(dispatched().map((a) => a.type)).toContain('machineSetup/opened');
-    expect(screen.queryByTestId('add-machine-paste-link')).toBeNull();
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 

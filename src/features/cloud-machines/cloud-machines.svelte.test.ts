@@ -41,6 +41,13 @@ const dispatched = () =>
     store.dispatch as unknown as { mock: { calls: [{ type: string; payload: unknown[] }][] } }
   ).mock.calls.map(([action]) => action);
 
+/** No cloud choice: Add machine opens the wizard at once, with no one-item menu. */
+async function opensWizardDirectly(view: ReturnType<typeof render>) {
+  await fireEvent.click(await view.findByTestId('add-machine-menu'));
+  expect(dispatched().map((a) => a.type)).toContain('machineSetup/opened');
+  expect(view.queryByTestId('add-machine-setup')).toBeNull();
+}
+
 describe('Add machine', () => {
   it('opens a menu with E2B while E2B is supported and not set up', () => {
     seed('add-menu');
@@ -51,15 +58,15 @@ describe('Add machine', () => {
 
   it('has no E2B item when the backend has no cloud machines', async () => {
     seed('unsupported');
-    const view = render(DevicesSettings, { initialAddMenuOpen: true });
-    await view.findByTestId('add-machine-setup');
+    const view = render(DevicesSettings);
+    await opensWizardDirectly(view);
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
   });
 
   it('hides E2B setup, the E2B row and its sandboxes while the Labs flag is off', async () => {
     seed('labs-off');
-    const view = render(DevicesSettings, { initialAddMenuOpen: true });
-    await view.findByTestId('add-machine-setup');
+    const view = render(DevicesSettings);
+    await opensWizardDirectly(view);
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
     expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
@@ -67,8 +74,8 @@ describe('Add machine', () => {
 
   it('has no E2B item once E2B is set up, and the E2B row shows', async () => {
     seed('connected');
-    const view = render(DevicesSettings, { initialAddMenuOpen: true });
-    await view.findByTestId('add-machine-setup');
+    const view = render(DevicesSettings);
+    await opensWizardDirectly(view);
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).not.toBeNull();
   });
@@ -311,6 +318,7 @@ describe('named E2B entries under Nodes', () => {
     seed('entries');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
     expect(await view.findByTestId('add-cloud-e2b')).toBeTruthy();
+    expect(view.getByTestId('add-machine-setup')).toBeTruthy();
   });
 
   it('asks a new entry for a free name, then sends it with the key', async () => {
