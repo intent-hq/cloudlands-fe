@@ -3074,8 +3074,9 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
  * on it. The same response also refreshes the stored tailcat tunnel endpoint
- * (`tcAddress`, PROTOCOL §12.3) used as a connect-race candidate, so a
- * daemon gaining/losing its tunnel is reflected without re-pairing, and the
+ * (`tcAddress`, PROTOCOL §12.3) used as a connect-race candidate when it is
+ * present; an omitted one keeps the last known address (see
+ * {@link extractTcAddress}), and the
  * candidate-host list (`localIps`) for records whose "detect all backend IPs"
  * option is on — `server.pairingInfo` (the {@link refreshRemoteHosts} path)
  * is local-only on the daemon, so this is how REMOTE records converge on the
@@ -3087,8 +3088,7 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * daemon too old to report it — e.g. the machine's daemon was replaced/downgraded) is a
  * conclusive "unknown" and clears any previously-stored flag to `null`, so a
  * stale `true` never keeps offering Update against a daemon whose capability
- * is no longer known (and likewise a stale `tcAddress` never keeps dialing a
- * tunnel the daemon no longer advertises). Only a FAILED request
+ * is no longer known. Only a FAILED request
  * (unreachable, method unknown, store write error) is fail-soft: swallowed
  * with a warn, stored value kept as-is. Results that arrive after the
  * backend's client was disposed are discarded (monorepo#2221). Never called
@@ -3174,7 +3174,9 @@ async function captureRemoteUpdateSupportedOriginal(id: string, owner?: PoolOwne
         return;
       }
       const changed = await connectionsStore.setUpdateSupported(id, supported);
-      const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
+      // The tc address is stable: a response without one (tunnel sidecar
+      // down or restarting) keeps the last known route.
+      const tcChanged = tcAddress !== null && (await connectionsStore.setTcAddress(id, tcAddress));
       // Re-check after the awaited writes above: a disconnect/replacement
       // during them must not let the disposed client's answer overwrite the
       // replacement connection's candidate list.
@@ -3295,9 +3297,8 @@ export function refreshLocalUpdateSupported(): Promise<void> {
  * host list keeps whatever candidates it already has, and the multi-host
  * reconnect racing still applies. When the daemon does answer, the persisted
  * list tracks the backend's current interfaces on every connect, and the same
- * response also refreshes the stored tunnel tc address (PROTOCOL §12.3) —
- * conclusively, so a successful answer without the field clears a stale
- * address. The every-connect `system.status` capture
+ * response also refreshes the stored tunnel tc address (PROTOCOL §12.3) when
+ * it carries one. The every-connect `system.status` capture
  * ({@link captureRemoteUpdateSupported}) is what actually refreshes remote
  * records today: it covers the tc address for records whose detectHosts is
  * off (this path early-returns for those) AND the candidate-host list from
@@ -3308,17 +3309,21 @@ export function refreshLocalUpdateSupported(): Promise<void> {
 function refreshRemoteHostsOwned(
   id: string,
   parent?: PoolOwner,
-  refreshTunnel = false,
+  tunnelEnabled?: boolean,
 ): Promise<void> {
   return poolWork('refreshRemoteHosts', parent, (owner) =>
-    refreshRemoteHostsOriginal(id, owner, refreshTunnel),
+    refreshRemoteHostsOriginal(id, owner, tunnelEnabled),
   );
 }
 
+/**
+ * `tunnelEnabled` is set after the user toggled the remote's tunnel: turning
+ * it off is the one conclusive signal that clears the stored tc address.
+ */
 async function refreshRemoteHostsOriginal(
   id: string,
   owner?: PoolOwner,
-  refreshTunnel = false,
+  tunnelEnabled?: boolean,
 ): Promise<void> {
   try {
     // Snapshot this backend's pooled client BEFORE the first await: a
@@ -3331,14 +3336,17 @@ async function refreshRemoteHostsOriginal(
     // Invited routes come from authenticated system.status, never owner-only pairingInfo.
     if (isGuest) return;
     const detectHosts = await connectionsStore.getDetectHosts(id);
-    if (!detectHosts && !refreshTunnel) return;
+    if (!detectHosts && tunnelEnabled === undefined) return;
     const result = await poolRequest(owner, client, 'server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
       if (ips && detectHosts) await connectionsStore.setHosts(id, ips);
-      const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
+      const tcAddress = tunnelEnabled === false ? null : extractTcAddress(result);
+      const tcChanged =
+        (tcAddress !== null || tunnelEnabled === false) &&
+        (await connectionsStore.setTcAddress(id, tcAddress));
       if ((ips && detectHosts) || tcChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
@@ -4907,7 +4915,7 @@ function connectionTunnelOperation(id: string, enabled?: boolean): Promise<Conne
     };
     if (enabled === undefined) return getConnectionTunnel(request);
     const result = await setConnectionTunnel(request, enabled);
-    if (result.supported) await refreshRemoteHostsOwned(id, owner, true);
+    if (result.supported) await refreshRemoteHostsOwned(id, owner, result.enabled);
     return result;
   });
 }
@@ -5500,7 +5508,10 @@ async function performPublishSelfBackendOriginal(owner?: PoolOwner): Promise<Pub
   }
   // Publishing is explicit user intent to sync this machine, so force-clear
   // any per-backend exclusion on the record (mirrors clearing the marker).
-  const record = await upsertSelfRecord({ ...info, port: info.port }, { syncExcluded: false });
+  const record = await upsertSelfRecord(
+    { ...info, port: info.port },
+    { syncExcluded: false, request: (method) => localClient.request(method) },
+  );
   await setStoredSelfFingerprint(info.certFingerprint);
   await setAutoPublishSuppressed(false);
   await broadcastConnectionsChangedOwned(owner);
@@ -5526,7 +5537,7 @@ async function performPublishSelfBackendOriginal(owner?: PoolOwner): Promise<Pub
  */
 async function upsertSelfRecord(
   info: SelfPairingInfo & { port: number },
-  opts: { syncExcluded?: boolean } = {},
+  opts: { syncExcluded?: boolean; request: (method: string) => Promise<unknown> },
 ): Promise<ConnectionRecord> {
   const host = info.localIps[0] ?? info.tcAddress;
   if (!host) {
@@ -5553,12 +5564,23 @@ async function upsertSelfRecord(
   if (hostname) {
     await connectionsStore.setHostname(record.id, hostname);
   }
-  // Persist the daemon's tunnel tc address conclusively: pairingInfo omits
-  // it whenever the tunnel is down, so `null` clears a stale address and a
-  // rotation propagates to the user's other devices via keychain sync.
-  await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  // pairingInfo also omits the tc address while the sidecar restarts, and a
+  // clear syncs to every device. The address is stable, so clear it only
+  // when this machine's tunnel setting is off; an unreadable setting keeps it.
+  if (info.tcAddress !== null || (await isLocalTunnelOff(opts.request))) {
+    await connectionsStore.setTcAddress(record.id, info.tcAddress);
+  }
   await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, info.deviceKind);
   return record;
+}
+
+async function isLocalTunnelOff(request: (method: string) => Promise<unknown>): Promise<boolean> {
+  try {
+    const tunnel = await getConnectionTunnel(request);
+    return !tunnel.supported || !tunnel.enabled;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -5611,7 +5633,10 @@ async function refreshSelfBackendOriginal(owner?: PoolOwner): Promise<RefreshSel
   if (!published) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  await upsertSelfRecord({ ...info, port: info.port });
+  await upsertSelfRecord(
+    { ...info, port: info.port },
+    { request: (method) => localClient.request(method) },
+  );
   await setStoredSelfFingerprint(info.certFingerprint);
   await broadcastConnectionsChangedOwned(owner);
   return { refreshed: true } satisfies RefreshSelfResult;

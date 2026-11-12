@@ -828,43 +828,34 @@ describe('backend.ipc remote tcAddress capture on hello', () => {
     disconnectBackendClient('conn-remote');
   });
 
-  it('clears the stored address to null when system.status omits tcAddress', async () => {
-    // PROTOCOL §5: the field is omitted — never null — when the tunnel is
-    // disabled or the sidecar is down; a successful flagless response is a
-    // conclusive "no tunnel" (see extractTcAddress for the trade-off note).
-    systemStatus.value = { exactUpdateSupported: true }; // no tcAddress field
+  it('keeps the stored address when system.status omits or garbles tcAddress', async () => {
+    // PROTOCOL §5: the field is omitted while the tunnel sidecar is down,
+    // including its restart backoff. The address is stable, so a missing or
+    // malformed field must not erase the last known route.
+    systemStatus.value = { exactUpdateSupported: true };
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
     const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
 
+    for (const status of [
+      { exactUpdateSupported: true },
+      { exactUpdateSupported: true, tcAddress: 42 },
+      { exactUpdateSupported: true, tcAddress: '   ' },
+    ]) {
+      mockSetUpdateSupported.mockClear();
+      systemStatus.value = status;
+      onHelloResult({ server: { version: '0.9.0' } });
+      await vi.waitFor(() => {
+        expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', true);
+      });
+    }
+    systemStatus.value = { exactUpdateSupported: true, tcAddress: 'tc7f2a91.tailcat.net' };
     onHelloResult({ server: { version: '0.9.0' } });
     await vi.waitFor(() => {
-      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+      expect(mockSetTcAddress).toHaveBeenCalled();
     });
-
-    disconnectBackendClient('conn-remote');
-  });
-
-  it('clears to null on a malformed (non-string or empty) tcAddress', async () => {
-    systemStatus.value = { tcAddress: 42 };
-    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
-    await connectBackendClient('conn-remote');
-    const poolCtor = ctorOptions[ctorOptions.length - 1];
-    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
-
-    onHelloResult({ server: { version: '0.9.0' } });
-    await vi.waitFor(() => {
-      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
-    });
-
-    // Whitespace-only clears the same way.
-    mockSetTcAddress.mockClear();
-    systemStatus.value = { tcAddress: '   ' };
-    onHelloResult({ server: { version: '0.9.0' } });
-    await vi.waitFor(() => {
-      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
-    });
+    expect(mockSetTcAddress.mock.calls).toEqual([['conn-remote', 'tc7f2a91.tailcat.net']]);
 
     disconnectBackendClient('conn-remote');
   });
@@ -952,7 +943,11 @@ describe('backend.ipc remote localIps capture on hello', () => {
   });
 
   it('drops the host write when the pooled client is replaced during the preceding store writes', async () => {
-    systemStatus.value = { exactUpdateSupported: true, localIps: ['172.96.161.227'] };
+    systemStatus.value = {
+      exactUpdateSupported: true,
+      tcAddress: 'tc7f2a91.tailcat.net',
+      localIps: ['172.96.161.227'],
+    };
     // Hold the tcAddress write open so the disconnect lands mid-capture,
     // AFTER the initial stale-client check already passed.
     let releaseTcAddress!: () => void;
