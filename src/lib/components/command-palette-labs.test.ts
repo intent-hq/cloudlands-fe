@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   setDock: vi.fn(),
   electron: { value: true },
-  groupByProject: vi.fn<() => (() => void) | undefined>(),
+  groupByProject: vi.fn<() => { run?: () => void; disabledReason?: string }>(),
 }));
 vi.mock('$lib/dock-lab', () => ({ setDockLabEnabled: mocks.setDock }));
 vi.mock('$lib/utils/platform-capabilities', () => ({
@@ -128,7 +128,9 @@ describe('command palette Labs commands', () => {
     expect(isLabCommandHidden('group-tabs-by-project', false, false, false, false)).toBe(true);
     expect(isLabCommandHidden('group-tabs-by-project', false, false, false, true)).toBe(false);
     const group = vi.fn();
-    mocks.groupByProject.mockReturnValueOnce(group).mockReturnValueOnce(undefined);
+    mocks.groupByProject
+      .mockReturnValueOnce({ run: group })
+      .mockReturnValueOnce({ disabledReason: 'nothing to group' });
     expect(runLabCommand('group-tabs-by-project')).toBe(true);
     expect(runLabCommand('group-tabs-by-project')).toBe(true);
     expect(group).toHaveBeenCalledTimes(1);

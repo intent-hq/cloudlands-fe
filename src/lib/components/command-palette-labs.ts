@@ -68,7 +68,7 @@ export function isSshMachineSetupCommandHidden(commandId: string, enabled: boole
 
 export function runLabCommand(commandId: string): boolean {
   if (commandId === GROUP_TABS_BY_PROJECT) {
-    groupTabsByProjectAction()?.();
+    groupTabsByProjectAction().run?.();
     return true;
   }
   if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {

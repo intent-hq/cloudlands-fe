@@ -20,14 +20,19 @@ import {
   workspaceTabGroupDisplayName,
 } from './workspace-tab-group-labels';
 
+/** Group by project: `run` when it would change the tabs, else why it is unavailable. */
+export interface WorkspaceTabGroupByProject {
+  run?: () => void;
+  disabledReason?: string;
+}
+
 export interface WorkspaceTabGroupEntriesOptions {
   groups: readonly WorkspaceTabGroup[];
   workspaceId: string;
   onCreateGroup: () => void;
   onAddToGroup: (groupId: string) => void;
   onRemoveFromGroup: () => void;
-  /** Omitted when grouping by project would change nothing. */
-  onGroupByProject?: () => void;
+  groupByProject?: WorkspaceTabGroupByProject;
 }
 
 /** Tab context-menu entries that put a tab into, or take it out of, a group. */
@@ -37,7 +42,7 @@ export function buildWorkspaceTabGroupEntries({
   onCreateGroup,
   onAddToGroup,
   onRemoveFromGroup,
-  onGroupByProject,
+  groupByProject,
 }: WorkspaceTabGroupEntriesOptions): SidebarMenuEntry[] {
   const currentGroup = findWorkspaceTabGroup(groups, workspaceId);
   const otherGroups = groups.filter((group) => group !== currentGroup);
@@ -69,16 +74,21 @@ export function buildWorkspaceTabGroupEntries({
       onClick: onRemoveFromGroup,
     });
   }
-  if (onGroupByProject) entries.push(groupByProjectEntry(onGroupByProject));
+  if (groupByProject) entries.push(groupByProjectEntry(groupByProject));
   return entries;
 }
 
-function groupByProjectEntry(onClick: () => void): SidebarMenuEntry {
+function groupByProjectEntry({
+  run,
+  disabledReason,
+}: WorkspaceTabGroupByProject): SidebarMenuEntry {
   return {
     id: 'tab-group-by-project',
     label: m.layout_workspaceTabGroup_groupByProject_label(),
     icon: faFolderTree,
-    onClick,
+    onClick: run ?? (() => {}),
+    disabled: !run,
+    disabledReason: run ? undefined : disabledReason,
   };
 }
 
@@ -88,8 +98,7 @@ export interface WorkspaceTabGroupMenuOptions {
   onSetColor: (color: WorkspaceTabGroupColor) => void;
   onUngroup: () => void;
   onCloseGroup: () => void;
-  /** Omitted when grouping by project would change nothing. */
-  onGroupByProject?: () => void;
+  groupByProject?: WorkspaceTabGroupByProject;
 }
 
 /** Context menu for a group chip. */
@@ -99,7 +108,7 @@ export function buildWorkspaceTabGroupMenu({
   onSetColor,
   onUngroup,
   onCloseGroup,
-  onGroupByProject,
+  groupByProject,
 }: WorkspaceTabGroupMenuOptions): SidebarMenuEntry[] {
   return [
     {
@@ -123,7 +132,7 @@ export function buildWorkspaceTabGroupMenu({
       })),
     },
     { type: 'separator' },
-    ...(onGroupByProject ? [groupByProjectEntry(onGroupByProject)] : []),
+    ...(groupByProject ? [groupByProjectEntry(groupByProject)] : []),
     {
       id: 'tab-group-ungroup',
       label: m.layout_workspaceTabGroup_ungroup_label(),

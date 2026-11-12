@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -25,12 +26,13 @@ import {
 import {
   buildWorkspaceTabGroupEntries,
   buildWorkspaceTabGroupMenu,
+  type WorkspaceTabGroupByProject,
 } from './workspace-tab-group-actions';
 import { resolveWorkspaceTabGroupToggle } from './workspace-tab-group-items';
 import { resolveWorkspaceTabProjects } from './workspace-tab-projects';
 
-/** Regroups the open tabs by project, or undefined when that would change nothing. */
-export function groupTabsByProjectAction(): (() => void) | undefined {
+/** Regroups the open tabs by project, or explains why that would change nothing. */
+export function groupTabsByProjectAction(): WorkspaceTabGroupByProject {
   const state = appStore.state;
   const groups = selectWorkspaceTabGroups.select(state);
   const projects = resolveWorkspaceTabProjects(selectWorkspaceItems.select(state));
@@ -41,8 +43,13 @@ export function groupTabsByProjectAction(): (() => void) | undefined {
   const unchanged =
     JSON.stringify(layout.workspaceStacks) === JSON.stringify(stacks) &&
     membership(layout.groups) === membership(groups);
-  if (!layout.groups.some(isWorkspaceTabProjectGroup) || unchanged) return undefined;
-  return () => appStore.dispatch(groupWorkspaceTabsByProject(projects));
+  if (!layout.groups.some(isWorkspaceTabProjectGroup)) {
+    return { disabledReason: m.layout_workspaceTabGroup_groupByProject_noProjects_reason() };
+  }
+  if (unchanged) {
+    return { disabledReason: m.layout_workspaceTabGroup_groupByProject_alreadyGrouped_reason() };
+  }
+  return { run: () => appStore.dispatch(groupWorkspaceTabsByProject(projects)) };
 }
 
 export type WorkspaceTabMenuTarget =
@@ -105,7 +112,7 @@ export function createWorkspaceTabGroupController({
         onCreateGroup: () => createGroupForTab(workspaceId),
         onAddToGroup: (groupId) => appStore.dispatch(addWorkspaceTabToGroup(workspaceId, groupId)),
         onRemoveFromGroup: () => appStore.dispatch(removeWorkspaceTabFromGroup(workspaceId)),
-        onGroupByProject: groupTabsByProjectAction(),
+        groupByProject: groupTabsByProjectAction(),
       });
       return [...groupEntries, { type: 'separator' }, ...entries];
     },
@@ -118,7 +125,7 @@ export function createWorkspaceTabGroupController({
         onSetColor: (color) => appStore.dispatch(updateWorkspaceTabGroup(group.id, { color })),
         onUngroup: () => appStore.dispatch(ungroupWorkspaceTabGroup(group.id)),
         onCloseGroup: () => closeWorkspaceTabs([...group.workspaceIds]),
-        onGroupByProject: groupTabsByProjectAction(),
+        groupByProject: groupTabsByProjectAction(),
       });
     },
   };

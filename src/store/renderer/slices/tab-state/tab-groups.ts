@@ -171,7 +171,7 @@ export function isWorkspaceTabProjectGroup(group: WorkspaceTabGroup): boolean {
 
 /**
  * Sorts stacks so each project's tabs sit together, in order of each project's
- * first tab, and rebuilds one group per project that has two or more tabs.
+ * first tab, and rebuilds one group per project, even for a single tab.
  * Groups made by hand keep their tabs and move as one unit. A stack follows
  * its first tab. Project groups from an earlier run keep their name and color.
  */
@@ -196,7 +196,7 @@ export function layoutWorkspaceTabsByProject(
   const planned = [...buckets].flatMap(([id, stacks]) => {
     const workspaceIds = stacks.flat();
     const project = projects[workspaceIds[0] ?? ''];
-    if (!project || !id.startsWith(PROJECT_GROUP_PREFIX) || workspaceIds.length < 2) return [];
+    if (!project || !id.startsWith(PROJECT_GROUP_PREFIX)) return [];
     return [{ id, project, workspaceIds, previous: previous.get(id) }];
   });
   const colored = [

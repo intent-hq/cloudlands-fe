@@ -387,7 +387,7 @@ describe('layoutWorkspaceTabsByProject', () => {
     c1: { key: 'acme/docs', name: 'docs' },
   };
 
-  it('sorts tabs by first appearance and groups projects with two or more tabs', () => {
+  it('sorts tabs by first appearance and groups every project, even a single tab', () => {
     const layout = layoutWorkspaceTabsByProject(
       [['b1'], ['x'], ['a1'], ['c1'], ['b2'], ['a2']],
       [],
@@ -399,6 +399,7 @@ describe('layoutWorkspaceTabsByProject', () => {
     ).toEqual([
       ['api', 'blue', ['b1', 'b2']],
       ['app', 'green', ['a1', 'a2']],
+      ['docs', 'purple', ['c1']],
     ]);
   });
 
@@ -432,13 +433,18 @@ describe('layoutWorkspaceTabsByProject', () => {
     expect(layout.groups.map(({ id, color, workspaceIds }) => [id, color, workspaceIds])).toEqual([
       ['project:acme/api', 'blue', ['b2', 'b3']],
       ['manual', 'green', ['a1', 'b1']],
+      ['project:acme/app', 'purple', ['a2']],
+      ['project:acme/docs', 'orange', ['c1']],
     ]);
   });
 
   it('moves a stack with the project of its first tab', () => {
     const layout = layoutWorkspaceTabsByProject([['a1', 'b1'], ['b2'], ['a2']], [], projects);
     expect(layout.workspaceStacks).toEqual([['a1', 'b1'], ['a2'], ['b2']]);
-    expect(layout.groups.map((candidate) => candidate.workspaceIds)).toEqual([['a1', 'b1', 'a2']]);
+    expect(layout.groups.map((candidate) => candidate.workspaceIds)).toEqual([
+      ['a1', 'b1', 'a2'],
+      ['b2'],
+    ]);
   });
 });
 
