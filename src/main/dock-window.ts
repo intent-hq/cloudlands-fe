@@ -13,6 +13,7 @@ import {
   isPointInDockPointerRegions,
   type DockPointerRect,
 } from '../shared/dock-layout';
+import { DOCK_CAPTURE_EDITOR_CHANNELS } from '../shared/dock-capture-editor';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import {
   getBackendIdForWindow,
@@ -151,6 +152,12 @@ function supportsDockPointerForwarding(platform: NodeJS.Platform): boolean {
   return platform === 'darwin' || platform === 'win32';
 }
 
+let pointerPublication = 0;
+/** Receipt for the current document's most recent accepted region publication. */
+export function getDockPointerPublication(window: BrowserWindow): number {
+  return window === dockWindowRef ? pointerPublication : -1;
+}
+
 const lastForwardedMove = new WeakMap<BrowserWindow, { x: number; y: number }>();
 const pointerPresence = new WeakMap<
   BrowserWindow,
@@ -181,6 +188,7 @@ export function setDockPointerRegions(
   if (window !== dockWindowRef || window.isDestroyed()) return false;
   const snapshot = placementController?.getSnapshot();
   if (snapshot && state.revision !== snapshot.revision) return false;
+  if (pointerState !== state) pointerPublication += 1;
   pointerState = state;
   try {
     if (recordingHidden(window)) {
@@ -331,6 +339,10 @@ export async function updateDockPlacement(
     return getDockPlacementSnapshot(window);
   }
   if (command.action === 'release') {
+    if (command.editorCompact) {
+      revealCompactedEditorDock(window, command.editorCompact);
+      return getDockPlacementSnapshot(window);
+    }
     // A transient close: the renderer collapsed; only hand the keyboard back. Electron's
     // blur on macOS orders the window out and back, which blanks the dock: hand it back
     // natively first (the dock stays on screen) and blur only if that is unavailable.
@@ -728,18 +740,18 @@ function canRevealDock(window: BrowserWindow): boolean {
     !window.isDestroyed() &&
     !sessionPaused &&
     !captureHiddenWindows.has(window) &&
-    !editorHeld(window) &&
+    !editorHidden(window) &&
     rendererReady.has(window)
   );
 }
 
 /**
  * Capture → editor handoff. The dock stays out of sight from a capture (or the start of a
- * recording) that opens the media editor, and for every editor session, until that editor
- * ends: a hold, by token, that capture, selection and recording releases do not clear. Each
- * hold belongs to the dock document (and strict binding) that asked; the editor session that
- * opened adopts it. The dock document stays mounted throughout (its draft and save workers
- * keep running). A gone owner releases its holds without revealing anything.
+ * recording) until its admitted editor acknowledges a painted compact dock. Capture,
+ * selection and recording releases do not clear that hold. Each token belongs to the dock
+ * document and strict binding that asked; the editor session adopts it. Ownership remains
+ * until the editor ends. The document stays mounted, keeping its draft and save workers.
+ * A gone owner releases its holds without revealing anything.
  */
 interface EditorHold {
   window: BrowserWindow;
@@ -748,10 +760,14 @@ interface EditorHold {
   openId: string | null;
   /** A screenshot's hold: its admitted capture takes the dock out of sight (see below). */
   screenshot?: boolean;
+  compactReady?: boolean;
+  adoption?: number;
 }
 const editorHolds = new Map<string, EditorHold>();
-function editorHeld(window: BrowserWindow): boolean {
-  for (const hold of editorHolds.values()) if (hold.window === window) return true;
+let editorAdoption = 0;
+function editorHidden(window: BrowserWindow): boolean {
+  for (const hold of editorHolds.values())
+    if (hold.window === window && !hold.compactReady) return true;
   return false;
 }
 function ownerCurrent(hold: Pick<EditorHold, 'window' | 'sender' | 'binding'>): boolean {
@@ -762,6 +778,10 @@ function ownerCurrent(hold: Pick<EditorHold, 'window' | 'sender' | 'binding'>): 
     hold.window.webContents === hold.sender &&
     getStrictBackendBindingForWebContents(hold.sender) === hold.binding
   );
+}
+function notifyEditorEnded(hold: EditorHold): void {
+  if (!hold.openId || !ownerCurrent(hold)) return;
+  hold.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, { endedOpenId: hold.openId });
 }
 /** Forget every hold of a gone owner (document reload, backend switch, window closed). */
 function dropOwnerHolds(match: (hold: EditorHold) => boolean): void {
@@ -839,9 +859,53 @@ export function adoptDockEditorHold(
   )
     return false;
   hold.openId = openId;
+  hold.compactReady = false;
+  hold.adoption = ++editorAdoption;
   if (owner.window.isVisible() && !recordingHidden(owner.window)) owner.window.hide();
   return true;
 }
+/** The admitted editor's renderer finished collapsing and publishing its compact surface. */
+function revealCompactedEditorDock(
+  window: BrowserWindow,
+  receipt: { openId: string; revision: number; pointerVersion: number },
+): boolean {
+  let latest: EditorHold | undefined;
+  for (const hold of editorHolds.values())
+    if (
+      hold.window === window &&
+      hold.openId !== null &&
+      (!latest || (hold.adoption ?? 0) > (latest.adoption ?? 0))
+    )
+      latest = hold;
+  if (
+    !latest ||
+    latest.openId !== receipt.openId ||
+    !ownerCurrent(latest) ||
+    latest.compactReady ||
+    recordingHidden(window) ||
+    captureHiddenWindows.has(window) ||
+    sessionPaused ||
+    !rendererReady.has(window) ||
+    placementController?.getSnapshot()?.revision !== receipt.revision ||
+    pointerState.revision !== receipt.revision ||
+    pointerPublication !== receipt.pointerVersion ||
+    !pointerState.active ||
+    pointerState.regions.length === 0
+  )
+    return false;
+  // A different capture still preparing must not be revealed by an older editor's ACK.
+  for (const hold of editorHolds.values())
+    if (hold.window === window && hold.openId === null) return false;
+  // Older adopted sessions may still own pending Attach/retarget decisions. Their ownership
+  // remains intact; the same document has now painted one compact surface for all of them.
+  for (const hold of editorHolds.values())
+    if (hold.window === window && hold.openId !== null) hold.compactReady = true;
+  if (!canRevealDock(window)) return false;
+  if (!window.isVisible()) window.showInactive();
+  window.webContents.invalidate();
+  return true;
+}
+
 /** No editor took this hold (refused, failed, cancelled capture): only its owner ends it. */
 export function endDockEditorHold(
   token: string,
@@ -862,6 +926,7 @@ export function releaseDockEditorHolds(openId: string, reveal: boolean): void {
   let owner: EditorHold | null = null;
   for (const [token, hold] of editorHolds)
     if (hold.openId === openId) {
+      notifyEditorEnded(hold);
       editorHolds.delete(token);
       owner = hold;
     }
@@ -1064,7 +1129,7 @@ function restoreRecordingHide(): void {
   if (!held || held.window.isDestroyed()) return;
   const { window } = held;
   // A capture → editor handoff keeps it out of sight: hidden first, so nothing paints.
-  if (editorHeld(window)) window.hide();
+  if (editorHidden(window)) window.hide();
   // Focusable again, never focused: the person's current window keeps the keyboard.
   window.setFocusable(true);
   window.setOpacity(1);
@@ -1186,7 +1251,7 @@ export function focusDockWindow(
     return;
   }
   // An editor holding the dock (or a capture handing off to one) blocks every other press.
-  if (editorHeld(window)) return;
+  if (editorHidden(window)) return;
   dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();

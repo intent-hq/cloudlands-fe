@@ -41,6 +41,7 @@
   let disposed = false;
   let lastWorkspace: string | null = null;
   let initialFocusPending = true;
+  let lastComposerOnMount = false;
   // A historical Focus Dock request must not steal focus on a later icon click.
   // svelte-ignore state_referenced_locally
   let lastFocusRequest = focusRequest;
@@ -121,7 +122,12 @@
       const changed = id !== lastWorkspace;
       // A switch to the conversation a click asked for focuses its composer too.
       const explicitFocus =
-        request !== lastFocusRequest || ((initialFocusPending || changed) && composerOnMount);
+        request !== lastFocusRequest ||
+        ((initialFocusPending || changed || !lastComposerOnMount) && composerOnMount);
+      // The surface may mount before its owner's keyboard-open signal arrives in the
+      // same Svelte update. Consume that rising intent even if the request was present
+      // at mount; otherwise Attach parks on Back and never reaches the prompt.
+      lastComposerOnMount = composerOnMount;
       initialFocusPending = false;
       lastFocusRequest = request;
       lastWorkspace = id;
@@ -133,7 +139,9 @@
         if (!live()) return;
         const composer = explicitFocus ? composerOf() : null;
         if (composer) {
-          composer.focus({ preventScroll: true });
+          // A typing key also raises the keyboard-open signal. Never move focus from
+          // its editor to this wrapper while the remaining keystrokes are arriving.
+          if (!composer.contains(document.activeElement)) composer.focus({ preventScroll: true });
           return;
         }
         // Focus parked on Back by the app is not a keyboard move: no focus ring for it.

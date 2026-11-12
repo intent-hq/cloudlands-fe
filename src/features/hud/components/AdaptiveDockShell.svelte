@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { useDockEditorCompact } from './dock-editor-compact.svelte';
+  import type { DockShellProps } from './dock-shell-props';
   import '$lib/styles/dock-tokens.css';
-  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Logo from '$lib/components/Logo.svelte';
   import { activateIntentFromDock } from '$features/hud/dock-context-menu';
@@ -10,9 +12,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import type { DockPointerRect } from '$shared/dock-layout';
-  import type { DockPlacementSnapshot, DockPlacementCommand } from '$shared/dock-placement';
-  import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
-  import type { DockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
+  import type { DockPlacementCommand } from '$shared/dock-placement';
   import { createDockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { openDockWorkspace, openDockAssistant } from '$features/hud/dock-navigation';
   import {
@@ -31,7 +31,6 @@
   import DockCompanionContent from './DockCompanionContent.svelte';
   import DockEdgeConversation from './DockEdgeConversation.svelte';
   import type { DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
-  import type { DockRecordingIndicator as RecordingState } from '$features/hud/utils/dock-recording-indicator';
   import DockRecordingIndicator from './DockRecordingIndicator.svelte';
   import DockUpdateStatus from './DockUpdateStatus.svelte';
   import { dockStatusGroups } from '$features/hud/utils/dock-status-groups';
@@ -40,7 +39,6 @@
   import DockActionFeedback from './DockActionFeedback.svelte';
   import DockShellSilhouette from './DockShellSilhouette.svelte';
   import DockMachineMenu from './DockMachineMenu.svelte';
-  import type { DockMachineOption } from './dock-machine-types';
   let {
     workspaces,
     olderWorkspaces = [],
@@ -57,6 +55,7 @@
     onPlacementCommand,
     focusRequest = 0,
     closeRequest = 0,
+    editorCompactRequest = null,
     sideDefaultWorkspaceId = null,
     placementError = false,
     dragStartResult,
@@ -69,38 +68,7 @@
     conversationWorkspaceId = null,
     onOpenConversation,
     onHomeDismiss,
-  }: {
-    workspaces: DockWorkspaceView[];
-    olderWorkspaces?: DockWorkspaceView[];
-    recording?: RecordingState | null;
-    inputLive?: boolean;
-    recordingStopping?: boolean;
-    onStopRecording?: () => void;
-    machines?: DockMachineOption[];
-    machineId?: string;
-    machineSwitching?: string | null;
-    machineError?: boolean;
-    onMachine?: (id: string) => void;
-    conversation?: Snippet;
-    conversationWorkspaceId?: string | null;
-    onOpenConversation?: (workspaceId: string) => void;
-    onCloseConversation?: () => void;
-    onHomeDismiss?: () => void;
-    staticData?: boolean;
-    placement: DockPlacementSnapshot;
-    onPlacementCommand: (command: DockPlacementCommand) => void;
-    focusRequest?: number;
-    /** Increments when the open shortcut is pressed again: close as Escape would. */
-    closeRequest?: number;
-    /** On a side, the chat the open shortcut returns to (open, last, else first). */
-    sideDefaultWorkspaceId?: string | null;
-    placementError?: Parameters<typeof dockPlacementFailureMessage>[0];
-    dragStartResult?: { id: number; token: string | null } | null;
-    resizeStartResult?: { id: number; token: string | null } | null;
-    onOpenWorkspace?: (id: string) => void | Promise<void>;
-    onOpenAssistant?: () => void | Promise<void>;
-    pointerController?: DockPointerRegionController;
-  } = $props();
+  }: DockShellProps = $props();
   // svelte-ignore state_referenced_locally
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pointer-region state controller, not a domain-data request
   const pointerRegion = pointerController ?? createDockPointerRegionController();
@@ -625,6 +593,38 @@
       else shortcutOpenRequest += 1;
     });
   });
+  useDockEditorCompact(
+    () => ({
+      request: editorCompactRequest,
+      revision: placement.revision,
+      blocked:
+        disposed ||
+        placement.captureHidden ||
+        dragging ||
+        nativeMenuOpen ||
+        inputLive ||
+        !!recording,
+      compact:
+        !expanded &&
+        !conversationVisible &&
+        !sidePreviewOpen &&
+        !edgeState.held &&
+        !edgeState.shell &&
+        !shellMotion.surfaceExpanded &&
+        !shellMotion.contentVisible &&
+        shellMotion.reveal === 0 &&
+        shellMotion.settled,
+    }),
+    () => {
+      dismiss();
+      if (sidePreviewOpen) sideCloseRequest += 1;
+    },
+    () => {
+      publishRegions();
+      return pointerRegion.flush?.() ?? Promise.resolve(null);
+    },
+    command,
+  );
   onMount(() => {
     reducedMotion = prefersReducedMotion();
     const stopMotion = onReducedMotionChange((value) => {

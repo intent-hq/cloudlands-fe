@@ -2,6 +2,7 @@
 import { goto } from '$app/navigation';
 import { faFile } from '@fortawesome/free-solid-svg-icons';
 import { openDevConsole } from '$features/dev-console/dev-console-client';
+import { groupTabsByProjectAction } from '$lib/components/layout/workspace-tab-group-controller';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -27,12 +28,10 @@ import {
   setStatsOverlayOpen,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { prefillForRepo } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
 import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import { runLabCommand } from './command-palette-labs';
 
 const logger = createLogger('CommandPalette');
 
@@ -54,22 +53,18 @@ export function runPaletteCommand(commandId: string, context: PaletteCommandCont
     navigateToSettings({ tab: settingsCommand.settingsTab });
     return true;
   }
-  if (runLabCommand(commandId)) return true;
   switch (commandId) {
     case 'new-workspace':
       if (selectWorkspaceCreationVisible.select(appStore.state)) {
         appStore.dispatch(setShowCreateModal(true));
       }
       return true;
+    case 'group-tabs-by-project':
+      groupTabsByProjectAction().run?.();
+      return true;
     case 'settings':
       appStore.dispatch(setShowCreateModal(false));
       navigateToSettings();
-      return true;
-    case 'enable-experimental-remote-agents':
-      appStore.dispatch(setLabsRemoteAgentsEnabled(true));
-      return true;
-    case 'disable-experimental-remote-agents':
-      appStore.dispatch(setLabsRemoteAgentsEnabled(false));
       return true;
     case 'new-agent':
       if (workspaceId && !context.hidesAgentLifecycleActions) {

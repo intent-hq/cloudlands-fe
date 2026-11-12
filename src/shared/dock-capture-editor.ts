@@ -404,3 +404,6 @@ export const DockCaptureEditorDeleteResultSchema = z
   })
   .strict();
 export type DockCaptureEditorDeleteResult = z.infer<typeof DockCaptureEditorDeleteResultSchema>;
+
+/** Owner-only CHANGED payload: retire a pending compact handoff for this editor. */
+export const DockCaptureEditorEndedSchema = z.object({ endedOpenId: z.string().uuid() }).strict();

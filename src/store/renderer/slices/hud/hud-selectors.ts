@@ -1563,3 +1563,29 @@ export const selectDockMachineSwitch = store.createSelector((state) => ({
   pending: state.hud.dockMachineSwitching,
   error: state.hud.dockMachineSwitchError,
 }));
+
+/** An editor collapse belongs only to its original conversation lifetime and authority. */
+export const selectDockEditorCompactRequest = store.createSelector((state) => {
+  const request = state.hud.dockEditorCompactRequest;
+  const dock = state.dockConversation;
+  const evidence =
+    dock.workspaceId && dock.agentId
+      ? getItem(dock.evidence, JSON.stringify([dock.workspaceId, dock.agentId]))
+      : null;
+  const inputLive =
+    !!dock.nativeSpeech.activeId ||
+    !!evidence?.annotation ||
+    evidence?.clips.some((clip) => clip.status === 'recording') ||
+    state.hardwareConsole.pttRecording ||
+    state.hardwareConsole.voiceTranscribing;
+  return request &&
+    !inputLive &&
+    state.hud.active &&
+    request.conversationGeneration === dock.generation &&
+    request.authority === getPrincipalActionContext(state) &&
+    request.backendId === state.connections.windowBackendId &&
+    request.workspaceId === state.dockConversation.workspaceId &&
+    request.agentId === state.dockConversation.agentId
+    ? request
+    : null;
+});

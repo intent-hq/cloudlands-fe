@@ -152,6 +152,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['agent-features', 'Agent Features', 'Agent feature settings.', 'agent-behavior'],
     ['font-style', 'Font style', 'Font style settings.', 'display'],
     ['language', 'Language', 'Application language settings.', 'display'],
+    ['labs', 'Labs', 'Experimental feature switches.', 'advanced'],
     ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'advanced'],
     ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
     ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],

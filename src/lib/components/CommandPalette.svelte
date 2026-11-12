@@ -32,13 +32,8 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import {
-    selectLabsRemoteAgentsEnabled,
-    selectLabsPlainFolderWorkspacesEnabled,
-    selectLabsBrowserAccessEnabled,
-    selectLabsTabGroupsEnabled,
-    selectLabsCloudMachinesEnabled,
-    selectLabsSshMachineSetupEnabled,
     selectLabsMultiplayerEnabled,
+    selectLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
@@ -109,13 +104,6 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import {
-    isLabCommandHidden,
-    isMachineRailCommandHidden,
-    isSshMachineSetupCommandHidden,
-  } from './command-palette-labs';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
-  import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -159,13 +147,7 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
-  const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
-  const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
-  const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
-  const machineRailEnabled$ = selectMachineRailEnabled();
-  const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
-  const labsSshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -189,18 +171,7 @@
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
         !(!$canCreate$ && command.id === 'new-workspace') &&
-        !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        !isMachineRailCommandHidden(command.id, $machineRailEnabled$) &&
-        !isSshMachineSetupCommandHidden(command.id, $labsSshMachineSetup$) &&
-        !isLabCommandHidden(
-          command.id,
-          $dockLabEnabled,
-          $labsPlainFolders$,
-          $labsBrowserAccess$,
-          $labsTabGroups$,
-          $labsCloudMachines$,
-        ),
+        !(!$labsTabGroups$ && command.id === 'group-tabs-by-project'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);

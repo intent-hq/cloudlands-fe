@@ -17,6 +17,7 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
+  DockEditorCompactIntent,
   DockPlacementCommand,
   DockPlacementFailure,
   DockPlacementSnapshot,
@@ -199,6 +200,15 @@ export interface HudState {
   dockFocusRequest: number;
   /** Counts "close as Escape would" requests (the open shortcut pressed again). */
   dockCloseRequest: number;
+  dockEditorCompactRequest:
+    | (DockEditorCompactIntent & {
+        conversationGeneration: number;
+        workspaceId: string;
+        agentId: string;
+        authority: string;
+        backendId: string | null;
+      })
+    | null;
   dockMachineSwitching: string | null;
   dockMachineSwitchError: boolean;
 }
@@ -228,6 +238,7 @@ export const initialState: HudState = {
   dockResizeStartResult: null,
   dockFocusRequest: 0,
   dockCloseRequest: 0,
+  dockEditorCompactRequest: null,
   dockMachineSwitching: null,
   dockMachineSwitchError: false,
 };
@@ -256,6 +267,21 @@ export const dockMachineSwitchFinished = createAction<[backendId: string, failed
 
 export const dockFocusRequested = createAction('hud/dockFocusRequested');
 export const dockCloseRequested = createAction('hud/dockCloseRequested');
+export const dockEditorCompactCancelled = createAction<[openId: string]>(
+  'hud/dockEditorCompactCancelled',
+);
+export const dockEditorCompactRequested = createAction<
+  [
+    {
+      openId: string;
+      conversationGeneration: number;
+      workspaceId: string;
+      agentId: string;
+      authority: string;
+      backendId: string | null;
+    },
+  ]
+>('hud/dockEditorCompactRequested');
 
 // ── Actions ──
 
@@ -549,3 +575,17 @@ hudReducer.with(dockResizeStartResolved, (state, { payload: [token] }) => {
     dockResizeStartResult: { id: (state.dockResizeStartResult?.id ?? 0) + 1, token },
   };
 });
+
+hudReducer.with(dockEditorCompactRequested, (state, { payload: [request] }) => ({
+  ...state,
+  dockEditorCompactRequest: {
+    ...request,
+    requestId: (state.dockEditorCompactRequest?.requestId ?? 0) + 1,
+  },
+}));
+
+hudReducer.with(dockEditorCompactCancelled, (state, { payload: [openId] }) =>
+  state.dockEditorCompactRequest?.openId === openId
+    ? { ...state, dockEditorCompactRequest: null }
+    : state,
+);

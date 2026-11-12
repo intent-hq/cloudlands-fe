@@ -1,5 +1,7 @@
+import type { DockEditorCompactIntent } from '$shared/dock-placement';
 import {
   getDockCompactNotchSize,
+  type DockPlacementCommand,
   type DockPlacementSnapshot,
   type DockDisplayGeometry,
   type DockShape,
@@ -25,6 +27,8 @@ export interface DockRailPreviewProps {
   failOpenOnce?: boolean;
   focusRequest?: number;
   closeRequest?: number;
+  editorCompactRequest?: DockEditorCompactIntent | null;
+  onEditorCompactReady?: (command: DockPlacementCommand) => void;
   sideDefaultWorkspaceId?: string | null;
   placementError?: boolean;
   floatingDisplay?: DockDisplayGeometry;
