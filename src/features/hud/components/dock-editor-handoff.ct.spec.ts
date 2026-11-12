@@ -49,15 +49,29 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
         return true;
       }
       if (ch === 'dock-capture-editor:open') {
+        const openId = crypto.randomUUID();
         (window as any).__ipc.push({
           ch,
           token: payload?.holdToken ?? null,
           kind: payload?.kind ?? null,
           at: performance.now(),
+          openId,
+          attachmentId: payload?.attachmentId ?? null,
+          sourceId: payload?.source?.id ?? null,
+          sourceRevision: payload?.source?.revision ?? null,
         });
         return (window as any).__openOk
-          ? { ok: true, openId: crypto.randomUUID() }
+          ? { ok: true, openId }
           : { ok: false, error: 'unavailable' };
+      }
+      if (ch === 'dock-capture-editor:attach-return') {
+        (window as any).__ipc.push({
+          ch,
+          token: payload?.openId ?? null,
+          kind: String(payload?.accept),
+          at: performance.now(),
+        });
+        return payload?.accept === true;
       }
       return inner(ch, payload);
     };
@@ -220,43 +234,42 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   receipts.recordingAutoEnded = { holdAtStart: true, openCarriesHold: true, ended: false };
 
-  // 4. Attach: main returns the dock to exactly that conversation; the prompt takes the keyboard.
-  const source = await page.evaluate(() => {
-    const all: any[] = Object.values(
-      (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map ?? {},
-    );
-    const image = all.flatMap((x) => x?.images ?? []).find((i: any) => i?.media?.source);
-    return image
-      ? {
-          attachmentId: image.media.source.attachmentId,
-          id: image.media.source.id,
-          revision: image.media.source.revision,
-        }
-      : null;
-  });
-  expect(source).not.toBeNull();
-  const attached = (revision: number) =>
+  // 4. Attach: main asks the owner to validate while the dock is still held; only a valid,
+  // current session's Attach is accepted, then the dock returns to that exact conversation
+  // and its (empty) prompt takes the keyboard.
+  const opens = (await ipc()).filter((r: any) => r.ch === 'dock-capture-editor:open') as any[];
+  const latest = opens[opens.length - 1];
+  const older = opens[0];
+  const attached = (row: any, revision: number) =>
     page.evaluate(
-      ({ pair, source, revision }) =>
+      ({ pair, row, revision }) =>
         (window as any).__dockComposerE2E.fixture.emit('dock-capture-editor:attached', {
-          openId: crypto.randomUUID(),
+          openId: row.openId,
           workspaceId: pair.workspaceId,
           agentId: pair.agentId,
-          attachmentId: source!.attachmentId,
-          sourceId: source!.id,
+          attachmentId: row.attachmentId,
+          sourceId: row.sourceId,
           sourceRevision: revision,
         }),
-      { pair, source, revision },
+      { pair, row, revision },
     );
-  // Stale (a different source revision): nothing moves.
+  const answers = async () =>
+    (await ipc()).filter((r) => r.ch === 'dock-capture-editor:attach-return');
   await page.evaluate(() => (window as any).__dockComposerE2E.close());
   await expect.poll(open).toBeNull();
-  await attached(source!.revision + 99);
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a stale attach must not open anything
-  await page.waitForTimeout(800);
+  // An older session (a newer editor opened since): refused, nothing moves.
+  await attached(older, older.sourceRevision);
+  await expect.poll(async () => (await answers()).length).toBe(1);
+  expect((await answers())[0]).toMatchObject({ token: older.openId, kind: 'false' });
+  // The current session with a different source revision (stale): refused.
+  await attached(latest, latest.sourceRevision + 99);
+  await expect.poll(async () => (await answers()).length).toBe(2);
+  expect((await answers())[1]).toMatchObject({ token: latest.openId, kind: 'false' });
   expect(await open()).toBeNull();
-  // Current: back to the conversation, prompt focused.
-  await attached(source!.revision);
+  // The current session, current source: accepted, then the exact conversation and prompt.
+  await attached(latest, latest.sourceRevision);
+  await expect.poll(async () => (await answers()).length).toBe(3);
+  expect((await answers())[2]).toMatchObject({ token: latest.openId, kind: 'true' });
   await expect.poll(open).toBe(pair.workspaceId);
   await expect
     .poll(() =>
@@ -270,7 +283,9 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     .toBe(true);
   await page.screenshot({ path: info.outputPath('17-editor-attach-returned.png') });
   receipts.attach = {
-    staleIgnored: true,
+    olderSessionRefused: true,
+    staleSourceRefused: true,
+    validatedBeforeReturn: true,
     returnedTo: pair.workspaceId,
     composerFocused: true,
     emptyComposer: true,

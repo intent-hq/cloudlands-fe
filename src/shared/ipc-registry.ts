@@ -494,6 +494,8 @@ export const IPC_CHANNELS = {
     HOLD_END: 'dock-capture-editor:hold-end',
     /** main → the opening dock send: its editor attached (DockCaptureEditorAttached). */
     ATTACHED: 'dock-capture-editor:attached',
+    /** dock → main: the owner validated (or refused) the return for that attach ({ openId, accept }). */
+    ATTACH_RETURN: 'dock-capture-editor:attach-return',
     /** dock → main: the placed candidate's canonical source, or failure (DockCaptureEditorRetakeResult). */
     RETAKE_RESULT: 'dock-capture-editor:retake-result',
     /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */

@@ -19,6 +19,7 @@ import {
   DOCK_CAPTURE_EDITOR_ROUTE,
   DockCaptureEditorCloseSchema,
   DockCaptureEditorHoldSchema,
+  DockCaptureEditorAttachReturnSchema,
   type DockCaptureEditorAttached,
   DockCaptureEditorDeleteResultSchema,
   type DockCaptureEditorDeleteRequest,
@@ -55,10 +56,10 @@ import {
   adoptDockEditorHold,
   beginDockEditorHold,
   endDockEditorHold,
+  dockEditorHoldOwner,
   focusDockForEditorReturn,
   getDockWindow,
   releaseDockEditorHolds,
-  revealDockAfterEditor,
 } from '../../../main/dock-window';
 import {
   getDockMediaChoiceLocalPref,
@@ -244,8 +245,15 @@ function dropPending(): void {
   pending = null;
 }
 
-/** The session ending by the editor's Attach: its hold ends without revealing the dock. */
-let attachingOpenId: string | null = null;
+/**
+ * How the current session is ending: a close or cancel brings its owner's dock back; an
+ * attach keeps the hold until the owner validates the return; a retired owner releases
+ * without revealing anything (its replacement is not ours to show).
+ */
+let ending: 'close' | 'attach' | 'retired' = 'close';
+/** When each admitted OPEN started (startup phase timing; cleared at the first reveal). */
+const openedAt = new Map<string, number>();
+let openedAtMark = 0;
 
 function endSession(): void {
   const ended = session;
@@ -253,8 +261,8 @@ function endSession(): void {
   session = null;
   // The editor's dock hold ends with it: Close/Cancel brings the dock back as it was; an
   // Attach returns to its conversation instead (see the close handler).
-  if (ended)
-    releaseDockEditorHolds(ended.snapshot.openId, attachingOpenId !== ended.snapshot.openId);
+  if (ended && ending !== 'attach')
+    releaseDockEditorHolds(ended.snapshot.openId, ending === 'close');
   // Its saves can no longer reach the editor: they end as failed (the dock may still
   // finish writing; nothing here claims they were cancelled).
   // The editor is going: its note dictation stops (nobody is left to receive it).
@@ -274,12 +282,12 @@ function endSession(): void {
   }
 }
 
-function closeEditor(attach = false): void {
-  attachingOpenId = attach ? (session?.snapshot.openId ?? null) : null;
+function closeEditor(mode: 'close' | 'attach' | 'retired' = 'close'): void {
+  ending = mode;
   try {
     closeEditorNow();
   } finally {
-    attachingOpenId = null;
+    ending = 'close';
   }
 }
 function closeEditorNow(): void {
@@ -425,6 +433,11 @@ function bringEditorForward(window: BrowserWindow): void {
 
 function revealEditor(window: BrowserWindow): void {
   if (editor !== window || !usable(window) || !session || window.isVisible()) return;
+  // Startup phase timing (OPEN admitted → editor shown), for the editor-delay reports.
+  const admittedAt = openedAt.get(session.snapshot.openId);
+  if (admittedAt !== undefined)
+    logger.info('Capture editor revealed', { msSinceOpen: Date.now() - admittedAt });
+  openedAt.delete(session.snapshot.openId);
   noteDockCaptureEditorFocused();
   window.show();
   window.focus();
@@ -477,11 +490,21 @@ async function open(
   )
     return unavailable();
 
+  const owner = { window: dock, sender: event.sender, binding };
+  openedAtMark = Date.now();
+  /** Every admitted editor holds its owner's dock: the capture's token, else one of main's. */
+  const holdDockFor = (id: string): void => {
+    if (holdToken && adoptDockEditorHold(holdToken, owner, id)) return;
+    adoptDockEditorHold(randomUUID(), owner, id);
+    // A pre-capture token this session could not adopt: its owner's own hold, now ended.
+    if (holdToken) endDockEditorHold(holdToken, event.sender, binding);
+  };
   const openId = randomUUID();
+  openedAt.set(openId, openedAtMark);
   // Its owner gone (the dock's document or binding retired), a session ends: as the
   // current one, the editor closes; as a pending one, it is dropped.
   const stopWatching = onStrictBackendBindingRetired(event.sender, () => {
-    if (session?.snapshot.openId === openId) closeEditor();
+    if (session?.snapshot.openId === openId) closeEditor('retired');
     else if (pending?.kind === 'retarget' && pending.next.snapshot.openId === openId) dropPending();
   });
   // A source without a canonical description opens read-only (no output at all).
@@ -514,14 +537,14 @@ async function open(
     opened.source.revision === next.snapshot.source.revision
   ) {
     stopWatching();
-    if (holdToken) adoptDockEditorHold(holdToken, dock, opened.openId);
+    holdDockFor(opened.openId);
     bringEditorForward(editor);
     return { ok: true, openId: opened.openId };
   }
   // An open session is never replaced silently: the editor is asked (it answers at
   // once when it has no unsaved edits), and this opens on Discard.
-  // The capture's hold belongs to this editor session from now until it ends.
-  if (holdToken) adoptDockEditorHold(holdToken, dock, openId);
+  // The dock stays out of sight for this editor session, from now until it ends.
+  holdDockFor(openId);
   if (usable(editor) && session) askDiscard({ kind: 'retarget', next });
   else showSession(next);
   return { ok: true, openId };
@@ -575,18 +598,29 @@ export function setupDockCaptureEditorIPC(): void {
       sourceId: snapshot.source?.id ?? null,
       sourceRevision: snapshot.source?.revision ?? null,
     };
-    closeEditor(true);
-    // Back to exactly the opening dock document, on its own binding; else as a close.
-    const dock = getDockWindow();
-    const returned =
-      !!dock &&
-      !owner.sender.isDestroyed() &&
-      owner.sender === dock.webContents &&
-      getStrictBackendBindingForWebContents(owner.sender) === owner.binding &&
-      focusDockForEditorReturn(dock);
-    if (returned) owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.ATTACHED, back);
-    else if (dock) revealDockAfterEditor(dock);
+    const holder = dockEditorHoldOwner(openId);
+    closeEditor('attach');
+    // The dock stays out of sight while its owner validates the return (ATTACH_RETURN).
+    if (holder && holder.sender === owner.sender && !holder.sender.isDestroyed())
+      holder.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.ATTACHED, back);
+    else releaseDockEditorHolds(openId, false);
     return true;
+  });
+  // The owner's answer for an attach: a validated return releases the hold and brings that
+  // very dock forward; a refused one brings it back as a close would; others do nothing.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.ATTACH_RETURN, (event, request: unknown) => {
+    const parsed = DockCaptureEditorAttachReturnSchema.safeParse(request);
+    if (!parsed.success) return false;
+    const owner = dockEditorHoldOwner(parsed.data.openId);
+    if (!owner || event.sender !== owner.sender) return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== owner.binding) return false;
+    if (!parsed.data.accept) {
+      releaseDockEditorHolds(parsed.data.openId, true);
+      return false;
+    }
+    releaseDockEditorHolds(parsed.data.openId, false);
+    return focusDockForEditorReturn(owner);
   });
   // The dock's capture → editor handoff: hold before a capture that may open the editor,
   // release when it did not (an opened editor adopts the hold and ends it itself).
@@ -600,18 +634,21 @@ export function setupDockCaptureEditorIPC(): void {
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_BEGIN, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);
     const dock = fromDock(event);
-    if (!parsed.success || !dock || !beginDockEditorHold(dock, parsed.data.token)) return false;
-    // The dock document that asked goes (reload, backend switch): a hold no editor adopted
-    // ends with it, so the dock can never stay out of sight for a gone owner.
-    const token = parsed.data.token;
-    onStrictBackendBindingRetired(event.sender, () => endDockEditorHold(token, dock));
-    return true;
+    const binding = getStrictBackendBindingForWebContents(event.sender);
+    // Bound to the asking document: its retirement drops the hold (see beginDockEditorHold).
+    return (
+      !!parsed.success &&
+      !!dock &&
+      !!binding &&
+      beginDockEditorHold(dock, event.sender, binding, parsed.data.token)
+    );
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);
     const dock = fromDock(event);
-    if (!parsed.success || !dock) return false;
-    endDockEditorHold(parsed.data.token, dock);
+    const binding = getStrictBackendBindingForWebContents(event.sender);
+    if (!parsed.success || !dock || !binding) return false;
+    endDockEditorHold(parsed.data.token, event.sender, binding);
     return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, (event, value: unknown) =>

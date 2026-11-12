@@ -17,6 +17,7 @@ import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import {
   getBackendIdForWindow,
   getStrictBackendBindingForWebContents,
+  onStrictBackendBindingRetired,
   stampWindowWithBackend,
 } from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
@@ -728,68 +729,128 @@ function canRevealDock(window: BrowserWindow): boolean {
 }
 
 /**
- * Capture → editor handoff. The dock stays out of sight from a capture (or the stop of a
- * recording) that opens the media editor until that editor ends: a hold, by token, that
- * capture, selection and recording releases do not clear. The editor session that opened
- * adopts the token; only its end (or the dock, when no editor opened) releases it. The
- * dock document stays mounted throughout (its draft and save workers keep running).
+ * Capture → editor handoff. The dock stays out of sight from a capture (or the start of a
+ * recording) that opens the media editor, and for every editor session, until that editor
+ * ends: a hold, by token, that capture, selection and recording releases do not clear. Each
+ * hold belongs to the dock document (and strict binding) that asked; the editor session that
+ * opened adopts it. The dock document stays mounted throughout (its draft and save workers
+ * keep running). A gone owner releases its holds without revealing anything.
  */
-const editorHolds = new Map<string, { window: BrowserWindow; openId: string | null }>();
+interface EditorHold {
+  window: BrowserWindow;
+  sender: Electron.WebContents;
+  binding: object;
+  openId: string | null;
+}
+const editorHolds = new Map<string, EditorHold>();
 function editorHeld(window: BrowserWindow): boolean {
   for (const hold of editorHolds.values()) if (hold.window === window) return true;
   return false;
 }
-export function beginDockEditorHold(window: BrowserWindow, token: string): boolean {
-  if (window !== getDockWindow() || window.isDestroyed() || editorHolds.has(token)) return false;
-  editorHolds.set(token, { window, openId: null });
+function ownerCurrent(hold: Pick<EditorHold, 'window' | 'sender' | 'binding'>): boolean {
+  return (
+    hold.window === getDockWindow() &&
+    !hold.window.isDestroyed() &&
+    !hold.sender.isDestroyed() &&
+    hold.window.webContents === hold.sender &&
+    getStrictBackendBindingForWebContents(hold.sender) === hold.binding
+  );
+}
+/** Forget every hold of a gone owner (document reload, backend switch, window closed). */
+function dropOwnerHolds(match: (hold: EditorHold) => boolean): void {
+  for (const [token, hold] of editorHolds) if (match(hold)) editorHolds.delete(token);
+}
+export function beginDockEditorHold(
+  window: BrowserWindow,
+  sender: Electron.WebContents,
+  binding: object,
+  token: string,
+): boolean {
+  const owner = { window, sender, binding };
+  if (!ownerCurrent(owner) || editorHolds.has(token)) return false;
+  editorHolds.set(token, { ...owner, openId: null });
+  onStrictBackendBindingRetired(sender, () => dropOwnerHolds((hold) => hold.sender === sender));
+  window.once('closed', () => dropOwnerHolds((hold) => hold.window === window));
   return true;
 }
-/** The editor session `openId` opened for this handoff: it owns the hold now. */
-export function adoptDockEditorHold(token: string, window: BrowserWindow, openId: string): boolean {
-  const hold = editorHolds.get(token);
-  if (!hold || hold.window !== window || hold.openId !== null) return false;
+/**
+ * The editor session `openId` opened for this owner: it owns the hold now (a pre-capture
+ * token, or one main takes for an editor opened without a capture). An already-visible dock
+ * hides now, its document still mounted.
+ */
+export function adoptDockEditorHold(
+  token: string,
+  owner: { window: BrowserWindow; sender: Electron.WebContents; binding: object },
+  openId: string,
+): boolean {
+  let hold = editorHolds.get(token);
+  if (!hold) {
+    if (!beginDockEditorHold(owner.window, owner.sender, owner.binding, token)) return false;
+    hold = editorHolds.get(token)!;
+  }
+  if (
+    hold.openId !== null ||
+    hold.window !== owner.window ||
+    hold.sender !== owner.sender ||
+    hold.binding !== owner.binding
+  )
+    return false;
   hold.openId = openId;
+  if (owner.window.isVisible() && !recordingHidden(owner.window)) owner.window.hide();
   return true;
 }
-/** No editor took this handoff (refused, failed, cancelled capture): release only it. */
-export function endDockEditorHold(token: string, window: BrowserWindow): void {
+/** No editor took this hold (refused, failed, cancelled capture): only its owner ends it. */
+export function endDockEditorHold(
+  token: string,
+  sender: Electron.WebContents,
+  binding: object,
+): void {
   const hold = editorHolds.get(token);
-  if (!hold || hold.window !== window || hold.openId !== null) return;
+  if (!hold || hold.openId !== null || hold.sender !== sender || hold.binding !== binding) return;
   editorHolds.delete(token);
-  revealAfterEditorHold(window);
+  revealAfterEditorHold(hold);
 }
 /**
  * The editor session `openId` ended. `reveal` brings the dock back as it was (collapsed,
- * inactive) for a close or cancel; an attach passes false and returns to its own
- * conversation instead.
+ * inactive) for a close or cancel, and only for that same owner document; a retired owner
+ * or an attach passes false.
  */
 export function releaseDockEditorHolds(openId: string, reveal: boolean): void {
-  let window: BrowserWindow | null = null;
+  let owner: EditorHold | null = null;
   for (const [token, hold] of editorHolds)
     if (hold.openId === openId) {
       editorHolds.delete(token);
-      window = hold.window;
+      owner = hold;
     }
-  if (window && reveal) revealAfterEditorHold(window);
+  if (owner && reveal) revealAfterEditorHold(owner);
+}
+/** True while the session `openId` still holds its owner's dock (an attach awaiting its ACK). */
+export function dockEditorHoldOwner(
+  openId: string,
+): { window: BrowserWindow; sender: Electron.WebContents; binding: object } | null {
+  for (const hold of editorHolds.values()) if (hold.openId === openId) return hold;
+  return null;
 }
 /**
- * The editor attached: bring the dock forward with the keyboard so its conversation can
- * take it. No shortcut routing, foreground sample or focus-dock request is involved.
+ * The editor attached and its owner validated the return: bring that very dock forward with
+ * the keyboard. No shortcut routing, foreground sample or focus-dock request is involved.
  */
-export function focusDockForEditorReturn(window: BrowserWindow): boolean {
-  if (window !== getDockWindow() || recordingHidden(window) || !canRevealDock(window)) return false;
+export function focusDockForEditorReturn(owner: {
+  window: BrowserWindow;
+  sender: Electron.WebContents;
+  binding: object;
+}): boolean {
+  const { window } = owner;
+  if (!ownerCurrent(owner) || recordingHidden(window) || !canRevealDock(window)) return false;
   dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();
   return true;
 }
-/** Bring the dock back as it was after an editor hold, when nothing else holds it. */
-export function revealDockAfterEditor(window: BrowserWindow): void {
-  revealAfterEditorHold(window);
-}
-function revealAfterEditorHold(window: BrowserWindow): void {
-  if (window !== getDockWindow() || recordingHidden(window)) return;
-  if (canRevealDock(window) && !window.isVisible()) window.showInactive();
+function revealAfterEditorHold(owner: Pick<EditorHold, 'window' | 'sender' | 'binding'>): void {
+  // Never on behalf of a replaced document or window.
+  if (!ownerCurrent(owner) || recordingHidden(owner.window)) return;
+  if (canRevealDock(owner.window) && !owner.window.isVisible()) owner.window.showInactive();
 }
 
 function armDockReadyFallback(window: BrowserWindow): void {

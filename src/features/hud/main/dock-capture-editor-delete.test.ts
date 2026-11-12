@@ -61,7 +61,7 @@ vi.mock('../../../main/dock-window', () => ({
   endDockEditorHold: () => {},
   focusDockForEditorReturn: () => false,
   releaseDockEditorHolds: () => {},
-  revealDockAfterEditor: () => {},
+  dockEditorHoldOwner: () => null,
 }));
 vi.mock('../../../main/local-prefs', () => ({
   getDockMediaChoiceLocalPref: async () => null,

@@ -200,6 +200,10 @@ export const DockCaptureEditorCloseSchema = z
     intent: z.literal('attach').optional(),
   })
   .strict();
+/** The owner's answer to ATTACHED: return to that conversation (accept) or not. */
+export const DockCaptureEditorAttachReturnSchema = z
+  .object({ openId: z.string().uuid(), accept: z.boolean() })
+  .strict();
 /** A dock hold around a capture that may open the editor (HOLD_BEGIN / HOLD_END). */
 export const DockCaptureEditorHoldSchema = z.object({ token: z.string().uuid() }).strict();
 /**

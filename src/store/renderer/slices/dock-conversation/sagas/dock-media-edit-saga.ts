@@ -698,6 +698,17 @@ function* openEditorWith(
     }
     // The opened editor session owns the dock hold now; it ends when the editor does.
     held.adopted = !!held.token;
+    // The session this dock opened: only its Attach may return here, and only until a newer
+    // editor opens (or the principal/backend changes).
+    editorGeneration += 1;
+    admittedEditor = {
+      openId: opened.openId,
+      authority,
+      backend: store.state.connections.windowBackendId,
+      workspaceId,
+      agentId,
+      generation: editorGeneration,
+    };
     // A new capture's editor takes over: the dock closes behind it, as Escape would,
     // once the editor is open and only for the conversation still shown. Live input
     // (dictation, a recording, an annotate session, the mic) keeps it open.
@@ -729,13 +740,26 @@ const attachedSchema = z
  * over live input or a send. Drafts and attachments are untouched.
  */
 function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerator<void> {
-  const { workspaceId, agentId, attachmentId, sourceId, sourceRevision } = value;
-  const authority = getPrincipalActionContext(store.state);
-  const backend = store.state.connections.windowBackendId;
-  if (!authority) return;
-  const fresh = (): boolean => {
-    if (getPrincipalActionContext(store.state) !== authority) return false;
-    if (store.state.connections.windowBackendId !== backend) return false;
+  const { openId, workspaceId, agentId, attachmentId, sourceId, sourceRevision } = value;
+  const mine = admittedEditor;
+  const myReturn = ++returnGeneration;
+  let answered = false;
+  const answer = (accept: boolean) =>
+    call(() =>
+      window.electronAPI
+        .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.ATTACH_RETURN, { openId, accept })
+        .then((ok: unknown) => ok === true)
+        .catch(() => false),
+    );
+  // Still this dock's own session, principal and backend; the attachment's source the one
+  // the editor had; no newer editor or return; no live input or send.
+  const current = (): boolean => {
+    if (!mine || mine.openId !== openId || mine.generation !== editorGeneration) return false;
+    if (myReturn !== returnGeneration) return false;
+    if (mine.workspaceId !== workspaceId || mine.agentId !== agentId) return false;
+    if (getPrincipalActionContext(store.state) !== mine.authority) return false;
+    if (store.state.connections.windowBackendId !== mine.backend) return false;
+    if (dockInputLive() || store.state.dockConversation.sending) return false;
     const evidence = evidenceOf(workspaceId, agentId);
     const rows: Array<{
       media?: { source?: { attachmentId: string; id: string; revision: number } };
@@ -749,29 +773,58 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
       );
     });
   };
-  if (!fresh() || dockInputLive() || store.state.dockConversation.sending) return;
-  // The dock opens by keyboard first (main already gave its window the keyboard), so the
-  // conversation mounts asked to focus its prompt; after it loads the prompt is asked again.
-  yield* put(dockFocusRequested());
-  if (store.state.dockConversation.workspaceId !== workspaceId)
-    yield* put(openDockConversationRequested(workspaceId));
-  let selected = false;
-  for (let waited = 0; waited < 10_000; waited += 100) {
-    const dock = store.state.dockConversation;
-    if (!fresh() || dock.workspaceId !== workspaceId || dock.error || dockInputLive()) return;
-    if (!dock.loading && dock.agentId) {
-      if (dock.agentId !== agentId) {
-        if (selected) return;
-        selected = true;
-        yield* put(selectDockConversationAgentRequested(agentId));
-      } else {
-        if (dock.authority === authority) yield* put(dockFocusRequested());
-        return;
+  try {
+    if (!current()) return;
+    answered = true;
+    // Main releases the hold and brings this dock forward only now, after validation.
+    if (!(yield* answer(true)) || !current()) return;
+    admittedEditor = null;
+    const keep = mine!;
+    const still = (): boolean =>
+      myReturn === returnGeneration &&
+      keep.generation === editorGeneration &&
+      getPrincipalActionContext(store.state) === keep.authority &&
+      store.state.connections.windowBackendId === keep.backend &&
+      !dockInputLive() &&
+      !store.state.dockConversation.sending;
+    // The dock opens by keyboard first, so the conversation mounts asked to focus its prompt.
+    yield* put(dockFocusRequested());
+    if (store.state.dockConversation.workspaceId !== workspaceId)
+      yield* put(openDockConversationRequested(workspaceId));
+    let selected = false;
+    for (let waited = 0; waited < 10_000; waited += 100) {
+      const dock = store.state.dockConversation;
+      if (!still() || dock.workspaceId !== workspaceId || dock.error) return;
+      if (!dock.loading && dock.agentId) {
+        if (dock.agentId !== agentId) {
+          if (selected) return;
+          selected = true;
+          yield* put(selectDockConversationAgentRequested(agentId));
+        } else {
+          if (dock.authority === keep.authority) yield* put(dockFocusRequested());
+          return;
+        }
       }
+      yield* race({ loaded: take(dockConversationLoaded), tick: delay(100) });
     }
-    yield* race({ loaded: take(dockConversationLoaded), tick: delay(100) });
+  } finally {
+    // Every attach is answered: an invalid or superseded one refuses (main reveals as a close).
+    if (!answered) yield* answer(false);
   }
 }
+
+/** The editor session this dock opened last (see openEditorWith), and its generation. */
+let admittedEditor: {
+  openId: string;
+  authority: string;
+  backend: string | null;
+  workspaceId: string;
+  agentId: string;
+  generation: number;
+} | null = null;
+let editorGeneration = 0;
+/** Bumped by each Attach received: an older return stops at its next check. */
+let returnGeneration = 0;
 
 const retakeSchema = z
   .object({
