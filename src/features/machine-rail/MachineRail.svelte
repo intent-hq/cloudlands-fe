@@ -211,6 +211,12 @@
 
   function moveDrag(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.pointerId) return;
+    // A press released off the rail never reaches it: a move without the
+    // button held ends that press instead of starting a drag.
+    if (!(event.buttons & 1)) {
+      endDrag(false);
+      return;
+    }
     const dy = event.clientY - drag.startY;
     if (!drag.active) {
       if (Math.abs(dy) < DRAG_THRESHOLD_PX) return;
@@ -368,6 +374,7 @@
 
 {#snippet railEntry(item: MachineRailItem, group: RailGroup, index: number)}
   {@const dragged = drag?.active && drag.id === item.id}
+  <!-- svelte-ignore a11y_no_static_element_interactions (the machine's button inside is the control; this wrapper only tracks the drag) -->
   <div
     class={cn('relative flex', dragged && 'z-10 cursor-grabbing')}
     data-rail-group={group}
