@@ -190,7 +190,15 @@ describe('browser artifact producer contract', () => {
     expect(passed.status, passed.stderr).toBe(0);
     expect(
       JSON.parse(readFileSync(join(dir, 'e2e-reports/build-smoke-outcome.json'), 'utf8')),
-    ).toMatchObject({ testOutcome: 'success', reportPresent: true, testCount: 1 });
+    ).toMatchObject({ testOutcome: 'success', reportPresent: true, testCount: 1, testFilter: '' });
+    run(dir, ['record', 'build-smoke', '1'], {
+      BROWSER_TEST_OUTCOME: 'success',
+      BROWSER_JOB_STATUS: 'success',
+      BROWSER_TEST_FILTER: 'multi-agent',
+    });
+    expect(
+      JSON.parse(readFileSync(join(dir, 'e2e-reports/build-smoke-outcome.json'), 'utf8')),
+    ).toMatchObject({ testFilter: 'multi-agent' });
   });
 
   it('marks a never-started step as skipped, without inventing a Playwright report', () => {

@@ -277,6 +277,7 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
   const incidents = [];
   const failures = [];
   const lanes = [];
+  const filtered = [];
   const archive = (name) => {
     const found = artifacts.filter((a) => a.name === name);
     requireValue(
@@ -323,6 +324,10 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
       validateContext(doc?.outcome, run, job);
       validateEntry(doc.outcome, entry);
       const outcome = doc.outcome;
+      if (outcome.testFilter) {
+        filtered.push(entry.artifactName);
+        continue;
+      }
       requireValue(
         ['success', 'failure'].includes(outcome.testOutcome) &&
           ['success', 'failure'].includes(outcome.jobStatus),
@@ -456,7 +461,7 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
       ],
     });
   }
-  return { schemaVersion: 1, run, lanes, incidents, items };
+  return { schemaVersion: 1, run, lanes, incidents, items, filtered };
 }
 
 export function safeText(value) {

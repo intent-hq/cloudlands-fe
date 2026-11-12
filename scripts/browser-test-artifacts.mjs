@@ -124,6 +124,7 @@ function main(args, env) {
       ...entry,
       testOutcome,
       jobStatus,
+      testFilter: env.BROWSER_TEST_FILTER ?? '',
       reportPresent: existsSync(entry.reportPath),
       testCount: reportTestCount(entry.reportPath),
     };

@@ -652,6 +652,17 @@ describe('nightly Build Smoke evidence', () => {
     });
   });
 
+  it('files nothing for a dispatch that ran only a --grep subset', () => {
+    const data = buildSmokeFixture();
+    data.run.event = 'workflow_dispatch';
+    data.documents['build-smoke-reports'].outcome.event = 'workflow_dispatch';
+    data.documents['build-smoke-reports'].outcome.testFilter = 'multi-agent';
+    const result = analyzeReports(data);
+    expect(result.items).toEqual([]);
+    expect(result.incidents).toEqual([]);
+    expect(result.filtered).toEqual(['build-smoke-reports']);
+  });
+
   it('still treats a global error other than the maxFailures stop as an incident', () => {
     const data = buildSmokeFixture();
     data.documents['build-smoke-reports'].report.errors.push({ message: 'worker crashed' });

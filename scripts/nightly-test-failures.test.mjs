@@ -480,6 +480,21 @@ describe('GitHub API validation', () => {
 describe('trusted workflow execution policy', () => {
   const expression = / {4}if: >-\n((?: {6}.*\n)+)/.exec(workflow)[1].trim();
   const evaluate = new Function('github', `return (${expression})`);
+  it('reads the Build Smoke outcome from the members its upload paths produce', () => {
+    // upload-artifact roots the archive at the paths' common ancestor; with both
+    // paths that is the repository root, so members keep the e2e-reports/ prefix.
+    const smoke = readFileSync(resolve('.github/workflows/build-smoke.yml'), 'utf8');
+    const upload = /- name: Upload build-smoke reports[\s\S]*?path: \|\n((?: {12}.+\n)+)/.exec(
+      smoke,
+    );
+    expect(upload?.[1].trim().split(/\s+/)).toEqual(['e2e-reports/', 'e2e/e2e-reports/']);
+    expect(buildSmokeEntry.outcomePath.startsWith('e2e-reports/')).toBe(true);
+    expect(buildSmokeEntry.reportPath.startsWith('e2e-reports/')).toBe(true);
+    expect(smoke).toContain('BROWSER_TEST_FILTER: ${{ inputs.grep }}');
+    expect(smoke.indexOf('Record build smoke outcome')).toBeLessThan(
+      smoke.indexOf('Upload build-smoke reports'),
+    );
+  });
   it('runs after both nightly browser tests and Build Smoke complete', () => {
     expect(/^ {4}workflows: \[(.*)\]$/m.exec(workflow)?.[1].split(/, */)).toEqual([
       'Nightly Browser Tests',
@@ -516,7 +531,7 @@ describe('trusted workflow execution policy', () => {
               repository: 'intent-hq/cloudlands-fe',
               event: { workflow_run: { ...run, event, conclusion } },
             }),
-          ).toBe(true);
+          ).toBe(conclusion !== 'cancelled' || run.name !== 'Build Smoke');
     },
   );
   it.each([
