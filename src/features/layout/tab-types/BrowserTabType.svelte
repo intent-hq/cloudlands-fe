@@ -14,7 +14,6 @@
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
-  import BrowserTabNotices from '$lib/components/browser/BrowserTabNotices.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { faRobot } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -97,10 +96,6 @@
   const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
   const tabHost$ = selectBrowserTabHost(hostClientIdStore, workspaceIdStore);
-  // An offline host already has its own banner in the mirror.
-  const mirrorHostName = $derived(
-    !isHostedHere && $tabHost$.connected ? $tabHost$.name : undefined,
-  );
 </script>
 
 {#snippet connectedAgent()}
@@ -115,7 +110,6 @@
 {/snippet}
 
 <div class="flex h-full flex-col" data-browser-tab-frame>
-  <BrowserTabNotices {mirrorHostName} agentName={ownerAgentName} onOpenAgent={openOwnerAgent} />
   {#if !isHostedHere}
     <div
       use:browserClientConsumer={workspaceId}
@@ -127,6 +121,7 @@
         url={browserUrl}
         title={tab.title}
         host={$tabHost$}
+        agentOwned={!!tab.ownerAgentId}
         {isActive}
         onNavigate={(newUrl: string) => {
           return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));

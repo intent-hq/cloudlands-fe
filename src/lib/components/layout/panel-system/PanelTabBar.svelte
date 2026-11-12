@@ -34,7 +34,10 @@
   import { invoke } from '$lib/electron-bridge';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { notify } from '$lib/components/patterns/notify';
-  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import {
+    locateItemInSidebarRequested,
+    openAgentTabRequested,
+  } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -84,6 +87,8 @@
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind } from '$lib/components/shared/resource-icon';
   import { getPanelExternalOpenTarget } from './panel-external-open-target';
+  import { resolveOwnerName } from '$lib/components/workspace/sidebar-browser-groups';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -241,6 +246,17 @@
   // state, specialist, and delegation info all derive from this store so the
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+
+  function openBrowserOwner(tab: PanelTab, event: MouseEvent) {
+    if (!tab.ownerAgentId) return;
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: tab.ownerAgentId,
+        sourcePanelId: stablePanelId,
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
+  }
 
   /**
    * Get the display title for a tab, resolving note/agent titles from the store
@@ -1921,6 +1937,39 @@
       {@render paneStackSelector()}
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
 
+      {#if activeTab.type === 'browser' && activeTab.ownerAgentId}
+        {@const ownerName = resolveOwnerName(
+          activeTab.ownerAgentId,
+          $workspaceAgents$,
+          activeTab.ownerAgentName,
+        )}
+        <Tooltip
+          class="min-w-0 max-w-[45%] shrink"
+          content={m.browser_embedded_ownerChip_tooltip({ name: ownerName })}
+          side="bottom"
+          delayDuration={300}
+        >
+          <Button
+            variant="ghost-light"
+            size="sm"
+            wrapContent={false}
+            class="browser-owner-control h-9 min-w-9 max-w-full gap-1.5 px-1.5 text-muted-foreground hover:text-foreground"
+            aria-label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerName })}
+            onclick={(event) => activeTab && openBrowserOwner(activeTab, event)}
+            data-browser-tab-agent-control={activeTab.ownerAgentId}
+          >
+            <span class="panel-header-leading-surface flex shrink-0 items-center justify-center">
+              {#key activeTab.ownerAgentId}
+                <PanelHeaderAgentAvatar agentId={activeTab.ownerAgentId} />
+              {/key}
+            </span>
+            <span class="browser-owner-label min-w-0 truncate">
+              {m.browser_tabNotice_agentControl_label({ name: ownerName })}
+            </span>
+          </Button>
+        </Tooltip>
+      {/if}
+
       <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
         {@render panelActionsDropdown('compact')}
@@ -2122,6 +2171,9 @@
     transform: rotate(270deg);
   }
   @container (max-width: 420px) {
+    .browser-owner-label {
+      display: none;
+    }
     .panel-header {
       padding-inline: 8px;
       gap: 4px;

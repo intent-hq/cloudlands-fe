@@ -4,22 +4,17 @@
    * on another client (REV-2, spec Model 3). Mirrors the EmbeddedBrowser
    * toolbar: navigation controls and the page identity / editable address.
    * Which client drives the tab is shown in the workspace menu, not here.
-   * While the host is offline the controls are disabled and a banner explains
-   * why. Presentational — no wire calls.
+   * Host details and offline recovery live beside the address.
+   * Presentational — no wire calls.
    */
-  import {
-    faArrowLeft,
-    faArrowRight,
-    faLock,
-    faRefresh,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowLeft, faArrowRight, faLock, faRefresh } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabHost } from './browser-tab-host';
+  import BrowserStatusControl from './BrowserStatusControl.svelte';
   import {
     isValidBrowserUrl,
     normalizeBrowserAddressInput,
@@ -31,6 +26,8 @@
     /** Canonical page title as last reported by the host. */
     title?: string;
     host: BrowserTabHost;
+    agentOwned?: boolean;
+    showHostStatus?: boolean;
     canGoBack?: boolean;
     canGoForward?: boolean;
     /** Request navigation on the host (`browser.navigateTab`). */
@@ -46,6 +43,8 @@
     url,
     title,
     host,
+    agentOwned = false,
+    showHostStatus = true,
     canGoBack = true,
     canGoForward = true,
     onNavigate,
@@ -121,28 +120,30 @@
     data-browser-toolbar
   >
     <div class="flex gap-0.5">
-      <Button
-        variant="ghost-light"
-        size="icon-compact"
-        onclick={() => onGoBack?.()}
-        disabled={offline || !canGoBack}
-        tooltip={m.browser_embedded_goBack_tooltip()}
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_goBack_ariaLabel()}
-      >
-        <Fa icon={faArrowLeft} size="xs" />
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-compact"
-        onclick={() => onGoForward?.()}
-        disabled={offline || !canGoForward}
-        tooltip={m.browser_embedded_goForward_tooltip()}
-        tooltipSide="bottom"
-        aria-label={m.browser_embedded_goForward_ariaLabel()}
-      >
-        <Fa icon={faArrowRight} size="xs" />
-      </Button>
+      <div class="browser-viewer-history flex gap-0.5">
+        <Button
+          variant="ghost-light"
+          size="icon-compact"
+          onclick={() => onGoBack?.()}
+          disabled={offline || !canGoBack}
+          tooltip={m.browser_embedded_goBack_tooltip()}
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_goBack_ariaLabel()}
+        >
+          <Fa icon={faArrowLeft} size="xs" />
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-compact"
+          onclick={() => onGoForward?.()}
+          disabled={offline || !canGoForward}
+          tooltip={m.browser_embedded_goForward_tooltip()}
+          tooltipSide="bottom"
+          aria-label={m.browser_embedded_goForward_ariaLabel()}
+        >
+          <Fa icon={faArrowRight} size="xs" />
+        </Button>
+      </div>
       <Button
         variant="ghost-light"
         size="icon-compact"
@@ -187,7 +188,7 @@
         <Button
           variant="plain"
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md px-6 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onclick={() => void startEditingUrl()}
           disabled={offline}
           aria-label={m.browser_embedded_editAddress_ariaLabel()}
@@ -209,27 +210,37 @@
         </Button>
       {/if}
     </div>
+    {#if offline || showHostStatus}
+      <BrowserStatusControl
+        label={offline ? m.browser_status_offline_label() : host.name}
+        ariaLabel={offline
+          ? m.browser_status_offlineHost_ariaLabel({ host: host.name })
+          : m.browser_status_host_label({ host: host.name })}
+        description={offline
+          ? m.browser_viewer_hostOffline_description({ host: host.name })
+          : agentOwned
+            ? m.browser_tabNotice_notPrimary_description({ host: host.name })
+            : m.browser_status_host_description({ host: host.name })}
+        tone={offline ? 'warning' : 'info'}
+        actionLabel={offline ? m.browser_viewer_forceClose_label() : undefined}
+        onAction={offline && onClose ? () => onClose?.({ force: true }) : undefined}
+      />
+    {/if}
   </div>
-
-  {#if offline}
-    <div
-      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
-      data-browser-viewer-offline-banner
-      role="status"
-    >
-      <Fa icon={faTriangleExclamation} class="shrink-0" />
-      <span class="min-w-0 flex-1">
-        {m.browser_viewer_hostOffline_description({ host: host.name })}
-      </span>
-      <Button variant="outline" size="compact" onclick={() => onClose?.({ force: true })}>
-        {m.browser_viewer_forceClose_label()}
-      </Button>
-    </div>
-  {/if}
 </div>
 
 <style>
+  [data-browser-toolbar] {
+    container-type: inline-size;
+    container-name: browser-toolbar;
+  }
   .browser-viewer-hostname {
     max-width: 40%;
+  }
+  @container browser-toolbar (max-width: 399px) {
+    .browser-viewer-history,
+    .browser-viewer-hostname {
+      display: none;
+    }
   }
 </style>

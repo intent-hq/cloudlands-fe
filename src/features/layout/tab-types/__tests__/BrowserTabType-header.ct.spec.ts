@@ -20,12 +20,32 @@ test('browser owner menu is keyboard accessible and viewport follows panel resiz
       ],
       activeTabId: 'browser-one',
       renderPanelHeader: true,
+      captureOwnerRequests: true,
       width: 640,
     },
   });
   const trigger = component
     .locator('[data-panel-content-header]')
     .getByRole('button', { name: 'More', exact: true });
+  const headerOwner = component.getByRole('button', { name: 'Open owning agent Browser agent' });
+  await headerOwner.focus();
+  await headerOwner.press('Enter');
+  await expect(component).toHaveAttribute(
+    'data-owner-request',
+    JSON.stringify([
+      'workspace-1',
+      { agentId: 'agent-one', sourcePanelId: 'browser-panel', openInAdjacentPanel: false },
+    ]),
+  );
+  const isMac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  await headerOwner.click({ modifiers: [isMac ? 'Meta' : 'Control'] });
+  await expect(component).toHaveAttribute(
+    'data-owner-request',
+    JSON.stringify([
+      'workspace-1',
+      { agentId: 'agent-one', sourcePanelId: 'browser-panel', openInAdjacentPanel: true },
+    ]),
+  );
   const menu = page.locator('[data-slot="menu-content"]');
   const owner = menu.getByRole('menuitem', { name: /Browser agent/ });
   await trigger.focus();
@@ -58,6 +78,14 @@ test('browser owner menu is keyboard accessible and viewport follows panel resiz
   await component.update({ props: { width: 360 } });
   await expect.poll(async () => (await viewport.boundingBox())!.width).toBeLessThan(initialWidth);
   expect((await viewport.boundingBox())!.width).toBe((await component.boundingBox())!.width);
+  await headerOwner.focus();
+  await expect(headerOwner).toBeFocused();
+  await expect(page.getByRole('tooltip')).toContainText('Browser agent');
+  const headerBox = (await component.locator('[data-panel-content-header]').boundingBox())!;
+  const ownerBox = (await headerOwner.boundingBox())!;
+  const actionsBox = (await component.locator('[data-panel-header-actions]').last().boundingBox())!;
+  expect(ownerBox.x).toBeGreaterThanOrEqual(headerBox.x);
+  expect(ownerBox.x + ownerBox.width).toBeLessThanOrEqual(actionsBox.x);
   await trigger.focus();
   await page.keyboard.press('Enter');
   await owner.focus();
@@ -67,4 +95,19 @@ test('browser owner menu is keyboard accessible and viewport follows panel resiz
   await expect(trigger).toBeFocused();
   await page.mouse.move(0, 0);
   await component.screenshot({ path: testInfo.outputPath('embedded-browser-header.png') });
+
+  await component.update({
+    props: {
+      tabs: [
+        {
+          id: 'browser-one',
+          type: 'browser',
+          title: 'Intent docs',
+          browserUrl: 'https://intentapp.dev/docs',
+          closable: true,
+        },
+      ],
+    },
+  });
+  await expect(headerOwner).toHaveCount(0);
 });

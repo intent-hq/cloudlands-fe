@@ -27,6 +27,7 @@
     url: string;
     title?: string;
     host: BrowserTabHost;
+    agentOwned?: boolean;
     isActive?: boolean;
     /**
      * Forward a navigation to the host (`browser.navigateTab`). A returned
@@ -45,6 +46,7 @@
     url,
     title,
     host,
+    agentOwned = false,
     isActive = true,
     onNavigate,
     onClose,
@@ -211,6 +213,7 @@
     {url}
     {title}
     {host}
+    {agentOwned}
     {canGoBack}
     {canGoForward}
     onNavigate={navigateFromAddressBar}

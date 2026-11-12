@@ -14,6 +14,7 @@
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   import { notify } from '$lib/components/patterns/notify';
+  import { ErrorState } from '$lib/components/patterns/screen';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -45,13 +46,7 @@
     normalizeBrowserAddressInput,
   } from './embedded-browser-url-validation';
   import Fa from 'svelte-fa';
-  import {
-    faArrowLeft,
-    faArrowRight,
-    faRefresh,
-    faLock,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowLeft, faArrowRight, faRefresh, faLock } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
@@ -73,6 +68,7 @@
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
   import BrowserElementPickerButton from './BrowserElementPickerButton.svelte';
+  import BrowserStatusControl from './BrowserStatusControl.svelte';
   import { toWebviewCaptureRect } from './element-picker-coordinates';
   import { parseElementPickerMessage } from './element-picker-payload';
   import { elementPickerScript } from './element-picker-script';
@@ -208,6 +204,7 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; navigation events keep this current
   let isSecure = $state(url?.startsWith('https://') ?? false);
   let errorMessage = $state('');
+  let refreshButtonRef: HTMLButtonElement | null = $state(null);
   let webviewReady = $state(false);
   let consoleErrorCount = $state(0);
   let isPickingElement = $state(false);
@@ -246,7 +243,7 @@
 
   // Set when the guest webContents was destroyed under a mounted <webview>
   // (e.g. the page called window.close()). The dead element is unmounted and
-  // an error banner is shown until the user explicitly navigates or reloads;
+  // an error status is shown until the user explicitly navigates or reloads;
   // nothing reloads automatically so a self-closing page cannot loop.
   let isGuestDestroyed = $state(false);
 
@@ -953,6 +950,17 @@
     }
   }
 
+  function retryLoadError() {
+    refreshButtonRef?.focus();
+    if (webviewReady || isGuestDestroyed) {
+      refresh();
+      return;
+    }
+    const targetUrl = safeWebviewUrl() || displayUrl || currentWebviewUrl;
+    if (isValidBrowserUrl(targetUrl)) void loadUrl(targetUrl);
+    else void focusUrlInput();
+  }
+
   function currentLoadedUrl(): string {
     const loadedUrl = safeWebviewUrl();
     if (loadedUrl && loadedUrl !== 'about:blank') return loadedUrl;
@@ -1258,6 +1266,7 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={refresh}
+        bind:ref={refreshButtonRef}
         disabled={isLoading}
         tooltip={m.browser_embedded_refresh_tooltip()}
         tooltipShortcut="mod+r"
@@ -1270,6 +1279,16 @@
           <Fa icon={faRefresh} size="xs" />
         {/if}
       </Button>
+      {#if errorMessage && !isGuestDestroyed}
+        <BrowserStatusControl
+          label={m.browser_status_error_label()}
+          description={errorMessage}
+          tone="error"
+          actionLabel={m.chat_shared_retry_label()}
+          onAction={retryLoadError}
+          actionFocusTarget={refreshButtonRef}
+        />
+      {/if}
     </div>
 
     <!-- Page identity / editable address -->
@@ -1323,7 +1342,7 @@
             type="button"
             variant="plain"
             size="sm"
-            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md px-5 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md px-2 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
@@ -1391,21 +1410,18 @@
     </div>
   </div>
 
-  <!-- Error banner -->
-  {#if errorMessage}
-    <div
-      class="flex items-center gap-2 px-3 py-2 bg-danger-background/10 text-danger text-sm border-b border-danger/20"
-    >
-      <Fa icon={faExclamationTriangle} />
-      <span>{errorMessage}</span>
-    </div>
-  {/if}
-
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
     {#if isGuestDestroyed}
-      <!-- Guest destroyed: the banner above carries the message; the address bar and refresh recover -->
-      <div class="h-full bg-muted/30" data-browser-guest-destroyed></div>
+      <div class="flex h-full items-center justify-center p-6" data-browser-guest-destroyed>
+        <ErrorState
+          density="compact"
+          retryLabel={m.chat_shared_retry_label()}
+          onRetry={retryLoadError}
+        >
+          {#snippet message()}{errorMessage}{/snippet}
+        </ErrorState>
+      </div>
     {:else if isUrlValid && !isRecreatingWebview}
       <BrowserDeviceFrame
         {viewport}
@@ -1448,6 +1464,7 @@
 
   .browser-toolbar {
     container-type: inline-size;
+    container-name: browser-toolbar;
   }
 
   .browser-toolbar-hostname {
