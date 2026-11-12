@@ -32,6 +32,10 @@ for (const mode of ['notch', 'floating'] as const) {
     const shell = component.getByTestId('dock-shell');
     await component.getByTestId('dock-drag-handle').hover();
     await expect(shell).toHaveAttribute('data-reveal', '1');
+    // The harness opens its conversation on mount; enter the overview before
+    // observing the next conversation's native resize grants.
+    await component.locator('[data-dock-conversation-back]').click();
+    await expect(component.locator('.overview-row').first()).toBeVisible();
     // Main can reply to an earlier resize while a new growth request is pending.
     // Grant some room, then the full request while the height morph is still running.
     await page.evaluate((snapshot) => {
