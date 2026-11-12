@@ -2888,12 +2888,9 @@
   // navigator, and the unread divider intentionally keep operating on the
   // tail ($agentMessages$) only for this iteration — history rows render but
   // are not indexed by those features.
+  const windowDetached = $derived($historySegmentMeta$.detachedFromTail);
   const composedTranscript = $derived(
-    composeTranscript(
-      $agentHistoryMessages$,
-      $agentMessages$,
-      $historySegmentMeta$.detachedFromTail,
-    ),
+    composeTranscript($agentHistoryMessages$, $agentMessages$, windowDetached),
   );
   const failureTranscript = $derived(
     projectFailureTranscript(composedTranscript, {
