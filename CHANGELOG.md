@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.322.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.2...v2.322.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **chat:** show always-allow options with how far they reach ([#4480](https://github.com/intent-hq/cloudlands-fe/issues/4480)) ([380b4d6](https://github.com/intent-hq/cloudlands-fe/commit/380b4d62aad6698d52abbccfc5a03493d42a74f8))
+* **e2e:** let the sandbox's scripted agent ask for tool approval ([#4490](https://github.com/intent-hq/cloudlands-fe/issues/4490)) ([7515a85](https://github.com/intent-hq/cloudlands-fe/commit/7515a85146f8cd30bd264bcb2a24cf6add352f1c))
+* **machine-rail:** smooth switching, guest hosts, and in-place machine menus ([#4491](https://github.com/intent-hq/cloudlands-fe/issues/4491)) ([619de8a](https://github.com/intent-hq/cloudlands-fe/commit/619de8adf6ef5f329ae0daa4bcde47f2097bd595))
+* **workspace:** import an existing agent session in new workspace ([#4465](https://github.com/intent-hq/cloudlands-fe/issues/4465)) ([5759c1d](https://github.com/intent-hq/cloudlands-fe/commit/5759c1d14a1f4f77a656d2d6c89b44a67b92d007))
+
+
+### 🐛 Bug Fixes
+
+* **backend:** keep the saved tailcat address when a refresh omits it ([#4486](https://github.com/intent-hq/cloudlands-fe/issues/4486)) ([3ffdcea](https://github.com/intent-hq/cloudlands-fe/commit/3ffdceadf1d39b6c6cf36b0a5c3f93f49f368b6b))
+* bump intentd sidecar to v0.11.192 ([#4493](https://github.com/intent-hq/cloudlands-fe/issues/4493)) ([d4fb90a](https://github.com/intent-hq/cloudlands-fe/commit/d4fb90ae18eb805d55a6c379238106e6f0fb5b92))
+* **chat:** keep scrollback as one contiguous window with no gaps ([#4489](https://github.com/intent-hq/cloudlands-fe/issues/4489)) ([f398527](https://github.com/intent-hq/cloudlands-fe/commit/f39852740799257f87a411d436d3aa0d5d9ac31c))
+* default new workspace to the last-used repo outside Home ([#4485](https://github.com/intent-hq/cloudlands-fe/issues/4485)) ([47a3506](https://github.com/intent-hq/cloudlands-fe/commit/47a350632e568a438a95f93ec492383ec6f45a60))
+* **onboarding:** drop 'say something' setup line once the chat has a user message ([#4484](https://github.com/intent-hq/cloudlands-fe/issues/4484)) ([ceec14d](https://github.com/intent-hq/cloudlands-fe/commit/ceec14de9b72872c91c883830a897d24c13063be))
+
 ## [2.321.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.1...v2.321.2) (2026-11-12)
 
 
