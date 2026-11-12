@@ -76,6 +76,23 @@ export function addRailMachine(machineIds: readonly string[], id: string): strin
 }
 
 /**
+ * The machine after `selectedId` in rail order, looping back to the start and
+ * skipping those `skip` names (guest hosts); `null` when there is none other.
+ */
+export function nextRailMachine(
+  machineIds: readonly string[],
+  selectedId: string,
+  skip: (id: string) => boolean,
+): string | null {
+  const start = machineIds.indexOf(selectedId);
+  for (let step = 1; step < machineIds.length; step++) {
+    const id = machineIds[(start + step + machineIds.length) % machineIds.length];
+    if (id !== selectedId && !skip(id)) return id;
+  }
+  return null;
+}
+
+/**
  * State after removing `id`. The home machine stays; removing the selected
  * machine selects the home machine.
  */

@@ -2,6 +2,7 @@ import { getItem, getItems } from '@themislib/themis/utils/collections/collectio
 import { store } from '../../store';
 import type { ConnectionRecord } from '../connections/connections-types';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
+import { nextRailMachine } from '$shared/types/machine-rail';
 
 export type MachineRailItemStatus = 'connected' | 'connecting' | 'disconnected';
 
@@ -73,6 +74,21 @@ export const selectMachineRailCandidates = store.createSelector((state): Connect
   return getItems(state.connections.connections).filter(
     (connection) => connection.daemonMode !== 'node' && !inRail.has(connection.id),
   );
+});
+
+/**
+ * Where the hardware window-cycle key goes: the next own machine in the rail
+ * (guest hosts skipped, looping), `''` when there is no other, `null` while
+ * the rail is off (the key cycles windows then).
+ */
+export const selectNextRailMachine = store.createSelector((state): string | null => {
+  const rail = state.machineRail;
+  if (!rail?.enabled) return null;
+  const isGuest = (id: string) =>
+    !getItem(state.connections.connections, id) &&
+    !!state.guestSessions &&
+    getItem(state.guestSessions.sessions, id) !== undefined;
+  return nextRailMachine(rail.machineIds, rail.selectedId, isGuest) ?? '';
 });
 
 /** Guest hosts that can still be added to this window's rail. */

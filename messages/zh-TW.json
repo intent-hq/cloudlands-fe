@@ -2558,6 +2558,7 @@
   "hardwareConsole_actionKey_noOtherIdleAgents_message": "沒有其他閒置的智慧體",
   "hardwareConsole_actionKey_noOtherInProgressAgents_message": "沒有其他進行中的智慧體",
   "hardwareConsole_actionKey_noOtherOpenWindows_message": "沒有其他開啟的視窗",
+  "hardwareConsole_actionKey_noOtherMachines_message": "此視窗中沒有其他機器",
   "hardwareConsole_actionKey_noOtherUnreadAgents_message": "沒有其他未讀的智慧體",
   "hardwareConsole_actionKey_noUnreadAgents_message": "沒有未讀的智慧體",
   "hardwareConsole_actionKey_none_label": "無",
