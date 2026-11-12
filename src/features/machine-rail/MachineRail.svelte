@@ -249,6 +249,8 @@
     // mark once that click has had its turn.
     suppressClick = true;
     setTimeout(() => (suppressClick = false), 0);
+    // The dropped machine sits under the pointer: keep its name hidden until the pointer moves on.
+    quietTooltips = ended.id;
     if (!commit || !commitOrder(ended.group, ended.id, ended.to)) return;
     if (prefersReducedMotion()) return;
     const offset = ended.centers[ended.from] + ended.dy - ended.centers[ended.to];
@@ -315,6 +317,8 @@
   });
 
   function tooltipQuiet(item: MachineRailItem): boolean {
+    // No names while a machine is dragged: they would trail and cover the rail.
+    if (drag?.active) return true;
     return quietTooltips === 'all' || quietTooltips === item.id;
   }
 
