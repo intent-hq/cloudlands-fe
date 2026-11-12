@@ -1,6 +1,14 @@
 import { expect, test } from '../../../../test/ct-test';
 import SharedMediaSendHarness from './SharedMediaSendHarness.svelte';
-for (const mode of ['direct', 'queued', 'invalid', 'unavailable', 'retired']) {
+for (const mode of [
+  'direct',
+  'queued',
+  'invalid',
+  'unavailable',
+  'retired',
+  'missing-preload',
+  'browser-mock',
+]) {
   test(`shared capture main send ${mode} preserves prepared media or retains draft`, async ({
     mount,
     page,
@@ -104,6 +112,13 @@ for (const mode of ['direct', 'queued', 'invalid', 'unavailable', 'retired']) {
     const native = JSON.parse((await root.getAttribute('data-native'))!);
     if (mode === 'direct' || mode === 'queued')
       expect(native).toEqual(['begin', 'export', 'release', 'close']);
+    if (mode === 'missing-preload' || mode === 'browser-mock') {
+      expect(native).toEqual([]);
+      expect(JSON.parse((await root.getAttribute('data-platform-probe'))!)).toEqual([
+        'media-export-unavailable',
+        'media-export-unavailable',
+      ]);
+    }
     await info.attach('shared-media-send-receipt', {
       body: JSON.stringify(
         { mode, calls: await calls(), native, export: await root.getAttribute('data-export') },

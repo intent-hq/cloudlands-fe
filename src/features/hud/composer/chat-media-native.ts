@@ -1,3 +1,4 @@
+import { detectPlatform } from '$lib/utils/platform-capabilities';
 import { electronAPI } from '$lib/electron-bridge';
 import {
   CHAT_MEDIA_CHANNELS,
@@ -16,7 +17,11 @@ export function createChatMediaNative(
   request: ChatMediaBegin,
   current: () => boolean,
   signal: AbortSignal,
-  invoke: Invoke = (channel, value) => electronAPI().invoke(channel, value),
+  invoke: Invoke = async (channel, value) => {
+    if (typeof window === 'undefined' || detectPlatform(window) !== 'electron')
+      return { ok: false, error: 'unavailable' };
+    return electronAPI().invoke(channel, value);
+  },
 ) {
   let sessionId: string | null = null;
   let starting: Promise<string> | null = null;

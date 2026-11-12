@@ -589,6 +589,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'dock-evidence:cancel',
   'dock-evidence:capture',
   'dock-evidence:control',
+  // Offline chat media preparation owns real main-process leases and helper
+  // outputs. chat-media-native.ts refuses missing preload and the browser-mock
+  // sentinel before invoking IPC; a seeder would invent native export success.
+  'chat-media:begin',
+  'chat-media:control',
+  'chat-media:close',
 ]);
 
 /**

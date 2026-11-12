@@ -16,7 +16,11 @@
   import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { serializeDraftAttachments } from '../chat-draft-attachments';
   import { planChatSend } from '../composer-submission';
-  import { persistSyntheticDraft, invokeFixtureBridge } from './shared-media-send.preview-fixtures';
+  import {
+    probeUnavailableMediaAdapter,
+    persistSyntheticDraft,
+    invokeFixtureBridge,
+  } from './shared-media-send.preview-fixtures';
   import {
     defaultDockMediaEdit,
     type DockMediaSource,
@@ -37,6 +41,8 @@
   let controller: AbortController | null = null;
   let release: (() => void) | null = null;
   let sourcePng = '';
+  let platformProbe = $state<string[]>([]);
+  let syntheticBridge: NonNullable<Window['electronAPI']>;
   const agentId = 'wire-main';
   function descriptors() {
     const source: DockMediaSource = {
@@ -154,10 +160,12 @@
       },
     };
     if (mode === 'invalid') media.saved!.sourceRevision = 99;
-    return { items, attachments: serializeDraftAttachments(items, screen) };
+    return { items, attachments: serializeDraftAttachments(items, screen), clip };
   }
   async function send() {
-    const { items, attachments } = descriptors();
+    const { items, attachments, clip } = descriptors();
+    if (mode === 'missing-preload' || mode === 'browser-mock')
+      platformProbe = await probeUnavailableMediaAdapter(mode, clip);
     const capture: PreparedChatDraftCapture = {
       authority: getPrincipalActionContext(store.state)!,
       ownerId: 'synthetic-main-editor',
@@ -188,6 +196,7 @@
         },
       },
     });
+    window.electronAPI = syntheticBridge;
     result = admitted ? 'admitted' : 'retained';
     if (admitted && draftText === capture.text) draftText = '';
   }
@@ -206,12 +215,20 @@
     g.fillStyle = '#000';
     g.fillRect(8, 8, 6, 6);
     sourcePng = canvas.toDataURL('image/png').split(',')[1];
-    window.fetch = async (input, init) =>
-      String(input).startsWith('workspace-file:')
-        ? new Response(Uint8Array.from(atob(sourcePng), (x) => x.charCodeAt(0)))
-        : originalFetch(input, init);
+    window.fetch = async (input, init) => {
+      if (!String(input).startsWith('workspace-file:')) return originalFetch(input, init);
+      if (mode === 'missing-preload') delete (window as { electronAPI?: unknown }).electronAPI;
+      if (mode === 'browser-mock')
+        window.electronAPI = {
+          ...syntheticBridge,
+          versions: { ...syntheticBridge.versions, electron: '0.0.0-browser' },
+        };
+      return new Response(Uint8Array.from(atob(sourcePng), (x) => x.charCodeAt(0)));
+    };
     window.electronAPI = {
       ...originalBridge,
+      // This controlled native boundary deliberately does not inherit the browser sentinel.
+      versions: { ...originalBridge.versions, electron: 'synthetic-electron' },
       invoke: async (channel, payload: any) => {
         if (channel === C.BEGIN) {
           native = [...native, 'begin'];
@@ -267,6 +284,7 @@
         return invokeFixtureBridge(originalBridge, channel, payload);
       },
     };
+    syntheticBridge = window.electronAPI;
     const stop = store.getReadableState().subscribe(() => {
       ready = !!selectWorkspaceParticipationContext.select(store.state, workspaceId);
     });
@@ -276,6 +294,7 @@
       release?.();
       stop();
       window.fetch = originalFetch;
+      window.electronAPI = syntheticBridge;
       fixture.dispose();
     };
   });
@@ -289,12 +308,16 @@
   data-native={JSON.stringify(native)}
   data-export={JSON.stringify(exportRequest)}
   data-png={preparedPng}
+  data-platform-probe={JSON.stringify(platformProbe)}
 >
   <select
     aria-label="Send scenario"
     bind:value={mode}
     onchange={() => store.dispatch(setAgentStreaming(agentId, mode === 'queued'))}
   >
+    <option value="missing-preload">Missing preload</option><option value="browser-mock"
+      >Browser mock</option
+    >
     <option value="direct">Direct</option><option value="queued">Queued</option><option
       value="invalid">Invalid saved edit</option
     ><option value="unavailable">Unavailable export</option><option value="retired"
