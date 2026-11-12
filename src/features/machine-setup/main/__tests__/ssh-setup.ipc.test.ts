@@ -199,3 +199,29 @@ describe('holdSetupLink', () => {
     expect(await holdSetupLink('intent://node?v=1', 'build-box')).toBeNull();
   });
 });
+
+describe('ssh setup defaults', () => {
+  it('defaults to the agent when SSH_AUTH_SOCK is set or on Windows', async () => {
+    const { sshSetupDefaults } = await import('../ssh-setup.ipc');
+    expect(sshSetupDefaults({ SSH_AUTH_SOCK: '/tmp/agent.sock' }, 'linux')).toEqual({
+      agent: true,
+    });
+    expect(sshSetupDefaults({ SSH_AUTH_SOCK: '' }, 'darwin')).toEqual({ agent: false });
+    expect(sshSetupDefaults({}, 'linux')).toEqual({ agent: false });
+    expect(sshSetupDefaults({}, 'win32')).toEqual({ agent: true });
+  });
+
+  it('answers SSH_DEFAULTS with no params', async () => {
+    const h = await handlers();
+    const before = process.env.SSH_AUTH_SOCK;
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock';
+    try {
+      expect(h[CHANNELS.SSH_DEFAULTS]({ sender: new FakeSender() }, undefined)).toEqual({
+        agent: true,
+      });
+    } finally {
+      if (before === undefined) delete process.env.SSH_AUTH_SOCK;
+      else process.env.SSH_AUTH_SOCK = before;
+    }
+  });
+});

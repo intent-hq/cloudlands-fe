@@ -110,6 +110,8 @@ export interface SshSetupRunnerDeps {
   discardLink?(link: SshSetupLink): void;
   emit(event: SshSetupEvent): void;
   newRunId?(): string;
+  /** Runs the work after the start reply was sent (default `setImmediate`). */
+  defer?(callback: () => void): void;
   setTimeout?(callback: () => void, ms: number): unknown;
   clearTimeout?(handle: unknown): void;
 }
@@ -194,6 +196,7 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
   const clearTimer =
     deps.clearTimeout ?? ((handle: unknown) => clearTimeout(handle as NodeJS.Timeout));
   const newRunId = deps.newRunId ?? randomUUID;
+  const defer = deps.defer ?? ((callback: () => void) => void setImmediate(callback));
   let active: Run | null = null;
 
   // ── timers ──────────────────────────────────────────────────────────────
@@ -432,8 +435,9 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
   }
 
   async function execute(run: Run): Promise<SshSetupResult> {
-    // After `start` returned, so the caller knows the run id first.
-    await Promise.resolve();
+    // Next tick: the start reply (the run id) reaches the renderer before
+    // the first event of the run.
+    await new Promise<void>((resolve) => defer(resolve));
     if (run.ended) throw new Cancelled();
     deps.emit({ runId: run.id, type: 'step', step: 'connecting' });
     await connect(run);

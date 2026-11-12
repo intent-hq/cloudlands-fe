@@ -17,6 +17,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
   MachineSetupTarget,
   SshAuth,
+  SshSetupDefaults,
   SshSetupLink,
   SshSetupStartParams,
   SshSetupStartResult,
@@ -109,6 +110,14 @@ function parseKey(data: Buffer, passphrase: string | undefined): boolean {
   return !(sshUtils.parseKey(data, passphrase) instanceof Error);
 }
 
+/** Whether the login screen should default to the SSH agent. */
+export function sshSetupDefaults(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): SshSetupDefaults {
+  return { agent: platform === 'win32' || Boolean(env.SSH_AUTH_SOCK) };
+}
+
 let runner: SshSetupRunner | null = null;
 let handlersRegistered = false;
 /** The window of the active run: its events go there and nowhere else. */
@@ -152,6 +161,8 @@ function ownsRun(event: IpcMainInvokeEvent, runId: unknown): runId is string {
 export function registerSshSetupHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
+
+  ipcMain.handle(CHANNELS.SSH_DEFAULTS, (): SshSetupDefaults => sshSetupDefaults());
 
   // Validated by hand: the payload carries a password or passphrase.
   ipcMain.handle(CHANNELS.SSH_START, (event, params: unknown): SshSetupStartResult => {

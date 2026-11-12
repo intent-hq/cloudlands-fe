@@ -292,6 +292,39 @@ describe('ssh setup runner: success', () => {
   });
 });
 
+describe('ssh setup runner: start', () => {
+  it('emits nothing until the next tick after start returns', async () => {
+    const deferred: (() => void)[] = [];
+    const h = harness({ deps: { defer: (callback) => void deferred.push(callback) } });
+    expect(h.runner.start(params())).toEqual({ ok: true, runId: 'run-1' });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(h.events).toEqual([]);
+    expect(h.clients).toHaveLength(0);
+    expect(deferred).toHaveLength(1);
+    deferred[0]();
+    expect((await h.settle())?.type).toBe('done');
+    expect(h.events[0]).toEqual({ runId: 'run-1', type: 'step', step: 'connecting' });
+  });
+
+  it('defaults to setImmediate', async () => {
+    const h = harness();
+    h.runner.start(params());
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(h.events).toEqual([]);
+    await new Promise((r) => setImmediate(r));
+    expect(h.events[0]).toEqual({ runId: 'run-1', type: 'step', step: 'connecting' });
+  });
+
+  it('a run cancelled before its first tick emits nothing', async () => {
+    const h = harness();
+    h.runner.start(params());
+    h.runner.cancel('run-1');
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    expect(h.events).toEqual([]);
+    expect(h.clients).toHaveLength(0);
+  });
+});
+
 describe('ssh setup runner: failures', () => {
   it('refuses an unsupported OS', async () => {
     const h = harness({ script: { os: 'FreeBSD' } });
