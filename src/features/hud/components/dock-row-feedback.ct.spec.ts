@@ -2,10 +2,7 @@ import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
-test('compact header status counts match accessible row descriptions', async ({
-  mount,
-  page,
-}) => {
+test('compact header status counts match accessible row descriptions', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 640 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
   const props = dockRailPreview.states.notch.props;
