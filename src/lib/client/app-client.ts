@@ -3,6 +3,7 @@ import type { MessageBlockImageReference } from '$shared/types/wire-image-block'
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { AgentPermissionPolicy } from '$shared/types/agent-session';
 import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
@@ -1082,6 +1083,18 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     pinned: boolean;
+  }): Promise<MutationResult>;
+  /**
+   * Set or clear the per-chat permission policy override
+   * (`agent.update { changes: { permissionPolicy } }`, §5.5). `null` resets to
+   * the daemon default. The daemon persists it without advancing `updatedAt`,
+   * applies it on the next turn, and emits `agent:updated`. Transport / daemon
+   * errors fold into `{ success: false, error }`.
+   */
+  setPermissionPolicy(params: {
+    agentId: string;
+    workspaceId: string;
+    permissionPolicy: AgentPermissionPolicy | null;
   }): Promise<MutationResult>;
   /** Persist foreground/background mode through the partial agent.update writer. */
   setBackground(params: {

@@ -416,6 +416,40 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].lastUserMessage).toBe('Please also handle the empty-list case');
     });
 
+    // Permission policy (AgentLite §5.5): a daemon-wide default change or a
+    // failed per-chat write re-reads the agent with an unchanged `updatedAt`;
+    // the no-op guard must still apply the new policy fields.
+    it.each([
+      ['wire upsert', upsertSession],
+      ['bulk upsert', (session: AgentSession) => bulkUpsertSessions([session])],
+    ] as const)('applies a permission-policy-only change through %s', (_, action) => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            permissionPolicy: 'interactive',
+            effectivePermissionPolicy: 'interactive',
+          }),
+        ),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        action(
+          makeSession('a1', 'ws-1', { permissionPolicy: null, effectivePermissionPolicy: 'allow' }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].permissionPolicy).toBeNull();
+      expect(next.byAgentId['a1'].effectivePermissionPolicy).toBe('allow');
+      const same = makeSession('a1', 'ws-1', {
+        permissionPolicy: null,
+        effectivePermissionPolicy: 'allow',
+      });
+      expect(agentSessionReducer(next, action(same))).toBe(next);
+    });
+
     // Wire lastMessageId + derived hasUnread (monorepo#1597): an upsert whose
     // only change is the newest-message id (new-message push) or the derived
     // unread flag flipping (agent:updated seen-marker convergence re-derives

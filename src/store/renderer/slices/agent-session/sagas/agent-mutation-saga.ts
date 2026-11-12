@@ -65,6 +65,7 @@ import {
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   setAgentPinnedRequested,
+  setAgentPermissionPolicyRequested,
   setAgentBackgroundRequested,
   hydrateAgentsRequested,
   addAgent,
@@ -754,6 +755,55 @@ function* setPinned(action: ReturnType<typeof setAgentPinnedRequested>): SagaGen
   }
 }
 
+function* setPermissionPolicy(
+  action: ReturnType<typeof setAgentPermissionPolicyRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentId, permissionPolicy] = action.payload;
+  // Optimistic flip so the toggle responds immediately. A non-null override is
+  // the effective policy; a `null` reset waits for the daemon default on the
+  // `agent:updated` refetch, so only the override is patched then.
+  const previous = yield* selectAgentSession.effect(agentId);
+  const previousEffective = previous?.effectivePermissionPolicy;
+  const optimisticEffective =
+    permissionPolicy !== null && previousEffective !== undefined
+      ? permissionPolicy
+      : previousEffective;
+  if (previous !== undefined) {
+    yield* put(
+      updateSession(agentId, {
+        permissionPolicy,
+        effectivePermissionPolicy: optimisticEffective,
+      }),
+    );
+  }
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.setPermissionPolicy], {
+      agentId,
+      workspaceId: wsId,
+      permissionPolicy,
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_setPermissionPolicyFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_setPermissionPolicyFailed_error());
+    // Reconcile against the daemon instead of restoring a captured snapshot:
+    // with `takeEvery`, overlapping flips that both fail would otherwise
+    // restore another flip's optimistic value (allow → interactive → allow
+    // could leave the switch ON while the daemon still allows tools).
+    if (previous !== undefined) yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_setPermissionPolicyFailed_error())));
+    }
+  }
+}
+
 function* dismissQuestions(
   action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
 ): SagaGenerator<void> {
@@ -1201,6 +1251,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
     takeEvery(setAgentPinnedRequested, setPinned),
+    takeEvery(setAgentPermissionPolicyRequested, setPermissionPolicy),
     takeEvery(setAgentBackgroundRequested, setBackground),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
     takeEvery(agentProposalResolveRequested, resolveProposal),

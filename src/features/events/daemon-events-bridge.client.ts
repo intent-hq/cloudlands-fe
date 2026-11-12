@@ -3417,6 +3417,28 @@ function handleSettingsChangedEvent(
   const revision = typeof data.revision === 'number' ? data.revision : undefined;
   if (onSettingsChanges) onSettingsChanges(changes, revision);
   else applySettingsChanges(changes);
+  if (changes.some((change) => change.path === PERMISSION_POLICY_SETTING_PATH)) {
+    refreshSessionsFollowingPermissionPolicyDefault();
+  }
+}
+
+const PERMISSION_POLICY_SETTING_PATH = 'agents.permissionPolicy';
+
+/**
+ * A daemon-wide `agents.permissionPolicy` change emits only `settings:changed`
+ * (no `agent:updated`), yet it moves `effectivePermissionPolicy` for every chat
+ * without a per-chat override (`permissionPolicy === null`). Refetch those
+ * loaded sessions so the chat menu's "Ask before using tools" switch matches
+ * the policy the next turn runs under. The value is never derived client-side:
+ * `INTENTD_PERMISSION_POLICY` on the daemon can override the setting.
+ */
+function refreshSessionsFollowingPermissionPolicyDefault(): void {
+  const byAgentId = appStore.state.agentSessions?.byAgentId;
+  if (!byAgentId) return;
+  for (const [agentId, session] of Object.entries(byAgentId)) {
+    if (session?.permissionPolicy !== null) continue;
+    void refreshAgentSessionAfterEvent(agentId, session.workspaceId);
+  }
 }
 
 /**

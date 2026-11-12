@@ -36,7 +36,12 @@ const paths = {
     'agents.idleReapMinutes',
     'agents.acpNodeMaxOldSpaceMb',
   ],
-  'agent-features': [...FEATURE_PATHS, 'prMonitor.debounceSeconds', 'agents.maxTopLevelAgents'],
+  'agent-features': [
+    ...FEATURE_PATHS,
+    'prMonitor.debounceSeconds',
+    'agents.maxTopLevelAgents',
+    'agents.permissionPolicy',
+  ],
   'workspace-api': [
     'workspaceApi.maxOutputChars',
     'workspaceApi.toonOutput',

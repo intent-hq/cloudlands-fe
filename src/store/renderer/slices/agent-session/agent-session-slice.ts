@@ -1142,6 +1142,8 @@ type SessionComparisonSnapshot = Pick<
   | 'stopReason'
   | 'stopReasonTimestamp'
   | 'sessionCorrupted'
+  | 'permissionPolicy'
+  | 'effectivePermissionPolicy'
 > & {
   messageCount: number;
   wireMessageCount: number | undefined;
@@ -1204,6 +1206,10 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     stopReason: session.stopReason,
     stopReasonTimestamp: session.stopReasonTimestamp,
     sessionCorrupted: session.sessionCorrupted,
+    // A daemon-wide `agents.permissionPolicy` change or a failed per-chat write
+    // re-reads the agent without bumping `updatedAt`; the read must still land.
+    permissionPolicy: session.permissionPolicy,
+    effectivePermissionPolicy: session.effectivePermissionPolicy,
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
