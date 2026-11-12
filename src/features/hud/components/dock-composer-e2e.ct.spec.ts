@@ -53,6 +53,8 @@ async function assertAdmitted(
   before: ComposerDraftSnapshot,
   send: Harness['calls'][number],
 ) {
+  // Require the canonical draft to clear before acknowledging the held daemon response.
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.text).toBe('');
   const admitted = await draftSnapshot(page);
   const delivery = admitted.draft?.delivery;
   expect(delivery).toBeDefined();
@@ -466,7 +468,7 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   expect(placements).toHaveLength(1);
   expect(placements[0].params).toMatchObject({
     workspaceId: seeded.workspaceId,
-    mimeType: 'image/png',
+    mimeType: 'image/jpeg',
   });
   expect(placements[0].params).not.toHaveProperty('sourcePath');
   const metadata = send.params.messageMetadata as DockScreenEvidenceMetadata;
