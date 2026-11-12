@@ -44,12 +44,25 @@ interface FakeOptions {
 
 class FakeChannel extends EventEmitter {
   stderr = new EventEmitter();
+  signals: string[] = [];
+  signal(name: string) {
+    this.signals.push(name);
+  }
+}
+
+/** The command inside `sh -c '…'`; anything else is returned as sent. */
+function unwrapShell(command: string): string {
+  const match = /^sh -c '([\s\S]*)'$/.exec(command);
+  return match ? match[1].replaceAll("'\\''", "'") : command;
 }
 
 class FakeClient extends EventEmitter {
   config: ConnectConfig | null = null;
   ended = false;
+  /** Commands as the remote sh runs them. */
   commands: string[] = [];
+  /** Commands exactly as sent to the login shell. */
+  sent: string[] = [];
   channels: FakeChannel[] = [];
 
   constructor(private readonly options: FakeOptions) {
@@ -85,10 +98,12 @@ class FakeClient extends EventEmitter {
     _options: unknown,
     callback: (error: Error | undefined, channel: SshChannelLike) => void,
   ) {
-    this.commands.push(command);
+    this.sent.push(command);
+    const inner = unwrapShell(command);
+    this.commands.push(inner);
     const channel = new FakeChannel();
     this.channels.push(channel);
-    const reply = this.options.exec(command);
+    const reply = this.options.exec(inner);
     callback(undefined, channel);
     if (reply === 'hang') return this;
     queueMicrotask(() => {
@@ -453,9 +468,54 @@ describe('ssh setup runner: failures', () => {
     );
     expect(answers).toEqual([[PASSWORD]]);
   });
+
+  it('sends the password once: a second prompt (a one-time code) gets nothing', async () => {
+    const h = harness();
+    h.runner.start(params());
+    await h.settle();
+    const answers: string[][] = [];
+    const ask = (prompt: string, echo = false) =>
+      h.clients[0].emit('keyboard-interactive', '', '', '', [{ prompt, echo }], (a: string[]) =>
+        answers.push(a),
+      );
+    ask('Password:');
+    ask('Verification code:');
+    ask('Password:');
+    expect(answers).toEqual([[PASSWORD], [], []]);
+  });
+
+  it('runs every command under sh, whatever the login shell is', async () => {
+    const h = harness();
+    h.runner.start(params());
+    await h.settle();
+    expect(h.clients[0].sent.length).toBeGreaterThan(0);
+    for (const sent of h.clients[0].sent) expect(sent).toMatch(/^sh -c '/);
+  });
 });
 
 describe('ssh setup runner: host keys', () => {
+  it('asks for the key types known_hosts records for the host first', async () => {
+    const h = harness();
+    h.files['/home/me/.ssh/known_hosts'] = `box ssh-rsa ${HOST_KEY.toString('base64')}\n`;
+    h.files['/etc/ssh/ssh_known_hosts'] =
+      `box ecdsa-sha2-nistp256 ${TEST_HOST_KEYS.ecdsa.toString('base64')}\n`;
+    h.runner.start(params());
+    await h.settle();
+    expect(h.clients[0].config?.algorithms?.serverHostKey).toEqual({
+      prepend: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256'],
+    });
+  });
+
+  it('refuses an ed25519 key from a host known only by an ecdsa key', async () => {
+    const h = harness();
+    h.files['/home/me/.ssh/known_hosts'] = '';
+    h.files['/etc/ssh/ssh_known_hosts'] =
+      `box ecdsa-sha2-nistp256 ${TEST_HOST_KEYS.ecdsa.toString('base64')}\n`;
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'failed', code: 'host-key-mismatch' });
+    expect(h.events.some((e) => e.type === 'host-key')).toBe(false);
+  });
+
   it('asks about an unknown key and continues when trusted', async () => {
     const h = harness();
     h.files['/home/me/.ssh/known_hosts'] = '';
@@ -582,6 +642,7 @@ describe('ssh setup runner: timeouts and cancel', () => {
     expect(h.clients[0].ended).toBe(true);
     expect(h.runner.activeRunId()).toBeNull();
     const channel = h.clients[0].channels.at(-1)!;
+    expect(channel.signals).toEqual(['KILL']);
     channel.emit('data', Buffer.from(`${installerOutput(PAIR_URI)}`));
     channel.emit('close', 0);
     for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));

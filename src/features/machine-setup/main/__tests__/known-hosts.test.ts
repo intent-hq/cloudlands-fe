@@ -4,6 +4,7 @@ import {
   checkKnownHosts,
   hostFieldMatches,
   hostKeyType,
+  knownHostKeyTypes,
   knownHostsName,
   sha256Fingerprint,
 } from '../known-hosts';
@@ -71,9 +72,21 @@ describe('known-hosts', () => {
     );
   });
 
-  it('does not treat a key of another type as a mismatch', () => {
+  it('refuses a key of another type when the host is known by a different type', () => {
     const text = line('box', 'ecdsa-sha2-nistp256', ecdsa);
-    expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('unknown');
+    expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('mismatch');
+    expect(checkKnownHosts(text, 'other', 22, edKey)).toBe('unknown');
+  });
+
+  it('lists the key types known for a host, for the algorithm order', () => {
+    const text = [
+      line('box', 'ecdsa-sha2-nistp256', ecdsa),
+      line(hashed('box'), 'ssh-rsa', ed),
+      line('other', 'ssh-ed25519', ed),
+      `@revoked box ssh-ed25519 ${ed.toString('base64')}`,
+    ].join('\n');
+    expect(knownHostKeyTypes(text, 'box', 22)).toEqual(['ecdsa-sha2-nistp256', 'ssh-rsa']);
+    expect(knownHostKeyTypes(text, 'nobody', 22)).toEqual([]);
   });
 
   it('prefers a match over another stale line of the same type', () => {
@@ -81,12 +94,19 @@ describe('known-hosts', () => {
     expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('match');
   });
 
-  it('skips @revoked and @cert-authority lines', () => {
+  it('skips @cert-authority lines and other revoked keys', () => {
     const text = [
       `@cert-authority box ${'ssh-ed25519'} ${otherEd.toString('base64')}`,
       `@revoked box ssh-ed25519 ${otherEd.toString('base64')}`,
     ].join('\n');
     expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('unknown');
+  });
+
+  it('refuses a revoked key, for this host or any host', () => {
+    for (const hosts of ['box', '*']) {
+      const text = [line('box', 'ssh-ed25519', ed), `@revoked ${hosts} ssh-ed25519 ${ed.toString('base64')}`].join('\n');
+      expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('mismatch');
+    }
   });
 
   it('supports wildcards and negation', () => {

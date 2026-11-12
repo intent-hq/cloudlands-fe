@@ -70,11 +70,44 @@ export function hostFieldMatches(field: string, name: string): boolean {
   return matched;
 }
 
+interface KnownLine {
+  marker: '' | '@revoked' | '@cert-authority';
+  hosts: string;
+  type: string;
+  blob: Buffer;
+}
+
+function knownLines(text: string): KnownLine[] {
+  const lines: KnownLine[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const fields = line.split(/\s+/);
+    const marker = fields[0].startsWith('@') ? fields.shift()! : '';
+    if (marker !== '' && marker !== '@revoked' && marker !== '@cert-authority') continue;
+    if (fields.length < 3) continue;
+    const [hosts, type, base64] = fields;
+    lines.push({ marker, hosts, type, blob: Buffer.from(base64, 'base64') });
+  }
+  return lines;
+}
+
+/** The key types recorded for `host:port` (not revoked), in file order. */
+export function knownHostKeyTypes(text: string, host: string, port: number): string[] {
+  const name = knownHostsName(host, port);
+  const types: string[] = [];
+  for (const line of knownLines(text))
+    if (line.marker === '' && hostFieldMatches(line.hosts, name) && !types.includes(line.type))
+      types.push(line.type);
+  return types;
+}
+
 /**
- * Check `key` for `host:port` against the text of a known_hosts file.
- * `@cert-authority` and `@revoked` lines and comments are skipped. A recorded
- * key of another type is not a mismatch: only the same type with a different
- * blob is.
+ * Check `key` for `host:port` against the text of known_hosts files.
+ * `@cert-authority` lines and comments are skipped. A revoked key is a
+ * mismatch. So is a key of a type the host has no entry for while it has
+ * entries of other types: the runner asks for the known types first (as
+ * OpenSSH does), so another type means the server is not the recorded one.
  */
 export function checkKnownHosts(
   text: string,
@@ -83,16 +116,18 @@ export function checkKnownHosts(
   key: HostKey,
 ): KnownHostsVerdict {
   const name = knownHostsName(host, port);
-  let sameTypeDiffers = false;
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#') || line.startsWith('@')) continue;
-    const fields = line.split(/\s+/);
-    if (fields.length < 3) continue;
-    const [hosts, type, base64] = fields;
-    if (type !== key.type || !hostFieldMatches(hosts, name)) continue;
-    if (Buffer.from(base64, 'base64').equals(key.blob)) return 'match';
-    sameTypeDiffers = true;
+  let known = false;
+  let match = false;
+  for (const line of knownLines(text)) {
+    if (line.marker === '@revoked') {
+      if (line.type === key.type && line.blob.equals(key.blob) && hostFieldMatches(line.hosts, name))
+        return 'mismatch';
+      continue;
+    }
+    if (line.marker !== '' || !hostFieldMatches(line.hosts, name)) continue;
+    known = true;
+    if (line.type === key.type && line.blob.equals(key.blob)) match = true;
   }
-  return sameTypeDiffers ? 'mismatch' : 'unknown';
+  if (match) return 'match';
+  return known ? 'mismatch' : 'unknown';
 }

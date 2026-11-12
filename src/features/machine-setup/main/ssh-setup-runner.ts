@@ -22,7 +22,12 @@ import type {
   SshSetupStartResult,
   SshSetupStep,
 } from '$shared/types/machine-setup';
-import { checkKnownHosts, hostKeyType, sha256Fingerprint } from './known-hosts';
+import {
+  checkKnownHosts,
+  hostKeyType,
+  knownHostKeyTypes,
+  sha256Fingerprint,
+} from './known-hosts';
 import { createLineSplitter, parseLinkMarker, parsePairUrl, redactLine } from './ssh-output';
 
 // i18n-ignore (remote shell commands and installer wire text)
@@ -48,6 +53,17 @@ export const SSH_SETUP_TIMEOUTS = {
   logBatchMs: 250,
 } as const;
 
+const SYSTEM_KNOWN_HOSTS = '/etc/ssh/ssh_known_hosts';
+/** ssh2 host-key algorithm names for a known_hosts key type. */
+const HOST_KEY_ALGORITHMS: Record<string, string[]> = {
+  'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+};
+
+/** Run under sh whatever the login shell is (fish and csh reject sh syntax). */
+function posixShell(command: string): string {
+  return `sh -c '${command.replaceAll("'", "'\\''")}'`;
+}
+
 const MAX_LOG_BATCH = 50;
 const UNREACHABLE_CODES = new Set([
   'ECONNREFUSED',
@@ -66,6 +82,8 @@ export interface SshClientError extends Error {
 
 /** The part of an ssh2 exec channel the runner uses. @internal */
 export interface SshChannelLike {
+  /** Ask the server to signal the remote command (best effort). */
+  signal?(name: string): unknown;
   on(event: 'data', listener: (chunk: Buffer) => void): unknown;
   on(event: 'close', listener: (code?: number | null) => void): unknown;
   stderr: { on(event: 'data', listener: (chunk: Buffer) => void): unknown };
@@ -152,6 +170,8 @@ interface Run {
   hostKeyFailure: SetupFailure | null;
   logs: string[];
   logTimer: unknown;
+  /** The exec channel that is running, to stop it on cancel. */
+  channel: SshChannelLike | null;
 }
 
 interface ExecResult {
@@ -261,6 +281,13 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
     run.timers.clear();
     run.pendingTrust = null;
     try {
+      // Without a PTY, closing the connection may leave the installer running.
+      run.channel?.signal?.('KILL');
+    } catch {
+      // Older servers ignore signal requests.
+    }
+    run.channel = null;
+    try {
       run.client?.end();
     } catch {
       // The connection is already gone.
@@ -302,12 +329,19 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
   async function connect(run: Run): Promise<void> {
     const { host, port, username, auth } = run.params;
     const credentials = await guard(run, authConfig(run));
-    const knownHosts = await guard(
-      run,
+    const readText = (path: string) =>
       deps
-        .readFile(`${deps.homeDir}/.ssh/known_hosts`)
+        .readFile(path)
         .then((data) => data.toString('utf8'))
-        .catch(() => ''),
+        .catch(() => '');
+    const knownHosts = (
+      await guard(
+        run,
+        Promise.all([readText(`${deps.homeDir}/.ssh/known_hosts`), readText(SYSTEM_KNOWN_HOSTS)]),
+      )
+    ).join('\n');
+    const preferred = knownHostKeyTypes(knownHosts, host, port).flatMap(
+      (type) => HOST_KEY_ALGORITHMS[type] ?? [type],
     );
     if (run.ended) throw new Cancelled();
 
@@ -363,10 +397,17 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
           reject(run.hostKeyFailure ?? new SetupFailure('unreachable'));
         } else run.abort(new SetupFailure('failed'));
       });
-      if (auth.method === 'password')
-        client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, reply) =>
-          reply(prompts.map(() => auth.password)),
-        );
+      if (auth.method === 'password') {
+        // One round: the password answers the password prompt. A second
+        // round (a one-time code) gets nothing, so the sign-in is refused
+        // instead of sending the password as a code.
+        let answered = false;
+        client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, reply) => {
+          if (answered || prompts.length !== 1 || prompts[0].echo) return reply([]);
+          answered = true;
+          reply([auth.password]);
+        });
+      }
     });
     startConnectTimer();
     client.connect({
@@ -377,6 +418,11 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
       // real limit; ssh2's is a backstop.
       readyTimeout: SSH_SETUP_TIMEOUTS.overallMs,
       hostVerifier,
+      // Ask for the key types known_hosts records for this host first, as
+      // OpenSSH does: another type then counts as a changed key.
+      ...(preferred.length
+        ? { algorithms: { serverHostKey: { prepend: preferred as never[] } } }
+        : {}),
       ...credentials,
     });
     try {
@@ -393,8 +439,9 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
     return guard(
       run,
       new Promise<ExecResult>((resolve, reject) => {
-        client.exec(command, { pty: false }, (error, channel) => {
+        client.exec(posixShell(command), { pty: false }, (error, channel) => {
           if (error) return reject(new SetupFailure('failed'));
+          run.channel = channel;
           const out = createLineSplitter();
           const err = createLineSplitter();
           const stdout: string[] = [];
@@ -405,6 +452,7 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
           channel.on('data', (chunk: Buffer) => feed(out.push(chunk), !onLine));
           channel.stderr.on('data', (chunk: Buffer) => feed(err.push(chunk), false));
           channel.on('close', (code?: number | null) => {
+            if (run.channel === channel) run.channel = null;
             feed(out.flush(), !onLine);
             feed(err.flush(), false);
             resolve({ code: typeof code === 'number' ? code : null, stdout: stdout.join('\n') });
@@ -532,6 +580,7 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
       hostKeyFailure: null,
       logs: [],
       logTimer: null,
+      channel: null,
     };
     active = run;
     timer(run, SSH_SETUP_TIMEOUTS.overallMs, () => run.abort(new SetupFailure('no-link')));
