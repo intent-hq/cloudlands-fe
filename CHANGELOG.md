@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.321.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.0...v2.321.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* restore direct panel moves and explain Full width ([#4475](https://github.com/intent-hq/cloudlands-fe/issues/4475)) ([c532049](https://github.com/intent-hq/cloudlands-fe/commit/c5320498250acf6eb135d80910c20056d4984ee9))
+
 ## [2.321.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.1...v2.321.0) (2026-11-12)
 
 
