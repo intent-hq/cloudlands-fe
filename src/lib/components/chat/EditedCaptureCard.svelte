@@ -251,7 +251,7 @@
     display: block;
     flex-basis: 100%;
     overflow: hidden;
-    font-size: 10px;
+    font-size: var(--text-caption-size);
     color: hsl(var(--muted-foreground));
     white-space: nowrap;
     text-overflow: ellipsis;
