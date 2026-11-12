@@ -5687,6 +5687,43 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     });
   });
 
+  it('keeps option kind and allow_always scope from agent:permission:request (PROTOCOL §8)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:permission:request', {
+        requestId: REQUEST_ID,
+        sessionId: AGENT,
+        title: 'Run command',
+        options: [
+          { id: 'allow-once', label: 'Yes', destructive: false, kind: 'allow_once' },
+          {
+            id: 'allow-with-updates',
+            label: 'Yes, and do not ask again',
+            destructive: false,
+            kind: 'allow_always',
+            scope: 'workspace',
+          },
+          { id: 'odd', label: 'Odd', kind: 'later_maybe', scope: 'galaxy' },
+        ],
+        timestamp: 1718600000000,
+      }),
+    );
+
+    expect(readPermissionRequests()[0]?.options).toEqual([
+      { id: 'allow-once', label: 'Yes', destructive: false, kind: 'allow_once' },
+      {
+        id: 'allow-with-updates',
+        label: 'Yes, and do not ask again',
+        destructive: false,
+        kind: 'allow_always',
+        scope: 'workspace',
+      },
+      { id: 'odd', label: 'Odd' },
+    ]);
+  });
+
   it('clears the request via removePermissionRequest on agent:permission:resolved', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
