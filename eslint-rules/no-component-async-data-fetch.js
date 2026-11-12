@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const MESSAGE =
   'Svelte components must not fetch or load async domain data directly. Dispatch through the configured Store instance (store.dispatch(action)) and read the result through Redux selectors instead; keep API/client/provider calls in sagas or service layers, not components.';
@@ -37,12 +38,16 @@ const STATIC_MODULE_SPECIFIER_PATTERN =
 const MODULE_FILE_EXTENSIONS = ['.ts', '.js', '.svelte.ts', '.svelte.js', '.svelte'];
 const INDEX_FILE_EXTENSIONS = ['.ts', '.js'];
 const MAX_SYNCHRONOUS_MODULE_DEPTH = 8;
-// Test hosts and previews drive these in-memory fakes of the desktop bridge; they never load data.
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Test hosts and previews use these modules to register mock handlers and emit mock events;
+// only `mockInvoke` sends a request through the renderer transport, so it stays reported.
 const TEST_FIXTURE_FILE_PATTERN = /(?:^|[\\/])__tests__[\\/]|\.preview\.svelte$/;
-const TEST_TRANSPORT_MODULE_SUFFIXES = [
-  ['src', 'shared', 'ipc-mock-router.ts'],
-  ['src', 'test', 'ct-mock-electron-bridge.ts'],
-].map((segments) => path.sep + path.join(...segments));
+const TEST_TRANSPORT_MODULE_PATHS = new Set(
+  ['src/shared/ipc-mock-router.ts', 'src/test/ct-mock-electron-bridge.ts'].map((modulePath) =>
+    path.join(PACKAGE_ROOT, modulePath),
+  ),
+);
+const TEST_TRANSPORT_REQUEST_EXPORTS = new Set(['mockInvoke']);
 const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN =
   /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
 
@@ -144,7 +149,7 @@ function resolveImportBase(filename, source) {
 
   for (const [alias, target] of Object.entries(aliases)) {
     if (source.startsWith(alias)) {
-      return path.resolve(process.cwd(), target, source.slice(alias.length));
+      return path.resolve(PACKAGE_ROOT, target, source.slice(alias.length));
     }
   }
 
@@ -202,15 +207,30 @@ function readImportedModule(fromFilename, source) {
   }
 }
 
+function isTestFixtureFile(filename) {
+  if (!filename || filename.startsWith('<')) return false;
+
+  const relativePath = path.relative(PACKAGE_ROOT, path.resolve(filename));
+  return (
+    !relativePath.startsWith('..') &&
+    !path.isAbsolute(relativePath) &&
+    TEST_FIXTURE_FILE_PATTERN.test(relativePath)
+  );
+}
+
 function isTestTransportImport(context, source) {
   const filename = getFilename(context);
-  if (!filename || !TEST_FIXTURE_FILE_PATTERN.test(filename)) {
-    return false;
-  }
+  if (!isTestFixtureFile(filename)) return false;
 
   const filePath = resolveImportedModulePath(filename, source);
-  return Boolean(
-    filePath && TEST_TRANSPORT_MODULE_SUFFIXES.some((suffix) => filePath.endsWith(suffix)),
+  return Boolean(filePath && TEST_TRANSPORT_MODULE_PATHS.has(filePath));
+}
+
+/** Named imports of mock handler and event helpers; `mockInvoke` and namespace imports stay tracked. */
+function isExemptTestTransportSpecifier(specifier) {
+  return (
+    specifier.type === 'ImportSpecifier' &&
+    !TEST_TRANSPORT_REQUEST_EXPORTS.has(specifier.imported?.name ?? specifier.imported?.value)
   );
 }
 
@@ -471,8 +491,7 @@ export default {
     return {
       ImportDeclaration(node) {
         const source = node.source.value;
-        if (isTestTransportImport(context, source)) return;
-
+        const isTestTransportSource = isTestTransportImport(context, source);
         const isAsyncWrapperSource = isAsyncWrapperImportSource(context, source);
         const isDomainSource =
           isDomainImportSource(source) &&
@@ -482,7 +501,10 @@ export default {
         if (!isDomainSource && !isAsyncWrapperSource) return;
 
         for (const specifier of node.specifiers) {
-          if (specifier.importKind === 'type') {
+          if (
+            specifier.importKind === 'type' ||
+            (isTestTransportSource && isExemptTestTransportSpecifier(specifier))
+          ) {
             continue;
           }
 

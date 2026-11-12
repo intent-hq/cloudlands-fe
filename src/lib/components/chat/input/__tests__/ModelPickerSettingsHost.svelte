@@ -90,7 +90,6 @@
   appClient.settings.update = async (changes) => {
     for (const { path, value } of changes) saved.set(path, value);
     // Independent mock daemon delivery; the production writer ignores the response.
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only mock daemon receipt, not a component transport call
     queueMicrotask(() => applySettingsChanges(changes));
     return changes;
   };
