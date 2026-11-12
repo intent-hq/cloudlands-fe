@@ -325,6 +325,7 @@
       commitSubmission(input?.getValue() ?? value, forceSubmit);
     } catch (error) {
       // Stage and bounded code only: never the prompt, file names or ids.
+      // i18n-ignore (bounded log diagnostic; the displayed failure uses the message below)
       sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'barrier'));
       if (isCurrent()) notify.error(m.dock_conversation_sendFailed_error());
     } finally {

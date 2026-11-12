@@ -22,6 +22,7 @@ export function ensureDockAnnotationFont(): Promise<void> {
           : (globalThis as typeof globalThis & { fonts?: FontFaceSet }).fonts;
       if (!fonts || typeof FontFace === 'undefined') throw new Error('font-api-unavailable');
       const face = await Promise.race([
+        // i18n-ignore (FontFace family identifier; must match the annotation font stack)
         new FontFace('Intent Annotation Hand', `url("${fontUrl}")`, {
           style: 'normal',
           weight: '400',

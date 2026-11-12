@@ -580,13 +580,14 @@
             aria-label={m.dock_captureEditor_frameTools_label()}
           >
             {#each frameTools as entry (entry.glyph)}
+              {@const label = frameToolLabels[entry.tool ?? 'pointer']()}
               <Button
                 variant="ghost"
                 size="icon-sm"
                 active={frameTool === entry.tool}
                 aria-pressed={frameTool === entry.tool}
-                aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
-                tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
+                aria-label={label}
+                tooltip={label}
                 tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS[
                   entry.tool === 'pen' ? 'draw' : (entry.tool ?? 'pointer')
                 ]}

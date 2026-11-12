@@ -15,6 +15,7 @@ export const DOCK_ANNOTATION_STYLE = {
   halo: 'rgba(248, 250, 255, 0.88)',
   haloWidth: 1.2,
   textLineHeight: 1.4,
+  // i18n-ignore (CSS font-family identifiers; must match the registered FontFace)
   fontFamily: '"Intent Annotation Hand", system-ui, sans-serif',
   badgeFontFamily: 'system-ui, sans-serif',
 } as const;

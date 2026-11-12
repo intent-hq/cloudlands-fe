@@ -51,6 +51,7 @@ export function reportCaptureEditorSaveFailure(
   const reasons = (typeof reason === 'string' ? [reason] : reason)
     .slice(0, 7)
     .map((code) => (SAVE_DIAGNOSTIC_REASONS.has(code) ? code : 'other'));
+  // i18n-ignore (bounded machine diagnostic persisted through renderer log IPC)
   const message = `CaptureEditorSave stage=${stage} reason=${reasons.join(',') || 'other'}`;
   console.warn(message);
   if (!isElectron()) return;
