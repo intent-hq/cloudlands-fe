@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectMessageBlockPagesSupported: {
-    // eslint-disable-next-line require-yield -- selector effect stand-in
     *effect() {
       return mocks.messageBlockPages;
     },

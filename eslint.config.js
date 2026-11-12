@@ -570,6 +570,9 @@ export default [
       'test/**',
     ],
   },
+  // A stale eslint-disable silently turns off a check for code that may later need it
+  // (intent-hq/cloudlands-fe#4479), so an exception that suppresses nothing fails lint.
+  { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   javascriptConfig,
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],

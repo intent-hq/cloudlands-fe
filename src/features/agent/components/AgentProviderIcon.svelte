@@ -45,7 +45,6 @@
     monochrome = false,
   }: Props = $props();
   // A named profile (§5.54 `<base>@<id>`) shares its base provider's icon.
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
   const providerId = $derived(providerRefBaseId(providerRef));
 </script>
 

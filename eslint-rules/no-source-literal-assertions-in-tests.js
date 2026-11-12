@@ -1,4 +1,7 @@
 import { relativeFilename } from './design-system/common.js';
+import { suppressedLines } from './lib/disable-directives.js';
+
+const RULE_NAME = 'no-source-literal-assertions-in-tests';
 
 const MESSAGE =
   "Reading '{{path}}' from disk to assert on its source text pins the test to how the source is " +
@@ -134,6 +137,7 @@ export default {
 
   create(context) {
     const allowed = context.options[0]?.baseline?.[relativeFilename(context)] ?? 0;
+    const suppressed = suppressedLines(context.sourceCode, RULE_NAME);
     let seen = 0;
 
     return {
@@ -143,8 +147,12 @@ export default {
         const evidence = staticPath(node.arguments[0]);
         if (evidence === null || evidence.tail === null) return;
         if (!isSourceFile(evidence.tail) || hasExemptSegment(evidence.statics)) return;
-        seen += 1;
-        if (seen <= allowed) return;
+        // A reasoned disable still gets its report, so ESLint counts the directive as used,
+        // but it does not use up the baseline allowance.
+        if (!suppressed(node.loc.start.line)) {
+          seen += 1;
+          if (seen <= allowed) return;
+        }
         context.report({ node, messageId: 'sourceLiteralRead', data: { path: evidence.tail } });
       },
     };
