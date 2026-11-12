@@ -126,7 +126,7 @@ for (const save of ['reject', 'mismatch'] as const) {
   });
 }
 
-test('a conversation opened from the intro never holds the notch open after it closes', async ({
+test('a conversation opened from the intro collapses and preserves selection until Back', async ({
   mount,
   page,
 }) => {
@@ -138,19 +138,27 @@ test('a conversation opened from the intro never holds the notch open after it c
   await component.locator('[data-dock-row]').first().click();
   const surface = component.getByTestId('dock-conversation-surface');
   await expect(surface).toBeVisible();
-  // Escape leaves the conversation; with the pointer away the notch collapses.
+  const preview = component.locator('[data-preview-conversation]');
+  await expect(preview).toHaveAttribute('data-preview-conversation', /.+/);
+  const workspaceId = (await preview.getAttribute('data-preview-conversation')) ?? '';
+  // Escape collapses the conversation without clearing its selection.
   await page.keyboard.press('Escape');
   await expect(surface).toHaveCount(0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.mouse.move(630, SHORT - 10);
   await expect(shell).toHaveAttribute('data-reveal', '0');
-  // Not secretly dismissed: the intro still waits for "Got it" on the next open,
-  // and the conversation reopens from the same row.
+  await expect(preview).toHaveAttribute('data-preview-conversation', workspaceId);
   expect(await page.evaluate((key) => localStorage.getItem(key), SEEN_KEY)).toBeNull();
-  await component.getByTestId('dock-drag-handle').hover();
+  // The native open request restores the pinned conversation; Back returns to the intro.
+  await component.update({ props: { focusRequest: 1 } });
+  await expect(surface).toBeVisible();
+  await expect(preview).toHaveAttribute('data-preview-conversation', workspaceId);
+  await surface.locator('[data-dock-conversation-back]').press('Enter');
+  await expect(preview).toHaveAttribute('data-preview-conversation', '');
   await expect(component.getByTestId('dock-intro')).toBeVisible();
   await component.locator('[data-dock-row]').first().click();
-  await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();
+  await expect(surface).toBeVisible();
+  await expect(preview).toHaveAttribute('data-preview-conversation', workspaceId);
 });
 
 test('the intro at normal height (screenshot for review)', async ({ mount, page }, testInfo) => {
