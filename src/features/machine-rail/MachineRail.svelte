@@ -16,6 +16,9 @@
    * button follows the last machine. Hosts joined as a guest come after the
    * user's own machines, below a separator.
    *
+   * A machine other than the window's own can be dragged to another place in
+   * its group (the others move aside to make room), or moved with Alt+Up/Down.
+   *
    * A context click opens the machine's menu where it is, without switching:
    * its status, removal from the rail and machine settings. The shown
    * machine's status comes from its own renderer, with full health details.
@@ -24,6 +27,7 @@
    * shell backdrop with the shown machine's tint, so the tint cross-fades.
    */
   import { faPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
+  import { flip } from 'svelte/animate';
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DaemonStatusIndicator from '$lib/components/layout/DaemonStatusIndicator.svelte';
@@ -32,6 +36,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Header from '$lib/components/ui/Header.svelte';
   import * as Menu from '$lib/components/ui/menu';
+  import { prefersReducedMotion, spring } from '$lib/motion';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -60,10 +65,12 @@
   import {
     addRailMachineRequested,
     removeRailMachineRequested,
+    reorderRailMachinesRequested,
     selectRailMachineRequested,
   } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { moveItem, railDropIndex, railShift } from './rail-reorder';
 
   const enabled$ = selectMachineRailEnabled();
   const items$ = selectMachineRailItems();
@@ -102,8 +109,139 @@
   let itemMenu = $state<{ id: string; anchor: HTMLElement } | null>(null);
   let itemMenuOpen = $state(false);
 
-  const ownItems = $derived($items$.filter((item) => !item.guest));
-  const guestItems = $derived($items$.filter((item) => item.guest));
+  type RailGroup = 'own' | 'guest';
+  interface RailDrag {
+    id: string;
+    group: RailGroup;
+    from: number;
+    to: number;
+    startY: number;
+    dy: number;
+    /** Slot centres of the group at drag start. */
+    centers: number[];
+    /** First slot a machine may move to: the window's own machine stays first. */
+    min: number;
+    active: boolean;
+  }
+  // Movement before a press becomes a drag, so a click stays a click.
+  const DRAG_THRESHOLD_PX = 4;
+  // How long a new order shows before main confirms it (or refuses it).
+  const PENDING_ORDER_MS = 2000;
+  let drag = $state<RailDrag | null>(null);
+  let suppressClick = false;
+  let pendingOrder = $state<string[] | null>(null);
+  let pendingOrderTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const orderedItems = $derived.by(() => {
+    if (!pendingOrder || pendingOrder.length !== $items$.length) return $items$;
+    const byId = new Map($items$.map((item) => [item.id, item]));
+    const ordered = pendingOrder.map((id) => byId.get(id));
+    return ordered.every((item) => item !== undefined) ? (ordered as MachineRailItem[]) : $items$;
+  });
+  const ownItems = $derived(orderedItems.filter((item) => !item.guest));
+  const guestItems = $derived(orderedItems.filter((item) => item.guest));
+
+  // Main's reply (or push) carries the order to show from then on.
+  $effect(() => {
+    void $items$;
+    pendingOrder = null;
+  });
+
+  function groupItems(group: RailGroup): MachineRailItem[] {
+    return group === 'own' ? ownItems : guestItems;
+  }
+
+  function commitOrder(group: RailGroup, from: number, to: number) {
+    const own = ownItems.map((item) => item.id);
+    const guests = guestItems.map((item) => item.id);
+    const moved =
+      group === 'own'
+        ? [...moveItem(own, from, to), ...guests]
+        : [...own, ...moveItem(guests, from, to)];
+    const homeId = $items$.find((item) => item.home)?.id;
+    const order = homeId ? [homeId, ...moved.filter((id) => id !== homeId)] : moved;
+    clearTimeout(pendingOrderTimer);
+    pendingOrder = order;
+    pendingOrderTimer = setTimeout(() => (pendingOrder = null), PENDING_ORDER_MS);
+    appStore.dispatch(reorderRailMachinesRequested(order));
+  }
+
+  function startDrag(event: PointerEvent, item: MachineRailItem, group: RailGroup, index: number) {
+    suppressClick = false;
+    if (event.button !== 0 || item.home) return;
+    const entry = event.currentTarget as HTMLElement;
+    const slots = entry
+      .closest('[data-rail-list]')
+      ?.querySelectorAll<HTMLElement>(`[data-rail-group="${group}"]`);
+    const centers = [...(slots ?? [])].map((slot) => {
+      const rect = slot.getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    });
+    const list = groupItems(group);
+    drag = {
+      id: item.id,
+      group,
+      from: index,
+      to: index,
+      startY: event.clientY,
+      dy: 0,
+      centers,
+      min: list[0]?.home ? 1 : 0,
+      active: false,
+    };
+    entry.setPointerCapture(event.pointerId);
+  }
+
+  function moveDrag(event: PointerEvent) {
+    if (!drag) return;
+    const dy = event.clientY - drag.startY;
+    if (!drag.active && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+    drag.active = true;
+    drag.dy = dy;
+    drag.to = railDropIndex(drag.centers, drag.from, dy, drag.min);
+  }
+
+  function endDrag(commit: boolean) {
+    const ended = drag;
+    drag = null;
+    if (!ended?.active) return;
+    // The press that ended a drag is not a click on the machine.
+    suppressClick = true;
+    if (commit && ended.to !== ended.from) commitOrder(ended.group, ended.from, ended.to);
+  }
+
+  /** Where a group entry sits during a drag: the dragged one follows the pointer. */
+  function dragOffset(group: RailGroup, index: number): string | undefined {
+    if (!drag?.active || drag.group !== group) return undefined;
+    if (index === drag.from) return `translateY(${drag.dy}px)`;
+    const step = drag.centers.length > 1 ? drag.centers[1] - drag.centers[0] : 0;
+    const shift = railShift(index, drag.from, drag.to);
+    return shift ? `translateY(${shift * step}px)` : undefined;
+  }
+
+  function moveWithKeys(
+    event: KeyboardEvent,
+    item: MachineRailItem,
+    group: RailGroup,
+    index: number,
+  ) {
+    if (!event.altKey || item.home) return;
+    const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+    if (!delta) return;
+    event.preventDefault();
+    const list = groupItems(group);
+    const min = list[0]?.home ? 1 : 0;
+    const to = Math.min(list.length - 1, Math.max(min, index + delta));
+    if (to !== index) commitOrder(group, index, to);
+  }
+
+  function selectMachine(id: string) {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    appStore.dispatch(selectRailMachineRequested(id));
+  }
   const itemMenuItem = $derived($items$.find((item) => item.id === itemMenu?.id) ?? null);
 
   function openItemMenu(event: MouseEvent, item: MachineRailItem) {
@@ -180,6 +318,25 @@
   {/if}
 {/snippet}
 
+{#snippet railEntry(item: MachineRailItem, group: RailGroup, index: number)}
+  {@const dragged = drag?.active && drag.id === item.id}
+  <div
+    class={cn('relative flex', dragged && 'z-10 cursor-grabbing')}
+    data-rail-group={group}
+    style:transform={dragOffset(group, index)}
+    style:transition={drag?.active && !dragged
+      ? 'transform var(--spring-moderate) var(--spring-moderate-ease)'
+      : undefined}
+    onpointerdown={(event) => startDrag(event, item, group, index)}
+    onpointermove={moveDrag}
+    onpointerup={() => endDrag(true)}
+    onpointercancel={() => endDrag(false)}
+    onkeydown={(event) => moveWithKeys(event, item, group, index)}
+  >
+    {@render railItem(item)}
+  </div>
+{/snippet}
+
 {#snippet railItem(item: MachineRailItem)}
   {@const accent = item.record?.isLocal ? null : resolveConnectionAccent(item.record?.accent)}
   <div class="relative flex">
@@ -211,7 +368,7 @@
       data-guest={item.guest ? true : undefined}
       data-offline={item.offline || undefined}
       data-pending={item.pending || undefined}
-      onclick={() => appStore.dispatch(selectRailMachineRequested(item.id))}
+      onclick={() => selectMachine(item.id)}
       oncontextmenu={(event: MouseEvent) => openItemMenu(event, item)}
     >
       {#if item.pending}
@@ -257,9 +414,11 @@
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
   >
-    <div class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto">
-      {#each ownItems as item (item.id)}
-        {@render railItem(item)}
+    <div class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto" data-rail-list>
+      {#each ownItems as item, index (item.id)}
+        <div animate:flip={{ duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs }}>
+          {@render railEntry(item, 'own', index)}
+        </div>
       {/each}
       {#if ownItems.length > 0 && guestItems.length > 0}
         <div
@@ -268,8 +427,10 @@
           data-testid="machine-rail-guest-separator"
         ></div>
       {/if}
-      {#each guestItems as item (item.id)}
-        {@render railItem(item)}
+      {#each guestItems as item, index (item.id)}
+        <div animate:flip={{ duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs }}>
+          {@render railEntry(item, 'guest', index)}
+        </div>
       {/each}
     </div>
 

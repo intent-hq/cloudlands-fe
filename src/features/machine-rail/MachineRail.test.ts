@@ -145,6 +145,38 @@ it('marks a connected machine whose daemon is degraded', () => {
   ).toEqual(['local']);
 });
 
+it("moves a machine with Alt+arrow keys, keeping the window's own machine first", async () => {
+  setState({ machineIds: ['local', 'b', 'c', 'g1'] });
+  mocks.state = {
+    ...mocks.state,
+    connections: {
+      ...(mocks.state.connections as object),
+      connections: createCollection<ConnectionRecord, 'id'>('id', [
+        record('local'),
+        record('b'),
+        record('c'),
+      ]),
+    },
+  };
+  render(MachineRail);
+  const [local, , c] = railItems();
+  await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      type: 'machineRail/reorderRequested',
+      payload: [['local', 'c', 'b', 'g1']],
+    }),
+  );
+  mocks.dispatch.mockClear();
+  // The new order shows at once: `c` is now right below the window's own machine.
+  expect(railItems().map((item) => item.dataset.machineId)).toEqual(['local', 'c', 'b', 'g1']);
+  await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
+  await fireEvent.keyDown(local, { key: 'ArrowDown', altKey: true });
+  expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'machineRail/reorderRequested' }),
+  );
+});
+
 it('offers guest hosts that are not in the rail in the add menu', async () => {
   render(MachineRail);
   await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });

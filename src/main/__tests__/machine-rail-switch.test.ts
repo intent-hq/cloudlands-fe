@@ -312,6 +312,18 @@ describe('machine rail switching', () => {
     expect(getMachineRailSession(fakes.window as never)?.selectedId).toBe('local');
   });
 
+  it("saves a new order of the rail, keeping the window's own machine first", async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    expect(await invoke(RAIL.REORDER, home(), { machineIds: ['local', 'c', 'b'] })).toMatchObject({
+      machineIds: ['local', 'c', 'b'],
+    });
+    expect(getMachineRailSession(fakes.window as never)?.machineIds).toEqual(['c', 'b']);
+    expect(await invoke(RAIL.REORDER, home(), { machineIds: ['c', 'local', 'b'] })).toMatchObject({
+      machineIds: ['local', 'c', 'b'],
+    });
+  });
+
   it('forgets the wait for a machine removed while it starts', async () => {
     await invoke(RAIL.ADD, home(), { id: 'b' });
     expect(await invoke(RAIL.REMOVE, home(), { id: 'b' })).toMatchObject({

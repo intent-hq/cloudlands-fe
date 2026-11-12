@@ -37,6 +37,7 @@ import {
   addRailMachineRequested,
   machineRailStateReceived,
   removeRailMachineRequested,
+  reorderRailMachinesRequested,
   selectRailMachineRequested,
   setMachineRailEnabledRequested,
 } from '../machine-rail-slice';
@@ -79,6 +80,8 @@ const railRequests = {
     (await requireApi().invoke(MACHINE_RAIL.ADD, { id })) as MachineRailState,
   remove: async (id: string) =>
     (await requireApi().invoke(MACHINE_RAIL.REMOVE, { id })) as MachineRailState,
+  reorder: async (machineIds: string[]) =>
+    (await requireApi().invoke(MACHINE_RAIL.REORDER, { machineIds })) as MachineRailState,
   setEnabled: async (enabled: boolean) =>
     (await requireApi().invoke(MACHINE_RAIL.SET_ENABLED, { enabled })) as MachineRailState,
 };
@@ -283,6 +286,9 @@ export function* machineRailSaga() {
   });
   yield* takeEvery(removeRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.remove(id));
+  });
+  yield* takeEvery(reorderRailMachinesRequested, function* ({ payload: [machineIds] }) {
+    yield* request(() => railRequests.reorder(machineIds));
   });
   yield* takeEvery(setMachineRailEnabledRequested, function* ({ payload: [enabled] }) {
     yield* request(() => railRequests.setEnabled(enabled));
