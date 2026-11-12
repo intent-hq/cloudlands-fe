@@ -218,19 +218,18 @@
     // Main stamps the recording clock. Never send renderer wall-clock timing.
     const end = current.points.at(-1) ?? current.origin;
     void current.down
-      .then(
-        (ack) =>
-          ack.ok &&
-          current.transport.pointer({
-            sessionId: current.sessionId,
-            sequence: current.sequence,
-            phase: 'move',
-            tool: current.tool,
-            x: end.x,
-            y: end.y,
-            pointCount: current.points.length,
-          }),
-      )
+      .then(async (ack) => {
+        if (!ack.ok) return;
+        await current.transport.pointer({
+          sessionId: current.sessionId,
+          sequence: current.sequence,
+          phase: 'move',
+          tool: current.tool,
+          x: end.x,
+          y: end.y,
+          pointCount: current.points.length,
+        });
+      })
       .catch(() => {});
   }
 

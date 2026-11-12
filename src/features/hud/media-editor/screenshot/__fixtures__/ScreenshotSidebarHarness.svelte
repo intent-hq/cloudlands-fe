@@ -72,7 +72,11 @@
     onRetake={async () => null}
     onSave={async ({ edit }) => {
       saved = true;
-      return { result: 'saved', saved: edit };
+      return {
+        requestId: '10000000-0000-4000-8000-000000000000',
+        result: 'saved',
+        saved: edit,
+      };
     }}
   />
 </div>

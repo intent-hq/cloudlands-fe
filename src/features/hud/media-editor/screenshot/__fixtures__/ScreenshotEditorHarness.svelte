@@ -30,6 +30,7 @@
     height: 500,
     audio: 'none',
     visuals: 'clean',
+    batches: [],
   };
   const picture = (width: number, height: number) => {
     const image = document.createElement('canvas');

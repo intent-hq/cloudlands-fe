@@ -68,6 +68,7 @@
     listening: 'Listening',
     recording: 'Recording',
     markUp: 'Mark up',
+    edit: 'Edit',
     remove: 'Remove',
     play: 'Play',
     done: 'Done',

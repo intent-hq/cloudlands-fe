@@ -6,7 +6,7 @@
   import type { DockPointerRect } from '$shared/dock-layout';
 
   let { open = false }: { open?: boolean } = $props();
-  let state = $state<DockEdgeConversationState>({ held: false, reveal: 0, shell: null });
+  let edgeState = $state<DockEdgeConversationState>({ held: false, reveal: 0, shell: null });
   let regions = $state<DockPointerRect[]>([]);
   const placement = {
     ...adaptiveDockFixture('edge', 'right'),
@@ -17,7 +17,7 @@
 
 <section
   data-testid="edge-motion-host"
-  data-state={JSON.stringify(state)}
+  data-state={JSON.stringify(edgeState)}
   data-regions={JSON.stringify(regions)}
   style="position:relative;width:640px;height:600px"
 >
@@ -26,7 +26,7 @@
     workspaceId="motion-proof"
     {placement}
     shown={{ x: 580, y: 80, width: 40, height: 240 }}
-    onStateChange={(value) => (state = value)}
+    onStateChange={(value) => (edgeState = value)}
     onRegionsChange={(value) => (regions = value)}
   >
     <p>Unsaved conversation stays mounted during reversal.</p>

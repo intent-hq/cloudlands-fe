@@ -160,7 +160,7 @@
   oncontextmenu={(event) => {
     if (!pickable) return;
     event.preventDefault();
-    if ((event as PointerEvent).pointerType === 'touch') suppressClick = true;
+    if ('pointerType' in event && event.pointerType === 'touch') suppressClick = true;
     show('touch');
   }}
   onkeydown={(event) => {

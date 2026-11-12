@@ -505,7 +505,7 @@ export function setupConversationWire(
       if (!value) for (const resolve of serviceListWaiters.splice(0)) resolve();
     },
     emit(channel: string, payload: unknown) {
-      for (const entry of listeners.values()) if (entry.channel === channel) entry.handler(payload);
+      emitMockIpcEvent(channel, payload);
     },
     askQuestions(recover = false) {
       pendingQuestion = true;
