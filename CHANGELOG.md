@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.325.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.1...v2.325.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **machine-rail:** drag machines to reorder the rail ([#4500](https://github.com/intent-hq/cloudlands-fe/issues/4500)) ([4da8788](https://github.com/intent-hq/cloudlands-fe/commit/4da878881ebc3f364ea3e744d3c9809ce482011d))
+* **machines:** one ordered machine list in Settings → Machines ([#4494](https://github.com/intent-hq/cloudlands-fe/issues/4494)) ([b9c33a2](https://github.com/intent-hq/cloudlands-fe/commit/b9c33a2815444a7aca6c88b43bcd7f45e9a4b8f6))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.194 ([#4502](https://github.com/intent-hq/cloudlands-fe/issues/4502)) ([60f8c6c](https://github.com/intent-hq/cloudlands-fe/commit/60f8c6c14328a22aa731ac522476f823581aa963))
+
 ## [2.324.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.0...v2.324.1) (2026-11-12)
 
 
