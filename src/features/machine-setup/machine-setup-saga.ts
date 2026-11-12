@@ -209,9 +209,9 @@ function* finishRun(event: Extract<SshSetupEvent, { type: 'done' }>): SagaGenera
     yield* put(sshSetupFailed({ code: 'link-rejected', step: 'adding', addError: added }));
     return;
   }
-  const { lingerUser, macBackgroundOnly } = event.result;
-  if (lingerUser || macBackgroundOnly) {
-    yield* put(sshSetupDone(lingerUser, macBackgroundOnly));
+  const { lingerUser } = event.result;
+  if (lingerUser) {
+    yield* put(sshSetupDone(lingerUser));
     return;
   }
   yield* put(machineSetupClosed());

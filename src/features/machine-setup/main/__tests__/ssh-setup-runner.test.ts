@@ -222,7 +222,7 @@ describe('ssh setup runner: success', () => {
     expect(end).toEqual({
       runId: 'run-1',
       type: 'done',
-      result: { link: PAIR_LINK, lingerUser: null, macBackgroundOnly: false },
+      result: { link: PAIR_LINK, lingerUser: null },
     });
     expect(steps(h.events)).toEqual(['connecting', 'installing', 'starting', 'pairing', 'adding']);
     expect(h.holdLink).toHaveBeenCalledWith(PAIR_URI, 'build-box');
@@ -658,21 +658,16 @@ describe('ssh setup runner: after install', () => {
     expect(h.clients[0].commands.some((c) => c.includes('enable-linger'))).toBe(true);
   });
 
-  it('flags a macOS background-domain install', async () => {
-    const h = harness({
-      script: { os: 'Darwin', install: { stdout: installerOutput(PAIR_URI, { mac: true }) } },
-    });
-    h.runner.start(params());
-    expect(await h.settle()).toMatchObject({
-      type: 'done',
-      result: { macBackgroundOnly: true, lingerUser: null },
-    });
-    expect(h.clients[0].commands.some((c) => c.includes('loginctl'))).toBe(false);
-  });
-
-  it('does not flag a macOS desktop install', async () => {
+  it('refuses a Mac: SSH setup supports Linux only', async () => {
     const h = harness({ script: { os: 'Darwin' } });
     h.runner.start(params());
-    expect(await h.settle()).toMatchObject({ type: 'done', result: { macBackgroundOnly: false } });
+    expect(await h.settle()).toEqual({
+      runId: 'run-1',
+      type: 'failed',
+      code: 'unsupported-os',
+      step: 'connecting',
+      os: 'Darwin',
+    });
+    expect(h.clients[0].commands.some((c) => c.includes('install.sh'))).toBe(false);
   });
 });

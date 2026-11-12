@@ -48,7 +48,7 @@ export type SshSetupErrorCode =
   | 'host-key-mismatch'
   /** The user did not trust an unknown host key. */
   | 'host-key-declined'
-  /** `uname -s` is neither Linux nor Darwin. */
+  /** `uname -s` is not Linux (SSH setup supports Linux only). */
   | 'unsupported-os'
   /** The installer (or the fallback `intentd pair`) exited non-zero. */
   | 'install-failed'
@@ -82,8 +82,6 @@ export interface SshSetupResult {
    * out; the success screen shows `sudo loginctl enable-linger <user>`.
    */
   lingerUser: string | null;
-  /** macOS: installed without a desktop login (launchd `user/<uid>` domain). */
-  macBackgroundOnly: boolean;
 }
 
 export type SshSetupEvent =

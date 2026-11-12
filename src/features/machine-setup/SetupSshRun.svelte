@@ -165,11 +165,6 @@
       />
     </div>
   {/if}
-  {#if run.phase === 'done' && run.macBackgroundOnly}
-    <p class="type-caption text-muted-foreground" data-machine-setup-mac-note>
-      {m.machineSetup_run_macBackground_description()}
-    </p>
-  {/if}
 
   {#if run.log.length > 0}
     <div class="space-y-2">

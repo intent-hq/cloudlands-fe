@@ -33,7 +33,6 @@ const LINGER_CHECK = 'loginctl show-user "$(id -un)" -p Linger';
 const LINGER_ENABLE = 'sudo -n loginctl enable-linger "$(id -un)"';
 const STARTING_TEXT = 'waiting for the daemon to respond';
 const PAIRING_TEXT = /\bpairing\b|node mode on/i;
-const MAC_BACKGROUND_TEXT = 'runs in the background domain';
 
 export const SSH_SETUP_TIMEOUTS = {
   /** TCP + SSH handshake + sign-in (paused while the user decides on a host key). */
@@ -444,20 +443,18 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
 
     const probe = await exec(run, PROBE_COMMAND);
     const [os = '', nodeName = '', user = ''] = probe.stdout.split('\n').map((s) => s.trim());
-    if (os !== 'Linux' && os !== 'Darwin')
+    if (os !== 'Linux')
       throw new SetupFailure('unsupported-os', { os: os.slice(0, 64) || 'unknown' });
 
     // Installer: the step follows its output; the marker line is the link.
     setStep(run, 'installing');
     let link: string | null = null;
     let urlLink: string | null = null;
-    let macBackgroundOnly = false;
     const onInstallerLine = (line: string) => {
       armWatchdog(run);
       const marker = parseLinkMarker(line);
       if (marker) link ??= marker;
       urlLink ??= parsePairUrl(line);
-      if (line.includes(MAC_BACKGROUND_TEXT)) macBackgroundOnly = true;
       if (run.step === 'installing' && line.includes(STARTING_TEXT)) setStep(run, 'starting');
       if (run.step !== 'pairing' && PAIRING_TEXT.test(line)) {
         setStep(run, 'pairing');
@@ -485,7 +482,7 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
       if (!link) throw new SetupFailure('no-link');
     }
 
-    const linger = os === 'Linux' ? await lingerUser(run, user) : null;
+    const linger = await lingerUser(run, user);
 
     setStep(run, 'adding');
     const holding = Promise.resolve().then(() => deps.holdLink(link as string, nodeName));
@@ -507,7 +504,6 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
     return {
       link: held,
       lingerUser: linger,
-      macBackgroundOnly: os === 'Darwin' && macBackgroundOnly,
     };
   }
 

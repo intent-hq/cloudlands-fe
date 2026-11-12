@@ -54,8 +54,6 @@ export interface SshRunState {
   failure: SshRunFailure | null;
   /** Done but lingering is still off: show the sudo step. */
   lingerUser: string | null;
-  /** Done on a Mac nobody is logged in to. */
-  macBackgroundOnly: boolean;
 }
 
 export interface MachineSetupState {
@@ -121,7 +119,7 @@ export const sshHostKeyAnswered = createAction<[trust: boolean]>('machineSetup/s
 export const sshSetupAdding = createAction('machineSetup/sshSetupAdding');
 export const sshSetupFailed = createAction<[failure: SshRunFailure]>('machineSetup/sshSetupFailed');
 /** Added, with one more step to show (lingering off, or a Mac nobody is logged in to). */
-export const sshSetupDone = createAction<[lingerUser: string | null, macBackgroundOnly: boolean]>(
+export const sshSetupDone = createAction<[lingerUser: string]>(
   'machineSetup/sshSetupDone',
 );
 
@@ -171,7 +169,6 @@ machineSetupReducer.with(sshRunShown, (state, { payload: [login] }) => ({
     hostKey: null,
     failure: null,
     lingerUser: null,
-    macBackgroundOnly: false,
   },
 }));
 machineSetupReducer.with(sshSetupStarted, (state, { payload: [runId] }) =>
@@ -215,8 +212,8 @@ machineSetupReducer.with(sshSetupFailed, (state, { payload: [failure] }) =>
     ? { ...state, ssh: { ...state.ssh, phase: 'failed', step: failure.step, failure } }
     : state,
 );
-machineSetupReducer.with(sshSetupDone, (state, { payload: [lingerUser, macBackgroundOnly] }) =>
+machineSetupReducer.with(sshSetupDone, (state, { payload: [lingerUser] }) =>
   state.ssh
-    ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser, macBackgroundOnly } }
+    ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser } }
     : state,
 );

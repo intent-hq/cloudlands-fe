@@ -43,7 +43,6 @@
       'ssh-no-link': scene('ssh-no-link'),
       'ssh-link-rejected': scene('ssh-link-rejected'),
       'ssh-done-linger': scene('ssh-done-linger'),
-      'ssh-done-mac': scene('ssh-done-mac'),
     },
     captureReadiness: { selector: '[data-machine-setup-scene][data-ready]' },
   });

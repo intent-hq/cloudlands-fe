@@ -30,7 +30,6 @@ export function sshFailureMessage(failure: SshRunFailure, host: string): string 
 
 /** A second line for the failures with a common fix. */
 export function sshFailureHint(failure: SshRunFailure): string | null {
-  if (failure.code === 'unreachable') return m.machineSetup_error_remoteLogin_hint();
   if (failure.code === 'install-failed' || failure.code === 'no-link')
     return m.machineSetup_error_seeLog_hint();
   return null;

@@ -128,7 +128,6 @@ const doneEvent = (overrides: Partial<Extract<SshSetupEvent, { type: 'done' }>['
         existingId: null,
       },
       lingerUser: null,
-      macBackgroundOnly: false,
       ...overrides,
     },
   }) satisfies SshSetupEvent;
@@ -346,8 +345,7 @@ describe('SSH setup run', () => {
       result: {
         link: { kind: 'invite', pendingId: 'inv-1', label: 'gpu-rig' },
         lingerUser: null,
-        macBackgroundOnly: false,
-      },
+        },
     });
     await vi.waitFor(() => expect(setup().ssh?.phase).toBe('failed'));
     expect(ui.confirm).toHaveBeenCalled();

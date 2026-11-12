@@ -42,8 +42,7 @@ export type MachineSetupPreviewState =
   | 'ssh-install-failed'
   | 'ssh-no-link'
   | 'ssh-link-rejected'
-  | 'ssh-done-linger'
-  | 'ssh-done-mac';
+  | 'ssh-done-linger';
 
 const LOGIN: SshLoginPrefill = {
   host: 'build-2.example.com',
@@ -182,11 +181,7 @@ export function setupMachineSetupFixture(state: MachineSetupPreviewState): () =>
       break;
     case 'ssh-done-linger':
       run('adding');
-      store.dispatch(sshSetupDone('deploy', false));
-      break;
-    case 'ssh-done-mac':
-      run('adding');
-      store.dispatch(sshSetupDone(null, true));
+      store.dispatch(sshSetupDone('deploy'));
       break;
   }
 

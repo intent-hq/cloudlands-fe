@@ -56,17 +56,12 @@ export const PAIR_NODE_OUTPUT = [
 /** The installer with `INTENTD_LINK_MARKER=1` (full daemon, Linux). */
 export function installerOutput(
   uri: string | null,
-  extra: { node?: boolean; mac?: boolean; withPairOutput?: boolean } = {},
+  extra: { node?: boolean; withPairOutput?: boolean } = {},
 ): string {
   return [
     'install.sh: downloading intentd 0.42.0 (linux-x86_64)...',
     'install.sh: installed /home/dev/.local/bin/intentd',
     'install.sh: waiting for the daemon to respond (first start downloads the daemon binary)...',
-    ...(extra.mac
-      ? [
-          "install.sh: nobody is logged in at this Mac's desktop, so intentd runs in the background domain: it keeps running after you log out, but if the Mac restarts it starts again only after someone logs in",
-        ]
-      : []),
     extra.node
       ? 'install.sh: node mode on — pair this computer with the Intent that will run agents here'
       : 'install.sh: pairing — the link below adds this computer to the Intent desktop app',
