@@ -9,7 +9,8 @@ import {
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
-export type MachineOrderPreviewState = 'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions';
+export type MachineOrderPreviewState =
+  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'orchestrator';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
@@ -52,11 +53,13 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   const exceptions = state === 'exceptions';
   const restoreCloud = setupCloudMachinesFixture(exceptions ? 'entries-key-rejected' : 'entries');
   const ordered = state !== 'unsupported';
+  // An orchestrator's list has no "This computer" row: it never runs agents.
+  const order = state === 'orchestrator' ? ORDER.filter((row) => row.kind !== 'local') : ORDER;
   store.dispatch(
     remoteMachinesLoaded({
       supported: true,
       machineOrder: ordered,
-      order: ordered ? ORDER : null,
+      order: ordered ? order : null,
       machines: exceptions
         ? [
             { ...STUDIO, state: 'update-required' },
@@ -69,7 +72,7 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   );
   if (state === 'saving') store.dispatch(machineOrderSaveStarted('preview-save', ORDER));
   // The owner reorders; a member reads the same list.
-  admitLegacyPrincipal('owner');
+  admitLegacyPrincipal('owner', {}, state === 'orchestrator' ? 'orchestrator' : undefined);
   const { context, invalidation, presentationVersion } = store.state.principal;
   const member = withHostPrincipal(store.state, 'member').principal.snapshot;
   if (state === 'member' && context && member)

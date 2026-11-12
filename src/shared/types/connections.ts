@@ -107,11 +107,13 @@ export type DeviceIconChoice = 'auto' | DeviceKind;
  * The running mode a daemon reports (`client.hello` `server.daemonMode`, or the
  * `node-mode` refusal probe for older daemons). A node only runs agents for
  * other backends: it is never the current backend and never opens a window.
+ * An orchestrator is a backend that never runs agents itself: every agent runs
+ * on one of its machines (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
  */
-export type DaemonMode = 'regular' | 'node';
+export type DaemonMode = 'regular' | 'node' | 'orchestrator';
 
 export function isDaemonMode(value: unknown): value is DaemonMode {
-  return value === 'regular' || value === 'node';
+  return value === 'regular' || value === 'node' || value === 'orchestrator';
 }
 
 /** Transient state derived only from an already-created backend client. */

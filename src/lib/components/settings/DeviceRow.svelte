@@ -84,6 +84,7 @@
   import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
   import { machineRowPlatform, machineRowProviders } from '$features/remote-machines/machine-facts';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectBackendDaemonMode } from '$store/renderer/slices/principal/principal-selectors';
 
   export type DevicePanelMode = 'edit' | null;
 
@@ -116,6 +117,9 @@
   }: Props = $props();
   // A node only runs agents for other backends: it is never connected to as a backend.
   const isNode = $derived(device.daemonMode === 'node');
+  // The current backend's mode comes from its hello; other rows keep the mode
+  // captured on their last connection.
+  const backendMode$ = selectBackendDaemonMode();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   // intent-web dials the remote itself for tunnel settings, so they do not
@@ -242,6 +246,11 @@
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const displayName = $derived(formatMachineRowLabel(device, $currentConnectionId$));
+  // An orchestrator never runs agents itself: say where they run instead.
+  const isOrchestrator = $derived(
+    ((device.id === $currentConnectionId$ && $backendMode$) || device.daemonMode) ===
+      'orchestrator',
+  );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -635,7 +644,10 @@
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
-  <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
+  <ListRow
+    class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center"
+    description={isOrchestrator ? orchestratorDescription : undefined}
+  >
     {#snippet leading()}
       <span class="flex items-center gap-3">
         <span
@@ -1045,3 +1057,8 @@
     </form>
   {/if}
 </article>
+
+{#snippet orchestratorDescription()}
+  <span data-testid="device-orchestrator-mode">{m.settings_devices_orchestrator_description()}</span
+  >
+{/snippet}

@@ -81,6 +81,7 @@
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
   import { notify } from '$lib/components/patterns/notify';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const sessionId = crypto.randomUUID();
@@ -95,6 +96,11 @@
   const providerStatusMap$ = selectProviderStatusMap();
   const providerLoadingMap$ = selectProviderLoadingMap();
   const npxStatus$ = selectNpxStatus();
+  // An orchestrator runs no provider CLI, so it checks none: its rows only
+  // enable or disable a provider and hold its profiles, with no install,
+  // sign-in, version or warning state (PROTOCOL `provider-profiles.md` →
+  // "Profiles on an orchestrator").
+  const orchestrator$ = selectIsOrchestratorBackend();
 
   const checkError = $derived($discoveryError$);
   const providerPaths = $derived($paths$.configured);
@@ -160,6 +166,25 @@
   // Provider options for display - dynamically generated from the catalog
   const providerOptions = $derived.by(() =>
     orderedCatalogEntries.map((provider) => {
+      if ($orchestrator$)
+        return {
+          id: provider.id,
+          name: provider.displayName,
+          displayName: provider.displayName,
+          command: provider.command,
+          // Configurable here; whether it runs is each machine's own report.
+          available: true,
+          authenticated: undefined,
+          statusPending: false,
+          requiresAuth: false,
+          docsUrl: '',
+          loginDocsUrl: undefined,
+          loginCommandHint: undefined,
+          hasNpxFallback: false,
+          warning: undefined,
+          version: undefined,
+          unavailableReason: undefined,
+        };
       const status = $providerStatusMap$[provider.id];
       return {
         id: provider.id,
@@ -181,10 +206,16 @@
     }),
   );
 
+  // On an orchestrator every provider counts as configurable: Enabled or Available.
+  const availabilityByProviderId = $derived(
+    $orchestrator$
+      ? Object.fromEntries(providerOptions.map((option) => [option.id, { available: true }]))
+      : $providerStatusMap$,
+  );
   const groupedProviderOptions = $derived.by(() =>
     groupProviderEntries(providerOptions, {
       isProviderEnabled,
-      availabilityByProviderId: $providerStatusMap$,
+      availabilityByProviderId,
       hiddenProviderIds: $hiddenProviders$,
       activeProviderId: $activeProviderId,
     }),
@@ -197,6 +228,7 @@
   ]);
 
   function isProviderReadyForUse(providerId: string): boolean {
+    if ($orchestrator$) return true;
     if (!getProviderAvailable(providerId)) return false;
     return isProviderAuthenticationReady(providerId, getProviderAuthenticated(providerId));
   }
@@ -294,7 +326,11 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  {#if checkError}
+  {#if $orchestrator$}
+    <p class="max-w-2xl type-body text-muted-foreground" data-testid="providers-orchestrator-note">
+      {m.settings_providers_orchestrator_description()}
+    </p>
+  {:else if checkError}
     <div
       data-slot="settings-section-body"
       class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4"
@@ -544,17 +580,20 @@
                             </p>
                           {/if}
 
-                          <Menu.Item
-                            class="cursor-pointer text-foreground"
-                            onSelect={() => {
-                              pathConfigOpen = { [provider.id]: true };
-                            }}
-                          >
-                            <span class="flex size-4 shrink-0 items-center justify-center">
-                              <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
-                            </span>
-                            {m.settings_providerPath_setCustomPath_label()}
-                          </Menu.Item>
+                          {#if !$orchestrator$}
+                            <!-- An orchestrator runs no CLI, so it has no CLI path. -->
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                pathConfigOpen = { [provider.id]: true };
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerPath_setCustomPath_label()}
+                            </Menu.Item>
+                          {/if}
 
                           {#if canAddProfile}
                             <Menu.Item

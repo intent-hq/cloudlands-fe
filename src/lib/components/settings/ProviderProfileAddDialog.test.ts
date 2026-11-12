@@ -276,6 +276,36 @@ describe('ProviderProfileAddDialog', () => {
     );
   });
 
+  // An orchestrator runs no test prompt (`supportsTestPrompt: false`): the
+  // saved key is the outcome, so the dialog closes with the created toast.
+  it('API key on a backend without a key check: closes once the key is saved', async () => {
+    await seed();
+    await openDialog('claude');
+    await fireEvent.click(screen.getByTestId('provider-profile-kind-apiKey'));
+    await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: 'Key' } });
+    await fireEvent.input(screen.getByTestId('provider-profile-secret-input'), {
+      target: { value: 'sk-ant-first' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    const {
+      providerProfileSecretSetupRequested,
+      providerProfileSetupChanged,
+      providerProfileSetupDismissed,
+    } = await slice();
+    const setupId = lastOf(providerProfileSecretSetupRequested.type)!.payload.setupId;
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'saving' }));
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'keySaved', profileId: 'p1' }));
+
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledWith(
+      m.settings_providerProfiles_created_label({ name: 'Key' }),
+    );
+    expect(lastOf(providerProfileSetupDismissed.type)?.payload).toEqual([setupId]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('Codex token: rejects a non-JWT value inline, then sends CODEX_ACCESS_TOKEN with its unsets', async () => {
     await seed();
     await openDialog('codex');

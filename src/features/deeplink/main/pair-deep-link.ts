@@ -125,8 +125,9 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     // Legacy isAdministrator remains sufficient for the established owner-only pairing path.
     if (!remote.principal.isAdministrator) return;
     const daemonMode = tested.daemonMode ?? (parsed.modeHint === 'node' ? 'node' : null);
-    // Unknown mode: saving could keep a node the backend can't use, so stop here.
-    if (!daemonMode) throw new Error('Daemon mode unknown');
+    // Unknown mode from an older daemon: saving could keep a node the backend
+    // can't use, so stop here. A reported mode this app doesn't know is never a node.
+    if (!daemonMode && !tested.modeReported) throw new Error('Daemon mode unknown');
     if (daemonMode === 'node') {
       await routeNodeLink({
         hosts,
@@ -165,7 +166,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       fingerprint,
       token,
       ...(tcAddress !== null ? { tcAddress } : {}),
-      daemonMode,
+      ...(daemonMode ? { daemonMode } : {}),
     });
     if (!existing) addedId = record.id;
     logger.info('Added backend from pairing link; opening its window', { id: record.id });

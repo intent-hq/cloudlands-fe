@@ -70,7 +70,9 @@ async function seed({
   defaults,
   providerStatus,
   providerLoading,
+  daemonMode,
 }: {
+  daemonMode?: 'orchestrator' | 'regular';
   profiles?: ProviderProfile[];
   defaultProviderId?: string;
   transportMode?: string;
@@ -126,6 +128,11 @@ async function seed({
     providerStatusMap: { ...state.agentAvailability.providerStatusMap, ...providerStatus },
     providerLoadingMap: { ...state.agentAvailability.providerLoadingMap, ...providerLoading },
   };
+  if (daemonMode) {
+    const { withBackendDaemonMode, withLegacyPrincipal } =
+      await import('../../../test/fixtures/principal-state');
+    state = withBackendDaemonMode(withLegacyPrincipal(state), daemonMode) as never;
+  }
   mocks.state.current = state;
 }
 
@@ -1474,5 +1481,70 @@ describe('ProviderProfiles row Log In, identity and delete confirmation', () => 
         expect.objectContaining({ profileId: 'pwork' }),
       ]),
     );
+  });
+});
+
+// PROTOCOL provider-profiles.md "Profiles on an orchestrator": the backend
+// checks no sign-in, so its rows carry no status, Recheck or Log In.
+describe('ProviderProfiles on an orchestrator', () => {
+  const CODEX_FOLDER: ProviderProfile = {
+    ...WORK,
+    env: [{ key: 'CODEX_HOME', kind: 'set', value: '~/intent/profiles/codex/work-k3f9' }],
+  };
+
+  async function renderOn(daemonMode: 'orchestrator' | 'regular') {
+    await seed({
+      profiles: [CODEX_FOLDER],
+      daemonMode,
+      providerStatus: { codex: { available: true, authenticated: true } },
+    });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    return render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
+  }
+
+  async function openMenu(name: string) {
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_actions_ariaLabel({ name }) }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  it('shows no status on the Default or profile rows', async () => {
+    await renderOn('orchestrator');
+    expect(screen.getByTestId('provider-profile-row')).toBeTruthy();
+    expect(document.querySelector('[data-profile-status]')).toBeNull();
+  });
+
+  it('keeps Edit and drops Recheck and Log In from the row menus', async () => {
+    await renderOn('orchestrator');
+    let menu = await openMenu('Work');
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+    ).toBeTruthy();
+    for (const name of [
+      m.settings_providers_recheck_label(),
+      m.settings_providerProfileKinds_logIn_label(),
+    ])
+      expect(within(menu).queryByRole('menuitem', { name })).toBeNull();
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+    cleanup();
+
+    await renderOn('orchestrator');
+    menu = await openMenu('Default');
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providers_recheck_label() }),
+    ).toBeNull();
+  });
+
+  it('keeps status, Recheck and Log In on a Full daemon', async () => {
+    await renderOn('regular');
+    expect(document.querySelector('[data-profile-status]')).not.toBeNull();
+    const menu = await openMenu('Work');
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_recheck_label() }),
+    ).toBeTruthy();
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfileKinds_logIn_label() }),
+    ).toBeTruthy();
   });
 });

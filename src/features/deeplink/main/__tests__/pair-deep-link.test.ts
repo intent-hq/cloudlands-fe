@@ -28,13 +28,17 @@ vi.mock('../invite-attempt', () => ({
   captureInviteAttempt: () => ({ current: () => lifetime, allowed: () => lifetime, release() {} }),
 }));
 const inspectCredential = vi.hoisted(() => vi.fn());
-const tested = vi.hoisted(() => ({ daemonMode: 'regular' as 'regular' | 'node' | null }));
+const tested = vi.hoisted(() => ({
+  daemonMode: 'regular' as 'regular' | 'node' | 'orchestrator' | null,
+  modeReported: false,
+}));
 vi.mock('../../../backend/main/invited-principal', async (actual) => ({
   ...(await actual<typeof import('../../../backend/main/invited-principal')>()),
   inspectPersonalCredential: inspectCredential,
   inspectPairCredential: async (candidate: unknown) => ({
     snapshot: await inspectCredential(candidate),
     daemonMode: tested.daemonMode,
+    modeReported: tested.modeReported,
     name: 'GPU rig',
   }),
 }));
@@ -135,6 +139,7 @@ beforeEach(() => {
   findMatching.mockResolvedValue(null);
   showMessageBox.mockResolvedValue({ response: 0 });
   tested.daemonMode = 'regular';
+  tested.modeReported = false;
   pairLinks.hold.mockResolvedValue({
     ok: true,
     pendingId: 'pending-node',
@@ -262,6 +267,24 @@ describe('a node invite link', () => {
 });
 
 describe('a full daemon pairing link', () => {
+  it('saves and opens an orchestrator as a backend', async () => {
+    tested.daemonMode = 'orchestrator';
+    tested.modeReported = true;
+    await handlePairDeepLink(LINK);
+    expect(pairLinks.hold).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ daemonMode: 'orchestrator' }));
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+  });
+
+  it('saves a daemon reporting a mode this app does not know without a mode', async () => {
+    tested.daemonMode = null;
+    tested.modeReported = true;
+    await handlePairDeepLink(LINK);
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add.mock.calls[0][0]).not.toHaveProperty('daemonMode');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+  });
+
   it('keeps the owner pairing flow and stores the detected mode', async () => {
     await handlePairDeepLink(LINK);
     expect(pairLinks.hold).not.toHaveBeenCalled();

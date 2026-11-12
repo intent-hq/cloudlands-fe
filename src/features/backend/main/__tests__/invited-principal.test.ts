@@ -291,4 +291,35 @@ describe('inspectPairCredential mode detection', () => {
     await expect(pending).resolves.toMatchObject({ daemonMode: null });
     vi.useRealTimers();
   });
+
+  it('reports an orchestrator from the hello, without probing', async () => {
+    const probe = vi.fn();
+    rpc.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello')
+        return { server: { ...hello.server, daemonMode: 'orchestrator' } };
+      if (method === 'principal.me') return owner;
+      if (method === 'workspace.get') probe();
+      return {};
+    });
+    await expect(inspectPairCredential(candidate)).resolves.toMatchObject({
+      daemonMode: 'orchestrator',
+      modeReported: true,
+    });
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reported mode it does not know unknown, marked as reported', async () => {
+    const probe = vi.fn();
+    rpc.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello') return { server: { ...hello.server, daemonMode: 'hub' } };
+      if (method === 'principal.me') return owner;
+      if (method === 'workspace.get') probe();
+      return {};
+    });
+    await expect(inspectPairCredential(candidate)).resolves.toMatchObject({
+      daemonMode: null,
+      modeReported: true,
+    });
+    expect(probe).not.toHaveBeenCalled();
+  });
 });

@@ -119,6 +119,7 @@
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
+    enhanceUnavailableDetail,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
@@ -3471,6 +3472,7 @@
                 message: error.message,
               })
             : m.workspace_compactInitializer_enhanceFailed_error(),
+        enhanceUnavailableDetail(error),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {

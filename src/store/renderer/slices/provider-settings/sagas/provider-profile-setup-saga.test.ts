@@ -94,7 +94,16 @@ function savedProfile(
 }
 
 /** Records every dep call (and create/update requests) in one ordered log. */
-function harness({ appOwned = true, deps = {} as Partial<ProviderProfileSetupDeps> } = {}) {
+function harness({
+  appOwned = true,
+  deps = {} as Partial<ProviderProfileSetupDeps>,
+  supportsTestPrompt,
+}: {
+  appOwned?: boolean;
+  deps?: Partial<ProviderProfileSetupDeps>;
+  /** The catalog rows' `supportsTestPrompt` (an orchestrator sends false). */
+  supportsTestPrompt?: boolean;
+} = {}) {
   const log: unknown[][] = [];
   let clock = 0;
   const fullDeps: ProviderProfileSetupDeps = {
@@ -135,7 +144,11 @@ function harness({ appOwned = true, deps = {} as Partial<ProviderProfileSetupDep
     providerSettings: providerSettingsReducer(initialState, providerSettingsSessionOpened('s1')),
     providerCatalog: providerCatalogReducer(
       catalogInitialState,
-      providerCatalogLoaded({ providers: [row('codex'), row('claude-code')] }),
+      providerCatalogLoaded({
+        providers: [row('codex'), row('claude-code')].map((entry) =>
+          supportsTestPrompt === undefined ? entry : { ...entry, supportsTestPrompt },
+        ),
+      }),
     ),
     terminals: terminalsReducer(undefined as never, { type: '@@init' } as never),
     daemonHealth: { transport: { mode: appOwned ? 'sidecar-uds' : 'remote-tcp' } },
@@ -589,6 +602,66 @@ describe('API key / Token setup', () => {
     await settle();
     expect(mocks.create.mock.calls[0][0]).toMatchObject({ backup: true });
     expect(selectProviderProfileSetups.select(h.state()).s1.phase).toBe('keyRejected');
+  });
+});
+
+// An orchestrator runs no provider CLI: its catalog rows say
+// `supportsTestPrompt: false` and `host.providerTestPrompt` is refused, so the
+// key is saved without a check (PROTOCOL provider-profiles.md "Profiles on an
+// orchestrator").
+describe('API key / Token on a backend without a test prompt', () => {
+  const env = [{ key: 'ANTHROPIC_API_KEY', kind: 'set' as const, value: 'sk-ant-secret' }];
+
+  it('creates the profile and runs no key check', async () => {
+    const h = harness({ supportsTestPrompt: false });
+    task = h.task;
+    h.dispatch(
+      providerProfileSecretSetupRequested({
+        setupId: 's1',
+        baseProviderId: 'claude-code',
+        name: 'Key',
+        backup: false,
+        env,
+      }),
+    );
+    await settle();
+    expect(h.log).toEqual([
+      ['providers.profiles.create', { baseProviderId: 'claude-code', name: 'Key', env }],
+    ]);
+    expect(h.deps.testPrompt).not.toHaveBeenCalled();
+    expect(selectProviderProfileSetups.select(h.state()).s1).toMatchObject({
+      phase: 'keySaved',
+      profileId: 'p1',
+    });
+  });
+
+  it('saves a replaced key without a check', async () => {
+    const h = harness({ supportsTestPrompt: false });
+    task = h.task;
+    h.dispatch(
+      providerProfileSecretEditRequested({ setupId: 'e1', profileId: 'p1', name: 'Key', env }),
+    );
+    await settle();
+    expect(mocks.update).toHaveBeenCalledWith({ profileId: 'p1', name: 'Key', env });
+    expect(h.deps.testPrompt).not.toHaveBeenCalled();
+    expect(selectProviderProfileSetups.select(h.state()).e1.phase).toBe('keySaved');
+  });
+
+  it('still checks the key when the catalog row supports the test prompt', async () => {
+    const h = harness({ supportsTestPrompt: true });
+    task = h.task;
+    h.dispatch(
+      providerProfileSecretSetupRequested({
+        setupId: 's1',
+        baseProviderId: 'claude-code',
+        name: 'Key',
+        backup: false,
+        env,
+      }),
+    );
+    await settle();
+    expect(h.deps.testPrompt).toHaveBeenCalledWith('claude-code@p1');
+    expect(selectProviderProfileSetups.select(h.state()).s1.phase).toBe('keyWorks');
   });
 });
 

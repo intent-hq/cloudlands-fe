@@ -12,6 +12,24 @@ const principal = {
 };
 
 describe('principal discovery wire contract', () => {
+  it.each([
+    ['orchestrator', 'orchestrator'],
+    ['regular', 'regular'],
+    ['node', 'node'],
+    // Absent (older daemon) or a value this client does not know: unknown.
+    [undefined, undefined],
+    ['hub', undefined],
+    [1, undefined],
+  ])('carries the reported daemonMode %j as %j', (reported, expected) => {
+    const snapshot = parsePrincipalSnapshot(
+      { server: { capabilities: {}, ...(reported === undefined ? {} : { daemonMode: reported }) } },
+      principal,
+    );
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.daemonMode).toBe(expected);
+    expect(snapshot && 'daemonMode' in snapshot).toBe(expected !== undefined);
+  });
+
   it.each([undefined, false, true, 0, 1, 2, '1', null])(
     'admits guest role changes only for exact server capability 1 (%j)',
     (flag) => {

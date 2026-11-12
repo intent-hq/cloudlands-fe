@@ -172,12 +172,16 @@
   const orderSaving$ = selectMachineOrderSaving();
   const canAdminister$ = selectCanAdministerHost();
   const backendLabel$ = selectCurrentBackendLabel();
-  /** Saved connection id of each exposed machine (never the local row, which stays above). */
+  /**
+   * Saved connection id of each exposed machine. This computer's own daemon,
+   * exposed to another backend, is one of them: it moves into the ordered list
+   * like any exposed machine instead of showing in both lists.
+   */
   const exposedConnectionIds = $derived(
     new Map(
       $remoteMachines$.flatMap((machine) => {
         const id = connectionForMachine(machine, $connections$, $localFingerprint$);
-        return id && id !== LOCAL_CONNECTION_ID ? [[machine.id, id] as const] : [];
+        return id ? [[machine.id, id] as const] : [];
       }),
     ),
   );

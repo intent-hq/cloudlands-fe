@@ -186,6 +186,13 @@
       if (current.phase === 'keyWorks') {
         toasted.add(key);
         notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
+      } else if (current.phase === 'keySaved') {
+        // No key check on this backend: the saved profile is the outcome.
+        toasted.add(key);
+        notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
+        dismissSetup();
+        setupId = null;
+        open = false;
       }
     });
   });

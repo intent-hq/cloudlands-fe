@@ -81,26 +81,42 @@ function isStartOnMachineUsable(machine: RemoteMachine): boolean {
   return USABLE_STATES.has(machine.state);
 }
 
-/** The backend first, then each machine available to it. */
+/**
+ * The backend first, then each machine available to it. On an orchestrator
+ * the first row is not the backend, which never runs agents: an omitted
+ * placement walks the ordered machine list, so the row reads "First available
+ * machine" (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
+ */
 export function startOnOptions({
   backendLabel,
   backendPlatform,
   machines,
   cloud,
+  orchestrator = false,
 }: {
   backendLabel: string;
   /** The backend's own host platform (`host.status` os/arch), when known. */
   backendPlatform?: { os?: string; arch?: string };
   machines: readonly RemoteMachine[];
   cloud?: StartOnCloud | null;
+  /** The backend is an orchestrator: no "this machine" choice. */
+  orchestrator?: boolean;
 }): StartOnOption[] {
   const options: StartOnOption[] = [
-    {
-      id: START_ON_BACKEND,
-      label: backendLabel,
-      platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
-      disabled: false,
-    },
+    orchestrator
+      ? {
+          id: START_ON_BACKEND,
+          label: m.remoteMachines_startOn_firstAvailable_label(),
+          platform: null,
+          disabled: false,
+          hint: m.remoteMachines_startOn_firstAvailable_hint(),
+        }
+      : {
+          id: START_ON_BACKEND,
+          label: backendLabel,
+          platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
+          disabled: false,
+        },
     ...machines.map((machine): StartOnOption => {
       const platform = machinePlatformLabel(machine.platform?.os, machine.platform?.arch);
       if (isStartOnMachineUsable(machine))
@@ -130,7 +146,10 @@ export function startOnOptions({
   return options;
 }
 
-/** The backend's own label among Start On rows (not always first with `machineOrder: 1`). */
+/**
+ * The label of the omitted-placement row among Start On rows (not always first
+ * with `machineOrder: 1`): the backend, or "First available machine" on an orchestrator.
+ */
 export function startOnBackendLabel(options: readonly StartOnOption[]): string {
   return options.find((option) => option.id === START_ON_BACKEND)?.label ?? '';
 }

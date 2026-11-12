@@ -178,7 +178,8 @@ vi.mock('../backend-connection', async (importActual) => {
 
 const importedPrincipal = vi.hoisted(() => ({
   inspect: vi.fn(),
-  daemonMode: null as 'regular' | 'node' | null,
+  daemonMode: null as 'regular' | 'node' | 'orchestrator' | null,
+  modeReported: false,
 }));
 vi.mock('../invited-principal', async (actual) => ({
   ...(await actual<typeof import('../invited-principal')>()),
@@ -186,6 +187,7 @@ vi.mock('../invited-principal', async (actual) => ({
   inspectPairCredential: async (candidate: unknown) => ({
     snapshot: await importedPrincipal.inspect(candidate),
     daemonMode: importedPrincipal.daemonMode,
+    modeReported: importedPrincipal.modeReported,
     name: null,
   }),
 }));
@@ -2037,6 +2039,7 @@ describe('connections:* IPC handlers', () => {
     };
     afterEach(() => {
       importedPrincipal.daemonMode = null;
+      importedPrincipal.modeReported = false;
     });
 
     it.each(['labs-off', 'backend-unsupported'] as const)(
@@ -2079,6 +2082,32 @@ describe('connections:* IPC handlers', () => {
 
       await handler!({}, params);
       expect(store.add).toHaveBeenCalledWith({ ...params, daemonMode: 'node' });
+    });
+
+    it('saves an orchestrator as a backend even when nodes would be refused', async () => {
+      importedPrincipal.daemonMode = 'orchestrator';
+      importedPrincipal.modeReported = true;
+      store.add.mockResolvedValue(REMOTE);
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:add');
+
+      await handler!({}, { ...params, refuseNode: 'labs-off' });
+      expect(store.add).toHaveBeenCalledWith({ ...params, daemonMode: 'orchestrator' });
+    });
+
+    it('saves a daemon reporting a mode this app does not know, with no mode', async () => {
+      importedPrincipal.daemonMode = null;
+      importedPrincipal.modeReported = true;
+      store.add.mockResolvedValue(REMOTE);
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:add');
+
+      await handler!({}, { ...params, refuseNode: 'labs-off' });
+      expect(store.add).toHaveBeenCalledWith(params);
     });
 
     it('saves a full daemon even when nodes would be refused', async () => {

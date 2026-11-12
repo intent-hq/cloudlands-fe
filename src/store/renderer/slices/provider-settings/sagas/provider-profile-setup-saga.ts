@@ -15,7 +15,10 @@
  *   the add dialog closes and the profile row tracks the wait and toasts the
  *   outcome, the same as row ⋯ → Log In.
  * - API key / Token: create, then `host.providerTestPrompt` → "Key works" or
- *   "Key was rejected"; a rejected key can be replaced and checked again.
+ *   "Key was rejected"; a rejected key can be replaced and checked again. A
+ *   backend whose catalog row says `supportsTestPrompt: false` (an
+ *   orchestrator, which runs no provider CLI) gets no check: the key is
+ *   saved as is (`keySaved`).
  * - Edit: a replaced key/token is saved with `providers.profiles.update` and
  *   checked the same way; a saved Different-login profile signs in to the
  *   folder saved on it (also row ⋯ → Log In).
@@ -80,6 +83,7 @@ import {
 } from '../provider-settings-selectors';
 import { takeStagedProfileEnv } from '../provider-profiles-state';
 import { selectIsDaemonAppOwned } from '../../daemon-health/daemon-health-selectors';
+import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { closeTerminalOverlay, openTerminalOverlay } from '../../terminals/terminals-slice';
 import { selectWorkspaceTerminalState } from '../../terminals/terminals-selectors';
 
@@ -328,8 +332,13 @@ function* runFolderSetup(
   yield* call(signIn, deps, setupId, provider, saved.profile, folder);
 }
 
-/** Run the key check for a saved key/token profile. */
+/** Run the key check for a saved key/token profile, where the backend can run one. */
 function* checkKey(deps: ProviderProfileSetupDeps, setupId: string, profile: ProviderProfile) {
+  const entry = yield* selectProviderCatalogEntry.effect(profile.baseProviderId);
+  if (entry?.supportsTestPrompt === false) {
+    yield* put(changed(setupId, { phase: 'keySaved', failure: undefined }));
+    return;
+  }
   yield* put(changed(setupId, { phase: 'checkingKey', failure: undefined }));
   let works = false;
   try {

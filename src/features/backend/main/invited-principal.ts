@@ -9,7 +9,7 @@ import { canonicalFingerprint } from './invited-session-key';
 import { JsonRpcClient } from './json-rpc-client';
 import type { InvitedCandidate, VerifiedInvitedIdentity } from './invited-session-sync';
 import type { DaemonMode } from '$shared/types/connections';
-import { detectDaemonMode } from './daemon-mode';
+import { detectDaemonMode, reportsDaemonMode } from './daemon-mode';
 
 /** Only the pinned, bearer-authenticated remote daemon may classify a personal credential. */
 export async function inspectPersonalCredential(
@@ -23,6 +23,11 @@ export interface InspectedPairCredential {
   snapshot: PrincipalSnapshot;
   /** Null when neither the hello nor the probe could tell. */
   daemonMode: DaemonMode | null;
+  /**
+   * The hello reported a mode, even one this client does not know. An unknown
+   * reported mode is never a node, so it can still be saved as a backend.
+   */
+  modeReported: boolean;
   /** `host.status` pretty name or hostname; null when unavailable. */
   name: string | null;
 }
@@ -36,12 +41,15 @@ export async function inspectPairCredential(
       client.request(method, params, options);
     // One retry: an unknown mode can refuse a link, and a daemon that is still
     // starting or briefly busy usually answers a moment later.
+    const modeReported = reportsDaemonMode(hello);
     const daemonMode =
       (await detectDaemonMode(hello, request)) ??
-      (await new Promise((resolve) => setTimeout(resolve, MODE_RETRY_MS)).then(() =>
-        detectDaemonMode(hello, request),
-      ));
-    return { snapshot, daemonMode, name: await readMachineName(request) };
+      (modeReported
+        ? null
+        : await new Promise((resolve) => setTimeout(resolve, MODE_RETRY_MS)).then(() =>
+            detectDaemonMode(hello, request),
+          ));
+    return { snapshot, daemonMode, modeReported, name: await readMachineName(request) };
   });
 }
 

@@ -33,6 +33,7 @@ import ProviderSelector from './ProviderSelector.svelte';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 import { MOCK_CURSOR_PROVIDER } from '../../../test/fixtures/provider-catalog.fixture';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 export const previewProviders = [
   {
@@ -253,6 +254,20 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
     'cursor-enabled': {
       props: {},
       setup: () => setupCursorProviderPreview('signed-in', { enabled: true }),
+    },
+    // An orchestrator runs no CLI: only enable/disable and profiles, no status.
+    orchestrator: {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
+        admitLegacyPrincipal('owner', {}, 'orchestrator');
+        return () => {
+          admitLegacyPrincipal('owner');
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
     },
     profiles: {
       props: {},
