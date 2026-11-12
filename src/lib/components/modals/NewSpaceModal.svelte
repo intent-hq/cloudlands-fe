@@ -10,6 +10,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectCreateModalUsesHomeRepository } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
     open?: boolean;
@@ -18,8 +19,6 @@
     onClose?: () => void;
     /** Changing it while open re-applies the `workspace-prefill` entry. */
     prefillRequest?: number;
-    /** Default to the Home repository selection instead of the last-used one. */
-    defaultToHomeRepository?: boolean;
   }
 
   let {
@@ -28,9 +27,10 @@
     initializer,
     onClose,
     prefillRequest = 0,
-    defaultToHomeRepository = false,
   }: Props = $props();
 
+  // Only Home's New workspace button opens on the Home repository selection.
+  const usesHomeRepository$ = selectCreateModalUsesHomeRepository();
   let isExpanded = $state(true);
   let initializerRef: CompactWorkspaceInitializer | null = $state(null);
   let contentRef: HTMLElement | null = $state(null);
@@ -103,7 +103,7 @@
         bind:this={initializerRef}
         bind:isExpanded
         autoFocus={false}
-        defaultToSidebarRepository={defaultToHomeRepository}
+        defaultToSidebarRepository={$usesHomeRepository$}
         oncreate={close}
         onNavigateAway={close}
       />

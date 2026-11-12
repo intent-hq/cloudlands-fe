@@ -673,8 +673,8 @@
       },
     });
   });
-  // New space resolves the selected Home repository itself
-  // (`defaultToSidebarRepository`), so Home only opens it.
+  // `homeRepository` makes New space resolve the selected Home repository
+  // itself (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
     store.dispatch(setShowCreateModal(true, { homeRepository: true }));
   }
