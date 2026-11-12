@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Compile the offline media export helper for macOS 13+, without running it. */
+/** Compile the window and region capture selector for macOS 14.2+, without running it. */
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -21,22 +21,22 @@ function upToDate() {
 
 function main() {
   if (process.platform !== 'darwin') {
-    console.log('Skipping dock recorder build (macOS only).');
+    console.log('Skipping dock capture selector build (macOS only).');
     return;
   }
   try {
     execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
   } catch {
-    console.warn('Warning: swiftc not found — dock recorder not built; recording is unavailable.');
+    console.warn('Warning: swiftc not found — dock capture selector not built; window and region capture are unavailable.');
     return;
   }
   if (upToDate()) {
-    console.log(`Dock recorder up to date: ${destination}`);
+    console.log(`Dock capture selector up to date: ${destination}`);
     return;
   }
   const arch = SWIFT_ARCH[process.arch];
   if (!arch) {
-    console.warn(`Skipping dock recorder build (unsupported arch ${process.arch}).`);
+    console.warn(`Skipping dock capture selector build (unsupported arch ${process.arch}).`);
     return;
   }
   fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -67,7 +67,7 @@ function main() {
     // packaging replaces it with the Developer ID signature (afterPack hook).
     execFileSync('codesign', ['-f', '-s', '-', temporary], { stdio: 'inherit' });
     fs.renameSync(temporary, destination);
-    console.log('Dock recorder built.');
+    console.log('Dock capture selector built.');
   } finally {
     fs.rmSync(temporary, { force: true });
   }
