@@ -71,8 +71,10 @@ test('screenshot keyboard edits, text and legacy metadata survive the save trans
     contentType: 'image/png',
   });
   await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(0);
-  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+S contract is independent of the workspace editor.save shortcut.
-  await page.keyboard.press('ControlOrMeta+s');
+  const save = fixture.getByRole('button', { name: 'Save changes', exact: true });
+  await expect(save).toBeEnabled();
+  await save.focus();
+  await save.press('Enter');
   await expect(fixture).not.toHaveAttribute('data-saved', '');
   const saved = JSON.parse((await fixture.getAttribute('data-saved')) ?? '{}') as DockMediaEdit;
   expect(saved.blurRegions).toHaveLength(1);
