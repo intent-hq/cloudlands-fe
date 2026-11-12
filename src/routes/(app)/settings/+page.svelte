@@ -200,7 +200,6 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
-    labs: 'advanced',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
