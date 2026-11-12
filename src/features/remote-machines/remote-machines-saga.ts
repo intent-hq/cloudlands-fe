@@ -9,9 +9,12 @@ import { call, delay, put, takeEvery, takeLatest, type SagaGenerator } from 'typ
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  machineOrderId,
   parseExecutorBackend,
+  parseMachineOrder,
   parseRemoteMachine,
   type ExecutorBackend,
+  type MachineOrderRow,
   type RemoteMachine,
   type RemoteMachineExposeResult,
   type RemoteMachineFailure,
@@ -28,6 +31,8 @@ import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-prefe
 import {
   executorBackendRevoked,
   executorRevokeRequested,
+  machineOrderSaving,
+  machineOrderSetRequested,
   remoteMachineChanged,
   remoteMachineExposeRequested,
   remoteMachineOperationSettled,
@@ -125,6 +130,7 @@ async function readSupported(): Promise<{
   supported: boolean;
   initialAgentPlacement: boolean;
   claimInvites: boolean;
+  machineOrder: boolean;
 } | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
@@ -133,6 +139,7 @@ async function readSupported(): Promise<{
           remoteMachines?: unknown;
           remoteInitialAgent?: unknown;
           remoteMachineClaim?: unknown;
+          machineOrder?: unknown;
         } | null;
       };
     } | null;
@@ -143,6 +150,7 @@ async function readSupported(): Promise<{
       supported,
       initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1,
       claimInvites: supported && capabilities.remoteMachineClaim === 1,
+      machineOrder: supported && capabilities.machineOrder === 1,
     };
   } catch {
     return null;
@@ -161,6 +169,16 @@ async function readMachines(): Promise<RemoteMachine[]> {
         return machine ? [machine] : [];
       })
     : [];
+}
+
+/** `remoteMachines.order` (owner and members); null when it can't be read. */
+async function readMachineOrder(): Promise<MachineOrderRow[] | null> {
+  try {
+    const result = await backendRequest<{ order?: unknown }>('remoteMachines.order');
+    return parseMachineOrder(result?.order);
+  } catch {
+    return null;
+  }
 }
 
 /** `executor.list` on the current backend's own machine; null when it is unavailable. */
@@ -196,8 +214,10 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
   const supported = known?.supported === true;
   const initialAgentPlacement = known?.initialAgentPlacement === true;
   const claimInvites = known?.claimInvites === true;
+  const machineOrder = known?.machineOrder === true;
   let machines: RemoteMachine[] = [];
   let localFingerprint: string | null = null;
+  let order: MachineOrderRow[] | null = null;
   if (supported) {
     try {
       machines = yield* call(readMachines);
@@ -205,12 +225,15 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
       machines = [];
     }
     localFingerprint = yield* call(readLocalFingerprint);
+    if (machineOrder) order = yield* call(readMachineOrder);
   }
   const executorBackends = yield* call(readExecutorBackends);
   return {
     supported,
     initialAgentPlacement,
     claimInvites,
+    machineOrder,
+    order,
     machines,
     localFingerprint,
     executorBackends,
@@ -370,6 +393,51 @@ function* refreshMachine(
   yield* put(remoteMachineOperationSettled(key, null));
 }
 
+/** The current list a `-32602` `order-stale` answer carries, or null for any other error. */
+function staleOrder(error: unknown): MachineOrderRow[] | null {
+  const { rpcCode, data } = (error ?? {}) as { rpcCode?: unknown; data?: unknown };
+  if (rpcCode !== -32602) return null;
+  const payload = (data ?? {}) as { code?: unknown; order?: unknown };
+  return payload.code === 'order-stale' ? parseMachineOrder(payload.order) : null;
+}
+
+/**
+ * Owner reorder: show the new order at once, send the whole list
+ * (`remoteMachines.setOrder`) and keep the backend's answer. An `order-stale`
+ * answer carries the current list, which replaces ours; any other failure
+ * puts the previous order back.
+ */
+function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGenerator<void> {
+  if (!labsEnabled()) return;
+  const state = store.state.remoteMachines;
+  if (!state.machineOrder || !state.order || state.orderSaving) return;
+  const [keys] = action.payload;
+  const previous = state.order;
+  const rows = new Map(previous.map((row) => [machineOrderId(row), row]));
+  const optimistic = keys.flatMap((key) => {
+    const row = rows.get(machineOrderId(key));
+    return row ? [row] : [];
+  });
+  const started = generation();
+  yield* put(
+    machineOrderSaving(true, optimistic.length === previous.length ? optimistic : undefined),
+  );
+  let next: MachineOrderRow[] | null = null;
+  let failed = false;
+  try {
+    const result = yield* call(backendRequest<{ order?: unknown }>, 'remoteMachines.setOrder', {
+      order: keys,
+    });
+    next = parseMachineOrder(result?.order);
+  } catch (error) {
+    next = staleOrder(error);
+    failed = next === null;
+  }
+  if (started !== generation()) return;
+  yield* put(machineOrderSaving(false, next ?? (failed ? previous : undefined)));
+  if (failed) yield* call(notify.error, m.remoteMachines_order_saveFailed_error());
+}
+
 export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeLatest(
     [remoteMachinesRefreshRequested, backendReconnected, setLabsRemoteAgentsEnabled],
@@ -379,4 +447,5 @@ export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeEvery(remoteMachineUnexposeRequested, unexpose);
   yield* takeEvery(executorRevokeRequested, revokeExecutor);
   yield* takeEvery(remoteMachineRefreshRequested, refreshMachine);
+  yield* takeEvery(machineOrderSetRequested, setOrder);
 }

@@ -1,7 +1,7 @@
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-import type { RemoteMachine } from '$shared/types/remote-machines';
+import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -12,6 +12,7 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { selectRemoteReadyProfilesSupported } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
+import { sortByMachineOrder } from './machine-order';
 import {
   cloudProfileBlockReason,
   startOnCloud,
@@ -42,6 +43,27 @@ export const selectRemoteMachinesVisible = store.createSelector(
 export const selectRemoteReadyProfilesVisible = store.createSelector(
   (state) =>
     selectRemoteMachinesVisible.select(state) && selectRemoteReadyProfilesSupported.select(state),
+);
+
+/**
+ * Settings → Machines shows one ordered list: remote surfaces on, the backend
+ * advertises exactly `machineOrder: 1`, and its list was read.
+ */
+export const selectMachineOrderVisible = store.createSelector(
+  (state) =>
+    selectRemoteMachinesVisible.select(state) &&
+    state.remoteMachines.machineOrder === true &&
+    state.remoteMachines.order !== null,
+);
+
+/** The backend's ordered machine list (first = preferred); empty while hidden. */
+export const selectMachineOrder = store.createSelector((state): MachineOrderRow[] =>
+  selectMachineOrderVisible.select(state) ? (state.remoteMachines.order ?? []) : [],
+);
+
+/** A reorder is in flight. */
+export const selectMachineOrderSaving = store.createSelector(
+  (state) => state.remoteMachines.orderSaving,
 );
 
 /** The current backend's exposed machines, by name. */
@@ -146,15 +168,22 @@ function backendHostPlatform(state: Parameters<typeof selectCurrentBackendLabel.
   return connection?.hostOs ? { os: connection.hostOs, arch: connection.hostArch } : undefined;
 }
 
-/** The backend first (by its label), then each machine available to it, usable or not. */
-export const selectStartOnRows = store.createSelector((state): StartOnOption[] =>
-  startOnOptions({
+/**
+ * The backend first (by its label), then each machine available to it, usable
+ * or not; in the stored order with `machineOrder: 1`.
+ */
+export const selectStartOnRows = store.createSelector((state): StartOnOption[] => {
+  const options = startOnOptions({
     backendLabel: selectCurrentBackendLabel.select(state),
     backendPlatform: backendHostPlatform(state),
     machines: selectRemoteMachines.select(state),
     cloud: startOnCloud(state),
-  }),
-);
+  });
+  // With `machineOrder: 1` the rows follow the user's ordered machine list.
+  return selectMachineOrderVisible.select(state)
+    ? sortByMachineOrder(options, selectMachineOrder.select(state))
+    : options;
+});
 
 /** `selectStartOnRows`; empty while hidden. */
 export const selectStartOnOptions = store.createSelector((state): StartOnOption[] =>

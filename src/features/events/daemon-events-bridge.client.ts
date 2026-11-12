@@ -3,8 +3,9 @@ import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
 } from '$store/renderer/slices/scripts/scripts-selectors';
-import { parseRemoteMachine } from '$shared/types/remote-machines';
+import { parseMachineOrder, parseRemoteMachine } from '$shared/types/remote-machines';
 import {
+  machineOrderLoaded,
   remoteMachineChanged,
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
@@ -3645,6 +3646,9 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  */
 function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
+  // `machineOrder: 1`: `{ order }` after each change of the ordered machine list.
+  const order = parseMachineOrder(data?.order);
+  if (order) appStore.dispatch(machineOrderLoaded(order));
   if (data?.removed === true && typeof data.machineId === 'string' && data.machineId) {
     appStore.dispatch(remoteMachineRemoved(data.machineId));
     return;

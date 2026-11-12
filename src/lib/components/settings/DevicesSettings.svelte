@@ -8,7 +8,11 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
+  import {
+    LOCAL_CONNECTION_ID,
+    SELECTABLE_CONNECTION_ACCENTS,
+    type ConnectionRecord,
+  } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
@@ -25,10 +29,19 @@
   import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
   import RemoteMachineRow from '$features/remote-machines/RemoteMachineRow.svelte';
   import {
+    selectCurrentBackendLabel,
     selectLocalMachineFingerprint,
+    selectMachineOrder,
+    selectMachineOrderSaving,
+    selectMachineOrderVisible,
     selectRemoteMachines,
     selectRemoteMachinesVisible,
   } from '$features/remote-machines/remote-machines-selectors';
+  import OrderedMachinesList from '$features/remote-machines/OrderedMachinesList.svelte';
+  import MachineOrderPlainRow from '$features/remote-machines/MachineOrderPlainRow.svelte';
+  import type { MachineOrderControls } from '$features/remote-machines/machine-order-controls';
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import type { MachineOrderRow } from '$shared/types/remote-machines';
   import { connectionForMachine } from '$features/remote-machines/remote-machines-utils';
   import type { RemoteMachine } from '$shared/types/remote-machines';
   import BackendsWithAccessSection from '$features/remote-machines/BackendsWithAccessSection.svelte';
@@ -159,10 +172,40 @@
     ...($cloudNamed$ ? cloudRows : []),
   ]);
   const highlightId$ = selectHighlightedConnectionId();
-  const listRows = $derived<ListRowItem[]>([
-    ...machineRows.map((device): ListRowItem => ({ kind: 'device', device })),
-    ...($cloudNamed$ ? [] : cloudRows),
-  ]);
+  // `machineOrder: 1`: one ordered list of every place the backend runs agents
+  // replaces Nodes and "Machines <backend> can run agents on". Saved
+  // connections it doesn't name (not exposed to the backend) stay above.
+  const orderVisible$ = selectMachineOrderVisible();
+  const order$ = selectMachineOrder();
+  const orderSaving$ = selectMachineOrderSaving();
+  const canAdminister$ = selectCanAdministerHost();
+  const backendLabel$ = selectCurrentBackendLabel();
+  /** Saved connection id of each exposed machine (never the local row, which stays above). */
+  const exposedConnectionIds = $derived(
+    new Map(
+      $remoteMachines$.flatMap((machine) => {
+        const id = connectionForMachine(machine, $connections$, $localFingerprint$);
+        return id && id !== LOCAL_CONNECTION_ID ? [[machine.id, id] as const] : [];
+      }),
+    ),
+  );
+  const exposedIds = $derived(new Set(exposedConnectionIds.values()));
+  const listRows = $derived<ListRowItem[]>(
+    $orderVisible$
+      ? rows
+          .filter((device) => !exposedIds.has(device.id))
+          .map((device): ListRowItem => ({ kind: 'device', device }))
+      : [
+          ...machineRows.map((device): ListRowItem => ({ kind: 'device', device })),
+          ...($cloudNamed$ ? [] : cloudRows),
+        ],
+  );
+  const newCloudRow = $derived(cloudRows.find((row) => row.entry === null) ?? null);
+  /** The saved connection behind an ordered machine row, when this app has one. */
+  function orderedDevice(nodeId: string): ConnectionRecord | null {
+    const id = exposedConnectionIds.get(nodeId);
+    return (id && $connections$.find((device) => device.id === id)) || null;
+  }
 
   let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
@@ -265,7 +308,23 @@
     {/snippet}
   </ListView>
 
-  {#if nodeRows.length > 0}
+  {#if $orderVisible$}
+    <OrderedMachinesList
+      rows={$order$}
+      backendLabel={$backendLabel$}
+      canReorder={$canAdminister$ && $order$.length > 1}
+      saving={$orderSaving$}
+    >
+      {#snippet machineRow(entry, order)}
+        {@render orderedRow(entry, order)}
+      {/snippet}
+      {#snippet footer()}
+        {#if newCloudRow}
+          <div class="border-t border-border">{@render cloudRow(newCloudRow, true)}</div>
+        {/if}
+      {/snippet}
+    </OrderedMachinesList>
+  {:else if nodeRows.length > 0}
     <section class="space-y-3" aria-labelledby="nodes-title" data-nodes-section>
       <div>
         <h3 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h3>
@@ -397,17 +456,51 @@
     </div>
   {/if}
 
-  <RemoteMachinesSection />
+  {#if !$orderVisible$}<RemoteMachinesSection />{/if}
   <BackendsWithAccessSection />
 </div>
 
-{#snippet cloudRow(item: CloudRow, first = false)}
+{#snippet orderedRow(entry: MachineOrderRow, order: MachineOrderControls)}
+  {@const machine =
+    entry.kind === 'machine' ? $remoteMachines$.find((row) => row.id === entry.nodeId) : undefined}
+  {@const device = entry.kind === 'machine' ? orderedDevice(entry.nodeId) : null}
+  {@const cloudEntry =
+    entry.kind === 'cloud'
+      ? $cloudEntries$.find((row) => row.id === entry.cloudMachineId)
+      : undefined}
+  {#if device}
+    <DeviceRow
+      {device}
+      first
+      highlighted={$highlightId$ === device.id}
+      panelMode={activeDeviceId === device.id ? activePanel : null}
+      onOpenPanel={(panel) => openPanel(device.id, panel)}
+      onClosePanel={closePanel}
+      onRequestRemove={requestRemove}
+      {order}
+    />
+  {:else if machine}
+    <RemoteMachineRow {machine} first highlighted={$highlightId$ === machine.id} {order} />
+  {:else if cloudEntry}
+    {@render cloudRow({ kind: 'cloud', entry: cloudEntry }, true, order)}
+  {:else}
+    <MachineOrderPlainRow
+      row={entry}
+      {order}
+      localBackend={$currentConnectionId$ === LOCAL_CONNECTION_ID}
+      backendLabel={$backendLabel$}
+    />
+  {/if}
+{/snippet}
+
+{#snippet cloudRow(item: CloudRow, first = false, order?: MachineOrderControls)}
   {@const formKey = item.entry?.id ?? NEW_CLOUD_ENTRY}
   <CloudMachineRow
     entry={item.entry}
     newProvider={newCloudProvider}
     initialDraft={item.entry ? undefined : initialCloudDraft}
     {first}
+    {order}
     editing={cloudEditing === formKey}
     onEdit={() => (cloudEditing = formKey)}
     onClose={() => {

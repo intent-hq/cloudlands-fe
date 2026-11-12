@@ -237,3 +237,53 @@ export function fingerprintKey(fingerprint: string | null | undefined): string |
   const key = (typeof fingerprint === 'string' ? fingerprint : '').trim().toUpperCase();
   return key === '' ? null : key;
 }
+
+/**
+ * One row of the backend's ordered machine list (PROTOCOL `methods/nodes.md` →
+ * "Ordered machine list", `machineOrder: 1`): "This computer", an exposed
+ * machine by `nodeId`, or a cloud entry by `cloudMachineId`. First = most preferred.
+ */
+export type MachineOrderRow =
+  | { kind: 'local'; name: string }
+  | { kind: 'machine'; nodeId: string; name: string }
+  | { kind: 'cloud'; cloudMachineId: string; name: string };
+
+/** `remoteMachines.setOrder` names each row by its key alone. */
+export type MachineOrderKey =
+  | { kind: 'local' }
+  | { kind: 'machine'; nodeId: string }
+  | { kind: 'cloud'; cloudMachineId: string };
+
+/** Narrow one wire `MachineOrderRow`; null for an unknown kind or missing id. */
+function parseMachineOrderRow(value: unknown): MachineOrderRow | null {
+  if (!record(value) || typeof value.name !== 'string') return null;
+  const name = value.name;
+  if (value.kind === 'local') return { kind: 'local', name };
+  if (value.kind === 'machine' && text(value.nodeId))
+    return { kind: 'machine', nodeId: value.nodeId, name };
+  if (value.kind === 'cloud' && text(value.cloudMachineId))
+    return { kind: 'cloud', cloudMachineId: value.cloudMachineId, name };
+  return null;
+}
+
+/** Narrow a wire `MachineOrderRow[]`, or null when `value` is not an array. */
+export function parseMachineOrder(value: unknown): MachineOrderRow[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((row) => {
+    const parsed = parseMachineOrderRow(row);
+    return parsed ? [parsed] : [];
+  });
+}
+
+/** The key that names `row` in `remoteMachines.setOrder`. */
+export function machineOrderKey(row: MachineOrderRow): MachineOrderKey {
+  if (row.kind === 'local') return { kind: 'local' };
+  if (row.kind === 'machine') return { kind: 'machine', nodeId: row.nodeId };
+  return { kind: 'cloud', cloudMachineId: row.cloudMachineId };
+}
+
+/** A stable string id for a row: `local`, `machine:<nodeId>` or `cloud:<cloudMachineId>`. */
+export function machineOrderId(row: MachineOrderRow | MachineOrderKey): string {
+  if (row.kind === 'local') return 'local';
+  return row.kind === 'machine' ? `machine:${row.nodeId}` : `cloud:${row.cloudMachineId}`;
+}

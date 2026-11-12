@@ -17,6 +17,8 @@
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
+  import type { MachineOrderControls } from '$features/remote-machines/machine-order-controls';
+  import PreferredMachineBadge from '$features/remote-machines/PreferredMachineBadge.svelte';
   import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { cn } from '$lib/utils';
   import {
@@ -97,6 +99,8 @@
     first?: boolean;
     /** Last row of its list: the highlight follows the card's rounded corners. */
     last?: boolean;
+    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    order?: MachineOrderControls;
   }
 
   let {
@@ -108,6 +112,7 @@
     highlighted = false,
     first = false,
     last = false,
+    order,
   }: Props = $props();
   // A node only runs agents for other backends: it is never connected to as a backend.
   const isNode = $derived(device.daemonMode === 'node');
@@ -362,6 +367,7 @@
           },
         ]
       : []),
+    ...(order?.actions ?? []),
   ]);
 
   function resetPanel() {
@@ -426,6 +432,7 @@
   }
 
   function handleRowAction(id: string) {
+    if (order?.onAction(id)) return;
     switch (id) {
       case 'connect':
         void connectDevice();
@@ -648,6 +655,7 @@
            badge, version, provider icons) on the name; inline icons with
            vertical-align: middle sat ~1.5px below cap-height text. -->
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+        {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if platform}
           <MachinePlatformIcon {platform} />
         {/if}
