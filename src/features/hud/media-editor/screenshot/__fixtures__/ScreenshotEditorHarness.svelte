@@ -1,11 +1,21 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { renderDockMediaImage } from '$features/hud/composer/dock-media-render';
   import { Button } from '$lib/components/ui/button';
   import DockScreenshotEditor from '../DockScreenshotEditor.svelte';
   import DockCaptureEditorShell from '../../DockCaptureEditorShell.svelte';
   import { createEditTransaction } from '../../edit-transaction.svelte';
-  import { defaultDockMediaEdit, type DockMediaSource } from '$shared/dock-media-edit';
+  import {
+    defaultDockMediaEdit,
+    type DockMediaSource,
+    type DockMediaEditMark,
+    type DockMediaBlurRegion,
+  } from '$shared/dock-media-edit';
   import { retakeScreenshotEdit } from '../screenshot-edit-geometry';
+  let { initialMarks = [], initialBlurRegions = [] }: {
+    initialMarks?: DockMediaEditMark[];
+    initialBlurRegions?: DockMediaBlurRegion[];
+  } = $props();
   const source: DockMediaSource = {
     id: 'synthetic-screenshot',
     revision: 0,
@@ -38,7 +48,14 @@
     context.fillText('Save changes', 445, 320);
     return image.toDataURL('image/png');
   };
-  const original = { source, url: picture(800, 500), edit: defaultDockMediaEdit(source, [], null) };
+  const original = untrack(() => ({
+    source,
+    url: picture(800, 500),
+    edit: {
+      ...defaultDockMediaEdit(source, initialMarks, null),
+      blurRegions: initialBlurRegions,
+    },
+  }));
   const transaction = createEditTransaction(original);
   let saved = $state('');
   let output = $state('');

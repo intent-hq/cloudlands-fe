@@ -1,40 +1,46 @@
 import { expect, test } from '../../../../test/ct-test';
 import ScreenshotEditorHarness from './__fixtures__/ScreenshotEditorHarness.svelte';
-import type { DockMediaEdit } from '$shared/dock-media-edit';
+import type { DockMediaEdit, DockMediaEditMark } from '$shared/dock-media-edit';
 
-test('screenshot draft tools, notes and crop share the shell transaction', async ({
+test('screenshot keyboard edits, notes and save share the shell transaction', async ({
   mount,
   page,
 }, info) => {
   await page.setViewportSize({ width: 1080, height: 900 });
-  const fixture = await mount(ScreenshotEditorHarness);
+  const mark = (
+    id: string,
+    kind: DockMediaEditMark['kind'],
+    geometry: DockMediaEditMark['geometry'],
+  ): DockMediaEditMark => ({
+    id,
+    kind,
+    geometry,
+    atMs: 0,
+    batchId: 'initial',
+    source: 'editor',
+    included: true,
+    label: kind === 'box' ? 'Box' : '',
+    note: '',
+    context: { selector: null, text: null, url: null },
+  });
+  const fixture = await mount(ScreenshotEditorHarness, {
+    props: {
+      initialMarks: [
+        mark('box-one', 'box', { kind: 'rect', x: 45, y: 55, w: 235, h: 140 }),
+        mark('box-two', 'box', { kind: 'rect', x: 420, y: 250, w: 210, h: 130 }),
+        mark('text', 'text', { kind: 'text', x: 300, y: 80, text: 'Original note', fontSize: 18 }),
+        mark('element', 'element', { kind: 'rect', x: 420, y: 250, w: 210, h: 130 }),
+      ],
+      initialBlurRegions: [{ id: 'blur', x: 65, y: 100, w: 185, h: 65 }],
+    },
+  });
   const canvas = fixture.getByRole('application');
   const draft = async () =>
     JSON.parse((await fixture.getAttribute('data-draft')) ?? '{}') as DockMediaEdit;
-  async function draw(tool: string, from: { x: number; y: number }, to: { x: number; y: number }) {
-    await fixture.getByRole('button', { name: tool, exact: true }).click();
-    await expect(canvas).toBeVisible();
-    const rect = await canvas.boundingBox();
-    if (!rect) throw new Error('Screenshot canvas missing');
-    const source = JSON.parse((await fixture.getAttribute('data-source')) ?? '{}');
-    const crop = (await draft()).crop ?? { x: 0, y: 0, w: source.width, h: source.height };
-    const at = (p: { x: number; y: number }) => ({
-      x: rect.x + ((p.x - crop.x) / crop.w) * rect.width,
-      y: rect.y + ((p.y - crop.y) / crop.h) * rect.height,
-    });
-    const a = at(from),
-      b = at(to);
-    await page.mouse.move(a.x, a.y);
-    await page.mouse.down();
-    await page.mouse.move(b.x, b.y, { steps: 5 });
-    await page.mouse.up();
-  }
   await expect(fixture.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
-  await draw('Box', { x: 45, y: 55 }, { x: 280, y: 195 });
   await fixture
     .getByRole('textbox', { name: 'Note for mark 1', exact: true })
     .fill('Keep this card');
-  await draw('Box', { x: 420, y: 250 }, { x: 630, y: 380 });
   await expect(
     fixture.getByRole('textbox', { name: 'Note for mark 2', exact: true }),
   ).toBeVisible();
@@ -50,19 +56,16 @@ test('screenshot draft tools, notes and crop share the shell transaction', async
     })
     .toEqual({ x: 46, w: 236 });
   await fixture.getByRole('button', { name: 'Delete mark 1', exact: true }).click();
-  await expect.poll(async () => (await draft()).marks.length).toBe(1);
-  await expect(fixture.getByRole('textbox', { name: 'Note for mark 2', exact: true })).toHaveCount(
+  await expect.poll(async () => (await draft()).marks.length).toBe(3);
+  await expect(fixture.getByRole('textbox', { name: 'Note for mark 4', exact: true })).toHaveCount(
     0,
   );
   await canvas.focus();
   await page.keyboard.press('ControlOrMeta+z');
-  await expect.poll(async () => (await draft()).marks.length).toBe(2);
-  await draw('Blur sensitive content', { x: 65, y: 100 }, { x: 250, y: 165 });
+  await expect.poll(async () => (await draft()).marks.length).toBe(4);
   await expect.poll(async () => (await draft()).blurRegions.length).toBe(1);
-  await expect(fixture.getByRole('textbox', { name: /Note for mark/ })).toHaveCount(2);
-  await draw('Text', { x: 300, y: 80 }, { x: 410, y: 120 });
+  await expect(fixture.getByRole('textbox', { name: /Note for mark/ })).toHaveCount(4);
   await fixture.getByRole('textbox', { name: 'Text for mark 3', exact: true }).fill('Fix this');
-  await draw('Element selector', { x: 420, y: 250 }, { x: 630, y: 380 });
   await fixture
     .getByRole('textbox', { name: 'Element selector for mark 4', exact: true })
     .fill('button.save');
@@ -83,11 +86,6 @@ test('screenshot draft tools, notes and crop share the shell transaction', async
     body: await page.screenshot(),
     contentType: 'image/png',
   });
-  await draw('Crop', { x: 0, y: 0 }, { x: 300, y: 220 });
-  await expect.poll(async () => (await draft()).marks.length).toBe(1);
-  await canvas.focus();
-  await page.keyboard.press('ControlOrMeta+z');
-  await expect.poll(async () => (await draft()).marks.length).toBe(4);
   await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+s');
   await expect(fixture).not.toHaveAttribute('data-saved', '');

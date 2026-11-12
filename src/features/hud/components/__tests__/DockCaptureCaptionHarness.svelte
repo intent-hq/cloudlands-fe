@@ -2,7 +2,6 @@
   import DockCaptureModeMenu from '../DockCaptureModeMenu.svelte';
   import DockComposerIcon from '../DockComposerIcon.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import type { DockCaptureMode } from '$shared/dock-evidence';
   let anchor = $state<HTMLButtonElement | null>(null);
@@ -38,17 +37,6 @@
         }
       }}><DockComposerIcon glyph="viewfinder" /></Button
     >
-  </div>
-  <div style="position:absolute;left:450px;top:300px">
-    <TooltipShortcut
-      label={m.dock_composer_captureModes_ariaLabel()}
-      shortcut="ctrl+shift+4"
-      delayDuration={0}
-      contentClass="dock-chrome-tooltip"
-      align="start"
-    >
-      <Button data-testid="reference-tooltip">Shortcut tooltip reference</Button>
-    </TooltipShortcut>
   </div>
   <label style="position:absolute;left:100px;top:380px"
     >Synthetic draft

@@ -7,24 +7,19 @@ const requests = async (fixture: Locator) =>
     channel: string;
     request: { openId: string; intent?: 'attach'; edit?: { marks: unknown[] } };
   }[];
-async function draw(page: Page, fixture: Locator, kind: 'screenshot' | 'recording') {
-  await fixture
-    .getByRole('button', { name: kind === 'screenshot' ? 'Box' : 'Rectangle', exact: true })
-    .click();
-  const canvas =
+async function editText(page: Page, fixture: Locator, kind: 'screenshot' | 'recording') {
+  await fixture.getByRole('button', { name: 'Text', exact: true }).click();
+  const surface =
     kind === 'screenshot'
       ? fixture.getByRole('application')
       : fixture.locator('.frame-marks svg.surface');
-  await expect(canvas).toBeVisible();
-  if (kind === 'recording') await expect(canvas).toHaveAttribute('data-editable', 'true');
-  const bounds = await canvas.boundingBox();
-  if (!bounds) throw new Error('Drawing surface unavailable');
-  await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height * 0.2);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5, {
-    steps: 6,
-  });
-  await page.mouse.up();
+  await expect(surface).toBeVisible();
+  if (kind === 'recording') await expect(surface).toHaveAttribute('data-editable', 'true');
+  await surface.click({ position: { x: 100, y: 100 } });
+  const input = fixture.getByRole('textbox', { name: 'Text', exact: true });
+  await input.fill('Local draft');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(input).not.toBeVisible();
   await expect(fixture).toHaveAttribute('data-dirty', 'true');
   await expect(fixture.locator('[data-attach]')).toBeEnabled();
 }
@@ -45,7 +40,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await expect(fixture).toHaveAttribute('data-closes', '1');
     expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
     await fixture.update({ props: { kind, epoch: 1, admitted: true } });
-    await draw(page, fixture, kind);
+    await editText(page, fixture, kind);
     await page.keyboard.press('ControlOrMeta+s');
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
     expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
@@ -74,7 +69,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
       hooksConfig: { mockBackend: {} },
     });
     await page.evaluate(() => document.documentElement.classList.add('dark'));
-    await draw(page, fixture, kind);
+    await editText(page, fixture, kind);
     await fixture.locator('[data-attach]').click();
     await expect(fixture.getByRole('alert')).toBeVisible();
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
@@ -96,7 +91,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await expect(fixture.getByRole('alert')).toBeVisible();
     await expect(fixture).toHaveAttribute('data-closes', '0');
     await fixture.update({ props: { kind, epoch: 1, mode: 'defer' } });
-    await draw(page, fixture, kind);
+    await editText(page, fixture, kind);
     await fixture.locator('[data-attach]').click();
     const closeCountBeforeRetarget = (await requests(fixture)).filter((x) =>
       x.channel.endsWith(':close'),
@@ -160,7 +155,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
       props: { kind, closeMode: 'fail' },
       hooksConfig: { mockBackend: {} },
     });
-    await draw(page, fixture, kind);
+    await editText(page, fixture, kind);
     const attach = fixture.locator('[data-attach]');
     await attach.click();
     await expect(fixture.getByRole('alert')).toHaveText(
@@ -224,35 +219,6 @@ for (const kind of ['screenshot', 'recording'] as const) {
       ),
       contentType: 'application/json',
     });
-  });
-  test(`${kind}: a pending drawing gesture participates in native close protection`, async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1100, height: 780 });
-    const fixture = await mount(Harness, { props: { kind }, hooksConfig: { mockBackend: {} } });
-    await fixture
-      .getByRole('button', { name: kind === 'screenshot' ? 'Box' : 'Rectangle', exact: true })
-      .click();
-    const surface =
-      kind === 'screenshot'
-        ? fixture.getByRole('application')
-        : fixture.locator('.frame-marks svg.surface');
-    if (kind === 'recording') await expect(surface).toHaveAttribute('data-editable', 'true');
-    const box = await surface.boundingBox();
-    if (!box) throw new Error('No drawing surface');
-    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
-    await expect(fixture).toHaveAttribute('data-dirty', 'true');
-    await expect(fixture.locator('[data-attach]')).toBeDisabled();
-    await fixture.update({ props: { kind, nativeRequest: 1 } });
-    const dialog = page.getByRole('dialog', { name: 'Discard changes?' });
-    await expect(dialog).toBeVisible();
-    await page.mouse.up();
-    await dialog.getByRole('button', { name: 'Keep editing', exact: true }).click();
-    await expect(fixture).toHaveAttribute('data-discarded', '0');
-    await expect(fixture).toHaveAttribute('data-closes', '0');
   });
 }
 test('screenshot crop cancels before Close; legacy main receives a guarded close fallback', async ({

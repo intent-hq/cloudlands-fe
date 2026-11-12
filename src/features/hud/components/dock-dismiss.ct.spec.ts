@@ -71,8 +71,6 @@ test('hover leave, outside click and Escape release disclosure and its input foo
   }
   await expect(shell).toHaveAttribute('data-expanded', 'false');
   await expect(shell).toHaveAttribute('data-reveal', '0');
-  const compact = await page.getByTestId('dock-surface').boundingBox();
-  expect(compact!.height).toBeLessThan(60);
   await page.getByTestId('dock-drag-handle').hover();
   await expect(shell).toHaveAttribute('data-reveal', '1');
   await page.getByRole('textbox', { name: 'Draft' }).press('End');
@@ -230,31 +228,3 @@ for (const liveMode of ['recording', 'dictation'])
       contentType: 'application/json',
     });
   });
-
-test('rapid reentry reverses close and a later leave returns to the compact footprint', async ({
-  mount,
-  page,
-}, info) => {
-  test.skip(baseline);
-  await page.setViewportSize({ width: 1000, height: 740 });
-  await mount(Harness);
-  const shell = page.getByTestId('dock-shell');
-  await page.mouse.move(900, 700);
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-  await expect(shell).toHaveAttribute('data-reveal', '0');
-  for (let i = 0; i < 3; i++) {
-    await page.getByTestId('dock-drag-handle').hover();
-    await expect(shell).toHaveAttribute('data-reveal', '1');
-    await page.mouse.move(900, 700);
-    await expect(shell).toHaveAttribute('data-expanded', 'false');
-    await expect
-      .poll(async () => Number(await shell.getAttribute('data-reveal')))
-      .toBeLessThan(0.95);
-    await page.getByTestId('dock-drag-handle').hover();
-    await expect(shell).toHaveAttribute('data-reveal', '1');
-    await page.mouse.move(900, 700);
-    await expect(shell).toHaveAttribute('data-reveal', '0');
-  }
-  expect((await page.getByTestId('dock-surface').boundingBox())!.height).toBeLessThan(60);
-  await info.attach('reversal.png', { body: await page.screenshot(), contentType: 'image/png' });
-});

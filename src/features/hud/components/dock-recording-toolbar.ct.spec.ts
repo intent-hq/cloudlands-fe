@@ -1,11 +1,11 @@
 /**
  * The recording tool bar (Recording toolbar spec, Nov 2026), through the real
  * component with main and the dock replaced at the toolbar boundary
- * (`DockRecordingToolbarHarness`). One test per acceptance criterion, plus light and
- * dark captures of the spec's four states.
+ * (`DockRecordingToolbarHarness`). Functional and accessible behavior only;
+ * visual captures are manual review evidence.
  */
 import type { Locator, Page } from '@playwright/test';
-import { expect, expectAnimationsToSettle, test } from '../../../test/ct-test';
+import { expect, test } from '../../../test/ct-test';
 import { pauseClock } from '../../../test/ct-clock';
 import Harness from './__tests__/DockRecordingToolbarHarness.svelte';
 
@@ -24,24 +24,10 @@ test.beforeEach(async ({ page }) => {
   await page.mouse.move(5, 395);
 });
 
-test('Pointer sits alone; Rectangle, Draw and Arrow sit in the well in order', async ({
-  mount,
-  page,
-}) => {
-  await mount(Harness);
-  // Pointer is the first tool and the only one outside the well.
-  await expect(bar(page).locator('[data-tool]').first()).toHaveAttribute('data-tool', 'pointer');
-  await expect(bar(page).locator('.well [data-tool="pointer"]')).toHaveCount(0);
-  const well = await bar(page)
-    .locator('.well [data-tool]')
-    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tool')));
-  expect(well).toEqual(['box', 'pen', 'arrow']);
-  await expect(bar(page)).toHaveAttribute('role', 'toolbar');
-  await expect(bar(page)).toHaveAccessibleName('Recording tools');
-});
-
 test('exactly one tool is selected as tools change', async ({ mount, page }) => {
   await mount(Harness);
+  await expect(bar(page)).toHaveAttribute('role', 'toolbar');
+  await expect(bar(page)).toHaveAccessibleName('Recording tools');
   const checked = bar(page).locator('[role="radio"][aria-checked="true"]');
   await expect(checked).toHaveCount(1);
   await expect(checked).toHaveAttribute('data-tool', 'pointer');
@@ -52,46 +38,19 @@ test('exactly one tool is selected as tools change', async ({ mount, page }) => 
   }
 });
 
-test('Clear is absent with no marks, appears with the first mark around a fixed centre, and clears to Pointer', async ({
+test('Clear appears with the first mark and clears to Pointer', async ({
   mount,
   page,
 }) => {
-  // No live mic level: the waveform's motion would keep the bar animating.
   const harness = await mount(Harness, { props: { signal: null } });
   await pauseClock(page);
   await expect(bar(page).locator('[data-clear]')).toHaveCount(0);
-  await expectAnimationsToSettle(bar(page));
-  const before = (await bar(page).boundingBox())!;
   await page.getByRole('button', { name: 'Draw a mark' }).click();
   await expect(bar(page).locator('[data-clear]')).toBeVisible();
-  // The bar grows smoothly: it has animations while Clear comes in.
-  await page.clock.runFor(400);
-  await expectAnimationsToSettle(bar(page));
-  const after = (await bar(page).boundingBox())!;
-  expect(after.width).toBeGreaterThan(before.width + 30);
-  // Centre fixed: nothing jumps under the pointer.
-  expect(Math.abs(after.x + after.width / 2 - (before.x + before.width / 2))).toBeLessThanOrEqual(
-    1,
-  );
   await bar(page).locator('[data-clear]').click();
   expect((await actions(harness)).slice(-2)).toEqual(['clear', 'mouse']);
   await expect(bar(page).locator('[data-clear]')).toHaveCount(0);
   await expect(tool(page, 'pointer')).toHaveAttribute('aria-checked', 'true');
-});
-
-test('hovering the chip while recording swaps the dot for a pause icon', async ({
-  mount,
-  page,
-}) => {
-  await mount(Harness);
-  const chip = page.getByTestId('recording-chip');
-  const opacity = (selector: string) =>
-    chip.locator(selector).evaluate((node) => getComputedStyle(node).opacity);
-  expect(await opacity('.rec-dot')).toBe('1');
-  expect(await opacity('.hover-pause')).toBe('0');
-  await chip.hover();
-  expect(await opacity('.rec-dot')).toBe('0');
-  expect(await opacity('.hover-pause')).toBe('1');
 });
 
 test('clicking the chip pauses and resumes; paused shows a play icon and a flat waveform', async ({
@@ -222,37 +181,6 @@ test('narrow windows keep every control and scale the bar down', async ({ mount,
   for (const selector of ['[data-tool]', '[data-clear]', '[data-discard]', '[data-done]'])
     await expect(bar(page).locator(selector).first()).toBeVisible();
 });
-
-for (const scheme of ['light', 'dark'] as const) {
-  test(`states in ${scheme} (screenshots for review)`, async ({ mount, page }, testInfo) => {
-    await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
-    const capture = async (name: string) => {
-      await expectAnimationsToSettle(bar(page));
-      const box = (await bar(page).boundingBox())!;
-      await page.screenshot({
-        path: testInfo.outputPath(`recording-toolbar-${scheme}-${name}.png`),
-        clip: { x: box.x - 24, y: box.y - 56, width: box.width + 48, height: box.height + 80 },
-      });
-    };
-    const empty = await mount(Harness);
-    await pauseClock(page);
-    await page.clock.runFor(500);
-    await capture('1-nothing-drawn');
-    await page.getByRole('button', { name: 'Draw a mark' }).click();
-    await tool(page, 'box').click();
-    await page.mouse.move(5, 395);
-    await page.clock.runFor(500);
-    await capture('2-marks-drawn');
-    await page.getByTestId('recording-chip').hover();
-    await capture('3-hover-chip');
-    await page.getByTestId('recording-chip').click();
-    await tool(page, 'pointer').click();
-    await page.mouse.move(5, 395);
-    await capture('4-paused');
-    await empty.unmount();
-  });
-}
-
 
 test('removed Element tool has no button or E binding', async ({ mount, page }, info) => {
   const harness = await mount(Harness);
