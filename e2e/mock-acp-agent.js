@@ -50,6 +50,9 @@ const sessionId = 'mock-session-1';
 // Agent→client requests (clientCalls) awaiting the daemon's answer, keyed by our JSON-RPC id.
 let nextClientCallId = 1;
 const pendingClientCalls = new Map();
+// Set once the daemon closes our stdin; client calls made after that cannot be answered.
+let stdinClosed = false;
+const STDIN_CLOSED_ERROR = { code: -32000, message: 'stdin closed' };
 
 // --- JSON-RPC helpers ---
 
@@ -66,6 +69,8 @@ function jsonrpcNotification(method, params) {
 }
 
 function callClient(method, params) {
+  // No daemon left to answer: settle now so the turn can still finish (see the close handler).
+  if (stdinClosed) return Promise.resolve({ error: STDIN_CLOSED_ERROR });
   const id = nextClientCallId++;
   return new Promise((resolve) => {
     pendingClientCalls.set(id, resolve);
@@ -240,7 +245,6 @@ function handleMessage(msg) {
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 let pendingHandlers = 0;
-let stdinClosed = false;
 
 function exitIfDone() {
   if (stdinClosed && pendingHandlers === 0) {
@@ -275,7 +279,7 @@ rl.on('close', () => {
   stdinClosed = true;
   // No daemon left to answer: let any turn waiting on a client call finish.
   for (const resolve of pendingClientCalls.values()) {
-    resolve({ error: { code: -32000, message: 'stdin closed' } });
+    resolve({ error: STDIN_CLOSED_ERROR });
   }
   pendingClientCalls.clear();
   exitIfDone();

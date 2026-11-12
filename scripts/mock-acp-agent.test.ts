@@ -32,7 +32,11 @@ function startAgent(behavior: unknown) {
   const proc = agent;
   return {
     send: (msg: object) => proc.stdin.write(JSON.stringify(msg) + '\n'),
-    next: async () => JSON.parse((await lines.next()).value as string),
+    /** The next JSON-RPC message, or null once the agent's stdout has ended. */
+    next: async () => {
+      const line = await lines.next();
+      return line.done ? null : JSON.parse(line.value as string);
+    },
     stderr: () => stderr,
   };
 }
@@ -83,5 +87,19 @@ describe('mock ACP agent clientCalls', () => {
     while (msg.id !== 1) msg = await io.next();
     expect(msg.result).toEqual({ stopReason: 'end_turn' });
     await expect.poll(io.stderr).toContain('client call session/request_permission → error');
+  }, 15_000);
+
+  it('finishes the turn and exits when stdin closes with client calls still to send', async () => {
+    const call = { method: 'session/request_permission', params: permissionParams };
+    const io = startAgent({ clientCalls: [call, call] });
+    const proc = agent!;
+    const exited = new Promise<number | null>((resolve) => proc.once('exit', resolve));
+    io.send({ jsonrpc: '2.0', id: 5, method: 'session/prompt', params: { prompt: [] } });
+    await io.next();
+    proc.stdin.end();
+    expect(await exited).toBe(0);
+    const rest = [];
+    for (let msg = await io.next(); msg; msg = await io.next()) rest.push(msg);
+    expect(rest.find((msg) => msg.id === 5)?.result).toEqual({ stopReason: 'end_turn' });
   }, 15_000);
 });
