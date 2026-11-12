@@ -44,9 +44,7 @@
     appStore.dispatch(set(enabled.includes(lab as Lab)));
   }
   if (desktop) {
-    appStore.dispatch(
-      machineRailStateReceived({ enabled: true, homeId: 'local', machineIds: [], selectedId: '' }),
-    );
+    appStore.dispatch(machineRailStateReceived({ ...previousRail, enabled: true }));
     // A non-mock version makes the desktop-only rows render; the dock lab reads it once.
     window.electronAPI = {
       ...previousApi,
@@ -66,8 +64,7 @@
     appStore.dispatch(setLabsTabGroupsEnabled(previousPreferences.labsTabGroupsEnabled));
     appStore.dispatch(setLabsBrowserAccessEnabled(previousPreferences.labsBrowserAccessEnabled));
     if (desktop) {
-      const { menuRequests: _menuRequests, ...rail } = previousRail;
-      appStore.dispatch(machineRailStateReceived(rail));
+      appStore.dispatch(machineRailStateReceived(previousRail));
       window.electronAPI = previousApi;
     }
   });
