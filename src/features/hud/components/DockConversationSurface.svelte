@@ -139,7 +139,9 @@
         if (!live()) return;
         const composer = explicitFocus ? composerOf() : null;
         if (composer) {
-          composer.focus({ preventScroll: true });
+          // A typing key also raises the keyboard-open signal. Never move focus from
+          // its editor to this wrapper while the remaining keystrokes are arriving.
+          if (!composer.contains(document.activeElement)) composer.focus({ preventScroll: true });
           return;
         }
         // Focus parked on Back by the app is not a keyboard move: no focus ring for it.
