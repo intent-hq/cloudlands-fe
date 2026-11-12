@@ -6,8 +6,9 @@
     /** Mirror tab: header over a placeholder mirror surface (no webview in the sandbox). */
     mirror: { url: string; title?: string; host: BrowserTabHost };
     width: number;
-    /** Notices above the address bar: owner agent, and whether this computer only mirrors the tab. */
-    notices?: { agentName?: string; mirrored: boolean };
+    showDetails?: boolean;
+    /** Owner agent and whether this computer only mirrors the tab. */
+    notices?: { agentId?: string; agentName?: string; mirrored: boolean };
   }
 
   export const ONLINE_HOST: BrowserTabHost = { name: 'office-linux', connected: true };
@@ -28,7 +29,7 @@
         props: {
           width: 640,
           mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
-          notices: { agentName: 'Docs agent', mirrored: true },
+          notices: { agentId: 'docs-agent', agentName: 'Docs agent', mirrored: true },
         },
       },
       'mirror-user-tab': {
@@ -42,14 +43,43 @@
         props: {
           width: 640,
           mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
-          notices: { agentName: 'Docs agent', mirrored: false },
+          notices: { agentId: 'docs-agent', agentName: 'Conversation layout', mirrored: false },
+        },
+      },
+      'primary-agent-unnamed': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentId: 'agent-12345678-1234-1234-1234-123456789abc', mirrored: false },
+        },
+      },
+      'primary-agent-tight': {
+        props: {
+          width: 240,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentId: 'docs-agent', agentName: 'Docs agent', mirrored: false },
         },
       },
       'mirror-agent-narrow': {
         props: {
           width: 360,
           mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
-          notices: { agentName: 'Release notes researcher with a long name', mirrored: true },
+          notices: {
+            agentId: 'release-agent',
+            agentName: 'Release notes researcher with a long name',
+            mirrored: true,
+          },
+        },
+      },
+      'primary-agent-long-name': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: {
+            agentId: 'release-agent',
+            agentName: 'Release notes researcher with a long name',
+            mirrored: false,
+          },
         },
       },
       'host-offline': {
@@ -62,39 +92,88 @@
           },
         },
       },
+      'host-offline-details': {
+        props: {
+          width: 360,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: OFFLINE_HOST },
+          notices: { agentId: 'docs-agent', agentName: 'Docs agent', mirrored: true },
+          showDetails: true,
+        },
+      },
+      'host-offline-narrow': {
+        props: {
+          width: 240,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: OFFLINE_HOST },
+        },
+      },
+      'mirror-agent-details': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentId: 'docs-agent', agentName: 'Docs agent', mirrored: true },
+          showDetails: true,
+        },
+      },
     },
   });
 </script>
 
 <script lang="ts">
-  import BrowserTabNotices from './BrowserTabNotices.svelte';
+  import { onMount, tick } from 'svelte';
   import BrowserViewerTabHeader from './BrowserViewerTabHeader.svelte';
+  import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
+  import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
 
-  let { mirror, width, notices }: BrowserViewerTabPreviewProps = $props();
+  let { mirror, width, notices, showDetails = false }: BrowserViewerTabPreviewProps = $props();
 
   let lastAction = $state('');
+  let root: HTMLElement;
+  onMount(() => {
+    if (showDetails)
+      void tick().then(() =>
+        root.querySelector<HTMLButtonElement>('[data-browser-status] button')?.click(),
+      );
+  });
 </script>
 
-<section class="grid gap-3" data-browser-viewer-tab-preview style:width={`${width}px`}>
+<section
+  bind:this={root}
+  class="grid gap-3"
+  data-browser-viewer-tab-preview
+  style:width={`${width}px`}
+>
   <div
     class="flex h-[320px] flex-col overflow-hidden rounded-lg border border-border bg-background"
   >
-    {#if notices}
-      <BrowserTabNotices
-        mirrorHostName={notices.mirrored && mirror.host.connected ? mirror.host.name : undefined}
-        agentName={notices.agentName}
-        onOpenAgent={() => (lastAction = 'open-agent')}
-      />
-    {/if}
+    <PanelTabBar
+      tabs={[
+        {
+          id: 'browser-preview',
+          type: 'browser',
+          title: mirror.title ?? mirror.url,
+          browserUrl: mirror.url,
+          ownerAgentId: notices?.agentId,
+          ownerAgentName: notices?.agentName,
+          closable: true,
+        },
+      ]}
+      activeTabId="browser-preview"
+      panelId={PREVIEW_FIXTURE_IDS.panel}
+      workspaceId={PREVIEW_FIXTURE_IDS.workspace}
+      isFocused
+      onTabClose={() => (lastAction = 'hide-tab')}
+    />
     <BrowserViewerTabHeader
       url={mirror.url}
       title={mirror.title}
       host={mirror.host}
+      agentOwned={!!notices?.agentId}
+      showHostStatus={notices?.mirrored ?? true}
       onNavigate={(url) => (lastAction = `navigate ${url}`)}
       onGoBack={() => (lastAction = 'back')}
       onGoForward={() => (lastAction = 'forward')}
       onRefresh={() => (lastAction = 'refresh')}
-      onClose={() => (lastAction = 'force-close')}
+      onClose={({ force }) => (lastAction = force ? 'force-close' : 'close')}
     />
     <div
       class="flex flex-1 items-center justify-center bg-muted/20 text-xs text-muted-foreground"

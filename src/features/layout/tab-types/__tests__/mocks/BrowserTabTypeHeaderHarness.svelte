@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { takeEvery, type SagaGenerator } from 'typed-redux-saga';
+  import { store } from '$store/renderer/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
@@ -10,16 +13,34 @@
     activeTabId,
     width = 640,
     renderPanelHeader = false,
+    captureOwnerRequests = false,
   }: {
     tabs: PanelTab[];
     activeTabId: string;
     width?: number;
     renderPanelHeader?: boolean;
+    captureOwnerRequests?: boolean;
   } = $props();
   const header = createPanelHeaderContext();
+  let ownerRequest = $state('');
+  $effect(() => {
+    if (!captureOwnerRequests) return;
+    return store.runSaga(function* (): SagaGenerator<void> {
+      yield* takeEvery(
+        openAgentTabRequested.type,
+        function* (action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
+          ownerRequest = JSON.stringify(action.payload);
+        },
+      );
+    });
+  });
 </script>
 
-<div class="flex h-90 flex-col overflow-hidden bg-card" style:width={`${width}px`}>
+<div
+  class="flex h-90 flex-col overflow-hidden bg-card"
+  style:width={`${width}px`}
+  data-owner-request={ownerRequest}
+>
   {#if renderPanelHeader}
     <PanelTabBar
       {tabs}

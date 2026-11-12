@@ -34,7 +34,10 @@
   import { invoke } from '$lib/electron-bridge';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { notify } from '$lib/components/patterns/notify';
-  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import {
+    locateItemInSidebarRequested,
+    openAgentTabRequested,
+  } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -84,6 +87,8 @@
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { getResourceIconKind } from '$lib/components/shared/resource-icon';
   import { getPanelExternalOpenTarget } from './panel-external-open-target';
+  import { resolveOwnerName } from '$lib/components/workspace/sidebar-browser-groups';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -241,6 +246,17 @@
   // state, specialist, and delegation info all derive from this store so the
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+
+  function openBrowserOwner(tab: PanelTab, event: MouseEvent) {
+    if (!tab.ownerAgentId) return;
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: tab.ownerAgentId,
+        sourcePanelId: stablePanelId,
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
+  }
 
   /**
    * Get the display title for a tab, resolving note/agent titles from the store
@@ -1920,6 +1936,34 @@
     >
       {@render paneStackSelector()}
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
+
+      {#if activeTab.type === 'browser' && activeTab.ownerAgentId}
+        {@const ownerName = resolveOwnerName(
+          activeTab.ownerAgentId,
+          $workspaceAgents$,
+          activeTab.ownerAgentName,
+        )}
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          wrapContent={false}
+          class="panel-header-action-button"
+          aria-label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerName })}
+          tooltip={m.browser_tabNotice_agentControl_label({ name: ownerName })}
+          tooltipSide="bottom"
+          tooltipDelayDuration={300}
+          onclick={(event) => activeTab && openBrowserOwner(activeTab, event)}
+          data-browser-tab-agent-control={activeTab.ownerAgentId}
+        >
+          <span
+            class="panel-header-leading-surface pointer-events-none flex shrink-0 items-center justify-center"
+          >
+            {#key activeTab.ownerAgentId}
+              <PanelHeaderAgentAvatar agentId={activeTab.ownerAgentId} />
+            {/key}
+          </span>
+        </Button>
+      {/if}
 
       <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
