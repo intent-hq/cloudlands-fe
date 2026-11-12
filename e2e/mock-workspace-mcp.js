@@ -65,7 +65,7 @@ export async function createMockChild(servers, child) {
     const result = await request('tools/call', {
       name: 'workspace_api',
       arguments: {
-        code: `return await ws.agent.create(${JSON.stringify(child.name)}, ${JSON.stringify(child.prompt)}, { provider: "mock", skipAutoCommit: true });`,
+        code: `return await ws.agent.create(${JSON.stringify(child.name)}, ${JSON.stringify(child.prompt)}, { provider: "mock" });`,
         summary: 'Create packaged smoke fixture child',
       },
     });
