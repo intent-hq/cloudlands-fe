@@ -168,6 +168,9 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
     let page = await launch();
     const field = () => page.locator('[id="shortcut-dock.focus"]');
     const raw = () => page.evaluate(() => (window as any).shortcutFixture.effective('dock.focus'));
+    // Captured Control is the platform primary modifier off macOS. Defaults and
+    // explicit main updates retain their own ctrl spelling; the native key is Control in both.
+    const capturedControlY = process.platform === 'darwin' ? 'ctrl+alt+shift+y' : 'mod+alt+shift+y';
     const edit = async (chord: string) => {
       await field().click();
       await expect
@@ -212,7 +215,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
     await expect(field()).toBeFocused();
     await expect(field()).toHaveAttribute('placeholder', 'Press shortcut');
     await page.keyboard.press('Control+Alt+Shift+Y');
-    await expect.poll(raw).toBe('ctrl+alt+shift+y');
+    await expect.poll(raw).toBe(capturedControlY);
     expect(
       await application!.evaluate(({ globalShortcut }) => ({
         newKey: globalShortcut.isRegistered('Control+Alt+Shift+Y'),
@@ -288,11 +291,11 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
     await expect.poll(raw).toBe('ctrl+alt+shift+u');
     snapshots.push({ phase: 'held-old-get-after-new-change', snapshot: newer });
     await edit('Control+Alt+Shift+Y');
-    await expect.poll(raw).toBe('ctrl+alt+shift+y');
+    await expect.poll(raw).toBe(capturedControlY);
     await edit('Control+Shift+R');
-    await expect.poll(raw).toBe('ctrl+alt+shift+y');
+    await expect.poll(raw).toBe(capturedControlY);
     await expect(page.getByRole('alert').filter({ hasText: 'already used' }).first()).toBeVisible();
-    await edit('Meta+Shift+S');
+    await edit('ControlOrMeta+Shift+S');
     await expect(page.getByRole('alert').filter({ hasText: 'already used' }).first()).toBeVisible();
     await edit('Y');
     await expect(page.getByRole('alert').filter({ hasText: 'Use Control' }).first()).toBeVisible();
@@ -323,7 +326,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
       globalShortcut.unregister('Control+Alt+Shift+F10');
     });
     const persisted = JSON.parse(await readFile(join(profile, 'local-prefs.json'), 'utf8'));
-    expect(persisted.dockShortcutOverrides['dock.focus']).toBe('ctrl+alt+shift+y');
+    expect(persisted.dockShortcutOverrides['dock.focus']).toBe(capturedControlY);
     snapshots.push({
       phase: 'after-refusals',
       snapshot: await application!.evaluate(() =>
@@ -331,18 +334,22 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
       ),
     });
     await page.getByRole('button', { name: 'Workspace row', exact: true }).focus();
-    await page.keyboard.press('Meta+Shift+S');
+    await page.keyboard.press('ControlOrMeta+Shift+S');
     expect(await page.evaluate(() => (window as any).shortcutFixture.workspaceActions)).toEqual([
       'fixture-space',
     ]);
     await page.getByRole('button', { name: 'Open shortcut sheet', exact: true }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByRole('dialog').getByText('⌃⌥⇧Y', { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('dialog')
+        .getByText(process.platform === 'darwin' ? '⌃⌥⇧Y' : 'Ctrl+Alt+Shift+Y', { exact: true }),
+    ).toBeVisible();
     await page.keyboard.press('Escape');
     await application!.close();
     application = undefined;
     page = await launch();
-    await expect.poll(raw).toBe('ctrl+alt+shift+y');
+    await expect.poll(raw).toBe(capturedControlY);
     expect(
       await application!.evaluate(({ globalShortcut }) =>
         globalShortcut.isRegistered('Control+Alt+Shift+Y'),
@@ -352,7 +359,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
     await reset.click();
     await expect.poll(raw).toBe('ctrl+shift+d');
     await edit('Control+Alt+Shift+Y');
-    await expect.poll(raw).toBe('ctrl+alt+shift+y');
+    await expect.poll(raw).toBe(capturedControlY);
     await page.getByRole('button', { name: 'Reset all', exact: true }).click();
     await expect.poll(raw).toBe('ctrl+shift+d');
     await page
