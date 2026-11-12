@@ -50,6 +50,7 @@ import {
 import { createAdmittedLegacyPrincipal } from '../../../../../test/fixtures/admitted-legacy-principal';
 import type { AgentSession } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
+import { appClient } from '$lib/client';
 import { clearDraftCacheForTests } from '$lib/components/chat/chat-draft-cache';
 import { __resetAgentQueueReadServiceForTests } from '$features/agent/agent-queue-read-service';
 import {
@@ -246,7 +247,12 @@ beforeEach(() => {
       });
     }),
   );
-  cleanups.push(appStore.runSaga(chatDraftsSaga));
+  // This fixture scripts daemon drafts.*, not the desktop-local shared broker.
+  cleanups.push(
+    appStore.runSaga(function* legacyDaemonDraftsSaga() {
+      yield* chatDraftsSaga(appClient.drafts, null);
+    }),
+  );
   cleanups.push(appStore.runSaga(dockConversationSaga));
 });
 afterEach(() => {
