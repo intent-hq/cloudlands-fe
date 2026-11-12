@@ -71,6 +71,7 @@ export function* chatDraftsSaga(
     : null,
 ): SagaGenerator<void> {
   const publications = new Map<string, Promise<SharedDraft>>();
+  const clears = new WeakMap<ClearAction, Promise<void>>();
   const pending: Record<string, { requestId: string; request: ChatDraftSaveRequest; timer: Task }> =
     {};
   const pairs: Record<string, { epoch: number; committed: Record<string, CommittedSave> }> = {};
@@ -103,7 +104,13 @@ export function* chatDraftsSaga(
   }
 
   function* schedule(action: ReturnType<typeof chatDraftSaveScheduled>): SagaGenerator<void> {
-    const [ownerId, requestId, request] = action.payload;
+    const [ownerId, requestId, submitted] = action.payload;
+    const authority = sync?.authority() ?? getPrincipalActionContext(store.state);
+    if (submitted.authority && submitted.authority !== authority) {
+      yield* put(chatDraftSaveSettled(ownerId, requestId, 'failed', 'draft-authority-changed'));
+      return;
+    }
+    const request = { ...submitted, authority: submitted.authority ?? authority ?? undefined };
     yield* dropPending(ownerId);
     if (sync) {
       const publication = sync.edit(ownerId, request.workspaceId, request.agentId, request);
@@ -144,6 +151,14 @@ export function* chatDraftsSaga(
 
   function* invalidatePair(action: ClearRequestAction): SagaGenerator<void> {
     const [workspaceId, agentId] = action.payload;
+    const started = chatDraftClearStarted(workspaceId, agentId);
+    if (sync) {
+      // Capture scope and predecessor at the clear request, before the local
+      // persistence FIFO can wait behind an older save. Never rebase at dequeue.
+      const clear = sync.clear(workspaceId, agentId);
+      clears.set(started, clear);
+      void clear.catch(() => {});
+    }
     const key = pairKey(workspaceId, agentId);
     for (const [ownerId, entry] of Object.entries(pending)) {
       if (pairKey(entry.request.workspaceId, entry.request.agentId) === key) {
@@ -158,7 +173,7 @@ export function* chatDraftsSaga(
       }
     }
     setCachedDraft(workspaceId, agentId, { text: '', attachments: [] });
-    yield* put(chatDraftClearStarted(workspaceId, agentId));
+    yield* put(started);
   }
 
   function* restore(action: ReturnType<typeof chatDraftRestoreRequested>): SagaGenerator<void> {
@@ -180,10 +195,15 @@ export function* chatDraftsSaga(
     if (isClear(action)) {
       const [workspaceId, agentId] = action.payload;
       try {
-        if (sync) yield* call([sync, sync.clear], workspaceId, agentId);
-        else yield* call([drafts, drafts.clear], workspaceId, agentId);
+        if (sync) {
+          const clear = clears.get(action);
+          if (!clear) throw new Error('draft-clear-request-missing');
+          yield* call(() => clear);
+        } else yield* call([drafts, drafts.clear], workspaceId, agentId);
       } catch (error) {
         logger.warn('Failed to clear draft', { error: errorMessage(error) });
+      } finally {
+        clears.delete(action);
       }
       return;
     }
@@ -193,13 +213,16 @@ export function* chatDraftsSaga(
     const pair = pairState(key);
     const save = pair.committed[requestId] ?? { epoch: pair.epoch, rollback: request.rollback };
     try {
-      if (request.authority && request.authority !== getPrincipalActionContext(store.state))
+      if (
+        request.authority &&
+        request.authority !== (sync?.authority() ?? getPrincipalActionContext(store.state))
+      )
         throw new Error('draft-authority-changed');
       if (sync) {
-        const publication =
-          publications.get(requestId) ??
-          sync.edit(ownerId, workspaceId, agentId, { text, attachments });
+        const publication = publications.get(requestId);
+        if (!publication) throw new Error('draft-save-publication-missing');
         yield* call(() => publication);
+        if (request.authority !== sync.authority()) throw new Error('draft-authority-changed');
         yield* call([sync, sync.flush], workspaceId, agentId);
       } else {
         yield* call(

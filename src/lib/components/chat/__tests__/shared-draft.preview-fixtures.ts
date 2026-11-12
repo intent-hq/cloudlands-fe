@@ -12,6 +12,12 @@ import {
 } from '$features/hud/components/dock-conversation-wire.preview-fixtures';
 import { store } from '$store/renderer/store';
 import {
+  chatDraftOwnerOpened,
+  chatDraftSaveScheduled,
+  chatDraftSaveFlushRequested,
+  chatDraftClearRequested,
+} from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
+import {
   openDockConversationRequested,
   closeDockConversationRequested,
 } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
@@ -225,6 +231,124 @@ export function setupSharedDraftFixture() {
       });
       await dock.flush(conversationWireWorkspace, 'wire-main');
       return attachment.screen;
+    },
+    async queuedClearProof(retire: boolean) {
+      const isolatedDrafts = createChatDraftFixture().client;
+      const notifications = new Set<(value: SharedDraft) => void>();
+      const changes: string[] = [];
+      const isolated = createChatDraftBroker(provenance, isolatedDrafts, (value) => {
+        changes.push(value.snapshot.text);
+        for (const notify of notifications) notify(value);
+      });
+      let epoch = 0;
+      let releaseFlush!: () => void;
+      let enteredFlush!: () => void;
+      let completedClear!: () => void;
+      const flushGate = new Promise<void>((resolve) => {
+        releaseFlush = resolve;
+      });
+      const flushEntered = new Promise<void>((resolve) => {
+        enteredFlush = resolve;
+      });
+      const clearCompleted = new Promise<void>((resolve) => {
+        completedClear = resolve;
+      });
+      const owner = {};
+      const methods: string[] = [];
+      const local = createDraftSyncConnection(
+        {
+          request: async (request) => {
+            methods.push(request.kind);
+            if (request.kind === 'flush') {
+              enteredFlush();
+              await flushGate;
+            }
+            try {
+              return await isolated.request(request, { owner, current: () => true });
+            } finally {
+              if (request.kind === 'clear') completedClear();
+            }
+          },
+          subscribe: (notify) => {
+            notifications.add(notify);
+            return () => {
+              notifications.delete(notify);
+            };
+          },
+        },
+        () => provenance,
+        () => String(epoch),
+      );
+      const peerOwner = {};
+      const peer = createDraftSyncConnection(
+        {
+          request: (request) =>
+            isolated.request(request, { owner: peerOwner, current: () => true }),
+          subscribe: (notify) => {
+            notifications.add(notify);
+            return () => {
+              notifications.delete(notify);
+            };
+          },
+        },
+        () => provenance,
+      );
+      const isolatedDriver = createChatDraftStoreDriver(isolatedDrafts, local);
+      const ws = 'queued-clear-workspace';
+      const agent = 'queued-clear-agent';
+      try {
+        await local.read(ws, agent);
+        isolatedDriver.dispatch(chatDraftOwnerOpened('old-editor'));
+        isolatedDriver.dispatch(
+          chatDraftSaveScheduled('old-editor', 'old-save', {
+            authority: '0',
+            workspaceId: ws,
+            agentId: agent,
+            text: 'old draft',
+            attachments: [],
+            rollback: null,
+          }),
+        );
+        isolatedDriver.dispatch(chatDraftSaveFlushRequested('old-editor'));
+        await flushEntered;
+        isolatedDriver.dispatch(chatDraftClearRequested(ws, agent));
+        // The actual client captures the old predecessor now. A peer write is
+        // allowed while the renderer's older durability receipt is still held.
+        await peer.read(ws, agent);
+        await peer.edit('peer-editor', ws, agent, {
+          text: 'peer typed after clear request',
+          attachments: [],
+        });
+        await peer.flush(ws, agent);
+        if (retire) epoch += 2;
+        releaseFlush();
+        await clearCompleted;
+        const canonical = await peer.read(ws, agent);
+        const beforeInvalid = methods.length;
+        isolatedDriver.dispatch(
+          chatDraftSaveScheduled('old-editor', 'wrong-authority', {
+            authority: 'retired-context',
+            workspaceId: ws,
+            agentId: agent,
+            text: 'invalid overwrite',
+            attachments: [],
+            rollback: null,
+          }),
+        );
+        await Promise.resolve();
+        const persisted = await isolatedDrafts.get(ws, agent);
+        return {
+          text: canonical.snapshot.text,
+          persisted: persisted?.text,
+          invalidPublished: methods.length !== beforeInvalid,
+          changes,
+        };
+      } finally {
+        releaseFlush();
+        isolatedDriver.stop();
+        peer.dispose();
+        isolated.dispose();
+      }
     },
     async lifecycleProof() {
       let release!: (value: null) => void;

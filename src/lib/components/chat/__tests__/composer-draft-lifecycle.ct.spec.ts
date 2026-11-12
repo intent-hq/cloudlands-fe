@@ -366,3 +366,25 @@ test('retires captured drafts and queued writes across an authority round trip',
   await expect(dock).toHaveText('Same pair and same content');
   await page.screenshot({ path: test.info().outputPath('shared-draft-retired-authority.png') });
 });
+
+test('pins queued clear and save authority before older persistence completes', async ({
+  mount,
+  page,
+}) => {
+  await mount(SharedDraftEditorsHarness);
+  await expect.poll(() => page.evaluate(() => !!window.__sharedDraftFixture)).toBe(true);
+  for (const retire of [false, true]) {
+    const result = await page.evaluate(
+      async (retire) => window.__sharedDraftFixture?.queuedClearProof(retire),
+      retire,
+    );
+    expect(result?.text).toBe('peer typed after clear request');
+    expect(result?.persisted).toBe('peer typed after clear request');
+    expect(result?.invalidPublished).toBe(false);
+    expect(result?.changes.at(-1)).toBe('peer typed after clear request');
+    await test.info().attach(retire ? 'retired-clear-order' : 'same-owner-clear-order', {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    });
+  }
+});

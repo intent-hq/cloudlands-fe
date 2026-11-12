@@ -562,6 +562,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       pendingSaveRequestId = requestId;
       port.dispatch(
         chatDraftSaveScheduled(ownerId, requestId, {
+          authority: port.authority?.() ?? undefined,
           workspaceId,
           agentId,
           text: currentValue,
