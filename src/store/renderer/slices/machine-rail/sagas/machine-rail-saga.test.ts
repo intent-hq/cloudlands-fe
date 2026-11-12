@@ -15,6 +15,7 @@ import {
   addRailMachineRequested,
   machineRailReducer,
   removeRailMachineRequested,
+  reorderRailMachinesRequested,
   selectRailMachineRequested,
   setMachineRailEnabledRequested,
 } from '../machine-rail-slice';
@@ -137,6 +138,12 @@ describe('machineRailSaga', () => {
     ['select', selectRailMachineRequested('b'), 'machine-rail:select', { id: 'b' }],
     ['add', addRailMachineRequested('b'), 'machine-rail:add', { id: 'b' }],
     ['remove', removeRailMachineRequested('b'), 'machine-rail:remove', { id: 'b' }],
+    [
+      'reorder',
+      reorderRailMachinesRequested(['local', 'c', 'b']),
+      'machine-rail:reorder',
+      { machineIds: ['local', 'c', 'b'] },
+    ],
     [
       'set enabled',
       setMachineRailEnabledRequested(false),

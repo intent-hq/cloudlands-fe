@@ -22,6 +22,7 @@ import {
   addRailMachine,
   normalizeRailSession,
   removeRailMachine,
+  reorderRailMachines,
   type MachineRailState,
   type MachineRailToastEvent,
 } from '../shared/types/machine-rail';
@@ -30,6 +31,7 @@ import {
   MachineRailForwardToastSchema,
   MachineRailHealthSchema,
   MachineRailMachineSchema,
+  MachineRailReorderSchema,
   MachineRailSetEnabledSchema,
 } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
@@ -430,6 +432,14 @@ function removeMachine(window: BrowserWindowType, id: string): MachineRailState 
   return stateOf(window);
 }
 
+function reorderMachines(window: BrowserWindowType, order: string[]): MachineRailState {
+  const rail = readWindowRail(window);
+  const machineIds = reorderRailMachines(rail.machineIds, order);
+  writeWindowRail(window, { machineIds, selectedId: rail.selectedId });
+  broadcastState(window);
+  return stateOf(window);
+}
+
 /** A forgotten machine leaves every rail. */
 export function removeMachineFromAllRails(id: string): void {
   for (const window of getAppWindows()) {
@@ -551,6 +561,17 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
         return removeMachine(windowOf(event.sender), id);
       },
       MACHINE_RAIL.REMOVE,
+    ),
+  );
+  ipcMain.handle(
+    MACHINE_RAIL.REORDER,
+    createValidatedHandler(
+      MachineRailReorderSchema,
+      async (event, { machineIds }) => {
+        assertEnabled();
+        return reorderMachines(windowOf(event.sender), machineIds);
+      },
+      MACHINE_RAIL.REORDER,
     ),
   );
   ipcMain.handle(

@@ -1204,6 +1204,7 @@ export const IPC_CHANNELS = {
     SELECT: 'machine-rail:select',
     ADD: 'machine-rail:add',
     REMOVE: 'machine-rail:remove',
+    REORDER: 'machine-rail:reorder',
     SET_ENABLED: 'machine-rail:set-enabled',
     CHANGED: 'machine-rail:changed',
     // A renderer whose machine is not shown hands a toast to main, which
