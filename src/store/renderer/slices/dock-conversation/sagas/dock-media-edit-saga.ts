@@ -68,7 +68,13 @@ import {
   dockEvidenceClipChanged,
 } from '../dock-conversation-slice';
 import { endDockEditorHold } from './dock-editor-hold';
-import { evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
+import {
+  evidenceOf,
+  dockMediaNativeService,
+  dockRecordingReviewOpened,
+  dockRecordingReviewEnded,
+  dockRecordingReviewReturn,
+} from './dock-evidence-saga';
 import { dockInputLive } from './dock-live-input';
 import {
   dockEditorCompactCancelled,
@@ -745,6 +751,18 @@ function* openEditorWith(
       agentId,
       generation: editorGeneration,
     };
+    dockRecordingReviewOpened(
+      source.kind === 'recording' && shownHere()
+        ? {
+            openId: opened.openId,
+            logicalId,
+            workspaceId,
+            agentId,
+            authority,
+            generation: conversationGeneration,
+          }
+        : null,
+    );
     // Every admitted editor requests an idempotent compact owner, without changing its pair,
     // once the editor is open and only for the conversation still shown. The selector and
     // shell defer this pending intent while live input continues; ending input resumes it.
@@ -806,6 +824,7 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
   };
 
   let answered = false;
+  let returned = false;
   const answer = (accept: boolean) =>
     call(() =>
       window.electronAPI
@@ -827,9 +846,11 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
   try {
     if (!current()) return;
     answered = true;
+    dockRecordingReviewReturn(openId);
     // Main releases the hold and brings this dock forward only now, after validation.
     if (!(yield* answer(true)) || !current()) return;
     admittedEditor = null;
+    returned = true;
     const keep = mine!;
     const still = (): boolean =>
       myReturn === returnGeneration &&
@@ -862,6 +883,7 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
   } finally {
     // Every attach is answered: an invalid or superseded one refuses (main reveals as a close).
     if (!answered) yield* answer(false);
+    dockRecordingReviewReturn(openId, returned);
   }
 }
 
@@ -1214,6 +1236,7 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
       if (!parsed.success) return;
       const openId = parsed.data.endedOpenId;
       if (openingEditors) endedWhileOpening.add(openId);
+      dockRecordingReviewEnded(openId);
       if (admittedEditor?.openId === openId) admittedEditor = null;
       yield* put(dockEditorCompactCancelled(openId));
     },

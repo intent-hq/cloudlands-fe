@@ -229,6 +229,7 @@
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatRecordingAttachments from './ChatRecordingAttachments.svelte';
   import { chatRecordingEvidence } from './chat-recording-attachments';
+  import { createChatRecordingWarm } from './chat-recording-warm.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
@@ -2381,6 +2382,11 @@
     },
   });
   const recordingDraft = $derived(draftManager.captureDraft());
+  const recordingWarm = createChatRecordingWarm({
+    capture: () => recordingDraft,
+    active: () => isActive && isChatFocused && !pendingEvidenceSend,
+    drafts: draftManager,
+  });
   const recordingAttachmentIds = $derived(
     chatRecordingEvidence(recordingDraft)?.clips.flatMap((clip) =>
       clip.contextItemId ? [clip.contextItemId] : [],
@@ -6436,6 +6442,7 @@
           isInitialWorkspaceAgent,
         },
         signal: pending.controller.signal,
+        warm: recordingWarm,
       })
         .then((admitted) => {
           if (admitted && draftManager.isCurrentDraft(capture)) {
@@ -8601,6 +8608,9 @@
                       <ChatRecordingAttachments
                         capture={recordingDraft}
                         drafts={draftManager}
+                        beforeOpen={() => recordingWarm.beforeEditorOpen()}
+                        onReviewChange={(opening, review) =>
+                          recordingWarm.editorState(opening, review)}
                         disabled={!workspace || !$agentSession$ || draftManager.gateActive}
                         onRemove={(id) => inputComponent?.removeAttachment(id) ?? false}
                       />

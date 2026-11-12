@@ -266,6 +266,7 @@ export function createDockEvidenceNative(
         action: 'media-transcribe',
         request,
       }),
+    adoptMediaJob: (jobId) => control<boolean>({ action: 'media-job-adopt', jobId }),
     cancelMediaJob: (jobId) => control<void>({ action: 'media-job-cancel', jobId }),
     releaseMediaJob: (jobId) => control<void>({ action: 'media-job-release', jobId }),
     releaseClip: (clipId) => control<void>({ action: 'clip-release', clipId }),

@@ -20,12 +20,19 @@
     disabled = false,
     onRemove,
     controllerFactory = createChatRecordingEditor,
+    beforeOpen,
+    onReviewChange,
   }: {
     capture: ChatDraftCapture | null;
     drafts: ChatDraftManager;
     disabled?: boolean;
     onRemove: (id: string) => boolean;
     controllerFactory?: typeof createChatRecordingEditor;
+    beforeOpen?: () => Promise<void>;
+    onReviewChange?: (
+      opening: boolean,
+      review: { openId: string; capture: ChatDraftCapture } | null,
+    ) => void;
   } = $props();
   const controller = untrack(() =>
     controllerFactory({
@@ -33,8 +40,21 @@
       capture: () => capture,
       disabled: () => disabled,
       onRemove: (id) => onRemove(id),
+      beforeOpen: () => beforeOpen?.() ?? Promise.resolve(),
     }),
   );
+  $effect(() => {
+    const opening = controller.opening;
+    const session = controller.session;
+    untrack(() =>
+      onReviewChange?.(
+        opening,
+        session?.snapshot.output?.ready
+          ? { openId: session.snapshot.openId, capture: session.capture }
+          : null,
+      ),
+    );
+  });
   const labels = $derived(createDockComposerLabels());
   const evidence = $derived(chatRecordingEvidence(capture));
   const items = $derived<DockComposerAttachment[]>(

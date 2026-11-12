@@ -27,6 +27,7 @@ export const ChatMediaControlSchema = ChatMediaScopeSchema.extend({
       .object({ action: z.literal('transcribe'), request: DockMediaTranscribeRequestSchema })
       .strict(),
     z.object({ action: z.literal('release'), jobId: z.guid() }).strict(),
+    z.object({ action: z.literal('adopt'), jobId: z.guid() }).strict(),
   ]),
 }).strict();
 export type ChatMediaControl = z.infer<typeof ChatMediaControlSchema>;
