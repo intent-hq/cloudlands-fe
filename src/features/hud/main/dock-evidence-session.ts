@@ -17,6 +17,7 @@ import {
   getDockWindow,
   setDockHiddenForCapture,
   setDockHiddenForSelection,
+  hideDockForOwnScreenshot,
 } from '../../../main/dock-window';
 import {
   getStrictBackendBindingForWebContents,
@@ -91,6 +92,11 @@ export interface DockEvidenceDependencies {
   ): Promise<DockNativeResult<SelectedImage>>;
   id(): string;
   now(): number;
+  /**
+   * An admitted capture whose dock document holds a screenshot hold: hide the dock now (before
+   * pixels), so it never shows while that screenshot's editor prepares. Exact owner only.
+   */
+  hideForOwnScreenshot?(window: BrowserWindow, sender: Electron.WebContents, binding: object): boolean;
 }
 
 interface Session {
@@ -280,6 +286,9 @@ export class DockEvidenceSessions {
     if (!display || !placement || placement.captureHidden || !window.isVisible())
       return unavailable();
     if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
+    // Admitted: a screenshot handing off to its editor takes the dock out of sight before any
+    // pixels (its hold keeps it hidden through release; the native paths exclude it anyway).
+    this.deps.hideForOwnScreenshot?.(window, session.owner.sender, session.binding);
     this.capturing = session;
     const selection = request.mode && request.mode !== 'fullscreen' ? request.mode : null;
     const setHidden = selection ? this.deps.hiddenForSelection : this.deps.hidden;
@@ -494,6 +503,7 @@ export const dockEvidenceRecorder = createDockScreenRecorder();
 export const dockEvidenceSessions = new DockEvidenceSessions({
   dock: getDockWindow,
   binding: getStrictBackendBindingForWebContents,
+  hideForOwnScreenshot: hideDockForOwnScreenshot,
   retired: onStrictBackendBindingRetired,
   placement: getDockPlacementSnapshot,
   displays: () => screen.getAllDisplays(),

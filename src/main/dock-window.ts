@@ -741,6 +741,8 @@ interface EditorHold {
   sender: Electron.WebContents;
   binding: object;
   openId: string | null;
+  /** A screenshot's hold: its admitted capture takes the dock out of sight (see below). */
+  screenshot?: boolean;
 }
 const editorHolds = new Map<string, EditorHold>();
 function editorHeld(window: BrowserWindow): boolean {
@@ -769,13 +771,39 @@ export function beginDockEditorHold(
 ): boolean {
   const owner = { window, sender, binding };
   if (!ownerCurrent(owner) || editorHolds.has(token)) return false;
-  editorHolds.set(token, { ...owner, openId: null });
+  editorHolds.set(token, { ...owner, openId: null, ...(hide ? { screenshot: true } : {}) });
   onStrictBackendBindingRetired(sender, () => dropOwnerHolds((hold) => hold.sender === sender));
   window.once('closed', () => dropOwnerHolds((hold) => hold.window === window));
-  // A screenshot: out of sight from the press, not only once its editor opens. Its document
-  // stays mounted; a recording keeps its own hide. As for a selection, the pointer's last
-  // "inside" is forgotten so a later reveal re-reports entry.
-  if (hide && window.isVisible() && !recordingHidden(window)) {
+  return true;
+}
+/**
+ * A screenshot's capture was admitted (visible dock, current session, permission and display
+ * checked): take the dock out of sight now, before any pixels or selection UI, when its own
+ * document holds an unadopted screenshot hold (exact window, sender and strict binding). The
+ * hold then keeps it hidden through the capture's release until its editor ends (or the hold
+ * ends without one, which reveals it). Its document stays mounted; a recording keeps its own
+ * hide. As for a selection, the pointer's last "inside" is forgotten so a later reveal
+ * re-reports entry. False (nothing changes) without such a hold.
+ */
+export function hideDockForOwnScreenshot(
+  window: BrowserWindow,
+  sender: Electron.WebContents,
+  binding: object,
+): boolean {
+  if (window.isDestroyed() || recordingHidden(window)) return false;
+  let owned = false;
+  for (const hold of editorHolds.values())
+    if (
+      hold.screenshot &&
+      hold.openId === null &&
+      hold.window === window &&
+      hold.sender === sender &&
+      hold.binding === binding &&
+      ownerCurrent(hold)
+    )
+      owned = true;
+  if (!owned) return false;
+  if (window.isVisible()) {
     placementController?.cancelInteraction();
     presenceFor(window).reset();
     lastForwardedMove.delete(window);
