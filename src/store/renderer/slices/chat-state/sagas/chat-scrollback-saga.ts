@@ -216,11 +216,16 @@ function* oldestLoadedRowId(agentId: string): SagaGenerator<string | undefined> 
   return oldestRowId(history) ?? oldestRowId(tail);
 }
 
-/** True while a row with this id is loaded in the window or the tail. */
+/**
+ * True while a row with this id is loaded at the window's older edge: in
+ * the window when it holds rows, else in the tail. A tail row no longer
+ * borders the loaded rows once a window holds rows (a detached window may
+ * sit far from it).
+ */
 function* isRowLoaded(agentId: string, id: string | null | undefined): SagaGenerator<boolean> {
   if (!id) return false;
   const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
-  if (history.some((message) => message.id === id)) return true;
+  if (history.length > 0) return history.some((message) => message.id === id);
   const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
   return tail.some((message) => message.id === id);
 }

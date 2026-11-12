@@ -223,6 +223,11 @@ for (const scenario of ['gap-error-once', 'gap-error', 'gap-stalled'] as const) 
     expect(requests).toHaveLength(1);
     expect(maxInFlight).toBe(1);
     expect(requests[0]).toMatchObject({ nextToken: 'after-4', limit: 5 });
+    // A stopped forward walk never strands the reader: jump-to-latest stays
+    // available and returns to the live tail.
+    await component.getByRole('button', { name: 'Scroll to bottom' }).click();
+    await expect(component.getByTestId('chat-history-forward-edge')).toHaveCount(0);
+    await expect(component.locator('[data-message-id="m-10"]').first()).toBeVisible();
   });
 }
 

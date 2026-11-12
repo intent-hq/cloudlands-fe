@@ -32,6 +32,7 @@ import {
   appendHistoryMessages,
   bulkUpsertSessions,
   clearAllSessions,
+  clearHistorySegment,
   initialState as agentSessionInitialState,
   prependHistoryMessages,
   removeSession,
@@ -2159,6 +2160,36 @@ describe('chatScrollbackSaga (contiguous window)', () => {
       expect(run.history()?.messages ?? []).toEqual([]);
       expect(run.chat()?.scrollbackOlderToken).toBeNull();
       expect(run.chat()?.fetchingOlderHistory).toBe(false);
+    } finally {
+      run.task.cancel();
+      mocks.getConversation.mockReset();
+    }
+  });
+
+  it('drops a far-jump landing that resolves after the reader returned to the tail', async () => {
+    const run = harness();
+    let resolvePage!: (value: ReturnType<typeof page>) => void;
+    try {
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-90', 90)] })]));
+      mocks.getConversation.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePage = resolve;
+        }),
+      );
+      run.channel.put(historySeekRequested(WS, AGENT, 10));
+      await settle();
+      expect(run.chat()?.fetchingHistorySeek).toBe(true);
+      run.dispatch(clearHistorySegment(AGENT));
+      resolvePage(
+        page([message('m-09', 9), message('m-10', 10)], {
+          totalMessages: 91,
+          nextToken: 'before-9',
+          prevToken: 'after-10',
+        }),
+      );
+      await settle();
+      expect(run.history()).toBeUndefined();
+      expect(run.chat()?.scrollbackOlderToken).toBeNull();
     } finally {
       run.task.cancel();
       mocks.getConversation.mockReset();

@@ -6308,8 +6308,12 @@
     // drafts.clear must never delay or skip them.
     if (options.followBottom) {
       beginScrollNavigation();
-      shouldFollowBottom = true;
-      if (scrollContainer) followToBottom(scrollContainer);
+      // The sent message lands in the live tail, which a detached window
+      // hides: return to the end first (collapse follows the bottom itself).
+      if (!collapseDetachedWindow()) {
+        shouldFollowBottom = true;
+        if (scrollContainer) followToBottom(scrollContainer);
+      }
     }
 
     if (options.historyText) {
@@ -8352,7 +8356,9 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </ChatContentLane>
     </div>
-    {#if isActive && showScrollToBottom && !deferTranscriptReveal}
+    <!-- A detached transcript never holds the live end, so the way back to
+         it stays available even at the bottom of the window. -->
+    {#if isActive && (showScrollToBottom || transcriptDetached) && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
         style:margin-bottom="var(--chat-composer-gap)"

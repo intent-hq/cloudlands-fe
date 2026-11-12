@@ -503,12 +503,24 @@ function accountLostOlderTailRows(
     });
   }
   if (!lost.joinsNext) return removeHistorySegment(next, agentId);
+  const merged = dropRowsPresentInTail(
+    normalizeSortHistoryMessages([...segment.messages, ...lost.rows]),
+    session.messages,
+  );
+  if (merged.length <= HISTORY_SEGMENT_MAX) {
+    return setHistorySegment(next, agentId, { ...segment, messages: merged });
+  }
+  // Live growth keeps feeding an attached window: bound it by pruning the
+  // OLDEST side, which keeps window + tail one contiguous run. The older
+  // cursor's row is gone, so the next older page re-anchors by itself.
+  const prunedOlder = merged.length - HISTORY_SEGMENT_MAX;
   return setHistorySegment(next, agentId, {
     ...segment,
-    messages: dropRowsPresentInTail(
-      normalizeSortHistoryMessages([...segment.messages, ...lost.rows]),
-      session.messages,
-    ),
+    messages: merged.slice(prunedOlder),
+    oldestReached: false,
+    ...(segment.startOrdinalEstimate !== undefined
+      ? { startOrdinalEstimate: segment.startOrdinalEstimate + prunedOlder }
+      : {}),
   });
 }
 

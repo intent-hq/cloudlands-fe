@@ -1732,6 +1732,9 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
     scrollbackOlderToken: null,
     scrollbackOlderTokenAnchorId: null,
     scrollbackGapToken: null,
+    // The window was dropped (e.g. the reader returned to the tail): a page
+    // or seek landing still in flight belongs to it and must not land.
+    scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
   });
 });
 chatStateReducer.with(

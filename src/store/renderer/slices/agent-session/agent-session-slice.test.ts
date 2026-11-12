@@ -7919,6 +7919,22 @@ describe('history window stays contiguous (no gaps)', () => {
     expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
   });
 
+  it('caps an attached window that live growth keeps feeding, pruning its oldest side', () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => row(i + 10_000));
+    let state = withWindow(tail, rows(1, 5));
+    state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+    for (let i = 0; i < HISTORY_SEGMENT_MAX + 10; i++) {
+      state = agentSessionReducer(state, addMessage('a1', row(20_000 + i)));
+    }
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(segment?.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+    expect(segment?.detachedFromTail).toBe(false);
+    expect(segment?.oldestReached).toBe(false);
+    const newestWindowRow = segment!.messages[HISTORY_SEGMENT_MAX - 1];
+    const oldestTailRow = state.byAgentId['a1'].messages[0];
+    expect(Number(newestWindowRow.id.slice(2)) + 1).toBe(Number(oldestTailRow.id.slice(2)));
+  });
+
   it('walking up past the window cap detaches the window instead of opening a hole', () => {
     let state = withWindow(rows(10_000, 10_010), rows(5_000, 9_999));
     state = agentSessionReducer(state, prependHistoryMessages('a1', rows(4_000, 4_999)));
