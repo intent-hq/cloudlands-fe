@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.327.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.2...v2.327.3) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.197 ([#4524](https://github.com/intent-hq/cloudlands-fe/issues/4524)) ([a5e2d62](https://github.com/intent-hq/cloudlands-fe/commit/a5e2d62dfa7cde7bb71b45281cd3c1ce36ec9b45))
+* **dock:** align recording controls and finalized exports ([#4520](https://github.com/intent-hq/cloudlands-fe/issues/4520)) ([4e69710](https://github.com/intent-hq/cloudlands-fe/commit/4e697101e9e57b89594fa7408b016ef96a982250))
+
+
+### ⚡ Performance
+
+* **dock:** prepare recording exports before Send ([#4522](https://github.com/intent-hq/cloudlands-fe/issues/4522)) ([c23029e](https://github.com/intent-hq/cloudlands-fe/commit/c23029e5265856be8bb72d6b6f37bf5211b6ad48))
+
 ## [2.327.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.1...v2.327.2) (2026-11-12)
 
 
