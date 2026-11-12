@@ -44,6 +44,11 @@
   } from './cloud-machines-format';
   import CloudMachineSetupForm from './CloudMachineSetupForm.svelte';
   import CloudSandboxList from './CloudSandboxList.svelte';
+  import {
+    withOrderActions,
+    type MachineOrderControls,
+  } from '$features/remote-machines/machine-order-controls';
+  import PreferredMachineBadge from '$features/remote-machines/PreferredMachineBadge.svelte';
 
   interface Props {
     /** The saved entry; null while a new one is set up. */
@@ -60,6 +65,8 @@
     first?: boolean;
     /** Fixed clock for previews and tests. */
     now?: number;
+    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    order?: MachineOrderControls;
   }
 
   let {
@@ -71,6 +78,7 @@
     onClose,
     first = false,
     now,
+    order,
   }: Props = $props();
   const kind = $derived(entry?.provider ?? newProvider);
 
@@ -132,8 +140,10 @@
     }
   });
 
-  const actions = $derived<ActionDefinition[]>(
-    entry
+  const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
+
+  function ownActions(): ActionDefinition[] {
+    return entry
       ? [
           { id: 'edit', label: m.cloudMachines_edit_label(), icon: faPen },
           {
@@ -144,11 +154,11 @@
             disabled: removing,
           },
         ]
-      : [],
-  );
+      : [];
+  }
 
   function onAction(id: string) {
-    if (!entry) return;
+    if (order?.onAction(id) || !entry) return;
     if (id === 'edit') onEdit();
     else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested(entry.id));
   }
@@ -208,6 +218,7 @@
     {/snippet}
     {#snippet meta()}
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
+        {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if status}
           <Badge variant="dot" color={status.color}>{status.label}</Badge>
           {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}

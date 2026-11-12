@@ -97,6 +97,7 @@
     machineModelFallback,
     resolveStartOn,
     START_ON_BACKEND,
+    startOnBackendLabel,
     startOnCloudId,
     startOnCloudMachineId,
   } from '$features/remote-machines/start-on';
@@ -1151,11 +1152,11 @@
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
-            backend: $startOnOptions$[0]?.label ?? '',
+            backend: startOnBackendLabel($startOnOptions$),
           })
         : startOnBackendOnly === 'new-repo'
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: $startOnOptions$[0]?.label ?? '',
+              backend: startOnBackendLabel($startOnOptions$),
             })
           : undefined}
     />

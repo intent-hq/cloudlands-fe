@@ -130,6 +130,11 @@ export function startOnOptions({
   return options;
 }
 
+/** The backend's own label among Start On rows (not always first with `machineOrder: 1`). */
+export function startOnBackendLabel(options: readonly StartOnOption[]): string {
+  return options.find((option) => option.id === START_ON_BACKEND)?.label ?? '';
+}
+
 /**
  * The row shows only while the remote-machine surfaces are on (Labs flag and
  * `remoteMachines`), the backend accepts an initial-agent placement, and at
