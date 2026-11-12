@@ -11,7 +11,7 @@
 import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
-import { Client, utils as sshUtils } from 'ssh2';
+import ssh2 from 'ssh2';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -30,6 +30,9 @@ import {
   type SshSetupRunner,
   type SshSetupRunnerDeps,
 } from './ssh-setup-runner';
+
+// ssh2 is CommonJS: Node's ESM loader cannot see `utils` as a named export.
+const { Client, utils: sshUtils } = ssh2;
 
 const logger = new Logger('MachineSetupIPC');
 const CHANNELS = IPC_CHANNELS.MACHINE_SETUP;
