@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.324.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.0...v2.324.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* **machine-setup:** load ssh2 through its default export ([#4499](https://github.com/intent-hq/cloudlands-fe/issues/4499)) ([0f77523](https://github.com/intent-hq/cloudlands-fe/commit/0f77523dfff74bf81fe2ee84f0a06db0b3260670))
+
 ## [2.324.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.323.0...v2.324.0) (2026-11-12)
 
 
