@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.326.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.325.0...v2.326.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **machine-setup:** Add machine opens the wizard; menu only with Add cloud ([#4506](https://github.com/intent-hq/cloudlands-fe/issues/4506)) ([b55e514](https://github.com/intent-hq/cloudlands-fe/commit/b55e514a1083747b7154e78062c702126947a4d0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.195 ([#4511](https://github.com/intent-hq/cloudlands-fe/issues/4511)) ([282646d](https://github.com/intent-hq/cloudlands-fe/commit/282646dce35ed03739cd9b649c03179bb03fedef))
+* **e2e:** drop the unknown skipAutoCommit option from the build smoke mock ([#4504](https://github.com/intent-hq/cloudlands-fe/issues/4504)) ([3d0a7a0](https://github.com/intent-hq/cloudlands-fe/commit/3d0a7a09e84f15a9bc7b731a28853ed11dab635a))
+* **machine-rail:** keep a stale machine name tooltip from staying open ([#4505](https://github.com/intent-hq/cloudlands-fe/issues/4505)) ([132772d](https://github.com/intent-hq/cloudlands-fe/commit/132772d6654342d0ad0803d571c27d3dc5915f63))
+
 ## [2.325.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.1...v2.325.0) (2026-11-12)
 
 
