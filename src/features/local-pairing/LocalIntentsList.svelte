@@ -3,15 +3,9 @@
    * **Intents on this computer**: the local pairing credentials this daemon
    * issued, with Remove. Purely props-driven so previews can render each state.
    */
-  import {
-    ListRow,
-    ListView,
-    RowActions,
-    type ActionDefinition,
-  } from '$lib/components/patterns/collection';
+  import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import { faLinkSlash } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { formatRelativeTime } from '$lib/i18n/format';
   import type { LocalPairingCredential } from './local-pairing-types';
@@ -32,20 +26,6 @@
     onRemove: (credentialId: string) => void;
     onDismissFailure: (credentialId: string) => void;
   } = $props();
-
-  function actions(credential: LocalPairingCredential): ActionDefinition[] {
-    return [
-      {
-        id: 'remove',
-        label: removing[credential.credentialId]
-          ? m.localPairing_removing_label()
-          : m.localPairing_remove_label(),
-        icon: faLinkSlash,
-        destructive: true,
-        disabled: removing[credential.credentialId] === true,
-      },
-    ];
-  }
 </script>
 
 <section class="space-y-3" aria-labelledby="local-intents-title" data-testid="local-intents">
@@ -91,13 +71,19 @@
               </span>
             {/snippet}
             {#snippet trailing()}
-              <RowActions
-                alwaysVisible
-                actions={actions(credential)}
-                onAction={() => onRemove(credential.credentialId)}
-                visibleCount={1}
-                overflowLabel={m.localPairing_actionsFor_ariaLabel({ name: credential.appName })}
-              />
+              <Button
+                variant="ghost"
+                size="sm"
+                class="text-danger hover:text-danger"
+                disabled={removing[credential.credentialId] === true}
+                aria-label={m.localPairing_removeNamed_ariaLabel({ name: credential.appName })}
+                data-testid="local-intent-remove"
+                onclick={() => onRemove(credential.credentialId)}
+              >
+                {removing[credential.credentialId]
+                  ? m.localPairing_removing_label()
+                  : m.localPairing_remove_label()}
+              </Button>
             {/snippet}
           </ListRow>
           {#if removeFailed[credential.credentialId]}

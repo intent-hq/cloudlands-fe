@@ -152,6 +152,8 @@ interface StoredConnection {
    * on records written before the flag existed — treated as `false` (synced).
    */
   syncExcluded?: boolean;
+  /** Saved through local code pairing (see `ConnectionRecord.localPairing`). */
+  localPairing?: boolean;
 }
 
 /**
@@ -206,6 +208,8 @@ export interface NewConnection {
    * flag-less freshness paths never flip a user's opt-out — see add()).
    */
   syncExcluded?: boolean;
+  /** Saved through local code pairing; a later owner pairing clears it. */
+  localPairing?: boolean;
 }
 
 interface PersistedState {
@@ -314,6 +318,7 @@ export function createConnectionsStore(options: {
       ...(isDaemonMode(stored.daemonMode) ? { daemonMode: stored.daemonMode } : {}),
       syncExcluded: stored.syncExcluded === true,
       detectHosts: stored.detectHosts !== false,
+      ...(stored.localPairing === true ? { localPairing: true } : {}),
       isLocal: false,
     };
   }
@@ -357,6 +362,7 @@ export function createConnectionsStore(options: {
       // `syncExcluded` is an optional late addition (spec Phase 2): absent on
       // older records — treated as `false` (synced).
       (c.syncExcluded === undefined || typeof c.syncExcluded === 'boolean') &&
+      (c.localPairing === undefined || typeof c.localPairing === 'boolean') &&
       !!tok &&
       typeof tok === 'object' &&
       typeof tok.encrypted === 'boolean' &&
@@ -667,6 +673,8 @@ export function createConnectionsStore(options: {
         else if (fingerprintChanged) delete survivor.daemonMode;
         survivor.detectHosts = conn.detectHosts ?? true;
         survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
+        if (conn.localPairing === true) survivor.localPairing = true;
+        else delete survivor.localPairing;
         survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
         survivor.updatedAt = stamp;
         carryPendingCloudDelete(survivor.syncExcluded === true);
@@ -689,6 +697,7 @@ export function createConnectionsStore(options: {
         detectHosts: conn.detectHosts ?? true,
         syncExcluded: conn.syncExcluded ?? false,
         ...(conn.daemonMode ? { daemonMode: conn.daemonMode } : {}),
+        ...(conn.localPairing === true ? { localPairing: true } : {}),
         encToken,
         updatedAt: stamp,
       };

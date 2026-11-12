@@ -8,6 +8,8 @@ export interface BackendDialRecord {
   fingerprint: string;
   tcAddress: string | null;
   getToken: () => Promise<string | null>;
+  /** Saved through local code pairing: loopback only, a 401 is transient. */
+  localPairing?: boolean;
   invitedIdentity?: { principalId: string; pairedAt: number };
 }
 
@@ -53,7 +55,10 @@ export async function buildConfigForRecord(
       port: record.port,
       token,
       fingerprint: record.fingerprint,
-      tcAddress: record.tcAddress ?? undefined,
+      // A local pairing credential is admitted only from loopback, never
+      // through the other Intent's tunnel (protocol §5.58).
+      tcAddress: record.localPairing ? undefined : (record.tcAddress ?? undefined),
+      ...(record.localPairing ? { localPairingCredential: true } : {}),
     },
     ...(record.invitedIdentity ? { invitedCredential: { ...record.invitedIdentity, token } } : {}),
     meta: { id, host: record.host, port: record.port },

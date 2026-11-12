@@ -152,6 +152,12 @@ export function isDeviceIconChoice(value: unknown): value is DeviceIconChoice {
 export interface ConnectionRecord {
   id: string;
   label: string;
+  /**
+   * Saved by Add machine → Intent on this computer (local code pairing,
+   * protocol §5.58): a loopback-only credential. A `401` means the other
+   * Intent is unreachable for now (its tunnel may be on), not a bad token.
+   */
+  localPairing?: boolean;
   /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
   accent?: ConnectionAccent;
   /** Daemon-detected kind; `null` when the daemon omits or predates the field. */

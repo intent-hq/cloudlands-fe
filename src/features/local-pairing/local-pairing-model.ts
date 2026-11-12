@@ -58,7 +58,7 @@ export type CodePanelView =
   | { kind: 'connected'; appName: string | null }
   | { kind: 'expired' }
   | { kind: 'locked' }
-  | { kind: 'cancelled'; reason: 'user' | 'replaced' };
+  | { kind: 'cancelled'; reason: NonNullable<LocalPairingCode['cancelReason']> };
 
 /** Milliseconds until `expiresAt`, never negative. */
 function remainingMs(expiresAt: string, nowMs: number): number {
@@ -121,6 +121,15 @@ function rpcCode(error: unknown): number | null {
 /** `-32603 { code: "listener-down" }` from `pairing.createLocalCode`. */
 export const isListenerDown = (error: unknown): boolean =>
   rpcCode(error) === -32603 && errorDataCode(error) === 'listener-down';
+
+/**
+ * The daemon refuses local pairing while its remote access (Tailcat) tunnel
+ * is on, because tunnel traffic reaches the listener from loopback:
+ * `-32603 { code: "tunnel-active" }`. Any other data code naming the tunnel
+ * counts too.
+ */
+export const isRemoteAccessRefusal = (error: unknown): boolean =>
+  /tunnel|remote-access/i.test(errorDataCode(error) ?? '');
 
 /**
  * The local link cannot serve the administration methods: `-32001` means the

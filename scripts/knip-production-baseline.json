@@ -1082,8 +1082,6 @@
     ],
     "src/lib/components/ui/radio-group/index.ts": [
       "RadioGroup.Item",
-      "RadioGroup.RadioGroup",
-      "RadioGroup.RadioGroupItem",
       "RadioGroup.Root"
     ],
     "src/lib/components/ui/scroll-area/index.ts": [

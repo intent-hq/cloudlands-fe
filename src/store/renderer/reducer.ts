@@ -4,6 +4,7 @@ import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
 import { localPairingReducer } from '$features/local-pairing/local-pairing-slice';
+import { localIntentAddReducer } from '$features/local-pairing/add/local-intent-add-slice';
 import { nodesReducer } from '$features/nodes/nodes-slice';
 import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -274,6 +275,7 @@ export const reducers = {
   hostMembership: hostMembershipReducer,
   remoteMachines: remoteMachinesReducer,
   localPairing: localPairingReducer,
+  localIntentAdd: localIntentAddReducer,
   nodes: nodesReducer,
   cloudMachines: cloudMachinesReducer,
 } as const;

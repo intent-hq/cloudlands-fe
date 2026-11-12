@@ -9,16 +9,21 @@
  * un-expose report the backend unsupported, and there is no local machine
  * fingerprint. Tests override individual channels via `registerMockIpcHandler`
  * after this runs.
+ *
+ * The same forwarding serves `local-pairing:*` (Add machine → Intent on this
+ * computer): main reads the discovery folder and redeems codes. Bridge-less
+ * builds list no Intents and cannot redeem.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { LocalIntentsListResult, LocalRedeemResult } from '$shared/types/local-pairing';
 import type { NodeInviteClaimResult, NodeInviteInspectResult } from '$shared/types/node-invite';
 import type {
   RemoteMachineExposeResult,
   RemoteMachineUnexposeResult,
 } from '$shared/types/remote-machines';
 
-const { REMOTE_MACHINES } = IPC_CHANNELS;
+const { LOCAL_PAIRING, REMOTE_MACHINES } = IPC_CHANNELS;
 
 const UNSUPPORTED = { success: false, code: 'unsupported-backend' } as const;
 
@@ -32,6 +37,8 @@ const FALLBACKS: ReadonlyArray<[string, () => unknown]> = [
   ],
   [REMOTE_MACHINES.INVITE_CLAIM, (): NodeInviteClaimResult => ({ ok: false, code: 'failed' })],
   [REMOTE_MACHINES.INVITE_DISCARD, () => ({ ok: true })],
+  [LOCAL_PAIRING.LIST, (): LocalIntentsListResult => ({ ok: true, intents: [] })],
+  [LOCAL_PAIRING.REDEEM, (): LocalRedeemResult => ({ ok: false, error: { code: 'unsupported' } })],
 ];
 
 for (const [channel, fallback] of FALLBACKS) {

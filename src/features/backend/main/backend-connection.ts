@@ -97,6 +97,13 @@ export interface BackendConnectionConfig {
    * host works. Fail-soft — a missing binary just skips the candidate.
    */
   tcAddress?: string;
+  /**
+   * The token is a local pairing credential (protocol §5.58). Its daemon
+   * refuses it with `401` while that daemon's tunnel runs and admits it again
+   * afterwards, so a rejection is retried slowly instead of ending the
+   * connection.
+   */
+  localPairingCredential?: boolean;
 }
 
 /** Options for [[resolveBackendConfig]]. */

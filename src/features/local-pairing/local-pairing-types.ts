@@ -13,7 +13,8 @@ export interface LocalPairingCode {
   createdAt: string;
   expiresAt: string;
   attemptsRemaining: number;
-  cancelReason?: 'user' | 'replaced';
+  /** `tunnel-active`: the remote access tunnel was started while the code was active. */
+  cancelReason?: 'user' | 'replaced' | 'tunnel-active';
   credentialId?: string;
   appName?: string;
 }
@@ -33,7 +34,12 @@ export type LocalPairingSupport = 'unknown' | 'supported' | 'unsupported';
 export type LocalPairingPanelStep =
   'closed' | 'creating' | 'confirm-listener' | 'enabling-listener' | 'open';
 
-export type LocalPairingPanelFailure = 'create-failed' | 'listener-failed' | 'cancel-failed';
+export type LocalPairingPanelFailure =
+  | 'create-failed'
+  | 'listener-failed'
+  | 'cancel-failed'
+  /** The daemon refuses codes while its remote access tunnel is on. */
+  | 'remote-access-on';
 
 export interface LocalPairingState {
   support: LocalPairingSupport;
@@ -75,7 +81,9 @@ export function parseLocalPairingCode(value: unknown): LocalPairingCode | null {
     expiresAt,
     attemptsRemaining,
     ...(state === 'cancelled' &&
-    (value.cancelReason === 'user' || value.cancelReason === 'replaced')
+    (value.cancelReason === 'user' ||
+      value.cancelReason === 'replaced' ||
+      value.cancelReason === 'tunnel-active')
       ? { cancelReason: value.cancelReason }
       : {}),
     ...(state === 'redeemed' && isString(value.credentialId)

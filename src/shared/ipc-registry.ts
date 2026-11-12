@@ -1177,6 +1177,16 @@ export const IPC_CHANNELS = {
     INVITE_DISCARD: 'remote-machines:invite-discard',
   },
 
+  // Local code pairing, requester side (protocol §5.58): main reads the
+  // discovery folder and redeems a code over /local-pair; the credential
+  // token stays in main.
+  LOCAL_PAIRING: {
+    /** Other Intents on this computer that accept local code pairing. */
+    LIST: 'local-pairing:list',
+    /** Redeem a code against one of them and save it as a machine. */
+    REDEEM: 'local-pairing:redeem',
+  },
+
   // Hardware console (Codex Micro / Creator Micro 2)
   HARDWARE_CONSOLE: {
     // Main → renderer: ask the renderer to send the lighting off-frame

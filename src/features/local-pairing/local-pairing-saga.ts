@@ -29,7 +29,12 @@ import {
   revokeLocalCredential,
 } from './local-pairing-client';
 import { clearLocalPairingCodeText, receiveLocalPairingCodeText } from './local-pairing-code-text';
-import { isListenerDown, isLocalLinkUnsupported, isTerminalCode } from './local-pairing-model';
+import {
+  isListenerDown,
+  isLocalLinkUnsupported,
+  isRemoteAccessRefusal,
+  isTerminalCode,
+} from './local-pairing-model';
 import {
   localPairingCancelRequested,
   localPairingCodeChanged,
@@ -107,6 +112,7 @@ function* createCode(): SagaGenerator<void> {
     yield* put(localPairingCodeCreated(localCode));
   } catch (error) {
     if (isListenerDown(error)) yield* put(localPairingListenerNeeded());
+    else if (isRemoteAccessRefusal(error)) yield* put(localPairingPanelFailed('remote-access-on'));
     else yield* put(localPairingPanelFailed('create-failed'));
   }
   // The daemon cancels the earlier code itself (reason `replaced`).
@@ -127,7 +133,13 @@ function* enableListenerAndCreate(): SagaGenerator<void> {
     yield* put(localPairingCodeCreated(localCode));
   } catch (error) {
     yield* put(
-      localPairingPanelFailed(isListenerDown(error) ? 'listener-failed' : 'create-failed'),
+      localPairingPanelFailed(
+        isListenerDown(error)
+          ? 'listener-failed'
+          : isRemoteAccessRefusal(error)
+            ? 'remote-access-on'
+            : 'create-failed',
+      ),
     );
   }
 }

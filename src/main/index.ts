@@ -360,6 +360,7 @@ import { registerWorkspaceTransferHandlers } from '../features/backend/main/work
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
 import { registerPairLinkHandlers } from '../features/backend/main/pair-link.ipc';
+import { registerLocalPairingHandlers } from '../features/local-pairing/main/local-pairing.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import {
@@ -370,9 +371,11 @@ import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
   probeDaemonVersion,
   resolveSocketPath,
+  setSidecarProductName,
   startIntentdSidecar,
   stopIntentdSidecar,
 } from '../features/backend/main/intentd-sidecar';
+import { desktopProductName } from '../features/local-pairing/main/local-daemon-discovery';
 import { readPinnedVersion } from '../features/backend/main/intentd-version-pin';
 import { formatIntentdAboutVersion } from '../features/backend/main/intentd-about-version';
 import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
@@ -1576,6 +1579,7 @@ const bootFlow = app.whenReady().then(async () => {
   // ready before the first JSON-RPC client connection attempt. Adoption logic
   // (probe socket first) ensures we don't spawn when an external daemon is
   // already running.
+  setSidecarProductName(desktopProductName(app.getName(), app.isPackaged));
   await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
 
   // Per-process memory sampling → console-output.log, so a debug bundle can
@@ -1654,6 +1658,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
   registerRemoteMachinesHandlers(); // Make a machine available to the current backend
   registerPairLinkHandlers(); // Add a machine or node from a pasted intent:// link
+  registerLocalPairingHandlers(); // Add machine → Intent on this computer (Labs)
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).

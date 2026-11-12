@@ -137,6 +137,8 @@ const DEFAULT_RECONNECT_MS = 1_000;
 // a prompt automatic reconnect once the daemon comes back. Retries continue
 // indefinitely (there is no give-up).
 const DEFAULT_MAX_RECONNECT_MS = 5_000;
+/** Retry cadence while another local Intent refuses its local pairing credential (tunnel on). */
+const LOCAL_PAIRING_REFUSED_RETRY_MS = 15_000;
 
 /** §5.17 global handshake method — carries the stable client identity. */
 const HELLO_METHOD = 'client.hello';
@@ -1379,6 +1381,21 @@ export class JsonRpcClient extends EventEmitter {
     // automatic reconnect loop stops here. Recovery paths (re-pair, backend
     // switch) build a fresh client; a later request() still triggers a single
     // on-demand connect via ensureConnected().
+    if (error instanceof AuthRejectedError && this.config.localPairingCredential) {
+      // The other Intent on this computer refuses its local pairing
+      // credential while its tunnel runs (protocol §5.58): unreachable for
+      // now, not a bad token. Keep retrying on a slow cadence.
+      logger.warn('Local pairing credential refused; retrying later', {
+        target: describeBackendConfig(this.config),
+        statusCode: error.statusCode,
+      });
+      this.currentReconnectDelay = Math.max(
+        this.currentReconnectDelay,
+        LOCAL_PAIRING_REFUSED_RETRY_MS,
+      );
+      this.scheduleReconnect();
+      return;
+    }
     if (error instanceof AuthRejectedError) {
       this.finishConnectionOwner();
       logger.warn('Backend rejected authentication; automatic reconnect halted', {

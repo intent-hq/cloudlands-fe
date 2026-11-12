@@ -55,4 +55,19 @@ describe('buildSidecarSpawnEnv', () => {
 
     expect(spawnEnv.INTENTD_DATA_DIR).toBe('/data/dir');
   });
+
+  it('passes the app product name as INTENTD_PRODUCT_NAME for the discovery record', () => {
+    const spawnEnv = buildSidecarSpawnEnv({}, () => null, ' Intent (dev build) ');
+
+    expect(spawnEnv.INTENTD_PRODUCT_NAME).toBe('Intent (dev build)');
+  });
+
+  it('keeps a user-set INTENTD_PRODUCT_NAME and skips an empty name', () => {
+    expect(
+      buildSidecarSpawnEnv({ INTENTD_PRODUCT_NAME: 'Mine' }, () => null, 'Intent')
+        .INTENTD_PRODUCT_NAME,
+    ).toBe('Mine');
+    expect(buildSidecarSpawnEnv({}, () => null, '  ').INTENTD_PRODUCT_NAME).toBeUndefined();
+    expect(buildSidecarSpawnEnv({}, () => null, null).INTENTD_PRODUCT_NAME).toBeUndefined();
+  });
 });

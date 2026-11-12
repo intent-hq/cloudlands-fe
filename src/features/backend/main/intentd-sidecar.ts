@@ -816,6 +816,17 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
   }, delayMs);
 }
 
+let sidecarProductName: string | null = null;
+
+/**
+ * Name of this desktop app install (for example "Intent" or "Intent (dev
+ * build)"), passed to the sidecar as `INTENTD_PRODUCT_NAME`. Set by main
+ * before the first spawn.
+ */
+export function setSidecarProductName(name: string | null): void {
+  sidecarProductName = name;
+}
+
 /**
  * Build the env for a sidecar spawn. Exported for unit tests.
  *
@@ -827,16 +838,23 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
  * enabling the tunnel in a packaged app would fail with ENOENT. An
  * explicitly-set `INTENTD_TAILCAT_BIN` from the user's env always wins,
  * and when no bundled tailcat exists the var is simply not set (fail-soft,
- * intentd probes as before).
+ * intentd probes as before). It also passes the app's product name as
+ * `INTENTD_PRODUCT_NAME` (see {@link setSidecarProductName}).
  */
 export function buildSidecarSpawnEnv(
   env: NodeJS.ProcessEnv,
   resolveTailcat: () => string | null = () => resolveTailcatBinaryPath(env),
+  productName: string | null = sidecarProductName,
 ): NodeJS.ProcessEnv {
   assertIsolatedTestEnvironment(env);
   const spawnEnv = { ...env };
   if (env.INTENTD_DATA_DIR?.trim()) {
     spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
+  }
+  // The daemon labels its local discovery record (protocol §5.58) with this
+  // name; without it every install reads "Intent". A user-set value wins.
+  if (!env.INTENTD_PRODUCT_NAME?.trim() && productName?.trim()) {
+    spawnEnv.INTENTD_PRODUCT_NAME = productName.trim();
   }
   if (!env.INTENTD_TAILCAT_BIN?.trim()) {
     const tailcatPath = resolveTailcat();

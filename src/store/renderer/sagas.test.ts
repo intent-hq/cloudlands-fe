@@ -138,6 +138,7 @@ describe('renderer app saga registry', () => {
       'personalDevicesSaga',
       'remoteMachinesSaga',
       'localPairingSaga',
+      'localIntentAddSaga',
       'nodesSaga',
       'cloudMachinesSaga',
       'fileContentPruneSaga',

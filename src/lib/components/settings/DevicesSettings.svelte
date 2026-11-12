@@ -51,11 +51,18 @@
     type CloudProviderKind,
   } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
-  import { faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
+  import { faCloud, faDesktop, faLaptop, faLink } from '$lib/icons/phosphor-icons';
   import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
   import { pasteLinkRequested } from '$features/nodes/nodes-slice';
   import LocalPairingSection from '$features/local-pairing/LocalPairingSection.svelte';
+  import LocalIntentAdd from '$features/local-pairing/add/LocalIntentAdd.svelte';
+  import {
+    localIntentAddClosed,
+    localIntentAddOpened,
+  } from '$features/local-pairing/add/local-intent-add-slice';
+  import { selectLabsLocalPairingEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 
   let {
     initialEditedMachine,
@@ -79,6 +86,13 @@
     /** Previews: the setup form's starting values. */
     initialCloudDraft?: CloudFormDraft;
   } = $props();
+
+  // Labs: Add machine → Intent on this computer (local code pairing, requester
+  // side). Desktop only: the main process reads the discovery folder and redeems.
+  const labsLocalPairing$ = selectLabsLocalPairingEnabled();
+  const canAddLocalIntent = $derived($labsLocalPairing$ && isElectronPlatform());
+  // Leaving Settings → Machines closes the form and stops reading the folder.
+  onDestroy(() => appStore.dispatch(localIntentAddClosed()));
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -313,6 +327,10 @@
 
   <PairLinkPaste />
 
+  {#if canAddLocalIntent}
+    <LocalIntentAdd />
+  {/if}
+
   <div class="flex justify-end">
     <Menu.Root bind:open={addMenuOpen}>
       <Menu.Trigger>
@@ -345,6 +363,20 @@
             >
           </span>
         </Menu.Item>
+        {#if canAddLocalIntent}
+          <Menu.Item
+            onSelect={() => appStore.dispatch(localIntentAddOpened())}
+            data-testid="add-machine-local-intent"
+          >
+            {#snippet leading()}<Fa icon={faLaptop} />{/snippet}
+            <span class="flex min-w-0 flex-col">
+              <span>{m.localPairing_addMenu_label()}</span>
+              <span class="type-caption text-muted-foreground"
+                >{m.localPairing_addMenu_description()}</span
+              >
+            </span>
+          </Menu.Item>
+        {/if}
         {#if canAddCloud && $cloudKinds$.length === 1}
           <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
             {#snippet leading()}<Fa icon={faCloud} />{/snippet}

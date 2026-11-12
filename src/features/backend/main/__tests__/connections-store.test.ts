@@ -1998,6 +1998,20 @@ describe('connections-store keychain sync surface', () => {
     expect(JSON.stringify(records)).not.toContain('activeId');
   });
 
+  it('keeps the local pairing mark across reloads and drops it when re-paired as an owner', async () => {
+    const store = await import('../desktop-connections-store');
+    const local = { ...sampleConn, host: '127.0.0.1', localPairing: true, syncExcluded: true };
+    const rec = await store.add(local);
+    expect(rec.localPairing).toBe(true);
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../desktop-connections-store');
+    expect((await reloaded.list()).find((c) => c.id === rec.id)?.localPairing).toBe(true);
+    const repaired = await reloaded.add({ ...sampleConn, host: '127.0.0.1' });
+    expect(repaired.id).toBe(rec.id);
+    expect((await reloaded.list()).find((c) => c.id === rec.id)?.localPairing).toBeUndefined();
+  });
+
   it('add without syncExcluded stays synced (flag false, listed to sync)', async () => {
     const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);

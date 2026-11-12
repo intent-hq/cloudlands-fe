@@ -37,6 +37,9 @@ describe('parseLocalPairingCode', () => {
       parseLocalPairingCode({ ...CODE, state: 'cancelled', cancelReason: 'replaced' }),
     ).toMatchObject({ state: 'cancelled', cancelReason: 'replaced' });
     expect(
+      parseLocalPairingCode({ ...CODE, state: 'cancelled', cancelReason: 'tunnel-active' }),
+    ).toMatchObject({ state: 'cancelled', cancelReason: 'tunnel-active' });
+    expect(
       parseLocalPairingCode({
         ...CODE,
         state: 'redeemed',

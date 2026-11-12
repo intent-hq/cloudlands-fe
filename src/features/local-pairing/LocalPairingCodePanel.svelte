@@ -51,6 +51,12 @@
           tone: 'muted',
         };
       case 'cancelled':
+        if (view.reason === 'tunnel-active')
+          return {
+            title: m.localPairing_tunnelCancelled_title(),
+            description: m.localPairing_tunnelCancelled_description(),
+            tone: 'muted',
+          };
         return view.reason === 'replaced'
           ? {
               title: m.localPairing_replaced_title(),
@@ -70,7 +76,9 @@
     view.kind === 'failed'
       ? view.failure === 'listener-failed'
         ? m.localPairing_listenerFailed_error()
-        : m.localPairing_createFailed_error()
+        : view.failure === 'remote-access-on'
+          ? m.localPairing_remoteAccessOn_error()
+          : m.localPairing_createFailed_error()
       : null,
   );
 </script>

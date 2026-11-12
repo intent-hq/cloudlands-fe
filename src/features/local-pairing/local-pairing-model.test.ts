@@ -106,6 +106,10 @@ describe('codePanelView', () => {
       kind: 'cancelled',
       reason: 'replaced',
     });
+    expect(at({ state: 'cancelled', cancelReason: 'tunnel-active' })).toEqual({
+      kind: 'cancelled',
+      reason: 'tunnel-active',
+    });
     expect(at({ state: 'cancelled' })).toEqual({ kind: 'cancelled', reason: 'user' });
   });
 });

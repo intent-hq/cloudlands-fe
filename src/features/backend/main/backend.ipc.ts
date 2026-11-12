@@ -2220,6 +2220,13 @@ function createAdditionalBackendClient(
     }
     if (error instanceof AuthRejectedError) {
       if (backendClients.get(id) !== instance) return;
+      // A local pairing credential is refused while the other Intent's tunnel
+      // runs (protocol §5.58): the machine is unreachable for now and the
+      // client keeps retrying. Never prompt to re-pair or drop the credential.
+      if (config.localPairingCredential) {
+        logger.warn('Local pairing credential refused; showing the machine as unreachable', { id });
+        return;
+      }
       if (invitedCredential && error.statusCode === 401) {
         invitedConnectionGuards.delete(id);
         void poolWork(
@@ -3960,6 +3967,7 @@ export async function resolveBackendRecord(id: string): Promise<{
   fingerprint: string;
   tcAddress: string | null;
   getToken: () => Promise<string | null>;
+  localPairing?: boolean;
   invitedIdentity?: { principalId: string; pairedAt: number };
 } | null> {
   if (id === LOCAL_CONNECTION_ID) return null;
@@ -3974,6 +3982,7 @@ export async function resolveBackendRecord(id: string): Promise<{
       fingerprint: owner.fingerprint,
       tcAddress: owner.tcAddress ?? null,
       getToken: () => connectionsStore.getDecryptedToken(id),
+      ...(owner.localPairing ? { localPairing: true } : {}),
     };
   }
   const guest = await guestSessionsStore.findById(id);

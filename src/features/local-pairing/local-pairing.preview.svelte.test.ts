@@ -40,6 +40,12 @@ describe('local pairing preview', () => {
     expect(container.querySelector('[data-testid="local-pairing-code"]')).toBeNull();
   });
 
+  it('says why a code ended when the Tailcat tunnel was turned on', () => {
+    const { container } = render(LocalPairingPreview, { state: 'tunnel-cancelled' });
+    expect(panel(container).textContent).toContain('Tailcat');
+    expect(container.querySelector('[data-testid="local-pairing-code"]')).toBeNull();
+  });
+
   it('explains the loopback-only listener before turning it on', () => {
     render(LocalPairingPreview, { state: 'confirm-listener' });
     expect(screen.getByTestId('local-pairing-listener-prompt').textContent).toContain(

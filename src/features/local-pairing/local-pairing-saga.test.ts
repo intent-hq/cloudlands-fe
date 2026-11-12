@@ -288,6 +288,15 @@ describe('local pairing — code panel', () => {
     await vi.waitFor(() => expect(store.state.localPairing.failure).toBe('create-failed'));
   });
 
+  it('explains a refusal while the remote access tunnel is on', async () => {
+    daemon().onRequest('pairing.createLocalCode', () => {
+      throw rpc(-32603, { code: 'tunnel-active' });
+    });
+    await loaded();
+    dispatch(localPairingCodeRequested());
+    await vi.waitFor(() => expect(store.state.localPairing.failure).toBe('remote-access-on'));
+  });
+
   it('cancels the shown code', async () => {
     daemon();
     await loaded();
