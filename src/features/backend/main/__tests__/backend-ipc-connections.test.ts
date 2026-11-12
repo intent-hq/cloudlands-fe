@@ -3506,6 +3506,30 @@ describe('remote Tailcat settings IPC', () => {
     },
   );
 
+  it('keeps the saved address when enabling answers before the sidecar is up', async () => {
+    const { client, set } = await connectedHandlers();
+    store.getDetectHosts.mockResolvedValue(false);
+    vi.mocked(client.request).mockImplementation(async (method) => {
+      if (method === 'settings.list') return settings(false);
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'server.tunnel.enabled', value: true }], revision: 2 };
+      }
+      if (method === 'server.pairingInfo') {
+        return { certFingerprint: REMOTE.fingerprint, localIps: ['10.0.0.99'] };
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    });
+
+    await expect(set({}, { id: REMOTE.id, enabled: true })).resolves.toEqual({
+      supported: true,
+      enabled: true,
+    });
+    expect(vi.mocked(client.request).mock.calls.map(([method]) => method)).toContain(
+      'server.pairingInfo',
+    );
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+  });
+
   it('reports unsupported without writing when the setting is absent', async () => {
     const { client, get, set } = await connectedHandlers();
     vi.mocked(client.request).mockResolvedValue({ settings: [], revision: 1 });
@@ -4703,7 +4727,7 @@ describe('multi-host candidates (#1746)', () => {
     await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', TC_ADDRESS));
   });
 
-  it('clears the stored tcAddress when a successful pairingInfo omits it', async () => {
+  it('keeps the stored tcAddress when a successful pairingInfo omits it', async () => {
     installWindow();
     rpc.handler = async (method) => {
       if (method === 'server.pairingInfo') {
@@ -4714,7 +4738,8 @@ describe('multi-host candidates (#1746)', () => {
     const { mod } = await loadModule();
     await mod.openBackendWindow('remote-1');
 
-    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', null));
+    await vi.waitFor(() => expect(store.setHosts).toHaveBeenCalledWith('remote-1', ['10.0.0.5']));
+    expect(store.setTcAddress).not.toHaveBeenCalledWith('remote-1', null);
   });
 
   it('skips the pairingInfo refresh when the record opted out of IP detection', async () => {
