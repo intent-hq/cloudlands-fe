@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import {
   EmptySchema,
+  WindowShowDockMenuSchema,
   WindowSetDockPointerRegionSchema,
   WindowUpdateDockPlacementSchema,
   WindowSwitchDockBackendSchema,
@@ -88,16 +89,41 @@ export function registerDockPlacementHandlers(): void {
   ipcMain.handle(
     WINDOW_CHANNELS.SHOW_DOCK_MENU,
     createSafeValidatedHandler(
-      EmptySchema,
-      async (event) => {
+      WindowShowDockMenuSchema,
+      async (event, request) => {
         const window = BrowserWindow.fromWebContents(event.sender);
         // Only the dock's own top-level document can open its menu.
         if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
           return { shown: false };
-        showDockContextMenu(window);
-        return { shown: true };
+        const frame = event.senderFrame;
+        const result = await showDockContextMenu(window, request);
+        if (window.isDestroyed() || window !== getDockWindow() || frame !== event.sender.mainFrame)
+          return { shown: false };
+        return result;
       },
       WINDOW_CHANNELS.SHOW_DOCK_MENU,
+    ),
+  );
+}
+
+/**
+ * Dock header double-click: bring Intent forward as it was. `activate` is the app's
+ * own activation (the app-icon click), run on behalf of the dock's top-level
+ * document only.
+ */
+export function registerDockActivateAppHandler(activate: () => Promise<unknown>): void {
+  ipcMain.handle(
+    WINDOW_CHANNELS.ACTIVATE_APP,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
+          return { activated: false };
+        await activate();
+        return { activated: true };
+      },
+      WINDOW_CHANNELS.ACTIVATE_APP,
     ),
   );
 }

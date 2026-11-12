@@ -12,6 +12,7 @@
     focusRequest = 0,
     focusComposerOnMount = false,
     active = true,
+    focusActive = active,
     resizable = true,
     clip,
     rect,
@@ -23,6 +24,8 @@
     focusRequest?: number;
     focusComposerOnMount?: boolean;
     active?: boolean;
+    /** Admit typing during opening without enabling popups or resize handles early. */
+    focusActive?: boolean;
     /** False while the visible shell still clips the panel edges (height settling). */
     resizable?: boolean;
     /** Inline only: current visible host ink in viewport CSS pixels. Detached panels omit it. */
@@ -106,12 +109,14 @@
     });
   });
 
+  // A prompt focus waiting for the composer to become focusable (one at a time).
+  let pendingComposer: MutationObserver | null = null;
   $effect(() => {
     const element = root;
     const id = workspaceId;
     const request = focusRequest;
     const composerOnMount = focusComposerOnMount;
-    if (!element || !active) return;
+    if (!element || !focusActive) return;
     untrack(() => {
       const changed = id !== lastWorkspace;
       // A switch to the conversation a click asked for focuses its composer too.
@@ -121,25 +126,49 @@
       lastFocusRequest = request;
       lastWorkspace = id;
       if (!explicitFocus && !changed) return;
-      // The composer can render a few frames after the conversation: retry briefly.
-      const focus = (attempt: number): void => {
-        if (disposed || !active || workspaceId !== id || !element.isConnected) return;
-        const composer = explicitFocus
-          ? element.querySelector<HTMLElement>('[data-dock-conversation-composer]:not(:disabled)')
-          : null;
-        if (explicitFocus && !composer && attempt < 20) {
-          setTimeout(() => focus(attempt + 1), 50);
+      const composerOf = () =>
+        element.querySelector<HTMLElement>('[data-dock-conversation-composer]:not(:disabled)');
+      const live = () => !disposed && focusActive && workspaceId === id && element.isConnected;
+      const focus = (): void => {
+        if (!live()) return;
+        const composer = explicitFocus ? composerOf() : null;
+        if (composer) {
+          composer.focus({ preventScroll: true });
           return;
         }
-        (composer ?? element.querySelector<HTMLElement>('[data-dock-conversation-back]'))?.focus({
-          preventScroll: true,
+        // Focus parked on Back by the app is not a keyboard move: no focus ring for it.
+        const back = element.querySelector<HTMLElement>('[data-dock-conversation-back]');
+        back?.focus({ preventScroll: true, focusVisible: false });
+        if (!explicitFocus) return;
+        // The prompt was asked for but is not focusable yet (still restoring or loading):
+        // move there when it becomes focusable, while the keyboard is still where this
+        // parked it and the conversation is the same. Driven by the DOM, not by a timer.
+        pendingComposer?.disconnect();
+        const watcher = new MutationObserver(() => {
+          const owner = document.activeElement;
+          if (!live() || (owner && owner !== back && owner !== document.body)) {
+            watcher.disconnect();
+            return;
+          }
+          const ready = composerOf();
+          if (!ready) return;
+          watcher.disconnect();
+          ready.focus({ preventScroll: true });
+        });
+        pendingComposer = watcher;
+        watcher.observe(element, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['data-dock-conversation-composer', 'disabled'],
         });
       };
-      void tick().then(() => focus(0));
+      void tick().then(focus);
     });
   });
   onDestroy(() => {
     disposed = true;
+    pendingComposer?.disconnect();
     popupOwner?.destroy();
     portalTarget?.remove();
   });
@@ -176,6 +205,7 @@
        inward), so the side panel's lanes match notch and floating. The inline depth stays
        within the transcript scrollbar's transparent outer border, clear of its thumb. */
     --dock-resize-depth-inline: 4px;
+    --dock-resize-depth-inline-start: 8px;
     --dock-resize-corner: 16px;
     position: relative;
     display: flex;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { DockRecordingIndicator } from '$features/hud/utils/dock-recording-indicator';
   import AdaptiveDockShell from './AdaptiveDockShell.svelte';
   import type { DockMachineOption } from './dock-machine-types';
   import type {
@@ -8,6 +9,7 @@
   } from '$shared/dock-placement';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import Logo from '$lib/components/Logo.svelte';
+  import { isDockRecordingOwnerOnly } from '$shared/dock-shortcuts';
   import { Button } from '$lib/components/ui/button';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -53,11 +55,17 @@
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
 
   interface Props {
+    recording?: DockRecordingIndicator | null;
+    inputLive?: boolean;
+    recordingStopping?: boolean;
+    onStopRecording?: () => void;
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
     onCloseConversation?: () => void;
+    onHomeDismiss?: () => void;
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
     machines?: DockMachineOption[];
     machineId?: string;
     machineSwitching?: string | null;
@@ -66,6 +74,10 @@
     placement?: DockPlacementSnapshot;
     onPlacementCommand?: (command: DockPlacementCommand) => void;
     focusRequest?: number;
+    /** Increments when the open shortcut is pressed again while the dock has the keyboard. */
+    closeRequest?: number;
+    /** On a side, the chat the open shortcut returns to (see AdaptiveDockShell). */
+    sideDefaultWorkspaceId?: string | null;
     placementError?: DockPlacementFailure | boolean | null;
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -80,6 +92,11 @@
 
   let {
     workspaces,
+    olderWorkspaces = [],
+    recording = null,
+    inputLive = false,
+    recordingStopping = false,
+    onStopRecording,
     machines,
     machineId,
     machineSwitching,
@@ -88,6 +105,8 @@
     placement,
     onPlacementCommand,
     focusRequest,
+    closeRequest,
+    sideDefaultWorkspaceId = null,
     placementError,
     dragStartResult,
     resizeStartResult,
@@ -101,6 +120,7 @@
     conversationWorkspaceId,
     onOpenConversation,
     onCloseConversation,
+    onHomeDismiss,
   }: Props = $props();
 
   // The controller owns native window state for this component instance and must not change mid-mount.
@@ -146,6 +166,8 @@
   let magnificationCenter = $state<number | null>(null);
   let windowFocused = $state(false);
   let focusedWorkspaceId = $state<string | null>(null);
+  /** The last key pressed in the dock: only keyboard focus opens a preview. */
+  let lastKeyAt = 0;
   let hoveredWorkspaceId = $state<string | null>(null);
   let edgeHoveredWorkspaceId = $state<string | null>(null);
   let hoverDismissed = false;
@@ -542,7 +564,9 @@
       rendererWidth = shellElement?.clientWidth || window.innerWidth;
       schedulePointerRegion(railExpanded ? 'expanded' : 'collapsed');
     };
-    const handleDockFocusRequest = () => {
+    const handleDockFocusRequest = (context?: unknown) => {
+      // A recording-owner shortcut is not a request to open or focus the dock.
+      if (isDockRecordingOwnerOnly(context)) return;
       hoverDismissed = false;
       windowFocused = true;
       cancelClose();
@@ -595,10 +619,17 @@
   });
 </script>
 
-<svelte:window bind:innerHeight={windowHeight} />
+<svelte:window
+  bind:innerHeight={windowHeight}
+  onkeydowncapture={() => (lastKeyAt = performance.now())}
+/>
 
 {#if placement && onPlacementCommand}
   <AdaptiveDockShell
+    {inputLive}
+    {recording}
+    {recordingStopping}
+    {onStopRecording}
     {machines}
     {machineId}
     {machineSwitching}
@@ -608,11 +639,15 @@
     {conversationWorkspaceId}
     {onOpenConversation}
     {onCloseConversation}
+    {onHomeDismiss}
     {workspaces}
+    {olderWorkspaces}
     {staticData}
     {placement}
     {onPlacementCommand}
     {focusRequest}
+    {closeRequest}
+    {sideDefaultWorkspaceId}
     {placementError}
     {dragStartResult}
     {resizeStartResult}
@@ -734,7 +769,10 @@
                     revealDockItem(event.currentTarget);
                     focusedWorkspaceId = workspaceId;
                     magnificationCenter = index;
-                    showPreview(workspaceId, event.currentTarget as HTMLButtonElement);
+                    // Only keyboard navigation previews: macOS restoring the dock's focus
+                    // (switching desktops, reactivating the app) must not open anything.
+                    if (performance.now() - lastKeyAt < 1000)
+                      showPreview(workspaceId, event.currentTarget as HTMLButtonElement);
                   }}
                   onblur={() => {
                     focusedWorkspaceId = null;

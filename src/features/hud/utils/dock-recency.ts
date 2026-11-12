@@ -95,3 +95,16 @@ export function isRecentDockConversation(
 ): boolean {
   return timestamp != null && timestamp <= now && timestamp > now - DOCK_CONVERSATION_WINDOW_MS;
 }
+
+/** The older complement of the recent window, never an unknown or invalid date. */
+export function isOlderDockConversation(
+  timestamp: number | null | undefined,
+  now: number,
+): boolean {
+  return (
+    timestamp != null &&
+    Number.isFinite(timestamp) &&
+    timestamp > 0 &&
+    timestamp <= now - DOCK_CONVERSATION_WINDOW_MS
+  );
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -7,6 +8,7 @@
   import DockComposerIcon from './DockComposerIcon.svelte';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import { springIn, crispOut } from '$lib/motion';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
   import type {
     DockComposerAttachment,
     DockComposerAttachmentsProps,
@@ -17,8 +19,11 @@
     labels,
     disabled = false,
     onMarkUp,
+    onEdit,
     onRemove,
     onRetry,
+    onCopy,
+    onMenu,
   }: DockComposerAttachmentsProps = $props();
   // Screenshots, then the clip, then attached files (pasted or dropped images included).
   const rank = (item: DockComposerAttachment) =>
@@ -44,7 +49,10 @@
 
   function label(item: DockComposerAttachment): string {
     if (item.kind === 'image') return labels.image(item.markCount);
-    if (item.kind === 'clip') return labels.clip(item.duration);
+    if (item.kind === 'clip')
+      return item.summary
+        ? `${labels.clip(item.duration)} ${item.summary}`
+        : labels.clip(item.duration);
     return item.name;
   }
   function show(item: DockComposerAttachment, source: HTMLElement): void {
@@ -55,6 +63,11 @@
       (item.kind === 'clip' && (!item.url || item.recording))
     )
       return;
+    // In the capture editor preview, a screenshot or recording pill opens the editor.
+    if ((item.kind === 'clip' || item.kind === 'image') && onEdit) {
+      onEdit(item.id);
+      return;
+    }
     opener = source;
     selectedId = item.id;
     open = true;
@@ -72,7 +85,10 @@
     const item = items.find((candidate) => candidate.id === id);
     if (disabled || !item || !imageReady(item)) return;
     open = false;
-    onMarkUp(id);
+    // In the capture editor preview, editing an existing screenshot is the bounded
+    // editor, never the full-screen live annotate overlay.
+    if (onEdit) onEdit(id);
+    else onMarkUp(id);
   }
   function deleteKey(event: KeyboardEvent, id: string): void {
     if (event.key !== 'Delete' || disabled) return;
@@ -80,7 +96,50 @@
     event.stopPropagation();
     void remove(id);
   }
+  /** A finished screenshot, recording or pasted image (never a live or placing one). */
+  function copyable(item: DockComposerAttachment): boolean {
+    if (item.status === 'placing' || item.status === 'failed') return false;
+    if (item.kind === 'image') return !!item.file || imageReady(item);
+    return item.kind === 'clip' && !item.recording && !!item.url;
+  }
+  /**
+   * On a focused tile only (never in the text field): Cmd/Ctrl+C copies it and
+   * Cmd/Ctrl+X cuts it (removed only once it is on the clipboard); Delete removes it.
+   */
+  function tileKey(event: KeyboardEvent, item: DockComposerAttachment): void {
+    const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
+    const key = event.key.toLowerCase();
+    if (mod && !event.shiftKey && !event.altKey && (key === 'c' || key === 'x')) {
+      if (!onCopy || !copyable(item)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (key === 'x' && disabled) return;
+      onCopy(item.id, key === 'x');
+      return;
+    }
+    deleteKey(event, item.id);
+  }
+  function tileMenu(event: MouseEvent, item: DockComposerAttachment): void {
+    if (!onMenu || !copyable(item)) return;
+    event.preventDefault();
+    onMenu(item.id);
+  }
 </script>
+
+{#snippet removeControl(id: string, name: string)}
+  <span class="tile-remove-slot"
+    ><Button
+      variant="secondary"
+      size="icon-sm"
+      class="tile-action tile-remove"
+      {disabled}
+      aria-label={name}
+      tooltipContentClass="dock-chrome-tooltip"
+      tooltip={name}
+      onclick={() => remove(id)}><DockComposerIcon glyph="x" /></Button
+    ></span
+  >
+{/snippet}
 
 {#if ordered.length}
   <div
@@ -92,10 +151,13 @@
   >
     {#each ordered as item (item.id)}
       {#if item.kind === 'image' && item.file}
+        <!-- svelte-ignore a11y_no_static_element_interactions (keys and the menu act on the focused preview inside) -->
         <div
-          class="file-image"
+          class="file-image tile"
           data-kind="file"
           data-attachment-id={item.id}
+          onkeydown={(event) => tileKey(event, item)}
+          oncontextmenu={(event) => tileMenu(event, item)}
           in:springIn={{ tier: 'fast', y: 3, scale: 0.98 }}
           out:crispOut={{ tier: 'fast' }}
         >
@@ -105,20 +167,54 @@
             type={item.file.imageMimeType}
             imageData={item.file.imageData}
             imageMimeType={item.file.imageMimeType}
-            onRemove={disabled ? undefined : (id) => void remove(id)}
             variant="thumbnail"
+            thumbnailClass="size-full"
+            class="size-full"
+            disabled={disabled || item.status === 'placing'}
             placementStatus={item.status}
             placementError={item.error}
-            {onRetry}
           />
+          {#if item.status}
+            <span
+              class="attachment-status"
+              data-failed={item.status === 'failed' || undefined}
+              role={item.status === 'failed' ? 'alert' : 'status'}
+              title={item.error}
+            >
+              {item.status === 'failed'
+                ? (item.error ?? labels.attachmentFailed)
+                : labels.attachmentPending}
+            </span>
+          {/if}
+          <div class="tile-actions">
+            {#if item.status === 'failed' && onRetry}
+              <Button
+                variant="primary"
+                size="icon-sm"
+                class="tile-action"
+                {disabled}
+                aria-label={labels.retry}
+                tooltipContentClass="dock-chrome-tooltip"
+                tooltip={labels.retry}
+                onclick={() => onRetry?.(item.id)}
+                ><Fa icon={faArrowRotateRight} size={16} /></Button
+              >
+            {/if}
+            {@render removeControl(
+              item.id,
+              m.chat_attachmentPreview_remove_ariaLabel({ name: item.file.name }),
+            )}
+          </div>
         </div>
       {:else}
         {@const previewPending =
           item.kind === 'image' && !imageReady(item) && item.status !== 'failed'}
+        <!-- svelte-ignore a11y_no_static_element_interactions (the menu acts on the tile's button) -->
         <div
           class="tile"
           data-kind={item.kind}
           data-attachment-id={item.id}
+          oncontextmenu={(event) => tileMenu(event, item)}
           aria-busy={previewPending || undefined}
           in:springIn={{ tier: 'fast', y: 3, scale: 0.98 }}
           out:crispOut={{ tier: 'fast' }}
@@ -144,7 +240,7 @@
               class="open-tile"
               aria-label={label(item)}
               disabled={disabled || (item.kind === 'clip' && (item.recording || !item.url))}
-              onkeydown={(event) => deleteKey(event, item.id)}
+              onkeydown={(event) => tileKey(event, item)}
               onclick={(event) => {
                 if (event.currentTarget instanceof HTMLElement) show(item, event.currentTarget);
               }}
@@ -153,7 +249,8 @@
               {:else}<span class="clip"
                   ><span class="record-dot" aria-hidden="true"></span><span class="duration"
                     >{item.duration}</span
-                  ></span
+                  >{#if item.summary}<span class="summary" data-clip-summary>{item.summary}</span
+                    >{/if}</span
                 >{/if}
             </Button>
           {/if}
@@ -177,6 +274,7 @@
                 class="tile-action"
                 {disabled}
                 aria-label={labels.retry}
+                tooltipContentClass="dock-chrome-tooltip"
                 tooltip={labels.retry}
                 onclick={() => onRetry?.(item.id)}
               >
@@ -188,8 +286,9 @@
                 size="icon-sm"
                 class="tile-action"
                 {disabled}
-                aria-label={labels.markUp}
-                tooltip={labels.markUp}
+                aria-label={onEdit ? labels.edit : labels.markUp}
+                tooltipContentClass="dock-chrome-tooltip"
+                tooltip={onEdit ? labels.edit : labels.markUp}
                 onclick={() => markup(item.id)}
               >
                 <DockComposerIcon glyph="pencil" />
@@ -200,26 +299,17 @@
                 size="icon-sm"
                 class="tile-action"
                 {disabled}
-                aria-label={labels.play}
-                tooltip={labels.play}
+                aria-label={onEdit ? labels.edit : labels.play}
+                tooltipContentClass="dock-chrome-tooltip"
+                tooltip={onEdit ? labels.edit : labels.play}
                 onclick={(event) => {
                   if (event.currentTarget instanceof HTMLElement) show(item, event.currentTarget);
                 }}
               >
-                <DockComposerIcon glyph="play" />
+                <DockComposerIcon glyph={onEdit ? 'pencil' : 'play'} />
               </Button>
             {/if}
-            <Button
-              variant="secondary"
-              size="icon-sm"
-              class="tile-action"
-              {disabled}
-              aria-label={labels.remove}
-              tooltip={labels.remove}
-              onclick={() => remove(item.id)}
-            >
-              <DockComposerIcon glyph="x" />
-            </Button>
+            {@render removeControl(item.id, labels.remove)}
           </div>
         </div>
       {/if}
@@ -269,6 +359,16 @@
 </ContentDialog>
 
 <style>
+  /* The saved send choice under the duration (Highlights · Transcript). */
+  .summary {
+    display: block;
+    flex-basis: 100%;
+    overflow: hidden;
+    font-size: var(--text-caption-size);
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   .attachment-row {
     display: flex;
     gap: 8px;
@@ -310,7 +410,9 @@
   .tile-actions {
     position: absolute;
     inset: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, 28px);
+    align-content: center;
     align-items: center;
     justify-content: center;
     gap: 6px;
@@ -345,6 +447,12 @@
   .tile:focus-within .tile-actions :global(button) {
     pointer-events: auto;
   }
+  .tile-remove-slot {
+    grid-column: 2;
+    width: 28px;
+    height: 28px;
+    display: flex;
+  }
   .tile-actions :global(.tile-action) {
     width: 28px;
     min-width: 28px;
@@ -355,11 +463,15 @@
   .tile :global(.file),
   .clip {
     display: flex;
+    flex-wrap: wrap;
+    align-content: center;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
-    gap: 6px;
+    gap: 2px 6px;
+    padding: 0 4px;
+    text-align: center;
   }
   .tile :global(.file) {
     flex-direction: column;

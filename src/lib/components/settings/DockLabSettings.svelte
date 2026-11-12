@@ -43,6 +43,7 @@ off the row is hidden; the Labs command palette entry turns it on. -->
       <DockLabIllustration />
       <div class="min-w-0 flex-1">
         <SettingsForm {schema} embedded compact={false} />
+        <p class="mt-2 type-caption text-muted-foreground">{m.settings_dockLab_moveHint()}</p>
       </div>
     </div>
   </section>

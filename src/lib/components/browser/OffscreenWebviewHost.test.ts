@@ -196,6 +196,7 @@ describe('OffscreenWebviewHost', () => {
       expect(invokeMock).toHaveBeenCalledExactlyOnceWith('browser:register-tab', {
         tabId: 'tab-blank',
         webContentsId: 91,
+        workspaceId: 'ws-blank',
       });
       expect(dispatchMock).toHaveBeenCalledExactlyOnceWith({
         type: 'browserClients/consumerMounted',
@@ -304,6 +305,7 @@ describe('OffscreenWebviewHost', () => {
     expect(invokeMock).toHaveBeenCalledWith('browser:register-tab', {
       tabId: 'tab-bg',
       webContentsId: 11,
+      workspaceId: 'ws-bg',
     });
     expect(loadURL).not.toHaveBeenCalled();
     expect(
@@ -342,6 +344,7 @@ describe('OffscreenWebviewHost', () => {
     expect(invokeMock).toHaveBeenCalledWith('browser:register-tab', {
       tabId: 'tab-evicted',
       webContentsId: 14,
+      workspaceId: 'ws-bg',
     });
     layoutsStore.set({ 'ws-bg': { ...layout } });
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-evicted']));
@@ -626,6 +629,7 @@ describe('OffscreenWebviewHost', () => {
       expect(invokeMock).toHaveBeenCalledWith('browser:register-tab', {
         tabId: 'tab-bg',
         webContentsId: 77,
+        workspaceId: 'ws-bg',
       }),
     );
   });
@@ -661,8 +665,8 @@ describe('OffscreenWebviewHost', () => {
     webview.dispatchEvent(new Event('dom-ready'));
     await waitFor(() =>
       expect(registerCalls()).toEqual([
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 78 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77, workspaceId: 'ws-bg' }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 78, workspaceId: 'ws-bg' }],
       ]),
     );
   });
@@ -691,8 +695,8 @@ describe('OffscreenWebviewHost', () => {
     webview.dispatchEvent(new Event('dom-ready'));
     await waitFor(() =>
       expect(registerCalls()).toEqual([
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77, workspaceId: 'ws-bg' }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77, workspaceId: 'ws-bg' }],
       ]),
     );
   });
@@ -735,8 +739,8 @@ describe('OffscreenWebviewHost', () => {
     webview.dispatchEvent(new Event('dom-ready'));
     await waitFor(() =>
       expect(registerCalls()).toEqual([
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
-        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77, workspaceId: 'ws-bg' }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77, workspaceId: 'ws-bg' }],
       ]),
     );
   });

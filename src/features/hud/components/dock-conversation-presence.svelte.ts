@@ -13,13 +13,17 @@ export function useDockConversationPresence(
   engaged: () => boolean = () => false,
   /** False where only an explicit open (a click) discloses the conversation. */
   autoOpen: () => boolean = () => true,
+  hoverDelayMs: () => number = () => 0,
 ) {
   let open = $state(false);
   let pointerInside = false;
   /** Last forwarded outside point; re-measured against live handles when a close is due. */
   let approach: { x: number; y: number; at: number } | null = null;
   let keyboard = $state(false);
+  let focusEngaged = false;
+  let dismissed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
   function portal(node: Node | null): boolean {
     return (
@@ -57,19 +61,53 @@ export function useDockConversationPresence(
     if (!document.hasFocus() || !(target instanceof HTMLElement) || !owns(target)) return false;
     return (
       portal(target) ||
-      target.matches('input, textarea, select, [contenteditable="true"]') ||
-      !!target.closest('[contenteditable="true"]') ||
-      (keyboard && target.matches(':focus-visible'))
+      ((focusEngaged || keyboard) &&
+        (target.matches('input, textarea, select, [contenteditable="true"]') ||
+          !!target.closest('[contenteditable="true"]') ||
+          target.matches(':focus-visible')))
     );
   }
   function show(fromKeyboard = false): void {
     cancel();
-    if (fromKeyboard) keyboard = true;
+    if (fromKeyboard) {
+      keyboard = true;
+      dismissed = false;
+    }
+    if (dismissed) return;
     if (!blocked()) open = true;
+  }
+  function hide(suppressHover = false): void {
+    cancel();
+    dismissed = suppressHover;
+    keyboard = false;
+    focusEngaged = false;
+    approach = null;
+    open = false;
+  }
+  function leave(): void {
+    dismissed = false;
+    pointerInside = false;
+    settle();
   }
   function cancel(): void {
     clearTimeout(timer);
     timer = undefined;
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  }
+  function hover(): void {
+    if (dismissed || blocked() || !workspaceId() || (!open && !autoOpen())) return;
+    if (open || hoverDelayMs() === 0) {
+      show();
+      return;
+    }
+    clearTimeout(timer);
+    timer = undefined;
+    if (hoverTimer !== undefined) return;
+    hoverTimer = setTimeout(() => {
+      hoverTimer = undefined;
+      if (pointerInside && !blocked() && workspaceId() && autoOpen()) show();
+    }, hoverDelayMs());
   }
   function settle(): void {
     cancel();
@@ -92,6 +130,8 @@ export function useDockConversationPresence(
     untrack(() => {
       cancel();
       approach = null;
+      dismissed = false;
+      focusEngaged = false;
       open = !!id && !blocked() && (autoOpen() || open);
     });
   });
@@ -124,7 +164,7 @@ export function useDockConversationPresence(
       pointerInside = owns(event.target as Node);
       approach = pointerInside ? null : point(event);
       if (!pointerInside) settle();
-      else if (workspaceId() && (open || autoOpen())) show();
+      else hover();
     };
     const out = (event: PointerEvent) => {
       pointerInside = owns(event.relatedTarget as Node | null);
@@ -139,15 +179,20 @@ export function useDockConversationPresence(
     const focus = (event: FocusEvent) => {
       if (workspaceId() && owns(event.target as Node)) show();
     };
-    const pointer = () => {
+    const pointer = (event: PointerEvent) => {
       keyboard = false;
+      focusEngaged = owns(event.target as Node);
+      if (focusEngaged) dismissed = false;
     };
-    const key = () => {
-      keyboard = true;
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' && owns(document.activeElement)) keyboard = true;
     };
     const blur = () => {
       pointerInside = false;
       approach = null;
+      focusEngaged = false;
+      keyboard = false;
+      dismissed = false;
       settle();
     };
     document.addEventListener('pointerover', over, true);
@@ -178,5 +223,7 @@ export function useDockConversationPresence(
       return keyboard && open;
     },
     show,
+    hide,
+    leave,
   };
 }

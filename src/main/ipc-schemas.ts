@@ -687,6 +687,7 @@ const DockSurfaceSizeSchema = z.object({
 
 export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('dismiss') }),
+  z.object({ action: z.literal('release') }),
   z.object({ action: z.literal('focus') }),
   z.object({
     action: z.literal('move'),
@@ -1276,5 +1277,21 @@ export const InviteNoticeResponseSchema = z.object({
 export const WindowSwitchDockBackendSchema = z
   .object({
     backendId: z.string().trim().min(1).max(256),
+  })
+  .strict();
+
+export const WindowShowDockMenuSchema = z
+  .object({
+    machines: z
+      .array(
+        z
+          .object({ id: z.string().trim().min(1).max(256), label: z.string().min(1).max(512) })
+          .strict(),
+      )
+      .max(256)
+      .optional(),
+    currentId: z.string().max(256).optional(),
+    pending: z.string().max(256).nullable().optional(),
+    error: z.boolean().optional(),
   })
   .strict();

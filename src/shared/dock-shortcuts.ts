@@ -1,0 +1,193 @@
+/** `focus` is the global shortcut; the others are Window-menu commands only. */
+export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate';
+/** Includes OS-local wildcard/loopback aliases; normalize WHATWG URL hostname first. */
+export function isDockLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    /^127\.\d+\.\d+\.\d+$/.test(host) ||
+    ['0.0.0.0', '[::]', '[::1]'].includes(host)
+  );
+}
+/** A single foreground sample, captured before Intent changes focus. */
+export interface DockShortcutContext {
+  id: string;
+  backendId: string;
+  action: DockShortcutAction;
+  appId?: string;
+  appName?: string;
+  title?: string;
+  url?: string;
+  workspaceId?: string;
+  /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
+  serviceAddress?: string;
+  /**
+   * Set by main for `focus` when the context feed admitted and published the pre-focus
+   * sample: its raw version and identity. The dock follows only its linked snapshot for
+   * exactly this version (never an older or a newer context); otherwise it shows the index.
+   */
+  identityKey?: string;
+  contextVersion?: string;
+  /**
+   * Set by main only, while a recording keeps the notch out of sight: act on that
+   * recording's own pair (Stop, draw, dictate) and nothing else. Never focus, open,
+   * select or route to a destination; with no live recording there, do nothing.
+   */
+  recordingOwnerOnly?: boolean;
+  /**
+   * Set by main only: the open shortcut was pressed again while the dock already had the
+   * keyboard. Close it as Escape would (the pinned conversation, or collapse), unless a
+   * recording, an annotate session or dictation is live; never retarget or select.
+   */
+  toggleClose?: boolean;
+}
+/** A focus-dock payload that only drives the live recording (see `recordingOwnerOnly`). */
+export function isDockToggleClose(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { toggleClose?: unknown }).toggleClose === true
+  );
+}
+export function isDockRecordingOwnerOnly(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { recordingOwnerOnly?: unknown }).recordingOwnerOnly === true
+  );
+}
+export interface DockShortcutSelection {
+  workspaceId: string;
+  backendId: string;
+  authority: string;
+  appId?: string;
+  url?: string;
+}
+export interface DockShortcutState {
+  resolving?: boolean;
+  context: DockShortcutContext;
+  destination: string | null;
+  error: string | null;
+  authority?: string | null;
+  service?: DockServiceOwner;
+}
+export type DockLinkScope = 'url' | 'project' | 'app';
+export function dockLinkKey(context: DockShortcutContext, scope: DockLinkScope): string | null {
+  if (scope === 'app') return context.appId ? `app:${context.appId}` : null;
+  if (!context.url) return null;
+  try {
+    const url = new URL(context.url);
+    // Never persist a dev server/forward address: process and tunnel reuse changes ownership.
+    if (isDockLoopbackHostname(url.hostname) || url.port) return null;
+    if (scope === 'project') {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (url.hostname === 'github.com')
+        return parts.length >= 2 ? `project:${url.origin}/${parts.slice(0, 2).join('/')}/` : null;
+      const directory = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1);
+      return directory.length > 1 ? `project:${url.protocol}//${url.host}${directory}` : null;
+    }
+    return `url:${url.href}`;
+  } catch {
+    return null;
+  }
+}
+export function resolveDockDestination(
+  context: DockShortcutContext,
+  workspaceIds: readonly string[],
+  links: Record<string, string>,
+): string | null {
+  const valid = (id: string | undefined) => (id && workspaceIds.includes(id) ? id : null);
+  for (const scope of ['url', 'project'] as const) {
+    const key = dockLinkKey(context, scope);
+    const id = key && valid(links[key]);
+    if (id) return id;
+  }
+  if (context.url) {
+    try {
+      const u = new URL(context.url);
+      const address = `${u.protocol}//${u.host}${u.pathname}`;
+      const scoped = Object.keys(links)
+        .filter(
+          (key) => key.startsWith('project:') && address.startsWith(key.slice('project:'.length)),
+        )
+        .sort((a, b) => b.length - a.length);
+      for (const key of scoped) {
+        const id = valid(links[key]);
+        if (id) return id;
+      }
+      if (u.protocol === 'intent:' && u.hostname === 'local') {
+        const match = /^\/workspace\/([^/]+)$/.exec(u.pathname);
+        const id = match && valid(decodeURIComponent(match[1]));
+        if (id) return id;
+      }
+    } catch {
+      /* Unknown URLs stay unknown. */
+    }
+  }
+  const owned = valid(context.workspaceId);
+  if (owned) return owned;
+  // A known but unlinked URL must never inherit a broad app default.
+  if (context.url) return null;
+  const key = dockLinkKey(context, 'app');
+  return key ? valid(links[key]) : null;
+}
+
+/** Ranking is a hint for the chooser, never permission to guess a destination. */
+export function dockCandidateScore(
+  context: DockShortcutContext | undefined,
+  workspace: {
+    branch?: string;
+    worktreePath?: string;
+    repositoryOwner?: string;
+    repositoryName?: string;
+  },
+): number {
+  if (!context?.url) return 0;
+  try {
+    const url = new URL(context.url);
+    if (url.hostname === 'github.com') {
+      const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      if (parts[0] !== workspace.repositoryOwner || parts[1] !== workspace.repositoryName) return 0;
+      return parts[2] === 'tree' && parts.slice(3).join('/') === workspace.branch ? 3 : 1;
+    }
+    if (url.protocol === 'file:' && context.backendId === 'local' && workspace.worktreePath) {
+      const root = workspace.worktreePath.replace(/\/$/, '');
+      const path = decodeURIComponent(url.pathname);
+      return path === root || path.startsWith(`${root}/`) ? 2 : 0;
+    }
+  } catch {
+    /* No inferred identity from an unparseable address. */
+  }
+  return 0;
+}
+
+export interface DockServiceOwner {
+  workspaceId: string;
+  scriptId: string;
+  backendId: string;
+  connection: string;
+  runId: string;
+  pid: number;
+  startedAt: string;
+  restartCount: number;
+  detectedUrl: string;
+}
+/** Exact scheme/host/port and segment-bounded path; query/hash do not own a server. */
+export function dockServiceUrlMatches(source: string, detected: string): boolean {
+  try {
+    const a = new URL(source),
+      b = new URL(detected);
+    const host = (url: URL) => (isDockLoopbackHostname(url.hostname) ? 'loopback' : url.hostname);
+    const root = b.pathname.replace(/\/$/, '');
+    return (
+      ['http:', 'https:'].includes(a.protocol) &&
+      a.protocol === b.protocol &&
+      host(a) === host(b) &&
+      a.port === b.port &&
+      (a.pathname === root || a.pathname.startsWith(`${root}/`))
+    );
+  } catch {
+    return false;
+  }
+}

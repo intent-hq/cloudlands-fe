@@ -1,3 +1,4 @@
+import type { DockShortcutSelection, DockShortcutState } from '$shared/dock-shortcuts';
 import type { AgentMessage } from '$shared/types';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
@@ -60,6 +61,7 @@ export interface DockConversationDraft {
   clearRevision?: number;
   clearSubmissionId?: string;
   recoverRevision?: number;
+  sharedRevision?: number;
   delivery?: {
     reference: import('../pending-submissions/pending-submissions-types').SubmissionReference;
     revision: number;
@@ -78,6 +80,11 @@ export interface DockConversationDraft {
   };
 }
 export interface DockConversationState {
+  linkedContextServiceAddress?: string | null;
+  linkedContextAuthority?: string | null;
+  linkedContext?: import('$shared/dock-context-links').DockLinkedContextSnapshot | null;
+  shortcutSelection?: DockShortcutSelection | null;
+  shortcut?: DockShortcutState | null;
   workspaceId: string | null;
   workspaceTitle: string;
   agentId: string | null;

@@ -9,6 +9,7 @@ import {
 
 interface DockShellLayoutInput {
   surfaceExpanded: boolean;
+  recording?: boolean;
   conversationOpen?: boolean;
   conversationSize?: { width: number; height: number };
   reveal: number;
@@ -16,6 +17,8 @@ interface DockShellLayoutInput {
   expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
+  /** Reserve history viewport room, including after the disclosure is removed. */
+  hasOlderWorkspaces?: boolean;
   compactWingWidth: number;
   hasFeedback: boolean;
   /** The "Meet the notch" card sits above the rows (DockIntroCard). */
@@ -24,10 +27,25 @@ interface DockShellLayoutInput {
 
 /** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
 export const DOCK_INTRO_HEIGHT = 130;
+export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
+/** The index search field (32) and its gap below (8); keep in step with DockOverview. */
+const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
 /** Width of the compact notch wing that shows one dot per status group. */
+/**
+ * Collapsed status wing: its outer inset, the 12px glyphs and the gaps between them (both
+ * tighter than in the open header), and 4px clear of the camera. Keep in step with the
+ * collapsed rules in AdaptiveDockShell (.header-state) and DockUpdateStatus (--dock-status-gap).
+ */
+const DOCK_COMPACT_STATUS_INSET = 8;
+const DOCK_COMPACT_STATUS_GAP = 3;
 export function dockCompactWingWidth(statusGroups: number): number {
-  return 12 + statusGroups * 12 + 6 * Math.max(0, statusGroups - 1) + 4;
+  return (
+    DOCK_COMPACT_STATUS_INSET +
+    statusGroups * 12 +
+    DOCK_COMPACT_STATUS_GAP * Math.max(0, statusGroups - 1) +
+    4
+  );
 }
 
 interface DockShellLayout {
@@ -48,12 +66,14 @@ export function getDockShellLayout(
   placement: DockPlacementSnapshot,
   {
     surfaceExpanded,
+    recording = false,
     conversationOpen = false,
     conversationSize = DOCK_CONVERSATION_DEFAULT_SIZE,
     reveal,
     expandedHeight = null,
     rowLimit,
     workspaceCount,
+    hasOlderWorkspaces = false,
     compactWingWidth,
     hasFeedback,
     intro = false,
@@ -69,13 +89,19 @@ export function getDockShellLayout(
     !dragging && placement.placement.kind === 'notch'
       ? getDockCompactNotchSize(placement.cutout, compactWingWidth)
       : null;
-  const headerHeight = compactNotchSize?.height ?? 40;
+  const headerHeight = edge && recording ? 104 : (compactNotchSize?.height ?? 40);
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
-  // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
-  // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
+  // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40), the search
+  // field and the frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
   const overviewHeight =
-    Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16 + (intro ? DOCK_INTRO_HEIGHT : 0);
-  const railHeight = 48 + (Math.min(workspaceCount, rowLimit) + 1) * 32;
+    Math.min(workspaceCount, rowLimit) * 52 +
+    7 +
+    40 +
+    16 +
+    DOCK_OVERVIEW_SEARCH_HEIGHT +
+    (hasOlderWorkspaces ? DOCK_OVERVIEW_HISTORY_HEIGHT : 0) +
+    (intro ? DOCK_INTRO_HEIGHT : 0);
+  const railHeight = (edge ? headerHeight + 8 : 48) + (Math.min(workspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging
     ? 224
@@ -111,10 +137,14 @@ export function getDockShellLayout(
     height: anchorHeight,
   };
   const progress = edge ? 0 : dragging ? 1 : reveal;
+  const cameraCenter =
+    notch && placement.cutout
+      ? placement.cutout.x + placement.cutout.width / 2 - full.x
+      : full.width / 2;
   const openHeight =
-    edge || dragging || expandedHeight === null
+    edge || dragging
       ? full.height
-      : Math.max(compactHeight, Math.min(full.height, expandedHeight));
+      : Math.max(compactHeight, Math.min(full.height, expandedHeight ?? desiredHeight));
   const width = Math.min(full.width, compactWidth + (full.width - compactWidth) * progress);
   const height = Math.min(full.height, compactHeight + (openHeight - compactHeight) * progress);
   const openY = floatingUp ? full.height - openHeight : 0;
@@ -126,7 +156,7 @@ export function getDockShellLayout(
         height: floatingCompact.height + (openHeight - floatingCompact.height) * progress,
       }
     : {
-        x: edge ? (side === 'right' ? full.width - width : 0) : (full.width - width) / 2,
+        x: edge ? (side === 'right' ? full.width - width : 0) : cameraCenter - width / 2,
         y: edge ? (full.height - height) * along : 0,
         width,
         height,

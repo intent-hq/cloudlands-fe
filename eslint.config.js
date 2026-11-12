@@ -44,7 +44,7 @@ import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.j
 import noHoverThenClickInCtRule from './eslint-rules/no-hover-then-click-in-ct.js';
 import noUnpausedClockInCtRule from './eslint-rules/no-unpaused-clock-in-ct.js';
 import noHandTypedShortcutInCtRule from './eslint-rules/no-hand-typed-shortcut-in-ct.js';
-import { SHORTCUT_DEFAULTS } from './src/lib/utils/shortcut-bindings.ts';
+import { SHORTCUT_DEFAULTS } from './src/shared/keyboard-shortcut-bindings.ts';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';

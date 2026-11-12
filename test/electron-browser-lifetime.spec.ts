@@ -1,3 +1,5 @@
+import './electron-dock-shortcut-settings.fixture';
+import './electron-dock-shortcut-context.fixture';
 // Native diagnostic windows share this display-backed Electron verification lane.
 import './electron-browser-lifetime-dev-console.fixture';
 import './electron-browser-lifetime-dev-console-ui.fixture';

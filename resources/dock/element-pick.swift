@@ -61,10 +61,19 @@ func coversDisplay(_ bounds: CGRect, at point: CGPoint) -> Bool {
   return bounds.contains(CGDisplayBounds(display))
 }
 
+// Why there is no window: bounded metadata of what stopped the lookup (never a title or
+// app name), so a failed pick can be explained from the log.
+var lastMiss: [String: Any] = [:]
+
+func miss(_ reason: String, count: Int, blocker: [String: Any]? = nil) -> [String: Any]? {
+  lastMiss = ["reason": reason, "listCount": count, "blocker": blocker ?? NSNull()]
+  return nil
+}
+
 func windowAt(_ point: CGPoint, ownPid: pid_t, seeThrough: Set<Int>) -> [String: Any]? {
   let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
   guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-    return nil
+    return miss("none", count: 0)
   }
   // Front-to-back: the first visible, non-see-through window containing the point wins.
   for info in list {
@@ -84,13 +93,16 @@ func windowAt(_ point: CGPoint, ownPid: pid_t, seeThrough: Set<Int>) -> [String:
       // without covering it: look through them.
       if coversDisplay(bounds, at: point) { continue }
       // Menus, menu bar, Dock, status items and other system surfaces are not app windows.
-      return nil
+      return miss("system-layer", count: list.count, blocker: [
+        "pid": Int(owner), "windowId": windowId, "layer": layer,
+        "bounds": rectObject(bounds), "alpha": alpha,
+      ])
     }
     let app = (info[kCGWindowOwnerName as String] as? String) ?? ""
     return ["pid": Int(owner), "windowId": windowId, "layer": layer,
             "app": bounded(app), "bounds": rectObject(bounds)]
   }
-  return nil
+  return miss("none", count: list.count)
 }
 
 // MARK: - Accessibility element
@@ -186,6 +198,8 @@ while let line = readLine(strippingNewline: true) {
   if wantsElement, trusted, let pid = window?["pid"] as? Int {
     element = elementAt(point, pid: pid_t(pid))
   }
-  emit(["id": id, "ok": true, "trusted": trusted,
-        "window": window ?? NSNull(), "element": element ?? NSNull()])
+  var reply: [String: Any] = ["id": id, "ok": true, "trusted": trusted,
+                              "window": window ?? NSNull(), "element": element ?? NSNull()]
+  if window == nil { reply["diagnostic"] = lastMiss }
+  emit(reply)
 }

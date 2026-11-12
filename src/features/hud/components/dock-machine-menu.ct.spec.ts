@@ -14,8 +14,8 @@ for (const side of ['left', 'right'] as const) {
         controlledPlacement: true,
       },
     });
-    const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
-    await logo.click();
+    const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
+    await logo.press('ArrowDown');
     const menu = page.getByRole('menu', { name: 'Machines' });
     await expect(menu).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`machine-picker-${side}.png`) });
@@ -45,8 +45,8 @@ test('logo machine picker preserves current selection on failure and retries wit
       theme: 'dark',
     },
   });
-  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
-  await logo.click();
+  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
+  await logo.press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Machines' });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitemradio', { name: 'This Mac', exact: true })).toHaveAttribute(
@@ -85,9 +85,9 @@ test('keyboard opens machine picker and Escape restores the logo without dismiss
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
   await logo.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Machines' });
   await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
@@ -99,7 +99,7 @@ test('keyboard opens machine picker and Escape restores the logo without dismiss
   );
 });
 
-test('clicking the Intent logo toggles the machine picker closed and open again', async ({
+test('keyboard reopens the machine picker after Escape restores logo focus', async ({
   mount,
   page,
 }) => {
@@ -110,14 +110,15 @@ test('clicking the Intent logo toggles the machine picker closed and open again'
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
   const menu = page.getByRole('menu', { name: 'Machines' });
-  await logo.click();
+  await logo.press('ArrowDown');
   await expect(menu).toBeVisible();
-  await logo.click();
+  await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
+  await expect(logo).toBeFocused();
   await expect(logo).toHaveAttribute('aria-expanded', 'false');
-  await logo.click();
+  await logo.press('ArrowDown');
   await expect(menu).toBeVisible();
   expect(JSON.parse((await component.getAttribute('data-preview-actions'))!)).toEqual([]);
 });
@@ -133,9 +134,9 @@ test('Escape closes the machine picker when focus has returned to the logo', asy
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
   const menu = page.getByRole('menu', { name: 'Machines' });
-  await logo.click();
+  await logo.press('ArrowDown');
   await expect(menu).toBeVisible();
   await logo.focus();
   await expect(logo).toBeFocused();
@@ -167,7 +168,7 @@ test('machine list remains operable inside an empty notch native envelope', asyn
       },
     },
   });
-  await component.getByRole('button', { name: 'Switch machine', exact: true }).click();
+  await component.getByRole('button', { name: 'Open Intent', exact: true }).press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Machines' });
   await expect(menu).toBeVisible();
   await expect
@@ -213,7 +214,7 @@ test('notch machine menu stays fully visible and reachable', async ({ mount, pag
   });
   const shell = component.getByTestId('dock-shell');
   await expect(shell).toHaveAttribute('data-expanded', 'false');
-  await component.getByRole('button', { name: 'Switch machine', exact: true }).click();
+  await component.getByRole('button', { name: 'Open Intent', exact: true }).press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Machines' });
   await expect(menu).toBeVisible();
   // The shell opens with the menu (never held compact waiting on a later event).

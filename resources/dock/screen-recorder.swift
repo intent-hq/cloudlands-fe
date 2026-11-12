@@ -23,8 +23,15 @@
 // produced. Source pixel dimensions are kept up to 4096 on the long edge
 // (H.264 High level limit), scaled proportionally beyond.
 //     stdin  (JSON lines): {"cmd":"mic","on":bool} | {"cmd":"marks","marks":[…]}
+//                          | {"cmd":"pause"} | {"cmd":"resume"}
 //                          | {"cmd":"exclude","windowIds":[…]} | {"cmd":"stop"} | {"cmd":"cancel"}
-//     stdout (JSON lines): started · mic · exclude · finished · cancelled · error
+//     stdout (JSON lines): started · mic · exclude · paused · level · finished · cancelled · error
+//
+// Pause stops writing (video and microphone) and stops the clock: the time spent paused
+// is cut from the clip, so the file plays straight through and the size/duration limits
+// count recorded time only. `paused` answers every pause/resume with the current state.
+// While the microphone is open and the clip is not paused, `level` reports its input
+// level (0…1, RMS on a -50 dB…0 dB scale) about 15 times a second.
 //
 // System audio is never captured. The microphone device is opened only between
 // {"cmd":"mic","on":true} and {"cmd":"mic","on":false} (or `--mic` at start), and
@@ -40,7 +47,7 @@ import Foundation
 import ImageIO
 import ScreenCaptureKit
 
-let captureApi = "sck-stream+avcapture-mic/1"
+let captureApi = "sck-stream+avcapture-mic/2"
 func videoBitrate(width: Int, height: Int, fps: Int, cap: Int) -> Int {
   min(cap, max(min(3_000_000, cap), Int(Double(width * height * fps) * 0.05)))
 }
@@ -231,6 +238,7 @@ struct ExclusionMissing: Error {}
 
 struct Options {
   var output = ""
+  var cleanOutput = ""
   var displayId: CGDirectDisplayID = 0
   var maxMs = 120_000
   var fps = 30
@@ -261,9 +269,19 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   var videoInput: AVAssetWriterInput?
   var adaptor: AVAssetWriterInputPixelBufferAdaptor?
   var audioInput: AVAssetWriterInput?
+  var cleanWriter: AVAssetWriter?
+  var cleanVideo: AVAssetWriterInput?
+  var cleanAudio: AVAssetWriterInput?
+  var cleanAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  var clearTimes: [Int] = []
   var frameSize = CGSize.zero
   var pointScale: CGFloat = 1
   var startTime: CMTime?
+  /// Pause: nothing is written, and the paused span is cut from every later timestamp.
+  var paused = false
+  var pauseStarted: CMTime?
+  var pausedTotal = CMTime.zero
+  var lastLevelEmit: CFAbsoluteTime = 0
   var lastTime: CMTime?
   var overlay: CIImage?
   var pendingMarks: [Any] = []
@@ -271,9 +289,46 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   var micOn = false
   var micAtStart: Bool
   var hasMicAudio = false
+  var hasCleanMicAudio = false
+  var cleanAudioBuffers = 0
+  var annotatedAudioBuffers = 0
   var limitTimer: DispatchSourceTimer?
   var sizeTimer: DispatchSourceTimer?
   var startWatchdog: DispatchSourceTimer?
+
+  /// Still frames for mark images while recording. A second ScreenCaptureKit capture
+  /// (SCScreenshotManager in another process) would stop this stream, so the mark
+  /// image comes from this stream: the newest raw frame (before marks are drawn in),
+  /// copied into memory this process owns. At most one copy is kept, one is in flight
+  /// and one newer frame waits; copies run off the writer queue, at most every 250 ms
+  /// unless a still is waiting. Only frames of the confirmed content filter are kept.
+  struct StillFrame {
+    let image: CGImage
+    let generation: Int
+    let at: Date
+  }
+  struct StillWaiter {
+    let id: String
+    let path: String
+    let windowIds: Set<CGWindowID>
+    let requestedAt: Date
+    let timer: DispatchSourceTimer
+  }
+  static let stillCopyIntervalMs = 250
+  static let stillWaitMs = 1500
+  let frameQueue = DispatchQueue(label: "dev.intent.dock-recorder.frames")
+  let stillQueue = DispatchQueue(label: "dev.intent.dock-recorder.still")
+  /// Windows the running stream's content filter is confirmed to exclude.
+  var confirmedExcluded = Set<CGWindowID>()
+  /// Bumped on every filter change; a frame of an older filter is never served.
+  var filterGeneration = 0
+  var filterPending = 0
+  var lastFrame: StillFrame?
+  var pendingFrame: (pixels: CVPixelBuffer, generation: Int, at: Date)?
+  var copyInFlight = false
+  var lastCopyStart: CFAbsoluteTime = 0
+  var trailingCopy: DispatchSourceTimer?
+  var stillWaiters: [StillWaiter] = []
 
   init(options: Options) {
     self.options = options
@@ -290,6 +345,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       self.state = .done
       self.teardown()
       self.writer?.cancelWriting()
+      self.cleanWriter?.cancelWriting()
+      if !self.options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: self.options.cleanOutput) }
       try? FileManager.default.removeItem(at: self.outputURL)
       emit(["event": "error", "code": code, "detail": detail])
       exit(1)
@@ -388,11 +445,31 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     self.videoInput = video
     self.adaptor = adaptor
 
+    if !options.cleanOutput.isEmpty {
+      let clean = try AVAssetWriter(outputURL: URL(fileURLWithPath: options.cleanOutput), fileType: .mp4)
+      let input = AVAssetWriterInput(mediaType: .video, outputSettings: video.outputSettings)
+      input.expectsMediaDataInRealTime = true
+      guard clean.canAdd(input) else { throw NSError(domain: "recorder-clean", code: 1) }
+      clean.add(input)
+      cleanVideo = input
+      cleanAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
+        sourcePixelBufferAttributes: adaptor.sourcePixelBufferAttributes)
+      if let audioInput {
+        let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: audioInput.outputSettings)
+        audio.expectsMediaDataInRealTime = true
+        guard clean.canAdd(audio) else { throw NSError(domain: "recorder-clean", code: 2) }
+        clean.add(audio)
+        cleanAudio = audio
+      }
+      cleanWriter = clean
+    }
+
     let excluded = windows(options.excludeWindows, in: content)
     guard Set(excluded.map(\.windowID)) == Set(options.excludeWindows) else {
       throw ExclusionMissing()
     }
     let filter = SCContentFilter(display: display, excludingWindows: excluded)
+    confirmedExcluded = Set(excluded.map(\.windowID))
     let stream = SCStream(filter: filter, configuration: config, delegate: self)
     try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
     self.stream = stream
@@ -427,12 +504,16 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       SCFrameStatus(rawValue: rawStatus) == .complete,
       let writer, let videoInput, let adaptor
     else { return }
-    let time = CMSampleBufferGetPresentationTimeStamp(sample)
+    var time = CMSampleBufferGetPresentationTimeStamp(sample)
     if state == .starting {
       guard writer.startWriting() else {
         return fail("failed", "writer: \(writer.error?.localizedDescription ?? "unknown")")
       }
       writer.startSession(atSourceTime: time)
+      if let cleanWriter {
+        guard cleanWriter.startWriting() else { return fail("failed", "clean-writer-start") }
+        cleanWriter.startSession(atSourceTime: time)
+      }
       startTime = time
       state = .recording
       startWatchdog?.cancel()
@@ -442,13 +523,30 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       if micAtStart { setMic(true) }
       if !pendingMarks.isEmpty { setMarks(pendingMarks) }
     }
-    guard let startTime, time >= startTime else { return }
+    // Kept while paused too: a mark made during a pause shows the screen as it is now.
+    cacheFrame(pixels)
+    guard let startTime, !paused else { return }
+    time = time - pausedTotal
+    guard time >= startTime else { return }
     if CMTimeGetSeconds(time - startTime) * 1000 >= Double(options.maxMs) {
       return finish("limit")
     }
     guard videoInput.isReadyForMoreMediaData else { return }
     let sourceSize = CGSize(
       width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels))
+    if let cleanVideo, let cleanAdaptor, cleanVideo.isReadyForMoreMediaData {
+      if sourceSize == frameSize {
+        guard cleanAdaptor.append(pixels, withPresentationTime: time) else { return fail("failed", "clean-frame") }
+      } else if let pool = cleanAdaptor.pixelBufferPool {
+        var cleanPixels: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &cleanPixels)
+        guard let cleanPixels else { return fail("failed", "clean-frame-pool") }
+        let cleanImage = CIImage(cvPixelBuffer: pixels).transformed(by: CGAffineTransform(
+          scaleX: frameSize.width / sourceSize.width, y: frameSize.height / sourceSize.height))
+        ciContext.render(cleanImage, to: cleanPixels)
+        guard cleanAdaptor.append(cleanPixels, withPresentationTime: time) else { return fail("failed", "clean-frame") }
+      }
+    }
     if overlay == nil && sourceSize == frameSize {
       if adaptor.append(pixels, withPresentationTime: time) { lastTime = time }
       return
@@ -471,20 +569,20 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   func stream(_ stream: SCStream, didStopWithError error: Error) {
     queue.async {
       switch self.state {
-      case .recording: self.finish("interrupted")
+      case .recording: self.finish("interrupted", error: error)
       case .starting: self.fail("failed", "stream: \(error.localizedDescription)")
       default: break
       }
     }
   }
 
-  func scheduleLimit() {
+  func scheduleLimit(remainingMs: Int? = nil) {
     let timer = DispatchSource.makeTimerSource(queue: queue)
-    timer.schedule(deadline: .now() + .milliseconds(options.maxMs))
+    timer.schedule(deadline: .now() + .milliseconds(max(0, remainingMs ?? options.maxMs)))
     timer.setEventHandler { [weak self] in self?.finish("limit") }
     timer.resume()
     limitTimer = timer
-    guard options.maxBytes > 0 else { return }
+    guard remainingMs == nil, options.maxBytes > 0 else { return }
     // Stop early, truthfully, rather than produce a clip placement must reject.
     let sizer = DispatchSource.makeTimerSource(queue: queue)
     sizer.schedule(deadline: .now() + 1, repeating: 1)
@@ -503,6 +601,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   // MARK: Marks and exclusion
 
   func setMarks(_ raw: [Any]) {
+    if raw.isEmpty && !pendingMarks.isEmpty, let startTime, state == .recording {
+      let now = (paused ? pauseStarted ?? hostNow() : hostNow()) - pausedTotal
+      clearTimes.append(max(0, Int((CMTimeGetSeconds(now - startTime) * 1000).rounded())))
+    }
     pendingMarks = raw
     guard state == .recording else { return }
     overlay = renderOverlay(parseMarks(raw, frame: frameSize), size: frameSize, pointScale: pointScale)
@@ -512,9 +614,13 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     guard let stream, let display else {
       return emit(["event": "exclude", "ok": false, "detail": "not-started"])
     }
+    // No still frame from before the change is served, nor kept from during it.
+    invalidateStills()
+    filterPending += 1
     SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) {
       content, error in
       guard let content else {
+        self.queue.async { self.filterSettled(confirmed: nil) }
         return emit(["event": "exclude", "ok": false, "detail": error?.localizedDescription ?? ""])
       }
       let found = self.windows(ids, in: content)
@@ -523,6 +629,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       // but report the request as failed so the caller can stop the clip.
       stream.updateContentFilter(SCContentFilter(display: display, excludingWindows: found)) {
         error in
+        // Unknown after a failed update: no still is served until a confirmed one.
+        self.queue.async {
+          self.filterSettled(confirmed: error == nil ? Set(found.map(\.windowID)) : [])
+        }
         emit([
           "event": "exclude", "ok": error == nil && missing.isEmpty, "missing": missing,
           "detail": !missing.isEmpty ? "exclusion-missing" : error?.localizedDescription ?? "",
@@ -612,13 +722,232 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         time = host
       }
     }
+    guard !paused else { return }
+    emitLevel(buffer)
+    if pausedTotal != .zero {
+      var timing = CMSampleTimingInfo(
+        duration: CMSampleBufferGetDuration(buffer), presentationTimeStamp: time - pausedTotal,
+        decodeTimeStamp: .invalid)
+      var shifted: CMSampleBuffer?
+      CMSampleBufferCreateCopyWithNewTiming(
+        allocator: nil, sampleBuffer: buffer, sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing, sampleBufferOut: &shifted)
+      guard let shifted else { return }
+      buffer = shifted
+      time = time - pausedTotal
+    }
     guard time >= startTime else { return }
-    if audioInput.append(buffer) { hasMicAudio = true }
+    if let cleanAudio {
+      guard cleanAudio.isReadyForMoreMediaData else { return }
+      guard cleanAudio.append(buffer) else { return fail("failed", "clean-audio") }
+      hasCleanMicAudio = true; cleanAudioBuffers += 1
+    }
+    if audioInput.append(buffer) { hasMicAudio = true; annotatedAudioBuffers += 1 }
+  }
+
+  /// RMS of 32-bit float PCM on a -50 dB…0 dB scale, at most every 66 ms.
+  func emitLevel(_ sample: CMSampleBuffer) {
+    let now = CFAbsoluteTimeGetCurrent()
+    guard now - lastLevelEmit >= 0.066, let block = CMSampleBufferGetDataBuffer(sample) else {
+      return
+    }
+    var length = 0
+    var pointer: UnsafeMutablePointer<CChar>?
+    guard CMBlockBufferGetDataPointer(
+      block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length,
+      dataPointerOut: &pointer) == kCMBlockBufferNoErr, let pointer, length >= 4
+    else { return }
+    let count = length / 4
+    var sum: Float = 0
+    pointer.withMemoryRebound(to: Float.self, capacity: count) { floats in
+      for index in 0..<count { sum += floats[index] * floats[index] }
+    }
+    let rms = (sum / Float(count)).squareRoot()
+    let db = 20 * log10(max(rms, 1e-7))
+    lastLevelEmit = now
+    emit(["event": "level", "level": Double(min(1, max(0, (db + 50) / 50)))])
+  }
+
+  // MARK: Pause
+
+  func setPaused(_ on: Bool) {
+    guard state == .recording, let startTime else {
+      return emit(["event": "paused", "paused": paused, "reason": "not-recording"])
+    }
+    if on && !paused {
+      paused = true
+      pauseStarted = hostNow()
+      limitTimer?.cancel()
+      limitTimer = nil
+    } else if !on && paused, let pauseStarted {
+      pausedTotal = pausedTotal + (hostNow() - pauseStarted)
+      self.pauseStarted = nil
+      paused = false
+      let recorded = CMTimeGetSeconds(hostNow() - pausedTotal - startTime) * 1000
+      limitTimer?.cancel()
+      scheduleLimit(remainingMs: options.maxMs - Int(recorded.rounded()))
+    }
+    emit(["event": "paused", "paused": paused])
+  }
+
+  // MARK: Still frames
+
+  func invalidateStills() {
+    filterGeneration += 1
+    lastFrame = nil
+    pendingFrame = nil
+  }
+
+  func filterSettled(confirmed: Set<CGWindowID>?) {
+    filterPending = max(0, filterPending - 1)
+    if let confirmed { confirmedExcluded = confirmed }
+    invalidateStills()
+  }
+
+  func cacheFrame(_ pixels: CVPixelBuffer) {
+    guard state == .recording, filterPending == 0 else { return }
+    // Newest wins: at most one frame waits for its copy.
+    pendingFrame = (pixels, filterGeneration, Date())
+    scheduleCopy()
+  }
+
+  func scheduleCopy() {
+    guard !copyInFlight, pendingFrame != nil else { return }
+    let wait = Double(Self.stillCopyIntervalMs) / 1000 - (CFAbsoluteTimeGetCurrent() - lastCopyStart)
+    guard wait <= 0 || !stillWaiters.isEmpty else {
+      if trailingCopy == nil {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + wait)
+        timer.setEventHandler { [weak self] in
+          self?.trailingCopy = nil
+          self?.scheduleCopy()
+        }
+        timer.resume()
+        trailingCopy = timer
+      }
+      return
+    }
+    trailingCopy?.cancel()
+    trailingCopy = nil
+    guard let next = pendingFrame else { return }
+    pendingFrame = nil
+    guard state == .recording, filterPending == 0, next.generation == filterGeneration else {
+      return
+    }
+    copyInFlight = true
+    lastCopyStart = CFAbsoluteTimeGetCurrent()
+    frameQueue.async {
+      let image = ownedImage(next.pixels)
+      self.queue.async {
+        self.copyInFlight = false
+        if let image, self.state == .recording, self.filterPending == 0,
+          next.generation == self.filterGeneration
+        {
+          self.lastFrame = StillFrame(image: image, generation: next.generation, at: next.at)
+        }
+        // A newer frame arrived during this copy: copy that one first (at once, a still
+        // is waiting) rather than answer with an older screen.
+        self.serveStills()
+        self.scheduleCopy()
+      }
+    }
+  }
+
+  func requestStill(id: String, path: String, windowIds: [CGWindowID]) {
+    let directory = (options.output as NSString).deletingLastPathComponent
+    guard !id.isEmpty, id.count <= 64, path.hasSuffix(".png"),
+      (path as NSString).deletingLastPathComponent == directory,
+      !stillWaiters.contains(where: { $0.id == id })
+    else {
+      return emit(["event": "still", "id": id, "ok": false, "code": "failed", "detail": "usage"])
+    }
+    guard state == .recording else {
+      return emit([
+        "event": "still", "id": id, "ok": false, "code": "failed", "detail": "not-recording",
+      ])
+    }
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + .milliseconds(Self.stillWaitMs))
+    timer.setEventHandler { [weak self] in self?.endStill(id, detail: "no-frame") }
+    timer.resume()
+    stillWaiters.append(
+      StillWaiter(id: id, path: path, windowIds: Set(windowIds), requestedAt: Date(), timer: timer))
+    // A newer frame is on its way: wait for it rather than serve an older one.
+    if copyInFlight || pendingFrame != nil { scheduleCopy() } else { serveStills() }
+  }
+
+  func endStill(_ id: String, detail: String) {
+    guard let index = stillWaiters.firstIndex(where: { $0.id == id }) else { return }
+    stillWaiters.remove(at: index).timer.cancel()
+    emit(["event": "still", "id": id, "ok": false, "code": "failed", "detail": detail])
+  }
+
+  /// Answers each waiter with the newest frame: the cached one when no newer frame is
+  /// queued or being copied, or once it arrived after the request. Otherwise the newer
+  /// frame is copied first (each copy starts later than the last, so this settles
+  /// within a copy or two, inside the waiter's deadline).
+  func serveStills() {
+    guard !stillWaiters.isEmpty, state == .recording, filterPending == 0, let display,
+      let frame = lastFrame, frame.generation == filterGeneration
+    else { return }
+    let newerQueued = copyInFlight || pendingFrame != nil
+    let ready = stillWaiters.filter { !newerQueued || frame.at >= $0.requestedAt }
+    guard !ready.isEmpty else { return }
+    stillWaiters.removeAll { waiter in ready.contains { $0.id == waiter.id } }
+    let pointWidth = max(1, display.width)
+    for waiter in ready {
+      waiter.timer.cancel()
+      // Every window the caller needs hidden must be hidden by the stream's own filter.
+      guard waiter.windowIds.isSubset(of: confirmedExcluded) else {
+        emit([
+          "event": "still", "id": waiter.id, "ok": false, "code": "failed",
+          "detail": "exclusion-missing",
+        ])
+        continue
+      }
+      stillQueue.async {
+        let written = writeStill(frame, to: waiter)
+        self.queue.async { self.commitStill(frame, waiter, written: written, pointWidth: pointWidth) }
+      }
+    }
+  }
+
+  /// After encoding: only a request still current (recording, same filter) is answered
+  /// with its file; otherwise the file goes and the request fails. A process ending
+  /// before this leaves the file to main, which removes every path it issued on close.
+  func commitStill(_ frame: StillFrame, _ waiter: StillWaiter, written: Bool, pointWidth: Int) {
+    let current = state == .recording && filterPending == 0
+      && frame.generation == filterGeneration && waiter.windowIds.isSubset(of: confirmedExcluded)
+    guard written, current else {
+      try? FileManager.default.removeItem(atPath: waiter.path)
+      return emit([
+        "event": "still", "id": waiter.id, "ok": false, "code": "failed",
+        "detail": written ? "expired" : "png",
+      ])
+    }
+    var result: [String: Any] = [
+      "event": "still", "id": waiter.id, "ok": true, "path": waiter.path,
+      "width": frame.image.width, "height": frame.image.height,
+      "displayScale": Double(frame.image.width) / Double(pointWidth),
+      "capturedAt": ISO8601DateFormatter().string(from: frame.at),
+      "captureApi": "sck-stream-frame/1",
+    ]
+    if let hash = differenceHash(frame.image) { result["hash"] = hash }
+    emit(result)
   }
 
   // MARK: Lifecycle
 
   func teardown() {
+    trailingCopy?.cancel()
+    trailingCopy = nil
+    pendingFrame = nil
+    lastFrame = nil
+    for waiter in stillWaiters {
+      waiter.timer.cancel()
+      emit(["event": "still", "id": waiter.id, "ok": false, "code": "failed", "detail": "ended"])
+    }
+    stillWaiters.removeAll()
     limitTimer?.cancel()
     sizeTimer?.cancel()
     startWatchdog?.cancel()
@@ -630,25 +959,36 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     stream?.stopCapture(completionHandler: nil)
   }
 
-  func finish(_ reason: String) {
+  func finish(_ reason: String, error stopError: Error? = nil) {
     guard state == .recording, let writer, let startTime else {
       if state == .starting { cancel() }
       return
     }
     state = .finishing
-    let now = hostNow()
+    let now = (paused ? pauseStarted ?? hostNow() : hostNow()) - pausedTotal
     let maxEnd = startTime + CMTime(value: CMTimeValue(options.maxMs), timescale: 1000)
     let end = max(lastTime ?? startTime, min(now, maxEnd))
     teardown()
     videoInput?.markAsFinished()
     audioInput?.markAsFinished()
     writer.endSession(atSourceTime: end)
+    cleanVideo?.markAsFinished()
+    cleanAudio?.markAsFinished()
+    cleanWriter?.endSession(atSourceTime: end)
     let hadMic = hasMicAudio
-    writer.finishWriting {
+    let finishedWriters = DispatchGroup()
+    finishedWriters.enter()
+    writer.finishWriting { finishedWriters.leave() }
+    if let cleanWriter {
+      finishedWriters.enter()
+      cleanWriter.finishWriting { finishedWriters.leave() }
+    }
+    finishedWriters.notify(queue: self.queue) {
       self.queue.async {
         self.state = .done
-        guard writer.status == .completed else {
+        guard writer.status == .completed, self.cleanWriter == nil || self.cleanWriter?.status == .completed else {
           try? FileManager.default.removeItem(at: self.outputURL)
+          if !self.options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: self.options.cleanOutput) }
           emit([
             "event": "error", "code": "failed",
             "detail": "finish: \(writer.error?.localizedDescription ?? "unknown")",
@@ -658,11 +998,23 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         let bytes =
           (try? FileManager.default.attributesOfItem(atPath: self.options.output)[.size]
             as? NSNumber)?.intValue ?? 0
-        emit([
+        var finished: [String: Any] = [
           "event": "finished", "reason": reason, "path": self.options.output, "bytes": bytes,
           "durationMs": Int((CMTimeGetSeconds(end - startTime) * 1000).rounded()),
-          "hasMicAudio": hadMic, "mimeType": "video/mp4", "captureApi": captureApi,
-        ])
+          "hasMicAudio": hadMic, "hasCleanMicAudio": self.hasCleanMicAudio,
+          "cleanAudioBuffers": self.cleanAudioBuffers, "annotatedAudioBuffers": self.annotatedAudioBuffers,
+          "mimeType": "video/mp4", "captureApi": captureApi,
+          "width": Int(self.frameSize.width), "height": Int(self.frameSize.height),
+          "clearAtMs": self.clearTimes,
+          "cleanPath": self.options.cleanOutput,
+        ]
+        // The system's own reason for stopping the stream, as reported.
+        if let stopError = stopError as NSError? {
+          finished["errorDomain"] = stopError.domain
+          finished["errorCode"] = stopError.code
+          finished["errorDetail"] = String(stopError.localizedDescription.prefix(200))
+        }
+        emit(finished)
         exit(0)
       }
     }
@@ -673,6 +1025,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     state = .done
     teardown()
     writer?.cancelWriting()
+    cleanWriter?.cancelWriting()
+    if !options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: options.cleanOutput) }
     try? FileManager.default.removeItem(at: outputURL)
     emit(["event": "cancelled"])
     exit(0)
@@ -683,7 +1037,15 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     case "stop": state == .starting ? cancel() : finish("stopped")
     case "cancel": cancel()
     case "mic": setMic(command["on"] as? Bool == true)
+    case "pause": setPaused(true)
+    case "resume": setPaused(false)
     case "marks": setMarks((command["marks"] as? [Any]) ?? [])
+    case "still":
+      requestStill(
+        id: command["id"] as? String ?? "", path: command["path"] as? String ?? "",
+        windowIds: ((command["windowIds"] as? [Any]) ?? []).prefix(64).compactMap {
+          ($0 as? NSNumber).map { CGWindowID($0.uint32Value) }
+        })
     case "exclude":
       setExcluded(((command["windowIds"] as? [Any]) ?? []).prefix(64).compactMap {
         ($0 as? NSNumber).map { CGWindowID($0.uint32Value) }
@@ -713,6 +1075,47 @@ func differenceHash(_ image: CGImage) -> String? {
     }
   }
   return bits.map { String(format: "%02x", $0) }.joined()
+}
+
+/// A copy of a BGRA frame in memory this process owns (the stream's buffer goes back).
+func ownedImage(_ pixels: CVPixelBuffer) -> CGImage? {
+  guard CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA,
+    CVPixelBufferLockBaseAddress(pixels, .readOnly) == kCVReturnSuccess
+  else { return nil }
+  defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+  let width = CVPixelBufferGetWidth(pixels)
+  let height = CVPixelBufferGetHeight(pixels)
+  let sourceRowBytes = CVPixelBufferGetBytesPerRow(pixels)
+  guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddress(pixels) else { return nil }
+  let rowBytes = width * 4
+  let bytes = NSMutableData(length: rowBytes * height)!
+  let target = bytes.mutableBytes
+  for row in 0..<height {
+    memcpy(target + row * rowBytes, base + row * sourceRowBytes, rowBytes)
+  }
+  guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
+  return CGImage(
+    width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: rowBytes,
+    space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGBitmapInfo(
+      rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
+        | CGBitmapInfo.byteOrder32Little.rawValue),
+    provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+}
+
+/// Encodes one still as PNG at its request's path (off the writer queue); true if written.
+@available(macOS 12.3, *)
+func writeStill(_ frame: Recorder.StillFrame, to waiter: Recorder.StillWaiter) -> Bool {
+  guard
+    let destination = CGImageDestinationCreateWithURL(
+      URL(fileURLWithPath: waiter.path) as CFURL, "public.png" as CFString, 1, nil)
+  else { return false }
+  CGImageDestinationAddImage(destination, frame.image, nil)
+  guard CGImageDestinationFinalize(destination) else {
+    try? FileManager.default.removeItem(atPath: waiter.path)
+    return false
+  }
+  return true
 }
 
 func stillFailure(_ code: String, _ detail: String) -> Never {
@@ -779,6 +1182,7 @@ func parseOptions(_ args: ArraySlice<String>, needsOutput: Bool = true) -> Optio
   while let flag = it.next() {
     switch flag {
     case "--output": o.output = it.next() ?? ""
+    case "--clean-output": o.cleanOutput = it.next() ?? ""
     case "--display": o.displayId = CGDirectDisplayID(it.next() ?? "") ?? 0
     case "--max-ms": o.maxMs = min(120_000, max(1000, Int(it.next() ?? "") ?? 120_000))
     case "--fps": o.fps = min(30, max(1, Int(it.next() ?? "") ?? 30))

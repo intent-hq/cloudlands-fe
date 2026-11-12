@@ -1,11 +1,29 @@
+import { eventChannel } from 'redux-saga';
+import {
+  createLiveDraftSyncConnection,
+  type DraftSyncConnection,
+} from '$lib/components/chat/chat-draft-sync';
+import type { SharedDraft } from '$shared/types/chat-draft-sync';
+import { store } from '$store/renderer/store';
+import { getPrincipalActionContext } from '../../principal/principal-context';
 import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import type { DraftsClient } from '$lib/client/app-client';
 import { setCachedDraft } from '$lib/components/chat/chat-draft-cache';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
+  chatDraftSharedChanged,
   chatDraftClearRequested,
   chatDraftClearStarted,
   chatDraftOwnerReleased,
@@ -13,6 +31,7 @@ import {
   chatDraftRestoreSettled,
   chatDraftSaveCancelled,
   chatDraftSaveFlushRequested,
+  chatDraftSavePairFlushRequested,
   chatDraftSaveScheduled,
   chatDraftSaveSettled,
   chatDraftSaveStarted,
@@ -47,7 +66,12 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
  */
 export function* chatDraftsSaga(
   drafts: ChatDraftsTransport = appClient.drafts,
+  sync: DraftSyncConnection | null = drafts === appClient.drafts
+    ? createLiveDraftSyncConnection()
+    : null,
 ): SagaGenerator<void> {
+  const publications = new Map<string, Promise<SharedDraft>>();
+  const clears = new WeakMap<ClearAction, Promise<void>>();
   const pending: Record<string, { requestId: string; request: ChatDraftSaveRequest; timer: Task }> =
     {};
   const pairs: Record<string, { epoch: number; committed: Record<string, CommittedSave> }> = {};
@@ -61,10 +85,11 @@ export function* chatDraftsSaga(
     const { requestId, request } = entry;
     // Refresh the switch-back cache synchronously: a flush-at-unmount must be
     // visible to an immediate remount of the same pair.
-    setCachedDraft(request.workspaceId, request.agentId, {
-      text: request.text,
-      attachments: request.attachments,
-    });
+    if (!sync)
+      setCachedDraft(request.workspaceId, request.agentId, {
+        text: request.text,
+        attachments: request.attachments,
+      });
     const pair = pairState(pairKey(request.workspaceId, request.agentId));
     pair.committed[requestId] = { epoch: pair.epoch, rollback: request.rollback };
     yield* put(chatDraftSaveStarted(ownerId, requestId, request));
@@ -75,11 +100,28 @@ export function* chatDraftsSaga(
     if (!entry) return;
     delete pending[ownerId];
     yield* cancel(entry.timer);
+    publications.delete(entry.requestId);
   }
 
   function* schedule(action: ReturnType<typeof chatDraftSaveScheduled>): SagaGenerator<void> {
-    const [ownerId, requestId, request] = action.payload;
+    const [ownerId, requestId, submitted] = action.payload;
+    const authority = sync
+      ? sync.authority()
+      : submitted.authority
+        ? getPrincipalActionContext(store.state)
+        : undefined;
+    if ((sync && !authority) || (submitted.authority && submitted.authority !== authority)) {
+      yield* put(chatDraftSaveSettled(ownerId, requestId, 'failed', 'draft-authority-changed'));
+      return;
+    }
+    const request = { ...submitted, authority: submitted.authority ?? authority ?? undefined };
     yield* dropPending(ownerId);
+    if (sync) {
+      const publication = sync.edit(ownerId, request.workspaceId, request.agentId, request);
+      publications.set(requestId, publication);
+      // The timer/flush consumes the error and reports it through the existing save outcome.
+      void publication.catch(() => {});
+    }
     const timer = yield* fork(function* debounceSave() {
       yield* delay(CHAT_DRAFT_SAVE_DEBOUNCE_MS);
       yield* call(commitPending, ownerId);
@@ -95,12 +137,32 @@ export function* chatDraftsSaga(
     yield* call(commitPending, ownerId);
   }
 
+  function* flushPair({
+    payload: [workspaceId, agentId],
+  }: ReturnType<typeof chatDraftSavePairFlushRequested>): SagaGenerator<void> {
+    // Preserve insertion order: an older debounced owner cannot overwrite the
+    // explicit save that was scheduled after it. All writes still use one FIFO.
+    for (const [ownerId, entry] of Object.entries(pending)) {
+      if (entry.request.workspaceId !== workspaceId || entry.request.agentId !== agentId) continue;
+      yield* cancel(entry.timer);
+      yield* call(commitPending, ownerId);
+    }
+  }
+
   function* cancelPending(action: ReturnType<typeof chatDraftSaveCancelled>): SagaGenerator<void> {
     yield* dropPending(action.payload[0]);
   }
 
   function* invalidatePair(action: ClearRequestAction): SagaGenerator<void> {
     const [workspaceId, agentId] = action.payload;
+    const started = chatDraftClearStarted(workspaceId, agentId);
+    if (sync) {
+      // Capture scope and predecessor at the clear request, before the local
+      // persistence FIFO can wait behind an older save. Never rebase at dequeue.
+      const clear = sync.clear(workspaceId, agentId);
+      clears.set(started, clear);
+      void clear.catch(() => {});
+    }
     const key = pairKey(workspaceId, agentId);
     for (const [ownerId, entry] of Object.entries(pending)) {
       if (pairKey(entry.request.workspaceId, entry.request.agentId) === key) {
@@ -115,13 +177,17 @@ export function* chatDraftsSaga(
       }
     }
     setCachedDraft(workspaceId, agentId, { text: '', attachments: [] });
-    yield* put(chatDraftClearStarted(workspaceId, agentId));
+    yield* put(started);
   }
 
   function* restore(action: ReturnType<typeof chatDraftRestoreRequested>): SagaGenerator<void> {
     const [ownerId, requestId, workspaceId, agentId] = action.payload;
     try {
-      const draft = yield* call([drafts, drafts.get], workspaceId, agentId);
+      const shared = sync ? yield* call([sync, sync.read], workspaceId, agentId) : null;
+      const draft = shared
+        ? shared.snapshot
+        : yield* call([drafts, drafts.get], workspaceId, agentId);
+      if (shared) yield* put(chatDraftSharedChanged(shared));
       const snapshot = draft ? { text: draft.text, attachments: draft.attachments ?? [] } : null;
       yield* put(chatDraftRestoreSettled(ownerId, requestId, 'restored', snapshot));
     } catch (error) {
@@ -133,9 +199,15 @@ export function* chatDraftsSaga(
     if (isClear(action)) {
       const [workspaceId, agentId] = action.payload;
       try {
-        yield* call([drafts, drafts.clear], workspaceId, agentId);
+        if (sync) {
+          const clear = clears.get(action);
+          if (!clear) throw new Error('draft-clear-request-missing');
+          yield* call(() => clear);
+        } else yield* call([drafts, drafts.clear], workspaceId, agentId);
       } catch (error) {
         logger.warn('Failed to clear draft', { error: errorMessage(error) });
+      } finally {
+        clears.delete(action);
       }
       return;
     }
@@ -145,13 +217,26 @@ export function* chatDraftsSaga(
     const pair = pairState(key);
     const save = pair.committed[requestId] ?? { epoch: pair.epoch, rollback: request.rollback };
     try {
-      yield* call(
-        [drafts, drafts.set],
-        workspaceId,
-        agentId,
-        text,
-        attachments.length > 0 ? attachments : undefined,
-      );
+      if (
+        request.authority &&
+        request.authority !== (sync ? sync.authority() : getPrincipalActionContext(store.state))
+      )
+        throw new Error('draft-authority-changed');
+      if (sync) {
+        const publication = publications.get(requestId);
+        if (!publication) throw new Error('draft-save-publication-missing');
+        yield* call(() => publication);
+        if (request.authority !== sync.authority()) throw new Error('draft-authority-changed');
+        yield* call([sync, sync.flush], workspaceId, agentId);
+      } else {
+        yield* call(
+          [drafts, drafts.set],
+          workspaceId,
+          agentId,
+          text,
+          attachments.length > 0 ? attachments : undefined,
+        );
+      }
       delete pair.committed[requestId];
       // A clear splits the pair's rollback history. A successful pre-clear
       // write must not become the rollback baseline for a post-clear draft.
@@ -159,23 +244,40 @@ export function* chatDraftsSaga(
         if (later.epoch === save.epoch) later.rollback = { text, attachments };
       }
       // Re-assert on success unless a clear superseded this save.
-      if (pair.epoch === save.epoch) setCachedDraft(workspaceId, agentId, { text, attachments });
+      if (!sync && pair.epoch === save.epoch)
+        setCachedDraft(workspaceId, agentId, { text, attachments });
       yield* put(chatDraftSaveSettled(ownerId, requestId, 'saved'));
     } catch (error) {
       delete pair.committed[requestId];
       // Roll the optimistic cache write back to what the daemon holds.
-      if (pair.epoch === save.epoch && save.rollback) {
+      if (!sync && pair.epoch === save.epoch && save.rollback) {
         setCachedDraft(workspaceId, agentId, save.rollback);
       }
       yield* put(chatDraftSaveSettled(ownerId, requestId, 'failed', errorMessage(error)));
     } finally {
+      publications.delete(requestId);
       if (Object.keys(pair.committed).length === 0) delete pairs[key];
     }
   }
 
+  if (sync)
+    yield* fork(function* sharedChanges(): SagaGenerator<void> {
+      const channel = eventChannel<SharedDraft>((emit) => sync.subscribe(emit));
+      try {
+        while (true) {
+          const draft = yield* take(channel);
+          setCachedDraft(draft.workspaceId, draft.agentId, draft.snapshot);
+          yield* put(chatDraftSharedChanged(draft));
+        }
+      } finally {
+        channel.close();
+        sync.dispose();
+      }
+    });
   yield* takeEvery(chatDraftRestoreRequested, restore);
   yield* takeEvery(chatDraftSaveScheduled, schedule);
   yield* takeEvery([chatDraftSaveFlushRequested, chatDraftOwnerReleased], flush);
+  yield* takeEvery(chatDraftSavePairFlushRequested, flushPair);
   yield* takeEvery(chatDraftSaveCancelled, cancelPending);
   yield* takeEvery(chatDraftClearRequested, invalidatePair);
   yield* takeEveryByContextFIFO(

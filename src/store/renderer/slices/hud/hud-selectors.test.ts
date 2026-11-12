@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceDisplayStatus, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { latestDockHumanMessage } from '$features/hud/utils/dock-recency';
 import type { StoreState } from '../../types';
 import {
   initialState as workspaceInitialState,
@@ -9,6 +11,7 @@ import {
 } from '../workspace/workspace-slice';
 import {
   hudActivated,
+  dockConversationsLoaded,
   hudAttentionChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
@@ -18,6 +21,7 @@ import {
   type HudFeedEntry,
 } from './hud-slice';
 import {
+  selectDockWorkspaces,
   selectHudAgentStateCounts,
   selectHudAttentionItems,
   selectHudAttnCount,
@@ -4042,5 +4046,72 @@ describe('selectHudSystem remote hostname', () => {
     const view = selectHudSystem.select(state);
     expect(view.online).toBe(false);
     expect(view.remoteHostname).toBe('intent1');
+  });
+});
+
+describe('dock overview conversation age', () => {
+  const now = Date.parse('2026-11-10T12:00:00Z');
+  const day = 24 * 60 * 60 * 1000;
+  function conversations(workspaces: Workspace[], latest: Record<string, number>): StoreState {
+    const state = mockState(workspaces);
+    return { ...state, hud: hudReducer(state.hud, dockConversationsLoaded(latest, now)) };
+  }
+  const ids = (state: StoreState, age?: 'recent' | 'older') =>
+    selectDockWorkspaces.select(state, age).map(({ workspace }) => String(workspace.id));
+
+  it('keeps the recent default and partitions the exact 24-hour boundary without overlap', () => {
+    const state = conversations(
+      ['old', 'boundary', 'just-recent', 'now'].map((id) => makeWorkspace(id)),
+      { old: now - day - 1, boundary: now - day, 'just-recent': now - day + 1, now },
+    );
+    expect(ids(state)).toEqual(['now', 'just-recent']);
+    expect(ids(state, 'recent')).toEqual(ids(state));
+    expect(ids(state, 'older')).toEqual(['boundary', 'old']);
+  });
+
+  it('reveals only confirmed older human conversations in date order, never activity or invalid entries', () => {
+    const row = (id: string, time: number, automated = false) => ({
+      id,
+      createdAt: new Date(time).toISOString(),
+      preview: automated ? '[WORKSPACE EVENTS] automated wake' : 'A human conversation',
+      ...(automated ? { metadata: { type: 'event_notification' } } : {}),
+    });
+    const messages = {
+      'human-b': [row('b', now - 2 * day)],
+      'human-a': [row('a', now - 2 * day)],
+      older: [row('old', now - 3 * day)],
+      automated: [row('auto', now - 2 * day, true)],
+      future: [row('future', now + 1)],
+    };
+    const latest = Object.fromEntries(
+      Object.entries(messages).flatMap(([id, rows]) => {
+        const value = latestDockHumanMessage(rows);
+        return value === null ? [] : [[id, value]];
+      }),
+    );
+    const workspaces = [
+      ...Object.keys(messages).map((id) =>
+        makeWorkspace(id, { updatedAt: new Date(now).toISOString() }),
+      ),
+      makeWorkspace('unknown', { activity: 'agent_running', displayStatus: 'in_progress' }),
+      makeWorkspace('archived', { status: WorkspaceStatus.Archived }),
+      makeWorkspace('retired', { status: WorkspaceStatus.Retired }),
+      makeWorkspace('deleted', { status: WorkspaceStatus.Deleted }),
+      makeWorkspace(String(CHIEF_WORKSPACE_ID)),
+      ...['zero', 'negative', 'nan', 'infinity'].map((id) => makeWorkspace(id)),
+    ];
+    const state = conversations(workspaces, {
+      ...latest,
+      archived: now - day,
+      retired: now - day,
+      deleted: now - day,
+      [CHIEF_WORKSPACE_ID]: now - day,
+      zero: 0,
+      negative: -1,
+      nan: NaN,
+      infinity: -Infinity,
+    });
+    expect(ids(state)).toEqual([]);
+    expect(ids(state, 'older')).toEqual(['human-a', 'human-b', 'older']);
   });
 });

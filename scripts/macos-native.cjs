@@ -72,10 +72,14 @@ function binaryMatchesArchitecture(file, arch) {
   }
 }
 
-// Dock composer helpers (screen recorder, streaming dictation, element picker),
+// Dock composer helpers (capture selector, media export/transcription, recording,
+// streaming dictation and element picking),
 // relative to Resources in both the staging tree and the packaged app. They are
 // required in every Mac package and signed individually by sign-sidecar.js.
 const DOCK_COMPOSER_HELPERS = Object.freeze([
+  'dock-helper/intent-dock-capture-selector',
+  'dock-helper/intent-dock-media-export',
+  'dock-helper/intent-dock-media-transcribe',
   'dock-helper/intent-dock-recorder',
   'speech-helper/intent-dock-speech',
   'dock-helper/intent-dock-element-pick',

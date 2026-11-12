@@ -6,6 +6,7 @@
     type PendingQueueDisplayRow,
   } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
   import { queuePresentationMessages, queuePresentationLabel } from './queued-message-presentation';
+  import { queuedCaptureDisplay, queuedCaptureGroup } from './queued-capture-presentation';
   import { USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     findQueuedMessageForEdit,
@@ -125,7 +126,10 @@
     isHostOwner = false,
   }: Props = $props();
 
-  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  // The Dock has no workspace-route context; its queue already supplies the
+  // authoritative workspace used by the existing attachment resolver/viewer.
+  const workspaceId = $derived(queueWorkspaceId ?? routeWorkspaceId);
 
   const rows = $derived(displayRows ?? projectPendingSubmissions(undefined, messages).queue);
   const displayMessages = $derived(queuePresentationMessages(rows));
@@ -614,8 +618,15 @@
   let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
   let referenceImageUrls = $state<Record<string, string | null>>({});
+  let referenceImageFailures = $state<Record<string, true>>({});
+  let imageWorkspaceId: string | undefined;
   const referenceImageObservers = new Map<string, ReturnType<typeof observeAttachmentImageUrl>>();
   $effect(() => {
+    if (imageWorkspaceId !== workspaceId) {
+      referenceImageUrls = {};
+      referenceImageFailures = {};
+      imageWorkspaceId = workspaceId;
+    }
     if (!workspaceId) return;
     for (const message of displayMessages) {
       for (const block of [
@@ -633,6 +644,8 @@
           attachmentId,
           observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
             referenceImageUrls[attachmentId] = url;
+            if (url) delete referenceImageFailures[attachmentId];
+            else referenceImageFailures[attachmentId] = true;
           }),
         );
       }
@@ -658,7 +671,8 @@
     src: string,
   ) {
     const attachmentId = block.attachmentId;
-    if (!attachmentId) return;
+    if (!attachmentId || referenceImageUrls[attachmentId] !== src) return;
+    referenceImageFailures[attachmentId] = true;
     console.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
     referenceImageObservers.get(attachmentId)?.imageFailed();
   }
@@ -1181,6 +1195,7 @@
                           {queuedImageSrc}
                           {openImageLightbox}
                           {handleReferenceImageError}
+                          imageFailures={referenceImageFailures}
                           {openQueuedFileAttachment}
                         />
                       </div>
@@ -1223,7 +1238,11 @@
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
                         {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
-                          {@const groupText = presentedQueuedText(message, group.content)}
+                          {@const captureDisplay = queuedCaptureDisplay({
+                            ...queuedCaptureGroup(message, group),
+                            content: presentedQueuedText(message, group.content),
+                          })}
+                          {@const groupText = captureDisplay.text}
                           <div
                             class={message.deliveryGroups?.length
                               ? 'mb-2 border-b border-border pb-2 last:mb-0 last:border-b-0 last:pb-0'
@@ -1234,9 +1253,12 @@
                           >
                             <QueuedMessageAttachments
                               message={group}
+                              captures={captureDisplay.captures}
+                              {workspaceId}
                               {queuedImageSrc}
                               {openImageLightbox}
                               {handleReferenceImageError}
+                              imageFailures={referenceImageFailures}
                               {openQueuedFileAttachment}
                             />
                             {#if groupText.trim()}

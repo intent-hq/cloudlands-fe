@@ -10,14 +10,24 @@
     type DockConversationComposerSubmission,
   } from './DockConversationComposer.svelte';
   import type { DockComposerMediaBinding } from './dock-composer-media-presentation';
-  import { labels } from './dock-composer-media.preview.svelte';
+  import { fixtureImage, labels } from './dock-composer-media.preview.svelte';
   import {
     setupConversationWire,
     conversationWireWorkspace,
     type ConversationWireCall,
   } from './dock-conversation-wire.preview-fixtures';
 
-  let { width = 520, dictating = false }: { width?: number; dictating?: boolean } = $props();
+  let {
+    width = 520,
+    dictating = false,
+    recording = false,
+    footerLabels,
+  }: {
+    width?: number;
+    dictating?: boolean;
+    recording?: boolean;
+    footerLabels?: { model: string; profile: string };
+  } = $props();
 
   const composer$ = selectDockConversationComposer();
   const references: EditorScreenReference[] = [
@@ -131,20 +141,30 @@
     labels,
     state: {
       captureRevision: 0,
-      captureDisabled: true,
+      captureDisabled: !footerLabels,
       annotationActive: false,
       annotationDisabled: true,
       tool: 'pick',
       toolUsed: false,
-      recording: false,
-      recordingDisabled: true,
-      recordingTime: '0:00',
+      recording,
+      recordingDisabled: !footerLabels,
+      recordingTime: '1:23',
       dictating,
-      dictationDisabled: true,
+      dictationDisabled: !footerLabels,
       dictationTime: '0:09',
       inputLevels: dictating ? [0.2, 0.6, 0.3, 0.9, 0.4, 0.8, 0.1, 0.5] : [],
     },
-    attachments: [],
+    attachments: footerLabels
+      ? [
+          {
+            kind: 'image',
+            owner: 'evidence',
+            id: 'footer-image',
+            url: fixtureImage(false),
+            markCount: 0,
+          },
+        ]
+      : [],
     beforeSubmit,
     onCapture: noop,
     onRecordToggle: noop,
@@ -158,7 +178,11 @@
   });
 
   onMount(() => {
-    const fixture = setupConversationWire((call) => (calls = [...calls, call]));
+    const fixture = setupConversationWire((call) => (calls = [...calls, call]), {
+      providerChoice: !!footerLabels,
+      modelLabel: footerLabels?.model,
+      profileName: footerLabels?.profile,
+    });
     store.dispatch(openDockConversationRequested(conversationWireWorkspace));
     ready = true;
     return () => {

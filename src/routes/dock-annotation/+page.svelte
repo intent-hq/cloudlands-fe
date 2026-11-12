@@ -4,10 +4,15 @@
   import DockAnnotationOverlay from '$features/hud/components/DockAnnotationOverlay.svelte';
   import {
     connectDockAnnotationOverlay,
+    connectDockAnnotationSignal,
     type DockAnnotationOverlayView,
   } from '$features/hud/components/dock-annotation-overlay-bridge';
+  import type { DockAnnotationSignal } from '$shared/dock-annotation';
 
   let view = $state.raw<DockAnnotationOverlayView>({ overlay: null, stillUrl: null });
+  let signal = $state.raw<DockAnnotationSignal | null>(null);
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- isolated overlay window with no app store; the bridge owns its IPC
+  const stopSignal = connectDockAnnotationSignal((value) => (signal = value));
 
   // eslint-disable-next-line intent/no-component-async-data-fetch -- isolated overlay window with no app store; the bridge owns its IPC
   const bridge = connectDockAnnotationOverlay(
@@ -26,7 +31,10 @@
       });
     },
   );
-  onDestroy(() => bridge.dispose());
+  onDestroy(() => {
+    bridge.dispose();
+    stopSignal();
+  });
 </script>
 
 <Screen class="h-full w-full bg-transparent">
@@ -34,5 +42,6 @@
     overlay={view.overlay}
     stillUrl={view.stillUrl}
     transport={bridge.transport}
+    {signal}
   />
 </Screen>

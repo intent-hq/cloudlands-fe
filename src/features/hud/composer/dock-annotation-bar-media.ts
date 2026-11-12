@@ -10,19 +10,26 @@ import type {
   DockComposerMediaState,
 } from '$features/hud/components/dock-composer-media-presentation';
 
-/** m:ss with the canonical locale-aware number formatter (the composer's timer). */
+/**
+ * m:ss (h:mm:ss from one hour) with the canonical locale-aware number formatter
+ * (the composer's timer).
+ */
 export function formatDockElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = formatNumber(Math.floor(seconds / 60), { useGrouping: false });
-  const rest = formatNumber(seconds % 60, { minimumIntegerDigits: 2, useGrouping: false });
-  return `${minutes}:${rest}`;
+  const two = (value: number) =>
+    formatNumber(value, { minimumIntegerDigits: 2, useGrouping: false });
+  const rest = two(seconds % 60);
+  if (seconds < 3600)
+    return `${formatNumber(Math.floor(seconds / 60), { useGrouping: false })}:${rest}`;
+  const hours = formatNumber(Math.floor(seconds / 3600), { useGrouping: false });
+  return `${hours}:${two(Math.floor(seconds / 60) % 60)}:${rest}`;
 }
 
 export function dockAnnotationBarMedia(
   state: DockComposerMediaState,
   labels: Pick<DockComposerMediaLabels, 'capture' | 'captureLimit' | 'record' | 'stopRecording'>,
-  /** Epoch ms the live recording started, if one is live. */
-  recordingStartedAt: number | null,
+  /** The live recording's start and pauses, if one is live. */
+  recording: { startedAt: number; pausedAt?: number | null; pausedMs?: number } | null,
   disabled = false,
 ): DockAnnotationMediaState {
   const alerts = state.alerts ?? {};
@@ -49,7 +56,9 @@ export function dockAnnotationBarMedia(
       pending: !!state.recordingPending,
       alert: !!alerts.record,
       recording: state.recording,
-      startedAt: state.recording ? recordingStartedAt : null,
+      startedAt: state.recording ? (recording?.startedAt ?? null) : null,
+      pausedAt: state.recording ? (recording?.pausedAt ?? null) : null,
+      pausedMs: state.recording ? (recording?.pausedMs ?? 0) : 0,
     },
   };
 }

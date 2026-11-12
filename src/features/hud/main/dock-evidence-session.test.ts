@@ -2,14 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, Display } from 'electron';
 
 vi.mock('electron', () => ({ desktopCapturer: {}, screen: {}, systemPreferences: {} }));
-vi.mock('./dock-screen-recorder', () => ({
+vi.mock('./dock-screen-recorder', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./dock-screen-recorder')>()),
   createDockScreenRecorder: () => ({}),
-  cgWindowIdFromMediaSourceId: vi.fn(),
 }));
 vi.mock('../../../main/dock-window', () => ({
   getDockPlacementSnapshot: vi.fn(),
   getDockWindow: vi.fn(),
   setDockHiddenForCapture: vi.fn(),
+  hideDockForOwnScreenshot: vi.fn(() => false),
 }));
 vi.mock('../../../main/window-backend', () => ({
   getStrictBackendBindingForWebContents: vi.fn(),
@@ -40,6 +41,7 @@ function fixture() {
     webContents: sender,
     isDestroyed: () => false,
     isVisible: () => visible,
+    getMediaSourceId: () => 'window:42:0',
   } as BrowserWindow;
   const binding = { window, backendId: 'remote-machine', frame, stamp: {} };
   let currentBinding: typeof binding | null = binding;
@@ -236,12 +238,21 @@ describe('dock evidence capture ownership', () => {
     f.settle.resolve();
     const result = await pending;
     expect(f.capture).toHaveBeenCalledExactlyOnceWith(f.display);
+    const capture = {
+      mode: 'fullscreen',
+      frame: {
+        displayId: 7,
+        rect: { x: -1440, y: -200, w: 1440, h: 900 },
+        coordinateSpace: 'screen-points-top-left',
+      },
+    };
     expect(result).toEqual({
       ok: true,
       value: {
         ...f.scope,
         requestId: 'capture',
         image: {
+          capture,
           id: 'image',
           contextItemId: 'dock-evidence:image',
           width: 2880,
@@ -251,6 +262,7 @@ describe('dock evidence capture ownership', () => {
           source: 'capture',
         },
         pixels: {
+          capture,
           base64: f.pixels.png.toString('base64'),
           mimeType: 'image/png',
           width: 2880,
@@ -386,7 +398,12 @@ describe('dock evidence window and region capture', () => {
       requestId: 'window',
       mode: 'window',
     });
-    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('window');
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith(
+      'window',
+      [42],
+      expect.any(AbortSignal),
+    );
+    expect(vi.mocked(f.deps.captureSelection).mock.calls[0][2]?.aborted).toBe(false);
     expect(visibleDuringSelection).toBe(false);
     expect(f.window.isVisible()).toBe(true);
     // A selection never uses the capture hide, which unmounts the dock's draft and chips.
@@ -422,7 +439,7 @@ describe('dock evidence window and region capture', () => {
     expect(f.window.isVisible()).toBe(true);
   });
 
-  it('a recording exclusion does not block a selection (the system picker takes the screen)', async () => {
+  it('passes the dock window ID to the injected selector independently of fullscreen exclusion IDs', async () => {
     const f = fixture();
     f.settle.resolve();
     f.manager.setCaptureExclusionIds(() => [99]);
@@ -435,7 +452,12 @@ describe('dock evidence window and region capture', () => {
       requestId: 'region',
       mode: 'region',
     });
-    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('region');
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith(
+      'region',
+      [42],
+      expect.any(AbortSignal),
+    );
+    expect(vi.mocked(f.deps.captureSelection).mock.calls[0][2]?.aborted).toBe(false);
     expect(result).toMatchObject({ ok: true, value: { image: { width: 400, height: 300 } } });
     expect(f.window.isVisible()).toBe(true);
   });

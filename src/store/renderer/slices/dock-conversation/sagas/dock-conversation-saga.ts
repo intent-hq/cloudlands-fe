@@ -1,3 +1,14 @@
+import { selectDockDraftSynchronization } from '../dock-conversation-selectors';
+import type { SharedDraftSnapshot } from '$shared/types/chat-draft-sync';
+import {
+  evidenceMessageItems,
+  prepareEvidenceMessage,
+} from '$features/hud/composer/prepare-evidence-message';
+import { DockSendError, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
+import { createLogger } from '$lib/utils/client-logger';
+import { dockMediaEditSaga } from './dock-media-edit-saga';
+import { dockContextLinksSaga } from './dock-context-links-saga';
+import { dockShortcutSaga } from './dock-shortcut-saga';
 import { readDockLastTool } from '../dock-composer-last-tool';
 import {
   extractAttachmentBlocks,
@@ -10,29 +21,20 @@ import {
 } from '$lib/components/chat/chat-draft-attachments';
 import {
   DOCK_EVIDENCE_LIMITS,
-  buildDockEvidenceContext,
-  buildDockEvidenceMetadata,
-  dockCompositeSignature,
   dockEvidenceFingerprint,
   dockEvidenceId,
   dockEvidenceImageItemIds,
   dockClipItemIds,
   fromDockDraftEvidence,
   hasDockEvidence,
-  numberDockMarks,
   toDockDraftEvidence,
   validDockWireTokens,
   type DockComposerEvidence,
   type DockImagePlacementRecord,
 } from '$shared/dock-evidence';
-import { burnDockEvidenceImage } from '$features/hud/composer/dock-evidence-render';
 import { formatInteger } from '$lib/i18n/format';
-import {
-  captureDockPlacementBinding,
-  placeDockEvidenceImages,
-  probeDockAttachmentCapabilities,
-} from '$features/hud/composer/dock-evidence-placement';
-import { dockEvidenceSaga, evidenceOf } from './dock-evidence-saga';
+import { captureDockPlacementBinding } from '$features/hud/composer/dock-evidence-placement';
+import { dockEvidenceSaga, evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
 import { dockNativeSessionSaga } from './dock-native-session-saga';
 import { hasBlockingAttachments } from '$lib/components/chat/input/context-api';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
@@ -108,6 +110,7 @@ import {
   dockConversationDraftChanged,
   dockConversationContextItemsChanged,
   dockConversationDraftRestored,
+  dockConversationDraftShared,
   dockConversationDraftAdmitted,
   dockConversationDraftRecovered,
   dockConversationDeliveryTracked,
@@ -116,17 +119,12 @@ import {
   dockConversationSendState,
   dockEvidenceAnnotationEndRequested,
   dockEvidenceCleared,
-  dockEvidenceClipChanged,
-  dockEvidenceImageCaptured,
-  dockEvidenceImageRemoved,
-  dockEvidenceMarkAdded,
-  dockEvidenceMarkRemoved,
-  dockEvidenceMarkUndone,
-  dockEvidenceReferencesEdited,
   dockEvidenceRestored,
-  dockEvidenceInsertionCommitted,
+  dockEvidenceShared,
   dockEvidencePlacementRecorded,
 } from '../dock-conversation-slice';
+
+const sendLogger = createLogger('DockSend');
 
 function current(generation: number, authority: string): boolean {
   return (
@@ -142,34 +140,56 @@ function draftAttachments(
 ) {
   return serializeDraftAttachments(items, toDockDraftEvidence(evidenceOf(workspaceId, agentId)));
 }
+function* applySharedDraft(
+  workspaceId: string,
+  agentId: string,
+  snapshot: SharedDraftSnapshot,
+  revision: number,
+): SagaGenerator<void> {
+  const items = deserializeDraftAttachments(snapshot.attachments);
+  yield* put(setComposerContextItems(workspaceId, agentId, items));
+  const present = new Set(items.map((item) => item.id));
+  yield* put(
+    dockEvidenceShared(
+      workspaceId,
+      agentId,
+      fromDockDraftEvidence(
+        dockEvidenceId(workspaceId, agentId),
+        readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
+        items.map((item) => ({
+          contextItemId: item.id,
+          attachmentId: item.attachmentId,
+          path: item.path,
+        })),
+      ),
+    ),
+  );
+  yield* put(
+    dockConversationDraftShared(workspaceId, agentId, snapshot.text, items.length > 0, revision),
+  );
+}
 function* saveDrafts(
   ownerId: string,
   workspaceId: string,
   agentId: string,
   authority: string,
 ): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take([
-      dockConversationDraftChanged,
-      dockConversationDraftRecovered,
-      dockEvidenceImageCaptured,
-      dockEvidenceImageRemoved,
-      dockEvidenceMarkAdded,
-      dockEvidenceMarkRemoved,
-      dockEvidenceMarkUndone,
-      dockEvidenceReferencesEdited,
-      dockEvidenceClipChanged,
-      dockEvidenceCleared,
-      dockEvidenceRestored,
-      dockEvidenceInsertionCommitted,
-    ]);
-    if (action.payload[0] !== workspaceId || action.payload[1] !== agentId) continue;
-    if (getPrincipalActionContext(appStore.state) !== authority) continue;
+  let baseline = JSON.stringify({
+    text:
+      getItem(appStore.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))?.text ??
+      '',
+    attachments: draftAttachments(workspaceId, agentId),
+  });
+  let observed = selectDockDraftSynchronization.select(appStore.state, workspaceId, agentId);
+  let evidenceSnapshot = JSON.stringify(toDockDraftEvidence(observed.evidence));
+  let applyingShared = false;
+  function* saveCurrent(): SagaGenerator<void> {
+    if (getPrincipalActionContext(appStore.state) !== authority) return;
     const draft = getItem(
       appStore.state.dockConversation.drafts,
-      JSON.stringify([workspaceId, agentId]),
+      dockEvidenceId(workspaceId, agentId),
     );
-    if (!draft?.restored) continue;
+    if (!draft?.restored) return;
     yield* put(
       chatDraftSaveScheduled(ownerId, crypto.randomUUID(), {
         workspaceId,
@@ -180,6 +200,54 @@ function* saveDrafts(
       }),
     );
   }
+  // Other services own shared-draft and native evidence actions. Observe their
+  // resulting pair state; these selector workers cancel with this conversation.
+  yield* takeEveryFromSelector(
+    selectDockDraftSynchronization,
+    [workspaceId, agentId],
+    function* ({ payload }) {
+      if (getPrincipalActionContext(appStore.state) !== authority) return;
+      const previous = observed;
+      observed = payload;
+      const nextEvidence = JSON.stringify(toDockDraftEvidence(payload.evidence));
+      const evidenceChanged = nextEvidence !== evidenceSnapshot;
+      evidenceSnapshot = nextEvidence;
+      // Applying a peer snapshot updates evidence before text. Never publish
+      // that intermediate document back as a new local edit.
+      if (applyingShared) return;
+      if (payload.clearRevision !== previous.clearRevision)
+        baseline = JSON.stringify({ text: '', attachments: [] });
+      const shared = payload.shared;
+      if (shared && shared !== previous.shared) {
+        const draft = getItem(
+          appStore.state.dockConversation.drafts,
+          dockEvidenceId(workspaceId, agentId),
+        );
+        if (!draft) return;
+        const snapshot = JSON.stringify({
+          text: draft.text,
+          attachments: draftAttachments(workspaceId, agentId),
+        });
+        if (shared.origin === ownerId || snapshot === JSON.stringify(shared.snapshot))
+          baseline = JSON.stringify(shared.snapshot);
+        else if (snapshot === baseline) {
+          applyingShared = true;
+          try {
+            yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision);
+            baseline = JSON.stringify(shared.snapshot);
+          } finally {
+            applyingShared = false;
+          }
+        }
+      } else if (evidenceChanged) yield* saveCurrent();
+    },
+  );
+  yield* takeEvery(
+    [dockConversationDraftChanged, dockConversationDraftRecovered],
+    function* ({ payload: [ws, agent] }) {
+      if (ws === workspaceId && agent === agentId) yield* saveCurrent();
+    },
+  );
 }
 function* conversationLifetime(): SagaGenerator<void> {
   const { workspaceId, generation, agentId: requestedAgent } = appStore.state.dockConversation;
@@ -257,6 +325,12 @@ function* conversationLifetime(): SagaGenerator<void> {
     });
     yield* put(chatDraftOwnerOpened(ownerId));
     const requestId = crypto.randomUUID();
+    const restoreRevision =
+      getItem(appStore.state.dockConversation.drafts, dockEvidenceId(workspaceId, chosen.id))
+        ?.revision ?? 0;
+    const restoreItems = JSON.stringify(
+      selectComposerContextItems.select(appStore.state, workspaceId, chosen.id),
+    );
     yield* put(chatDraftRestoreRequested(ownerId, requestId, workspaceId, chosen.id));
     while (true) {
       const restore = selectChatDraftOwnerView.select(appStore.state, ownerId)?.restore;
@@ -267,6 +341,17 @@ function* conversationLifetime(): SagaGenerator<void> {
           appStore.state.dockConversation.drafts,
           JSON.stringify([workspaceId, chosen.id]),
         );
+        const shared = selectChatDraftOwnerView.select(appStore.state, ownerId)?.shared;
+        if (
+          shared &&
+          (existing?.revision ?? 0) === restoreRevision &&
+          JSON.stringify(
+            selectComposerContextItems.select(appStore.state, workspaceId, chosen.id),
+          ) === restoreItems
+        ) {
+          yield* applySharedDraft(workspaceId, chosen.id, shared.snapshot, restoreRevision);
+          break;
+        }
         // Live pair-scoped attachments and user edits win over a late restore.
         if (
           (!existing || existing.revision === 0) &&
@@ -284,6 +369,11 @@ function* conversationLifetime(): SagaGenerator<void> {
               fromDockDraftEvidence(
                 dockEvidenceId(workspaceId, chosen.id),
                 readDraftAttachmentScreens(attachments).filter(([id]) => present.has(id)),
+                restoredItems.map((item) => ({
+                  contextItemId: item.id,
+                  attachmentId: item.attachmentId,
+                  path: item.path,
+                })),
               ),
             ),
           );
@@ -404,14 +494,15 @@ function* sendReply(
   const evidence: DockComposerEvidence | null = hasDockEvidence(liveEvidence)
     ? structuredClone(liveEvidence!)
     : null;
-  const evidenceItems = dockEvidenceImageItemIds(evidence ?? undefined);
-  const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id));
+  const sendItems = evidenceMessageItems(clickedItems, evidence);
   const blocks = extractAttachmentBlocks(sendItems);
   if (
     !retry &&
     (!clickedDraft ||
       hasBlockingAttachments(clickedItems) ||
       !!liveEvidence?.capture.pending ||
+      !!liveEvidence?.images.some((image) => image.mediaError) ||
+      !!liveEvidence?.clips.some((clip) => clip.mediaError) ||
       // Narration or chips not yet committed by the editor would be lost or resent.
       (liveEvidence?.insertions.length ?? 0) > 0 ||
       liveEvidence?.dictation?.status === 'transcribing' ||
@@ -420,6 +511,7 @@ function* sendReply(
       ) ||
       !validDockWireTokens(clickedDraft.text, evidence ?? undefined) ||
       (!clickedDraft.text.trim() &&
+        !sendItems.length &&
         !blocks.imageBlocks.length &&
         !blocks.fileBlocks.length &&
         !evidence))
@@ -446,19 +538,6 @@ function* sendReply(
   const scopedContext = appStore.state.multiPanelContext.workspaceId === workspaceId;
   const checkedPanels = scopedContext ? selectCheckedPanels.select(appStore.state) : [];
   const checkedSelections = scopedContext ? selectCheckedSelections.select(appStore.state) : [];
-  const evidenceContext = evidence
-    ? {
-        workspaceId,
-        agentId,
-        appUrl: `intent://local/workspace/${encodeURIComponent(workspaceId)}`,
-        clipAttachmentIds: Object.fromEntries(
-          evidence.clips.map((clip) => [
-            clip.id,
-            clickedItems.find((item) => item.id === clip.contextItemId)?.attachmentId ?? null,
-          ]),
-        ),
-      }
-    : null;
   // Placement requests bind to the backend this click belongs to.
   const binding = captureDockPlacementBinding();
   const clickedPayload = {
@@ -471,6 +550,8 @@ function* sendReply(
     ...(prompt?.forceSubmit ? { forceSubmit: true } : {}),
   };
   yield* put(dockConversationSendState(generation, true, null));
+  // Cancelling the saga also retires its async shared preparation continuation.
+  let preparationActive = true;
   try {
     const target = yield* call([appClient.agents, appClient.agents.get], agentId, workspaceId);
     if (!current(generation, authority)) return;
@@ -493,84 +574,26 @@ function* sendReply(
     // The click owns this immutable snapshot. Edits made during validation are
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
-    // Composites come only from the click's snapshot (items + evidence).
-    const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems) : [];
+    const payload = yield* call(prepareEvidenceMessage, {
+      workspaceId,
+      agentId,
+      evidence,
+      clickedItems,
+      sendItems,
+      clickedPayload,
+      binding,
+      service: dockMediaNativeService(),
+      current: () => preparationActive && current(generation, authority),
+      onRecord: (record: DockImagePlacementRecord) =>
+        appStore.dispatch(dockEvidencePlacementRecorded(workspaceId, agentId, record)),
+    });
     if (!current(generation, authority)) return;
-    let evidenceBlocks: {
-      type: 'image';
-      data?: string;
-      mimeType?: string;
-      attachmentId?: string;
-    }[] = burned;
-    let imageAttachments: Record<
-      string,
-      { attachmentId: string; raw: { attachmentId: string; expiresAt: string } | null }
-    > | null = null;
-    // Workspaces pre-place composites (and, on retention daemons, raws) before
-    // admission so metadata names real references. The assistant workspace does
-    // so only where the daemon advertises its registry; otherwise it stays inline.
-    const attachmentCapabilities = evidence
-      ? yield* call(probeDockAttachmentCapabilities, binding)
-      : null;
-    if (!current(generation, authority)) return;
-    if (
-      evidence &&
-      (workspaceId !== CHIEF_WORKSPACE_ID || attachmentCapabilities?.chiefAttachments)
-    ) {
-      const records = yield* call(placeDockEvidenceImages, {
-        workspaceId,
-        binding,
-        images: evidence.images.map((image, index) => {
-          const item = clickedItems.find((row) => row.id === image.contextItemId);
-          return {
-            image,
-            signature: dockCompositeSignature(evidence, image.id),
-            composite: { base64: burned[index].data, mimeType: burned[index].mimeType },
-            raw:
-              item?.imageData && item.imageMimeType
-                ? { base64: item.imageData, mimeType: item.imageMimeType }
-                : null,
-          };
-        }),
-        records: evidenceOf(workspaceId, agentId)?.placements ?? {},
-        onRecord: (record: DockImagePlacementRecord) =>
-          appStore.dispatch(dockEvidencePlacementRecorded(workspaceId, agentId, record)),
-      });
-      if (!current(generation, authority)) return;
-      evidenceBlocks = records.map((record) => ({
-        type: 'image' as const,
-        attachmentId: record.composite!.attachmentId,
-        mimeType: record.composite!.mimeType,
-      }));
-      imageAttachments = Object.fromEntries(
-        records.map((record) => [
-          record.imageId,
-          { attachmentId: record.composite!.attachmentId, raw: record.raw },
-        ]),
+    if (!payload) {
+      yield* put(
+        dockConversationSendState(generation, false, m.dock_conversation_nothingToSend_error()),
       );
+      return;
     }
-    const wireContext =
-      evidenceContext && imageAttachments
-        ? { ...evidenceContext, imageAttachments }
-        : evidenceContext;
-    const payload =
-      evidence && wireContext
-        ? {
-            ...clickedPayload,
-            imageBlocks: [...evidenceBlocks, ...(clickedPayload.imageBlocks ?? [])],
-            // Models may never see messageMetadata: an agent-readable copy leads the context.
-            workspaceContextStr: [
-              buildDockEvidenceContext(evidence, wireContext),
-              clickedPayload.workspaceContextStr,
-            ]
-              .filter(Boolean)
-              .join('\n\n'),
-            messageMetadata: buildDockEvidenceMetadata(evidence, wireContext) as unknown as Record<
-              string,
-              unknown
-            >,
-          }
-        : clickedPayload;
     const appMessageId = createAppMessageId();
     const admitted = admitChatMessage(appStore, agentId, {
       ...payload,
@@ -606,13 +629,22 @@ function* sendReply(
       }),
     );
     yield* reconcileDeliveries();
-  } catch {
+  } catch (error) {
+    // Stage and bounded code only: never the prompt, file names or ids.
+    sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'admission'));
     if (current(generation, authority))
       yield* put(
-        dockConversationSendState(generation, false, m.dock_conversation_sendFailed_error()),
+        dockConversationSendState(
+          generation,
+          false,
+          error instanceof DockSendError && error.code === 'image-budget-exceeded'
+            ? m.dock_conversation_imageBudget_error()
+            : m.dock_conversation_sendFailed_error(),
+        ),
       );
     return;
   } finally {
+    preparationActive = false;
     if (current(generation, authority) && appStore.state.dockConversation.sending)
       yield* put(dockConversationSendState(generation, false, null));
   }
@@ -716,27 +748,11 @@ function* reconcileDeliveries(): SagaGenerator<void> {
     }
   }
 }
-/** Burned composites for the snapshot, in tile order (matches metadata image indexes). */
-async function burnEvidence(
-  evidence: DockComposerEvidence,
-  items: readonly { id: string; imageData?: string; imageMimeType?: string }[],
-) {
-  const numbered = numberDockMarks(evidence);
-  return Promise.all(
-    evidence.images.map(async (image) => {
-      const item = items.find((row) => row.id === image.contextItemId);
-      if (!item?.imageData || !item.imageMimeType) throw new Error('dock-evidence-missing-pixels');
-      const burned = await burnDockEvidenceImage(
-        { base64: item.imageData, mimeType: item.imageMimeType },
-        image,
-        numbered.filter(({ mark }) => mark.imageId === image.id),
-      );
-      return { type: 'image' as const, data: burned.base64, mimeType: burned.mimeType };
-    }),
-  );
-}
 export function* dockConversationSaga(): SagaGenerator<void> {
+  yield* fork(dockContextLinksSaga);
+  yield* fork(dockShortcutSaga);
   yield* fork(dockEvidenceSaga);
+  yield* fork(dockMediaEditSaga);
   yield* fork(dockNativeSessionSaga);
   yield* takeEvery(
     dockConversationContextItemsChanged,

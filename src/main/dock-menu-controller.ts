@@ -14,17 +14,15 @@ export type DockMenuControllerDependencies = {
 
 export function createDockMenuController(deps: DockMenuControllerDependencies) {
   const trackedWindows = new WeakSet<DockMenuWindow>();
-  const controllerClosures = new WeakSet<DockMenuWindow>();
 
   const trackWindow = (window: DockMenuWindow): void => {
     if (trackedWindows.has(window)) return;
     trackedWindows.add(window);
-    window.on('closed', () => {
-      const preferenceWrite = controllerClosures.delete(window)
-        ? Promise.resolve()
-        : deps.writeEnabledPreference(false);
-      void preferenceWrite.finally(deps.onStateChange);
-    });
+    // Only a user hide (setEnabled(false): the menu toggle or the dock's own Hide) is
+    // remembered. Any other close (an update install, which closes windows before quit
+    // starts, a renderer crash, a failed load) leaves the preference on, so with the
+    // Notch setting enabled the dock comes back at the next launch.
+    window.on('closed', () => deps.onStateChange());
   };
 
   return {
@@ -40,12 +38,10 @@ export function createDockMenuController(deps: DockMenuControllerDependencies) {
         await deps.writeEnabledPreference(true);
       } else {
         const window = deps.getWindow();
-        if (window) {
-          trackWindow(window);
-          controllerClosures.add(window);
-        }
+        if (window) trackWindow(window);
         await deps.writeEnabledPreference(false);
-        if (window) {
+        // Close only the window this hide was asked for; a replacement may exist by now.
+        if (window && deps.getWindow() === window) {
           deps.closeWindow();
           return;
         }
@@ -60,7 +56,6 @@ export function createDockMenuController(deps: DockMenuControllerDependencies) {
         return;
       }
       trackWindow(window);
-      controllerClosures.add(window);
       deps.closeWindow();
     },
     restore: async (): Promise<boolean> => {

@@ -1,3 +1,4 @@
+import type { DraftSyncConnection } from '../../chat-draft-sync';
 /**
  * Runs the real chat-drafts reducer + saga against an injected `drafts`
  * transport, exposing the store seam `createChatDraftManager` consumes. Tests
@@ -28,7 +29,10 @@ export interface ChatDraftStoreDriver {
   stop: () => void;
 }
 
-export function createChatDraftStoreDriver(drafts: DraftsTransport): ChatDraftStoreDriver {
+export function createChatDraftStoreDriver(
+  drafts: DraftsTransport,
+  sync: DraftSyncConnection | null = null,
+): ChatDraftStoreDriver {
   let state = initialState;
   const listeners = new Set<() => void>();
   const channel = stdChannel();
@@ -55,6 +59,7 @@ export function createChatDraftStoreDriver(drafts: DraftsTransport): ChatDraftSt
     { channel, dispatch, getState: () => ({ chatDrafts: state }) },
     chatDraftsSaga,
     transport,
+    sync,
   );
   const readView = (ownerId: string) =>
     selectChatDraftOwnerView.select(
@@ -62,6 +67,23 @@ export function createChatDraftStoreDriver(drafts: DraftsTransport): ChatDraftSt
       ownerId,
     );
   const port: ChatDraftStorePort = {
+    authority: () => sync?.authority() ?? null,
+    ...(sync
+      ? {
+          persistSnapshot: async (
+            ownerId: string,
+            workspaceId: string,
+            agentId: string,
+            snapshot: Parameters<DraftSyncConnection['edit']>[3],
+            authority: string,
+          ) => {
+            if (sync.authority() !== authority) throw new Error('draft-authority-changed');
+            await sync.edit(ownerId, workspaceId, agentId, snapshot);
+            if (sync.authority() !== authority) throw new Error('draft-authority-changed');
+            await sync.flush(workspaceId, agentId);
+          },
+        }
+      : {}),
     dispatch,
     ownerView: (ownerId) => ({
       subscribe(run) {

@@ -189,3 +189,60 @@ export async function setDockPlacementLocalPref(
   );
   return write;
 }
+
+/** Native shortcut changes must surface read/write failures, rather than invent defaults. */
+export async function getDockShortcutOverridesLocalPref(): Promise<unknown> {
+  const all = await readShortcutPrefsDocument();
+  return all.dockShortcutOverrides;
+}
+async function readShortcutPrefsDocument(): Promise<Record<string, unknown>> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath(), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('local-prefs is not a JSON object');
+  return parsed as Record<string, unknown>;
+}
+export async function setDockShortcutOverridesLocalPref(
+  overrides: import('../shared/dock-shortcut-settings').DockShortcutOverrides,
+): Promise<void> {
+  const write = writeChain.then(async () => {
+    const all = await readShortcutPrefsDocument();
+    all.dockShortcutOverrides = overrides;
+    await writeAll(all);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist dock shortcuts', error as Error),
+  );
+  return write;
+}
+
+/** This preference changes only after a successful capture-editor Save transaction. */
+export async function getDockMediaChoiceLocalPref(): Promise<
+  import('../shared/dock-media-edit').DockMediaChoice | null
+> {
+  const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
+  const document = await readShortcutPrefsDocument();
+  const result = DockMediaChoiceSchema.safeParse(document.dockMediaLastSavedChoice);
+  return result.success ? result.data : null;
+}
+export async function setDockMediaChoiceLocalPref(
+  choice: import('../shared/dock-media-edit').DockMediaChoice,
+): Promise<void> {
+  const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
+  const accepted = DockMediaChoiceSchema.parse(choice);
+  const write = writeChain.then(async () => {
+    const document = await readShortcutPrefsDocument();
+    document.dockMediaLastSavedChoice = accepted;
+    await writeAll(document);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist capture send options', error as Error),
+  );
+  return write;
+}

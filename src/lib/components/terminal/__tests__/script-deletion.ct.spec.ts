@@ -38,11 +38,32 @@ for (const surface of ['header', 'panel'] as const) {
 
 test('dialog rechecks a script started while confirmation was open', async ({ mount, page }) => {
   const component = await mount(Preview);
-  await page.getByRole('button', { name: 'Delete script', exact: true }).click();
+  const deleteScript = page.getByRole('button', { name: 'Delete script', exact: true });
+  const dialog = page.getByRole('dialog');
+  await deleteScript.click();
   await component.update({ props: { status: 'running' } });
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete script' }).click();
+  await dialog.getByRole('button', { name: 'Delete script' }).click();
+  await expect(
+    page.getByText(
+      'The script changed while confirmation was open. Check its current state and try again.',
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(page.getByText('Delete requests: 0')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Delete script', exact: true })).toBeDisabled();
+  await expect(page.getByText('Selected script: preview-check')).toBeVisible();
+  await expect(page.getByText('Open script tabs: 1')).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(deleteScript).toBeEnabled();
+  await deleteScript.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(
+    'It is running and will be stopped first. Any agents monitoring it will be woken. This cannot be undone.',
+  );
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Delete requests: 0')).toBeVisible();
+  await expect(page.getByText('Selected script: preview-check')).toBeVisible();
+  await expect(page.getByText('Open script tabs: 1')).toBeVisible();
 });
 
 test('delete errors remain visible and preserve selected content', async ({

@@ -42,6 +42,9 @@ export const spring = {
   },
 } as const satisfies Record<SpringTierName, SpringTier>;
 
+/** Critically damped panel disclosure; durations include the quiet settling tail. */
+export const panelSpring = { openMs: 350, closeMs: 280, reducedMs: 200 } as const;
+
 export { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 /** Compatibility API backed by bounded easing, never spring momentum. */

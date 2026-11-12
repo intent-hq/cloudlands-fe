@@ -1,6 +1,7 @@
 import { buffers } from 'redux-saga';
 import { actionChannel, call, cancel, put, take, type SagaGenerator } from 'typed-redux-saga';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
+import { isDockRecordingOwnerOnly, isDockToggleClose } from '$shared/dock-shortcuts';
 import {
   dockPlacementFailureFor,
   type DockPlacementCommand,
@@ -36,7 +37,11 @@ async function invokePlacement(
 function* receivePlacement(snapshot: DockPlacementSnapshot): SagaGenerator<void> {
   yield* put(dockPlacementReceived(snapshot));
 }
-function* receiveFocus(): SagaGenerator<void> {
+function* receiveFocus(context: object | null): SagaGenerator<void> {
+  // A recording-owner shortcut is not a request to show or focus the dock.
+  if (isDockRecordingOwnerOnly(context)) return;
+  // A second press of the open shortcut is a close request, decided by the dock saga.
+  if (isDockToggleClose(context)) return;
   yield* put(dockFocusRequested());
 }
 

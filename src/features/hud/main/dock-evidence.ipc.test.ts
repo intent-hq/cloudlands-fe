@@ -2,13 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => unknown>(),
+  analyzeMedia: vi.fn(),
+  probeMediaAudio: vi.fn(),
   begin: vi.fn(),
   capture: vi.fn(),
   cancel: vi.fn(),
   context: vi.fn(),
+  dock: vi.fn(),
+  hideDockForRecording: vi.fn(),
+  releaseDockRecordingHide: vi.fn(),
   setCaptureExclusionIds: vi.fn(),
   recorder: {
     onEnded: vi.fn(),
+    onSignal: vi.fn(),
+    setPaused: vi.fn(),
     start: vi.fn(),
     stop: vi.fn(),
     cancel: vi.fn(),
@@ -27,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     retireResources: vi.fn(),
     refreshPicker: vi.fn(),
     setAnnotationMedia: vi.fn(),
+    setRecordingSignal: vi.fn(),
   },
   speech: vi.fn(),
   openExternal: vi.fn(),
@@ -46,6 +54,13 @@ vi.mock('electron', () => ({
       mocks.handlers.set(channel, handler),
   },
 }));
+vi.mock('./dock-media-output', () => ({
+  analyzeDockMedia: mocks.analyzeMedia,
+  probeDockMediaAudio: mocks.probeMediaAudio,
+  exportDockMedia: vi.fn(),
+  transcribeDockMedia: vi.fn(),
+  releaseDockMediaJob: vi.fn(),
+}));
 vi.mock('./dock-evidence-session', () => ({
   dockEvidenceSessions: mocks,
   dockEvidenceRecorder: mocks.recorder,
@@ -54,7 +69,9 @@ vi.mock('../../../main/dock-window', () => ({
   getDockVisibleSurfaceRegions: vi.fn(() => []),
   getDockVisibleSurfaceBounds: vi.fn(() => null),
   getDockPlacementSnapshot: vi.fn(() => null),
-  getDockWindow: () => null,
+  getDockWindow: mocks.dock,
+  hideDockForRecording: mocks.hideDockForRecording,
+  releaseDockRecordingHide: mocks.releaseDockRecordingHide,
 }));
 vi.mock('./dock-annotation-window', () => ({
   setupDockAnnotationIPC: vi.fn(),
@@ -76,6 +93,7 @@ describe('dock evidence IPC', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.context.mockReturnValue(null);
+    mocks.dock.mockReturnValue(null);
     mocks.annotation.overlayWindowIds.mockReturnValue([]);
     setupDockEvidenceIPC();
   });
@@ -116,6 +134,93 @@ describe('dock evidence IPC', () => {
     };
   }
 
+  it('admits the renderer waveform control shape while retaining strict validation and session ownership', async () => {
+    const f = mediaContext();
+    const request = {
+      jobId: requestId,
+      media: {
+        source: {
+          id: 'recording',
+          revision: 0,
+          kind: 'recording',
+          attachmentId: 'attachment',
+          path: '.intent/attachments/recording.mp4',
+          durationMs: 1000,
+          width: 1280,
+          height: 720,
+          audio: 'available',
+          batches: [],
+          visuals: 'clean',
+        },
+        saved: null,
+        transcript: null,
+      },
+    };
+    const waveform = {
+      ok: true,
+      value: {
+        sourceId: 'recording',
+        sourceRevision: 0,
+        durationMs: 1000,
+        intervalMs: 50,
+        peaks: Array(20).fill(0.5),
+      },
+    };
+    mocks.analyzeMedia.mockResolvedValue(waveform);
+    const control = { action: 'media-waveform', request };
+    expect(await f.invoke(control)).toEqual(waveform);
+    expect(mocks.analyzeMedia).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ scope: { ...scope, sessionId }, backendId: 'remote' }),
+      request,
+    );
+    for (const invalid of [
+      { ...control, DockMediaAudioProbeRequestSchema: request },
+      { ...control, request: { ...request, jobId: 'invalid' } },
+      {
+        ...control,
+        request: {
+          ...request,
+          media: { ...request.media, source: { ...request.media.source, path: '../private.mp4' } },
+        },
+      },
+    ])
+      expect(await f.invoke(invalid)).toEqual({ ok: false, error: 'unavailable' });
+    expect(mocks.analyzeMedia).toHaveBeenCalledTimes(1);
+    const probe = {
+      ok: true,
+      value: { sourceId: 'recording', sourceRevision: 0, trackCount: 1, populatedTrackCount: 1 },
+    };
+    mocks.probeMediaAudio.mockResolvedValue(probe);
+    expect(await f.invoke({ action: 'media-audio-probe', request })).toEqual(probe);
+    expect(mocks.probeMediaAudio).toHaveBeenCalledExactlyOnceWith(expect.anything(), request);
+    f.retire();
+    expect(await f.invoke(control)).toEqual({ ok: false, error: 'unavailable' });
+    expect(mocks.analyzeMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses only the session-owned live clip, and forwards its mic signal to the tool bar', async () => {
+    const f = mediaContext();
+    mocks.recorder.start.mockResolvedValue({ ok: true, value: { startedAt: 10 } });
+    mocks.recorder.setPaused.mockResolvedValue({ ok: true, value: { paused: true } });
+    expect(await f.invoke({ action: 'clip-pause', clipId: requestId, paused: true })).toMatchObject(
+      { ok: false },
+    );
+    expect(mocks.recorder.setPaused).not.toHaveBeenCalled();
+    await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 });
+    expect(await f.invoke({ action: 'clip-pause', clipId: requestId, paused: true })).toEqual({
+      ok: true,
+      value: { paused: true },
+    });
+    expect(mocks.recorder.setPaused).toHaveBeenCalledWith(requestId, true);
+    const signal = mocks.recorder.onSignal.mock.calls[0][0];
+    signal('another-clip', { level: 0.9, mic: true });
+    expect(mocks.annotation.setRecordingSignal).not.toHaveBeenCalled();
+    signal(requestId, { level: 0.4, mic: true });
+    expect(mocks.annotation.setRecordingSignal).toHaveBeenLastCalledWith({ level: 0.4, mic: true });
+    mocks.recorder.onEnded.mock.calls[0][0](requestId, { ok: false, error: 'failed' });
+    expect(mocks.annotation.setRecordingSignal).toHaveBeenLastCalledWith(null);
+  });
+
   it('forwards accepted screenshot revisions through the qualified media channel', async () => {
     const f = mediaContext();
     const button = {
@@ -127,7 +232,7 @@ describe('dock evidence IPC', () => {
     };
     const media = {
       capture: { ...button, revision: 7, pending: true },
-      record: { ...button, recording: false, startedAt: null },
+      record: { ...button, recording: false, startedAt: null, pausedAt: null, pausedMs: 0 },
     };
     expect(await f.invoke({ action: 'annotation-media', media })).toEqual({
       ok: true,
@@ -563,7 +668,20 @@ describe('dock evidence IPC', () => {
     expect(f.send).not.toHaveBeenCalled();
   });
 
-  it('starts recording on the authoritative display and enables mic only after actual speech ready', async () => {
+  it('keeps the owned Dock visible while excluding it from the recording', async () => {
+    const f = mediaContext();
+    mocks.dock.mockReturnValue(mocks.context().window);
+    mocks.recorder.start.mockResolvedValue({ ok: true, value: { startedAt: 10 } });
+    expect(
+      await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 }),
+    ).toMatchObject({ ok: true });
+    expect(mocks.recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({ displayId: 7, excludeWindowIds: [42] }),
+    );
+    expect(mocks.hideDockForRecording).not.toHaveBeenCalled();
+  });
+
+  it('starts recording on the authoritative display with the mic on, kept after dictation ends', async () => {
     const f = mediaContext();
     mocks.recorder.start.mockResolvedValue({ ok: true, value: { startedAt: 10 } });
     mocks.recorder.setMicrophone.mockResolvedValue({ ok: true, value: { micActive: true } });
@@ -571,7 +689,7 @@ describe('dock evidence IPC', () => {
       await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 }),
     ).toMatchObject({ ok: true });
     expect(mocks.recorder.start).toHaveBeenCalledWith(
-      expect.objectContaining({ displayId: 7, excludeWindowIds: [42], includeMic: false }),
+      expect.objectContaining({ displayId: 7, excludeWindowIds: [42], includeMic: true }),
     );
     let deliver!: (event: unknown) => void;
     const speechId = 'f198558e-36d8-4ea3-b6d9-45f0fe7a8bc3';
@@ -605,11 +723,12 @@ describe('dock evidence IPC', () => {
       onDevice: true,
     });
     expect(await pending).toEqual({ ok: true, value: undefined });
+    // Dictation becoming ready only (re)opens the recording's microphone ...
     expect(mocks.recorder.setMicrophone).toHaveBeenLastCalledWith(requestId, true);
+    // ... and dictation ending never closes it: the mic is on for the whole recording.
     deliver({ type: 'state', state: 'finalizing' });
-    expect(mocks.recorder.setMicrophone).toHaveBeenLastCalledWith(requestId, false);
     deliver({ type: 'ended', reason: 'silence', elapsedMs: 8000 });
-    expect(mocks.recorder.setMicrophone).toHaveBeenLastCalledWith(requestId, false);
+    expect(mocks.recorder.setMicrophone).toHaveBeenCalledTimes(1);
     const sent = f.send.mock.calls.length;
     f.retire();
     deliver({ type: 'level', elapsedMs: 9000, level: 1 });

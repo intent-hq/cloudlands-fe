@@ -2,7 +2,8 @@
 // @verify-changed-triggers: electron-builder.yml, scripts/build-speech-helper.cjs,
 //   scripts/build-keychain-helper.cjs, scripts/ensure-native-deps.cjs,
 //   scripts/build-dock-recorder.cjs, scripts/build-dock-speech.cjs,
-//   scripts/build-dock-element-pick.cjs
+//   scripts/build-dock-element-pick.cjs, scripts/build-dock-capture-selector.cjs,
+//   scripts/build-dock-media-export.cjs, scripts/build-dock-media-transcribe.cjs
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,6 +43,9 @@ const staged = [
   'resources/sidecar/intentd',
   'resources/speech-helper/intent-speech-helper',
   'resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
+  'resources/dock-helper/intent-dock-capture-selector',
+  'resources/dock-helper/intent-dock-media-export',
+  'resources/dock-helper/intent-dock-media-transcribe',
   'resources/dock-helper/intent-dock-recorder',
   'resources/speech-helper/intent-dock-speech',
   'resources/dock-helper/intent-dock-element-pick',
@@ -53,6 +57,9 @@ const packaged = [
   'Contents/Resources/intentd/intentd',
   'Contents/Resources/speech-helper/intent-speech-helper',
   'Contents/Resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
+  'Contents/Resources/dock-helper/intent-dock-capture-selector',
+  'Contents/Resources/dock-helper/intent-dock-media-export',
+  'Contents/Resources/dock-helper/intent-dock-media-transcribe',
   'Contents/Resources/dock-helper/intent-dock-recorder',
   'Contents/Resources/speech-helper/intent-dock-speech',
   'Contents/Resources/dock-helper/intent-dock-element-pick',

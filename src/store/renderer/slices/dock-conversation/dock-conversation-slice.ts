@@ -1,3 +1,7 @@
+import type { DockShortcutSelection, DockShortcutState } from '$shared/dock-shortcuts';
+import type { DockMediaSaveRequest, DockSavedMedia } from '$shared/dock-media-edit';
+import type { DockCaptureEditorSaveResult } from '$shared/dock-capture-editor';
+import type { DockMediaClipboardContent, DockPasteOrigin } from '$shared/dock-media-clipboard';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -9,6 +13,7 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
   ackDockInsertion,
+  clearDockRecordingBatch,
   addDockMark,
   applyDockCapture,
   dockEvidenceFingerprint,
@@ -54,6 +59,55 @@ import type {
   DockNativeSpeechState,
 } from './dock-conversation-types';
 
+export const dockLinkedContextChanged = createAction<
+  [
+    snapshot: import('$shared/dock-context-links').DockLinkedContextSnapshot | null,
+    authority: string | null,
+    serviceAddress?: string | null,
+  ]
+>('dockConversation/linkedContextChanged');
+export const dockContextObservationReceived = createAction<
+  [observation: import('$shared/dock-context-links').DockForegroundObservation]
+>('dockConversation/contextObservationReceived');
+export const dockContextRefreshRequested = createAction<
+  [reason: 'authority' | 'workspaces' | 'services' | 'service-invalidated' | 'context']
+>('dockConversation/contextRefreshRequested');
+export const dockContextServiceReceived = createAction<
+  [
+    version: string,
+    authority: string,
+    service: import('$shared/dock-shortcuts').DockServiceOwner | null,
+  ]
+>('dockConversation/contextServiceReceived');
+export const dockContextLinkRequested = createAction<
+  [
+    version: string,
+    workspaceId: string,
+    scope?: import('$shared/dock-context-links').DockContextLinkScope,
+  ]
+>('dockConversation/contextLinkRequested');
+export const dockContextUnlinkRequested = createAction<
+  [version: string, scope?: import('$shared/dock-context-links').DockContextLinkScope]
+>('dockConversation/contextUnlinkRequested');
+export const dockContextFollowed = createAction<[version: string]>(
+  'dockConversation/contextFollowed',
+);
+export const dockContextDismissed = createAction<[version: string]>(
+  'dockConversation/contextDismissed',
+);
+export const dockContextAutoDecisionRequested = createAction<
+  [version: string, decision: 'yes' | 'no']
+>('dockConversation/contextAutoDecisionRequested');
+
+export const dockShortcutSelectionChanged = createAction<[selection: DockShortcutSelection | null]>(
+  'dockConversation/shortcutSelectionChanged',
+);
+export const dockShortcutChanged = createAction<[state: DockShortcutState | null]>(
+  'dockConversation/shortcutChanged',
+);
+export const dockShortcutChosen = createAction<
+  [workspaceId: string, scope?: import('$shared/dock-shortcuts').DockLinkScope]
+>('dockConversation/shortcutChosen');
 export const openDockConversationRequested =
   createAction<[workspaceId: string]>('dockConversation/open');
 export const closeDockConversationRequested = createAction<[]>('dockConversation/close');
@@ -85,6 +139,15 @@ export const dockConversationFailed =
 export const dockConversationDraftChanged = createAction<
   [workspaceId: string, agentId: string, text: string]
 >('dockConversation/draftChanged');
+export const dockConversationDraftShared = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    text: string,
+    hasAttachments: boolean,
+    expectedRevision: number,
+  ]
+>('dockConversation/draftShared');
 export const dockConversationDraftRestored = createAction<
   [workspaceId: string, agentId: string, text: string, hasAttachments: boolean]
 >('dockConversation/draftRestored');
@@ -124,13 +187,23 @@ export const dockEvidenceToolSelectRequested = createAction<
 export const dockEvidenceMouseModeRequested = createAction<Pair>(
   'dockConversation/evidenceMouseModeRequested',
 );
-export const dockEvidenceRecordToggleRequested = createAction<Pair>(
-  'dockConversation/evidenceRecordToggleRequested',
-);
+export const dockEvidenceRecordToggleRequested = createAction<
+  [workspaceId: string, agentId: string, expectedClipId?: string]
+>('dockConversation/evidenceRecordToggleRequested');
 /** The composer's Screenshot/Record state, mirrored on the annotate tool bar (saga only). */
 export const dockEvidenceBarMediaChanged = createAction<
   [workspaceId: string, agentId: string, media: DockAnnotationMediaState]
 >('dockConversation/evidenceBarMediaChanged');
+/** Intent media pasted into this draft: an editable screenshot or a recording, with fresh ids. */
+export const dockEvidenceMediaPasted = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    content: DockMediaClipboardContent,
+    /** Captured at the paste gesture; a stale origin places nothing. */
+    origin: DockPasteOrigin,
+  ]
+>('dockConversation/evidenceMediaPasted');
 export const dockEvidenceImageRemoveRequested = createAction<
   [workspaceId: string, agentId: string, imageId: string]
 >('dockConversation/evidenceImageRemoveRequested');
@@ -249,6 +322,36 @@ export const dockEvidenceDictationFinished = createAction<
   ]
 >('dockConversation/evidenceDictationFinished');
 /** Add or update one clip by id; null removes that clip only. */
+export const dockEvidenceRecordingBatchCleared = createAction<
+  [workspaceId: string, agentId: string, imageId: string]
+>('dockConversation/recordingBatchCleared');
+/** `capture`: opened by a new screenshot or recording, so the dock closes behind it. */
+export const dockMediaEditorOpenRequested = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    logicalAttachmentId: string,
+    origin?: 'capture',
+    /** The capture's dock hold, which the opened editor adopts (else it is ended). */
+    holdToken?: string,
+  ]
+>('dockConversation/mediaEditorOpenRequested');
+export const dockMediaEditSaveRequested = createAction<
+  [requestId: string, request: DockMediaSaveRequest, authority: string]
+>('dockConversation/mediaEditSaveRequested');
+export const dockMediaEditSaveSettled = createAction<
+  [requestId: string, result: DockCaptureEditorSaveResult]
+>('dockConversation/mediaEditSaveSettled');
+/** CAS also protects a failed write's rollback from replacing a newer edit/source. */
+export const dockEvidenceMediaChanged = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    logicalId: string,
+    expected: DockSavedMedia | null,
+    next: DockSavedMedia,
+  ]
+>('dockConversation/evidenceMediaChanged');
 export const dockEvidenceClipChanged = createAction<
   [workspaceId: string, agentId: string, clipId: string, clip: DockEvidenceClip | null]
 >('dockConversation/evidenceClipChanged');
@@ -261,6 +364,9 @@ export const dockEvidenceAnnotationEndRequested = createAction<Pair>(
   'dockConversation/evidenceAnnotationEndRequested',
 );
 /** Restore from a draft or failed delivery; never overwrites live evidence. */
+export const dockEvidenceShared = createAction<
+  [workspaceId: string, agentId: string, evidence: DockComposerEvidence]
+>('dockConversation/evidenceShared');
 export const dockEvidenceRestored = createAction<
   [workspaceId: string, agentId: string, evidence: DockComposerEvidence]
 >('dockConversation/evidenceRestored');
@@ -344,6 +450,14 @@ export const dockConversationReducer = createReducer<DockConversationState>({
   sending: false,
 });
 dockConversationReducer.with(
+  dockShortcutSelectionChanged,
+  (state, { payload: [shortcutSelection] }) => ({ ...state, shortcutSelection }),
+);
+dockConversationReducer.with(dockShortcutChanged, (state, { payload: [shortcut] }) => ({
+  ...state,
+  shortcut,
+}));
+dockConversationReducer.with(
   dockNativeSpeechSessionChanged,
   (state, { payload: [pairId, capability] }) => ({
     ...state,
@@ -414,6 +528,7 @@ dockConversationReducer.with(
 );
 dockConversationReducer.with(closeDockConversationRequested, (state) => ({
   ...state,
+  shortcut: null,
   workspaceId: null,
   agentId: null,
   generation: state.generation + 1,
@@ -820,6 +935,37 @@ dockConversationReducer.with(
     }),
 );
 dockConversationReducer.with(
+  dockEvidenceMediaChanged,
+  (state, { payload: [ws, agent, logicalId, expected, next] }) =>
+    withEvidence(state, ws, agent, (e) => {
+      const matches = (row: { id: string; media?: DockSavedMedia }) =>
+        row.id === logicalId && JSON.stringify(row.media ?? null) === JSON.stringify(expected);
+      if (next.source.kind === 'screenshot') {
+        if (!e.images.some(matches)) return e;
+        return {
+          ...e,
+          images: e.images.map((row) =>
+            matches(row)
+              ? { ...row, width: next.source.width, height: next.source.height, media: next }
+              : row,
+          ),
+        };
+      }
+      if (!e.clips.some(matches)) return e;
+      return {
+        ...e,
+        clips: e.clips.map((row) =>
+          matches(row) ? { ...row, path: next.source.path, media: next } : row,
+        ),
+      };
+    }),
+);
+dockConversationReducer.with(
+  dockEvidenceRecordingBatchCleared,
+  (state, { payload: [ws, agent, imageId] }) =>
+    withEvidence(state, ws, agent, (e) => clearDockRecordingBatch(e, imageId)),
+);
+dockConversationReducer.with(
   dockEvidenceClipChanged,
   (state, { payload: [ws, agent, clipId, clip] }) =>
     withEvidence(state, ws, agent, (e) => setDockClip(e, clipId, clip)),
@@ -919,4 +1065,50 @@ dockConversationReducer.with(
       chiefAttachments: capabilities.chiefAttachments === true,
     },
   }),
+);
+
+dockConversationReducer.with(
+  dockLinkedContextChanged,
+  (
+    state,
+    { payload: [linkedContext, linkedContextAuthority, linkedContextServiceAddress = null] },
+  ) => ({
+    ...state,
+    linkedContext,
+    linkedContextAuthority,
+    linkedContextServiceAddress,
+  }),
+);
+
+dockConversationReducer.with(
+  dockConversationDraftShared,
+  (state, { payload: [ws, agent, text, hasAttachments, expectedRevision] }) => {
+    const draft = draftFor(state, ws, agent);
+    if (draft.revision !== expectedRevision) return state;
+    return {
+      ...state,
+      drafts: upsertItem(state.drafts, {
+        ...draft,
+        text,
+        hasAttachments,
+        restored: true,
+        revision: draft.revision + 1,
+        sharedRevision: (draft.sharedRevision ?? 0) + 1,
+      }),
+    };
+  },
+);
+
+dockConversationReducer.with(dockEvidenceShared, (state, { payload: [ws, agent, restored] }) =>
+  withEvidence(state, ws, agent, (e) =>
+    restored.id === e.id
+      ? {
+          ...restored,
+          annotation: e.annotation,
+          dictation: e.dictation,
+          insertions: [],
+          revision: e.revision + 1,
+        }
+      : e,
+  ),
 );

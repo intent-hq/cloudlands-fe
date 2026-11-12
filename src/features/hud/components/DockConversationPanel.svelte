@@ -57,10 +57,14 @@
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { useDockBackHint } from './dock-back-hint.svelte';
   import { Select } from '$lib/components/ui/select';
   import { MessageComposer } from '$lib/components/ui/message-composer';
   import { InputMessage } from '$lib/components/ui/input-message';
-  import { ScreenHeader, EmptyState, LoadingState } from '$lib/components/patterns/screen';
+  import { ScreenHeader, EmptyState } from '$lib/components/patterns/screen';
+  import { Skeleton } from '$lib/components/ui/skeleton';
+  import { activateIntentFromDock } from '../dock-context-menu';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import ChatContentLane from '$lib/components/chat/ChatContentLane.svelte';
@@ -94,6 +98,7 @@
   import { extractAllContent } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import DockHeaderLinkButton from './DockHeaderLinkButton.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -134,6 +139,11 @@
   }: DockConversationPanelProps = $props();
 
   const uid = $props.id();
+  let backButton = $state<HTMLButtonElement | null>(null);
+  const backHint = useDockBackHint(
+    () => backButton,
+    () => conversationKey,
+  );
   const notices = getDockConversationNoticeHost();
   let bodyHeight = $state(0);
   let footerHeight = $state(0);
@@ -150,6 +160,8 @@
   const isAssistant = $derived(
     (workspaceId ?? (workspace ? String(workspace.id) : null)) === CHIEF_WORKSPACE_ID,
   );
+  /** The open workspace for Link: the loaded row's id, else the dock's own while it loads. */
+  const linkWorkspaceId = $derived(workspace ? String(workspace.id) : (workspaceId ?? null));
   let scrollArea: HTMLDivElement | undefined = $state();
   let transcript: HTMLDivElement | undefined = $state();
   let following = $state(true);
@@ -256,6 +268,16 @@
   function submit(): void {
     if (canSend) onSend();
   }
+
+  // Double-click on the header (not its back or open buttons) brings Intent
+  // forward as it was, like a click on the app icon; it does not navigate it.
+  function openIntent(event: MouseEvent): void {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('[data-dock-conversation-back], [data-slot="screen-header-actions"]'))
+      return;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget request for main to show its own window; nothing is loaded
+    activateIntentFromDock();
+  }
 </script>
 
 <section
@@ -264,18 +286,30 @@
   data-dock-conversation
 >
   <ScreenHeader
-    class="items-center gap-1 px-2 py-1 border-b border-border bg-background"
+    class="items-center gap-1 px-2 py-1 border-b border-border bg-background select-none"
     data-dock-chrome
+    ondblclick={openIntent}
   >
     {#snippet leading()}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onclick={onBack}
-        data-dock-conversation-back
-        aria-label={m.ui_contentHeader_goBack_tooltip()}
-        title={m.ui_contentHeader_goBack_tooltip()}><Fa icon={faArrowLeft} /></Button
+      <Tooltip
+        content={m.ui_contentHeader_goBack_tooltip()}
+        open={backHint.open}
+        onOpenChange={backHint.change}
+        disabled={!backHint.allowed}
+        contentClass="dock-chrome-tooltip"
       >
+        <Button
+          bind:ref={backButton}
+          variant="ghost"
+          size="icon-sm"
+          onclick={onBack}
+          data-dock-conversation-back
+          aria-label={m.ui_contentHeader_goBack_tooltip()}
+          onfocus={backHint.focus}
+          onblur={backHint.blur}
+          onpointerleave={backHint.leave}><Fa icon={faArrowLeft} /></Button
+        >
+      </Tooltip>
     {/snippet}
     {#snippet title()}
       <!-- Workspace first, agent below; the workspace avatar leads (the Assistant uses its own). -->
@@ -332,6 +366,12 @@
       {/if}
     {/snippet}
     {#snippet actions()}
+      <!-- Link stays in a normal workspace's header, also during capture/recording status and
+           while the workspace's metadata is still loading (its id is known from the dock). -->
+      {#if !isAssistant && linkWorkspaceId}<DockHeaderLinkButton
+          workspaceId={linkWorkspaceId}
+          title={workspace?.title?.trim() || workspaceTitle || m.workspace_links_untitled_label()}
+        />{/if}
       {#if mediaStatus}
         <span
           class="dock-media-status"
@@ -346,8 +386,12 @@
           variant="ghost"
           size="icon-sm"
           onclick={onOpenWorkspace}
+          data-dock-open-full
           aria-label={m.dock_conversation_openFull_ariaLabel()}
-          title={m.dock_conversation_openFull_ariaLabel()}
+          tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
+          tooltipSide="bottom"
+          tooltipAlign="end"
+          tooltip={m.dock_conversation_openFull_ariaLabel()}
           ><Fa icon={faArrowUpRightFromSquare} /></Button
         >{/if}
     {/snippet}
@@ -381,12 +425,24 @@
         operational
       >
         {#if loading && transcriptEmpty}
-          <LoadingState
-            density="compact"
-            count={3}
-            label={m.chat_agentThread_loading_label()}
-            class="py-6"
-          />
+          <div
+            class="conversation-loading"
+            role="status"
+            aria-label={m.chat_agentThread_loading_label()}
+          >
+            <div class="loading-turn loading-user" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+              <Skeleton class="h-2 w-3/5" />
+            </div>
+            <div class="loading-turn loading-assistant" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+              <Skeleton class="h-2 w-5/6" />
+              <Skeleton class="h-2 w-2/3" />
+            </div>
+            <div class="loading-turn loading-user loading-followup" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+            </div>
+          </div>
         {:else if !error && transcriptEmpty}
           <EmptyState density="compact">
             {#snippet title()}{m.dock_conversation_empty_label()}{/snippet}
@@ -667,6 +723,32 @@
     max-width: 100%;
     overflow-wrap: anywhere;
   }
+  .conversation-loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding-block: var(--space-3);
+  }
+  .loading-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .loading-user {
+    width: 62%;
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+  .loading-assistant {
+    width: 90%;
+  }
+  .loading-followup {
+    width: 44%;
+  }
+  .conversation-loading :global([data-slot='skeleton']) {
+    animation: none;
+    background-image: none;
+  }
   .conversation-queue {
     min-width: 0;
     --queued-messages-max-height: 160px;
@@ -714,6 +796,12 @@
   }
   .attention :global(button) {
     margin-top: var(--space-2);
+  }
+  /* Keyboard focus on Back: a quiet ring on the button's own edge, not the app-wide
+     ring floating outside it. */
+  :global([data-dock-conversation-back]:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring) / 0.6);
+    outline-offset: -1px;
   }
   /* The side dock's rail already switches conversations: no back. */
   :global([data-placement='edge']) :global([data-dock-conversation-back]) {

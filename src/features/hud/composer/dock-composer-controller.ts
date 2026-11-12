@@ -1,4 +1,5 @@
 import { isTextEntryTarget } from '$lib/utils/text-entry';
+import { dockRecordingShortcut } from '../components/dock-recording-toolbar';
 /**
  * UI-side owner for one dock draft pair (workspace + agent + authority).
  *
@@ -11,6 +12,12 @@ import { isTextEntryTarget } from '$lib/utils/text-entry';
  */
 import { get, writable, type Readable } from 'svelte/store';
 import { store as appStore } from '$store/renderer/store';
+import {
+  dockCaptureEditorPreviewEnabled,
+  dockRecordingEditorRequest,
+  openDockCaptureEditor,
+} from '$features/hud/media-editor/open-capture-editor';
+import { dockMediaSourceFor } from '$shared/dock-evidence';
 import {
   screenReferences,
   type DockMarkTool,
@@ -32,6 +39,7 @@ import {
   dockEvidenceCaptureModeSet,
   dockEvidenceClipRemoveRequested,
   dockEvidenceImageRemoveRequested,
+  dockEvidenceMediaPasted,
   dockEvidenceInsertionCommitted,
   dockEvidenceMarkUndone,
   dockEvidenceAnnotationUndoRequested,
@@ -45,10 +53,20 @@ import {
   dockSpeechKeepLiveRequested,
   dockSpeechStopRequested,
   dockSpeechToggleRequested,
+  dockMediaEditorOpenRequested,
 } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
 import type { DockComposerMediaLabels } from '$features/hud/components/dock-composer-media-presentation';
 import type { DockSettingsPane } from './dock-composer-presentation';
 import { createDockEvidencePreviewUrl } from './dock-evidence-render';
+import { createDockSavedPreviewUrl } from './dock-saved-preview';
+import {
+  dockMediaCopyRequest,
+  fetchDockMediaBytes,
+  interceptDockMediaPaste,
+  writeDockMediaClipboard,
+} from './dock-media-clipboard';
+import { captureDockPasteOrigin, isDockPasteOriginCurrent } from './dock-evidence-placement';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import { isMacPlatform } from '$lib/utils/shortcuts';
 import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
@@ -70,6 +88,7 @@ export interface DockComposerLocalState {
 
 export interface DockComposerControllerDeps {
   createPreviewUrl: typeof createDockEvidencePreviewUrl;
+  createSavedPreviewUrl: typeof createDockSavedPreviewUrl;
   revokeUrl: (url: string) => void;
   now: () => number;
   /** Resolves after the editor processed the latest controlled props. */
@@ -89,10 +108,14 @@ export interface DockComposerControllerDeps {
   sendStopMs: number;
   /** Platform modifier: ⌘ on macOS, Ctrl elsewhere. */
   mac: () => boolean;
+  /** Bytes of a preview or playback URL (copy). */
+  fetchBytes: (url: string) => Promise<Uint8Array>;
+  writeClipboard: typeof writeDockMediaClipboard;
 }
 
 const defaultDeps: DockComposerControllerDeps = {
   createPreviewUrl: createDockEvidencePreviewUrl,
+  createSavedPreviewUrl: createDockSavedPreviewUrl,
   revokeUrl: (url) => URL.revokeObjectURL(url),
   now: () => Date.now(),
   tick: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
@@ -100,6 +123,8 @@ const defaultDeps: DockComposerControllerDeps = {
   stopTimeoutMs: 20_000,
   sendStopMs: 2_500,
   mac: isMacPlatform,
+  fetchBytes: fetchDockMediaBytes,
+  writeClipboard: writeDockMediaClipboard,
 };
 
 const TOOL_KEYS: Record<string, DockMarkTool> = {
@@ -120,7 +145,10 @@ export function createDockComposerController(
   const local = writable<DockComposerLocalState>({ now: deps.now(), previews: {} });
   let disposed = false;
   let ticker: ReturnType<typeof setInterval> | undefined;
-  const previewKeys = new Map<string, string>();
+  const previewRequests = new Map<string, { key: string }>();
+  // Provenance belongs to the URL actually installed, never to an in-flight request.
+  const displayedPreviews = new Map<string, { saved: boolean; source: string }>();
+  let previewGeneration = 0;
 
   const evidence = (): EvidenceView =>
     selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
@@ -149,7 +177,8 @@ export function createDockComposerController(
     clearInterval(ticker);
     ticker = undefined;
     for (const url of Object.values(get(local).previews)) deps.revokeUrl(url);
-    previewKeys.clear();
+    previewRequests.clear();
+    displayedPreviews.clear();
   }
 
   /** Poll the store via `.select` (no readable outside component init) until `done` or the pair retires. */
@@ -271,44 +300,92 @@ export function createDockComposerController(
   // -------------------------------------------------------------------------
 
   async function refreshPreviews(view: EvidenceView, items: readonly ContextItem[]): Promise<void> {
-    const wanted = new Set<string>();
+    if (!current()) return;
+    const generation = ++previewGeneration;
+    const wanted = new Set(view.tiles.map((tile) => tile.image.id));
+    // Retire removed attachments before awaiting anything. An older refresh must
+    // never sweep URLs or requests installed by a newer view.
+    for (const id of previewRequests.keys()) if (!wanted.has(id)) previewRequests.delete(id);
+    for (const [id, url] of Object.entries(get(local).previews)) {
+      if (wanted.has(id)) continue;
+      displayedPreviews.delete(id);
+      local.update((state) => {
+        const previews = { ...state.previews };
+        delete previews[id];
+        return { ...state, previews };
+      });
+      deps.revokeUrl(url);
+    }
     for (const tile of view.tiles) {
-      const key = JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
-      wanted.add(tile.image.id);
-      if (previewKeys.get(tile.image.id) === key) continue;
+      if (generation !== previewGeneration || !current()) return;
+      const media = tile.image.media;
+      const saved = media?.saved ? { ...media, saved: media.saved } : null;
+      const source = JSON.stringify(media?.source ?? [tile.image.id, tile.image.contextItemId]);
+      // Retakes may keep the logical tile ID while replacing its immutable source.
+      if (displayedPreviews.get(tile.image.id)?.source !== source) {
+        const previous = get(local).previews[tile.image.id];
+        displayedPreviews.delete(tile.image.id);
+        if (previous) {
+          local.update((state) => {
+            const previews = { ...state.previews };
+            delete previews[tile.image.id];
+            return { ...state, previews };
+          });
+          deps.revokeUrl(previous);
+        }
+      }
+      const key = saved
+        ? JSON.stringify(['saved', source, saved.saved])
+        : JSON.stringify([
+            'live',
+            source,
+            tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]),
+          ]);
+      if (previewRequests.get(tile.image.id)?.key === key) continue;
+      previewRequests.delete(tile.image.id);
       const item = items.find((row) => row.id === tile.image.contextItemId);
-      if (!item?.imageData || !item.imageMimeType) continue;
-      previewKeys.set(tile.image.id, key);
+      if (!saved && (!item?.imageData || !item.imageMimeType)) continue;
+      const request = { key };
+      previewRequests.set(tile.image.id, request);
+      const ownsRequest = () => current() && previewRequests.get(tile.image.id) === request;
       try {
-        const url = await deps.createPreviewUrl(
-          { base64: item.imageData, mimeType: item.imageMimeType },
-          tile.image,
-          tile.marks,
-        );
-        if (disposed || previewKeys.get(tile.image.id) !== key) {
+        const url = saved
+          ? await deps.createSavedPreviewUrl(workspaceId, saved)
+          : await deps.createPreviewUrl(
+              { base64: item!.imageData!, mimeType: item!.imageMimeType! },
+              tile.image,
+              tile.marks,
+            );
+        if (!ownsRequest()) {
           deps.revokeUrl(url);
           continue;
         }
         const previous = get(local).previews[tile.image.id];
+        displayedPreviews.set(tile.image.id, { saved: !!saved, source });
         local.update((state) => ({
           ...state,
           previews: { ...state.previews, [tile.image.id]: url },
         }));
-        if (previous) deps.revokeUrl(previous);
+        if (previous && previous !== url) deps.revokeUrl(previous);
       } catch {
-        previewKeys.delete(tile.image.id);
-      }
-    }
-    const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
-    if (stale.length) {
-      local.update((state) => {
-        const previews = { ...state.previews };
-        for (const [id] of stale) delete previews[id];
-        return { ...state, previews };
-      });
-      for (const [id, url] of stale) {
-        previewKeys.delete(id);
-        deps.revokeUrl(url);
+        // Only the current request may mutate state. Failed saved renders retain
+        // a successful saved URL from this source, never an unedited capture.
+        if (!ownsRequest()) continue;
+        if (!saved) previewRequests.delete(tile.image.id);
+        else {
+          const displayed = displayedPreviews.get(tile.image.id);
+          if (displayed?.saved && displayed.source === source) continue;
+          const previous = get(local).previews[tile.image.id];
+          displayedPreviews.delete(tile.image.id);
+          if (previous) {
+            local.update((state) => {
+              const previews = { ...state.previews };
+              delete previews[tile.image.id];
+              return { ...state, previews };
+            });
+            deps.revokeUrl(previous);
+          }
+        }
       }
     }
   }
@@ -339,11 +416,74 @@ export function createDockComposerController(
       const image = imageFor(id);
       if (image) dispatch(dockEvidenceAnnotationToggleRequested(workspaceId, agentId, image.id));
     },
+    // Internal preview: a finished recording opens in the capture editor.
+    ...(dockCaptureEditorPreviewEnabled()
+      ? {
+          onEdit: (id: string) => {
+            const view = evidence();
+            const image = imageFor(id);
+            const clip = view.clips.find((row) => row.id === id || row.contextItemId === id);
+            // Screenshots, and recordings with a canonical source, open through the
+            // output owner (which prepares and persists the source first). A recording
+            // without one opens read-only, here.
+            const logicalId = image?.id ?? clip?.id;
+            if (!logicalId) return;
+            if (image || (clip && dockMediaSourceFor(view.evidence ?? undefined, clip.id))) {
+              dispatch(dockMediaEditorOpenRequested(workspaceId, agentId, logicalId));
+              return;
+            }
+            const request =
+              clip &&
+              dockRecordingEditorRequest({
+                workspaceId,
+                agentId,
+                clip,
+                evidence: view.evidence,
+                marks: view.evidence?.marks ?? [],
+              });
+            if (request) void openDockCaptureEditor(request);
+          },
+        }
+      : {}),
     onRemove: (id: string) => {
       const image = imageFor(id);
       const clip = evidence().clips.find((row) => row.id === id || row.contextItemId === id);
       if (image) dispatch(dockEvidenceImageRemoveRequested(workspaceId, agentId, image.id));
       else if (clip) dispatch(dockEvidenceClipRemoveRequested(workspaceId, agentId, clip.id));
+    },
+    /**
+     * Copy one tile to the system clipboard (true once it is there). Cut is the
+     * caller's: it removes the tile only after this resolves true.
+     */
+    onCopy: async (id: string): Promise<boolean> => {
+      if (!current()) return false;
+      try {
+        const request = await dockMediaCopyRequest(id, {
+          workspaceId,
+          view: evidence(),
+          items: selectComposerContextItems.select(appStore.state, workspaceId, agentId),
+          previews: get(local).previews,
+          fetchBytes: deps.fetchBytes,
+          createSavedPreviewUrl: deps.createSavedPreviewUrl,
+          revokeUrl: deps.revokeUrl,
+        });
+        return !!request && current() && (await deps.writeClipboard(request));
+      } catch {
+        return false;
+      }
+    },
+    /**
+     * Capture-phase paste: Intent media goes to the saga, bound to the draft and
+     * backend the paste was made in; anything else is untouched.
+     */
+    onPaste: (event: ClipboardEvent): boolean => {
+      if (!current()) return false;
+      const origin = captureDockPasteOrigin(workspaceId, agentId);
+      return interceptDockMediaPaste(event, {
+        isCurrent: () => current() && isDockPasteOriginCurrent(workspaceId, agentId, origin),
+        onIntentMedia: (content) =>
+          dispatch(dockEvidenceMediaPasted(workspaceId, agentId, content, origin)),
+      });
     },
   };
 
@@ -375,7 +515,6 @@ export function createDockComposerController(
     const fieldFocused = isTextEntryTarget(document.activeElement) || isTextEntryTarget(target);
     const mac = deps.mac();
     const view = evidence();
-    const caps = view.capabilities;
     const act = (run: () => void) => {
       handledKeys.add(event);
       event.preventDefault();
@@ -383,18 +522,15 @@ export function createDockComposerController(
       run();
       return true;
     };
-    if (matchesShortcut(event, 'mod+shift+s', mac))
-      return caps.capture && !view.captureDisabled && !view.capturePending
-        ? act(actions.onCapture)
-        : false;
-    if (matchesShortcut(event, 'mod+shift+r', mac))
-      return caps.record || view.recording ? act(actions.onRecordToggle) : false;
-    if (matchesShortcut(event, 'mod+shift+a', mac))
-      return caps.annotate || view.annotating ? act(actions.onAnnotationToggle) : false;
-    if (matchesShortcut(event, 'mod+shift+m', mac))
-      return view.speech.available || view.speech.active ? act(actions.onDictationToggle) : false;
     // Tool keys belong to the annotate session only while not typing; M or 0 is mouse mode.
     if (view.annotating && !fieldFocused) {
+      const shortcut = dockRecordingShortcut(event);
+      if (shortcut?.kind === 'tool')
+        return act(() =>
+          shortcut.tool === 'pointer'
+            ? dispatch(dockEvidenceMouseModeRequested(workspaceId, agentId))
+            : actions.onToolSelect(shortcut.tool),
+        );
       const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
       const tool = TOOL_KEYS[event.key];
       if (tool && plain) return act(() => actions.onToolSelect(tool));

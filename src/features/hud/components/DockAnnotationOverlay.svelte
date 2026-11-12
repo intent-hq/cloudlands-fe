@@ -1,29 +1,41 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { dockFreehandPath } from '$features/hud/composer/dock-freehand-path';
+  import { dockAnnotationCursor } from '$features/hud/composer/dock-annotation-cursor';
+  import {
+    DOCK_ANNOTATION_STYLE as INK,
+    dockAnnotationBadgeCenter,
+  } from '$features/hud/composer/dock-annotation-style';
   import { fade, scale } from '$lib/motion';
   import {
-    DOCK_ANNOTATION_LIMITS,
     dockAnnotationViewport,
     dockGeometryRect,
     gestureOverlayGeometry,
+    extendDockPenPoints,
+    finishDockPenPoints,
     imageToOverlay,
     mapDockGeometry,
     pointInRects,
     type DockAnnotationOverlayState,
     type DockAnnotationOverlayTransport,
     type DockAnnotationPointerRequest,
+    type DockAnnotationAck,
   } from '$shared/dock-annotation';
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
-  import DockAnnotationToolbar from './DockAnnotationToolbar.svelte';
+  import DockRecordingToolbar from './DockRecordingToolbar.svelte';
+  import type { DockAnnotationSignal, DockBarAnchor } from '$shared/dock-annotation';
 
   let {
     overlay,
     stillUrl = null,
     transport,
+    signal = null,
   }: {
     overlay: DockAnnotationOverlayState | null;
     stillUrl?: string | null;
     transport: DockAnnotationOverlayTransport;
+    /** The live recording's microphone (the recording tool bar's waveform). */
+    signal?: DockAnnotationSignal | null;
   } = $props();
 
   interface Gesture {
@@ -33,7 +45,10 @@
     tool: DockMarkTool;
     origin: DockImagePoint;
     points: DockImagePoint[];
-    down: Promise<boolean>;
+    capped: boolean;
+    down: Promise<DockAnnotationAck>;
+    feedbackEpoch: number;
+    transport: DockAnnotationOverlayTransport;
   }
   interface Pending {
     key: number;
@@ -48,9 +63,48 @@
   // Sequences only ever increase within this document, across sessions.
   let sequence = 0;
   let pendingKey = 0;
+  let feedbackEpoch = 0;
+  let active = true;
+  let pickFailure = $state<{
+    epoch: number;
+    reason: Extract<DockAnnotationAck, { ok: false }>['reason'];
+  } | null>(null);
+  const feedbackContext = $derived(
+    JSON.stringify([overlay?.sessionId, overlay?.tool, !!overlay?.mouse]),
+  );
+  function retirePickFeedback() {
+    feedbackEpoch++;
+    pickFailure = null;
+  }
+  $effect(() => {
+    const context = feedbackContext,
+      owner = transport;
+    untrack(retirePickFeedback);
+    void context;
+    void owner;
+  });
+  function ownsPickFeedback(current: Gesture): boolean {
+    return (
+      active &&
+      current.feedbackEpoch === feedbackEpoch &&
+      current.sequence === sequence &&
+      current.sessionId === overlay?.sessionId &&
+      current.tool === overlay?.tool &&
+      !overlay?.mouse &&
+      current.transport === transport
+    );
+  }
+  function pickResult(current: Gesture, ack: DockAnnotationAck) {
+    if (current.tool !== 'pick' || !ownsPickFeedback(current)) return;
+    if (ack.ok) pickFailure = null;
+    else if (ack.reason !== 'stale' && ack.reason !== 'excluded')
+      pickFailure = { epoch: current.feedbackEpoch, reason: ack.reason };
+  }
   let gesture = $state.raw<Gesture | null>(null);
   let pending = $state.raw<Pending[]>([]);
   let root = $state<HTMLDivElement | null>(null);
+  /** Where the person dragged the tool bar; both bars use it, so a swap never moves it. */
+  let toolbarAnchor = $state<DockBarAnchor | null>(null);
 
   const imageSize = $derived(overlay?.still ?? overlay?.image ?? null);
   const view = $derived(
@@ -106,6 +160,7 @@
     if (pointInRects(origin, overlay.excluded)) return;
     event.preventDefault();
     if (gesture) cancel();
+    retirePickFeedback();
     sequence += 1;
     const request: DockAnnotationPointerRequest = {
       sessionId: overlay.sessionId,
@@ -128,14 +183,19 @@
       tool: overlay.tool,
       origin,
       points: [origin],
-      down: transport.pointer(request).then(
-        (ack) => ack.ok,
-        () => false,
-      ),
+      capped: false,
+      feedbackEpoch,
+      transport,
+      down: transport
+        .pointer(request)
+        .catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' })),
     };
     gesture = current;
-    void current.down.then((ok) => {
-      if (!ok && gesture?.sequence === current.sequence) gesture = null;
+    void current.down.then((ack) => {
+      if (!ack.ok) {
+        pickResult(current, ack);
+        if (gesture?.sequence === current.sequence) gesture = null;
+      }
     });
   }
 
@@ -148,12 +208,29 @@
         : [event];
     const next = samples.map(local);
     if (current.tool === 'pen') {
-      if (current.points.length + next.length > DOCK_ANNOTATION_LIMITS.gesturePoints) return;
-      current.points = [...current.points, ...next];
+      const observed = extendDockPenPoints(current, next);
+      current.points = observed.points;
+      current.capped = observed.capped;
     } else {
       current.points = [current.origin, next.at(-1) ?? current.origin];
     }
     gesture = { ...current };
+    // Main stamps the recording clock. Never send renderer wall-clock timing.
+    const end = current.points.at(-1) ?? current.origin;
+    void current.down
+      .then(async (ack) => {
+        if (!ack.ok) return;
+        await current.transport.pointer({
+          sessionId: current.sessionId,
+          sequence: current.sequence,
+          phase: 'move',
+          tool: current.tool,
+          x: end.x,
+          y: end.y,
+          pointCount: current.points.length,
+        });
+      })
+      .catch(() => {});
   }
 
   function onPointerUp(event: PointerEvent) {
@@ -164,7 +241,7 @@
     const end = local(event);
     const points =
       current.tool === 'pen'
-        ? [...current.points, end]
+        ? finishDockPenPoints(current, end)
         : current.tool === 'pick'
           ? [current.origin]
           : [current.origin, end];
@@ -186,21 +263,20 @@
       },
     ];
     void (async () => {
-      const ok =
-        (await current.down) &&
-        (await transport
-          .gesture({
-            sessionId: current.sessionId,
-            sequence: current.sequence,
-            tool: current.tool,
-            origin: current.origin,
-            points,
-          })
-          .then(
-            (ack) => ack.ok,
-            () => false,
-          ));
-      settle(key, ok);
+      const down = await current.down;
+      const ack = down.ok
+        ? await current.transport
+            .gesture({
+              sessionId: current.sessionId,
+              sequence: current.sequence,
+              tool: current.tool,
+              origin: current.origin,
+              points,
+            })
+            .catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' }))
+        : down;
+      pickResult(current, ack);
+      settle(key, ack.ok);
     })();
   }
 
@@ -241,6 +317,7 @@
   }
 
   function cancel() {
+    retirePickFeedback();
     const current = gesture;
     if (!current) return;
     gesture = null;
@@ -261,6 +338,7 @@
     document.addEventListener('visibilitychange', onVisibility);
   }
   onDestroy(() => {
+    active = false;
     cancel();
     if (typeof window === 'undefined') return;
     window.removeEventListener('blur', cancel);
@@ -271,29 +349,20 @@
   // Drawing helpers
   // ---------------------------------------------------------------------------
 
-  const BADGE = 18;
+  const BADGE = INK.badgeRadius * 2;
 
   function badgeCenter(geometry: DockMarkGeometry): DockImagePoint {
     const rect = dockGeometryRect(geometry);
     const width = overlay?.display.width ?? Infinity;
     const height = overlay?.display.height ?? Infinity;
     const half = BADGE / 2;
-    return {
-      x: Math.min(width - half, Math.max(half, rect.x + rect.w)),
-      y: Math.min(height - half, Math.max(half, rect.y)),
-    };
-  }
-
-  function pathData(points: readonly DockImagePoint[]): string {
-    return points
-      .map((p, index) => `${index ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-      .join(' ');
+    return dockAnnotationBadgeCenter(rect, { x: 0, y: 0, w: width, h: height }, 1, half);
   }
 
   function arrowHead(from: DockImagePoint, to: DockImagePoint): string {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const size = 11;
-    const spread = Math.PI / 7;
+    const size = INK.arrowHead;
+    const spread = INK.arrowSpread;
     const a = {
       x: to.x - size * Math.cos(angle - spread),
       y: to.y - size * Math.sin(angle - spread),
@@ -303,26 +372,6 @@
       y: to.y - size * Math.sin(angle + spread),
     };
     return `M${a.x} ${a.y} L${to.x} ${to.y} L${b.x} ${b.y}`;
-  }
-
-  const CURSORS: Record<DockMarkTool, string> = {
-    pick: cursor(
-      '<circle cx="12" cy="12" r="6.5" fill="none" stroke="#080808" stroke-width="3.5"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#DDEC61" stroke-width="1.5"/><circle cx="12" cy="12" r="1.6" fill="#DDEC61" stroke="#080808" stroke-width="0.8"/>',
-    ),
-    box: cursor(
-      '<path d="M12 4v16M4 12h16" stroke="#080808" stroke-width="3.5"/><path d="M12 4v16M4 12h16" stroke="#DDEC61" stroke-width="1.5"/><rect x="15" y="15" width="6" height="6" rx="1" fill="none" stroke="#DDEC61" stroke-width="1.5"/>',
-    ),
-    pen: cursor(
-      '<circle cx="12" cy="12" r="3.2" fill="#DDEC61" stroke="#080808" stroke-width="1.4"/>',
-    ),
-    arrow: cursor(
-      '<path d="M12 4v16M4 12h16" stroke="#080808" stroke-width="3.5"/><path d="M12 4v16M4 12h16" stroke="#DDEC61" stroke-width="1.5"/><path d="M15 21l6-6M17 15h4v4" fill="none" stroke="#DDEC61" stroke-width="1.5" stroke-linecap="round"/>',
-    ),
-  };
-
-  function cursor(body: string): string {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${body}</svg>`;
-    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
   }
 </script>
 
@@ -335,16 +384,20 @@
       height={geometry.h}
       rx={tool === 'pick' ? 3 : 2}
       class="dock-annotation-stroke"
-      stroke-width="2"
+      stroke-width={INK.stroke}
     />
   {:else if geometry.kind === 'arrow'}
     <path
       d={`M${geometry.from.x} ${geometry.from.y} L${geometry.to.x} ${geometry.to.y} ${arrowHead(geometry.from, geometry.to)}`}
       class="dock-annotation-stroke"
-      stroke-width="2.5"
+      stroke-width={INK.stroke}
     />
   {:else}
-    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width="2.5" />
+    <path
+      d={dockFreehandPath(geometry.points)}
+      class="dock-annotation-stroke"
+      stroke-width={INK.pen}
+    />
   {/if}
 {/snippet}
 
@@ -355,7 +408,13 @@
   data-testid="dock-annotation-overlay"
   data-mode={overlay?.mode ?? 'idle'}
   data-tool={overlay?.tool ?? ''}
-  style:cursor={overlay && !overlay.mouse ? CURSORS[overlay.tool] : 'default'}
+  style:--annotation-ink={INK.accent}
+  style:--annotation-paper={INK.paper}
+  style:--annotation-halo={INK.halo}
+  style:--annotation-badge-font={INK.badgeFontFamily}
+  style:--annotation-badge-size={`${INK.badgeRadius * INK.badgeTextScale}px`}
+  style:--annotation-badge-outline={`${INK.badgeOutline}px`}
+  style:cursor={overlay && !overlay.mouse ? dockAnnotationCursor(overlay.tool) : 'default'}
   role="presentation"
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
@@ -399,8 +458,10 @@
           out:fade={{ tier: 'fast' }}
         >
           {@render shape(mark.overlay, mark.tool)}
-          <circle cx={badge.x} cy={badge.y} r={BADGE / 2} class="dock-annotation-badge" />
-          <text x={badge.x} y={badge.y} class="dock-annotation-badge-text">{mark.n}</text>
+          {#if INK.showNumbers}
+            <circle cx={badge.x} cy={badge.y} r={BADGE / 2} class="dock-annotation-badge" />
+            <text x={badge.x} y={badge.y} class="dock-annotation-badge-text">{mark.n}</text>
+          {/if}
         </g>
       {/each}
 
@@ -418,7 +479,7 @@
               cy={row.origin.y}
               r="9"
               class="dock-annotation-stroke"
-              stroke-width="2"
+              stroke-width={INK.stroke}
             />
           {/if}
         </g>
@@ -433,9 +494,17 @@
 
     <!-- Annotate sessions only: dictation clicks need no tools. -->
     {#if overlay.mode !== 'dictation' && transport.toolbar && overlay.workArea}
-      <DockAnnotationToolbar
+      <!-- One tool bar: annotating, and while a recording is live (its chip appears). -->
+      <DockRecordingToolbar
         {overlay}
-        send={(request) => void transport.toolbar?.(request).catch(() => false)}
+        {signal}
+        pickFailureReason={pickFailure?.reason ?? null}
+        bind:anchor={toolbarAnchor}
+        send={(request) => {
+          if (['tool', 'mouse', 'clear', 'end', 'commit', 'done'].includes(request.action))
+            retirePickFeedback();
+          void transport.toolbar?.(request).catch(() => false);
+        }}
       />
     {/if}
   {/if}
@@ -484,10 +553,10 @@
 
   .dock-annotation-stroke {
     fill: none;
-    stroke: hsl(var(--primary));
+    stroke: var(--annotation-ink);
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 1px hsl(var(--background) / 0.65));
+    filter: drop-shadow(0 0 0.6px var(--annotation-halo));
   }
 
   .dock-annotation-mark {
@@ -496,16 +565,18 @@
   }
 
   .dock-annotation-badge {
-    fill: hsl(var(--primary));
-    stroke: hsl(var(--primary-foreground));
-    stroke-width: 1;
+    fill: var(--annotation-paper);
+    stroke: var(--annotation-ink);
+    stroke-width: var(--annotation-badge-outline);
   }
 
   .dock-annotation-badge-text {
-    fill: hsl(var(--primary-foreground));
-    font-size: 11px;
+    fill: var(--annotation-ink);
+    font-size: var(--annotation-badge-size);
+    font-family: var(--annotation-badge-font);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    letter-spacing: normal;
     text-anchor: middle;
     dominant-baseline: central;
   }
