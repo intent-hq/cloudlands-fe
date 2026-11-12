@@ -36,16 +36,43 @@ for (const mode of ['notch', 'floating'] as const) {
     // observing the next conversation's native resize grants.
     await component.locator('[data-dock-conversation-back]').click();
     await expect(component.locator('.overview-row').first()).toBeVisible();
+    const row = component.locator('.overview-row').first();
+    const owner = await row
+      .locator('button[data-workspace-id]')
+      .first()
+      .getAttribute('data-workspace-id');
+    if (!owner) throw new Error('Missing workspace owner for the resize journey');
     // Main can reply to an earlier resize while a new growth request is pending.
     // Grant some room, then the full request while the height morph is still running.
-    await page.evaluate((snapshot) => {
-      const host = document.querySelector('[data-preview-commands]')!;
-      const observer = new MutationObserver(() => {
-        const requests = JSON.parse(host.getAttribute('data-preview-commands') ?? '[]');
-        const last = requests.at(-1);
-        if (last?.action !== 'resize' || last.height < 450) return;
-        observer.disconnect();
-        const publish = (height: number, revision: number) =>
+    await page.evaluate(
+      ({ snapshot, owner }) => {
+        const host = document.querySelector('[data-preview-commands]')!;
+        let ready = false;
+        let granted = false;
+        const ownerCurrent = () => {
+          const h = (
+            window as unknown as {
+              __dockComposerE2E: {
+                store: {
+                  state: { dockConversation: { workspaceId: string | null; loading: boolean } };
+                };
+              };
+            }
+          ).__dockComposerE2E;
+          const dock = h.store.state.dockConversation;
+          const panel = document.querySelector<HTMLElement>(
+            '[data-testid="dock-conversation-surface"]',
+          );
+          return (
+            ready &&
+            dock.workspaceId === owner &&
+            !dock.loading &&
+            panel?.dataset.workspaceId === owner
+          );
+        };
+        const publish = (height: number, revision: number) => {
+          const current = JSON.parse(host.getAttribute('data-preview-placement') ?? 'null');
+          if (!ownerCurrent() || current?.revision !== revision - 1) return;
           window.dispatchEvent(
             new CustomEvent('dock-preview-placement', {
               detail: {
@@ -57,14 +84,55 @@ for (const mode of ['notch', 'floating'] as const) {
               },
             }),
           );
-        publish(300, 2);
-        setTimeout(() => publish(452, 3), 50);
-      });
-      observer.observe(host, { attributes: true, attributeFilter: ['data-preview-commands'] });
-    }, initial);
-    await component.locator('.overview-row').first().click();
+        };
+        const maybeGrant = () => {
+          if (granted || !ownerCurrent()) return;
+          const requests = JSON.parse(host.getAttribute('data-preview-commands') ?? '[]');
+          const last = requests.at(-1);
+          if (last?.action !== 'resize' || last.height < 450 || last.revision !== snapshot.revision)
+            return;
+          granted = true;
+          observer.disconnect();
+          publish(300, 2);
+          setTimeout(() => publish(452, 3), 50);
+        };
+        const observer = new MutationObserver(maybeGrant);
+        observer.observe(host, { attributes: true, attributeFilter: ['data-preview-commands'] });
+        window.addEventListener(
+          'dock-height-target-ready',
+          () => {
+            ready = true;
+            // The same pending request may predate Back; identical requests are deduplicated.
+            maybeGrant();
+          },
+          { once: true },
+        );
+      },
+      { snapshot: initial, owner },
+    );
+    await row.click();
     const surface = component.getByTestId('dock-conversation-surface');
     await expect(surface).toHaveCount(1);
+    await expect(surface).toBeVisible();
+    await expect(surface).toHaveAttribute('data-workspace-id', owner);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const h = (
+            window as unknown as {
+              __dockComposerE2E: {
+                store: {
+                  state: { dockConversation: { workspaceId: string | null; loading: boolean } };
+                };
+              };
+            }
+          ).__dockComposerE2E;
+          const dock = h.store.state.dockConversation;
+          return { workspaceId: dock.workspaceId, loading: dock.loading };
+        }),
+      )
+      .toEqual({ workspaceId: owner, loading: false });
+    await page.evaluate(() => window.dispatchEvent(new Event('dock-height-target-ready')));
     await expect(shell).toHaveAttribute('data-revision', '3');
     // The full native envelope alone is insufficient: its painted clip must reach it too.
     await expect
