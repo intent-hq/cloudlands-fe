@@ -38,7 +38,7 @@ export const GET_OWNER_STATUS_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.GET_OWNER_
 export const OWNER_CHANGED_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.OWNER_CHANGED;
 
 /** Structural subset of Electron's WebContents used by the tracker. */
-export interface ConsoleOwnerRenderer {
+interface ConsoleOwnerRenderer {
   id: number;
   isDestroyed(): boolean;
   send(channel: string, payload: { isOwner: boolean }): void;
