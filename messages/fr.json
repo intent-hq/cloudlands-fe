@@ -8242,6 +8242,7 @@
   "desktop_os_checklist_allowed": "Autorisé",
   "desktop_os_checklist_missing": "Pas encore autorisé",
   "desktop_os_checklist_blocked": "En attente des éléments ci-dessus",
+  "desktop_os_checklist_checking": "Vérification",
   "desktop_os_checklist_ready": "Prêt",
   "desktop_os_checklist_unconfirmed": "Non confirmé",
   "inlineHtml_preview_preview_label": "Aperçu",

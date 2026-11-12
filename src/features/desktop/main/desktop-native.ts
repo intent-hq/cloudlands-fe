@@ -169,53 +169,95 @@ const permissionObservation = z
     screenCapture: z.enum(['pending', 'ready', 'unavailable']),
   })
   .strict();
+type PermissionObservation = z.infer<typeof permissionObservation>;
 // The helper abandons a capture check that is not re-asked within 3 s.
 const PERMISSION_RECHECK_MS = 500;
 const PERMISSION_SETTLE_MS = 120_000;
-function pause(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const abort = () => {
+const PERMISSION_HOLD_MS = 1500;
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** `promise`, or undefined after `ms`; rejects with the reason once `signal` aborts. */
+function within<T>(promise: Promise<T>, ms: number, signal?: AbortSignal) {
+  return new Promise<T | undefined>((resolve, reject) => {
+    const settle = (finish: () => void) => {
       clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', abort);
-      resolve();
-    }, ms);
+      finish();
+    };
+    const abort = () => settle(() => reject(signal?.reason));
+    const timer = Number.isFinite(ms)
+      ? setTimeout(() => settle(() => resolve(undefined)), ms)
+      : undefined;
     signal?.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    );
   });
+}
+interface PermissionCheck {
+  first: Promise<PermissionObservation>;
+  latest?: PermissionObservation;
+  result: Promise<DesktopOsChecklist>;
 }
 
 export class DesktopNativeAdapter implements DesktopNative {
+  private readonly checks = new Map<string, PermissionCheck>();
   /** The only way to ask macOS for desktop permissions. The helper answers a new
    * request id with a "pending" capture check and settles it only when the same
-   * id asks again, so this re-asks until the answer is final. A refused first
-   * ask rejects; a later refusal or the deadline (default two minutes) ends the
-   * check as unavailable; `signal` rejects with its reason. */
+   * id asks again within 3 s. Main owns that: one loop per id re-asks until the
+   * answer is final, the deadline passes (default two minutes) or a re-ask is
+   * refused (both end as unavailable). A call waits up to `holdMs` for the final
+   * answer, else returns "checking"; asking again joins the same loop. A refused
+   * first ask rejects; `signal` rejects this call with its reason. */
   async requestPermissions(
     computerId: string,
     requestId: string,
-    { signal, deadline }: { signal?: AbortSignal; deadline?: number } = {},
+    {
+      signal,
+      deadline,
+      holdMs = PERMISSION_HOLD_MS,
+    }: { signal?: AbortSignal; deadline?: number; holdMs?: number } = {},
   ): Promise<DesktopOsChecklist> {
-    const until = Math.min(deadline ?? Infinity, Date.now() + PERMISSION_SETTLE_MS);
     signal?.throwIfAborted();
-    let seen = await this.askPermissions(computerId, requestId);
-    while (true) {
-      signal?.throwIfAborted();
-      const { accessibility, screenRecording, screenCapture } = seen;
-      if (!accessibility || !screenRecording)
-        return { accessibility, screenRecording, screenCapture: 'blocked' };
-      if (screenCapture !== 'pending') return { accessibility, screenRecording, screenCapture };
-      const unavailable = { accessibility, screenRecording, screenCapture: 'unavailable' as const };
-      if (Date.now() + PERMISSION_RECHECK_MS > until) return unavailable;
-      await pause(PERMISSION_RECHECK_MS, signal);
-      try {
-        seen = await this.askPermissions(computerId, requestId);
-      } catch {
-        signal?.throwIfAborted();
-        return unavailable;
+    const key = JSON.stringify([computerId, requestId]);
+    let check = this.checks.get(key);
+    if (!check) {
+      check = this.startCheck(computerId, requestId, deadline ?? Date.now() + PERMISSION_SETTLE_MS);
+      this.checks.set(key, check);
+      void check.result.catch(() => undefined).finally(() => this.checks.delete(key));
+    }
+    await within(check.first, Infinity, signal);
+    const final = await within(check.result, holdMs, signal);
+    if (final) return final;
+    const { accessibility, screenRecording } = check.latest ?? (await check.first);
+    return { accessibility, screenRecording, screenCapture: 'checking' };
+  }
+  private startCheck(computerId: string, requestId: string, until: number): PermissionCheck {
+    const first = this.askPermissions(computerId, requestId);
+    const check: PermissionCheck = { first, result: first.then(settle) };
+    const ask = () => this.askPermissions(computerId, requestId);
+    async function settle(seen: PermissionObservation): Promise<DesktopOsChecklist> {
+      while (true) {
+        check.latest = seen;
+        const { accessibility, screenRecording, screenCapture } = seen;
+        if (!accessibility || !screenRecording)
+          return { accessibility, screenRecording, screenCapture: 'blocked' };
+        if (screenCapture !== 'pending') return { accessibility, screenRecording, screenCapture };
+        const unavailable = {
+          accessibility,
+          screenRecording,
+          screenCapture: 'unavailable' as const,
+        };
+        if (Date.now() + PERMISSION_RECHECK_MS > until) return unavailable;
+        await delay(PERMISSION_RECHECK_MS);
+        try {
+          seen = await ask();
+        } catch {
+          return unavailable;
+        }
       }
     }
+    return check;
   }
   private async askPermissions(computerId: string, requestId: string) {
     return permissionObservation.parse(

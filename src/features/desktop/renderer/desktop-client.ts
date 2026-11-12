@@ -94,7 +94,7 @@ const macPermissions = z.object({
   platform: z.literal('macos'),
   accessibility: z.boolean(),
   screenRecording: z.boolean(),
-  screenCapture: z.enum(['blocked', 'ready', 'unavailable']),
+  screenCapture: z.enum(['blocked', 'checking', 'ready', 'unavailable']),
 });
 const permissionResult = z.discriminatedUnion('platform', [
   z.object({ platform: z.literal('windows') }),

@@ -8242,6 +8242,7 @@
   "desktop_os_checklist_allowed": "Allowed",
   "desktop_os_checklist_missing": "Not allowed yet",
   "desktop_os_checklist_blocked": "Waits for the items above",
+  "desktop_os_checklist_checking": "Checking",
   "desktop_os_checklist_ready": "Ready",
   "desktop_os_checklist_unconfirmed": "Not confirmed",
   "inlineHtml_preview_preview_label": "Preview",

@@ -239,10 +239,25 @@ describe('shared OS permission readiness', () => {
     },
   );
 
+  it('reports checking after the hold while main keeps settling one shared check', async () => {
+    const h = helper(pending, pending, pending, pending, pending, ready);
+    const first = h.adapter.requestPermissions('local', 'request');
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(first).resolves.toEqual({ ...ready, screenCapture: 'checking' });
+    await vi.advanceTimersByTimeAsync(100);
+    const second = h.adapter.requestPermissions('local', 'request');
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(second).resolves.toEqual(ready);
+    expect(h.asks()).toHaveLength(6);
+  });
+
   it('ends a check that outlasts its deadline as not confirmed', async () => {
     const h = helper(pending);
     const result = settled(
-      h.adapter.requestPermissions('local', 'request', { deadline: Date.now() + 2000 }),
+      h.adapter.requestPermissions('local', 'request', {
+        deadline: Date.now() + 2000,
+        holdMs: 5000,
+      }),
     );
     await expect(result).resolves.toEqual({ ...ready, screenCapture: 'unavailable' });
     const asked = h.asks().length;
@@ -252,14 +267,29 @@ describe('shared OS permission readiness', () => {
 
   it('gives up after two minutes without a deadline', async () => {
     const h = helper(pending);
-    const result = h.adapter.requestPermissions('local', 'request');
+    const result = h.adapter.requestPermissions('local', 'request', { holdMs: Infinity });
     await vi.advanceTimersByTimeAsync(119_000);
     expect(h.asks().length).toBeGreaterThan(200);
     await vi.advanceTimersByTimeAsync(2000);
     await expect(result).resolves.toEqual({ ...ready, screenCapture: 'unavailable' });
   });
 
-  it('stops asking and rejects with the caller reason when cancelled', async () => {
+  it('follows a deadline later than two minutes', async () => {
+    const h = helper(pending);
+    let outcome: unknown;
+    void h.adapter
+      .requestPermissions('local', 'request', {
+        deadline: Date.now() + 300_000,
+        holdMs: Infinity,
+      })
+      .then((value) => (outcome = value));
+    await vi.advanceTimersByTimeAsync(200_000);
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(100_000);
+    expect(outcome).toEqual({ ...ready, screenCapture: 'unavailable' });
+  });
+
+  it('rejects the waiting call with the caller reason when cancelled', async () => {
     const h = helper(pending);
     const controller = new AbortController();
     const result = h.adapter.requestPermissions('local', 'request', { signal: controller.signal });
@@ -268,9 +298,6 @@ describe('shared OS permission readiness', () => {
     const reason = new Error('stale');
     controller.abort(reason);
     await expect(result).rejects.toBe(reason);
-    const asked = h.asks().length;
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(h.asks()).toHaveLength(asked);
   });
 
   it('propagates a refusal of the first ask', async () => {
@@ -330,28 +357,28 @@ describe('shared OS permission readiness', () => {
     h.client.emit('status', 'connecting');
     const error = await result.catch((e) => e);
     expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-stale-request' });
-    const asked = agent.asks().length;
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(agent.asks()).toHaveLength(asked);
     expect(h.client.listenerCount('status')).toBe(0);
   });
 
-  it('never waits past the agent request expiry', async () => {
+  it('never keeps checking past the agent request expiry', async () => {
     const agent = helper(pending);
     const h = setup();
     h.snapshot.pending.expiresAt = new Date(Date.now() + 5000).toISOString();
-    const result = requestDesktopPermissions(
-      h.client as unknown as JsonRpcClient,
-      selection,
-      agent.adapter,
-    );
-    result.catch(() => undefined);
-    await vi.advanceTimersByTimeAsync(5000);
-    const error = await result.catch((e) => e);
-    expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-stale-request' });
+    const run = () =>
+      requestDesktopPermissions(h.client as unknown as JsonRpcClient, selection, agent.adapter);
+    const first = run();
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(first).resolves.toEqual({
+      platform: 'macos',
+      ...ready,
+      screenCapture: 'checking',
+    });
+    await vi.advanceTimersByTimeAsync(4000);
     const asked = agent.asks().length;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(agent.asks()).toHaveLength(asked);
+    const error = await run().catch((e) => e);
+    expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-stale-request' });
   });
 });
 

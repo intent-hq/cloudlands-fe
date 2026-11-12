@@ -8242,6 +8242,7 @@
   "desktop_os_checklist_allowed": "허용됨",
   "desktop_os_checklist_missing": "아직 허용되지 않음",
   "desktop_os_checklist_blocked": "위 항목을 기다리는 중",
+  "desktop_os_checklist_checking": "확인 중",
   "desktop_os_checklist_ready": "준비됨",
   "desktop_os_checklist_unconfirmed": "확인되지 않음",
   "inlineHtml_preview_preview_label": "미리보기",

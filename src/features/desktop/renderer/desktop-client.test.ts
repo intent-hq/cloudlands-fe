@@ -126,6 +126,7 @@ describe('native permission check responses', () => {
     [true, false, 'blocked'],
     [false, true, 'blocked'],
     [false, false, 'blocked'],
+    [true, true, 'checking'],
   ] as const)(
     'returns the observed checklist with one relaunch hint (%s, %s, %s)',
     async (accessibility, screenRecording, screenCapture) => {

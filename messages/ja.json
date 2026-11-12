@@ -8242,6 +8242,7 @@
   "desktop_os_checklist_allowed": "許可済み",
   "desktop_os_checklist_missing": "未許可",
   "desktop_os_checklist_blocked": "上の項目を待っています",
+  "desktop_os_checklist_checking": "確認中",
   "desktop_os_checklist_ready": "準備完了",
   "desktop_os_checklist_unconfirmed": "未確認",
   "inlineHtml_preview_preview_label": "プレビュー",

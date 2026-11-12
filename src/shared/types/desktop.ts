@@ -10,12 +10,13 @@ export interface DesktopPermissionState {
   allowed: boolean;
 }
 export type DesktopPermissionDecision = 'allow_once' | 'allow_future' | 'deny';
-/** Settled macOS setup for one Allow gesture. Observation only, never a grant.
- * The capture check is `blocked` until both grants are present. */
+/** Observed macOS setup for one Allow gesture. Observation only, never a grant.
+ * The capture check is `blocked` until both grants are present. `checking` means
+ * main is still settling it: ask again with the same request id to follow it. */
 export interface DesktopOsChecklist {
   accessibility: boolean;
   screenRecording: boolean;
-  screenCapture: 'blocked' | 'ready' | 'unavailable';
+  screenCapture: 'blocked' | 'checking' | 'ready' | 'unavailable';
 }
 export interface DesktopPermissionRequest {
   requestId: string;

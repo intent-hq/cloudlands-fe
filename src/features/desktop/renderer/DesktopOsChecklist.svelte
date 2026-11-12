@@ -16,6 +16,8 @@
         return { state: 'waiting', status: m.desktop_os_checklist_blocked() };
       if (checklist.screenCapture === 'ready')
         return { state: 'done', status: m.desktop_os_checklist_ready() };
+      if (checklist.screenCapture === 'checking')
+        return { state: 'waiting', status: m.desktop_os_checklist_checking() };
       return { state: 'failed', status: m.desktop_os_checklist_unconfirmed() };
     };
     return [
