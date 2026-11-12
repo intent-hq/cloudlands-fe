@@ -25,7 +25,10 @@
  *             "options": [{ "optionId": "allow", "name": "Allow", "kind": "allow_once" },
  *                         { "optionId": "reject", "name": "Reject", "kind": "reject_once" }] } }],
  *           "response": "Permission answered." }
- *       An error answer is logged and the turn still finishes with the reply.
+ *       An error answer is logged and the turn still finishes with the reply. intentd shows the
+ *       card only when agents.permissionPolicy (or INTENTD_PERMISSION_POLICY) is "interactive";
+ *       under its default "allow" it approves unasked. See the header of the monorepo's
+ *       scripts/dev-sandbox.sh for a ready-made sandbox command.
  *   MOCK_AGENT_BEHAVIOR_FILE - path of a JSON file holding the same payload, re-read on every
  *     session/prompt. Takes precedence over MOCK_AGENT_BEHAVIOR when the file exists. The
  *     daemon spawns this agent with the env it was itself started with, so a test can only
