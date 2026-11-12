@@ -3,6 +3,8 @@
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Logo from '$lib/components/Logo.svelte';
+  import { activateIntentFromDock } from '$features/hud/dock-context-menu';
+  import { DOCK_NOTCH_HOVER_DELAY_MS } from '$features/hud/utils/dock-hover-intent';
   import { spring } from '$lib/motion';
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
   import { m } from '$shared/paraglide/messages.js';
@@ -13,30 +15,24 @@
   import type { DockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { createDockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { openDockWorkspace, openDockAssistant } from '$features/hud/dock-navigation';
-  import { dockHeightStep } from '$features/hud/utils/dock-motion';
-  import {
-    createFrameLoop,
-    createGrowGate,
-    createRevealTween,
-  } from '$features/hud/utils/dock-shell-frames';
   import {
     dockViewportRect,
-    getDockHeaderBounds,
     getDockShellLayout,
     dockCompactWingWidth,
-    dockDragEndCommand,
-    dockDragGripCenter,
-    type DockDragGesture,
-    type DockDragFinish,
   } from './dock-shell-geometry';
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
-  import { dockIntro } from '$features/hud/intro/dock-intro.svelte';
+  import { dockIntro, releaseDockIntroHold } from '$features/hud/intro/dock-intro.svelte';
   import { useDockConversationResize } from './dock-conversation-resize.svelte';
+  import { useDockHoverComposerFocus } from './dock-hover-composer-focus.svelte';
+  import { useDockShellDrag } from './dock-shell-drag.svelte';
+  import { useDockShellMotion } from './dock-shell-motion.svelte';
   import { useDockShellResize } from './dock-shell-resize.svelte';
   import { useDockConversationFocus } from './dock-conversation-focus.svelte';
   import DockCompanionContent from './DockCompanionContent.svelte';
   import DockEdgeConversation from './DockEdgeConversation.svelte';
   import type { DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
+  import type { DockRecordingIndicator as RecordingState } from '$features/hud/utils/dock-recording-indicator';
+  import DockRecordingIndicator from './DockRecordingIndicator.svelte';
   import DockUpdateStatus from './DockUpdateStatus.svelte';
   import { dockStatusGroups } from '$features/hud/utils/dock-status-groups';
   import { dockPlacementFailureMessage } from '$features/hud/utils/dock-placement-failure';
@@ -45,9 +41,13 @@
   import DockShellSilhouette from './DockShellSilhouette.svelte';
   import DockMachineMenu from './DockMachineMenu.svelte';
   import type { DockMachineOption } from './dock-machine-types';
-
   let {
     workspaces,
+    olderWorkspaces = [],
+    recording = null,
+    inputLive = false,
+    recordingStopping = false,
+    onStopRecording,
     machines,
     machineId = '',
     machineSwitching = null,
@@ -56,6 +56,8 @@
     placement,
     onPlacementCommand,
     focusRequest = 0,
+    closeRequest = 0,
+    sideDefaultWorkspaceId = null,
     placementError = false,
     dragStartResult,
     resizeStartResult,
@@ -66,9 +68,14 @@
     conversation,
     conversationWorkspaceId = null,
     onOpenConversation,
-    onCloseConversation,
+    onHomeDismiss,
   }: {
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
+    recording?: RecordingState | null;
+    inputLive?: boolean;
+    recordingStopping?: boolean;
+    onStopRecording?: () => void;
     machines?: DockMachineOption[];
     machineId?: string;
     machineSwitching?: string | null;
@@ -78,10 +85,15 @@
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
     onCloseConversation?: () => void;
+    onHomeDismiss?: () => void;
     staticData?: boolean;
     placement: DockPlacementSnapshot;
     onPlacementCommand: (command: DockPlacementCommand) => void;
     focusRequest?: number;
+    /** Increments when the open shortcut is pressed again: close as Escape would. */
+    closeRequest?: number;
+    /** On a side, the chat the open shortcut returns to (open, last, else first). */
+    sideDefaultWorkspaceId?: string | null;
     placementError?: Parameters<typeof dockPlacementFailureMessage>[0];
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -89,25 +101,25 @@
     onOpenAssistant?: () => void | Promise<void>;
     pointerController?: DockPointerRegionController;
   } = $props();
-
   // svelte-ignore state_referenced_locally
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pointer-region state controller, not a domain-data request
   const pointerRegion = pointerController ?? createDockPointerRegionController();
   const assistantId = 'dock:assistant';
   const pinned = $derived(!!conversationWorkspaceId);
   let rootElement = $state<HTMLDivElement>();
+  let compactRecording = $state<string | null>(null);
+  const mediaHold = $derived(inputLive && compactRecording !== recording?.clipId);
   const conversationPresence = useDockConversationPresence(
     () => conversationWorkspaceId,
     () => rootElement,
     () => placement.captureHidden || placement.phase === 'dragging',
-    () => conversationResize.held,
+    () => conversationResize.held || nativeMenuOpen || mediaHold,
     () => !edge,
+    () => (notch ? DOCK_NOTCH_HOVER_DELAY_MS : 0),
   );
   const conversationVisible = $derived(pinned && conversationPresence.open);
-
   let conversationRegions: DockPointerRect[] = [];
   let edgeState = $state({ held: false, reveal: 0, shell: null as DockPointerRect | null });
-  // Screen-space card and rail-relative anchor survive native window expansion.
   let edgeOrigin = $state<{
     workspaceId: string;
     card: DockPointerRect;
@@ -156,46 +168,134 @@
   let reducedMotion = $state(false);
   let keyboardOpen = $state(false);
   let lastUserInput = Number.NEGATIVE_INFINITY;
-  let pointerInside = false;
-  let openTimer: ReturnType<typeof setTimeout> | undefined;
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let measureFrame: number | undefined;
-  let dragFrame: number | undefined;
-  let dragGripCenter = $state({ x: 26, y: 20 });
-  const heldGripCenter = $derived(dragging ? dragGripCenter : null);
-  let surfaceExpanded = $state(false);
-  let contentVisible = $state(false);
-  let reveal = $state(0);
-  const shellTween = createRevealTween(
-    () => reveal,
-    (value) => (reveal = value),
-  );
-  let openHeight = $state<number | null>(null);
-  let heldHeight = $state<number | null>(null);
-  const heightLoop = createFrameLoop();
-  let heightTarget = 0;
-  const growGate = createGrowGate((from, to) => !disposed && morphHeight(openHeight ?? from, to));
   let disposed = false;
-  let sequence = 0;
-  let gesture = $state<DockDragGesture | null>(null);
-  let awaitingDragStart = $state<number | null>(null);
-  let activeDragToken = $state<string | null>(null);
-  let finishDrag = $state<DockDragFinish | null>(null);
-  let suppressClick = false;
-  let captureElement: HTMLElement | null = null;
+  const shellMotion = useDockShellMotion({
+    placement: () => placement,
+    expanded: () => expanded,
+    dragging: () => dragging,
+    reducedMotion: () => reducedMotion,
+    edge: () => edge,
+    compactWidth: () => compactWidth,
+    compactHeight: () => compactHeight,
+    inputLive: () => inputLive,
+    desiredHeight: () => desiredHeight,
+    disposed: () => disposed,
+    surface: () => surfaceElement,
+    resizeHeld: () => conversationResize.held,
+    resizeBusy: () => conversationResize.busy,
+    closed() {
+      showOlder = false;
+      overviewQuery = '';
+    },
+  });
+
+  const shellDrag = useDockShellDrag({
+    placement: () => placement,
+    startResult: () => dragStartResult,
+    disposed: () => disposed,
+    machineSwitching: () => machineSwitching,
+    resizeBusy: () => conversationResize.busy,
+    dragging: () => dragging,
+    grip: () => gripElement,
+    surface: () => surfaceElement,
+    shown: () => shown,
+    floatingCompact: () => floatingCompact,
+    headerHeight: () => headerHeight,
+    command,
+    nativeCommand(value) {
+      onPlacementCommand(value);
+    },
+    started() {
+      expandedByUser = false;
+    },
+    pinned: () => pinned,
+    edge: () => edge,
+    expanded: () => expanded,
+    surfaceExpanded: () => shellMotion.surfaceExpanded,
+    notch: () => notch,
+    keyboardOpen: () => keyboardOpen,
+    setKeyboardOpen(value) {
+      keyboardOpen = value;
+    },
+    setExpanded(value) {
+      expandedByUser = value;
+    },
+    pointerEntered() {
+      pointerRegion.recordEnter?.();
+      hoverComposerFocus.enter();
+    },
+    leavePresence() {
+      conversationPresence.leave();
+      hoverComposerFocus.leave();
+    },
+    showPresence() {
+      conversationPresence.show();
+    },
+    outsideFocus(event) {
+      conversationFocus.pointerLeave(event);
+    },
+    keepsOpen: (inside, keyboard) => conversationFocus.keepsOverviewOpen(inside, keyboard),
+    popupEscapeEvent: () => popupEscapeEvent,
+    machineMenuOpen: () => machineMenuOpen,
+    machineId: () => machineId,
+    machines: () => machines,
+    machineError: () => machineError,
+    switchMachine(id) {
+      onMachine?.(id);
+    },
+    closeMenu() {
+      machineMenuOpen = false;
+    },
+    closeLikeEscape,
+    root: () => rootElement,
+    outsideBlocked: () =>
+      nativeMenuOpen ||
+      machineMenuOpen ||
+      conversationPopupOpen ||
+      conversationResize.held ||
+      (!expanded && !edgeState.held),
+    userInput() {
+      lastUserInput = performance.now();
+    },
+    dismiss,
+    homeDismiss() {
+      onHomeDismiss?.();
+    },
+  });
+  const nativeMenuOpen = $derived(shellDrag.nativeMenuOpen);
+  const heldGripCenter = $derived(dragging ? shellDrag.gripCenter : null);
   let sidePreviewOpen = $state(false);
   let sideCloseRequest = $state(0);
+  /** Local open requests from the open shortcut on a collapsed dock (see closeRequest). */
+  let shortcutOpenRequest = $state(0);
+  /**
+   * Open requests the side entries take. On a side the open shortcut opens a chat (the
+   * dock routes it to the last or first workspace), so the entries take it only when
+   * there is no workspace to open.
+   */
+  let sideFocusRequest = $state(0);
+  let sideFocusRequestSeen = untrack(() => focusRequest);
+  $effect(() => {
+    const request = focusRequest;
+    if (request === sideFocusRequestSeen) return;
+    sideFocusRequestSeen = request;
+    if (untrack(() => workspaces.length === 0)) sideFocusRequest += 1;
+  });
   let sideRegions: DockPointerRect[] = [];
   const expanded = $derived(
     !edge &&
       !dragging &&
-      (machineMenuOpen ||
+      (nativeMenuOpen ||
+        machineMenuOpen ||
         (pinned
           ? conversationVisible
           : expandedByUser || dockIntro.hold || (!floating && pending))),
   );
   const statusGroups = $derived(dockStatusGroups(workspaces));
-  const compactWingWidth = $derived(dockCompactWingWidth(statusGroups.length));
+  const compactWingWidth = $derived(
+    Math.max(dockCompactWingWidth(statusGroups.length), recording ? 120 : 0),
+  );
   const rowLimit = 5;
   const conversationResize = useDockConversationResize(
     () => placement,
@@ -204,17 +304,23 @@
     () => resizeStartResult,
     (value) => onPlacementCommand(value),
   );
+  let showOlder = $state(false);
+  // The index search survives opening a conversation and Back; a full close clears it.
+  let overviewQuery = $state('');
+  const overviewWorkspaceCount = $derived(workspaces.length);
   const layout = $derived(
     getDockShellLayout(placement, {
-      surfaceExpanded,
+      surfaceExpanded: shellMotion.surfaceExpanded,
+      recording: !!recording,
       conversationOpen: pinned,
       conversationSize: conversationResize.size,
-      reveal,
-      expandedHeight: openHeight,
+      reveal: shellMotion.reveal,
+      expandedHeight: shellMotion.openHeight,
       rowLimit,
       workspaceCount: machineMenuOpen
-        ? Math.max(workspaces.length, Math.min(machines?.length ?? 0, 5))
-        : workspaces.length,
+        ? Math.max(overviewWorkspaceCount, Math.min(machines?.length ?? 0, 5))
+        : overviewWorkspaceCount,
+      hasOlderWorkspaces: olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
       intro: dockIntro.open,
@@ -239,65 +345,30 @@
   });
   const headerWingLeft = $derived(shown.x + 6);
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
-
-  function stopHeight(): void {
-    growGate.cancel();
-    heightLoop.cancel();
-    heldHeight = null;
-    openHeight = null;
-  }
-
-  function morphHeight(from: number, to: number): void {
-    heldHeight = to < from ? Math.max(heldHeight ?? 0, placement.surface.height) : null;
-    openHeight = from;
-    heightLoop.start((elapsed) => {
-      const step = dockHeightStep(from, to, elapsed);
-      openHeight = step.value;
-      if (!step.done) return false;
-      heldHeight = null;
-      if (placement.surface.height <= to + 0.5) openHeight = null;
-      return true;
-    });
-  }
-
-  function sendDragEnd(token: string, finish: DockDragFinish): void {
-    command(dockDragEndCommand(token, finish, ++sequence));
-  }
+  let recordingSeen: string | null = null;
   $effect(() => {
-    const wantOpen = expanded;
-    const moving = dragging;
-    const instant = reducedMotion || keyboardOpen;
-    const room = placement.surface.width > compactWidth || placement.surface.height > compactHeight;
+    const clipId = recording?.clipId ?? null;
+    if (clipId === recordingSeen) return;
+    recordingSeen = clipId;
     untrack(() => {
-      if (moving) {
-        shellTween.animate(0, true);
-        contentVisible = false;
-        surfaceExpanded = false;
-        return;
-      }
-      if (wantOpen) {
-        surfaceExpanded = true;
-        if (room) {
-          contentVisible = true;
-          shellTween.animate(1, instant);
-        }
-      } else {
-        const focused = document.activeElement;
-        if (
-          focused instanceof HTMLElement &&
-          focused.closest('.overview-frame') &&
-          surfaceElement?.contains(focused)
-        )
-          focused.blur();
-        shellTween.animate(0, instant);
-      }
+      compactRecording = clipId;
+      if (!clipId) return;
+      shellDrag.cancelOpen();
+      shellDrag.cancelClose();
+      hoverComposerFocus.leave();
+      conversationPresence.hide(true);
+      releaseDockIntroHold();
+      shellDrag.dismissedUntilLeave = shellDrag.pointerInside;
+      shellDrag.pointerInside = false;
+      expandedByUser = false;
+      keyboardOpen = false;
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && rootElement?.contains(focused)) focused.blur();
     });
   });
-
   function command(value: DockPlacementCommand): void {
     if (!placement.captureHidden) onPlacementCommand(value);
   }
-
   function publishRegions(): void {
     if (disposed || !surfaceElement || placement.captureHidden) return;
     const rail = { ...shown, x: placement.surface.x + shown.x, y: placement.surface.y + shown.y };
@@ -329,60 +400,19 @@
       publishRegions();
     });
   }
-
   function conversationRegionsChanged(regions: DockPointerRect[]): void {
     conversationRegions = regions;
     measure();
   }
-
-  $effect(() => {
-    const target = desiredHeight;
-    const settled = expanded && surfaceExpanded && reveal === 1;
-    const immediate =
-      reducedMotion ||
-      keyboardOpen ||
-      dragging ||
-      placement.captureHidden ||
-      conversationResize.held ||
-      conversationResize.busy;
-    untrack(() => {
-      const previous = heightTarget;
-      heightTarget = target;
-      if (immediate) {
-        if (openHeight !== null || heldHeight !== null) stopHeight();
-        return;
-      }
-      if (previous === target || previous === 0) return;
-      if (!settled) {
-        stopHeight();
-        return;
-      }
-      const from = openHeight ?? placement.surface.height;
-      if (target > from && placement.surface.height < target - 0.5) {
-        heightLoop.cancel();
-        openHeight = from;
-        growGate.hold(from, target);
-        return;
-      }
-      growGate.cancel();
-      morphHeight(from, target);
-    });
-  });
-
-  $effect(() => {
-    placement.surface.height;
-    untrack(() => {
-      if (growGate.pending) growGate.release(placement.surface.height);
-      else if (!heightLoop.active && heldHeight === null && openHeight !== null) openHeight = null;
-    });
-  });
-
   useDockShellResize(
     () => ({
       placement,
-      gestureHeld: gesture !== null || awaitingDragStart !== null,
+      gestureHeld: shellDrag.gesture !== null || shellDrag.awaiting !== null,
       width: desiredWidth,
-      height: heldHeight === null ? desiredHeight : Math.max(desiredHeight, heldHeight),
+      height:
+        shellMotion.heldHeight === null
+          ? desiredHeight
+          : Math.max(desiredHeight, shellMotion.heldHeight),
       railHeight,
       compactWingWidth,
       conversationVisible: conversationVisible || edgeState.held,
@@ -393,7 +423,6 @@
     }),
     command,
   );
-
   $effect(() => {
     placement.revision;
     const surface = surfaceElement;
@@ -403,75 +432,38 @@
     observer.observe(surface);
     return () => observer.disconnect();
   });
-
   $effect(() => {
     shown;
     placement.revision;
     untrack(publishRegions);
   });
-
-  $effect(() => {
-    const result = dragStartResult;
-    const awaiting = awaitingDragStart;
-    if (!result || awaiting === null || result.id <= awaiting) return;
-    untrack(() => {
-      awaitingDragStart = null;
-      const finish = finishDrag;
-      finishDrag = null;
-      if (!result.token) {
-        releaseGesture();
-        activeDragToken = null;
-        return;
-      }
-      if (finish || !gesture || disposed || placement.captureHidden) {
-        sendDragEnd(
-          result.token,
-          disposed || placement.captureHidden
-            ? { action: 'cancel-drag' }
-            : (finish ?? { action: 'cancel-drag' }),
-        );
-      } else {
-        activeDragToken = result.token;
-      }
-    });
-  });
-
-  $effect(() => {
-    if (placement.phase === 'idle' && activeDragToken && awaitingDragStart === null) {
-      untrack(() => {
-        activeDragToken = null;
-        releaseGesture();
-      });
-    }
-  });
-
   $effect(() => {
     if (placement.captureHidden) {
       untrack(() => {
-        pointerInside = false;
-        pointerEnd(true);
-        shellTween.animate(0, true);
-        contentVisible = false;
-        surfaceExpanded = false;
+        shellDrag.cancelOpen();
+        shellDrag.pointerInside = false;
+        shellDrag.pointerEnd(true);
+        shellMotion.animate(0, true);
+        shellMotion.contentVisible = false;
+        shellMotion.surfaceExpanded = false;
       });
       expandedByUser = false;
       pointerRegion.deactivate([], placement.revision);
     }
   });
-
   $effect(() => {
-    if ((reveal === 0 && !edge) || dragging || placement.captureHidden) composerAsk.open = null;
+    if ((shellMotion.reveal === 0 && !edge) || dragging || placement.captureHidden)
+      composerAsk.open = null;
   });
-
   const conversationFocus = useDockConversationFocus({
     get workspaceId() {
       return conversationWorkspaceId;
     },
     get request() {
-      return focusRequest;
+      return focusRequest + shortcutOpenRequest;
     },
     get contentVisible() {
-      return contentVisible;
+      return shellMotion.contentVisible;
     },
     get keyboardOpen() {
       return keyboardOpen;
@@ -492,82 +484,68 @@
       return gripElement;
     },
     openKeyboard(returning = false) {
+      shellDrag.cancelOpen();
       conversationPresence.show(!returning);
       expandedByUser = true;
       keyboardOpen = !returning;
     },
-    pointerOutside: leave,
+    pointerOutside: shellDrag.leave,
   });
-
-  function enter(): void {
-    pointerInside = true;
-    clearTimeout(closeTimer);
-    if (gesture || awaitingDragStart !== null || dragging) return;
-    if (pinned) keyboardOpen = false;
-    if (edge || expanded) return;
-    keyboardOpen = false;
-    clearTimeout(openTimer);
-    if (surfaceExpanded) expandedByUser = true;
-    else
-      openTimer = setTimeout(() => {
-        expandedByUser = true;
-      }, spring.fast.settleMs);
-  }
-
-  function leave(event?: PointerEvent | FocusEvent): void {
-    if (event instanceof PointerEvent) {
-      pointerInside = false;
-      if (!gesture && awaitingDragStart === null) conversationFocus.pointerLeave(event);
-    }
-    clearTimeout(openTimer);
-    clearTimeout(closeTimer);
-    if (
-      event instanceof FocusEvent &&
-      event.relatedTarget instanceof Node &&
-      surfaceElement?.contains(event.relatedTarget)
-    )
-      return;
-    const close = () => {
-      if (gesture || awaitingDragStart !== null || dragging) return;
-      if (!conversationFocus.keepsOverviewOpen(pointerInside, keyboardOpen)) {
-        expandedByUser = false;
-      }
-    };
-    if (event instanceof FocusEvent && keyboardOpen) closeTimer = setTimeout(close, 0);
-    else closeTimer = setTimeout(close, spring.moderate.settleMs);
-  }
-
+  const hoverComposerFocus = useDockHoverComposerFocus(
+    () => ({
+      notch,
+      workspaceId: conversationWorkspaceId,
+      inputLive,
+      expanded,
+      settled: shellMotion.reveal === 1 && shellMotion.settled,
+      blocked:
+        inputLive ||
+        dragging ||
+        !!shellDrag.gesture ||
+        shellDrag.awaiting !== null ||
+        placement.captureHidden ||
+        placement.phase !== 'idle' ||
+        conversationResize.held,
+      popup: nativeMenuOpen || machineMenuOpen || conversationPopupOpen,
+      root: rootElement,
+    }),
+    () => command({ action: 'focus' }),
+  );
   function resetPlacement(): void {
-    stopHeight();
+    shellDrag.cancelOpen();
+    shellMotion.stopHeight();
     expandedByUser = false;
-    contentVisible = false;
-    surfaceExpanded = false;
-    reveal = 0;
+    shellMotion.contentVisible = false;
+    shellMotion.surfaceExpanded = false;
+    shellMotion.reveal = 0;
     command({ action: 'move', target: 'reset' });
     void tick().then(() => gripElement?.focus({ preventScroll: true }));
   }
-
   function dismiss(): void {
-    if (placement.captureHidden) return;
-    pointerInside = false;
-    clearTimeout(openTimer);
-    clearTimeout(closeTimer);
-    if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
+    if (placement.captureHidden || inputLive || recording || nativeMenuOpen) return;
+    hoverComposerFocus.leave();
+    conversationPresence.hide(shellDrag.pointerInside);
+    releaseDockIntroHold();
+    shellDrag.dismissedUntilLeave = shellDrag.pointerInside;
+    if (!pinned) onHomeDismiss?.();
+    shellDrag.pointerInside = false;
+    shellDrag.cancelOpen();
+    shellDrag.cancelClose();
+    shellDrag.cancelFrame();
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
-    dragFrame = measureFrame = undefined;
-    shellTween.cancel();
-    stopHeight();
-    pointerEnd(true);
+    measureFrame = undefined;
+    shellMotion.stopHeight(true);
+    shellDrag.pointerEnd(true);
     expandedByUser = false;
     keyboardOpen = false;
-    contentVisible = false;
+    shellMotion.contentVisible = false;
     feedback = null;
     (document.activeElement as HTMLElement | null)?.blur();
-    clearTimeout(closeTimer);
+    shellDrag.cancelClose();
     pointerRegion.deactivate([], placement.revision);
-    command({ action: 'dismiss' });
+    // Collapse only: `dismiss` is the dock's own Hide (it closes and turns the dock off).
+    command({ action: 'release' });
   }
-
   async function runAction(
     action: () => void | Promise<void>,
     starting: string,
@@ -586,13 +564,22 @@
       if (!disposed) pending = false;
     }
   }
-  function openWorkspace(id: string): void {
+  function reopenRecording(): void {
+    if (!recording || recording.workspaceId !== conversationWorkspaceId) return;
+    command({ action: 'focus' });
+    conversationPresence.show();
+    expandedByUser = true;
+    keyboardOpen = true;
+    composerAsk.open = recording.workspaceId;
+    composerAsk.request += 1;
+  }
+  function openWorkspace(id: string, fromKeyboard = false): void {
     if (onOpenConversation) {
       command({ action: 'focus' });
       const workspaceId = id === assistantId ? CHIEF_WORKSPACE_ID : id;
       if (notch || edge) composerAsk.open = workspaceId;
       if (edge) composerAsk.request += 1;
-      conversationPresence.show();
+      conversationPresence.show(fromKeyboard);
       onOpenConversation(workspaceId);
       return;
     }
@@ -602,125 +589,11 @@
       m.dock_openFailed_error(),
     );
   }
-
-  function pointerDown(event: PointerEvent): void {
-    if (
-      machineSwitching !== null ||
-      event.button !== 0 ||
-      !event.isPrimary ||
-      gesture ||
-      awaitingDragStart !== null ||
-      conversationResize.busy ||
-      dragging ||
-      placement.captureHidden
-    )
-      return;
-    clearTimeout(openTimer);
-    clearTimeout(closeTimer);
-    const gripBounds = gripElement?.getBoundingClientRect();
-    const surfaceBounds = surfaceElement?.getBoundingClientRect();
-    const visibleHeader = getDockHeaderBounds(placement, shown, floatingCompact, headerHeight);
-    dragGripCenter = dockDragGripCenter(
-      gripBounds,
-      surfaceBounds,
-      placement.surface,
-      visibleHeader,
-      dragGripCenter,
-    );
-    gesture = {
-      pointerId: event.pointerId,
-      x: event.screenX,
-      y: event.screenY,
-      revision: placement.revision,
-      headerBounds: getDockHeaderBounds(placement, shown, floatingCompact, headerHeight),
-      origin: {
-        x: event.screenX - placement.windowBounds.x - placement.surface.x,
-        y: event.screenY - placement.windowBounds.y - placement.surface.y,
-      },
-      started: false,
-    };
-    finishDrag = null;
-    activeDragToken = null;
-    suppressClick = false;
-    captureElement = event.currentTarget as HTMLElement;
-    captureElement.setPointerCapture(event.pointerId);
-  }
-  function pointerMove(event: PointerEvent): void {
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (!gesture.started) {
-      if (Math.hypot(event.screenX - gesture.x, event.screenY - gesture.y) < 6) return;
-      gesture.started = true;
-      awaitingDragStart = dragStartResult?.id ?? 0;
-      suppressClick = true;
-      expandedByUser = false;
-      clearTimeout(openTimer);
-      clearTimeout(closeTimer);
-      command({
-        action: 'begin-drag',
-        revision: gesture.revision,
-        origin: { x: gesture.origin.x, y: gesture.origin.y },
-        headerBounds: { ...gesture.headerBounds },
-      });
-    }
-    if (!activeDragToken || dragFrame !== undefined) return;
-    dragFrame = requestAnimationFrame(() => {
-      dragFrame = undefined;
-      if (activeDragToken && gesture?.started)
-        command({ action: 'drag', token: activeDragToken, sequence: ++sequence });
-    });
-  }
-  function releaseGesture(): void {
-    const pointerId = gesture?.pointerId;
-    gesture = null;
-    if (pointerId !== undefined && captureElement?.hasPointerCapture(pointerId))
-      captureElement.releasePointerCapture(pointerId);
-    captureElement = null;
-    if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
-    dragFrame = undefined;
-    if (!disposed && !placement.captureHidden) pointerInside ? enter() : leave();
-  }
-  function pointerEnd(cancelled = false, event?: PointerEvent): void {
-    if (event && event.pointerId !== gesture?.pointerId) return;
-    const finish: DockDragFinish =
-      cancelled || !event
-        ? { action: 'cancel-drag' }
-        : { action: 'end-drag', releasePoint: { x: event.screenX, y: event.screenY } };
-    if (awaitingDragStart !== null) {
-      // Preserve a normal release and its endpoint while the bridge acknowledges startup.
-      finishDrag = finish;
-    } else if (activeDragToken) {
-      sendDragEnd(activeDragToken, finish);
-      activeDragToken = null;
-    }
-    releaseGesture();
-  }
-  function keydown(event: KeyboardEvent): void {
-    if (
-      event.key !== 'Escape' ||
-      event.isComposing ||
-      placement.captureHidden ||
-      event.defaultPrevented
-    )
-      return;
-    if (gesture || awaitingDragStart !== null || dragging) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (gesture || awaitingDragStart !== null || activeDragToken) pointerEnd(true);
-      else if (placement.dragToken) {
-        command({ action: 'cancel-drag', token: placement.dragToken, sequence: ++sequence });
-      }
-      return;
-    }
-    if (event === popupEscapeEvent) return;
-    if (machineMenuOpen) {
-      machineMenuOpen = false;
-      event.preventDefault();
-      gripElement?.focus({ preventScroll: true });
-      return;
-    }
-    event.preventDefault();
+  /** What Escape does once nothing else claims it: close the conversation, or collapse. */
+  function closeLikeEscape(): void {
+    if (placement.captureHidden || nativeMenuOpen || inputLive || recording) return;
     if (pinned) {
-      onCloseConversation?.();
+      dismiss();
       return;
     }
     if (edge && sidePreviewOpen) {
@@ -729,7 +602,29 @@
     }
     dismiss();
   }
-
+  // The open shortcut again while the dock has the keyboard: close what is open as Escape
+  // would; a collapsed dock opens and focuses its prompt instead, as the shortcut does.
+  let closeRequestSeen = untrack(() => closeRequest);
+  $effect(() => {
+    const request = closeRequest;
+    if (request === closeRequestSeen) return;
+    closeRequestSeen = request;
+    untrack(() => {
+      // Live input, a recording, a native menu or capture hiding: the press changes nothing.
+      if (placement.captureHidden || nativeMenuOpen || inputLive || recording) return;
+      // On a side the press opens a chat, like the shortcut does: a side entry's preview
+      // (focus returned to it after Back, or a hover card) is not an open chat to close.
+      const sideOpens = edge && !!sideDefaultWorkspaceId && !(pinned && conversationVisible);
+      if (!sideOpens && (expanded || (edge && sidePreviewOpen) || (pinned && conversationVisible)))
+        closeLikeEscape();
+      else if (sideOpens && sideDefaultWorkspaceId)
+        openWorkspace(
+          sideDefaultWorkspaceId === CHIEF_WORKSPACE_ID ? assistantId : sideDefaultWorkspaceId,
+          true,
+        );
+      else shortcutOpenRequest += 1;
+    });
+  });
   onMount(() => {
     reducedMotion = prefersReducedMotion();
     const stopMotion = onReducedMotionChange((value) => {
@@ -739,25 +634,21 @@
   });
   onDestroy(() => {
     disposed = true;
-    growGate.cancel();
-    pointerEnd(true);
-    clearTimeout(openTimer);
-    clearTimeout(closeTimer);
+    shellMotion.cancelGrow();
+    shellDrag.pointerEnd(true);
+    shellDrag.cancelOpen();
+    shellDrag.cancelClose();
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
-    if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
-    shellTween.cancel();
-    heightLoop.cancel();
-    if (placement.dragToken)
-      onPlacementCommand({
-        action: 'cancel-drag',
-        token: placement.dragToken,
-        sequence: ++sequence,
-      });
+    shellDrag.cancelFrame();
+    shellMotion.cancelReveal();
+    shellMotion.cancelHeight();
+    shellDrag.disposeNative();
     pointerRegion.destroy();
   });
+  const reveal = $derived(shellMotion.reveal);
 </script>
 
-{#if machineMenuOpen && machines && onMachine && gripElement && (edge || contentVisible)}
+{#if machineMenuOpen && machines && onMachine && gripElement && (edge || shellMotion.contentVisible)}
   <DockMachineMenu
     bind:open={machineMenuOpen}
     anchor={gripElement}
@@ -773,14 +664,12 @@
     }}
   />
 {/if}
-
 <svelte:window
-  onpointerdowncapture={() => {
-    lastUserInput = performance.now();
-  }}
+  oncontextmenu={shellDrag.contextMenu}
+  onpointerdowncapture={shellDrag.outsidePointer}
   onkeydowncapture={(event) => {
     lastUserInput = performance.now();
-    if (gesture || awaitingDragStart !== null || dragging) keydown(event);
+    if (shellDrag.gesture || shellDrag.awaiting !== null || dragging) shellDrag.keydown(event);
     else if (
       machineMenuOpen &&
       event.key === 'Escape' &&
@@ -794,17 +683,19 @@
       gripElement?.focus({ preventScroll: true });
     } else if (event.key === 'Escape' && conversationPopupOpen) popupEscapeEvent = event;
   }}
-  onkeydown={keydown}
+  onkeydown={shellDrag.keydown}
   onblur={() => {
-    pointerInside = false;
-    pointerEnd(true);
+    hoverComposerFocus.leave();
+    if (!nativeMenuOpen) releaseDockIntroHold();
+    shellDrag.pointerInside = false;
+    shellDrag.pointerEnd(true);
     expandedByUser = false;
   }}
 />
-
 <div
   bind:this={rootElement}
   class="adaptive-dock"
+  data-dock-hover-scope
   data-testid="dock-shell"
   data-placement={placement.shape}
   data-side={side}
@@ -824,8 +715,8 @@
       class:floating
       class:floating-up={floatingUp}
       class:dragging
-      class:gesture-held={gesture !== null || dragging}
-      class:grip-pressed={gesture !== null && !dragging}
+      class:gesture-held={shellDrag.gesture !== null || dragging}
+      class:grip-pressed={shellDrag.gesture !== null && !dragging}
       data-expansion-direction={floating ? (placement.expansionDirection ?? 'down') : undefined}
       data-dock-surface={notch || dragging ? 'notch' : 'detached'}
       data-expanded={expanded || reveal > 0}
@@ -845,19 +736,21 @@
       style:--header-wing-right={`${headerWingRight}px`}
       style:--camera-left={`${cameraLeft}px`}
       style:--camera-width={`${cameraWidth}px`}
-      style:--grip-press-duration={`${gesture ? spring.fast.settleMs : spring.fast.exit.duration}ms`}
+      style:--grip-press-duration={`${shellDrag.gesture ? spring.fast.settleMs : spring.fast.exit.duration}ms`}
       onpointerdowncapture={() => {
+        shellDrag.pointerInside = true;
+        shellDrag.dismissedUntilLeave = false;
         keyboardOpen = false;
       }}
-      onpointerenter={enter}
-      onpointerleave={leave}
+      onpointerenter={shellDrag.enter}
+      onpointerleave={shellDrag.leave}
       onfocusin={(event) => {
-        if (gesture !== null || awaitingDragStart !== null || dragging) return;
+        if (shellDrag.gesture !== null || shellDrag.awaiting !== null || dragging) return;
         if (performance.now() - lastUserInput > 1000) return;
+        shellDrag.cancelOpen();
         expandedByUser = true;
         const target = event.target as HTMLElement;
-        // Text entry always matches :focus-visible, including after a click; typing in
-        // a workspace conversation is not a keyboard disclosure and keeps motion.
+        // Text entry keeps motion even when it matches :focus-visible after a click.
         if (
           !conversationFocus.returning &&
           !target.isContentEditable &&
@@ -866,7 +759,7 @@
         )
           keyboardOpen = true;
       }}
-      onfocusout={leave}
+      onfocusout={shellDrag.leave}
       aria-label={m.dock_workspaces_ariaLabel()}
       data-testid="dock-surface"
     >
@@ -874,6 +767,7 @@
       <div
         class="companion-content"
         style:clip-path={contentClip}
+        style:--dock-overview-height={`${Math.max(0, shown.height - headerHeight)}px`}
         inert={machineSwitching !== null}
       >
         <!-- Pointer drag surface; its click shortcut to the field has keyboard parity via Tab. -->
@@ -881,28 +775,50 @@
         <header
           class="companion-header"
           class:side-header={edge}
+          class:recording-header={edge && !!recording}
           style:padding-left={heldGripCenter ? `${heldGripCenter.x - 14}px` : undefined}
           style:padding-top={heldGripCenter ? `${heldGripCenter.y - 14}px` : undefined}
           style:padding-bottom={heldGripCenter ? `${26 - heldGripCenter.y}px` : undefined}
           onpointerdown={(event) => {
-            if (!(event.target as HTMLElement).closest('button')) pointerDown(event);
+            if (!(event.target as HTMLElement).closest('button')) shellDrag.pointerDown(event);
+          }}
+          ondblclick={(event) => {
+            if (
+              event.defaultPrevented ||
+              (event.target as HTMLElement).closest('button') ||
+              shellDrag.suppressClick ||
+              shellDrag.gesture ||
+              shellDrag.awaiting !== null ||
+              dragging ||
+              placement.captureHidden
+            )
+              return;
+            event.preventDefault();
+            machineMenuOpen = false;
+            // eslint-disable-next-line intent/no-component-async-data-fetch -- native app activation, not domain data
+            activateIntentFromDock();
           }}
           onclick={(event) => {
-            // Clicking the notch itself (not a drag, menu or status control) is the
-            // user's request to type into the pinned conversation.
+            // A notch click requests typing in the pinned conversation.
             const control = (event.target as HTMLElement).closest('button');
             const grip = !!control && control === gripElement;
-            if (event.defaultPrevented || suppressClick || (control && !grip)) {
-              if (!control) suppressClick = false;
+            if (event.defaultPrevented || shellDrag.suppressClick || (control && !grip)) {
+              if (!control) shellDrag.suppressClick = false;
               return;
             }
-            if (notch && pinned && !(grip && machines && onMachine)) composerAsk.request += 1;
+            if (notch && pinned && !(grip && machines && onMachine)) {
+              shellDrag.cancelOpen();
+              conversationPresence.show();
+              expandedByUser = true;
+              keyboardOpen = false;
+              composerAsk.request += 1;
+            }
           }}
-          onpointermove={pointerMove}
-          onpointerup={(event) => pointerEnd(false, event)}
-          onpointercancel={() => pointerEnd(true)}
+          onpointermove={shellDrag.pointerMove}
+          onpointerup={(event) => shellDrag.pointerEnd(false, event)}
+          onpointercancel={() => shellDrag.pointerEnd(true)}
           onlostpointercapture={() => {
-            if (gesture) pointerEnd(true);
+            if (shellDrag.gesture) shellDrag.pointerEnd(true);
           }}
         >
           <Button
@@ -910,35 +826,83 @@
             variant="ghost"
             size="icon-sm"
             class="dock-grip"
-            aria-label={machines ? m.dock_machineSwitch_label() : m.dock_drag_label()}
-            aria-haspopup={machines ? 'menu' : undefined}
-            aria-expanded={machines ? machineMenuOpen : undefined}
-            title={machines ? m.dock_machineMenu_hint() : m.dock_drag_label()}
+            aria-label={m.dock_logo_open_label()}
+            aria-haspopup={machines && onMachine ? 'menu' : undefined}
+            aria-expanded={machines && onMachine ? machineMenuOpen : undefined}
             data-testid="dock-drag-handle"
             wrapContent={false}
-            onpointerdown={pointerDown}
-            onpointermove={pointerMove}
-            onpointerup={(event) => pointerEnd(false, event)}
-            onpointercancel={() => pointerEnd(true)}
+            onpointerdown={shellDrag.pointerDown}
+            onpointermove={shellDrag.pointerMove}
+            onpointerup={(event) => shellDrag.pointerEnd(false, event)}
+            onpointercancel={() => shellDrag.pointerEnd(true)}
             onlostpointercapture={() => {
-              if (gesture) pointerEnd(true);
+              if (shellDrag.gesture) shellDrag.pointerEnd(true);
+            }}
+            oncontextmenu={(event) => {
+              if (
+                !machines ||
+                !onMachine ||
+                dragging ||
+                placement.captureHidden ||
+                shellDrag.gesture
+              )
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              machineMenuOpen = true;
+            }}
+            onkeydown={(event) => {
+              if (
+                !machines ||
+                !onMachine ||
+                dragging ||
+                placement.captureHidden ||
+                shellDrag.gesture
+              )
+                return;
+              if (
+                event.key === 'ArrowDown' ||
+                event.key === 'ContextMenu' ||
+                (event.shiftKey && event.key === 'F10')
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                machineMenuOpen = true;
+              }
             }}
             onclick={(event) => {
-              if (suppressClick) {
+              // The logo is an app action; the surrounding header keeps its own click behavior.
+              event.stopPropagation();
+              if (shellDrag.suppressClick) {
                 event.preventDefault();
-                suppressClick = false;
+                shellDrag.suppressClick = false;
                 return;
               }
-              if (machines && onMachine) {
-                machineMenuOpen = !machineMenuOpen;
+              if (
+                shellDrag.gesture ||
+                shellDrag.awaiting !== null ||
+                dragging ||
+                placement.captureHidden
+              )
                 return;
-              }
-              if (!edge) expandedByUser = floating ? true : !expandedByUser;
+              machineMenuOpen = false;
+              // eslint-disable-next-line intent/no-component-async-data-fetch -- request main to show its own window, without fetching domain data
+              activateIntentFromDock();
             }}
           >
             <span class="grip-mark"><Logo width={16} /></span>
           </Button>
-          {#if !edge}
+          {#if recording}
+            <div class="header-recording" class:vertical={edge} style:opacity={dragging ? 0 : 1}>
+              <DockRecordingIndicator
+                {recording}
+                stopping={recordingStopping}
+                vertical={edge}
+                onOpen={reopenRecording}
+                onStop={onStopRecording}
+              />
+            </div>
+          {:else if !edge}
             <div class="header-state" style:opacity={dragging ? 0 : 1}>
               <DockUpdateStatus groups={statusGroups} />
             </div>
@@ -954,23 +918,30 @@
             style:height={`${placement.cutout.height}px`}
           ></div>
         {/if}
-        {#if contentVisible && !edge}
+        {#if shellMotion.contentVisible && !edge}
           <DockCompanionContent
             {workspaces}
+            {olderWorkspaces}
+            bind:showOlder
+            bind:query={overviewQuery}
             {pending}
             {expanded}
             {reveal}
             {floating}
             {floatingUp}
-            settling={openHeight !== null}
+            settling={shellMotion.openHeight !== null}
             clip={inlineClip}
             {conversation}
             {conversationWorkspaceId}
-            focusRequest={focusRequest + composerAsk.request}
-            focusComposerOnMount={notch && composerAsk.open === conversationWorkspaceId}
+            focusRequest={focusRequest + shortcutOpenRequest + composerAsk.request}
+            focusComposerOnMount={conversationPresence.keyboardOpen ||
+              (notch && composerAsk.open === conversationWorkspaceId)}
             onOpen={openWorkspace}
             onRegionsChange={conversationRegionsChanged}
-            onPopupStateChange={(open) => (conversationPopupOpen = open)}
+            onPopupStateChange={(open) => {
+              conversationPopupOpen = open;
+              if (open) hoverComposerFocus.cancel();
+            }}
           />
         {/if}
       </div>
@@ -980,6 +951,7 @@
     <DockSideEntries
       {workspaces}
       railHeight={shown.height}
+      {headerHeight}
       {side}
       railX={placement.surface.x + shown.x}
       railY={placement.surface.y + shown.y}
@@ -987,13 +959,13 @@
       windowHeight={placement.windowBounds.height}
       {reducedMotion}
       {staticData}
-      focusRequest={pinned ? 0 : focusRequest}
+      focusRequest={pinned ? 0 : sideFocusRequest + shortcutOpenRequest}
       pinnedWorkspaceId={conversationWorkspaceId === CHIEF_WORKSPACE_ID
         ? assistantId
         : conversationWorkspaceId}
       conversationOpen={!!edgeState.shell}
       closeRequest={sideCloseRequest}
-      disabled={pending || gesture !== null || awaitingDragStart !== null}
+      disabled={pending || shellDrag.gesture !== null || shellDrag.awaiting !== null}
       onOpen={(id, origin) => {
         edgeOrigin = origin
           ? {
@@ -1025,13 +997,15 @@
       {placement}
       {shown}
       origin={edgeCardOrigin}
-      focusRequest={focusRequest + composerAsk.request}
+      focusRequest={focusRequest + shortcutOpenRequest + composerAsk.request}
       focusComposerOnMount={conversationPresence.keyboardOpen ||
         composerAsk.open === conversationWorkspaceId}
       onRegionsChange={conversationRegionsChanged}
-      onPopupStateChange={(open) => (conversationPopupOpen = open)}
+      onPopupStateChange={(open) => {
+        conversationPopupOpen = open;
+        if (open) hoverComposerFocus.cancel();
+      }}
       onStateChange={(next) => {
-        // Closed for good: the next open (a click or the keyboard) sets its own anchor.
         if (edgeState.shell && !next.shell && !conversationVisible) edgeOrigin = null;
         edgeState = next;
         measure();
@@ -1146,6 +1120,25 @@
   .grip-pressed .grip-mark {
     opacity: 0.72;
   }
+  .header-recording {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+  .notch .header-recording {
+    position: absolute;
+    right: var(--header-wing-right);
+    margin: 0;
+  }
+  .header-recording.vertical {
+    margin: 0;
+  }
+  .side-header.recording-header {
+    height: var(--header-height);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+  }
   .header-state {
     margin-left: auto;
     display: flex;
@@ -1165,6 +1158,12 @@
     position: absolute;
     right: var(--header-wing-right);
     margin: 0;
+  }
+  /* Collapsed, the status wing hugs its glyphs: 8px outer inset (not 12) and 3px between
+     glyphs (DOCK_COMPACT_STATUS_INSET / _GAP, which size the collapsed wing). */
+  .notch:not(.expanded) .header-state {
+    right: calc(var(--header-wing-right) - 4px);
+    --dock-status-gap: 3px;
   }
   .notch .companion-header {
     padding-top: 0;

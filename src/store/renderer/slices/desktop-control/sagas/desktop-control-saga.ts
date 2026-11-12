@@ -1,4 +1,14 @@
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { desktopClient } from '$features/desktop/renderer/desktop-client';
 import {
   dismissDesktopPrompt,
@@ -22,6 +32,9 @@ import {
   desktopDecisionRequested,
   desktopEntryPatched,
   desktopEventReceived,
+  desktopOsPermissionsCleared,
+  desktopOsPermissionsReceived,
+  desktopOsPermissionsRequested,
   desktopPermissionRequested,
   desktopReadRequested,
   desktopRequestExpired,
@@ -121,8 +134,9 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
           }),
         );
         if (!setup) break;
-        // Read observed OS state only. The original gesture, request and expiry
-        // remain binding; this never retries a daemon decision or opens a session.
+        // Main settles the capture check; re-asking follows it and picks up grants
+        // made in System Settings. The original gesture, request and expiry remain
+        // binding; this never retries a daemon decision or opens a session.
         yield* delay(1000);
       }
       observing = false;
@@ -176,6 +190,33 @@ function* setPermission(
     );
     if (generation === (yield* selectDesktopControl.effect()).generation)
       yield* put(desktopReadRequested(ws, agent));
+  }
+}
+// Main settles the capture check. Re-ask with the same id while it is checking or
+// a grant is missing, so a grant made in System Settings shows up without a click.
+function* pollOsPermissions(): SagaGenerator<void> {
+  const requestId = crypto.randomUUID();
+  for (let attempt = 0; attempt < 120; attempt++) {
+    let result: Awaited<ReturnType<typeof desktopClient.requestOsPermissions>>;
+    try {
+      result = yield* call(desktopClient.requestOsPermissions, requestId);
+    } catch (error) {
+      // Only the user-started first call reports; later refusals keep the last checklist.
+      if (attempt === 0) throw error;
+      return;
+    }
+    yield* put(desktopOsPermissionsReceived(result));
+    if (!result || result.checklist.screenCapture === 'unavailable') return;
+    yield* delay(1000);
+  }
+}
+function* requestOsPermissions(): SagaGenerator<void> {
+  try {
+    yield* race({ poll: call(pollOsPermissions), cleared: take(desktopOsPermissionsCleared) });
+  } catch (error) {
+    yield* put(desktopOsPermissionsReceived(undefined));
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code !== 'desktop-unsupported') yield* call(showDesktopError, errorDetail(error));
   }
 }
 function* expire(ws: string, agent: string, requestId: string, expiresAt: string) {
@@ -253,4 +294,5 @@ export function* desktopControlSaga(): SagaGenerator<void> {
   });
   yield* takeEvery(desktopDecisionRequested, decide);
   yield* takeEvery(desktopPermissionRequested, setPermission);
+  yield* takeLeading(desktopOsPermissionsRequested, requestOsPermissions);
 }

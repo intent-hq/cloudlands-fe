@@ -32,7 +32,17 @@ export const DOCK_ANNOTATION_CHANNELS = {
   STATE: 'dock-annotation:state',
   /** overlay → main invoke: `DockAnnotationToolbarRequest` → `boolean` (on-screen tool bar). */
   TOOLBAR: 'dock-annotation:toolbar',
+  /** main → overlay send: `DockAnnotationSignal | null`, the recording's live microphone. */
+  SIGNAL: 'dock-annotation:signal',
 } as const;
+
+/** The live recording's microphone, about 15 times a second while it records. */
+export interface DockAnnotationSignal {
+  /** Input level, 0…1. */
+  level: number;
+  /** The microphone is open (granted and available); false shows "No mic input". */
+  mic: boolean;
+}
 
 export type DockAnnotationMode = 'live' | 'still' | 'dictation';
 
@@ -106,6 +116,10 @@ export interface DockAnnotationMediaState {
     recording: boolean;
     /** Epoch ms the live recording started; the bar ticks its own timer. */
     startedAt: number | null;
+    /** Epoch ms the live recording was paused (null while it records). */
+    pausedAt: number | null;
+    /** Earlier pauses' total, cut from the elapsed time. */
+    pausedMs: number;
   };
 }
 
@@ -130,13 +144,12 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
   if (!mediaButton(capture) || !mediaButton(record)) return null;
   const revision = (capture as unknown as Record<string, unknown>).revision;
   if (!Number.isSafeInteger(revision) || (revision as number) < 0) return null;
-  const { recording, startedAt } = record as unknown as Record<string, unknown>;
+  const { recording, startedAt, pausedAt, pausedMs } = record as unknown as Record<string, unknown>;
   if (typeof recording !== 'boolean') return null;
-  if (
-    startedAt !== null &&
-    !(typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0)
-  )
-    return null;
+  const epoch = (value: unknown) =>
+    value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+  if (!epoch(startedAt) || !epoch(pausedAt)) return null;
+  if (!(typeof pausedMs === 'number' && Number.isFinite(pausedMs) && pausedMs >= 0)) return null;
   const button = (row: DockAnnotationMediaButton): DockAnnotationMediaButton => ({
     label: row.label,
     tooltip: row.tooltip,
@@ -150,8 +163,19 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
       ...button(record),
       recording,
       startedAt: recording ? (startedAt as number | null) : null,
+      pausedAt: recording ? (pausedAt as number | null) : null,
+      pausedMs: recording ? pausedMs : 0,
     },
   };
+}
+
+/** Recorded (unpaused) time of the mirrored recording at `now`. */
+export function dockRecordingElapsedMs(
+  record: Pick<DockAnnotationMediaState['record'], 'startedAt' | 'pausedAt' | 'pausedMs'>,
+  now: number,
+): number {
+  if (record.startedAt === null) return 0;
+  return Math.max(0, (record.pausedAt ?? now) - record.startedAt - record.pausedMs);
 }
 
 /** The dock's painted shell and its form, as seen by the annotate overlay. */
@@ -166,6 +190,7 @@ export interface DockToolbarAnchor {
  * Where the annotate tool bar starts by default: the bottom centre of the work
  * area, whatever the dock's placement. The user can drag it from there. Always
  * inside the work area.
+ * @internal Pure placement seam used by the annotation toolbar bounds contract tests.
  */
 export function dockToolbarPosition(
   size: { width: number; height: number },
@@ -177,6 +202,42 @@ export function dockToolbarPosition(
     x: clamp(area.x + (area.width - size.width) / 2, area.x, area.x + area.width - size.width),
     y: clamp(area.y + area.height - size.height - 16, area.y, area.y + area.height - size.height),
   };
+}
+
+/**
+ * Where the person dragged the on-screen tool bar: its bottom centre (overlay DIP).
+ * The annotate and recording bars share it, so swapping between them (a recording
+ * starting or ending) never moves the bar.
+ */
+export interface DockBarAnchor {
+  cx: number;
+  bottom: number;
+}
+
+/** A bar's top-left: at its anchor when dragged, else the default spot; always inside the area. */
+export function dockToolbarPlace(
+  size: { width: number; height: number },
+  area: DockAnnotationRect,
+  anchor: DockBarAnchor | null,
+  defaultSize: { width: number; height: number } = size,
+): { x: number; y: number } {
+  const start = anchor
+    ? { x: anchor.cx - size.width / 2, y: anchor.bottom - size.height }
+    : dockToolbarPosition(defaultSize, area);
+  return {
+    x: Math.max(area.x, Math.min(start.x, area.x + area.width - size.width)),
+    y: Math.max(area.y, Math.min(start.y, area.y + area.height - size.height)),
+  };
+}
+
+/** The anchor of a bar dragged to `raw`, as it actually sits (kept inside the area). */
+export function dockToolbarAnchorAt(
+  size: { width: number; height: number },
+  area: DockAnnotationRect,
+  raw: DockBarAnchor,
+): DockBarAnchor {
+  const { x, y } = dockToolbarPlace(size, area, raw);
+  return { cx: x + size.width / 2, bottom: y + size.height };
 }
 
 /**
@@ -194,6 +255,13 @@ export type DockAnnotationToolbarRequest = { sessionId: string } & (
   /** Screenshot / Record (start or stop): the composer's own action, in the dock. */
   | { action: 'capture' }
   | { action: 'record' }
+  /** Recording tool bar: pause/resume, Done (stop and attach), and discard with undo. */
+  | { action: 'pause'; paused: boolean }
+  | { action: 'done' }
+  /** Pauses and clears the screen; the clip is deleted only on `discard-confirm`. */
+  | { action: 'discard' }
+  | { action: 'discard-undo' }
+  | { action: 'discard-confirm' }
   | { action: 'rect'; rect: DockAnnotationRect | null }
 );
 
@@ -205,7 +273,9 @@ export interface DockAnnotationReadyRequest {
 export interface DockAnnotationPointerRequest {
   sessionId: string;
   sequence: number;
-  phase: 'down' | 'cancel';
+  phase: 'down' | 'move' | 'cancel';
+  /** Number of actual accumulated path points; used only for recorded progress. */
+  pointCount?: number;
   /** Overlay DIP of the pointerdown origin (ignored for cancel). */
   x: number;
   y: number;
@@ -529,4 +599,21 @@ export function dockWindowIdFromMediaSourceId(mediaSourceId: string): number | n
   if (!match) return null;
   const id = Number(match[1]);
   return Number.isSafeInteger(id) && id > 0 && id <= 0xffffffff ? id : null;
+}
+
+/** Reserve the release slot without bridging any later, unobserved capped tail. */
+export function extendDockPenPoints(
+  state: { points: readonly DockImagePoint[]; capped: boolean },
+  next: readonly DockImagePoint[],
+  limit = DOCK_ANNOTATION_LIMITS.gesturePoints,
+): { points: DockImagePoint[]; capped: boolean } {
+  if (state.capped || state.points.length + next.length > limit - 1)
+    return { points: [...state.points], capped: true };
+  return { points: [...state.points, ...next], capped: false };
+}
+export function finishDockPenPoints(
+  state: { points: readonly DockImagePoint[]; capped: boolean },
+  end: DockImagePoint,
+): DockImagePoint[] {
+  return state.capped ? [...state.points] : [...state.points, end];
 }

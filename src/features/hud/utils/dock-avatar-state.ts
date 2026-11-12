@@ -15,9 +15,9 @@ export type DockAvatarItem = Pick<DockWorkspaceView, 'workspace'> &
 
 /**
  * The app's avatar state for a dock workspace. With the workspace agent's session in the
- * store, it is exactly the app's session state (the dock's question badge is the additive
- * store-only question signal, as in the sidebar launcher). Without a session, the
- * workspace's status feeds the same `getAvatarState` precedence instead.
+ * store, live and attention states retain their session precedence. Quiet agents
+ * reflect workspace-wide work and unread activity, including other agents in the
+ * workspace. Without a session, workspace status feeds `getAvatarState` instead.
  */
 export function dockWorkspaceAvatarState(
   item: DockAvatarItem,
@@ -26,16 +26,18 @@ export function dockWorkspaceAvatarState(
   const hasQuestion = item.badgeKind === 'question';
   const workspace: Workspace = item.workspace;
   const status = workspace.displayStatus;
-  // The same resolver as the header's status count, so a yellow header dot always has a row.
-  const workspaceRunning =
-    !!item.isRunning || resolveWorkspaceStatusState(workspace) === 'in_progress';
+  // Use the header's resolver for aggregate activity from the whole workspace.
+  const workspaceState = resolveWorkspaceStatusState(workspace);
+  const workspaceRunning = !!item.isRunning || workspaceState === 'in_progress';
+  const workspaceUnread = workspaceState === 'unread';
   if (session) {
     const state = getAvatarStateForSession(session, { hasQuestion });
-    // Another agent in the workspace (e.g. a sub-agent) is working while this one
-    // rests: the row shows the work, matching the header's running count.
-    return workspaceRunning && QUIET_STATES.has(state)
-      ? getAvatarState({ isStreaming: true })
-      : state;
+    // Another agent may be working or unread while this one rests.
+    if (QUIET_STATES.has(state)) {
+      if (workspaceRunning) return getAvatarState({ isStreaming: true });
+      if (workspaceUnread) return getAvatarState({}, { hasUnread: true });
+    }
+    return state;
   }
   return getAvatarState(
     {
@@ -47,7 +49,7 @@ export function dockWorkspaceAvatarState(
       hasQuestion,
       attentionKind:
         status === 'blocked' ? 'blocker' : status === 'needs_attention' ? 'discussion' : null,
-      hasUnread: item.isUnread ?? workspace.attention === 'unread',
+      hasUnread: workspaceUnread || item.isUnread === true,
     },
   );
 }

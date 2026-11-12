@@ -2,7 +2,8 @@
 // @verify-changed-triggers: electron-builder.yml, scripts/macos-native.cjs,
 //   build/entitlements.dock-media.plist, scripts/package-mac.mjs,
 //   scripts/build-dock-recorder.cjs, scripts/build-dock-speech.cjs,
-//   scripts/build-dock-element-pick.cjs
+//   scripts/build-dock-element-pick.cjs, scripts/build-dock-capture-selector.cjs,
+//   scripts/build-dock-media-export.cjs, scripts/build-dock-media-transcribe.cjs
 //
 // Packaging failures this guards against for the dock composer helpers:
 // - a helper missing from, or the wrong CPU in, the packaged app;
@@ -23,6 +24,7 @@ const codesign = vi.hoisted(() => ({
   calls: [] as string[][],
   signed: new Map<string, string>(),
   extraKey: null as string | null,
+  extraKeyTarget: null as string | null,
 }));
 
 vi.mock('child_process', () => {
@@ -42,7 +44,10 @@ vi.mock('child_process', () => {
       }
       if (argv[0] === '-d') {
         const plist = codesign.signed.get(file) ?? '';
-        const extra = codesign.extraKey ? `<key>${codesign.extraKey}</key><true/>` : '';
+        const extra =
+          codesign.extraKey && (!codesign.extraKeyTarget || file === codesign.extraKeyTarget)
+            ? `<key>${codesign.extraKey}</key><true/>`
+            : '';
         return reply(rest, {
           stdout: extra ? plist.replace('<dict>', `<dict>${extra}`) : plist,
           stderr: '',
@@ -61,9 +66,20 @@ const {
 } = await import('./sign-sidecar.js');
 
 const AUDIO_INPUT = 'com.apple.security.device.audio-input';
+const CAPTURE_SELECTOR = 'Contents/Resources/dock-helper/intent-dock-capture-selector';
+const MEDIA_EXPORT = 'Contents/Resources/dock-helper/intent-dock-media-export';
+const MEDIA_TRANSCRIBE = 'Contents/Resources/dock-helper/intent-dock-media-transcribe';
 const RECORDER = 'Contents/Resources/dock-helper/intent-dock-recorder';
 const SPEECH = 'Contents/Resources/speech-helper/intent-dock-speech';
 const PICKER = 'Contents/Resources/dock-helper/intent-dock-element-pick';
+const COMPOSER_HELPERS = [
+  CAPTURE_SELECTOR,
+  MEDIA_EXPORT,
+  MEDIA_TRANSCRIBE,
+  RECORDER,
+  SPEECH,
+  PICKER,
+];
 const packaged = [
   'Contents/MacOS/Intent',
   'Contents/Resources/intentd/intentd',
@@ -71,9 +87,7 @@ const packaged = [
   'Contents/Resources/speech-helper/intent-speech-helper',
   'Contents/Resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
   'Contents/Resources/dock-helper/intent-dock-helper',
-  RECORDER,
-  SPEECH,
-  PICKER,
+  ...COMPOSER_HELPERS,
   'Contents/Resources/tailcat/tailcat',
   'Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node',
   'Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper',
@@ -107,6 +121,7 @@ beforeEach(() => {
   codesign.calls.length = 0;
   codesign.signed.clear();
   codesign.extraKey = null;
+  codesign.extraKeyTarget = null;
   vi.spyOn(native, 'builderMacArch').mockReturnValue('arm64');
   vi.stubEnv('CSC_NAME', 'Developer ID Application: Test (TEAMID1234)');
   vi.stubEnv('CSC_IDENTITY_AUTO_DISCOVERY', '');
@@ -127,7 +142,7 @@ describe('dock composer helper signing (afterPack)', () => {
     const { root, app } = packagedApp();
     await afterPack(root);
 
-    for (const helper of [RECORDER, SPEECH, PICKER]) {
+    for (const helper of COMPOSER_HELPERS) {
       const [sign, verify, display, ...rest] = callsFor(join(app, helper));
       expect(rest).toEqual([]);
       expect(sign.slice(0, 4)).toEqual(['--force', '--options', 'runtime', '--timestamp']);
@@ -137,9 +152,11 @@ describe('dock composer helper signing (afterPack)', () => {
     }
     expect(entitlementKeysFromXml(codesign.signed.get(join(app, RECORDER)))).toEqual([AUDIO_INPUT]);
     expect(entitlementKeysFromXml(codesign.signed.get(join(app, SPEECH)))).toEqual([AUDIO_INPUT]);
-    // The Accessibility picker carries no microphone (or any other) privilege.
-    expect(callsFor(join(app, PICKER))[0]).not.toContain('--entitlements');
-    expect(codesign.signed.get(join(app, PICKER))).toBe('');
+    // Selection, offline media jobs and Accessibility picking carry no extra privilege.
+    for (const helper of [CAPTURE_SELECTOR, MEDIA_EXPORT, MEDIA_TRANSCRIBE, PICKER]) {
+      expect(callsFor(join(app, helper))[0]).not.toContain('--entitlements');
+      expect(codesign.signed.get(join(app, helper))).toBe('');
+    }
   });
 
   it('keeps legacy helper signing unchanged', async () => {
@@ -157,18 +174,19 @@ describe('dock composer helper signing (afterPack)', () => {
   });
 
   it('fails the package when a signed helper carries an unexpected entitlement', async () => {
-    const { root } = packagedApp();
+    const { root, app } = packagedApp();
+    codesign.extraKeyTarget = join(app, RECORDER);
     codesign.extraKey = 'com.apple.security.cs.allow-jit';
     await expect(afterPack(root)).rejects.toThrow(/Unexpected entitlements.*intent-dock-recorder/);
   });
 
-  it.each([RECORDER, SPEECH, PICKER])('fails before signing when %s is missing', async (helper) => {
+  it.each(COMPOSER_HELPERS)('fails before signing when %s is missing', async (helper) => {
     const { root } = packagedApp({ omit: helper });
     await expect(afterPack(root)).rejects.toThrow(/ENOENT/);
     expect(codesign.calls).toEqual([]);
   });
 
-  it.each([RECORDER, SPEECH, PICKER])('rejects an Intel %s before signing', async (helper) => {
+  it.each(COMPOSER_HELPERS)('rejects an Intel %s before signing', async (helper) => {
     const { root } = packagedApp({ foreign: helper });
     await expect(afterPack(root)).rejects.toThrow(/Wrong architecture/);
     expect(codesign.calls).toEqual([]);
@@ -203,8 +221,8 @@ describe('dock composer packaging contract', () => {
     };
     const ignored = (file: string) =>
       config.mac.signIgnore.some((pattern) => new RegExp(pattern).test(`/out/Intent.app/${file}`));
-    for (const helper of [RECORDER, SPEECH, PICKER]) expect(ignored(helper)).toBe(true);
-    for (const kept of packaged.filter((file) => ![RECORDER, SPEECH, PICKER].includes(file))) {
+    for (const helper of COMPOSER_HELPERS) expect(ignored(helper)).toBe(true);
+    for (const kept of packaged.filter((file) => !COMPOSER_HELPERS.includes(file))) {
       if (!kept.includes('keychain-helper')) expect(ignored(kept)).toBe(false);
     }
     expect(ignored(`${PICKER}.tmp`)).toBe(false);
@@ -219,6 +237,9 @@ describe('dock composer packaging contract', () => {
     const { scripts } = JSON.parse(readFileSync('package.json', 'utf8'));
     const canonical: string = scripts['build:dock-composer-helpers'];
     for (const script of [
+      'build-dock-capture-selector.cjs',
+      'build-dock-media-export.cjs',
+      'build-dock-media-transcribe.cjs',
       'build-dock-recorder.cjs',
       'build-dock-speech.cjs',
       'build-dock-element-pick.cjs',

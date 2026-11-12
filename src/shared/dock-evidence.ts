@@ -1,3 +1,10 @@
+import { DockGestureProgressSchema, type DockGestureProgress } from './dock-gesture-progress';
+import {
+  DockSavedMediaSchema,
+  type DockSavedMedia,
+  type DockMediaSource,
+  type DockMediaCapture,
+} from './dock-media-edit';
 /**
  * Dock composer screen evidence: captured images, numbered marks, clips and
  * pending editor insertions for one workspace/agent draft.
@@ -59,6 +66,7 @@ export interface DockMarkElement {
 }
 
 export interface DockMark {
+  gestureProgress?: DockGestureProgress;
   id: string;
   imageId: string;
   tool: DockMarkTool;
@@ -75,6 +83,9 @@ export interface DockMark {
 }
 
 export interface DockEvidenceImage {
+  capture?: DockMediaCapture;
+  media?: DockSavedMedia;
+  mediaError?: 'invalid-saved-edit';
   id: string;
   /** Composer context item that holds the raw screenshot bytes. */
   contextItemId: string;
@@ -89,12 +100,37 @@ export interface DockEvidenceImage {
 export type DockEvidenceErrorCode =
   'unavailable' | 'permission' | 'failed' | 'limit' | 'unsupported-workspace' | 'transport';
 
+/** A tool bar media action the dock runs with the composer's own rules. */
+export type DockAnnotationMediaAction =
+  | 'capture'
+  | 'record'
+  | 'pause'
+  | 'resume'
+  | 'done'
+  | 'discard'
+  | 'discard-undo'
+  | 'discard-confirm';
+
+interface DockRecordingMarkArchive {
+  mark: DockMark;
+  image: { id: string; width: number; height: number };
+  included: boolean;
+  /** Clear ends visible presentation; it does not exclude the earlier batch. */
+  cleared: boolean;
+}
 export interface DockEvidenceClip {
+  captureHistory?: DockRecordingMarkArchive[];
+  media?: DockSavedMedia;
+  mediaError?: 'invalid-saved-edit';
   id: string;
   status: 'recording' | 'placing' | 'ready' | 'failed';
   startedAt: number;
   durationMs: number;
   hasMicAudio: boolean;
+  /** Recording only: epoch ms it was paused (absent/null while it records). */
+  pausedAt?: number | null;
+  /** Recording only: earlier pauses' total, cut from its elapsed time. */
+  pausedMs?: number;
   /** Composer file context item carrying the placed clip attachment. */
   contextItemId?: string;
   /**
@@ -187,6 +223,7 @@ export interface DockImagePlacementRecord {
 export function dockCompositeSignature(evidence: DockComposerEvidence, imageId: string): string {
   return JSON.stringify([
     imageId,
+    evidence.images.find((image) => image.id === imageId)?.media,
     numberDockMarks(evidence)
       .filter(({ mark }) => mark.imageId === imageId)
       .map(({ n, mark }) => [n, mark.id, mark.geometry]),
@@ -287,12 +324,35 @@ export function hasDockEvidence(evidence: DockComposerEvidence | undefined): boo
 /**
  * Content identity of what a send carries. Session, capture-status and editor
  * insertion changes do not alter it, so they never block clearing an admitted draft.
+ * Recognition is derived output, not a new user edit: a background transcript
+ * arrival must not retain already-admitted attachments. Saved edits, source
+ * identities and paths still participate and preserve concurrent user changes.
  */
 export function dockEvidenceFingerprint(evidence: DockComposerEvidence | undefined): string {
   return JSON.stringify([
-    evidence?.images.map((image) => image.id) ?? [],
-    evidence?.marks.map((mark) => mark.id) ?? [],
-    evidence?.clips.map((clip) => [clip.id, clip.status]) ?? [],
+    evidence?.images.map((image) => [
+      image.id,
+      image.media?.source,
+      image.media?.saved?.revision,
+      image.mediaError,
+    ]) ?? [],
+    evidence?.marks.map((mark) => [
+      mark.id,
+      mark.imageId,
+      mark.tool,
+      mark.geometry,
+      mark.element,
+      mark.clipId,
+      mark.clipMs,
+      mark.gestureProgress,
+    ]) ?? [],
+    evidence?.clips.map((clip) => [
+      clip.id,
+      clip.status,
+      clip.media?.source,
+      clip.media?.saved?.revision,
+      clip.mediaError,
+    ]) ?? [],
   ]);
 }
 
@@ -452,11 +512,30 @@ export function sanitizeDockMark(mark: DockMark, image: DockEvidenceImage): Dock
   if (!(DOCK_MARK_TOOLS as readonly string[]).includes(mark.tool)) return null;
   const geometry = sanitizeGeometry(mark.geometry, image);
   if (!geometry) return null;
+  const parsedProgress = DockGestureProgressSchema.safeParse(mark.gestureProgress);
+  let gestureProgress = parsedProgress.success ? parsedProgress.data : undefined;
+  // Match the existing final-path decimation exactly. A progress count is an
+  // observed prefix index, never a time-derived fraction of the final stroke.
+  if (gestureProgress && mark.geometry.kind === 'path' && geometry.kind === 'path') {
+    const count = mark.geometry.points.length;
+    const stride = Math.ceil(count / DOCK_EVIDENCE_LIMITS.penPoints);
+    const indices = Array.from({ length: count }, (_, i) => i).filter((i) => i % stride === 0);
+    if (indices.at(-1) !== count - 1) indices.push(count - 1);
+    const kept = indices.slice(-DOCK_EVIDENCE_LIMITS.penPoints);
+    gestureProgress = {
+      ...gestureProgress,
+      samples: gestureProgress.samples.map((sample) => ({
+        ...sample,
+        pointCount: kept.filter((index) => index < sample.pointCount).length,
+      })),
+    };
+  }
   return {
     id: mark.id,
     imageId: image.id,
     tool: mark.tool,
     geometry,
+    ...(gestureProgress ? { gestureProgress } : {}),
     bounds: dockGeometryBounds(geometry),
     element: sanitizeElement(mark.element),
     createdAt: finite(mark.createdAt) ? mark.createdAt : 0,
@@ -588,6 +667,49 @@ export function applyDockCapture(
 }
 
 /** Removing an image removes its marks (and their pending chips); later marks renumber. */
+/** Archive status is separate from immutable gesture geometry and image dimensions. */
+function recordingMarkStatus(
+  evidence: DockComposerEvidence,
+  ids: readonly string[],
+  included: boolean,
+  clear = false,
+): DockEvidenceClip[] {
+  const changedIds = new Set(ids);
+  return evidence.clips.map((clip) =>
+    !clip.captureHistory?.some((entry) => changedIds.has(entry.mark.id))
+      ? clip
+      : {
+          ...clip,
+          captureHistory: clip.captureHistory.map((entry) =>
+            !changedIds.has(entry.mark.id)
+              ? entry
+              : {
+                  ...entry,
+                  included: clear
+                    ? entry.included
+                    : entry.cleared && !included
+                      ? entry.included
+                      : included,
+                  cleared: clear || entry.cleared,
+                },
+          ),
+        },
+  );
+}
+export function clearDockRecordingBatch(
+  evidence: DockComposerEvidence,
+  imageId: string,
+): DockComposerEvidence {
+  return changed(evidence, {
+    clips: recordingMarkStatus(
+      evidence,
+      evidence.marks.filter((mark) => mark.imageId === imageId).map((mark) => mark.id),
+      true,
+      true,
+    ),
+  });
+}
+
 export function removeDockImage(
   evidence: DockComposerEvidence,
   imageId: string,
@@ -599,6 +721,7 @@ export function removeDockImage(
   delete placements[imageId];
   return changed(evidence, {
     images: evidence.images.filter((image) => image.id !== imageId),
+    clips: recordingMarkStatus(evidence, removed, false),
     marks,
     placements,
     removedMarks: evidence.removedMarks?.filter(({ mark }) => mark.imageId !== imageId),
@@ -623,7 +746,39 @@ export function addDockMark(
     return { accepted: false, evidence };
   const sanitized = sanitizeDockMark(mark, image);
   if (!sanitized) return { accepted: false, evidence };
-  return { accepted: true, evidence: changed(evidence, { marks: [...evidence.marks, sanitized] }) };
+  const recording = sanitized.clipId && evidence.clips.find((clip) => clip.id === sanitized.clipId);
+  if (
+    recording &&
+    (recording.captureHistory?.length ?? 0) >= 10000 &&
+    !recording.captureHistory?.some((entry) => entry.mark.id === sanitized.id)
+  )
+    return { accepted: false, evidence };
+  const clips = recording
+    ? evidence.clips.map((clip) =>
+        clip.id !== recording.id
+          ? clip
+          : {
+              ...clip,
+              captureHistory: clip.captureHistory?.some((entry) => entry.mark.id === sanitized.id)
+                ? clip.captureHistory.map((entry) =>
+                    entry.mark.id === sanitized.id ? { ...entry, included: true } : entry,
+                  )
+                : [
+                    ...(clip.captureHistory ?? []),
+                    {
+                      mark: structuredClone(sanitized),
+                      image: { id: image.id, width: image.width, height: image.height },
+                      included: true,
+                      cleared: false,
+                    },
+                  ],
+            },
+      )
+    : evidence.clips;
+  return {
+    accepted: true,
+    evidence: changed(evidence, { marks: [...evidence.marks, sanitized], clips }),
+  };
 }
 
 export function removeDockMark(
@@ -635,6 +790,7 @@ export function removeDockMark(
   const marks = evidence.marks.filter((mark) => mark.id !== markId);
   return changed(evidence, {
     marks,
+    clips: recordingMarkStatus(evidence, [markId], false),
     ...retireMarks(evidence, [markId]),
     removedMarks: [
       ...(evidence.removedMarks ?? []).filter(({ mark }) => mark.id !== markId),
@@ -662,6 +818,7 @@ function restoreDockMark(evidence: DockComposerEvidence, markId: string): DockCo
   marks.splice(Math.min(removed.index, marks.length), 0, removed.mark);
   return changed(evidence, {
     marks,
+    clips: recordingMarkStatus(evidence, [markId], true),
     retiredMarkIds: evidence.retiredMarkIds?.filter((id) => id !== markId),
     removedMarks: evidence.removedMarks?.filter(({ mark }) => mark.id !== markId),
   });
@@ -757,6 +914,7 @@ export function redoDockAnnotationMark(evidence: DockComposerEvidence): DockComp
   marks.splice(Math.min(entry.index, marks.length), 0, entry.mark);
   return changed(next, {
     marks,
+    clips: recordingMarkStatus(next, [entry.mark.id], true),
     retiredMarkIds: next.retiredMarkIds?.filter((id) => id !== entry.mark.id),
     removedMarks: next.removedMarks?.filter(({ mark }) => mark.id !== entry.mark.id),
     annotationHistory: { ...history, redo: history.redo.slice(0, -1) },
@@ -1002,10 +1160,18 @@ export function buildDockEvidenceMetadata(
         { attachmentId: string; raw: { attachmentId: string; expiresAt: string } | null }
       >
     >;
+    /**
+     * The composer's mark numbers, by mark id, when `evidence` leaves some marks out
+     * (they go with an exported recording): the rest keep the numbers shown and burned.
+     */
+    markNumbers?: ReadonlyMap<string, number>;
   },
   maxPenPoints: number = DOCK_WIRE_PEN_POINTS.metadata,
 ): DockScreenEvidenceMetadata {
-  const numbered = numberDockMarks(evidence);
+  const numbered = numberDockMarks(evidence).map(({ n, mark }) => ({
+    n: context.markNumbers?.get(mark.id) ?? n,
+    mark,
+  }));
   const clips = evidence.clips.filter((clip) => clip.status === 'ready');
   return {
     type: 'dock_screen_evidence',
@@ -1148,16 +1314,55 @@ export function toDockDraftEvidence(
         durationMs: clip.durationMs,
         hasMicAudio: clip.hasMicAudio,
         ...(clip.path ? { path: clip.path } : {}),
+        ...(clip.media ? { media: clip.media } : {}),
+        ...(clip.mediaError ? { mediaError: clip.mediaError } : {}),
       },
     };
   }
   return out;
 }
 
+export interface DockMediaAttachmentReference {
+  contextItemId: string;
+  attachmentId?: string;
+  path?: string;
+}
+function restoreMedia(
+  item: { media?: DockSavedMedia; mediaError?: 'invalid-saved-edit' },
+  kind: 'recording' | 'screenshot',
+  attachment: DockMediaAttachmentReference | undefined,
+): { media?: DockSavedMedia; mediaError?: 'invalid-saved-edit' } {
+  if (item.mediaError) return { media: undefined, mediaError: 'invalid-saved-edit' };
+  if (item.media === undefined) return {};
+  const parsed = DockSavedMediaSchema.safeParse(item.media);
+  // The source is a pixel generation, not the logical image/clip ID. A retake
+  // changes it. Its placed file must still be the enclosing attachment's file.
+  const valid =
+    parsed.success &&
+    attachment?.attachmentId &&
+    attachment.path &&
+    parsed.data.source.kind === kind &&
+    parsed.data.source.attachmentId === attachment.attachmentId &&
+    parsed.data.source.path === attachment.path;
+  return valid && parsed.success
+    ? { media: parsed.data }
+    : { media: undefined, mediaError: 'invalid-saved-edit' };
+}
+/** Missing metadata is honestly unavailable; never guess recording dimensions or clean pixels. */
+export function dockMediaSourceFor(
+  evidence: DockComposerEvidence | undefined,
+  attachmentId: string,
+): DockMediaSource | null {
+  const item =
+    evidence?.images.find((row) => row.id === attachmentId) ??
+    evidence?.clips.find((row) => row.id === attachmentId);
+  return item?.mediaError ? null : (item?.media?.source ?? null);
+}
 /** Rebuild evidence for restored items that still exist, validating every field. */
 export function fromDockDraftEvidence(
   id: string,
   entries: ReadonlyArray<readonly [contextItemId: string, entry: unknown]>,
+  attachments: readonly DockMediaAttachmentReference[] = [],
 ): DockComposerEvidence {
   let evidence = emptyDockEvidence(id);
   const marks: { index: number; mark: DockMark }[] = [];
@@ -1165,7 +1370,15 @@ export function fromDockDraftEvidence(
     const value = entry as DockDraftEvidence | null;
     if (!value || typeof value !== 'object') continue;
     if (value.kind === 'image' && value.image) {
-      const captured = applyDockCapture(evidence, { ...value.image, contextItemId });
+      const captured = applyDockCapture(evidence, {
+        ...value.image,
+        ...restoreMedia(
+          value.image,
+          'screenshot',
+          attachments.find((row) => row.contextItemId === contextItemId),
+        ),
+        contextItemId,
+      });
       if (captured.outcome !== 'added') continue;
       evidence = captured.evidence;
       if (Array.isArray(value.marks))
@@ -1176,6 +1389,11 @@ export function fromDockDraftEvidence(
       evidence = setDockClip(evidence, clip.id, {
         id: clip.id,
         status: 'ready',
+        ...restoreMedia(
+          clip,
+          'recording',
+          attachments.find((row) => row.contextItemId === contextItemId),
+        ),
         startedAt: finite(clip.startedAt) ? clip.startedAt : 0,
         durationMs: Math.min(DOCK_EVIDENCE_LIMITS.clipMs, Math.max(0, clip.durationMs)),
         hasMicAudio: clip.hasMicAudio === true,
@@ -1195,6 +1413,7 @@ export function fromDockDraftEvidence(
 
 /** Screenshot of the display the dock is on, with the dock excluded. */
 export interface DockCapturedPixels {
+  capture?: DockMediaCapture;
   /** Base64 bytes without a data-URL prefix. */
   base64: string;
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
@@ -1240,6 +1459,15 @@ export const DOCK_CAPTURE_MODES: readonly DockCaptureMode[] = ['fullscreen', 'wi
 
 /** A finished clip written by native to a host path, ready for attachment placement. */
 export interface DockClipFile {
+  /** Fresh dual-source recorder metadata; absent on legacy baked-only clips. */
+  original?: {
+    sourcePath: string;
+    size: number;
+    width: number;
+    height: number;
+    clearAtMs: number[];
+    hasMicAudio?: boolean;
+  };
   sourcePath: string;
   mimeType: string;
   size: number;
@@ -1251,6 +1479,7 @@ export type DockNativeResult<T> =
   { ok: true; value: T } | { ok: false; error: DockEvidenceErrorCode; detail?: string };
 
 export type DockEvidenceNativeEvent =
+  | { type: 'media-progress'; jobId: string; fraction: number }
   | {
       type: 'mark';
       sessionId: string;
@@ -1270,6 +1499,7 @@ export type DockEvidenceNativeEvent =
       markId?: string;
       /** Epoch ms of the gesture start, for point-of-speech offsets. */
       gestureAtEpochMs?: number;
+      gestureProgress?: DockGestureProgress;
     }
   | { type: 'annotation-ended'; sessionId: string }
   /** The tool was switched on the overlay's on-screen tool bar. */
@@ -1282,7 +1512,12 @@ export type DockEvidenceNativeEvent =
   /** Clear on the tool bar: the current marks (and a live session's image) are dropped. */
   | { type: 'annotation-clear'; sessionId: string }
   /** Screenshot or Record on the tool bar: the dock runs the composer's own action. */
-  | { type: 'annotation-media'; sessionId: string; action: 'capture' | 'record' }
+  | {
+      type: 'annotation-media';
+      sessionId: string;
+      action: DockAnnotationMediaAction;
+      inputRevision?: number;
+    }
   /**
    * A genuine failure in a live session (no capture taken, no mark made): `pick`
    * means accessibility metadata is unreadable, `target`/`capture` that the screen
@@ -1292,6 +1527,20 @@ export type DockEvidenceNativeEvent =
   | { type: 'clip-ended'; clipId: string; result: DockNativeResult<DockClipFile> };
 
 export interface DockEvidenceNativeService {
+  probeMediaAudio?(
+    request: import('./dock-media-output').DockMediaAudioProbeRequest,
+  ): Promise<DockNativeResult<import('./dock-media-output').DockMediaAudioProbe>>;
+  analyzeMedia?(
+    request: import('./dock-media-output').DockMediaAnalyzeRequest,
+  ): Promise<DockNativeResult<import('./dock-media-output').DockMediaWaveform>>;
+  exportMedia?(
+    request: import('./dock-media-output').DockMediaExportRequest,
+  ): Promise<DockNativeResult<import('./dock-media-output').DockMediaNativeOutput>>;
+  transcribeMedia?(
+    request: import('./dock-media-output').DockMediaTranscribeRequest,
+  ): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;
+  cancelMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
+  releaseMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   /** Absent means only `captureDisplay` is implemented (annotate and record stay disabled). */
   readonly capabilities?: DockEvidenceCapabilities;
   /** A dismissed window/region selection fails with `detail: 'cancelled'`. */
@@ -1303,7 +1552,11 @@ export interface DockEvidenceNativeService {
     mode: DockAnnotationSession['mode'];
     still?: { imageId: string; pixels: DockCapturedPixels };
   }): Promise<DockNativeResult<void>>;
-  setAnnotationTool(sessionId: string, tool: DockMarkTool): Promise<void>;
+  setAnnotationTool(
+    sessionId: string,
+    tool: DockMarkTool,
+    restoreInputRevision?: number,
+  ): Promise<void>;
   /** Mouse mode: the screen is used normally until a tool is chosen again. */
   setAnnotationMouse?(sessionId: string): Promise<void>;
   /** The composer's Screenshot/Record state, mirrored on the annotate tool bar. */
@@ -1319,6 +1572,8 @@ export interface DockEvidenceNativeService {
     options: { includeMic: boolean; maxMs: number },
   ): Promise<DockNativeResult<void>>;
   stopClip(clipId: string): Promise<DockNativeResult<DockClipFile>>;
+  /** Pause or resume the live clip; paused time is cut from it. */
+  pauseClip?(clipId: string, paused: boolean): Promise<DockNativeResult<{ paused: boolean }>>;
   /** Best-effort: delete native's finished source file once the daemon holds the attachment. */
   releaseClip?(clipId: string): Promise<DockNativeResult<void>>;
   /**

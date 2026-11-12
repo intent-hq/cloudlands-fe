@@ -97,6 +97,7 @@ function setup(
     hashes?: string[];
     hit?: Hit;
     intent?: DockAnnotationNative['intentWindow'];
+    nativeCursor?: boolean;
   } = {},
 ) {
   const windows: FakeWindow[] = [];
@@ -144,7 +145,36 @@ function setup(
   const started: string[] = [];
   const settled: string[] = [];
   const timers: { callback: () => void; ms: number }[] = [];
+  const cursorOwners: Array<{
+    window: unknown;
+    updates: Array<{
+      enabled: boolean;
+      regions: unknown[];
+      excludedRegions: unknown[];
+      revision: number;
+    }>;
+    changes: Array<{ type: string; custom: unknown }>;
+    disposed: number;
+  }> = [];
   const native: DockAnnotationNative = {
+    ...(options.nativeCursor
+      ? {
+          attachCursor: (window: BrowserWindow) => {
+            const owner: (typeof cursorOwners)[number] = {
+              window,
+              updates: [],
+              changes: [],
+              disposed: 0,
+            };
+            cursorOwners.push(owner);
+            return {
+              update: (state) => void owner.updates.push(state),
+              cursorChanged: (type, custom) => void owner.changes.push({ type, custom }),
+              dispose: () => void (owner.disposed += 1),
+            };
+          },
+        }
+      : {}),
     createWindow: (_display, backendId) => {
       const window = new FakeWindow();
       window.backendId = backendId;
@@ -227,6 +257,7 @@ function setup(
     windows,
     captures,
     cursor,
+    cursorOwners,
     tick: () => intervals.forEach((callback) => callback()),
     start,
     gesture,
@@ -242,6 +273,59 @@ const marks = (events: DockEvidenceNativeEvent[]) =>
   );
 
 describe('DockAnnotationController', () => {
+  it('normalizes removed Pick entry but preserves legacy element marks through Discard and Undo', async () => {
+    const t = setup();
+    await t.start('live', 'pick');
+    const state = () => t.windows[0]!.webContents.sent.at(-1) as { tool: string; marks: unknown[] };
+    expect(state().tool).toBe('box');
+    const old = {
+      n: 1,
+      tool: 'pick' as const,
+      geometry: { kind: 'rect' as const, x: 100, y: 100, w: 30, h: 30 },
+    };
+    await t.controller.syncMarks('s1', [old]);
+    expect(state().marks).toEqual([old]);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
+    expect(state().marks).toEqual([]);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'done' })).toBe(false);
+    await t.controller.setAnnotationTool('s1', 'pen');
+    await t.controller.setAnnotationTool('s1', 'pen', 1);
+    expect(state().marks).toEqual([]);
+    expect(state().tool).toBe('box');
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'done' })).toBe(true);
+    await t.controller.setAnnotationTool('s1', 'box', 1);
+    expect(state().marks).toEqual([old]);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(
+      false,
+    );
+    await t.controller.endAnnotation('s1');
+  });
+
+  it('discard cancels held and queued strokes, blocks tools until owned restoration', async () => {
+    const t = setup();
+    await t.start();
+    t.holdCaptures();
+    const pending = t.gesture([
+      { x: 100, y: 100 },
+      { x: 160, y: 160 },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'discard' })).toBe(true);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pen' })).toBe(
+      false,
+    );
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    await t.controller.setAnnotationTool('s1', 'pen');
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    await t.controller.setAnnotationTool('s1', 'box', 0);
+    await t.controller.setAnnotationTool('s1', 'box', 1);
+    t.releaseCapture();
+    await pending;
+    expect(marks(t.events)).toEqual([]);
+    await t.controller.endAnnotation('s1');
+  });
+
   it.each([false, true])(
     'retires active or warm resources and preserves subscribers (ended=%s)',
     async (ended) => {
@@ -578,6 +662,120 @@ describe('DockAnnotationController', () => {
     expect(t.captures).toEqual([]);
   });
 
+  it.each(['box', 'arrow'] as const)(
+    'keeps a recording %s over a screen area without an app window',
+    async (tool) => {
+      const t = setup({ hit: () => ({ ...noHit, window: null }) });
+      await t.start('live', tool);
+      t.host.clip = 2500;
+
+      await expect(
+        t.gesture(
+          [
+            { x: 100, y: 100 },
+            { x: 300, y: 300 },
+          ],
+          tool,
+        ),
+      ).resolves.toEqual({ ok: true });
+      expect(marks(t.events)).toHaveLength(1);
+      expect(marks(t.events)[0]).toMatchObject({ tool, clipMs: 2500 });
+      expect(t.captures).toHaveLength(1);
+      expect(t.captures[0]!.excluded).toEqual(expect.arrayContaining([11, 12, 4242]));
+    },
+  );
+
+  it('keeps a recording arrow that crosses the starting app window', async () => {
+    const narrow = { ...appWindow, bounds: { ...appWindow.bounds, width: 900 } };
+    const t = setup({
+      hit: (point) => ({ ...noHit, window: point.x > -540 ? null : narrow }),
+    });
+    await t.start('live', 'arrow');
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture(
+        [
+          { x: 800, y: 100 },
+          { x: 1000, y: 300 },
+        ],
+        'arrow',
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]).toMatchObject({ tool: 'arrow', clipMs: 2500 });
+  });
+
+  it('keeps a recording drawing when window lookup is unavailable', async () => {
+    const t = setup({
+      hit: () => ({ checked: false, access: 'unavailable', window: null, element: null }),
+    });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('keeps a recording drawing when Intent window details are unavailable', async () => {
+    const t = setup({ intent: async () => ({ kind: 'failed' }) });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('keeps a recording drawing when its target cannot be confirmed after capture', async () => {
+    const t = setup();
+    await t.start();
+    t.host.clip = 2500;
+    t.io.onCaptured = () => {
+      t.io.hit = () => ({ ...noHit, window: null });
+    };
+
+    await expect(
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('still excludes dock controls and rejects removed Pick during recording', async () => {
+    const t = setup({ hit: () => ({ ...noHit, window: null }) });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([
+        { x: 1200, y: 10 },
+        { x: 1300, y: 90 },
+      ]),
+    ).resolves.toEqual({ ok: false, reason: 'excluded' });
+    await t.controller.setAnnotationTool('s1', 'pick');
+    await expect(t.gesture([{ x: 100, y: 100 }], 'pick')).resolves.toEqual({
+      ok: false,
+      reason: 'stale',
+    });
+    expect(marks(t.events)).toEqual([]);
+    expect(t.captures).toEqual([]);
+  });
+
   it('fences stale sequences, mismatched origins and replaced sessions', async () => {
     const t = setup();
     await t.start();
@@ -659,9 +857,9 @@ describe('DockAnnotationController', () => {
     // A frozen image has no live element: pick is refused, not faked.
     expect(await t.gesture([{ x: 220, y: 100 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
-    expect(t.issues).toEqual([{ sessionId: 's1', kind: 'pick', error: 'unavailable' }]);
+    expect(t.issues).toEqual([]);
     await t.controller.setAnnotationTool('s1', 'box');
     // 1200×900 contained in 1440×900 → scale 1, offset x 120.
     await t.gesture(
@@ -682,7 +880,7 @@ describe('DockAnnotationController', () => {
     });
   });
 
-  it('pick reports the actual accessibility role, name and frame with no invented path or source', async () => {
+  it('removed Pick cannot create a mark even when accessibility metadata is available', async () => {
     const element = {
       role: 'AXButton',
       name: 'Get started',
@@ -690,15 +888,12 @@ describe('DockAnnotationController', () => {
     };
     const t = setup({ hit: () => ({ ...noHit, element }) });
     await t.start('dictation', 'pick');
-    await t.gesture([{ x: 120, y: 60 }], 'pick');
-    expect(marks(t.events)[0]).toMatchObject({
-      tool: 'pick',
-      geometry: { kind: 'rect', x: 200, y: 100, w: 224, h: 72 },
-      element: { role: 'button', name: 'Get started', path: null, source: null },
-    });
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(marks(t.events)).toEqual([]);
+    expect(t.captures).toEqual([]);
   });
 
-  it("picks in Intent's main window from its page, but has nothing to pick in its browser panel", async () => {
+  it('removed Pick never inspects an Intent page or browser panel', async () => {
     const requests: unknown[] = [];
     let answer: Awaited<ReturnType<DockAnnotationNative['intentWindow']>> = {
       kind: 'intent',
@@ -719,50 +914,41 @@ describe('DockAnnotationController', () => {
       },
     });
     await t.start('dictation', 'pick');
-    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: true });
-    expect(requests[0]).toMatchObject({
-      windowId: appWindow.windowId,
-      elementPoint: { x: -1320, y: -40 },
-    });
-    expect(marks(t.events)[0]).toMatchObject({
-      element: { role: 'button', name: 'Save', path: 'main > button#save', source: null },
-    });
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(requests).toEqual([]);
+    expect(marks(t.events)).toEqual([]);
     answer = { kind: 'intent', inPanel: true, element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     answer = { kind: 'failed' };
-    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'failed' });
-    expect(t.captures).toHaveLength(1);
-    expect(marks(t.events)).toHaveLength(1);
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(t.captures).toHaveLength(0);
+    expect(marks(t.events)).toHaveLength(0);
   });
 
-  it('a pick without accessibility leaves images and marks unchanged and reports why', async () => {
+  it('removed Pick leaves images and marks unchanged without requesting accessibility', async () => {
     let hit: DockElementHit = { ...noHit, access: 'permission', element: null };
     const t = setup({ hit: () => hit });
     await t.start('live', 'pick');
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'permission',
+      reason: 'stale',
     });
     hit = { ...noHit, access: 'granted', element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     hit = { checked: false, access: 'unavailable', window: null, element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     expect(t.captures).toEqual([]);
     expect(t.events).toEqual([]);
-    expect(t.issues.map(({ kind, error }) => `${kind}:${error}`)).toEqual([
-      'pick:permission',
-      'pick:unavailable',
-      'target:unavailable',
-    ]);
+    expect(t.issues).toEqual([]);
     // Shapes stay usable without accessibility.
     hit = { ...noHit, access: 'permission', element: null };
     await t.controller.setAnnotationTool('s1', 'pen');
@@ -1096,6 +1282,8 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
         alert: false,
         recording: true,
         startedAt: 1_700_000_000_000,
+        pausedAt: null,
+        pausedMs: 0,
       },
     };
     const sent = () =>
@@ -1112,6 +1300,7 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
       { ...media, capture: { ...media.capture, revision: -1 } },
       { ...media, capture: { ...media.capture, revision: Number.NaN } },
       { ...media, record: { ...media.record, recording: 'yes' } },
+      { ...media, record: { ...media.record, pausedMs: -1 } },
     ]) {
       t.controller.setAnnotationMedia(bad);
       expect(sent().media).toEqual(media);
@@ -1122,11 +1311,31 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
       { type: 'annotation-media', sessionId: 's1', action: 'capture' },
       { type: 'annotation-media', sessionId: 's1', action: 'record' },
     ]);
+    // The recording tool bar: pause/resume, Done, and discard with undo or confirm.
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: true })).toBe(
+      true,
+    );
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: false })).toBe(
+      true,
+    );
+    expect(
+      t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: 'yes' } as never),
+    ).toBe(false);
+    for (const action of ['done', 'discard', 'discard-undo', 'discard-confirm'] as const)
+      expect(t.controller.handleToolbar({ sessionId: 's1', action })).toBe(true);
+    expect(t.events.slice(-6).map((event) => (event as { action: string }).action)).toEqual([
+      'pause',
+      'resume',
+      'done',
+      'discard',
+      'discard-undo',
+      'discard-confirm',
+    ]);
     // A stale session's click is refused.
     expect(t.controller.handleToolbar({ sessionId: 'other', action: 'record' })).toBe(false);
     expect(t.controller.isActive()).toBe(true);
     expect(sent().tool).toBe('box');
-    expect(sent().mouse).toBe(false);
+    expect(sent().mouse).toBe(true);
   });
 
   it('Clear empties the screen without attaching and keeps the tool (no mouse mode)', async () => {
@@ -1252,5 +1461,186 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     // X ends the annotate session only; it reports activity like any bar click.
     t.controller.handleToolbar({ sessionId: 's1', action: 'end' });
     expect(activity).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('recorded gesture progress lifetime', () => {
+  it('stamps actual move clock, commits once, rejects late move after up or cancel', async () => {
+    const t = setup();
+    let clipId: string | undefined = 'clip-a';
+    t.host.clipIdentity = () => clipId;
+    t.host.clip = 100;
+    await t.start('live', 'pen');
+    const request = {
+      sessionId: 's1',
+      sequence: t.nextSequence(),
+      tool: 'pen' as const,
+      x: 10,
+      y: 10,
+    };
+    expect(t.controller.handlePointer({ ...request, phase: 'down' }).ok).toBe(true);
+    t.host.clip = 180;
+    expect(
+      t.controller.handlePointer({ ...request, phase: 'move', x: 30, y: 30, pointCount: 2 }).ok,
+    ).toBe(true);
+    t.host.clip = 250;
+    await t.controller.handleGesture({
+      sessionId: 's1',
+      sequence: request.sequence,
+      tool: 'pen',
+      origin: { x: 10, y: 10 },
+      points: [
+        { x: 10, y: 10 },
+        { x: 30, y: 30 },
+        { x: 60, y: 60 },
+      ],
+    });
+    expect(marks(t.events)[0].gestureProgress).toMatchObject({
+      completedAtMs: 250,
+      samples: [
+        { atMs: 100, pointCount: 1 },
+        { atMs: 180, pointCount: 2 },
+      ],
+    });
+    expect(t.controller.handlePointer({ ...request, phase: 'move', pointCount: 3 }).ok).toBe(false);
+    const next = { ...request, sequence: t.nextSequence() };
+    t.controller.handlePointer({ ...next, phase: 'down' });
+    t.controller.handlePointer({ ...next, phase: 'cancel' });
+    expect(t.controller.handlePointer({ ...next, phase: 'move', pointCount: 2 }).ok).toBe(false);
+    expect(marks(t.events)).toHaveLength(1);
+    clipId = undefined;
+  });
+  it('rejects the whole frozen mark when the clip changes during capture', async () => {
+    const t = setup();
+    let clipId = 'clip-a';
+    t.host.clipIdentity = () => clipId;
+    t.host.clip = 100;
+    await t.start();
+    t.holdCaptures();
+    const pending = t.gesture([
+      { x: 10, y: 10 },
+      { x: 80, y: 80 },
+    ]);
+    await vi.waitFor(() => expect(t.captures).toHaveLength(1));
+    clipId = 'clip-b';
+    t.releaseCapture();
+    expect((await pending).ok).toBe(false);
+    expect(marks(t.events)).toHaveLength(0);
+  });
+});
+
+describe('DockAnnotationController native drawing cursor', () => {
+  const lastUpdate = (t: ReturnType<typeof setup>) => t.cursorOwners[0]!.updates.at(-1)!;
+
+  it('owns the cursor only while the overlay takes the pointer for drawing, minus the dock and bar', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    expect(t.cursorOwners).toHaveLength(1);
+    expect(t.cursorOwners[0]!.window).toBe(t.windows[0]);
+    const bar = { x: 600, y: 760, width: 200, height: 38 };
+    t.controller.handleToolbar({ sessionId: 's1', action: 'rect', rect: bar });
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(false);
+    expect(lastUpdate(t)).toMatchObject({
+      enabled: true,
+      regions: [{ x: 0, y: 0, width: 1440, height: 900 }],
+      excludedRegions: [{ x: 1140, y: 0, width: 300, height: 900 }, bar],
+    });
+    // Over the dock the overlay is click-through: no native ownership.
+    t.cursor.x = -100;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(true);
+    expect(lastUpdate(t)).toMatchObject({ enabled: false, regions: [], excludedRegions: [] });
+    // Unchanged routing writes nothing (the route runs every 33 ms).
+    const writes = t.cursorOwners[0]!.updates.length;
+    t.tick();
+    t.tick();
+    expect(t.cursorOwners[0]!.updates.length).toBe(writes);
+  });
+
+  it('forwards Chromium custom cursor payloads (pen -> box) and standard types unchanged', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    const custom = (tag: string) => ({
+      image: { tag },
+      scale: 2,
+      size: { width: 48, height: 48 },
+      hotspot: { x: 6, y: 42 },
+    });
+    const pen = custom('pen');
+    t.windows[0]!.webContents.emit(
+      'cursor-changed',
+      {},
+      'custom',
+      pen.image,
+      pen.scale,
+      pen.size,
+      pen.hotspot,
+    );
+    const box = custom('box');
+    t.windows[0]!.webContents.emit(
+      'cursor-changed',
+      {},
+      'custom',
+      box.image,
+      box.scale,
+      box.size,
+      box.hotspot,
+    );
+    t.windows[0]!.webContents.emit('cursor-changed', {}, 'default');
+    expect(t.cursorOwners[0]!.changes).toEqual([
+      { type: 'custom', custom: pen },
+      { type: 'custom', custom: box },
+      { type: 'default', custom: undefined },
+    ]);
+  });
+
+  it('releases in Mouse mode and while discarding, resumes on a tool', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'box');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'mouse' });
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(false);
+    await t.controller.setAnnotationTool('s1', 'pen');
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(false);
+  });
+
+  it('disables before hiding on end, and disposes with the overlay window', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    await t.controller.endAnnotation('s1');
+    expect(lastUpdate(t).enabled).toBe(false);
+    expect(t.windows[0]!.visible).toBe(false);
+    expect(t.cursorOwners[0]!.disposed).toBe(0);
+    t.expire(60_000);
+    expect(t.windows[0]!.destroyed).toBe(true);
+    expect(t.cursorOwners[0]!.disposed).toBe(1);
+    t.windows[0]!.webContents.emit('cursor-changed', {}, 'custom', {}, 2, {}, {});
+    expect(t.cursorOwners[0]!.changes).toEqual([]);
+  });
+
+  it('without a native cursor owner nothing changes', async () => {
+    const t = setup();
+    await t.start('live', 'pen');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(false);
+    expect(t.cursorOwners).toEqual([]);
+    expect(t.windows[0]!.webContents.listenerCount('cursor-changed')).toBe(0);
   });
 });

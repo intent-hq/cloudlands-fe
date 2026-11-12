@@ -4,6 +4,132 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.326.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.325.0...v2.326.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **machine-setup:** Add machine opens the wizard; menu only with Add cloud ([#4506](https://github.com/intent-hq/cloudlands-fe/issues/4506)) ([b55e514](https://github.com/intent-hq/cloudlands-fe/commit/b55e514a1083747b7154e78062c702126947a4d0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.195 ([#4511](https://github.com/intent-hq/cloudlands-fe/issues/4511)) ([282646d](https://github.com/intent-hq/cloudlands-fe/commit/282646dce35ed03739cd9b649c03179bb03fedef))
+* **e2e:** drop the unknown skipAutoCommit option from the build smoke mock ([#4504](https://github.com/intent-hq/cloudlands-fe/issues/4504)) ([3d0a7a0](https://github.com/intent-hq/cloudlands-fe/commit/3d0a7a09e84f15a9bc7b731a28853ed11dab635a))
+* **machine-rail:** keep a stale machine name tooltip from staying open ([#4505](https://github.com/intent-hq/cloudlands-fe/issues/4505)) ([132772d](https://github.com/intent-hq/cloudlands-fe/commit/132772d6654342d0ad0803d571c27d3dc5915f63))
+
+## [2.325.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.1...v2.325.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **machine-rail:** drag machines to reorder the rail ([#4500](https://github.com/intent-hq/cloudlands-fe/issues/4500)) ([4da8788](https://github.com/intent-hq/cloudlands-fe/commit/4da878881ebc3f364ea3e744d3c9809ce482011d))
+* **machines:** one ordered machine list in Settings → Machines ([#4494](https://github.com/intent-hq/cloudlands-fe/issues/4494)) ([b9c33a2](https://github.com/intent-hq/cloudlands-fe/commit/b9c33a2815444a7aca6c88b43bcd7f45e9a4b8f6))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.194 ([#4502](https://github.com/intent-hq/cloudlands-fe/issues/4502)) ([60f8c6c](https://github.com/intent-hq/cloudlands-fe/commit/60f8c6c14328a22aa731ac522476f823581aa963))
+
+## [2.324.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.324.0...v2.324.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* **machine-setup:** load ssh2 through its default export ([#4499](https://github.com/intent-hq/cloudlands-fe/issues/4499)) ([0f77523](https://github.com/intent-hq/cloudlands-fe/commit/0f77523dfff74bf81fe2ee84f0a06db0b3260670))
+
+## [2.324.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.323.0...v2.324.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **dock:** edit captures and follow linked workspaces ([#4483](https://github.com/intent-hq/cloudlands-fe/issues/4483)) ([d8830f2](https://github.com/intent-hq/cloudlands-fe/commit/d8830f202e6fb60b5c9f467abd8ca174e388dcba))
+
+## [2.323.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.322.0...v2.323.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **machine-setup:** Set up a new machine wizard ([#4492](https://github.com/intent-hq/cloudlands-fe/issues/4492)) ([1b8320e](https://github.com/intent-hq/cloudlands-fe/commit/1b8320e8dd4e6b6fa9c57983379152827828a4f8))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.193 ([#4496](https://github.com/intent-hq/cloudlands-fe/issues/4496)) ([e083eb8](https://github.com/intent-hq/cloudlands-fe/commit/e083eb80b5db28bf0b54d6511a86d76022b881d1))
+
+## [2.322.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.2...v2.322.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **chat:** show always-allow options with how far they reach ([#4480](https://github.com/intent-hq/cloudlands-fe/issues/4480)) ([380b4d6](https://github.com/intent-hq/cloudlands-fe/commit/380b4d62aad6698d52abbccfc5a03493d42a74f8))
+* **e2e:** let the sandbox's scripted agent ask for tool approval ([#4490](https://github.com/intent-hq/cloudlands-fe/issues/4490)) ([7515a85](https://github.com/intent-hq/cloudlands-fe/commit/7515a85146f8cd30bd264bcb2a24cf6add352f1c))
+* **machine-rail:** smooth switching, guest hosts, and in-place machine menus ([#4491](https://github.com/intent-hq/cloudlands-fe/issues/4491)) ([619de8a](https://github.com/intent-hq/cloudlands-fe/commit/619de8adf6ef5f329ae0daa4bcde47f2097bd595))
+* **workspace:** import an existing agent session in new workspace ([#4465](https://github.com/intent-hq/cloudlands-fe/issues/4465)) ([5759c1d](https://github.com/intent-hq/cloudlands-fe/commit/5759c1d14a1f4f77a656d2d6c89b44a67b92d007))
+
+
+### 🐛 Bug Fixes
+
+* **backend:** keep the saved tailcat address when a refresh omits it ([#4486](https://github.com/intent-hq/cloudlands-fe/issues/4486)) ([3ffdcea](https://github.com/intent-hq/cloudlands-fe/commit/3ffdceadf1d39b6c6cf36b0a5c3f93f49f368b6b))
+* bump intentd sidecar to v0.11.192 ([#4493](https://github.com/intent-hq/cloudlands-fe/issues/4493)) ([d4fb90a](https://github.com/intent-hq/cloudlands-fe/commit/d4fb90ae18eb805d55a6c379238106e6f0fb5b92))
+* **chat:** keep scrollback as one contiguous window with no gaps ([#4489](https://github.com/intent-hq/cloudlands-fe/issues/4489)) ([f398527](https://github.com/intent-hq/cloudlands-fe/commit/f39852740799257f87a411d436d3aa0d5d9ac31c))
+* default new workspace to the last-used repo outside Home ([#4485](https://github.com/intent-hq/cloudlands-fe/issues/4485)) ([47a3506](https://github.com/intent-hq/cloudlands-fe/commit/47a350632e568a438a95f93ec492383ec6f45a60))
+* **onboarding:** drop 'say something' setup line once the chat has a user message ([#4484](https://github.com/intent-hq/cloudlands-fe/issues/4484)) ([ceec14d](https://github.com/intent-hq/cloudlands-fe/commit/ceec14de9b72872c91c883830a897d24c13063be))
+
+## [2.321.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.1...v2.321.2) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.191 ([#4481](https://github.com/intent-hq/cloudlands-fe/issues/4481)) ([cea3fa4](https://github.com/intent-hq/cloudlands-fe/commit/cea3fa442dbcea1cd58aca05d4cf5158b0d346a2))
+* **lint:** treat mock IPC router and fake bridge as test plumbing ([#4479](https://github.com/intent-hq/cloudlands-fe/issues/4479)) ([ce6e7dd](https://github.com/intent-hq/cloudlands-fe/commit/ce6e7ddc15f8840f5605aa989db8506e9f3a8903))
+
+
+### ⚡ Performance
+
+* **permissions:** derive principal authority once per recovery scan ([#4477](https://github.com/intent-hq/cloudlands-fe/issues/4477)) ([0733a8e](https://github.com/intent-hq/cloudlands-fe/commit/0733a8ed039414f19f71df210b3f711deac4aeef))
+
+## [2.321.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.0...v2.321.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* restore direct panel moves and explain Full width ([#4475](https://github.com/intent-hq/cloudlands-fe/issues/4475)) ([c532049](https://github.com/intent-hq/cloudlands-fe/commit/c5320498250acf6eb135d80910c20056d4984ee9))
+
+## [2.321.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.1...v2.321.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **agent:** per-chat tool approval toggle and default setting ([#4458](https://github.com/intent-hq/cloudlands-fe/issues/4458)) ([d2e88c9](https://github.com/intent-hq/cloudlands-fe/commit/d2e88c99165ae12503109f1890d877e084e686ac))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.190 ([#4473](https://github.com/intent-hq/cloudlands-fe/issues/4473)) ([9d07574](https://github.com/intent-hq/cloudlands-fe/commit/9d07574943ece1cb10e7f9d67322ce89dcd2ee97))
+
+## [2.320.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.0...v2.320.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.189 ([#4469](https://github.com/intent-hq/cloudlands-fe/issues/4469)) ([ebe8047](https://github.com/intent-hq/cloudlands-fe/commit/ebe8047a4681fd9a247b791aebf249c156f8d68d))
+
+## [2.320.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.319.0...v2.320.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** group starting context by owner in the harness dialog ([#4456](https://github.com/intent-hq/cloudlands-fe/issues/4456)) ([5229c20](https://github.com/intent-hq/cloudlands-fe/commit/5229c20c336d4021645cc63c8eb4acc1b1deb838))
+* **desktop:** ask macOS for permissions when desktop control is enabled ([#4452](https://github.com/intent-hq/cloudlands-fe/issues/4452)) ([5fa13cd](https://github.com/intent-hq/cloudlands-fe/commit/5fa13cd52086484dab453be3bde3a4d20f326b5b))
+
+## [2.319.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.318.0...v2.319.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **machine-rail:** Add a Labs rail to switch machines in one window ([#4463](https://github.com/intent-hq/cloudlands-fe/issues/4463)) ([e06de09](https://github.com/intent-hq/cloudlands-fe/commit/e06de09695d8d7197d7f691c90ff66590e1d28ea))
+
 ## [2.318.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.2...v2.318.0) (2026-11-11)
 
 

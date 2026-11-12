@@ -1,3 +1,4 @@
+import type { DockGestureProgress } from '../../../shared/dock-gesture-progress';
 /**
  * Dock composer annotation: one transparent, nonactivating overlay window on the
  * dock's display that turns pick/box/pen/arrow gestures into numbered marks.
@@ -12,8 +13,8 @@
  * before any await. The first mark captures the dock display without the dock,
  * its owned popups or this overlay; later marks reuse that image unless the
  * screen's 16×16 difference hash moved by more than 12 bits or a navigation was
- * reported. Still marks use the frozen pixels they were started with and never
- * capture the desktop.
+ * reported. Recording marks keep the batch's coordinate image until Clear.
+ * Still marks use the frozen pixels they were started with and never capture the desktop.
  */
 import { randomUUID } from 'node:crypto';
 import path, { dirname } from 'path';
@@ -71,6 +72,7 @@ import { Logger } from '../../../shared/logger';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { registerDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { fixWebContentsZoom } from '../../../main/fixed-zoom';
+import { attachDockCursor, type DockCursorController } from '../../../main/dock-cursor';
 import {
   createDockElementPicker,
   type DockElementHit,
@@ -138,6 +140,8 @@ export interface DockAnnotationHost {
   dockAnchor?(): DockToolbarAnchor | null;
   /** Elapsed time of the live clip, when one is recording. */
   clipMs(): number | undefined;
+  /** Identity of the currently owned recording; timing may never cross clips. */
+  clipIdentity?(): string | undefined;
   /**
    * Optional: called synchronously at an accepted pointerdown, before any await,
    * so live speech/clip clocks are stamped at the real click time. The mark may
@@ -174,6 +178,13 @@ export interface DockAnnotationNative {
   setInterval(callback: () => void, ms: number): () => void;
   setTimeout(callback: () => void, ms: number): () => void;
   onDisplaysChanged(listener: () => void): () => void;
+  /**
+   * Native AppKit cursor owner for the overlay panel (it never becomes key, so Chromium's
+   * CSS cursor is not shown by AppKit). Optional: absent means today's behaviour.
+   */
+  attachCursor?(
+    window: BrowserWindow,
+  ): Pick<DockCursorController, 'update' | 'cursorChanged' | 'dispose'> | undefined;
   /** Intent's own window under a gesture: panel check and page element; 'other' for any other app. */
   intentWindow(
     windowId: number,
@@ -182,6 +193,8 @@ export interface DockAnnotationNative {
 }
 
 interface Hold {
+  clipId?: string;
+  progress: DockGestureProgress['samples'];
   sequence: number;
   origin: DockImagePoint;
   tool: DockMarkTool;
@@ -194,6 +207,7 @@ interface Hold {
 }
 
 interface SessionImage {
+  clipId?: string;
   width: number;
   height: number;
   hash: string | null;
@@ -225,6 +239,10 @@ interface Session {
   toolbar: DockAnnotationRect | null;
   /** Mouse mode: click-through except the tool bar; no gesture starts. */
   mouse: boolean;
+  discarding: boolean;
+  discardMouse: boolean;
+  undoRequested: boolean;
+  inputRevision: number;
 }
 
 interface Lease {
@@ -232,8 +250,11 @@ interface Lease {
 }
 
 interface Frozen {
+  clipId?: string;
+  gestureProgress?: DockGestureProgress;
   session: Session;
   lease: Lease;
+  inputRevision: number;
   tool: DockMarkTool;
   display: Display;
   origin: DockImagePoint;
@@ -340,6 +361,10 @@ export class DockAnnotationController implements AnnotationService {
    */
   private revealing: Session | null = null;
   private windowCleanup: Array<() => void> = [];
+  private overlayCursor: Pick<DockCursorController, 'update' | 'cursorChanged' | 'dispose'> | null =
+    null;
+  private cursorKey = '';
+  private cursorRevision = 0;
   private cancelIdle: (() => void) | null = null;
   private stopRouting: (() => void) | null = null;
   private stopDisplays: (() => void) | null = null;
@@ -399,7 +424,7 @@ export class DockAnnotationController implements AnnotationService {
     const session: Session = {
       id: request.id,
       mode: request.mode,
-      tool: request.tool,
+      tool: request.tool === 'pick' ? 'box' : request.tool,
       display,
       window,
       ready: false,
@@ -418,6 +443,10 @@ export class DockAnnotationController implements AnnotationService {
       excludedKey: '',
       toolbar: null,
       mouse: false,
+      discarding: false,
+      discardMouse: false,
+      undoRequested: false,
+      inputRevision: 0,
     };
     this.session = session;
     this.stopNavigation = host.watchNavigation?.(() => this.notifyNavigation()) ?? null;
@@ -482,9 +511,30 @@ export class DockAnnotationController implements AnnotationService {
     return { ok: true, value: undefined };
   }
 
-  async setAnnotationTool(sessionId: string, tool: DockMarkTool): Promise<void> {
+  async setAnnotationTool(
+    sessionId: string,
+    tool: DockMarkTool,
+    restoreInputRevision?: number,
+  ): Promise<void> {
     const session = this.session;
-    if (!session || session.id !== sessionId || session.ended || !validTool(tool)) return;
+    if (
+      !session ||
+      session.id !== sessionId ||
+      session.ended ||
+      !validTool(tool) ||
+      tool === 'pick'
+    )
+      return;
+    if (!session.discarding && restoreInputRevision !== undefined) return;
+    if (session.discarding) {
+      if (!session.undoRequested || restoreInputRevision !== session.inputRevision) return;
+      session.undoRequested = false;
+      session.discarding = false;
+      session.mouse = session.discardMouse;
+      this.publish(session);
+      this.route();
+      return;
+    }
     // A held gesture keeps the tool it started with. Choosing a tool leaves mouse mode.
     session.tool = tool;
     session.mouse = false;
@@ -505,6 +555,21 @@ export class DockAnnotationController implements AnnotationService {
    * sessions (the dock sends it on change, not per session), so a new session's
    * bar shows it at once.
    */
+  /** The live recording's microphone, pushed to the overlay's time chip as it changes. */
+  setRecordingSignal(signal: { level: number; mic: boolean } | null): void {
+    const window = this.window;
+    if (!usable(window)) return;
+    const value =
+      signal && Number.isFinite(signal.level)
+        ? { level: Math.min(1, Math.max(0, signal.level)), mic: signal.mic === true }
+        : null;
+    try {
+      window.webContents.send(DOCK_ANNOTATION_CHANNELS.SIGNAL, value);
+    } catch (error) {
+      logger.debug('Failed to publish the recording signal', { error });
+    }
+  }
+
   setAnnotationMedia(media: unknown): void {
     const next = sanitizeDockAnnotationMedia(media);
     if (!next) return;
@@ -673,9 +738,18 @@ export class DockAnnotationController implements AnnotationService {
       request?.sessionId !== session.id
     )
       return false;
+    if (session.discarding && request.action === 'discard') return false;
+    if (session.discarding && request.action === 'done' && !session.undoRequested) return false;
+    if (
+      session.discarding &&
+      !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse', 'done'].includes(
+        request.action,
+      )
+    )
+      return false;
     if (request.action !== 'rect') this.activity();
     if (request.action === 'tool') {
-      if (!validTool(request.tool)) return false;
+      if (session.discarding || !validTool(request.tool) || request.tool === 'pick') return false;
       if (session.tool !== request.tool || session.mouse) {
         session.tool = request.tool;
         session.mouse = false;
@@ -727,6 +801,38 @@ export class DockAnnotationController implements AnnotationService {
       this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
       return true;
     }
+    if (request.action === 'pause') {
+      if (typeof request.paused !== 'boolean') return false;
+      this.emit({
+        type: 'annotation-media',
+        sessionId: session.id,
+        action: request.paused ? 'pause' : 'resume',
+      });
+      return true;
+    }
+    if (
+      request.action === 'done' ||
+      request.action === 'discard' ||
+      request.action === 'discard-undo' ||
+      request.action === 'discard-confirm'
+    ) {
+      if (request.action === 'discard') {
+        session.undoRequested = false;
+        session.discardMouse = session.mouse;
+        session.discarding = true;
+        session.inputRevision += 1;
+        this.enterMouse(session);
+      }
+      if (request.action === 'discard-undo') session.undoRequested = true;
+      // Only the owned Undo reply for this discard revision may restore input.
+      this.emit({
+        type: 'annotation-media',
+        sessionId: session.id,
+        action: request.action,
+        inputRevision: session.inputRevision,
+      });
+      return true;
+    }
     if (request.action === 'rect') {
       const rect = request.rect;
       session.toolbar =
@@ -753,13 +859,46 @@ export class DockAnnotationController implements AnnotationService {
       if (session.hold?.sequence === request.sequence) this.release(session);
       return { ok: true };
     }
+    if (request.phase === 'move') {
+      const hold = session.hold,
+        atMs = this.host?.clipMs();
+      if (
+        !hold ||
+        hold.sequence !== request.sequence ||
+        hold.tool !== request.tool ||
+        !hold.clipId ||
+        hold.clipId !== this.host?.clipIdentity?.() ||
+        !finitePoint(request) ||
+        !this.insideDisplay(session, request) ||
+        !Number.isSafeInteger(request.pointCount) ||
+        request.pointCount! < 1 ||
+        request.pointCount! > DOCK_ANNOTATION_LIMITS.gesturePoints ||
+        atMs === undefined ||
+        !Number.isFinite(atMs) ||
+        atMs < (hold.clipMs ?? 0)
+      )
+        return reject('stale');
+      const previous = hold.progress.at(-1);
+      if (previous && (atMs < previous.atMs || request.pointCount! < previous.pointCount))
+        return reject('stale');
+      const sample = { atMs, pointCount: request.pointCount!, end: { x: request.x, y: request.y } };
+      if (previous?.atMs === atMs) {
+        if (hold.progress.length > 1) hold.progress[hold.progress.length - 1] = sample;
+      } else if (!previous || atMs - previous.atMs >= 32) hold.progress.push(sample);
+      // Keep observed points only; evenly thin older observations under the cap.
+      if (hold.progress.length > 64)
+        hold.progress = hold.progress.filter(
+          (_, i) => i === 0 || i % 2 === 0 || i === hold.progress.length - 1,
+        );
+      return { ok: true };
+    }
     if (request.phase !== 'down' || !finitePoint(request) || !validTool(request.tool))
       return reject('invalid');
     // Sequences only move forward: a replayed or reordered pointerdown is stale.
     if (request.sequence <= session.lastSequence) return reject('stale');
     session.lastSequence = request.sequence;
     // Mouse mode makes no marks (the overlay is click-through there anyway).
-    if (session.mouse) return reject('excluded');
+    if (session.mouse || session.discarding) return reject('excluded');
     if (request.tool !== session.tool) return reject('stale');
     const origin = { x: request.x, y: request.y };
     if (!this.insideDisplay(session, origin)) return reject('outside');
@@ -767,6 +906,8 @@ export class DockAnnotationController implements AnnotationService {
     if (session.hold) this.release(session);
     const clipMs = this.host?.clipMs();
     session.hold = {
+      clipId: this.host?.clipIdentity?.(),
+      progress: clipMs === undefined ? [] : [{ atMs: clipMs, pointCount: 1, end: { ...origin } }],
       sequence: request.sequence,
       origin,
       tool: session.tool,
@@ -879,12 +1020,25 @@ export class DockAnnotationController implements AnnotationService {
     return {
       session,
       lease,
+      inputRevision: session.inputRevision,
       tool: hold.tool,
       display: session.display,
       origin: { ...hold.origin },
       end: hold.tool === 'pick' ? { ...hold.origin } : { ...points.at(-1)! },
       geometry,
       clipMs: hold.clipMs,
+      clipId: hold.clipId,
+      ...(hold.clipId &&
+      hold.clipId === host?.clipIdentity?.() &&
+      hold.progress.length &&
+      host?.clipMs() !== undefined
+        ? {
+            gestureProgress: {
+              completedAtMs: host.clipMs()!,
+              samples: hold.progress.map((sample) => ({ ...sample, end: { ...sample.end } })),
+            },
+          }
+        : {}),
       markId: hold.markId,
       atEpochMs: hold.atEpochMs,
       excludeWindowIds: [
@@ -910,7 +1064,11 @@ export class DockAnnotationController implements AnnotationService {
     const { session, display } = frozen;
     const host = this.host;
     // Every await is fenced by the session and the commit deadline before any state changes.
-    const live = () => !frozen.lease.expired && this.current(session);
+    const live = () =>
+      !frozen.lease.expired &&
+      !session.discarding &&
+      frozen.inputRevision === session.inputRevision &&
+      this.current(session);
     if (!host || !live()) return reject('stale');
     const { x: dx, y: dy } = display.bounds;
     const originGlobal = { x: dx + frozen.origin.x, y: dy + frozen.origin.y };
@@ -927,31 +1085,43 @@ export class DockAnnotationController implements AnnotationService {
         : this.native.picker.hit(frozen.elementPoint, { element: true }),
     ]);
     if (!live()) return reject('stale');
-    if (!originHit.checked) return this.refuse(session, 'target', 'unavailable');
-    // Dock, menus, desktop, menu bar and other system surfaces are never targets.
-    if (!originHit.window) {
+    // While a clip records, the whole screen is in it: a drawn mark (not a pick, which
+    // names an element) is about the screen, so it is kept over the desktop or across
+    // windows, where it used to be dropped without a word, and window and element
+    // details only enrich it when they can be read. Otherwise the dock, menus,
+    // desktop, menu bar and other system surfaces are never targets.
+    const anywhere = !pick && frozen.clipMs !== undefined;
+    if (!originHit.checked && !anywhere) return this.refuse(session, 'target', 'unavailable');
+    if (!originHit.window && !anywhere) {
       logger.info('Dock annotation mark refused: no app window under it', { tool: frozen.tool });
       return reject('outside');
     }
-    const target = { ...originHit.window, bounds: { ...originHit.window.bounds } };
-    if (!pick && !pointInRects(endGlobal, [target.bounds])) {
+    const target =
+      originHit.checked && originHit.window
+        ? { ...originHit.window, bounds: { ...originHit.window.bounds } }
+        : null;
+    if (!pick && !anywhere && target && !pointInRects(endGlobal, [target.bounds])) {
       logger.info('Dock annotation mark refused: it leaves its window', { tool: frozen.tool });
       return reject('outside');
     }
     // Intent's own main window: its page says where the browser panel is (never
     // markable) and which element is under the gesture.
-    const own = await this.native.intentWindow(target.windowId, {
-      panelPoints: pick ? [originGlobal] : [originGlobal, endGlobal, frozen.elementPoint],
-      elementPoint: pick ? originGlobal : frozen.elementPoint,
-    });
+    const probed = target
+      ? await this.native.intentWindow(target.windowId, {
+          panelPoints: pick ? [originGlobal] : [originGlobal, endGlobal, frozen.elementPoint],
+          elementPoint: pick ? originGlobal : frozen.elementPoint,
+        })
+      : null;
     if (!live()) return reject('stale');
-    if (own.kind === 'failed') return reject('failed');
+    if (probed?.kind === 'failed' && !anywhere) return reject('failed');
+    // A recording draw whose window details could not be read is kept without them.
+    const own = probed?.kind === 'failed' ? null : probed;
     // Intent's browser panel is a separate page: a drawn mark keeps its screenshot
     // without an element; a pick has nothing to name there.
-    if (own.kind === 'intent' && own.inPanel && pick)
+    if (own?.kind === 'intent' && own.inPanel && pick)
       return this.refuse(session, 'pick', 'unavailable');
     let ax: DockAxElement | null;
-    if (own.kind === 'intent') {
+    if (own?.kind === 'intent') {
       ax = own.inPanel ? null : own.element;
       if (pick && (!ax || !toDockMarkElement(ax)))
         return this.refuse(session, 'pick', 'unavailable');
@@ -965,9 +1135,9 @@ export class DockAnnotationController implements AnnotationService {
       ax = originHit.element;
       if (!ax || !toDockMarkElement(ax)) return this.refuse(session, 'pick', 'unavailable');
     } else {
-      ax = (samePoint ? originHit : elementHit)?.element ?? null;
+      ax = target ? ((samePoint ? originHit : elementHit)?.element ?? null) : null;
     }
-    const frozenElement = ax ? { ...ax, rect: { ...ax.rect } } : null;
+    let frozenElement = ax ? { ...ax, rect: { ...ax.rect } } : null;
 
     // 2. Clean capture of the dock display without the dock, its popups or this overlay.
     const captured = await host
@@ -1000,24 +1170,41 @@ export class DockAnnotationController implements AnnotationService {
     if (Math.abs(shot.width / shot.height - aspect) > aspect * 0.01) return reject('failed');
 
     // 3. Late-capture fence: the target window must not have moved or changed meanwhile.
-    const after = await this.native.picker.hit(originGlobal, { element: false });
-    if (!live() || !sameDisplay(display, host.dockDisplay())) return reject('stale');
-    if (!after.checked || !sameTarget(after.window, target)) return reject('stale');
+    //    A recording draw is about the screen: if its window cannot be confirmed, the mark
+    //    is kept and only its now unverified element is dropped. Session and display
+    //    are always checked.
+    if (target) {
+      const after = await this.native.picker.hit(originGlobal, { element: false });
+      if (!live() || !sameDisplay(display, host.dockDisplay())) return reject('stale');
+      if (!after.checked || !sameTarget(after.window, target)) {
+        if (!anywhere) return reject('stale');
+        frozenElement = null;
+      }
+    }
 
     const hash = this.native.hash(shot.png);
     const previous = session.image;
     // Without two comparable hashes a change cannot be shown, so the image is kept.
     const comparable = !!previous?.hash && !!hash;
+    if (frozen.clipId && frozen.clipId !== host.clipIdentity?.()) return reject('stale');
+    const recordingImage = !!frozen.clipId && previous?.clipId === frozen.clipId;
     const reuse =
       !!previous &&
-      !session.navigation &&
       previous.width === shot.width &&
       previous.height === shot.height &&
-      (!comparable ||
-        dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold);
+      (recordingImage ||
+        (!previous.clipId &&
+          !session.navigation &&
+          (!comparable ||
+            dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold)));
     const image: SessionImage = reuse
       ? previous!
-      : { width: shot.width, height: shot.height, hash };
+      : {
+          width: shot.width,
+          height: shot.height,
+          hash,
+          ...(frozen.clipId ? { clipId: frozen.clipId } : {}),
+        };
     const view = dockAnnotationViewport(display.bounds, image, session.mode);
     if (!view) return reject('failed');
 
@@ -1085,6 +1272,7 @@ export class DockAnnotationController implements AnnotationService {
         this.publish(session);
       }
     }
+    if (reuse && frozen.clipId) session.image = { ...image, clipId: frozen.clipId };
     return this.emitMark(frozen, geometry, element, capture) ? { ok: true } : reject('stale');
   }
 
@@ -1111,9 +1299,35 @@ export class DockAnnotationController implements AnnotationService {
     element: DockMarkElement | null,
     capture?: DockCapturedPixels,
   ): boolean {
-    if (frozen.lease.expired || !this.current(frozen.session)) return false;
+    if (
+      frozen.lease.expired ||
+      frozen.session.discarding ||
+      frozen.inputRevision !== frozen.session.inputRevision ||
+      !this.current(frozen.session)
+    )
+      return false;
+    if (frozen.clipId && frozen.clipId !== this.host?.clipIdentity?.()) return false;
+    const sameClip = frozen.clipId
+      ? frozen.clipId === this.host?.clipIdentity?.()
+      : !this.host?.clipIdentity;
+    const width = capture?.width ?? frozen.session.image?.width;
+    const height = capture?.height ?? frozen.session.image?.height;
+    const progress =
+      sameClip && frozen.gestureProgress && width && height && frozen.tool !== 'pick'
+        ? {
+            ...frozen.gestureProgress,
+            samples: frozen.gestureProgress.samples.map((sample) => ({
+              ...sample,
+              end: {
+                x: (sample.end.x * width) / frozen.display.bounds.width,
+                y: (sample.end.y * height) / frozen.display.bounds.height,
+              },
+            })),
+          }
+        : undefined;
     this.emit({
       type: 'mark',
+      ...(progress ? { gestureProgress: progress } : {}),
       sessionId: frozen.session.id,
       tool: frozen.tool,
       geometry,
@@ -1121,7 +1335,10 @@ export class DockAnnotationController implements AnnotationService {
       ...(capture ? { capture } : {}),
       markId: frozen.markId,
       gestureAtEpochMs: frozen.atEpochMs,
-      ...(frozen.clipMs !== undefined && Number.isFinite(frozen.clipMs) && frozen.clipMs >= 0
+      ...(sameClip &&
+      frozen.clipMs !== undefined &&
+      Number.isFinite(frozen.clipMs) &&
+      frozen.clipMs >= 0
         ? { clipMs: Math.round(frozen.clipMs) }
         : {}),
     });
@@ -1217,7 +1434,7 @@ export class DockAnnotationController implements AnnotationService {
             height: session.still.pixels.height,
           }
         : null,
-      marks: session.marks,
+      marks: session.discarding ? [] : session.marks,
       marksRevision: session.marksRevision,
       excluded: this.localExcluded(session),
       pick: session.mode === 'still' ? 'unavailable' : pickStatus(this.native.picker.access()),
@@ -1318,6 +1535,7 @@ export class DockAnnotationController implements AnnotationService {
     }
     if (session.hold) {
       this.setInteractive(session, true);
+      this.syncCursor(session);
       return;
     }
     const cursor = this.native.cursor();
@@ -1332,6 +1550,53 @@ export class DockAnnotationController implements AnnotationService {
       onToolbar ||
         (!session.mouse && this.insideDisplay(session, local) && !pointInRects(local, excluded)),
     );
+    this.syncCursor(session);
+  }
+
+  /**
+   * The overlay's drawing cursor through the native owner: only while the overlay takes the
+   * pointer for a drawing session (not Mouse, not discarding), over the display minus the
+   * dock, its excluded rects and the tool bar. Same eligibility rules as the dock's cursor.
+   */
+  private syncCursor(session: Session | null): void {
+    const cursor = this.overlayCursor;
+    if (!cursor) return;
+    const active =
+      !!session &&
+      !session.ended &&
+      session.revealed &&
+      session.interactive === true &&
+      !session.mouse &&
+      !session.discarding &&
+      usable(session.window) &&
+      session.window === this.window;
+    const { width, height } = session ? session.display.bounds : { width: 0, height: 0 };
+    const enabled = active && width > 0 && height > 0;
+    const sized = (rect: DockAnnotationRect) =>
+      [rect.x, rect.y, rect.width, rect.height].every(
+        (v) => Number.isFinite(v) && Math.abs(v) <= 1_000_000,
+      ) &&
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.width <= 16384 &&
+      rect.height <= 16384;
+    const regions = enabled ? [{ x: 0, y: 0, width, height }] : [];
+    const excludedRegions =
+      enabled && session
+        ? [...this.localExcluded(session), ...(session.toolbar ? [session.toolbar] : [])]
+            .filter(sized)
+            .slice(0, 64)
+        : [];
+    const key = JSON.stringify([enabled, regions, excludedRegions]);
+    if (key === this.cursorKey) return;
+    this.cursorKey = key;
+    this.cursorRevision += 1;
+    try {
+      cursor.update({ regions, excludedRegions, revision: this.cursorRevision, enabled });
+    } catch (error) {
+      this.cursorKey = '';
+      logger.warn('Failed to update the dock annotation cursor', { error });
+    }
   }
 
   private startRouting(): void {
@@ -1373,18 +1638,45 @@ export class DockAnnotationController implements AnnotationService {
     current.on('closed', onGone);
     current.webContents.on('render-process-gone', onGone);
     current.webContents.on('did-start-loading', onLoading);
+    const cursor = this.native.attachCursor?.(current) ?? null;
+    this.overlayCursor = cursor;
+    this.cursorKey = '';
+    const onCursor = (
+      _event: Electron.Event,
+      type: string,
+      image?: Electron.NativeImage,
+      scale?: number,
+      size?: Electron.Size,
+      hotspot?: Electron.Point,
+    ) => {
+      if (this.window !== current || !cursor) return;
+      cursor.cursorChanged(
+        type,
+        type === 'custom' && image && size && hotspot && typeof scale === 'number'
+          ? { image, scale, size, hotspot }
+          : undefined,
+      );
+    };
+    if (cursor) current.webContents.on('cursor-changed', onCursor);
     this.windowCleanup.push(() => {
       current.removeListener('closed', onGone);
       if (!current.webContents.isDestroyed()) {
         current.webContents.removeListener('render-process-gone', onGone);
         current.webContents.removeListener('did-start-loading', onLoading);
+        current.webContents.removeListener('cursor-changed', onCursor);
       }
+      if (this.overlayCursor === cursor) {
+        this.overlayCursor = null;
+        this.cursorKey = '';
+      }
+      cursor?.dispose();
     });
     return current;
   }
 
   private hideWindow(): void {
     const window = this.window;
+    this.syncCursor(null);
     if (usable(window)) {
       try {
         window.setIgnoreMouseEvents(true, { forward: true });
@@ -1505,6 +1797,7 @@ function hashPng(png: Buffer): string | null {
 export const dockAnnotationController = new DockAnnotationController(null, {
   createWindow: createOverlayWindow,
   cursor: () => screen.getCursorScreenPoint(),
+  attachCursor: (window) => attachDockCursor(window),
   hash: hashPng,
   picker: createDockElementPicker(),
   intentWindow: inspectDockIntentWindow,

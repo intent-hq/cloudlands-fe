@@ -24,6 +24,7 @@
     railX,
     railY,
     railHeight,
+    headerHeight = 40,
     windowWidth,
     windowHeight,
     reducedMotion,
@@ -42,6 +43,7 @@
     railX: number;
     railY: number;
     railHeight: number;
+    headerHeight?: number;
     windowWidth: number;
     windowHeight: number;
     reducedMotion: boolean;
@@ -381,8 +383,8 @@
     aria-label={m.dock_workspaces_ariaLabel()}
     data-dock-scroll
     style:left={`${railX - (side === 'right' ? scrollGutter : 0)}px`}
-    style:top={`${railY + 39}px`}
-    style:height={`${Math.max(0, railHeight - 39)}px`}
+    style:top={`${railY + headerHeight - 1}px`}
+    style:height={`${Math.max(0, railHeight - (headerHeight - 1))}px`}
     style:width={`${40 + scrollGutter}px`}
     style:padding-left={`${side === 'right' ? scrollGutter : 0}px`}
     style:padding-right={`${side === 'left' ? scrollGutter : 0}px`}
@@ -459,7 +461,7 @@
       class="preview-bridge"
       role="presentation"
       style:left={`${side === 'left' ? railX + 40 : railX - DOCK_PREVIEW_GAP}px`}
-      style:top={`${anchorRegion?.y ?? railY + 39}px`}
+      style:top={`${anchorRegion?.y ?? railY + headerHeight - 1}px`}
       style:height={`${anchorRegion?.height ?? 0}px`}
       style:width={`${DOCK_PREVIEW_GAP}px`}
       style:visibility={positioned ? 'visible' : 'hidden'}

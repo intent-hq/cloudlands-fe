@@ -172,6 +172,7 @@
       class="app-resize-handle conversation-resize rounded-none"
       data-dock-resize={edge}
       data-resize-axis={edge.length === 2 ? 'both' : /[ew]/.test(edge) ? 'x' : 'y'}
+      data-resize-indicator={edge === 'e' || edge === 'w' ? 'short' : undefined}
       data-resizing={held === edge}
       aria-label={edge.length === 2
         ? m.layout_panelCornerHandle_resize_ariaLabel()
@@ -215,6 +216,27 @@
     bottom: var(--dock-resize-corner);
     width: var(--dock-resize-depth-inline);
     height: auto;
+  }
+  /* The left edge has no scrollbar to keep clear, so it is easier to grab. */
+  :global(.conversation-resize[data-dock-resize='w']) {
+    width: var(--dock-resize-depth-inline-start, var(--dock-resize-depth-inline));
+  }
+  /* Width is discoverable: while the conversation is hovered, a short grip shows at the
+     middle of each side edge (quiet), and brightens on the handle itself. */
+  :global(.conversation-surface:hover .conversation-resize[data-resize-axis='x']::before) {
+    opacity: 0.7;
+  }
+  :global(.app-resize-handle.conversation-resize[data-resize-axis='x']::before) {
+    width: 3px;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='w']::before) {
+    left: 2px;
+    transform: translateY(-50%);
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='e']::before) {
+    left: auto;
+    right: 1px;
+    transform: translateY(-50%);
   }
   :global(.conversation-resize[data-resize-axis='both']) {
     width: var(--dock-resize-corner);

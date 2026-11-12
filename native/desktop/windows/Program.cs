@@ -266,6 +266,20 @@ static class Program {
         }
         // Lock-free and pid-only (no titles): read at session end, after release,
         // to tell whether the user switched apps during the session.
+        if(op=="foregroundContext" || op=="foregroundApp") {
+            var foreground=GetForegroundWindow(); uint pid=0;
+            if(foreground!=IntPtr.Zero) GetWindowThreadProcessId(foreground,out pid);
+            var result=new Dictionary<string,object>();
+            if(pid==0) return result;
+            result["pid"]=(int)pid;
+            result["appName"]=AppName(pid,new Dictionary<uint,string>());
+            try { using var process=System.Diagnostics.Process.GetProcessById((int)pid); if(process.MainModule?.FileName is string executable) result["appId"]=executable; } catch { }
+            if(op=="foregroundApp") return result;
+            result["urlStatus"]="unavailable";
+            int length=GetWindowTextLength(foreground);
+            if(length>0) { var text=new StringBuilder(length+1); GetWindowText(foreground,text,text.Capacity); result["title"]=text.ToString(); }
+            return result;
+        }
         if(op=="frontmost") {
             var foreground=GetForegroundWindow(); uint pid=0;
             if(foreground!=IntPtr.Zero) GetWindowThreadProcessId(foreground,out pid);

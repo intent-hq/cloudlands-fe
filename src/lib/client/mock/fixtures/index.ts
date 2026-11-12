@@ -254,6 +254,7 @@ export const mockUserPreferences: UserPreferencesState = {
   labsBrowserAccessEnabled: false,
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
+  labsSshMachineSetupEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: true,
   labsSettingsVisible: false,

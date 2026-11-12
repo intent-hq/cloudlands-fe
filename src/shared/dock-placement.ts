@@ -48,7 +48,13 @@ export interface DockPlacementSnapshot {
 type DockLandingSizes = Record<DockPlacement['kind'], { width: number; height: number }>;
 
 export type DockPlacementCommand =
+  /** The dock's own Hide: closes it and turns it off until shown again. */
   | { action: 'dismiss' }
+  /**
+   * A transient close (the open shortcut again, Escape, a click outside): the dock
+   * collapses and gives up the keyboard; the window, its setting and shortcuts stay.
+   */
+  | { action: 'release' }
   | { action: 'focus' }
   | { action: 'move'; target: DockPlacementTarget }
   | {
@@ -108,7 +114,12 @@ export interface DockDisplayGeometry {
 
 export const DEFAULT_DOCK_PLACEMENT: DockPlacement = { kind: 'notch', displayId: null };
 const DOCK_NOTCH_MIN_HEIGHT = 32;
-export const DOCK_NOTCH_MIN_WING_WIDTH = 36;
+/**
+ * A collapsed notch wing hugs its control: the mark's 28px grip button behind its 6px
+ * inset (the status wing grows from its dots, see dockCompactWingWidth). Native size,
+ * rendered shell and hit regions all derive from this one width.
+ */
+export const DOCK_NOTCH_MIN_WING_WIDTH = 34;
 export const DOCK_FLOATING_COMPACT_SIZE = { width: 224, height: 40 } as const;
 /** Conversation content size; horizontal shells add their compact header height. */
 export const DOCK_CONVERSATION_MIN_SIZE = { width: 320, height: 300 } as const;
@@ -352,6 +363,8 @@ export function dockWindowEnvelope(
   const margin = supportsForwarding ? shadowMargin : 0;
   const panelMargin = supportsForwarding ? DOCK_FLOATING_SHADOW_MARGIN : 0;
   const expansion = side && supportsForwarding ? 600 : 0;
+  // Reserve the side panel shadow too: opening must not move the native origin
+  // before the renderer receives its new window-local coordinates.
   // Side hover cards need vertical room independent of the compact rail's height.
   // Keep the rail and its margins in the union even outside the work area.
   const sideHoverEnvelope = side !== null && supportsForwarding;
@@ -371,7 +384,7 @@ export function dockWindowEnvelope(
       Math.min(
         surface.y - margin,
         preview?.y ?? surface.y,
-        sideHoverEnvelope ? display.workArea.y : surface.y,
+        sideHoverEnvelope ? display.workArea.y - panelMargin : surface.y,
         sidePanel ? sidePanel.y - panelMargin : surface.y,
       ),
     ),
@@ -392,7 +405,7 @@ export function dockWindowEnvelope(
       Math.max(
         surface.y + surface.height + margin,
         preview ? preview.y + preview.height : surface.y,
-        sideHoverEnvelope ? display.workArea.y + display.workArea.height : surface.y,
+        sideHoverEnvelope ? display.workArea.y + display.workArea.height + panelMargin : surface.y,
         sidePanel ? sidePanel.y + sidePanel.height + panelMargin : surface.y,
       ),
     ),

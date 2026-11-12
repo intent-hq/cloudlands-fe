@@ -132,6 +132,11 @@ export const selectLabsCloudMachinesEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsCloudMachinesEnabled === true;
 });
 
+/** Labs: Set up a new machine over SSH. Off hides only the SSH install method. */
+export const selectLabsSshMachineSetupEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsSshMachineSetupEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
@@ -243,3 +248,16 @@ export const selectShortcutOverrides = store.createSelector((state) => {
 export const selectResolvedLocale = store.createSelector((state) => {
   return resolvePreferenceToLocale(state.userPreferences.languagePreference);
 });
+
+export const selectDockShortcutSettings = store.createSelector(
+  (state) => state.userPreferences.dockShortcuts ?? null,
+);
+export const selectDockShortcutPending = store.createSelector(
+  (state) => state.userPreferences.dockShortcutPending ?? false,
+);
+export const selectDockShortcutCaptureToken = store.createSelector(
+  (state) => state.userPreferences.dockShortcutCaptureToken ?? null,
+);
+export const selectDockShortcutError = store.createSelector(
+  (state) => state.userPreferences.dockShortcutError ?? null,
+);

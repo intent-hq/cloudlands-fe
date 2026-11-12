@@ -1,3 +1,4 @@
+import { registerChatWindow } from './chat-window-identity';
 import { isDevConsoleRoute } from '../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
 import path from 'path';
@@ -25,11 +26,12 @@ import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-
 import { whenRendererWindowsAllowed } from './renderer-window-gate';
 import { isDockRoute, isDockWindow } from './dock-window';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
+import { isDockCaptureEditorWindow } from './dock-capture-editor-identity';
 
 const isTransientCaptureWindow = (window: BrowserWindowType): boolean =>
-  isDockWindow(window) || isDockAnnotationWindow(window);
+  isDockWindow(window) || isDockAnnotationWindow(window) || isDockCaptureEditorWindow(window);
 const isTransientCaptureRoute = (route: string): boolean =>
-  isDockRoute(route) || route === '/dock-annotation';
+  isDockRoute(route) || route === '/dock-annotation' || route === '/dock-capture-editor';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -695,6 +697,7 @@ export async function createWindowForSession(
   if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
     registerHudWindow(window);
   } else {
+    registerChatWindow(window);
     restoreMachineRailSession(window, session.rail);
   }
   forwardRendererConsoleToMainLog(window);
@@ -1005,6 +1008,7 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
   stampWindowWithBackend(window, backendId);
   forwardRendererConsoleToMainLog(window);
 
+  registerChatWindow(window);
   setMainWindow(window);
 
   // Save window bounds when resized or moved (debounced)
@@ -1154,6 +1158,7 @@ export async function createWindowForDeepLink(
 
   const iconPath = resolveIcon(false);
   const newWindow = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
+  registerChatWindow(newWindow);
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
   queueDeepLinkForWindow(newWindow, action);

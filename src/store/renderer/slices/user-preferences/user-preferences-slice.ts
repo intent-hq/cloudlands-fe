@@ -1,3 +1,8 @@
+import {
+  isDockShortcutId,
+  type DockShortcutSettingsSnapshot,
+  type DockShortcutIssue,
+} from '$shared/dock-shortcut-settings';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
@@ -47,6 +52,10 @@ export interface ActivityLogPresetPreference {
 }
 
 export type UserPreferencesState = {
+  dockShortcuts?: DockShortcutSettingsSnapshot | null;
+  dockShortcutPending?: boolean;
+  dockShortcutCaptureToken?: string | null;
+  dockShortcutError?: DockShortcutIssue | null;
   updateChannel: UpdateChannel;
   spellcheckEnabled: boolean;
   zoomFactor: number;
@@ -80,6 +89,8 @@ export type UserPreferencesState = {
   labsTabGroupsEnabled: boolean;
   /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
   labsCloudMachinesEnabled: boolean;
+  /** Labs: Set up a new machine over SSH (desktop app only). */
+  labsSshMachineSetupEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -166,6 +177,7 @@ export const initialState: UserPreferencesStoreState = {
   labsBrowserAccessEnabled: false,
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
+  labsSshMachineSetupEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -291,6 +303,21 @@ export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaul
   'userPreferences/setGithubLinkDefaultAction',
 );
 
+export const dockShortcutSettingsReceived = createAction<[snapshot: DockShortcutSettingsSnapshot]>(
+  'userPreferences/dockShortcutSettingsReceived',
+);
+export const dockShortcutPendingSet = createAction<[pending: boolean]>(
+  'userPreferences/dockShortcutPendingSet',
+);
+export const dockShortcutCaptureRequested = createAction<[active: boolean]>(
+  'userPreferences/dockShortcutCaptureRequested',
+);
+export const dockShortcutCaptureTokenSet = createAction<[token: string | null]>(
+  'userPreferences/dockShortcutCaptureTokenSet',
+);
+export const dockShortcutErrorSet = createAction<[issue: DockShortcutIssue | null]>(
+  'userPreferences/dockShortcutErrorSet',
+);
 export const hydrateShortcutOverrides = createAction<[overrides: unknown]>(
   'userPreferences/hydrateShortcutOverrides',
 );
@@ -492,6 +519,17 @@ export const setLabsCloudMachinesEnabled = labsCloudMachinesPreference.setAction
 
 export const toggleLabsCloudMachines = labsCloudMachinesPreference.toggleAction;
 
+const labsSshMachineSetupPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsSshMachineSetupEnabled',
+  setActionName: 'setLabsSshMachineSetupEnabled',
+  toggleActionName: 'toggleLabsSshMachineSetup',
+});
+
+export const setLabsSshMachineSetupEnabled = labsSshMachineSetupPreference.setAction;
+
+export const toggleLabsSshMachineSetup = labsSshMachineSetupPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -628,6 +666,7 @@ labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
 labsCloudMachinesPreference.register(userPreferencesReducer);
+labsSshMachineSetupPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
@@ -749,9 +788,17 @@ userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [acti
 }));
 userPreferencesReducer.with(hydrateShortcutOverrides, (state, { payload: [overrides] }) => ({
   ...state,
-  shortcutOverrides: sanitizeShortcutOverrides(overrides),
+  shortcutOverrides: {
+    ...Object.fromEntries(
+      Object.entries(state.shortcutOverrides).filter(([id]) => isDockShortcutId(id)),
+    ),
+    ...Object.fromEntries(
+      Object.entries(sanitizeShortcutOverrides(overrides)).filter(([id]) => !isDockShortcutId(id)),
+    ),
+  },
 }));
 userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcut] }) => {
+  if (isDockShortcutId(id)) return state;
   if (!isShortcutId(id)) return state;
   const normalized = normalizeShortcut(shortcut);
   if (!normalized) return state;
@@ -761,6 +808,7 @@ userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcu
   return { ...state, shortcutOverrides };
 });
 userPreferencesReducer.with(resetShortcutOverride, (state, { payload: [id] }) => {
+  if (isDockShortcutId(id)) return state;
   if (!(id in state.shortcutOverrides)) return state;
   const shortcutOverrides = { ...state.shortcutOverrides };
   delete shortcutOverrides[id];
@@ -768,5 +816,38 @@ userPreferencesReducer.with(resetShortcutOverride, (state, { payload: [id] }) =>
 });
 userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
   if (Object.keys(state.shortcutOverrides).length === 0) return state;
-  return { ...state, shortcutOverrides: {} };
+  return {
+    ...state,
+    shortcutOverrides: Object.fromEntries(
+      Object.entries(state.shortcutOverrides).filter(([id]) => isDockShortcutId(id)),
+    ),
+  };
 });
+
+userPreferencesReducer.with(dockShortcutSettingsReceived, (state, { payload: [snapshot] }) => {
+  // Invokes can resolve after a newer authoritative change event from another window.
+  if (state.dockShortcuts && snapshot.revision < state.dockShortcuts.revision) return state;
+  return {
+    ...state,
+    dockShortcuts: snapshot,
+    dockShortcutCaptureToken: snapshot.capturing ? state.dockShortcutCaptureToken : null,
+    shortcutOverrides: {
+      ...Object.fromEntries(
+        Object.entries(state.shortcutOverrides).filter(([id]) => !isDockShortcutId(id)),
+      ),
+      ...snapshot.overrides,
+    },
+  };
+});
+userPreferencesReducer.with(
+  dockShortcutPendingSet,
+  (state, { payload: [dockShortcutPending] }) => ({ ...state, dockShortcutPending }),
+);
+userPreferencesReducer.with(
+  dockShortcutCaptureTokenSet,
+  (state, { payload: [dockShortcutCaptureToken] }) => ({ ...state, dockShortcutCaptureToken }),
+);
+userPreferencesReducer.with(dockShortcutErrorSet, (state, { payload: [dockShortcutError] }) => ({
+  ...state,
+  dockShortcutError,
+}));

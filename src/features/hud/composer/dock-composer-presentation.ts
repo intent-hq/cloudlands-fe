@@ -22,6 +22,15 @@ import type { DockComposerController, DockComposerLocalState } from './dock-comp
 type EvidenceView = ReturnType<typeof selectDockComposerEvidence.select>;
 
 /** Native privacy panes the user may open from a permission-blocked control. */
+
+/** A live clip's recorded time: paused spans are cut, as the recorder cuts them. */
+function recordedMs(
+  clip: { startedAt: number; pausedAt?: number | null; pausedMs?: number },
+  now: number,
+): number {
+  return Math.max(0, (clip.pausedAt ?? now) - clip.startedAt - (clip.pausedMs ?? 0));
+}
+
 export type DockSettingsPane = DockEvidencePrivacyPane;
 
 /** Workspace-file playback URL from a daemon placement path (video only). */
@@ -34,6 +43,24 @@ export function dockClipPlaybackUrl(
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   const media = intentFileMediaUrlToWorkspaceFile(`intent://local/file/${encoded}`, workspaceId);
   return media?.kind === 'video' ? media.url : undefined;
+}
+
+/** A saved recording edit's send choice, for the pill's second line. */
+function dockClipSendSummary(saved: {
+  video: 'full' | 'highlights';
+  voice: 'audio' | 'transcript' | 'off';
+}): string {
+  const video =
+    saved.video === 'full'
+      ? m.dock_captureEditor_videoFull_label()
+      : m.dock_captureEditor_videoHighlights_label();
+  const voice =
+    saved.voice === 'audio'
+      ? m.dock_captureEditor_voiceAudio_label()
+      : saved.voice === 'transcript'
+        ? m.dock_captureEditor_voiceTranscript_label()
+        : m.dock_captureEditor_voiceOff_summary();
+  return `${video} · ${voice}`;
 }
 
 /** Which privacy pane a permission failure points at, if any. */
@@ -150,23 +177,39 @@ export function buildDockComposerMedia(input: {
   const clipsFull = view.clips.length >= DOCK_EVIDENCE_LIMITS.clips;
   const caps = view.capabilities;
   const speechAvailable = view.speech.available;
+  const recordingImages = new Set(
+    view.clips
+      .filter((clip) => clip.status === 'recording' || clip.status === 'placing' || !!clip.media)
+      .flatMap((clip) => clip.captureHistory?.map((entry) => entry.image.id) ?? []),
+  );
   const attachments: DockComposerAttachment[] = [
-    ...view.tiles.map(({ image, marks }): DockComposerAttachment => ({
-      kind: 'image',
-      id: image.contextItemId,
-      url: local.previews[image.id] ?? '',
-      markCount: marks.length,
-      owner: 'evidence',
-      // No preview yet: explicit pending so presentation never renders an empty image.
-      ...(local.previews[image.id] ? {} : { status: 'placing' as const }),
-    })),
+    ...view.tiles
+      .filter(
+        ({ image, marks }) =>
+          !!image.media ||
+          image.source !== 'annotate' ||
+          !recordingImages.has(image.id) ||
+          marks.some(({ mark }) => !mark.clipId),
+      )
+      .map(({ image, marks }): DockComposerAttachment => ({
+        kind: 'image',
+        id: image.contextItemId,
+        url: local.previews[image.id] ?? '',
+        markCount: marks.length,
+        owner: 'evidence',
+        // No preview yet: explicit pending so presentation never renders an empty image.
+        ...(local.previews[image.id] ? {} : { status: 'placing' as const }),
+      })),
     // One tile per recording, in start order.
     ...view.clips.map((clip): DockComposerAttachment => ({
       kind: 'clip' as const,
       // The context item exists once native returns the file; a live recording has only its id.
       id: clip.contextItemId ?? clip.id,
-      duration: elapsed(clip.status === 'recording' ? local.now - clip.startedAt : clip.durationMs),
+      duration: elapsed(
+        clip.status === 'recording' ? recordedMs(clip, local.now) : clip.durationMs,
+      ),
       recording: clip.status === 'recording',
+      ...(clip.media?.saved ? { summary: dockClipSendSummary(clip.media.saved) } : {}),
       ...(clip.status === 'ready' && dockClipPlaybackUrl(input.workspaceId, clip.path)
         ? { url: dockClipPlaybackUrl(input.workspaceId, clip.path) }
         : {}),
@@ -220,13 +263,7 @@ export function buildDockComposerMedia(input: {
     ...(copy
       ? {
           // Live dictation is content: no hint under the words about to appear.
-          placeholder: view.dictation
-            ? ''
-            : view.annotating
-              ? copy.annotating
-              : view.tiles.length
-                ? copy.captured
-                : copy.idle,
+          placeholder: view.dictation ? '' : copy.idle,
         }
       : {}),
     state: {
@@ -245,7 +282,7 @@ export function buildDockComposerMedia(input: {
       // A finished clip uploads in the background; a new recording can start meanwhile.
       recordingDisabled: !view.recording && (!caps.record || clipsFull),
       ...(clipsFull && !view.recording ? { recordingTooltip: labels.clipLimit } : {}),
-      recordingTime: recordingClip ? elapsed(local.now - recordingClip.startedAt) : elapsed(0),
+      recordingTime: recordingClip ? elapsed(recordedMs(recordingClip, local.now)) : elapsed(0),
       dictating: !!view.dictation,
       dictationPending: view.speech.pending || view.dictation?.status === 'transcribing',
       // A permission-blocked mic stays clickable: its click opens the pane.
@@ -258,6 +295,9 @@ export function buildDockComposerMedia(input: {
       ...(Object.keys(alerts).length ? { alerts } : {}),
     },
     ...input.actions,
+    // Where capture sources cannot be kept (the Assistant workspace without the
+    // connection's support), screenshots offer Mark up, not an editor that cannot open.
+    ...(view.fileAttachmentsEnabled === false ? { onEdit: undefined } : {}),
     onAlert,
     beforeSubmit: input.beforeSubmit,
   };

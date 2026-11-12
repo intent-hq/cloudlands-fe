@@ -11,7 +11,6 @@
 export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
-export const MACHINE_RAIL_MENU_REQUESTED_EVENT = 'machine-rail:menu-requested';
 
 /** Root attribute of a renderer whose machine is not the one the window shows. */
 export const MACHINE_HIDDEN_ATTRIBUTE = 'data-machine-hidden';
@@ -43,6 +42,20 @@ export interface MachineRailState {
   machineIds: string[];
   /** The machine whose renderer the window shows. */
   selectedId: string;
+  /**
+   * The machine whose renderer is on screen. It trails `selectedId` until the
+   * selected renderer has painted, so the previous one stays up until then.
+   */
+  shownId: string;
+  /** A machine the user asked to show whose renderer is still starting; `''` when none. */
+  pendingId: string;
+  /** Machines in the rail whose daemon reports degraded health. */
+  degradedIds: string[];
+}
+
+/** `machine-rail:health` params: a renderer reports its own machine's health. */
+export interface MachineRailHealthParams {
+  degraded: boolean;
 }
 
 /** What a window session remembers about its rail (the home machine is implied). */
@@ -60,6 +73,38 @@ export function addRailMachine(machineIds: readonly string[], id: string): strin
     return [...machineIds];
   }
   return [...machineIds, id];
+}
+
+/**
+ * A new rail order: the same machines with home still first, or the current
+ * order unchanged when `next` is not that.
+ */
+export function reorderRailMachines(
+  machineIds: readonly string[],
+  next: readonly string[],
+): string[] {
+  const same =
+    next.length === machineIds.length &&
+    new Set(next).size === next.length &&
+    next.every((id) => machineIds.includes(id));
+  return same && next[0] === machineIds[0] ? [...next] : [...machineIds];
+}
+
+/**
+ * The machine after `selectedId` in rail order, looping back to the start and
+ * skipping those `skip` names (guest hosts); `null` when there is none other.
+ */
+export function nextRailMachine(
+  machineIds: readonly string[],
+  selectedId: string,
+  skip: (id: string) => boolean,
+): string | null {
+  const start = machineIds.indexOf(selectedId);
+  for (let step = 1; step < machineIds.length; step++) {
+    const id = machineIds[(start + step + machineIds.length) % machineIds.length];
+    if (id !== selectedId && !skip(id)) return id;
+  }
+  return null;
 }
 
 /**

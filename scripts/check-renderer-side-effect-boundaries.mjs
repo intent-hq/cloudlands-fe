@@ -21,7 +21,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/lib/electron-bridge.ts', { addMockIpcListener: 2 }],
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 8 }],
+  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   // intent:// link delivery: drains the actions main queued for this window.
@@ -34,6 +34,8 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   // Machine rail (Labs): forwards `machine-rail:*` to main; answers "lab off" without a bridge.
   ['src/store/renderer/seeders/machine-rail-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  // SSH machine setup (Labs): forwards `machine-setup:ssh-*` to main; no run without a bridge.
+  ['src/store/renderer/seeders/machine-setup-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [

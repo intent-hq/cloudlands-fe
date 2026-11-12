@@ -87,7 +87,6 @@
   function eligible(owner: RepositorySelectionEdit) {
     return (
       original?.editId === owner.editId &&
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Pure shared root keys; no repository client or IO.
       repositoryRootKey(root) === repositoryRootKey(owner.root) &&
       selectPrincipalActionContext.select(store.state) === owner.admission &&
       !!selectWorkspaceActionContext.select(store.state, owner.root.workspaceId) &&
@@ -152,7 +151,6 @@
   $effect(() => {
     if (
       original &&
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Pure shared identity comparison before original-owner cleanup.
       (repositoryRootKey(original.root) !== repositoryRootKey(root) ||
         (original.admission !== $admission &&
           original.admission !== selectPrincipalActionContext.select(store.state)))

@@ -90,6 +90,36 @@ export function parseDesktopEvent(value: unknown): DesktopEvent | undefined {
   const result = event.safeParse(value);
   return result.success ? result.data : undefined;
 }
+const macPermissions = z.object({
+  platform: z.literal('macos'),
+  accessibility: z.boolean(),
+  screenRecording: z.boolean(),
+  screenCapture: z.enum(['blocked', 'checking', 'ready', 'unavailable']),
+});
+const permissionResult = z.discriminatedUnion('platform', [
+  z.object({ platform: z.literal('windows') }),
+  macPermissions,
+]);
+const osPermissionResult = z.discriminatedUnion('platform', [
+  z.object({ platform: z.literal('windows') }),
+  z.object({ platform: z.literal('unsupported') }),
+  macPermissions,
+]);
+function checklistFrom(
+  result: z.infer<typeof permissionResult>,
+): { guidance: string; checklist: DesktopOsChecklist } | undefined {
+  if (result.platform === 'windows') return;
+  const { accessibility, screenRecording, screenCapture } = result;
+  if (accessibility && screenRecording && screenCapture === 'ready') return;
+  // The checklist names each permission; the guidance carries one relaunch hint.
+  return {
+    checklist: { accessibility, screenRecording, screenCapture },
+    guidance:
+      accessibility && screenRecording && screenCapture === 'unavailable'
+        ? m.desktop_os_captureRetry_description()
+        : m.desktop_os_setup_description(),
+  };
+}
 export const desktopClient = {
   async requestPermissions(
     workspaceId: string,
@@ -109,28 +139,25 @@ export const desktopClient = {
       throw new BackendError(
         response?.error ?? { code: 'TRANSPORT_ERROR', message: m.desktop_consent_failed() },
       );
-    const result = z
-      .discriminatedUnion('platform', [
-        z.object({ platform: z.literal('windows') }),
-        z.object({
-          platform: z.literal('macos'),
-          accessibility: z.boolean(),
-          screenRecording: z.boolean(),
-          screenCapture: z.enum(['pending', 'ready', 'unavailable']),
-        }),
-      ])
-      .parse(response.result);
-    if (result.platform === 'windows') return;
-    const { accessibility, screenRecording, screenCapture } = result;
-    if (accessibility && screenRecording && screenCapture === 'ready') return;
-    // The checklist names each permission; the guidance carries one relaunch hint.
-    return {
-      checklist: { accessibility, screenRecording, screenCapture },
-      guidance:
-        accessibility && screenRecording && screenCapture === 'unavailable'
-          ? m.desktop_os_captureRetry_description()
-          : m.desktop_os_setup_description(),
-    };
+    return checklistFrom(permissionResult.parse(response.result));
+  },
+  /** Settings gesture: prompt this computer's OS for any missing permission. */
+  async requestOsPermissions(
+    requestId: string,
+  ): Promise<{ guidance: string; checklist: DesktopOsChecklist } | undefined> {
+    const api = electronAPI();
+    if (!api) return;
+    const response = await api.invoke(IPC_CHANNELS.BACKEND.DESKTOP_OS_PERMISSIONS, { requestId });
+    if (!response?.ok)
+      throw new BackendError(
+        response?.error ?? { code: 'TRANSPORT_ERROR', message: m.desktop_consent_failed() },
+      );
+    const result = osPermissionResult.parse(response.result);
+    if (result.platform === 'unsupported') return;
+    const outcome = checklistFrom(result);
+    return (
+      outcome && { checklist: outcome.checklist, guidance: m.desktop_os_settings_description() }
+    );
   },
   async getState(workspaceId: string, agentId: string): Promise<DesktopSnapshot> {
     const hello = await backendRequest<{

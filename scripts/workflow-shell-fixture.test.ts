@@ -1,7 +1,7 @@
 // @verify-changed-exempt: exercises disposable shell fixtures, not repository files
 // @vitest-environment node
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'workflow-shell-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'workflow-shell-')));
   directories.push(dir);
   const startup = join(dir, 'startup');
   const marker = join(dir, 'startup-ran');

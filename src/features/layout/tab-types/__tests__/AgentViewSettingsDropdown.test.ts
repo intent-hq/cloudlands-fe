@@ -7,6 +7,7 @@ const mockState = vi.hoisted(() => {
   return {
     dispatch: vi.fn(),
     desktop: undefined as unknown,
+    session: undefined as unknown,
     fontStyle: {
       set(next: string) {
         value = next;
@@ -28,6 +29,9 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mockState.dispatch,
     state: () => ({
       desktopControl: { byKey: { [JSON.stringify(['workspace', 'agent'])]: mockState.desktop } },
+      agentSessions: {
+        byAgentId: mockState.session ? { agent: mockState.session } : {},
+      },
     }),
   });
 });
@@ -44,27 +48,34 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
     subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
   }),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
-  setAgentFontStyle: (style: string) => ({
-    type: 'fontSettings/setAgentFontStyle',
-    payload: [style],
+vi.mock(
+  '$store/renderer/slices/user-preferences/user-preferences-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/user-preferences/user-preferences-slice')
+    >()),
+    setAgentFontStyle: (style: string) => ({
+      type: 'fontSettings/setAgentFontStyle',
+      payload: [style],
+    }),
+    setChatContentWidth: (width: string) => ({
+      type: 'userPreferences/setChatContentWidth',
+      payload: [width],
+    }),
+    setChatAuroraEnabled: (enabled: boolean) => ({
+      type: 'userPreferences/setChatAuroraEnabled',
+      payload: [enabled],
+    }),
+    setCollapseToolRuns: (enabled: boolean) => ({
+      type: 'userPreferences/setCollapseToolRuns',
+      payload: [enabled],
+    }),
   }),
-  setChatContentWidth: (width: string) => ({
-    type: 'userPreferences/setChatContentWidth',
-    payload: [width],
-  }),
-  setChatAuroraEnabled: (enabled: boolean) => ({
-    type: 'userPreferences/setChatAuroraEnabled',
-    payload: [enabled],
-  }),
-  setCollapseToolRuns: (enabled: boolean) => ({
-    type: 'userPreferences/setCollapseToolRuns',
-    payload: [enabled],
-  }),
-}));
+);
 
 import AgentViewSettingsDropdown from '../AgentViewSettingsDropdown.svelte';
 import { desktopPermissionRequested } from '$store/renderer/slices/desktop-control/desktop-control-slice';
+import { setAgentPermissionPolicyRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 describe('AgentViewSettingsDropdown', () => {
   beforeEach(() => {
@@ -117,5 +128,60 @@ describe('desktop permission in the agent menu', () => {
     render(AgentViewSettingsDropdown, { workspaceId: 'workspace', agentId: 'agent' });
     await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
     expect(screen.queryByRole('menuitemcheckbox', { name: 'Desktop control' })).toBeNull();
+  });
+});
+
+describe('ask before using tools in the agent menu', () => {
+  const ASK = 'Ask before using tools';
+  function agentSession(fields: Record<string, unknown>) {
+    return { id: 'agent', workspaceId: 'workspace', name: 'Agent', messages: [], ...fields };
+  }
+  beforeEach(() => {
+    mockState.dispatch.mockClear();
+    mockState.desktop = undefined;
+    mockState.session = undefined;
+  });
+  afterEach(cleanup);
+
+  it.each([
+    ['interactive', true, 'allow'],
+    ['allow', false, 'interactive'],
+    ['auto', false, 'interactive'],
+    ['deny', false, 'interactive'],
+  ])(
+    'checks the switch from effective policy %s and sends the opposite policy',
+    async (effective, checked, sent) => {
+      mockState.session = agentSession({
+        permissionPolicy: null,
+        effectivePermissionPolicy: effective,
+      });
+      render(AgentViewSettingsDropdown, { workspaceId: 'workspace', agentId: 'agent' });
+      await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+      const toggle = screen.getByRole('menuitemcheckbox', { name: ASK });
+      expect(toggle.getAttribute('aria-checked')).toBe(String(checked));
+      await fireEvent.click(toggle);
+      expect(mockState.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: setAgentPermissionPolicyRequested.type,
+          payload: ['workspace', 'agent', sent],
+        }),
+      );
+    },
+  );
+
+  it.each([
+    ['an older daemon omits permissionPolicy', { effectivePermissionPolicy: 'allow' }],
+    ['a remote agent omits effectivePermissionPolicy', { permissionPolicy: null }],
+  ])('hides the toggle when %s', async (_label, fields) => {
+    mockState.session = agentSession(fields);
+    render(AgentViewSettingsDropdown, { workspaceId: 'workspace', agentId: 'agent' });
+    await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+    expect(screen.queryByRole('menuitemcheckbox', { name: ASK })).toBeNull();
+  });
+
+  it('hides the toggle without an agent', async () => {
+    render(AgentViewSettingsDropdown);
+    await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+    expect(screen.queryByRole('menuitemcheckbox', { name: ASK })).toBeNull();
   });
 });

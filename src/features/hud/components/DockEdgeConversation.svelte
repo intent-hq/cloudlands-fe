@@ -11,30 +11,19 @@
 
 <script lang="ts">
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
-  import type { DockPlacementSnapshot } from '$shared/dock-placement';
+  import { DOCK_FLOATING_SHADOW_MARGIN, type DockPlacementSnapshot } from '$shared/dock-placement';
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
-  import { createRevealTween } from '$features/hud/utils/dock-shell-frames';
+  import { createRevealSpring, createRevealFade } from '$features/hud/utils/dock-shell-frames';
   import { DOCK_SHELL_REVEAL } from '$features/hud/utils/dock-motion';
-  import {
-    dockEdgeShellRect,
-    dockLerpRect,
-    type DockEdgeOpenOrigin,
-  } from '$features/hud/utils/dock-edge-shell';
+  import { dockLerpRect, type DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
+  import { intersectDockRect } from '$features/hud/utils/dock-scroll';
   import DockConversationSurface from './DockConversationSurface.svelte';
 
-  /**
-   * The side placement's conversation as one box beside the unchanged rail. Opened from
-   * a side entry, it grows out of that entry's hover card (rect and radius) into the
-   * panel, which main centres on the entry; it shrinks back into the card and fades on
-   * close. Without an origin it grows from the rail side.
-   */
   let {
     children,
     open,
     workspaceId,
     placement,
-    shown,
-    origin: cardOrigin = null,
     focusRequest = 0,
     focusComposerOnMount = false,
     onRegionsChange,
@@ -56,12 +45,6 @@
     onStateChange: (state: DockEdgeConversationState) => void;
   } = $props();
 
-  // Rail and panel in the same window-local space.
-  const rail = $derived({
-    ...shown,
-    x: placement.surface.x + shown.x,
-    y: placement.surface.y + shown.y,
-  });
   const panel = $derived(placement.sidePanel ?? null);
   const side = $derived(
     placement.placement.kind === 'edge' && placement.placement.side === 'left' ? 'left' : 'right',
@@ -72,11 +55,14 @@
     return onReducedMotionChange((value) => (reducedMotion = value));
   });
   let reveal = $state(0);
-  // The box travels a few hundred pixels: the dock's large-shell timing keeps each frame small.
-  const tween = createRevealTween(
+  const disclosure = createRevealSpring(
     () => reveal,
     (value) => (reveal = value),
     DOCK_SHELL_REVEAL,
+  );
+  const fade = createRevealFade(
+    () => reveal,
+    (value) => (reveal = value),
   );
   // Closing keeps the last panel and workspace so the shell shrinks with its content.
   let lastPanel = $state<DockPointerRect | null>(null);
@@ -84,7 +70,7 @@
   // Re-anchored while open (another entry clicked): the box glides to its new place.
   let move = $state(1);
   let moveFrom: DockPointerRect | null = null;
-  const mover = createRevealTween(
+  const mover = createRevealSpring(
     () => move,
     (value) => (move = value),
     DOCK_SHELL_REVEAL,
@@ -101,6 +87,7 @@
         previous.height === next.height;
       if (moved && !untrack(() => reducedMotion)) {
         moveFrom = untrack(() => shell) ?? previous;
+        mover.cancel();
         move = 0;
         mover.animate(1, false);
       }
@@ -108,116 +95,158 @@
     }
     if (workspaceId) lastWorkspace = workspaceId;
   });
-  const wanted = $derived(open && !!workspaceId && !!panel);
+  // A late compact reply must not reverse a reopen that still has its last panel.
+  const wanted = $derived(open && !!workspaceId && !!(panel ?? lastPanel));
   $effect(() => {
     const target = wanted ? 1 : 0;
-    const instant = reducedMotion;
-    untrack(() => tween.animate(target, instant));
+    const fadeOnly = reducedMotion;
+    untrack(() => {
+      if (fadeOnly) {
+        disclosure.cancel();
+        mover.cancel();
+        move = 1;
+        fade.animate(target);
+      } else {
+        fade.cancel();
+        disclosure.animate(target, false);
+      }
+    });
   });
   const present = $derived(wanted || reveal > 0);
-  // The box starts on the clicked entry's hover card (or rail-sized against the rail)
-  // and grows into the panel.
-  const origin = $derived(
-    cardOrigin?.card ??
-      (lastPanel && {
-        ...rail,
-        x: side === 'right' ? lastPanel.x + lastPanel.width - rail.width : lastPanel.x,
-      }),
+  const frame = $derived(
+    lastPanel && moveFrom && move < 1 ? dockLerpRect(moveFrom, lastPanel, move) : lastPanel,
   );
-  const shell = $derived.by(() => {
-    if (!present || !lastPanel || !origin) return null;
-    if (moveFrom && move < 1 && reveal >= 1) return dockLerpRect(moveFrom, lastPanel, move);
-    return dockEdgeShellRect(origin, lastPanel, reveal);
-  });
+  const offset = $derived(
+    reducedMotion ? 0 : (1 - reveal) * (frame?.width ?? 0) * (side === 'right' ? 1 : -1),
+  );
+  const translated = $derived(frame && { ...frame, x: frame.x + offset });
+  const viewport = $derived(
+    lastPanel && {
+      x: side === 'left' ? lastPanel.x : 0,
+      y: 0,
+      width:
+        side === 'left'
+          ? placement.windowBounds.width - lastPanel.x
+          : lastPanel.x + lastPanel.width,
+      height: placement.windowBounds.height,
+    },
+  );
+  const shell = $derived(
+    present && translated && viewport ? intersectDockRect(translated, viewport) : null,
+  );
   let shellElement = $state<HTMLDivElement>();
   const inlineClip = $derived.by(() => {
-    // Refresh the surface owner on every morph/glide frame, even without DOM mutations.
     const visible = shell;
-    // Measure in viewport space, including the host offset in embedded previews.
-    return () => (visible ? (shellElement?.getBoundingClientRect() ?? null) : null);
+    const position = translated;
+    return () => {
+      const bounds = shellElement?.getBoundingClientRect();
+      return visible && position && bounds
+        ? {
+            ...visible,
+            x: bounds.x + visible.x - position.x,
+            y: bounds.y + visible.y - position.y,
+          }
+        : { x: 0, y: 0, width: 0, height: 0 };
+    };
   });
-  // The card's corners become the box's; closing fades only at the very end.
-  const radius = $derived(32 + ((cardOrigin?.radius ?? 32) - 32) * (1 - reveal));
-  const fade = $derived(wanted ? 1 : Math.min(1, reveal / 0.2));
   $effect(() => {
     const state = { held: present && !wanted, reveal: shell ? reveal : 0, shell };
     untrack(() => onStateChange(state));
   });
   onDestroy(() => {
-    tween.cancel();
+    disclosure.cancel();
+    fade.cancel();
     mover.cancel();
     onStateChange({ held: false, reveal: 0, shell: null });
   });
   const settled = $derived(reveal >= 1);
-  // Content follows the shell from the docked edge.
-  const offset = $derived((1 - reveal) * 24 * (side === 'right' ? 1 : -1));
-  // While gliding to a new entry, content rides with the box (a translate, no layout).
-  const glide = $derived(shell && lastPanel && move < 1 ? shell.y - lastPanel.y : 0);
+  const glide = $derived(frame && lastPanel ? frame.y - lastPanel.y : 0);
+  const opacity = $derived(reducedMotion ? reveal : 1);
+  const clipRight = $derived(
+    viewport ? placement.windowBounds.width - viewport.x - viewport.width : 0,
+  );
 </script>
 
-{#if shell && lastPanel && lastWorkspace}
-  <!-- The conversation's only chrome: one fill, edge, radius and shadow. -->
-  <div
-    bind:this={shellElement}
-    class="edge-shell"
-    data-testid="dock-edge-shell"
-    data-side={side}
-    data-reveal={reveal}
-    aria-hidden="true"
-    style:left={`${shell.x}px`}
-    style:top={`${shell.y}px`}
-    style:width={`${shell.width}px`}
-    style:height={`${shell.height}px`}
-    style:border-radius={`${radius}px`}
-    style:opacity={fade}
-    style:--edge-chrome={reveal}
-  ></div>
-  <!-- While morphing, the panel shows only inside the shell; once open nothing is clipped. -->
-  <div
-    class="edge-panel"
-    style:clip-path={settled
-      ? undefined
-      : `xywh(${shell.x}px ${shell.y}px ${shell.width}px ${shell.height}px round ${radius}px)`}
-  >
-    <div
-      class="edge-panel"
-      inert={!wanted}
-      style:opacity={Math.max(0, Math.min(1, (reveal - 0.2) / 0.8))}
-      style:translate={settled ? (glide ? `0 ${glide}px` : undefined) : `${offset}px 0`}
-    >
-      <DockConversationSurface
-        workspaceId={lastWorkspace}
-        active={wanted}
-        resizable={wanted && settled}
-        {focusRequest}
-        {focusComposerOnMount}
-        rect={lastPanel}
-        clip={inlineClip}
-        {onRegionsChange}
-        {onPopupStateChange}
+{#if present && frame && lastPanel && lastWorkspace && viewport}
+  <div class="edge-panel">
+    <!-- Cast from visible bounds, not the offscreen rectangle: its blur may use native padding. -->
+    {#if shell}
+      <div
+        class="edge-panel"
+        aria-hidden="true"
+        style:clip-path={`inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
       >
-        {@render children()}
-      </DockConversationSurface>
+        <div
+          class="edge-shadow"
+          style:left={`${shell.x}px`}
+          style:top={`${shell.y}px`}
+          style:width={`${shell.width}px`}
+          style:height={`${shell.height}px`}
+          style:opacity
+        ></div>
+      </div>
+    {/if}
+    <div class="edge-panel" style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}>
+      <div
+        bind:this={shellElement}
+        class="edge-shell"
+        data-testid="dock-edge-shell"
+        data-side={side}
+        data-reveal={reveal}
+        aria-hidden="true"
+        style:left={`${frame.x}px`}
+        style:top={`${frame.y}px`}
+        style:width={`${frame.width}px`}
+        style:height={`${frame.height}px`}
+        style:transform={`translateX(${offset}px)`}
+        style:opacity
+      ></div>
+      <div
+        class="edge-panel"
+        inert={!wanted}
+        style:opacity
+        style:transform={`translate(${offset}px, ${glide}px)`}
+      >
+        <DockConversationSurface
+          workspaceId={lastWorkspace}
+          active={wanted}
+          resizable={wanted && settled}
+          {focusRequest}
+          {focusComposerOnMount}
+          rect={lastPanel}
+          clip={inlineClip}
+          {onRegionsChange}
+          {onPopupStateChange}
+        >
+          {@render children()}
+        </DockConversationSurface>
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
-  .edge-shell {
+  .edge-shell,
+  .edge-shadow {
     position: absolute;
     pointer-events: none;
+    border-radius: 32px;
+  }
+  .edge-shell {
     background: hsl(var(--popover));
-    border: 1px solid hsl(var(--border) / var(--edge-chrome));
+    border: 1px solid hsl(var(--border));
     /* Concentric with the composer card: its 16px radius plus the 16px lane inset. */
     border-radius: 32px;
   }
-  .edge-shell::after {
+  .edge-shadow {
+    border: 1px solid transparent;
+  }
+  .edge-shadow::after {
     content: '';
     position: absolute;
     inset: -1px;
     border-radius: inherit;
     box-shadow: var(--elevation-overlay);
-    opacity: var(--edge-chrome);
   }
   .edge-panel {
     position: absolute;

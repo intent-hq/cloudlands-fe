@@ -11,6 +11,7 @@ import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, fork, put, select, take, takeEvery } from 'typed-redux-saga';
 
+import { startSplashGate } from '$features/backend/splash-gate';
 import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -18,20 +19,25 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   MACHINE_HIDDEN_ATTRIBUTE,
   MACHINE_RAIL_CHANGED_EVENT,
-  MACHINE_RAIL_MENU_REQUESTED_EVENT,
   MACHINE_RAIL_TOAST_EVENT,
+  type MachineRailHealthParams,
   type MachineRailState,
   type MachineRailToastEvent,
 } from '$shared/types/machine-rail';
 import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
 import { selectConnectionRecoveryTarget } from '../../connections/connections-selectors';
-import { selectIsRailMachineShown, selectMachineRailEnabled } from '../machine-rail-selectors';
+import { selectDaemonHealth } from '../../daemon-health/daemon-health-selectors';
+import type { DaemonHealth } from '../../daemon-health/daemon-health-types';
+import {
+  selectIsRailMachineShown,
+  selectIsRailPageHidden,
+  selectMachineRailEnabled,
+} from '../machine-rail-selectors';
 import {
   addRailMachineRequested,
   machineRailStateReceived,
-  openRailMachineMenuRequested,
-  railMachineMenuRequested,
   removeRailMachineRequested,
+  reorderRailMachinesRequested,
   selectRailMachineRequested,
   setMachineRailEnabledRequested,
 } from '../machine-rail-slice';
@@ -41,6 +47,8 @@ const MACHINE_RAIL = IPC_CHANNELS.MACHINE_RAIL;
 
 /** Root attribute while the rail takes space at the window's left edge. */
 const MACHINE_RAIL_ATTRIBUTE = 'data-machine-rail';
+/** Root attribute while the window's own renderer hides its page under another machine. */
+const MACHINE_PAGE_HIDDEN_ATTRIBUTE = 'data-machine-page-hidden';
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -72,8 +80,8 @@ const railRequests = {
     (await requireApi().invoke(MACHINE_RAIL.ADD, { id })) as MachineRailState,
   remove: async (id: string) =>
     (await requireApi().invoke(MACHINE_RAIL.REMOVE, { id })) as MachineRailState,
-  openMenu: async (id: string) =>
-    (await requireApi().invoke(MACHINE_RAIL.OPEN_MENU, { id })) as MachineRailState,
+  reorder: async (machineIds: string[]) =>
+    (await requireApi().invoke(MACHINE_RAIL.REORDER, { machineIds })) as MachineRailState,
   setEnabled: async (enabled: boolean) =>
     (await requireApi().invoke(MACHINE_RAIL.SET_ENABLED, { enabled })) as MachineRailState,
 };
@@ -109,8 +117,8 @@ async function reportShownWorkspace(): Promise<void> {
 }
 
 /**
- * Tell main this renderer has painted since it became the shown one. Main
- * keeps the previous machine's view up until then, so a switch has no blank frame.
+ * Tell main this renderer has painted since it became the selected one. Main
+ * keeps the previous machine up until then, so a switch has no blank frame.
  */
 async function reportPainted(): Promise<void> {
   const api = getApi();
@@ -128,8 +136,51 @@ function* shownWorker({ payload: shown }: SelectorChannelPayload<boolean>) {
   yield* call(reportPainted);
 }
 
+function* pageHiddenWorker({ payload: hidden }: SelectorChannelPayload<boolean>) {
+  yield* call(toggleRootAttribute, MACHINE_PAGE_HIDDEN_ATTRIBUTE, hidden);
+}
+
+/** Report this renderer's machine health, so every rail can mark a degraded machine. */
+function* healthWorker({ payload: health }: SelectorChannelPayload<DaemonHealth>) {
+  const params: MachineRailHealthParams = { degraded: health === 'degraded' };
+  yield* call(() =>
+    requireApi()
+      .invoke(MACHINE_RAIL.HEALTH, params)
+      .catch(() => {}),
+  );
+}
+
 function* enabledWorker({ payload: enabled }: SelectorChannelPayload<boolean>) {
   yield* call(toggleRootAttribute, MACHINE_RAIL_ATTRIBUTE, enabled);
+}
+
+/**
+ * Resolves once startup is over: the backend answered, a connection attempt
+ * failed (the page then shows its usual cannot-connect dialog), or the splash
+ * budget ran out.
+ */
+function waitForStartup(): Promise<void> {
+  return new Promise((resolve) => {
+    startSplashGate(resolve, { settleOnConnectFailure: true });
+  });
+}
+
+/**
+ * Tell main this renderer has started, so a machine the user is waiting for
+ * can replace the one on screen. Its rail item spins until then, in place of
+ * this renderer's startup splash, which is dropped here so it cannot fade out
+ * over the page once shown.
+ */
+function* reportReady() {
+  yield* call(waitForStartup);
+  if (!(yield* select(selectIsRailMachineShown.select)) && typeof document !== 'undefined') {
+    document.getElementById('splash')?.remove();
+  }
+  yield* call(() =>
+    requireApi()
+      .invoke(MACHINE_RAIL.READY, {})
+      .catch(() => {}),
+  );
 }
 
 function createToastChannel(): EventChannel<MachineRailToastEvent> {
@@ -212,22 +263,6 @@ function* showForwardedToasts(channel: EventChannel<MachineRailToastEvent>) {
   }
 }
 
-function createMenuRequestChannel(): EventChannel<true> {
-  return eventChannel<true>((emit) => {
-    const api = getApi();
-    if (!api?.on) return () => {};
-    const listenerId = api.on(MACHINE_RAIL_MENU_REQUESTED_EVENT, () => emit(true));
-    return () => api.offById(MACHINE_RAIL_MENU_REQUESTED_EVENT, listenerId);
-  }, buffers.sliding<true>(1));
-}
-
-function* mirrorMenuRequests(channel: EventChannel<true>) {
-  while (true) {
-    yield* take(channel);
-    yield* put(railMachineMenuRequested());
-  }
-}
-
 function* mirrorPushes(channel: EventChannel<MachineRailState>) {
   while (true) {
     const state = yield* take(channel);
@@ -240,7 +275,9 @@ export function* machineRailSaga() {
   if (!getApi()?.on) return;
 
   yield* takeLatestFromSelector(selectIsRailMachineShown, shownWorker);
+  yield* takeLatestFromSelector(selectIsRailPageHidden, pageHiddenWorker);
   yield* takeLatestFromSelector(selectMachineRailEnabled, enabledWorker);
+  yield* takeLatestFromSelector(selectDaemonHealth, healthWorker);
   yield* takeEvery(selectRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.select(id));
   });
@@ -250,8 +287,8 @@ export function* machineRailSaga() {
   yield* takeEvery(removeRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.remove(id));
   });
-  yield* takeEvery(openRailMachineMenuRequested, function* ({ payload: [id] }) {
-    yield* request(() => railRequests.openMenu(id));
+  yield* takeEvery(reorderRailMachinesRequested, function* ({ payload: [machineIds] }) {
+    yield* request(() => railRequests.reorder(machineIds));
   });
   yield* takeEvery(setMachineRailEnabledRequested, function* ({ payload: [enabled] }) {
     yield* request(() => railRequests.setEnabled(enabled));
@@ -261,7 +298,7 @@ export function* machineRailSaga() {
   const channel = createChangedChannel();
   yield* fork(mirrorPushes, channel);
   yield* fork(showForwardedToasts, createToastChannel());
-  yield* fork(mirrorMenuRequests, createMenuRequestChannel());
+  yield* fork(reportReady);
   try {
     const state = yield* call(railRequests.getState);
     yield* put(machineRailStateReceived(state));

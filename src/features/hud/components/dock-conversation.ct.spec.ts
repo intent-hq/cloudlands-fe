@@ -284,36 +284,8 @@ test('conversation stays dark with light or system app preferences and keeps nar
   await page.keyboard.press('Escape');
   await expect(page.locator('.model-picker-panel')).toHaveCount(0);
   await expect(modelTrigger).toBeFocused();
-  // The dock footer has no + menu; its one popup is the annotate tool picker.
+  // The dock footer has no + menu.
   await expect(component.getByTestId('prompt-actions-trigger')).toHaveCount(0);
-  const annotate = component.getByRole('button', { name: /^Annotate the screen/ });
-  await expect(annotate).toBeEnabled();
-  const tools = page.getByRole('toolbar', { name: 'Annotation tools', exact: true });
-  // Every tool stays inside the narrow window and the dock's hit regions.
-  await annotate.focus();
-  await annotate.press('ArrowUp');
-  await assertPopup(tools);
-  for (const name of ['Pick an element', 'Box', 'Pen', 'Arrow']) {
-    const tool = tools.getByRole('button', { name, exact: true });
-    await expect(tool).toBeEnabled();
-    const box = (await tool.boundingBox())!;
-    const hit = await page.evaluate(
-      ([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'),
-      [box.x + box.width / 2, box.y + box.height / 2],
-    );
-    expect(hit).toBe(name);
-  }
-  await page.screenshot({ path: testInfo.outputPath('conversation-annotate-tools.png') });
-  await page.keyboard.press('Escape');
-  await expect(tools).toHaveCount(0);
-  // Keyboard: focus the button, ArrowUp opens on the current tool, Escape returns focus.
-  await annotate.focus();
-  await annotate.press('ArrowUp');
-  await assertPopup(tools);
-  await expect(tools.getByRole('button', { name: 'Pick an element', exact: true })).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(tools).toHaveCount(0);
-  await expect(annotate).toBeFocused();
   await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();
   await editor.fill('');
   await editor.pressSequentially('@');
@@ -628,7 +600,7 @@ test('conversation canonical composer preserves image drafts and retries one exa
 });
 
 for (const mode of ['notch', 'side-left', 'side-right'] as const) {
-  test(`conversation ${mode} full workspace list scrolls and closing reveals its origin`, async ({
+  test(`conversation ${mode} full workspace list scrolls and Back or Escape preserves its navigation contract`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -687,15 +659,24 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     await last.press('Enter');
     const panel = component.getByTestId('dock-conversation-surface');
     await expect(panel).toHaveAttribute('data-workspace-id', targetId);
-    // Opening focuses the composer. The notch closes with Back; the side dock has
-    // no Back and closes with Escape. Either way focus returns to the entry.
+    // Back leaves the conversation; Escape collapses it while retaining its selection.
     const composer = panel.getByRole('textbox', { name: 'Message', exact: true });
     await expect(composer).toBeFocused();
-    if (isSide) await composer.press('Escape');
-    else await panel.getByRole('button', { name: 'Go back', exact: true }).click();
-    await expect(panel).toHaveCount(0);
-    await expect(last).toBeFocused();
-    await expect.poll(visible).toBe(true);
+    if (isSide) {
+      await composer.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(component).toHaveAttribute('data-preview-conversation', targetId);
+      await expect(last).not.toBeFocused();
+      await component.update({ props: { focusRequest: 1 } });
+      await expect(panel).toHaveAttribute('data-workspace-id', targetId);
+      await expect(composer).toBeFocused();
+    } else {
+      await panel.getByRole('button', { name: 'Go back', exact: true }).click();
+      await expect(panel).toHaveCount(0);
+      await expect(component).toHaveAttribute('data-preview-conversation', '');
+      await expect(last).toBeFocused();
+      await expect.poll(visible).toBe(true);
+    }
     await component.screenshot({ path: testInfo.outputPath(`workspace-scroll-${mode}.png`) });
   });
 }
@@ -984,9 +965,29 @@ for (const side of ['left', 'right'] as const) {
     const after = await railPosition();
     expect(after).toEqual(initial);
     await component.screenshot({ path: testInfo.outputPath(`conversation-${side}.png`) });
+    const retainedDraft = 'Keep this unsent coordinator draft after Escape';
+    const retainedWorkspaceId = String(workspaces[0].workspace.id);
+    await composer.fill(retainedDraft);
     await composer.press('Escape');
     await expect(panel).toHaveCount(0);
-    await expect(first).toBeFocused();
+    await expect(component).toHaveAttribute('data-preview-conversation', retainedWorkspaceId);
+    await expect(first).not.toBeFocused();
+    await expect
+      .poll(async () => {
+        const drafts = JSON.parse((await component.getAttribute('data-preview-drafts')) ?? '{}');
+        return drafts[`${retainedWorkspaceId}:main`];
+      })
+      .toBe(retainedDraft);
+    const collapsedWorkspaceId = await component.getAttribute('data-preview-conversation');
+    const collapsedDrafts = await component.getAttribute('data-preview-drafts');
+    await component.update({ props: { focusRequest: 1 } });
+    await expect(panel).toHaveAttribute('data-workspace-id', retainedWorkspaceId);
+    await expect(chooser).toContainText('Workspace coordinator');
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue(retainedDraft);
+    expect(
+      JSON.parse((await component.getAttribute('data-preview-submissions')) ?? '[]'),
+    ).toHaveLength(1);
     await expect
       .poll(async () =>
         JSON.parse((await component.getAttribute('data-preview-commands')) ?? '[]').some(
@@ -998,7 +999,13 @@ for (const side of ['left', 'right'] as const) {
     await assistant.click();
     await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
     await panel.getByRole('textbox', { name: 'Message', exact: true }).press('Escape');
-    await expect(assistant).toBeFocused();
+    await expect(panel).toHaveCount(0);
+    await expect(component).toHaveAttribute('data-preview-conversation', '__chief__');
+    await expect(assistant).not.toBeFocused();
+    const collapsedAssistantId = await component.getAttribute('data-preview-conversation');
+    await component.update({ props: { focusRequest: 2 } });
+    await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
+    await expect(panel.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
     await writeFile(
       testInfo.outputPath(`conversation-${side}.json`),
       JSON.stringify(
@@ -1006,6 +1013,11 @@ for (const side of ['left', 'right'] as const) {
           scope: 'Real shell and panel with presentation-only fake callbacks; no wire/native claim',
           initial,
           after,
+          collapsedWorkspaceId,
+          collapsedDrafts,
+          retainedDraft,
+          collapsedAssistantId,
+          reopenedAssistantId: await panel.getAttribute('data-workspace-id'),
           commands: await component.getAttribute('data-preview-commands'),
           actions: await component.getAttribute('data-preview-actions'),
           submissions: await component.getAttribute('data-preview-submissions'),

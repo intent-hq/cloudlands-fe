@@ -347,6 +347,11 @@ export function* prepareCompactWorkspaceInitialization(
     },
   };
 
+  // Import a session: the daemon creates no initial agent; the saga imports
+  // the session once the workspace exists, then sends any typed prompt to it.
+  const importSession = s.importSession ?? null;
+  const importHeldMessage =
+    importSession && (prompt || hasStagedFiles || contextReferences.length > 0);
   const isGithubPick = s.repoType === 'github' && !!s.githubUrl;
   if (s.repoConfigUnavailable && !plainFolder)
     throw new Error(m.workspace_setupScript_configUnavailable_description());
@@ -375,7 +380,7 @@ export function* prepareCompactWorkspaceInitialization(
         title: s.prefillTitle || '',
         repositoryPath: s.repoPath,
         contextLinks: requestContextLinks,
-        initialAgent,
+        ...(importSession ? {} : { initialAgent }),
       })
     : {
         title: s.prefillTitle || '',
@@ -405,7 +410,7 @@ export function* prepareCompactWorkspaceInitialization(
         contextLinks: requestContextLinks,
         setupScript: setupScriptParam,
         scope: s.scope || undefined,
-        initialAgent,
+        ...(importSession ? {} : { initialAgent }),
       };
   const ghInfo = isGithubPick ? parseGitHubUrl(s.githubUrl) : null;
   const request: WorkspaceInitializationRequest = {
@@ -423,11 +428,23 @@ export function* prepareCompactWorkspaceInitialization(
       })
         ? { repositoryPath: s.repoPath, branch: s.branch }
         : undefined,
-    agentTitle: agentName,
+    agentTitle: importSession?.title.trim() || agentName,
     coordinator:
       specialistId !== undefined && specialistId === selectOrchestratorSpecialist.select(state)?.id,
     stagedItems: s.stagedItems,
-    heldMessage: hasStagedFiles ? { content: prompt, imageBlocks, contextReferences } : undefined,
+    heldMessage:
+      hasStagedFiles || importHeldMessage
+        ? { content: prompt, imageBlocks, contextReferences }
+        : undefined,
+    ...(importSession
+      ? {
+          importSession: {
+            provider: importSession.provider,
+            sessionId: importSession.sessionId,
+            ...(importSession.title.trim() ? { name: importSession.title.trim() } : {}),
+          },
+        }
+      : {}),
     lastSubmittedAgent: s.agent,
     rememberAgentRepoKey: s.rememberAgentRepoKey,
     rememberBranch:

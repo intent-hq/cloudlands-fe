@@ -36,6 +36,7 @@ import type {
   PairLinkInspected,
 } from '$shared/types/pair-link';
 import type { NodeInviteClaimResult, NodeInviteInspectErrorCode } from '$shared/types/node-invite';
+import type { SshSetupLink } from '$shared/types/machine-setup';
 import { parseRemoteMachine } from '$shared/types/remote-machines';
 import { isPairingUri, maskPairingUri } from '$shared/utils/pairing-uri';
 import { isNodeInviteUri, maskNodeInviteUri } from '$shared/utils/node-invite-uri';
@@ -67,7 +68,6 @@ import {
   pasteCompleted,
   pasteFailed,
   pasteFieldOpened,
-  pasteLinkRequested,
   pasteLinkRetried,
   pasteLinkSubmitted,
   pasteTestingStarted,
@@ -103,14 +103,6 @@ const invokeInviteClaim = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM, { pendingId });
 const invokeInviteDiscard = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_DISCARD, { pendingId });
-
-async function readClipboard(): Promise<string> {
-  try {
-    return await navigator.clipboard.readText();
-  } catch {
-    return '';
-  }
-}
 
 function inspectReply(reply: unknown): PairLinkInspectResult {
   const value = (reply ?? {}) as Record<string, unknown>;
@@ -426,10 +418,22 @@ function* testPasted(text: string): SagaGenerator<void> {
   else if (error) yield* put(pasteFailed(error));
 }
 
-function* requestPaste(): SagaGenerator<void> {
-  const clipboard = (yield* call(readClipboard)).trim();
-  if (isPairingUri(clipboard) || isNodeInviteUri(clipboard)) yield* call(testPasted, clipboard);
-  else yield* put(pasteFieldOpened());
+/**
+ * Add a link main captured itself (SSH machine setup): a held pair link is
+ * saved (a node only when the backend can use it, then the prompt); a held
+ * node invite is asked about and claimed. Returns the error to show, null
+ * once added, or 'cancelled' when the user declined the node prompt.
+ */
+export function* addHeldLink(link: SshSetupLink): SagaGenerator<NodeAddError | null | 'cancelled'> {
+  if (link.kind === 'invite')
+    return yield* call(claimInvite, { pendingId: link.pendingId, label: inviteLabel(link.label) });
+  return yield* call(addInspected, {
+    ok: true as const,
+    pendingId: link.pendingId,
+    kind: link.machineKind,
+    label: link.label,
+    existingId: link.existingId,
+  });
 }
 
 function* submitPaste(): SagaGenerator<void> {
@@ -513,10 +517,9 @@ function* queueNodeHandoffs(): SagaGenerator<void> {
 export function* nodesSaga(): SagaGenerator<void> {
   // Leading: a new paste request is ignored while one is being tested or saved.
   yield* takeLeading(
-    [pasteLinkRequested, pasteLinkSubmitted, pasteLinkRetried],
+    [pasteLinkSubmitted, pasteLinkRetried],
     function* (action): SagaGenerator<void> {
-      if (action.type === pasteLinkRequested.toString()) yield* call(requestPaste);
-      else if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
+      if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
       else yield* call(retryPaste);
     },
   );

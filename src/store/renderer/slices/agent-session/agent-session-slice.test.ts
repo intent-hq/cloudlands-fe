@@ -416,6 +416,40 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].lastUserMessage).toBe('Please also handle the empty-list case');
     });
 
+    // Permission policy (AgentLite §5.5): a daemon-wide default change or a
+    // failed per-chat write re-reads the agent with an unchanged `updatedAt`;
+    // the no-op guard must still apply the new policy fields.
+    it.each([
+      ['wire upsert', upsertSession],
+      ['bulk upsert', (session: AgentSession) => bulkUpsertSessions([session])],
+    ] as const)('applies a permission-policy-only change through %s', (_, action) => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            permissionPolicy: 'interactive',
+            effectivePermissionPolicy: 'interactive',
+          }),
+        ),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        action(
+          makeSession('a1', 'ws-1', { permissionPolicy: null, effectivePermissionPolicy: 'allow' }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].permissionPolicy).toBeNull();
+      expect(next.byAgentId['a1'].effectivePermissionPolicy).toBe('allow');
+      const same = makeSession('a1', 'ws-1', {
+        permissionPolicy: null,
+        effectivePermissionPolicy: 'allow',
+      });
+      expect(agentSessionReducer(next, action(same))).toBe(next);
+    });
+
     // Wire lastMessageId + derived hasUnread (monorepo#1597): an upsert whose
     // only change is the newest-message id (new-message push) or the derived
     // unread flag flipping (agent:updated seen-marker convergence re-derives
@@ -4711,7 +4745,7 @@ describe('agent-session selectors', () => {
         agentSessions: {
           ...base.agentSessions,
           historySegmentsByAgentId: {
-            a1: { messages: [histRow], gapToTail: false, oldestReached: false },
+            a1: { messages: [histRow], detachedFromTail: false, oldestReached: false },
           },
         },
       } as unknown as StoreState;
@@ -6688,7 +6722,7 @@ describe('history segment (scrollback)', () => {
       const segment = getHistory(state, 'a1');
       expect(segment).toBeDefined();
       expect(segment!.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2']);
-      expect(segment!.gapToTail).toBe(false);
+      expect(segment!.detachedFromTail).toBe(false);
       expect(segment!.oldestReached).toBe(false);
     });
 
@@ -6715,7 +6749,7 @@ describe('history segment (scrollback)', () => {
       const firstPage = Array.from({ length: HISTORY_SEGMENT_MAX }, (_, i) => histMsg(i + 100));
       state = agentSessionReducer(state, prependHistoryMessages('a1', firstPage));
       expect(getHistory(state, 'a1')!.messages).toHaveLength(HISTORY_SEGMENT_MAX);
-      expect(getHistory(state, 'a1')!.gapToTail).toBe(false);
+      expect(getHistory(state, 'a1')!.detachedFromTail).toBe(false);
 
       const olderPage = Array.from({ length: 100 }, (_, i) => histMsg(i));
       state = agentSessionReducer(state, prependHistoryMessages('a1', olderPage));
@@ -6726,7 +6760,7 @@ describe('history segment (scrollback)', () => {
       expect(segment.messages[segment.messages.length - 1].id).toBe(
         `hist-${HISTORY_SEGMENT_MAX - 1}`,
       );
-      expect(segment.gapToTail).toBe(true);
+      expect(segment.detachedFromTail).toBe(true);
       // Serial-walk segment: the pruned rows are counted into the hole so
       // the virtual extent attributes them below (extent 2x regression).
       expect(segment.holeRowsEstimate).toBe(100);
@@ -6772,7 +6806,7 @@ describe('history segment (scrollback)', () => {
           residentCount: segment.messages.length + 1,
           exhausted: false,
           startOrdinalEstimate: segment.startOrdinalEstimate ?? null,
-          gapToTail: segment.gapToTail,
+          detachedFromTail: segment.detachedFromTail,
           holeRowsEstimate: segment.holeRowsEstimate ?? null,
         }).above;
       };
@@ -6847,13 +6881,13 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true },
+          a1: { ...state.historySegmentsByAgentId!.a1, detachedFromTail: true },
         },
       };
       state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(2), histMsg(3)]));
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2', 'hist-3']);
-      expect(segment.gapToTail).toBe(true);
+      expect(segment.detachedFromTail).toBe(true);
     });
 
     it('closes the gap and drops the overlap when appended rows are present in the tail', () => {
@@ -6864,7 +6898,7 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true },
+          a1: { ...state.historySegmentsByAgentId!.a1, detachedFromTail: true },
         },
       };
       state = agentSessionReducer(
@@ -6873,7 +6907,7 @@ describe('history segment (scrollback)', () => {
       );
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-0', 'hist-1', 'hist-2']);
-      expect(segment.gapToTail).toBe(false);
+      expect(segment.detachedFromTail).toBe(false);
     });
 
     it('a gap refill shrinks the serial-walk hole estimate by the rows moved into history', () => {
@@ -6883,13 +6917,17 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true, holeRowsEstimate: 5 },
+          a1: {
+            ...state.historySegmentsByAgentId!.a1,
+            detachedFromTail: true,
+            holeRowsEstimate: 5,
+          },
         },
       };
       state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(2), histMsg(3)]));
       const segment = getHistory(state, 'a1')!;
       expect(segment.holeRowsEstimate).toBe(3);
-      expect(segment.gapToTail).toBe(true);
+      expect(segment.detachedFromTail).toBe(true);
     });
 
     it('closing the hole drops the estimate (floor 0 on over-refill while open)', () => {
@@ -6899,7 +6937,11 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, gapToTail: true, holeRowsEstimate: 1 },
+          a1: {
+            ...state.historySegmentsByAgentId!.a1,
+            detachedFromTail: true,
+            holeRowsEstimate: 1,
+          },
         },
       };
       // Over-refill: 3 rows land while the estimate said 1 — floor 0, gap open.
@@ -6914,7 +6956,7 @@ describe('history segment (scrollback)', () => {
         appendHistoryMessages('a1', [histMsg(4), makeUniqueMessage('tail-1', 'user', ts(1000))]),
       );
       const segment = getHistory(state, 'a1')!;
-      expect(segment.gapToTail).toBe(false);
+      expect(segment.detachedFromTail).toBe(false);
       expect(segment.holeRowsEstimate).toBeUndefined();
     });
 
@@ -6956,7 +6998,7 @@ describe('history segment (scrollback)', () => {
       );
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
-      expect(segment.gapToTail).toBe(true);
+      expect(segment.detachedFromTail).toBe(true);
       expect(segment.oldestReached).toBe(false);
       expect(segment.startOrdinalEstimate).toBe(500);
     });
@@ -6966,7 +7008,7 @@ describe('history segment (scrollback)', () => {
       state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500), histMsg(501)]));
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
-      expect(segment.gapToTail).toBe(true);
+      expect(segment.detachedFromTail).toBe(true);
       expect(segment.startOrdinalEstimate).toBeUndefined();
     });
 
@@ -6979,7 +7021,7 @@ describe('history segment (scrollback)', () => {
       );
       const segment = getHistory(state, 'a1')!;
       expect(segment.messages.map((m) => m.id)).toEqual(['hist-998']);
-      expect(segment.gapToTail).toBe(false);
+      expect(segment.detachedFromTail).toBe(false);
     });
 
     it('a landing fully resident in the tail drops the segment', () => {
@@ -7188,7 +7230,7 @@ describe('history segment (scrollback)', () => {
       state = agentSessionReducer(state, setHistoryOldestReached('a1'));
       const storeState = { agentSessions: state } as unknown as StoreState;
       expect(selectHistorySegmentMeta.select(storeState, 'a1')).toEqual({
-        gapToTail: false,
+        detachedFromTail: false,
         oldestReached: true,
         historyCount: 1,
         tailCount: 1,
@@ -7196,7 +7238,7 @@ describe('history segment (scrollback)', () => {
         holeRowsEstimate: null,
       });
       expect(selectHistorySegmentMeta.select(storeState, 'missing')).toEqual({
-        gapToTail: false,
+        detachedFromTail: false,
         oldestReached: false,
         historyCount: 0,
         tailCount: 0,
@@ -7296,35 +7338,6 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
     ).toBe(false);
   });
 
-  it('tail cap prune severs a contiguous history segment: gapToTail flips true and holeRowsEstimate grows', () => {
-    // Tail at exactly the cap; a serial-walk history segment contiguous with
-    // the tail (gapToTail false, untracked start ordinal).
-    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i + 1000));
-    let state = agentSessionReducer(
-      initialState,
-      upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
-    );
-    state = agentSessionReducer(
-      state,
-      prependHistoryMessages('a1', [
-        makeUniqueMessage('hist-0', 'user', ts(0)),
-        makeUniqueMessage('hist-1', 'user', ts(1)),
-      ]),
-    );
-    expect(state.historySegmentsByAgentId?.['a1']?.gapToTail).toBe(false);
-
-    // Two live appends past the cap drop two tail-resident rows into the
-    // history→tail hole.
-    state = agentSessionReducer(state, addMessage('a1', liveMsg(2000)));
-    state = agentSessionReducer(state, addMessage('a1', liveMsg(2001)));
-
-    const segment = state.historySegmentsByAgentId?.['a1'];
-    expect(segment?.gapToTail).toBe(true);
-    expect(segment?.holeRowsEstimate).toBe(2);
-    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
-    expect(state.byAgentId['a1'].messages.map((m) => m.id)).not.toContain('live-1000');
-  });
-
   it('replaceMessages (streaming transcript apply) past the cap latches; a prepend-shaped replacement does not', () => {
     const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i + 1000));
     let state = agentSessionReducer(
@@ -7417,7 +7430,7 @@ describe('tail writes that drop older resident rows never hide them', () => {
       withTail(rows(10, 20)),
       prependHistoryMessages('a1', rows(5, 9)),
     );
-    expect(state.historySegmentsByAgentId?.['a1']?.gapToTail).toBe(false);
+    expect(state.historySegmentsByAgentId?.['a1']?.detachedFromTail).toBe(false);
     return state;
   }
 
@@ -7430,25 +7443,22 @@ describe('tail writes that drop older resident rows never hide them', () => {
   ];
 
   describe.each(writers)('%s', (_name, write) => {
-    it('opens the gap of a loaded history segment when older resident rows are dropped', () => {
+    it('moves the dropped rows into a loaded attached window', () => {
       // #4333 shape: a newest-page read replaced rows 10..20 with 15..20.
       const state = agentSessionReducer(withContiguousHistory(), write(rows(15, 20)));
 
       expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(15, 20)));
       const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(ids(segment?.messages)).toEqual(ids(rows(5, 9)));
-      expect(segment?.gapToTail).toBe(true);
-      expect(segment?.holeRowsEstimate).toBe(5);
+      expect(ids(segment?.messages)).toEqual(ids(rows(5, 14)));
+      expect(segment?.detachedFromTail).toBe(false);
+      expect(segment?.holeRowsEstimate).toBeUndefined();
       expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
     });
 
-    it('marks the history boundary unknown when no history rows can hold a gap', () => {
+    it('creates no window when no window rows were loaded', () => {
       const state = agentSessionReducer(withTail(rows(10, 20)), write(rows(15, 20)));
 
-      const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(segment?.messages).toEqual([]);
-      expect(segment?.tailBoundaryUnknown).toBe(true);
-      expect(segment?.oldestReached).toBe(false);
+      expect(state.historySegmentsByAgentId?.['a1']).toBeUndefined();
       expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
     });
 
@@ -7465,8 +7475,7 @@ describe('tail writes that drop older resident rows never hide them', () => {
       const before = withContiguousHistory();
       const state = agentSessionReducer(before, write(rows(8, 20)));
 
-      expect(state.historySegmentsByAgentId?.['a1']?.gapToTail).toBe(false);
-      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBeUndefined();
+      expect(state.historySegmentsByAgentId?.['a1']?.detachedFromTail).toBe(false);
       expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
     });
   });
@@ -7496,22 +7505,22 @@ describe('tail writes that drop older resident rows never hide them', () => {
     const restoreWith = (state: AgentSessionState, tail: AgentMessage[]) =>
       restoreStoredSessions([{ ...state.byAgentId['a1'], messages: tail }]);
 
-    it('opens the gap of a loaded history segment when the snapshot drops older rows', () => {
+    it('moves the rows the snapshot drops into a loaded attached window', () => {
       const before = withContiguousHistory();
       const state = agentSessionReducer(before, restoreWith(before, rows(15, 20)));
 
       expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(15, 20)));
       const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(segment?.gapToTail).toBe(true);
-      expect(segment?.holeRowsEstimate).toBe(5);
+      expect(ids(segment?.messages)).toEqual(ids(rows(5, 14)));
+      expect(segment?.detachedFromTail).toBe(false);
       expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
     });
 
-    it('marks the history boundary unknown when no history rows can hold a gap', () => {
+    it('creates no window when no window rows were loaded', () => {
       const before = withTail(rows(10, 20));
       const state = agentSessionReducer(before, restoreWith(before, rows(15, 20)));
 
-      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBe(true);
+      expect(state.historySegmentsByAgentId?.['a1']).toBeUndefined();
     });
 
     it('leaves history untouched when the snapshot keeps the resident rows', () => {
@@ -7556,23 +7565,32 @@ describe('tail writes that drop older resident rows never hide them', () => {
     expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
   });
 
-  it('a rebase onto a disjoint newer window counts every older resident row', () => {
+  it('a rebase onto a disjoint newer window drops the attached window', () => {
     const state = agentSessionReducer(withContiguousHistory(), replaceMessages('a1', rows(30, 35)));
-    const segment = state.historySegmentsByAgentId?.['a1'];
-    expect(segment?.gapToTail).toBe(true);
-    expect(segment?.holeRowsEstimate).toBe(11);
+    expect(state.historySegmentsByAgentId?.['a1']).toBeUndefined();
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
   });
 
-  it('a seek-seeded segment opens the gap without a serial-walk hole estimate', () => {
+  it('a seek-seeded attached window takes the dropped rows and keeps its start ordinal', () => {
     let state = withTail(rows(10, 20));
     state = agentSessionReducer(state, seedHistoryAround('a1', [...rows(5, 9), row(10)], 5));
-    expect(state.historySegmentsByAgentId?.['a1']?.gapToTail).toBe(false);
+    expect(state.historySegmentsByAgentId?.['a1']?.detachedFromTail).toBe(false);
 
     state = agentSessionReducer(state, replaceMessages('a1', rows(15, 20)));
     const segment = state.historySegmentsByAgentId?.['a1'];
-    expect(segment?.gapToTail).toBe(true);
+    expect(ids(segment?.messages)).toEqual(ids(rows(5, 14)));
+    expect(segment?.detachedFromTail).toBe(false);
     expect(segment?.startOrdinalEstimate).toBe(5);
-    expect(segment?.holeRowsEstimate).toBeUndefined();
+  });
+
+  it('a detached window keeps its rows when the hidden tail drops rows', () => {
+    let state = withTail(rows(100, 110));
+    state = agentSessionReducer(state, seedHistoryAround('a1', rows(5, 9)));
+    state = agentSessionReducer(state, replaceMessages('a1', rows(105, 110)));
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(ids(segment?.messages)).toEqual(ids(rows(5, 9)));
+    expect(segment?.detachedFromTail).toBe(true);
+    expect(segment?.holeRowsEstimate).toBe(5);
   });
 
   it('a fully hydrated conversation that loses its first rows is no longer exhausted', () => {
@@ -7584,77 +7602,12 @@ describe('tail writes that drop older resident rows never hide them', () => {
     expect(state.historySegmentsByAgentId?.['a1']?.oldestReached).toBe(true);
 
     state = agentSessionReducer(state, replaceMessages('a1', rows(5, 10)));
-    const segment = state.historySegmentsByAgentId?.['a1'];
-    expect(segment?.oldestReached).toBe(false);
-    expect(segment?.tailBoundaryUnknown).toBe(true);
+    expect(state.historySegmentsByAgentId?.['a1']).toBeUndefined();
     expect(
       selectHistorySegmentMeta.select({ agentSessions: state } as unknown as StoreState, 'a1'),
     ).toMatchObject({
       oldestReached: false,
-      gapToTail: false,
-    });
-  });
-
-  describe('after the boundary became unknown', () => {
-    function withUnknownBoundary() {
-      const state = agentSessionReducer(
-        withTail(rows(10, 20)),
-        replaceMessages('a1', rows(15, 20)),
-      );
-      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBe(true);
-      return state;
-    }
-
-    it('a page from a cursor held before the loss lands behind an open gap', () => {
-      // Held cursor continued below the PRE-loss oldest row (10): rows 5..9.
-      let state = agentSessionReducer(
-        withUnknownBoundary(),
-        prependHistoryMessages('a1', rows(5, 9)),
-      );
-      let segment = state.historySegmentsByAgentId?.['a1'];
-      expect(ids(segment?.messages)).toEqual(ids(rows(5, 9)));
-      expect(segment?.gapToTail).toBe(true);
-      expect(segment?.tailBoundaryUnknown).toBeUndefined();
-      // The dropped rows (10..14) are attributed to the hole, not above history.
-      expect(segment?.holeRowsEstimate).toBe(5);
-
-      // The gap refill restores the dropped rows and closes on tail overlap.
-      state = agentSessionReducer(state, appendHistoryMessages('a1', rows(10, 16)));
-      segment = state.historySegmentsByAgentId?.['a1'];
-      expect(ids(segment?.messages)).toEqual(ids(rows(5, 14)));
-      expect(segment?.gapToTail).toBe(false);
-    });
-
-    it('a page anchored at the tail overlaps it and lands contiguous', () => {
-      // Anchored seek around the tail's oldest row (15) returns 12..17.
-      const state = agentSessionReducer(
-        withUnknownBoundary(),
-        prependHistoryMessages('a1', rows(12, 17)),
-      );
-      const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(ids(segment?.messages)).toEqual(ids(rows(12, 14)));
-      expect(segment?.gapToTail).toBe(false);
-      expect(segment?.tailBoundaryUnknown).toBeUndefined();
-      expect(segment?.holeRowsEstimate).toBeUndefined();
-    });
-
-    it('an empty page keeps the boundary unknown and cannot mark the start reached', () => {
-      let state = agentSessionReducer(withUnknownBoundary(), prependHistoryMessages('a1', []));
-      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
-      const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(segment?.tailBoundaryUnknown).toBe(true);
-      expect(segment?.oldestReached).toBe(false);
-    });
-
-    it('a repeated loss adds to the dropped-row count the gap will open with', () => {
-      let state = agentSessionReducer(withUnknownBoundary(), replaceMessages('a1', rows(17, 20)));
-      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBe(true);
-
-      // Rows 10..16 are now all in the hole below a pre-loss cursor page.
-      state = agentSessionReducer(state, prependHistoryMessages('a1', rows(5, 9)));
-      const segment = state.historySegmentsByAgentId?.['a1'];
-      expect(segment?.gapToTail).toBe(true);
-      expect(segment?.holeRowsEstimate).toBe(7);
+      detachedFromTail: false,
     });
   });
 });
@@ -7894,5 +7847,115 @@ describe('background mode request state', () => {
     state = agentSessionReducer(state, setAgentBackgroundPending('a', false));
     expect(state.backgroundModePending).toEqual({ b: true });
     expect(state.byAgentId).toEqual({});
+  });
+});
+
+// ===========================================================================
+// One contiguous window: the transcript never holds a gap
+// ===========================================================================
+
+describe('history window stays contiguous (no gaps)', () => {
+  const BASE_MS = Date.parse('2024-01-01T00:00:00.000Z');
+  const ts = (i: number) => new Date(BASE_MS + i * 1000).toISOString();
+  const row = (i: number) => makeUniqueMessage(`m-${i}`, 'user', ts(i));
+  const rows = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, k) => row(from + k));
+  const ids = (messages: AgentMessage[] | undefined) => (messages ?? []).map((m) => m.id);
+
+  function withWindow(tail: AgentMessage[], history: AgentMessage[]) {
+    return agentSessionReducer(
+      agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: tail })),
+      ),
+      prependHistoryMessages('a1', history),
+    );
+  }
+
+  const writers: Array<
+    [string, (tail: AgentMessage[]) => Parameters<typeof agentSessionReducer>[1]]
+  > = [
+    ['session upsert', (tail) => upsertSession(makeSession('a1', 'ws-1', { messages: tail }))],
+    ['message replacement', (tail) => replaceMessages('a1', tail)],
+    ['session update', (tail) => updateSession('a1', { messages: tail })],
+  ];
+
+  describe.each(writers)('%s', (_name, write) => {
+    it('moves the older rows it drops into the attached window', () => {
+      const state = agentSessionReducer(withWindow(rows(10, 20), rows(5, 9)), write(rows(15, 20)));
+      const segment = state.historySegmentsByAgentId?.['a1'];
+      expect(ids(segment?.messages)).toEqual(ids(rows(5, 14)));
+      expect(segment?.detachedFromTail).toBe(false);
+      expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(15, 20)));
+    });
+
+    it('drops the attached window when nothing joins it to the new tail', () => {
+      const state = agentSessionReducer(withWindow(rows(10, 20), rows(5, 9)), write(rows(40, 45)));
+      expect(state.historySegmentsByAgentId?.['a1']).toBeUndefined();
+      expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(40, 45)));
+    });
+
+    it('forgets a reached start when the tail drops rows and no window rows hold them', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: rows(10, 20) })),
+      );
+      state = agentSessionReducer(state, prependHistoryMessages('a1', []));
+      state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+      state = agentSessionReducer(state, write(rows(15, 20)));
+      expect(state.historySegmentsByAgentId?.['a1']?.oldestReached ?? false).toBe(false);
+      expect(state.historySegmentsByAgentId?.['a1']?.messages ?? []).toEqual([]);
+    });
+  });
+
+  it('live appends past the tail cap move the pruned rows into the attached window', () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => row(i + 1000));
+    let state = withWindow(tail, [row(1), row(2)]);
+    state = agentSessionReducer(state, addMessage('a1', row(5000)));
+    state = agentSessionReducer(state, addMessage('a1', row(5001)));
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(ids(segment?.messages)).toEqual(['m-1', 'm-2', 'm-1000', 'm-1001']);
+    expect(segment?.detachedFromTail).toBe(false);
+    expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+  });
+
+  it('caps an attached window that live growth keeps feeding, pruning its oldest side', () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => row(i + 10_000));
+    let state = withWindow(tail, rows(1, 5));
+    state = agentSessionReducer(state, setHistoryOldestReached('a1'));
+    for (let i = 0; i < HISTORY_SEGMENT_MAX + 10; i++) {
+      state = agentSessionReducer(state, addMessage('a1', row(20_000 + i)));
+    }
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(segment?.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+    expect(segment?.detachedFromTail).toBe(false);
+    expect(segment?.oldestReached).toBe(false);
+    const newestWindowRow = segment!.messages[HISTORY_SEGMENT_MAX - 1];
+    const oldestTailRow = state.byAgentId['a1'].messages[0];
+    expect(Number(newestWindowRow.id.slice(2)) + 1).toBe(Number(oldestTailRow.id.slice(2)));
+  });
+
+  it('walking up past the window cap detaches the window instead of opening a hole', () => {
+    let state = withWindow(rows(10_000, 10_010), rows(5_000, 9_999));
+    state = agentSessionReducer(state, prependHistoryMessages('a1', rows(4_000, 4_999)));
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(segment?.messages).toHaveLength(HISTORY_SEGMENT_MAX);
+    expect(segment?.messages[0]?.id).toBe('m-4000');
+    expect(segment?.detachedFromTail).toBe(true);
+  });
+
+  it('a forward page that reaches the newest row attaches the window even without tail overlap', () => {
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', { messages: [makeUniqueMessage('live-x', 'user', ts(99))] }),
+      ),
+    );
+    state = agentSessionReducer(state, seedHistoryAround('a1', rows(1, 2), 0));
+    expect(state.historySegmentsByAgentId?.['a1']?.detachedFromTail).toBe(true);
+    state = agentSessionReducer(state, appendHistoryMessages('a1', rows(3, 4), true));
+    const segment = state.historySegmentsByAgentId?.['a1'];
+    expect(ids(segment?.messages)).toEqual(ids(rows(1, 4)));
+    expect(segment?.detachedFromTail).toBe(false);
   });
 });

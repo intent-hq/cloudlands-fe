@@ -10,13 +10,16 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
+  import '$lib/styles/dock-tokens.css';
   import * as Menu from '$lib/components/ui/menu';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { formatShortcut } from '$lib/utils/shortcuts';
   import { DOCK_CAPTURE_MODES } from '$shared/dock-evidence';
   import DockComposerIcon from './DockComposerIcon.svelte';
 
   /**
-   * Screenshot modes for the composer's capture button. The owner opens it (hover or
-   * keyboard) and anchors it to its button.
+   * Screenshot modes for the composer's capture button. The owner opens it on hover or explicit
+   * keyboard/touch activation and anchors it to the stable capture button.
    */
   let {
     open = $bindable(false),
@@ -24,8 +27,11 @@
     mode,
     labels,
     label,
+    heading,
+    shortcut,
     focusChecked = false,
     onSelect,
+    onInteractOutside,
     onpointerenter,
     onpointerleave,
   }: {
@@ -34,16 +40,26 @@
     mode: DockCaptureMode;
     labels: Record<DockCaptureMode, string>;
     label?: string;
+    heading?: string;
+    shortcut?: string;
     /** Keyboard opening: focus the current mode. Pointer opening never takes focus. */
     focusChecked?: boolean;
     onSelect: (mode: DockCaptureMode) => void;
+    onInteractOutside?: (event: PointerEvent) => void;
     onpointerenter?: () => void;
     onpointerleave?: () => void;
   } = $props();
   let content = $state<HTMLElement | null>(null);
+  // Arrow keys can enter a menu already shown by hovering without remounting its anchor.
+  $effect(() => {
+    if (open && focusChecked)
+      void tick().then(() =>
+        content?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus(),
+      );
+  });
 </script>
 
-<!-- A hover menu never locks the page: the body lock would outlive a close that lands
+<!-- The picker never locks the page: the body lock would outlive a close that lands
      while the dock is hidden for a window or region selection, swallowing every click. -->
 <Menu.Root bind:open>
   <Menu.Content
@@ -53,34 +69,59 @@
     align="center"
     sideOffset={6}
     preventScroll={false}
-    class="dock-media-tool-popover min-w-0 rounded-[10px] p-[3px] shadow-none"
+    class="dock-media-tool-popover dock-capture-mode-menu min-w-44"
     data-dock-palette="notch"
     aria-label={label}
+    onInteractOutside={(event) => {
+      // The capture button owns its primary action. Let its click run once;
+      // outside dismissal must not interfere with its current focus context.
+      if (event.target instanceof Node && anchor?.contains(event.target)) {
+        event.preventDefault();
+        return;
+      }
+      onInteractOutside?.(event);
+    }}
     {onpointerenter}
     {onpointerleave}
-    onOpenAutoFocus={(event) => {
-      event.preventDefault();
-      if (focusChecked)
-        void tick().then(() =>
-          content
-            ?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
-            ?.focus(),
-        );
-    }}
+    onOpenAutoFocus={(event) => event.preventDefault()}
     onCloseAutoFocus={(event) => event.preventDefault()}
   >
-    <Menu.RadioGroup value={mode}>
-      {#each DOCK_CAPTURE_MODES as option (option)}
-        <Menu.RadioItem
-          value={option}
-          closeOnSelect
-          data-capture-mode={option}
-          onSelect={() => onSelect(option)}
+    <Menu.Group>
+      {#if heading || label}
+        <Menu.Label
+          class="min-h-0 font-normal text-left text-foreground [&>[data-slot=menu-item-leading]]:hidden"
         >
-          {#snippet leading()}<DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[option]} />{/snippet}
-          {labels[option]}
-        </Menu.RadioItem>
-      {/each}
-    </Menu.RadioGroup>
+          <span class="capture-menu-heading">
+            <span>{heading ?? label}</span>
+            {#if shortcut}<ShortcutChip class="text-muted-foreground"
+                >{formatShortcut(shortcut)}</ShortcutChip
+              >{/if}
+          </span>
+        </Menu.Label>
+      {/if}
+      <Menu.RadioGroup value={mode}>
+        {#each DOCK_CAPTURE_MODES as option (option)}
+          <Menu.RadioItem
+            value={option}
+            closeOnSelect
+            data-capture-mode={option}
+            onSelect={() => onSelect(option)}
+          >
+            {#snippet leading()}<DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[option]} />{/snippet}
+            {labels[option]}
+          </Menu.RadioItem>
+        {/each}
+      </Menu.RadioGroup>
+    </Menu.Group>
   </Menu.Content>
 </Menu.Root>
+
+<style>
+  .capture-menu-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+  }
+</style>

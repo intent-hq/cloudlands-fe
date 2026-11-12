@@ -5,6 +5,7 @@ import { homeIntegrationsReducer } from '$features/home/home-integrations-slice'
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
 import { nodesReducer } from '$features/nodes/nodes-slice';
 import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
+import { machineSetupReducer } from '$features/machine-setup/machine-setup-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
@@ -60,6 +61,7 @@ import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
 import { gitlabAuthReducer } from './slices/gitlab-auth/gitlab-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
+import { importableSessionsReducer } from './slices/importable-sessions/importable-sessions-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
@@ -192,6 +194,7 @@ export const reducers = {
   gitlabAuth: gitlabAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
+  importableSessions: importableSessionsReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
   linearAuth: linearAuthReducer,
@@ -274,4 +277,5 @@ export const reducers = {
   remoteMachines: remoteMachinesReducer,
   nodes: nodesReducer,
   cloudMachines: cloudMachinesReducer,
+  machineSetup: machineSetupReducer,
 } as const;

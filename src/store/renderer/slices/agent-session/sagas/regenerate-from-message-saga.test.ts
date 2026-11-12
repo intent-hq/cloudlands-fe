@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectMessageBlockPagesSupported: {
-    // eslint-disable-next-line require-yield -- selector effect stand-in
     *effect() {
       return mocks.messageBlockPages;
     },
@@ -99,7 +98,7 @@ interface StartOptions {
   /** Hydrated scrollback history segment (rows older than the tail). */
   history?: AgentMessage[];
   /** The history→tail hole is open. */
-  gapToTail?: boolean;
+  detachedFromTail?: boolean;
 }
 
 function start(sessionMessages: AgentMessage[] = messages, options: StartOptions = {}) {
@@ -120,7 +119,7 @@ function start(sessionMessages: AgentMessage[] = messages, options: StartOptions
     ? {
         [AGENT]: {
           messages: options.history,
-          gapToTail: options.gapToTail === true,
+          detachedFromTail: options.detachedFromTail === true,
           oldestReached: false,
         },
       }
@@ -254,7 +253,10 @@ describe('regenerateFromMessageSaga', () => {
     ];
 
     it('sources a hydrated history row from the history user message when the tail is contiguous', async () => {
-      const { channel, edits, task } = start(messages, { history: historyRows, gapToTail: false });
+      const { channel, edits, task } = start(messages, {
+        history: historyRows,
+        detachedFromTail: false,
+      });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'h-a0');
       channel.put(action);
       await settle();
@@ -271,7 +273,7 @@ describe('regenerateFromMessageSaga', () => {
     it('sources the first tail row from the history user message across a closed junction', async () => {
       const { channel, edits, task } = start(tailAssistantFirst, {
         history: historyRows,
-        gapToTail: false,
+        detachedFromTail: false,
       });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a1');
       channel.put(action);
@@ -297,7 +299,7 @@ describe('regenerateFromMessageSaga', () => {
       ];
       const { channel, edits, task } = start(messages, {
         history: staleHistoryCopy,
-        gapToTail: false,
+        detachedFromTail: false,
       });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a1');
       channel.put(action);
@@ -314,7 +316,7 @@ describe('regenerateFromMessageSaga', () => {
     it('fails closed with one toast when the walk back would cross an open history→tail gap', async () => {
       const { channel, edits, dispatched, task } = start(tailAssistantFirst, {
         history: historyRows,
-        gapToTail: true,
+        detachedFromTail: true,
       });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a1');
       channel.put(action);
@@ -329,7 +331,10 @@ describe('regenerateFromMessageSaga', () => {
     });
 
     it('still sources a history row within the hydrated segment while the gap is open', async () => {
-      const { channel, edits, task } = start(messages, { history: historyRows, gapToTail: true });
+      const { channel, edits, task } = start(messages, {
+        history: historyRows,
+        detachedFromTail: true,
+      });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'h-a0');
       channel.put(action);
       await settle();

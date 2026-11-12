@@ -11,16 +11,19 @@
     setLabsBrowserAccessEnabled,
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
+    setLabsSshMachineSetupEnabled,
     setLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectLabsBrowserAccessEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsRemoteAgentsEnabled,
+    selectLabsSshMachineSetupEnabled,
     selectLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   const remoteAgents$ = selectLabsRemoteAgentsEnabled();
+  const sshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   const plainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const tabGroups$ = selectLabsTabGroupsEnabled();
   const browserAccess$ = selectLabsBrowserAccessEnabled();
@@ -50,6 +53,18 @@
               get: () => $remoteAgents$,
               set: (enabled) => {
                 appStore.dispatch(setLabsRemoteAgentsEnabled(enabled));
+              },
+            },
+            {
+              kind: 'switch',
+              id: 'labs-ssh-machine-setup',
+              size: 'sm',
+              label: m.settings_labs_sshMachineSetup_label(),
+              description: m.settings_labs_sshMachineSetup_description(),
+              when: () => desktop,
+              get: () => $sshMachineSetup$,
+              set: (enabled) => {
+                appStore.dispatch(setLabsSshMachineSetupEnabled(enabled));
               },
             },
             {

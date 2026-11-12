@@ -26,7 +26,7 @@
         },
         guidance: missingPermissions ? m.desktop_os_setup_description() : undefined,
         checklist: missingPermissions
-          ? { accessibility: false, screenRecording: false, screenCapture: 'unavailable' }
+          ? { accessibility: false, screenRecording: false, screenCapture: 'blocked' }
           : undefined,
         onDecision: (value: string) => (decision = value),
       },

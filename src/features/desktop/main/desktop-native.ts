@@ -1,12 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { app } from 'electron';
 import { z } from 'zod';
 import type {
   DesktopAction,
   DesktopDisplay,
+  DesktopOsChecklist,
   DesktopTargetMismatchReason,
 } from '../../../shared/types/desktop';
 import type { DesktopNative, DesktopTargetCheck } from './desktop-executor';
@@ -31,15 +32,15 @@ export type NativeRequest = (
 
 function desktopHelperPath(): string {
   const name = process.platform === 'win32' ? 'intent-desktop-helper.exe' : 'intent-desktop-helper';
-  return app.isPackaged
-    ? join(process.resourcesPath, 'desktop-helper', name)
-    : join(
-        app.getAppPath(),
-        'resources',
-        'desktop-helper',
-        `${process.platform}-${process.arch}`,
-        name,
-      );
+  if (app.isPackaged) return join(process.resourcesPath, 'desktop-helper', name);
+  const roots = [
+    join(app.getAppPath(), 'resources'),
+    resolve(app.getAppPath(), '..', '..', 'resources'),
+  ];
+  const candidates = roots.map((root) =>
+    join(root, 'desktop-helper', `${process.platform}-${process.arch}`, name),
+  );
+  return candidates.find((path) => existsSync(path)) ?? candidates[0];
 }
 export function desktopNativeAvailable(): boolean {
   return (
@@ -161,16 +162,107 @@ class DesktopHelperTransport {
   }
 }
 
+const permissionObservation = z
+  .object({
+    accessibility: z.boolean(),
+    screenRecording: z.boolean(),
+    screenCapture: z.enum(['pending', 'ready', 'unavailable']),
+  })
+  .strict();
+type PermissionObservation = z.infer<typeof permissionObservation>;
+// The helper abandons a capture check that is not re-asked within 3 s.
+const PERMISSION_RECHECK_MS = 500;
+const PERMISSION_SETTLE_MS = 120_000;
+const PERMISSION_HOLD_MS = 1500;
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** `promise`, or undefined after `ms`; rejects with the reason once `signal` aborts. */
+function within<T>(promise: Promise<T>, ms: number, signal?: AbortSignal) {
+  return new Promise<T | undefined>((resolve, reject) => {
+    const settle = (finish: () => void) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      finish();
+    };
+    const abort = () => settle(() => reject(signal?.reason));
+    const timer = Number.isFinite(ms)
+      ? setTimeout(() => settle(() => resolve(undefined)), ms)
+      : undefined;
+    signal?.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    );
+  });
+}
+interface PermissionCheck {
+  first: Promise<PermissionObservation>;
+  latest?: PermissionObservation;
+  result: Promise<DesktopOsChecklist>;
+}
+
 export class DesktopNativeAdapter implements DesktopNative {
-  async requestPermissions(computerId: string, requestId: string) {
-    return z
-      .object({
-        accessibility: z.boolean(),
-        screenRecording: z.boolean(),
-        screenCapture: z.enum(['pending', 'ready', 'unavailable']),
-      })
-      .strict()
-      .parse(await this.request('requestPermissions', { computerId, requestId }));
+  private readonly checks = new Map<string, PermissionCheck>();
+  /** The only way to ask macOS for desktop permissions. The helper answers a new
+   * request id with a "pending" capture check and settles it only when the same
+   * id asks again within 3 s. Main owns that: one loop per id re-asks until the
+   * answer is final, the deadline passes (default two minutes) or a re-ask is
+   * refused (both end as unavailable). A call waits up to `holdMs` for the final
+   * answer, else returns "checking"; asking again joins the same loop. A refused
+   * first ask rejects; `signal` rejects this call with its reason. */
+  async requestPermissions(
+    computerId: string,
+    requestId: string,
+    {
+      signal,
+      deadline,
+      holdMs = PERMISSION_HOLD_MS,
+    }: { signal?: AbortSignal; deadline?: number; holdMs?: number } = {},
+  ): Promise<DesktopOsChecklist> {
+    signal?.throwIfAborted();
+    const key = JSON.stringify([computerId, requestId]);
+    let check = this.checks.get(key);
+    if (!check) {
+      check = this.startCheck(computerId, requestId, deadline ?? Date.now() + PERMISSION_SETTLE_MS);
+      this.checks.set(key, check);
+      void check.result.catch(() => undefined).finally(() => this.checks.delete(key));
+    }
+    await within(check.first, Infinity, signal);
+    const final = await within(check.result, holdMs, signal);
+    if (final) return final;
+    const { accessibility, screenRecording } = check.latest ?? (await check.first);
+    return { accessibility, screenRecording, screenCapture: 'checking' };
+  }
+  private startCheck(computerId: string, requestId: string, until: number): PermissionCheck {
+    const first = this.askPermissions(computerId, requestId);
+    const check: PermissionCheck = { first, result: first.then(settle) };
+    const ask = () => this.askPermissions(computerId, requestId);
+    async function settle(seen: PermissionObservation): Promise<DesktopOsChecklist> {
+      while (true) {
+        check.latest = seen;
+        const { accessibility, screenRecording, screenCapture } = seen;
+        if (!accessibility || !screenRecording)
+          return { accessibility, screenRecording, screenCapture: 'blocked' };
+        if (screenCapture !== 'pending') return { accessibility, screenRecording, screenCapture };
+        const unavailable = {
+          accessibility,
+          screenRecording,
+          screenCapture: 'unavailable' as const,
+        };
+        if (Date.now() + PERMISSION_RECHECK_MS > until) return unavailable;
+        await delay(PERMISSION_RECHECK_MS);
+        try {
+          seen = await ask();
+        } catch {
+          return unavailable;
+        }
+      }
+    }
+    return check;
+  }
+  private async askPermissions(computerId: string, requestId: string) {
+    return permissionObservation.parse(
+      await this.request('requestPermissions', { computerId, requestId }),
+    );
   }
   constructor(private readonly request: NativeRequest) {}
   async identity() {
@@ -218,6 +310,38 @@ export class DesktopNativeAdapter implements DesktopNative {
         ...(layout ? { layout } : {}),
       }),
     );
+  }
+  /** App identity only: no AX, screen permission or control lease. */
+  async foregroundApp(): Promise<{ pid?: number; appId?: string; appName?: string }> {
+    return z
+      .object({
+        pid: z.number().optional(),
+        appId: z.string().optional(),
+        appName: z.string().optional(),
+      })
+      .strict()
+      .parse(await this.request('foregroundApp'));
+  }
+  /** Read-only context: never acquires control or requests OS permissions. */
+  async foregroundContext(): Promise<{
+    pid?: number;
+    appId?: string;
+    appName?: string;
+    title?: string;
+    url?: string;
+    urlStatus?: 'available' | 'unavailable' | 'permission-required';
+  }> {
+    return z
+      .object({
+        pid: z.number().optional(),
+        appId: z.string().optional(),
+        appName: z.string().optional(),
+        title: z.string().optional(),
+        url: z.string().optional(),
+        urlStatus: z.enum(['available', 'unavailable', 'permission-required']).optional(),
+      })
+      .strict()
+      .parse(await this.request('foregroundContext'));
   }
   /** Frontmost app pid. Lock-free, so it also works after the session ended. */
   async frontmostPid(): Promise<number | undefined> {

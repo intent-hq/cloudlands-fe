@@ -13,6 +13,10 @@
     inlineVisualDraftOwnerReleased,
   } from '$store/renderer/slices/inline-visuals/inline-visuals-slice';
   import { submitChatMessage } from '$features/agent/chat-submission';
+  import {
+    submitPreparedChatMessage,
+    type PreparedChatDraftCapture,
+  } from '$features/agent/prepare-chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
     selectQueueMutationBlocked,
@@ -497,6 +501,7 @@
   import {
     deriveQueuedMessagesVisibility,
     hasAuthoritativeConversationEvidence,
+    setupCardHasPrompt,
     shouldDeferTranscriptReveal,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
@@ -2881,14 +2886,26 @@
       : null,
   );
 
-  // Grouped messages for display: scrollback history segment + live tail.
-  // With no history hydrated this is exactly the old tail-only grouping.
+  // Grouped messages for display: the scrollback window + live tail when
+  // attached, the window alone when detached (never a gap between them).
+  // With no window rows this is exactly the old tail-only grouping.
   // NOTE: transcript search, sticky headers, pinned prompts, message
   // navigator, and the unread divider intentionally keep operating on the
   // tail ($agentMessages$) only for this iteration — history rows render but
   // are not indexed by those features.
+  const windowDetached = $derived($historySegmentMeta$.detachedFromTail);
   const composedTranscript = $derived(
-    composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.gapToTail),
+    composeTranscript($agentHistoryMessages$, $agentMessages$, windowDetached),
+  );
+  const setupCardPrompted = $derived(
+    setupCardHasPrompt({
+      onboardingPrompt: onboardingContext?.prompt,
+      hasUserMessage:
+        $agentMessages$.some((m) => m.role === 'user') ||
+        $agentHistoryMessages$.some((m) => m.role === 'user'),
+      hasPendingUserMessage: Boolean(pendingMessage),
+      hasPendingConversationMessage: pendingConversationMessages.length > 0,
+    }),
   );
   const failureTranscript = $derived(
     projectFailureTranscript(composedTranscript, {
@@ -2910,9 +2927,9 @@
       ),
   );
   let groupedMessages = $derived(composedTranscript.groups);
-  // Index of the first tail group when the history→tail hole is open; the
-  // gap affordance renders immediately before this group.
-  const historyGapBeforeGroupIndex = $derived(composedTranscript.gapBeforeGroupIndex);
+  // A detached window renders alone: no rendered turn is the conversation's
+  // last one, and the forward edge renders after the window.
+  const transcriptDetached = $derived(composedTranscript.detached);
   // True only when the conversation's TRUE START is resident — gates the
   // top-of-transcript workspace intro card so it never renders mid-history
   // (falsely signalling "you've reached the beginning" while older rows
@@ -2945,7 +2962,7 @@
       chat.fetchingGapFill ||
       chat.fetchingHistorySeek ||
       seekLandingPending ||
-      $historySegmentMeta$.gapToTail ||
+      $historySegmentMeta$.detachedFromTail ||
       $historyExhausted$
     )
       return;
@@ -3018,7 +3035,8 @@
       residentCount: $agentHistoryMessages$.length + $agentMessages$.length,
       exhausted: $historyExhausted$,
       startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
-      gapToTail: $historySegmentMeta$.gapToTail,
+      detachedFromTail: $historySegmentMeta$.detachedFromTail,
+      hiddenTailCount: composedTranscript.hiddenTail.length,
       holeRowsEstimate: $historySegmentMeta$.holeRowsEstimate,
     });
   }
@@ -3083,7 +3101,7 @@
    */
   function viewportOverlapsBelowSpacer(): boolean {
     const container = scrollContainer;
-    if (!container || !$historySegmentMeta$.gapToTail) return false;
+    if (!container || !$historySegmentMeta$.detachedFromTail) return false;
     if (virtualSpacerBelowHeight <= 0 || !belowSpacerEl) return false;
     const top =
       belowSpacerEl.getBoundingClientRect().top -
@@ -3096,45 +3114,61 @@
   }
 
   /**
-   * True when the viewport sits ENTIRELY below the open history→tail hole
-   * (gap affordance + below spacer) — the user is back on the live tail.
+   * True when the reader scrolled to the END of a detached transcript: the
+   * viewport sits at the bottom of the scroll extent with every window row
+   * scrolled out above it (it jumped over the unloaded rows). While the
+   * window's forward edge is still in view, the forward walk owns the
+   * downward direction instead, so a short landing never snaps to the tail.
    */
-  function viewportFullyBelowOpenHole(): boolean {
+  function viewportAtEndOfDetachedWindow(): boolean {
     const container = scrollContainer;
-    if (!container || !$historySegmentMeta$.gapToTail) return false;
-    if ($agentHistoryMessages$.length === 0) return false;
-    const edge = belowSpacerEl ?? historyGapSentinel;
-    if (!edge) return false;
-    const bottomDoc =
+    const edge = historyGapSentinel;
+    if (!container || !edge || !transcriptDetached) return false;
+    if (virtualSpacerBelowHeight <= 0 || !belowSpacerEl) return false;
+    if (container.scrollTop + container.clientHeight < container.scrollHeight - 2) return false;
+    const edgeBottom =
       edge.getBoundingClientRect().bottom -
       container.getBoundingClientRect().top +
       container.scrollTop;
-    return container.scrollTop >= bottomDoc;
+    return container.scrollTop >= edgeBottom;
   }
 
   /**
-   * Return-to-tail collapse: a settled viewport fully below the open hole
-   * is reading the live tail, so the detached segment above it (and its
-   * Load-more affordance + below spacer) is a phantom gap that would
-   * persist forever — no downward driver can close a hole the user already
-   * jumped over. Drop the segment wholesale (`clearHistorySegment`; the
-   * saga watcher resets both walk cursors) and zero both spacers in the
-   * same flush; the prepend-anchoring effect captures a visible tail row
-   * before the DOM updates and restores its viewport offset after (native
-   * clamp when the capture was skipped near the bottom), so the removal
-   * never moves the reading position. An upward scroll afterwards re-arms
-   * the serial walk from scratch (fresh anchored seek at the tail's oldest
-   * row). Returns true when the segment was dropped.
+   * Return to the end: drop the detached window and show the live tail at
+   * the bottom. The window is abandoned (`clearHistorySegment`; the saga
+   * watcher resets both walk cursors), so scrolling up again reloads it from
+   * the tail. Zeroes both spacers in the same flush. Returns true when the
+   * window was dropped.
    */
-  function maybeCollapseHistorySegmentAtTail(): boolean {
-    if (!isActive || !workspace?.id || !agentId) return false;
-    if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
-    if ($fetchingHistorySeek$ || seekLandingPending) return false;
-    if (!viewportFullyBelowOpenHole()) return false;
+  function collapseDetachedWindow(): boolean {
+    if (!isActive || !workspace?.id || !agentId || !transcriptDetached) return false;
+    cancelSeekDebounce();
+    seekLandingPending = false;
+    pendingSeekTargetOrdinal = null;
     virtualSpacerHeight = 0;
     virtualSpacerBelowHeight = 0;
+    shouldFollowBottom = true;
     appStore.dispatch(clearHistorySegment(agentId));
+    const container = scrollContainer;
+    tick().then(() => {
+      if (!isActive || isComponentDestroyed || !container || scrollContainer !== container) return;
+      followToBottom(container);
+    });
     return true;
+  }
+
+  // The bottom of a detached transcript is not the live end: following it
+  // would pin the viewport under the unloaded rows and read as a return to
+  // the end. Follow-bottom resumes when the window collapses or attaches.
+  $effect.pre(() => {
+    if (transcriptDetached && shouldFollowBottom) shouldFollowBottom = false;
+  });
+
+  function maybeCollapseHistorySegmentAtTail(): boolean {
+    if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
+    if ($fetchingHistorySeek$ || seekLandingPending) return false;
+    if (!viewportAtEndOfDetachedWindow()) return false;
+    return collapseDetachedWindow();
   }
 
   function cancelSeekDebounce() {
@@ -3159,6 +3193,8 @@
       return false;
     if ($fetchingHistorySeek$ || seekLandingPending) return false;
     if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;
+    // The end of the conversation is not a seek target: show the live tail.
+    if (maybeCollapseHistorySegmentAtTail()) return true;
     const target = seekTargetOrdinalAt(scrollContainer.scrollTop);
     if (target === null) return false;
     cancelSeekDebounce();
@@ -3182,10 +3218,10 @@
       // maybeDispatchSettledSeek and re-classify the parked position.
       if ($fetchingOlderHistory$ || $fetchingGapFill$) return;
       if (maybeDispatchSettledSeek()) return;
-      // Settled without a far target: the below drivers decide. Fully
-      // below the hole collapses the segment (return-to-tail); a
+      // Settled without a far target: the below drivers decide. The end
+      // of a detached transcript shows the live tail (collapse); a
       // dead-zone overlap with the below spacer chains a bounded forward
-      // gap refill; otherwise the near-top serial trigger applies.
+      // page; otherwise the near-top serial trigger applies.
       if (maybeCollapseHistorySegmentAtTail()) return;
       if (viewportOverlapsBelowSpacer()) {
         requestHistoryGapFill();
@@ -3338,9 +3374,9 @@
   // 0 (no spacer, today's behavior) when totalMessages is unknown or the
   // walk is exhausted.
   //
-  // DUAL SPACERS: an open history→tail hole splits the unloaded extent into
-  // a spacer ABOVE the segment (rows older than its first row) and a spacer
-  // BELOW it (rows in the hole, splitUnloadedRows). Seek-seeded segments
+  // DUAL SPACERS: a detached window splits the rows that are not rendered
+  // into a spacer ABOVE it (rows older than its first row) and a spacer
+  // BELOW it (unloaded rows plus the hidden tail, splitUnloadedRows). Seek-seeded windows
   // anchor the split on startOrdinalEstimate; serial-walk segments on the
   // reducer-tracked holeRowsEstimate (cap-pruned rows — attributing them
   // above used to overestimate the above extent by up to 2x mid-walk). Both
@@ -3392,7 +3428,8 @@
       residentCount,
       exhausted,
       startOrdinalEstimate: $historySegmentMeta$.startOrdinalEstimate,
-      gapToTail: $historySegmentMeta$.gapToTail,
+      detachedFromTail: $historySegmentMeta$.detachedFromTail,
+      hiddenTailCount: composedTranscript.hiddenTail.length,
       holeRowsEstimate: $historySegmentMeta$.holeRowsEstimate,
     });
     const residentContentHeight = Math.max(
@@ -3473,7 +3510,7 @@
     void $transcriptSnapshotMeta$?.totalMessages;
     if ($initialHistoryPending$) return;
     const exhausted = $historyExhausted$;
-    const gapOpen = $historySegmentMeta$.gapToTail;
+    const gapOpen = $historySegmentMeta$.detachedFromTail;
     void $fetchingOlderHistory$;
     void $fetchingGapFill$;
     void $fetchingHistorySeek$;
@@ -3611,12 +3648,11 @@
       }
       // Downward dead zone / return-to-tail: a position overlapping the
       // below spacer that classified 'serial' has NO edge-triggered driver
-      // (below the gap sentinel's rootMargin, too near the hole's edge for
-      // a seek) — and a position fully below the open hole is back on the
-      // tail. Both arm the same settle debounce; its fire re-classifies
-      // from the settled position and picks the collapse or bounded
-      // gap-refill driver.
-      if (viewportOverlapsBelowSpacer() || viewportFullyBelowOpenHole()) {
+      // (below the forward-edge sentinel's rootMargin, too near the window
+      // for a seek) — and a position at the end is back on the tail. Both
+      // arm the same settle debounce; its fire re-classifies from the
+      // settled position and picks the collapse or bounded forward driver.
+      if (viewportOverlapsBelowSpacer() || viewportAtEndOfDetachedWindow()) {
         armSeekDebounce();
         return;
       }
@@ -3759,10 +3795,11 @@
 
   function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
-    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.gapToTail) return;
-    // A failed or stalled page stops automatic continuation, but the visible
-    // load button must still allow a deliberate retry. Keep the latch until
-    // that request settles so observers cannot restart the stopped chain.
+    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.detachedFromTail)
+      return;
+    // A failed or stalled page stops the settle chain; the forward edge
+    // coming back into view is a deliberate retry. Keep the latch until that
+    // request settles so the chain cannot restart on its own.
     if (
       trigger === 'automatic' &&
       selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked
@@ -3771,7 +3808,7 @@
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
     // segment must not go to the wire. The saga carries the same guard;
-    // this closes the panel-side dispatch window (sentinel, button).
+    // this closes the panel-side dispatch window (forward-edge sentinel).
     if ($fetchingHistorySeek$ || seekLandingPending) return;
     appStore.dispatch(historyGapFillRequested(workspace.id, agentId));
   }
@@ -3782,11 +3819,11 @@
   // after the anchor restore has landed. The settle re-classification runs
   // first (maybeDispatchSettledSeek): a viewport dragged far away while the
   // refill was in flight jumps there instead of continuing the refill.
-  // Otherwise collapse when the viewport is now fully below the hole;
-  // another bounded refill page while it still overlaps the below spacer.
-  // Stop conditions are state-derived — the gap closing (gapToTail false)
-  // or the overlap clearing ends the chain — so the loop is bounded by the
-  // hole's row count.
+  // Otherwise collapse when the viewport reached the end; another bounded
+  // forward page while it still overlaps the below spacer. Stop conditions
+  // are state-derived — the window attaching (detachedFromTail false) or the
+  // overlap clearing ends the chain — so the loop is bounded by the rows
+  // below the window.
   let wasFetchingGapFill = false;
   $effect(() => {
     const fetching = $fetchingGapFill$;
@@ -3809,8 +3846,8 @@
     });
   });
 
-  // Gap sentinel: scrolling near/into the history→tail hole requests a
-  // refill page (the affordance also offers a click-to-load fallback).
+  // Forward-edge sentinel: scrolling near the bottom of a detached window
+  // requests the next newer page; no button, the walk is automatic.
   let historyGapSentinel = $state<HTMLElement>();
   $effect(() => {
     const sentinel = historyGapSentinel;
@@ -3818,7 +3855,7 @@
     if (!isActive || !sentinel || !root) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill();
+        if (entries.some((entry) => entry.isIntersecting)) requestHistoryGapFill('explicit');
       },
       { root, rootMargin: '160px 0px' },
     );
@@ -4666,6 +4703,7 @@
   );
 
   const lastConversationTurn = $derived.by((): ConversationTurn | null => {
+    if (transcriptDetached) return null;
     const lastGroup = conversationTurnIndex.groups[conversationTurnIndex.groups.length - 1];
     return lastGroup?.turns[lastGroup.turns.length - 1] ?? null;
   });
@@ -5405,7 +5443,8 @@
     if (!shouldUseLazyLoading) return true;
     const turnKey = messageIdToTurnKey.get(messageId);
     if (!turnKey) return true;
-    const isLastTurn = globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1;
+    const isLastTurn =
+      !transcriptDetached && globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1;
     return (
       isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey) ||
       ($agentSessionIsStreaming$ && isLastTurn) ||
@@ -5831,8 +5870,8 @@
     };
   });
 
-  // Resident predecessors use the canonical gap-aware index. Unknown ones
-  // require an anchored backward walk; a loaded prompt across a hole is unsafe.
+  // Resident predecessors use the canonical transcript index. Unknown ones
+  // require an anchored backward walk.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!isActive || !scrollContainer || previousMessageLoadingId === currentMessageId) return;
     let previousMessage: { id: string } | null | undefined =
@@ -6284,8 +6323,12 @@
     // drafts.clear must never delay or skip them.
     if (options.followBottom) {
       beginScrollNavigation();
-      shouldFollowBottom = true;
-      if (scrollContainer) followToBottom(scrollContainer);
+      // The sent message lands in the live tail, which a detached window
+      // hides: return to the end first (collapse follows the bottom itself).
+      if (!collapseDetachedWindow()) {
+        shouldFollowBottom = true;
+        if (scrollContainer) followToBottom(scrollContainer);
+      }
     }
 
     if (options.historyText) {
@@ -6323,6 +6366,17 @@
   // metadata, no bytes). Inline image blocks are placed and swapped to
   // references by the send saga before the wire call.
 
+  let pendingEvidenceSend = $state.raw<{
+    capture: PreparedChatDraftCapture;
+    controller: AbortController;
+  } | null>(null);
+  $effect(() => {
+    const pending = pendingEvidenceSend;
+    if (pending && (!isActive || !draftManager.isCurrentDraft(pending.capture)))
+      pending.controller.abort();
+  });
+  onDestroy(() => pendingEvidenceSend?.controller.abort());
+
   // Handle sending messages
   function handleSend(text: string, source: ChatSendSource) {
     // Gather DOM state only. Validation, queue decisions, serialization,
@@ -6352,6 +6406,44 @@
     }));
     const userAppMessageId = createAppMessageId();
     const animateSend = !$agentIsResponding$ && !plan.hasAttachments;
+
+    const capture = source === 'composer' ? draftManager.captureDraft() : null;
+    if (capture?.attachments.some((attachment) => attachment.screen !== undefined)) {
+      if (pendingEvidenceSend) return;
+      const pending = { capture, controller: new AbortController() };
+      pendingEvidenceSend = pending;
+      // The application service owns persistence, preparation and admission. UI cleanup is
+      // conditional on the unchanged capture, so typing during preparation is retained.
+      void submitPreparedChatMessage({
+        capture,
+        drafts: draftManager,
+        items: 'contextItems' in plan.fields ? plan.fields.contextItems : [],
+        payload: {
+          wsId: workspace.id,
+          text,
+          userAppMessageId,
+          ...plan.fields,
+          agentName,
+          agentModel,
+          isInitialWorkspaceAgent,
+        },
+        signal: pending.controller.signal,
+      })
+        .then((admitted) => {
+          if (admitted && draftManager.isCurrentDraft(capture)) {
+            prepareMessageSendTransition(text, {
+              enabled: false,
+              followBottom: true,
+              userAppMessageId,
+            });
+            void performLocalSendCleanup(plan.cleanup);
+          }
+        })
+        .finally(() => {
+          if (pendingEvidenceSend === pending) pendingEvidenceSend = null;
+        });
+      return;
+    }
 
     // Dispatch all orchestration to the send-message saga
     if (
@@ -6774,6 +6866,8 @@
     cancelReturnLanding();
     const container = scrollContainer;
     if (!container) return;
+    // The end of a detached transcript is not loaded: show the live tail.
+    if (collapseDetachedWindow()) return;
     const getContainer = beginScrollNavigation();
     if (prefersReducedMotion()) {
       shouldFollowBottom = true;
@@ -7266,7 +7360,7 @@
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
                       specialistId={onboardingContext.specialistId}
-                      hasPrompt={!!onboardingContext.prompt?.trim()}
+                      hasPrompt={setupCardPrompted}
                       repoStatus="done"
                       branchStatus="done"
                       agentStatus="done"
@@ -7392,7 +7486,7 @@
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
                       specialistId={onboardingContext.specialistId}
-                      hasPrompt={!!onboardingContext.prompt?.trim()}
+                      hasPrompt={setupCardPrompted}
                       repoStatus="done"
                       branchStatus="done"
                       agentStatus="done"
@@ -7580,7 +7674,7 @@
                     baseRef={onboardingContext.baseRef || 'origin/main'}
                     specialistName={onboardingContext.specialistName}
                     specialistId={onboardingContext.specialistId}
-                    hasPrompt={!!onboardingContext.prompt?.trim()}
+                    hasPrompt={setupCardPrompted}
                     repoStatus="done"
                     branchStatus="done"
                     agentStatus="done"
@@ -7625,53 +7719,6 @@
                    rendered turns. -->
               {#each conversationTurnIndex.groups as indexedGroup, groupIndex (indexedGroup.group.groupKey ?? dateGroupKeys[groupIndex] ?? groupIndex)}
                 {@const turns = indexedGroup.turns}
-                <!-- History→tail hole: affordance renders between the last
-                     history group and the first tail group. The sentinel
-                     dispatches a gap-refill page when scrolled near, and the
-                     button is the click-to-load fallback. -->
-                {#if groupIndex === historyGapBeforeGroupIndex}
-                  <div
-                    bind:this={historyGapSentinel}
-                    class="flex items-center justify-start py-3 text-left"
-                    data-testid="chat-history-gap"
-                  >
-                    {#if $fetchingGapFill$}
-                      <div
-                        class="flex items-center gap-2 text-xs text-muted-foreground"
-                        aria-live="polite"
-                      >
-                        <IntentMarkLoader size={12} />
-                        <span>{m.chat_chatPanel_historyGapLoading_label()}</span>
-                      </div>
-                    {:else}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        class="text-xs text-muted-foreground"
-                        data-testid="chat-history-gap-load-button"
-                        onclick={() => requestHistoryGapFill('explicit')}
-                      >
-                        {m.chat_chatPanel_historyGapLoad_label()}
-                      </Button>
-                    {/if}
-                  </div>
-                  <!-- Virtual below-spacer: estimated extent of the unloaded
-                       rows inside the history→tail hole (seek-seeded
-                       segments), so the scrollbar keeps representing the
-                       full conversation after a far-flick landing. Renders
-                       AFTER the gap affordance: walking down from the
-                       landing refills via the sentinel above, while a far
-                       position inside this spacer re-seeks. -->
-                  {#if virtualSpacerBelowHeight > 0}
-                    <div
-                      bind:this={belowSpacerEl}
-                      class="transition-none"
-                      style="height: {virtualSpacerBelowHeight}px;"
-                      data-testid="chat-virtual-scrollback-spacer-below"
-                      aria-hidden="true"
-                    ></div>
-                  {/if}
-                {/if}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey =
                     turn.userMessage?.id ??
@@ -7692,8 +7739,10 @@
                   {@const currentIsChatCard = isChatCardMessage(turn.userMessage)}
                   {@const nextIsChatCard = isChatCardMessage(nextTurn?.userMessage)}
                   {@const isLastTurnInConversation =
+                    !transcriptDetached &&
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   {@const showPendingAssistantStatus =
+                    !transcriptDetached &&
                     !pendingStatusMessageId &&
                     groupIndex === groupedMessages.length - 1 &&
                     turnIndex === turns.length - 1 &&
@@ -7923,7 +7972,9 @@
                     <!-- PERF: Key by message.id for efficient updates during streaming -->
                     {#each turn.bodyMessages as message, bodyIndex (message.id)}
                       {@const isLastTurn =
-                        groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
+                        !transcriptDetached &&
+                        groupIndex === groupedMessages.length - 1 &&
+                        turnIndex === turns.length - 1}
                       {@const isLastAssistant =
                         message.role === 'assistant' &&
                         message.id ===
@@ -8085,6 +8136,37 @@
                   {/if}
                 {/each}
               {/each}
+              <!-- Detached window: the rows below it (unloaded rows and the
+                   live tail) are not rendered. The sentinel loads forward
+                   pages as the reader nears the window's bottom edge; the
+                   spacer keeps the scrollbar representing the rest of the
+                   conversation, and reaching the end shows the live tail. -->
+              {#if transcriptDetached}
+                <div
+                  bind:this={historyGapSentinel}
+                  class="flex min-h-8 items-center justify-start py-3 text-left"
+                  data-testid="chat-history-forward-edge"
+                >
+                  {#if $fetchingGapFill$}
+                    <div
+                      class="flex items-center gap-2 text-xs text-muted-foreground"
+                      aria-live="polite"
+                    >
+                      <IntentMarkLoader size={12} />
+                      <span>{m.chat_chatPanel_historyGapLoading_label()}</span>
+                    </div>
+                  {/if}
+                </div>
+                {#if virtualSpacerBelowHeight > 0}
+                  <div
+                    bind:this={belowSpacerEl}
+                    class="transition-none"
+                    style="height: {virtualSpacerBelowHeight}px;"
+                    data-testid="chat-virtual-scrollback-spacer-below"
+                    aria-hidden="true"
+                  ></div>
+                {/if}
+              {/if}
               {#if (showEndOfListStreamingStatus || recoveryAtEnd) && !pendingStatusMessageId}
                 <div
                   class="pt-1 {isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'}"
@@ -8338,7 +8420,9 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </ChatContentLane>
     </div>
-    {#if isActive && showScrollToBottom && !deferTranscriptReveal}
+    <!-- A detached transcript never holds the live end, so the way back to
+         it stays available even at the bottom of the window. -->
+    {#if isActive && (showScrollToBottom || transcriptDetached) && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
         style:margin-bottom="var(--chat-composer-gap)"

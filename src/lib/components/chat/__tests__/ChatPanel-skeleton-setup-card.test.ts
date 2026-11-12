@@ -60,6 +60,7 @@ const testState = vi.hoisted(() => {
     agentSession: null as Record<string, unknown> | null,
     agentMessages: [] as unknown[],
     agentHistoryMessages: [] as unknown[],
+    historyExhausted: false,
     workspaceTasks: [] as Array<{
       id: string;
       title: string;
@@ -144,6 +145,8 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async (importO
   ).chatStateSelectors(importOriginal)),
   selectTranscriptHydration: testState.selectorFrom(() => testState.transcriptHydration),
   selectTranscriptHydratedOnce: testState.selectorFrom(() => testState.transcriptHydratedOnce),
+  selectHistoryExhausted: testState.selectorFrom(() => testState.historyExhausted),
+  selectInitialChatHistoryPending: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async (importOriginal) =>
   (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(importOriginal),
@@ -334,6 +337,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     testState.agentSession = null;
     testState.agentMessages = [];
     testState.agentHistoryMessages = [];
+    testState.historyExhausted = false;
     testState.workspaceTasks = [];
     testState.workspaceTasksInitialized = false;
     vi.stubGlobal(
@@ -454,6 +458,55 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       await waitFor(() => expect(vi.mocked(ensureWorkspaceDetail)).toHaveBeenCalledWith('ws-1'));
       expect(card.getAttribute('data-setup-script-content')).toBeNull();
       expect(card.getAttribute('data-setup-script-status')).toBeNull();
+    });
+  });
+
+  describe('agent line after a remount (no persisted initial prompt)', () => {
+    const userMessage = { id: 'u1', role: 'user', contentBlocks: [{ type: 'text', text: 'Go' }] };
+    const assistantMessage = (id: string) => ({
+      id,
+      role: 'assistant',
+      contentBlocks: [{ type: 'text', text: 'Working on it.' }],
+    });
+
+    beforeEach(() => {
+      testState.transcriptHydration = 'settled';
+      testState.transcriptHydratedOnce = true;
+    });
+
+    it('marks the card prompted when the tail has a user message', async () => {
+      testState.agentMessages = [userMessage, assistantMessage('a1')];
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(card.getAttribute('data-has-prompt')).toBe('true');
+    });
+
+    it('marks the card prompted when the user message is only in exhausted history', async () => {
+      testState.historyExhausted = true;
+      testState.agentHistoryMessages = [userMessage, assistantMessage('a1')];
+      testState.agentMessages = [assistantMessage('a2'), assistantMessage('a3')];
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(card.getAttribute('data-has-prompt')).toBe('true');
+    });
+
+    it('keeps the idle line above a transcript with no user message', async () => {
+      testState.historyExhausted = true;
+      testState.agentHistoryMessages = [assistantMessage('a1')];
+      testState.agentMessages = [assistantMessage('a2')];
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(card.getAttribute('data-has-prompt')).toBe('false');
+    });
+
+    it('keeps the idle line when there is no prompt and no message', async () => {
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(card.getAttribute('data-has-prompt')).toBe('false');
     });
   });
 

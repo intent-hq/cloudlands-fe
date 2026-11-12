@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { addRailMachine, normalizeRailSession, removeRailMachine } from './machine-rail';
+import {
+  addRailMachine,
+  nextRailMachine,
+  normalizeRailSession,
+  reorderRailMachines,
+  removeRailMachine,
+} from './machine-rail';
 
 // The documented cap: nine machines per window, the window's own included.
 const MACHINE_RAIL_MAX_MACHINES = 9;
@@ -76,5 +82,43 @@ describe('normalizeRailSession', () => {
     const restored = normalizeRailSession('local', { machineIds: ids }, saved(ids));
     expect(restored.machineIds).toHaveLength(MACHINE_RAIL_MAX_MACHINES);
     expect(restored.machineIds[0]).toBe('local');
+  });
+});
+
+describe('nextRailMachine', () => {
+  const guests = new Set(['g1']);
+  const isGuest = (id: string) => guests.has(id);
+
+  it('moves to the next machine and loops back to the first', () => {
+    expect(nextRailMachine(['local', 'b', 'c'], 'local', isGuest)).toBe('b');
+    expect(nextRailMachine(['local', 'b', 'c'], 'c', isGuest)).toBe('local');
+  });
+
+  it('skips guest hosts, also when one is shown', () => {
+    expect(nextRailMachine(['local', 'g1', 'b'], 'local', isGuest)).toBe('b');
+    expect(nextRailMachine(['local', 'b', 'g1'], 'g1', isGuest)).toBe('local');
+  });
+
+  it('has nowhere to go without another own machine', () => {
+    expect(nextRailMachine(['local', 'g1'], 'local', isGuest)).toBeNull();
+    expect(nextRailMachine(['local'], 'local', isGuest)).toBeNull();
+  });
+});
+
+describe('reorderRailMachines', () => {
+  const rail = ['local', 'b', 'c', 'g1'];
+
+  it('takes a new order of the same machines', () => {
+    expect(reorderRailMachines(rail, ['local', 'c', 'b', 'g1'])).toEqual(['local', 'c', 'b', 'g1']);
+  });
+
+  it('keeps the home machine first', () => {
+    expect(reorderRailMachines(rail, ['b', 'local', 'c', 'g1'])).toEqual(rail);
+  });
+
+  it('refuses an order that adds, drops or repeats a machine', () => {
+    expect(reorderRailMachines(rail, ['local', 'b', 'c'])).toEqual(rail);
+    expect(reorderRailMachines(rail, ['local', 'b', 'c', 'x'])).toEqual(rail);
+    expect(reorderRailMachines(rail, ['local', 'b', 'b', 'g1'])).toEqual(rail);
   });
 });

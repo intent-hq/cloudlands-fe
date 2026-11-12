@@ -60,7 +60,7 @@
   import ProviderCliVersionToast from '$features/providers/components/ProviderCliVersionToast.svelte';
   import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
-  import { ConfirmHost } from '$lib/components/patterns/confirm';
+  import AppDialogHosts from '$features/machine-setup/AppDialogHosts.svelte';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
@@ -153,6 +153,7 @@
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectCreateModalPrefillRequest,
+    selectCreateModalUsesHomeRepository,
     selectShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
@@ -210,6 +211,7 @@
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
   const createModalPrefillRequest$ = selectCreateModalPrefillRequest();
+  const createModalUsesHomeRepository$ = selectCreateModalUsesHomeRepository();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
@@ -1057,7 +1059,7 @@
   <AuggieSetupGate />
 
   <Toast />
-  <ConfirmHost />
+  <AppDialogHosts />
   <!-- Web build only: experimental notice at each start (Browser access hosts). -->
   <WebExperimentalNoticeHost />
 
@@ -1112,6 +1114,7 @@
   <NewSpaceModal
     open={$showCreateModal$ && $canCreateWorkspace$}
     prefillRequest={$createModalPrefillRequest$}
+    defaultToHomeRepository={$createModalUsesHomeRepository$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

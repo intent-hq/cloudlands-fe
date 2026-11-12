@@ -34,8 +34,18 @@ export function useDockShellResize(
     if (current.gestureHeld || placement.captureHidden || placement.phase === 'dragging') return;
     const request: DockPlacementCommand = {
       action: 'resize',
-      width,
-      height,
+      // Keep the native horizontal allocation stable while only the visible shell opens.
+      width: placement.shape === 'edge' ? width : Math.max(width, current.conversationSize.width),
+      // Keep late compact replies from clipping a reopen, including upward floating anchors.
+      height:
+        placement.shape === 'edge'
+          ? height
+          : Math.max(
+              height,
+              (placement.placement.kind === 'notch'
+                ? getDockCompactNotchSize(placement.cutout, compactWingWidth).height
+                : DOCK_FLOATING_COMPACT_SIZE.height) + current.conversationSize.height,
+            ),
       revision: placement.revision,
       compactNotchWingWidth: compactWingWidth,
       sidePanelSize:

@@ -1,0 +1,311 @@
+/** Cold native foreground identity and real Electron guest provenance; no Intent profile or daemon. */
+import { _electron as electron, expect, test } from '@playwright/test';
+import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { build } from 'vite';
+
+test('cold shortcut context preserves native identity and first-use guest ownership', async ({}, info) => {
+  test.setTimeout(60000);
+  // This direct Vite bundle bypasses build:main's generated-config prerequisite.
+  await promisify(execFile)(process.execPath, [
+    resolve('scripts/generate-build-config.cjs'),
+    '--if-missing',
+  ]);
+  const root = await mkdtemp(join(tmpdir(), 'intent-shortcut-context-'));
+  const appPath = join(root, 'dist', 'main');
+  await symlink(
+    resolve('node_modules'),
+    join(root, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  const server = createServer((_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<title>Synthetic preview</title><p>Only fixture content</p>');
+  });
+  let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  try {
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing fixture server');
+    const url = `http://127.0.0.1:${address.port}/project/`;
+    // Launch a real app directory in the compiled layout: the production resolver must
+    // find the helper two levels above app.getAppPath(), without mutating Electron's app.
+    await mkdir(appPath, { recursive: true });
+    await writeFile(
+      join(appPath, 'package.json'),
+      JSON.stringify({ name: 'shortcut-context-fixture', version: '1.0.0', main: 'main.cjs' }),
+    );
+    await symlink(
+      resolve('resources'),
+      join(root, 'resources'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    const entry = join(root, 'entry.ts');
+    await writeFile(
+      entry,
+      [
+        `export { embeddedBrowserCdp } from ${JSON.stringify(resolve('src/features/browser/main/embedded-browser-cdp-service.ts'))};`,
+        `export { stampWindowWithBackend } from ${JSON.stringify(resolve('src/main/window-backend.ts'))};`,
+        `export { getDesktopNativeAdapter, desktopNativeAvailable } from ${JSON.stringify(resolve('src/features/desktop/main/desktop-native.ts'))};`,
+        `export { createDockContextFeed } from ${JSON.stringify(resolve('src/main/dock-context-feed.ts'))};`,
+        `export { sampleDockForeground } from ${JSON.stringify(resolve('src/main/dock-shortcut-foreground.ts'))};`,
+      ].join('\n'),
+    );
+    await build({
+      configFile: false,
+      logLevel: 'error',
+      resolve: { alias: { $shared: resolve('src/shared') } },
+      ssr: { noExternal: true },
+      plugins: [
+        {
+          name: 'isolated-workspace-routing',
+          enforce: 'pre',
+          resolveId(id) {
+            if (id === '../../system/main/system.ipc') return '\0fixture-workspace';
+            if (id.endsWith('shared/logger') || id === '$shared/logger') return '\0fixture-logger';
+          },
+          load(id) {
+            if (id === '\0fixture-logger')
+              return 'export class Logger { info() {} debug() {} warn() {} error() {} }';
+            if (id === '\0fixture-workspace')
+              return `export function sendToWorkspaceWindows(){throw new Error('No agent-list warmup allowed');} export function getWindowIdsForWorkspace(id, backend){return id==='fixture-workspace'&&backend==='fixture-backend'?[globalThis.shortcutWindow.id]:[];}`;
+          },
+        },
+      ],
+      build: {
+        ssr: entry,
+        outDir: appPath,
+        emptyOutDir: false,
+        minify: false,
+        rollupOptions: {
+          external: ['electron'],
+          output: { format: 'cjs', entryFileNames: 'context.cjs' },
+        },
+      },
+    });
+    await writeFile(
+      join(appPath, 'main.cjs'),
+      `
+   const {app,BrowserWindow}=require('electron');
+   app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
+   app.whenReady().then(async()=>{ const window=new BrowserWindow({show:false,webPreferences:{webviewTag:true,nodeIntegration:true,contextIsolation:false,sandbox:false}});globalThis.shortcutWindow=window;await window.loadURL('data:text/html,'+encodeURIComponent('<webview id="guest" src="${url}" style="width:400px;height:200px"></webview>'));globalThis.shortcutContext=require('./context.cjs');globalThis.shortcutContext.stampWindowWithBackend(window,'fixture-backend');}).catch(error=>{globalThis.shortcutStartupError=String(error.stack||error);});
+  `,
+    );
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) =>
+          !key.startsWith('DD_') && !['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE'].includes(key),
+      ),
+    );
+    application = await electron.launch({
+      args: [appPath],
+      env: { ...env, DD_TRACE_ENABLED: 'false' },
+    });
+    await expect
+      .poll(() =>
+        application!.evaluate(() =>
+          (globalThis as any).shortcutContext
+            ? 'ready'
+            : ((globalThis as any).shortcutStartupError ?? 'starting'),
+        ),
+      )
+      .toBe('ready');
+    const page = await application.firstWindow();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          try {
+            return (document.querySelector('webview') as any)?.getWebContentsId();
+          } catch {
+            return 0;
+          }
+        }),
+      )
+      .toBeGreaterThan(0);
+    const guestId = await page.evaluate(() =>
+      (document.querySelector('webview') as any).getWebContentsId(),
+    );
+    await expect
+      .poll(() =>
+        application!.evaluate(({ webContents }, id) => webContents.fromId(id)?.getURL(), guestId),
+      )
+      .toBe(url);
+    const evidence = await application.evaluate(
+      async ({ webContents, app }, { guestId }) => {
+        const {
+          embeddedBrowserCdp: service,
+          stampWindowWithBackend,
+          sampleDockForeground,
+          getDesktopNativeAdapter,
+          desktopNativeAvailable,
+          createDockContextFeed,
+        } = (globalThis as any).shortcutContext;
+        const window = (globalThis as any).shortcutWindow;
+        const compiledAppPath = app.getAppPath();
+        const distMainAvailable = desktopNativeAvailable();
+        const cold = await sampleDockForeground(getDesktopNativeAdapter());
+        const nativeIdentity = {
+          available: desktopNativeAvailable(),
+          appLayout: compiledAppPath.endsWith('/dist/main') ? 'dist/main' : 'unexpected',
+          distMainAvailable,
+          identityOutcome: cold.identityOutcome,
+          urlOutcome: cold.urlOutcome,
+          elapsedMs: cold.elapsedMs,
+          pidPresent: !!cold.snapshot.pid,
+          appNamePresent: !!cold.snapshot.appName,
+          appIdPresent: !!cold.snapshot.appId,
+        };
+        const degraded = await sampleDockForeground({
+          foregroundApp: () => getDesktopNativeAdapter().foregroundApp(),
+          foregroundContext: () => Promise.reject(new Error('Synthetic unavailable URL seam')),
+        });
+        // The first feed observation comes from the real cold native sample above.
+        let scope = {},
+          visible = true,
+          reads = 0,
+          revision = 0;
+        let next = {
+          backendId: 'fixture-backend',
+          self: false,
+          identityKey: `app:${cold.snapshot.appId ?? 'unknown'}`,
+          identityKind: 'app',
+          appId: cold.snapshot.appId ?? null,
+          appName: cold.snapshot.appName ?? null,
+          url: null,
+          icon: null,
+        };
+        const held: { resolve?: () => void } = {};
+        let hold = false;
+        const changes: any[] = [];
+        const feed = createDockContextFeed({
+          scope: () => scope,
+          visible: () => visible,
+          version: () => `entry-${++revision}`,
+          intervalMs: 60000,
+          async read() {
+            reads++;
+            if (hold) await new Promise<void>((resolve) => (held.resolve = resolve));
+            return structuredClone(next);
+          },
+          changed(value: any) {
+            changes.push(value);
+          },
+        });
+        feed.start();
+        const first = await feed.read();
+        const stable = await feed.read();
+        next = { ...next, appName: 'Synthetic metadata update' };
+        const metadata = await feed.read();
+        next = { ...next, self: true };
+        const selfPreserved = await feed.read();
+        visible = false;
+        const hiddenReads = reads;
+        await feed.read();
+        const didNotReadHidden = reads === hiddenReads;
+        visible = true;
+        next = { ...next, self: false };
+        hold = true;
+        const pending = feed.read();
+        const coalesced = feed.read();
+        const oneInFlight = pending === coalesced;
+        scope = {};
+        hold = false;
+        held.resolve?.();
+        const stale = await pending;
+        next = { ...next, identityKey: 'app:synthetic-next', appId: 'synthetic-next' };
+        const entered = await feed.read();
+        feed.stop();
+        const feedEvidence = {
+          first,
+          stable,
+          metadata,
+          selfPreserved,
+          didNotReadHidden,
+          oneInFlight,
+          stale,
+          entered,
+          changes: changes.length,
+        };
+        const before = service.focusedTabOwner(guestId);
+        service.registerTab('fixture-tab', guestId, 'fixture-workspace');
+        const owned = service.focusedTabOwner(guestId);
+        stampWindowWithBackend(window, 'fixture-backend');
+        const afterRestamp = service.focusedTabOwner(guestId);
+        service.registerTab('fixture-tab', guestId, 'fixture-workspace');
+        const rebound = service.focusedTabOwner(guestId);
+        stampWindowWithBackend(window, 'foreign-backend');
+        const afterBackendChange = service.focusedTabOwner(guestId);
+        return {
+          boundary:
+            'Real Electron app directory in compiled dist/main layout, webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
+          nativeIdentity,
+          feedEvidence,
+          degradedIdentityPreserved: !!degraded.snapshot.pid && !!degraded.snapshot.appName,
+          before,
+          owned,
+          afterRestamp,
+          rebound,
+          afterBackendChange,
+          guestType: webContents.fromId(guestId)?.getType(),
+        };
+      },
+      { guestId },
+    );
+    expect(evidence.nativeIdentity.appLayout).toBe('dist/main');
+    const supportedPlatform = process.platform === 'darwin' || process.platform === 'win32';
+    if (supportedPlatform) {
+      expect(evidence.nativeIdentity.distMainAvailable).toBe(true);
+      expect(evidence.nativeIdentity.available).toBe(true);
+      expect(evidence.nativeIdentity.identityOutcome).toBe('ok');
+      expect(evidence.nativeIdentity.pidPresent).toBe(true);
+      expect(evidence.nativeIdentity.appNamePresent).toBe(true);
+      expect(evidence.degradedIdentityPreserved).toBe(true);
+      expect(evidence.feedEvidence.first.appName).toBeTruthy();
+    } else {
+      expect(evidence.nativeIdentity.distMainAvailable).toBe(false);
+      expect(evidence.nativeIdentity.available).toBe(false);
+      expect(evidence.nativeIdentity.identityOutcome).toBe('unavailable');
+      expect(evidence.nativeIdentity.pidPresent).toBe(false);
+      expect(evidence.nativeIdentity.appNamePresent).toBe(false);
+      expect(evidence.degradedIdentityPreserved).toBe(false);
+      expect(evidence.feedEvidence.first.appName).toBeNull();
+    }
+    expect(evidence.before).toBeNull();
+    expect(evidence.feedEvidence.stable).toEqual(evidence.feedEvidence.first);
+    expect(evidence.feedEvidence.metadata.contextVersion).toBe(
+      evidence.feedEvidence.first.contextVersion,
+    );
+    expect(evidence.feedEvidence.metadata.sequence).toBeGreaterThan(
+      evidence.feedEvidence.first.sequence,
+    );
+    expect(evidence.feedEvidence.selfPreserved).toEqual(evidence.feedEvidence.metadata);
+    expect(evidence.feedEvidence.didNotReadHidden).toBe(true);
+    expect(evidence.feedEvidence.oneInFlight).toBe(true);
+    expect(evidence.feedEvidence.stale).toBeNull();
+    expect(evidence.feedEvidence.entered.contextVersion).not.toBe(
+      evidence.feedEvidence.first.contextVersion,
+    );
+    expect(evidence.owned).toEqual({
+      tabId: 'fixture-tab',
+      workspaceId: 'fixture-workspace',
+      backendId: 'fixture-backend',
+      url,
+    });
+    expect(evidence.afterRestamp).toBeNull();
+    expect(evidence.rebound).toEqual(evidence.owned);
+    expect(evidence.afterBackendChange).toBeNull();
+    expect(evidence.guestType).toBe('webview');
+    await writeFile(
+      info.outputPath('cold-native-and-guest-context.json'),
+      JSON.stringify(evidence, null, 2),
+    );
+  } finally {
+    if (application) await application.close();
+    await new Promise<void>((done) => server.close(() => done()));
+    await rm(root, { recursive: true, force: true });
+  }
+});

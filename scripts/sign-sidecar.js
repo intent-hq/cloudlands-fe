@@ -112,6 +112,17 @@ const AUDIO_INPUT = 'com.apple.security.device.audio-input';
  */
 export const DOCK_COMPOSER_SIGNING = Object.freeze([
   {
+    helper: 'dock-helper/intent-dock-capture-selector',
+    entitlements: null,
+    expectedEntitlements: [],
+  },
+  { helper: 'dock-helper/intent-dock-media-export', entitlements: null, expectedEntitlements: [] },
+  {
+    helper: 'dock-helper/intent-dock-media-transcribe',
+    entitlements: null,
+    expectedEntitlements: [],
+  },
+  {
     helper: 'dock-helper/intent-dock-recorder',
     entitlements: DOCK_MEDIA_ENTITLEMENTS,
     expectedEntitlements: [AUDIO_INPUT],

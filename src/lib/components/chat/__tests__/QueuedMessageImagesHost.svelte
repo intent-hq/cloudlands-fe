@@ -109,7 +109,6 @@
     if (projectSubmissions) untrack(fresh);
   });
 
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only attachment transport and reconnect fixture.
   installMockElectronBridge({
     'file.getAttachmentInfo': (params) => {
       const request = params as { attachmentId: string; workspaceId: string };

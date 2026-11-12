@@ -1,3 +1,17 @@
+import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
+import {
+  exportDockMedia,
+  transcribeDockMedia,
+  releaseDockMediaJob,
+  analyzeDockMedia,
+  probeDockMediaAudio,
+} from './dock-media-output';
+import {
+  DockMediaExportRequestSchema,
+  DockMediaTranscribeRequestSchema,
+  DockMediaAnalyzeRequestSchema,
+  DockMediaAudioProbeRequestSchema,
+} from '../../../shared/dock-media-output';
 import {
   app,
   BrowserWindow,
@@ -28,6 +42,7 @@ import {
   getDockVisibleSurfaceBounds,
   getDockVisibleSurfaceRegions,
   getDockWindow,
+  releaseDockRecordingHide,
 } from '../../../main/dock-window';
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import {
@@ -64,6 +79,7 @@ const geometry = z.discriminatedUnion('kind', [
 ]);
 const pixels = z
   .object({
+    capture: DockMediaCaptureSchema.optional(),
     base64: z
       .string()
       .min(1)
@@ -80,6 +96,21 @@ const pixels = z
   })
   .strict();
 const controlSchema = z.discriminatedUnion('action', [
+  z
+    .object({ action: z.literal('media-audio-probe'), request: DockMediaAudioProbeRequestSchema })
+    .strict(),
+  z
+    .object({
+      action: z.literal('media-waveform'),
+      request: DockMediaAnalyzeRequestSchema,
+    })
+    .strict(),
+  z.object({ action: z.literal('media-export'), request: DockMediaExportRequestSchema }).strict(),
+  z
+    .object({ action: z.literal('media-transcribe'), request: DockMediaTranscribeRequestSchema })
+    .strict(),
+  z.object({ action: z.literal('media-job-cancel'), jobId: z.guid() }).strict(),
+  z.object({ action: z.literal('media-job-release'), jobId: z.guid() }).strict(),
   z.object({ action: z.literal('capabilities') }).strict(),
   z.object({ action: z.literal('accessibility-status') }).strict(),
   z
@@ -101,7 +132,14 @@ const controlSchema = z.discriminatedUnion('action', [
         .strict(),
     })
     .strict(),
-  z.object({ action: z.literal('annotation-tool'), annotationId: z.guid(), tool }).strict(),
+  z
+    .object({
+      action: z.literal('annotation-tool'),
+      annotationId: z.guid(),
+      tool,
+      restoreInputRevision: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal('annotation-sync'),
@@ -135,6 +173,8 @@ const controlSchema = z.discriminatedUnion('action', [
                 ...button,
                 recording: z.boolean(),
                 startedAt: z.number().finite().positive().nullable(),
+                pausedAt: z.number().finite().positive().nullable(),
+                pausedMs: z.number().finite().nonnegative(),
               })
               .strict(),
           })
@@ -158,6 +198,7 @@ const controlSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z.object({ action: z.literal('clip-stop'), clipId: z.guid() }).strict(),
+  z.object({ action: z.literal('clip-pause'), clipId: z.guid(), paused: z.boolean() }).strict(),
   z.object({ action: z.literal('clip-release'), clipId: z.guid() }).strict(),
   z
     .object({
@@ -311,7 +352,16 @@ function createMediaBinder() {
     exclusionUpdates = result.catch(() => undefined);
     return result;
   };
+  // The live microphone level goes straight to the annotate tool bar's time chip.
+  dockEvidenceRecorder.onSignal((clipId, signal) => {
+    for (const state of sessions.values())
+      if (state.clipId === clipId && !state.clipEnded && state.context.isCurrent())
+        dockAnnotationController.setRecordingSignal(signal);
+  });
   dockEvidenceRecorder.onEnded((clipId, result) => {
+    dockAnnotationController.setRecordingSignal(null);
+    // The notch comes back when the clip that hid it ends, however it ended.
+    releaseDockRecordingHide(clipId);
     for (const state of sessions.values())
       if (state.clipId === clipId) {
         state.clipEnded = true;
@@ -416,6 +466,33 @@ function createMediaBinder() {
     const current = () => state.context.isCurrent();
     let result: DockNativeResult<unknown>;
     switch (control.action) {
+      case 'media-audio-probe':
+        result = await probeDockMediaAudio(state.context, control.request);
+        break;
+      case 'media-waveform':
+        result = await analyzeDockMedia(state.context, control.request);
+        break;
+      case 'media-export':
+        result = await exportDockMedia(state.context, control.request, (fraction) => {
+          send(state, {
+            kind: 'evidence',
+            event: { type: 'media-progress', jobId: control.request.jobId, fraction },
+          });
+        });
+        break;
+      case 'media-transcribe':
+        result = await transcribeDockMedia(state.context, control.request, (fraction) => {
+          send(state, {
+            kind: 'evidence',
+            event: { type: 'media-progress', jobId: control.request.jobId, fraction },
+          });
+        });
+        break;
+      case 'media-job-cancel':
+      case 'media-job-release':
+        await releaseDockMediaJob(state.context.scope.sessionId, control.jobId);
+        result = { ok: true, value: undefined };
+        break;
       case 'open-settings':
         if (process.platform !== 'darwin') return unavailable();
         // The person clicked a blocked control: prompt so the app is listed in the pane.
@@ -518,6 +595,8 @@ function createMediaBinder() {
               ...(snapshot.placement.kind === 'edge' ? { side: snapshot.placement.side } : {}),
             };
           },
+          clipIdentity: () =>
+            current() && !state.clipEnded ? (state.clipId ?? undefined) : undefined,
           clipMs: () =>
             state.clipId ? (dockEvidenceRecorder.elapsedMs(state.clipId) ?? undefined) : undefined,
           // Annotating while dictating is activity: the mic's silence timer must not
@@ -586,7 +665,11 @@ function createMediaBinder() {
       case 'annotation-end': {
         if (state.annotationId !== control.annotationId) return unavailable();
         if (control.action === 'annotation-tool')
-          await dockAnnotationController.setAnnotationTool(control.annotationId, control.tool);
+          await dockAnnotationController.setAnnotationTool(
+            control.annotationId,
+            control.tool,
+            control.restoreInputRevision,
+          );
         else if (control.action === 'annotation-mouse')
           await dockAnnotationController.setAnnotationMouse(control.annotationId);
         else if (control.action === 'annotation-sync') {
@@ -644,7 +727,9 @@ function createMediaBinder() {
             clipId: control.clipId,
             displayId,
             excludeWindowIds: ids,
-            includeMic: state.speechReady,
+            // The microphone is on for the whole recording (it opens only when access
+            // is already granted; the toolbar shows "No mic input" otherwise).
+            includeMic: true,
             maxMs: control.maxMs,
             outputDir: path.join(app.getPath('userData'), 'dock-clips', scope.sessionId),
           });
@@ -657,9 +742,15 @@ function createMediaBinder() {
         } finally {
           clipStartPending = false;
         }
+        // The notch stays in sight while it records, with its recording status and Stop;
+        // the dock is excluded from the recording either way.
         if (!result.ok) state.clipEnded = true;
         break;
       }
+      case 'clip-pause':
+        if (state.clipId !== control.clipId || state.clipEnded) return unavailable();
+        result = await dockEvidenceRecorder.setPaused(control.clipId, control.paused);
+        break;
       case 'clip-stop':
         if (state.clipId !== control.clipId) return unavailable();
         result = await dockEvidenceRecorder.stop(control.clipId);
@@ -708,14 +799,10 @@ function createMediaBinder() {
               resolve(failure);
             }
             if (event.type === 'state' && event.state === 'finalizing') state.speechReady = false;
-            if (
-              (event.type === 'ready' ||
-                event.type === 'ended' ||
-                (event.type === 'state' && event.state === 'finalizing')) &&
-              state.clipId &&
-              !state.clipEnded
-            )
-              void dockEvidenceRecorder.setMicrophone(state.clipId, state.speechReady);
+            // The recording keeps its microphone after dictation ends; dictation
+            // becoming ready only (re)opens it.
+            if (event.type === 'ready' && state.clipId && !state.clipEnded)
+              void dockEvidenceRecorder.setMicrophone(state.clipId, true);
             if (event.type === 'mark' || event.type === 'transcript' || event.type === 'ended') {
               if (event.type === 'mark') {
                 const gesture = state.speechGestures.get(event.markId);

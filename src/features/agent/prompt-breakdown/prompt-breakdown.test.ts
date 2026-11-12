@@ -129,6 +129,29 @@ describe('parsePromptBreakdown', () => {
     expect(intentOnly?.owners.map((summary) => summary.owner)).toEqual(['intent']);
   });
 
+  it('groups sections as native, user, then intent, each summed and largest first', () => {
+    const view = parsePromptBreakdown(available());
+    expect(
+      view?.groups.map((group) => [
+        group.kind,
+        group.chars,
+        group.estTokens,
+        group.rows.map((row) => row.chars),
+      ]),
+    ).toEqual([
+      ['native', 6_000, 1_500, [6_000]],
+      ['user', 5_000, 1_250, [3_000, 2_000]],
+      ['intent', 7_000, 1_750, [4_000, 3_000]],
+    ]);
+  });
+
+  it('leaves out empty groups', () => {
+    const view = parsePromptBreakdown(
+      available({ sections: [section('doctrine', 'intent', 600)], totalChars: 600 }),
+    );
+    expect(view?.groups.map((group) => group.kind)).toEqual(['intent']);
+  });
+
   it('keeps complete hidden skills in daemon order', () => {
     const view = parsePromptBreakdown(
       available({

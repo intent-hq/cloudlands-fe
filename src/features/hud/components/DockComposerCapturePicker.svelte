@@ -40,20 +40,29 @@
   const tooltip = $derived(
     media.alerts?.capture ??
       media.captureTooltip ??
-      (media.captureDisabled ? labels.captureLimit : modeLabel),
+      (media.captureDisabled
+        ? labels.captureLimit
+        : (labels.actionHints?.capture.label ?? modeLabel)),
+  );
+  const tooltipShortcut = $derived(
+    !media.alerts?.capture && !media.captureTooltip && !media.captureDisabled
+      ? labels.actionHints?.capture.shortcut
+      : undefined,
   );
 
   let open = $state(false);
   let trigger = $state<HTMLButtonElement | null>(null);
-  let keyboardOpen = false;
-  // Hovering moves focus into the menu; closing returns it to where the person was typing.
+  let keyboardOpen = $state(false);
   let returnFocus: HTMLElement | 'trigger' | null = null;
+  let stickyOpen = false;
+  let suppressClick = false;
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
-
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
   function cancelTimers(): void {
     clearTimeout(hoverTimer);
     clearTimeout(closeTimer);
+    clearTimeout(holdTimer);
   }
   onDestroy(cancelTimers);
   $effect(() => {
@@ -63,7 +72,7 @@
     }
   });
 
-  // Every close (choice, Escape, pointer leaving) returns focus to where it was.
+  // Choice, Escape and outside dismissal restore the activation context.
   let wasOpen = false;
   $effect(() => {
     if (open) {
@@ -75,29 +84,40 @@
     const target = returnFocus === 'trigger' ? trigger : returnFocus;
     returnFocus = null;
     keyboardOpen = false;
+    stickyOpen = false;
     if (target?.isConnected) void tick().then(() => target.focus({ preventScroll: true }));
   });
 
-  function show(fromKeyboard: boolean): void {
+  function show(input: 'hover' | 'keyboard' | 'touch'): void {
     cancelTimers();
-    keyboardOpen = fromKeyboard;
+    if (!pickable) return;
+    if (open) {
+      if (input === 'keyboard') {
+        keyboardOpen = true;
+        stickyOpen = true;
+        returnFocus = 'trigger';
+      }
+      return;
+    }
+    keyboardOpen = input === 'keyboard';
+    stickyOpen = input !== 'hover';
     const active = document.activeElement;
-    returnFocus = fromKeyboard ? 'trigger' : active instanceof HTMLElement ? active : null;
+    returnFocus = keyboardOpen ? 'trigger' : active instanceof HTMLElement ? active : null;
     open = true;
   }
   function enter(event: PointerEvent): void {
     clearTimeout(closeTimer);
     if (!pickable || event.pointerType !== 'mouse' || open) return;
-    clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => show(false), 150);
+    hoverTimer = setTimeout(() => show('hover'), 150);
   }
   function leave(): void {
     clearTimeout(hoverTimer);
+    clearTimeout(holdTimer);
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => {
-      // Keyboard interaction is not dismissed by an unrelated mouse movement.
-      if (!keyboardOpen) open = false;
-    }, 250);
+    if (!stickyOpen)
+      closeTimer = setTimeout(() => {
+        open = false;
+      }, 250);
   }
   function choose(next: DockComposerCaptureMode): void {
     cancelTimers();
@@ -106,9 +126,6 @@
   }
 </script>
 
-<!-- Disable, never drop, the tooltip while open: dropping it re-creates the button,
-     so a press that spans the hover opening would release on a new element and
-     lose its click. -->
 <Button
   bind:ref={trigger}
   variant="ghost-light"
@@ -116,29 +133,58 @@
   class="media-button capture-button"
   disabled={blocked}
   aria-label={modeLabel}
-  aria-busy={media.capturePending || undefined}
   aria-haspopup={pickable ? 'menu' : undefined}
   aria-expanded={pickable ? open : undefined}
+  aria-busy={media.capturePending || undefined}
   data-alert={media.alerts?.capture ? '' : undefined}
   data-capture-mode={mode}
   {tooltip}
+  {tooltipShortcut}
+  tooltipContentClass="dock-chrome-tooltip"
   tooltipDisabled={open}
   onpointerenter={enter}
   onpointerleave={leave}
   onpointerdown={(event) => {
+    clearTimeout(hoverTimer);
+    suppressClick = false;
     if (event.pointerType === 'mouse') event.preventDefault();
+    if (event.pointerType === 'touch' && pickable) {
+      holdTimer = setTimeout(() => {
+        suppressClick = true;
+        show('touch');
+      }, 450);
+    }
+  }}
+  onpointerup={() => clearTimeout(holdTimer)}
+  onpointercancel={() => clearTimeout(holdTimer)}
+  oncontextmenu={(event) => {
+    if (!pickable) return;
+    event.preventDefault();
+    if ('pointerType' in event && event.pointerType === 'touch') suppressClick = true;
+    show('touch');
+  }}
+  onkeydown={(event) => {
+    if (
+      !pickable ||
+      !(
+        ['ArrowUp', 'ArrowDown', 'ContextMenu'].includes(event.key) ||
+        (event.shiftKey && event.key === 'F10')
+      )
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    show('keyboard');
   }}
   onclick={() => {
     cancelTimers();
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     open = false;
     if (media.alerts?.capture) onAlert?.();
     else onCapture();
-  }}
-  onkeydown={(event) => {
-    if (!pickable || (event.key !== 'ArrowUp' && event.key !== ' ')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    show(true);
   }}
 >
   {#if media.alerts?.capture}<span class="alert-dot" aria-hidden="true"></span>{/if}
@@ -157,10 +203,15 @@
     {mode}
     labels={menuLabels}
     label={labels.captureOptions}
+    heading={labels.actionHints?.capture.label}
+    shortcut={labels.actionHints?.capture.shortcut}
     focusChecked={keyboardOpen}
     onSelect={choose}
     onpointerenter={() => clearTimeout(closeTimer)}
     onpointerleave={leave}
+    onInteractOutside={() => {
+      returnFocus = null;
+    }}
   />
 {/if}
 
@@ -170,7 +221,7 @@
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    animation: capture-confirm 150ms ease-out both;
+    animation: capture-confirm var(--spring-fast) var(--spring-fast-ease) both;
   }
   @keyframes capture-confirm {
     from {

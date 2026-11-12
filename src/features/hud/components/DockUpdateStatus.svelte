@@ -45,7 +45,8 @@
   .notch-updates {
     display: flex;
     align-items: center;
-    gap: 6px;
+    /* The collapsed notch tightens it (DOCK_COMPACT_STATUS_GAP). */
+    gap: var(--dock-status-gap, 6px);
     white-space: nowrap;
   }
   .notch-status-glyph {

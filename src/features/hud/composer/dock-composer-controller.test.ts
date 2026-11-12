@@ -826,36 +826,7 @@ describe('dock composer keyboard shortcuts', () => {
       .mock.calls.map(([action]) => (action as { type: string }).type);
   }
 
-  it('maps the dock chords only where the capability exists and consumes only acted events', async () => {
-    const controller = createDockComposerController(scope(), {
-      ...deps(),
-      mac: () => true,
-    });
-    const spy = vi.spyOn(appStore, 'dispatch');
-    const disabled = key({ key: 'S', metaKey: true, shiftKey: true });
-    expect(controller.handleKey(disabled)).toBe(false);
-    expect(disabled.defaultPrevented).toBe(false);
-    appStore.dispatch(
-      dockEvidenceCapabilitiesChanged({ capture: true, annotate: true, record: false }),
-    );
-    const capture = key({ key: 'S', metaKey: true, shiftKey: true });
-    expect(controller.handleKey(capture)).toBe(true);
-    expect(capture.defaultPrevented).toBe(true);
-    // The same event (e.g. a duplicate listener) is never acted on twice.
-    expect(controller.handleKey(capture)).toBe(false);
-    expect(controller.handleKey(key({ key: 'A', metaKey: true, shiftKey: true }))).toBe(true);
-    // Record is not available: the chord is left to the platform.
-    expect(controller.handleKey(key({ key: 'R', metaKey: true, shiftKey: true }))).toBe(false);
-    // Ctrl is not the macOS modifier.
-    expect(controller.handleKey(key({ key: 'S', ctrlKey: true, shiftKey: true }))).toBe(false);
-    expect(dispatched().filter((type) => type.startsWith('dockConversation/evidence'))).toEqual([
-      'dockConversation/evidenceCapabilitiesChanged',
-      'dockConversation/evidenceCaptureRequested',
-      'dockConversation/evidenceAnnotationToggleRequested',
-    ]);
-    spy.mockRestore();
-    await controller.dispose();
-  });
+  // Global action chords are covered by dock-shortcut-review.ct.spec.ts.
 
   it.each(['native', 'aria', 'edit-context'])(
     'switches tools only with the %s field unfocused and undoes the last mark from the field',

@@ -1,3 +1,5 @@
+import type { DetectedDeviceKind, DeviceIconChoice } from './connections';
+
 /**
  * Guest sessions: the renderer-facing contract for daemons this app joined as
  * a GUEST through an `intent://invite` link (multiplayer). A guest session is
@@ -40,6 +42,10 @@ export interface GuestSessionRecord {
   tcAddress: string | null;
   /** The remote machine's pretty name or hostname (from `system.status`) once captured. */
   hostname: string | null;
+  /** The remote machine's detected kind (from `system.status`), for its device icon. */
+  detectedDeviceKind?: DetectedDeviceKind | null;
+  /** The user's icon choice for this host; `auto` or absent follows the detected kind. */
+  deviceIcon?: DeviceIconChoice;
   /** Principal id the daemon minted the credential for. */
   principalId: string;
   /** Remote account display login, which may be unavailable. */

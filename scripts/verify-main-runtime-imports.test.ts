@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { packageNameOf, scanMainRuntimeImports } from './verify-main-runtime-imports.mjs';
 
@@ -136,6 +137,114 @@ describe('main-process runtime import scan', () => {
     });
     expect(result.visited).toEqual([ENTRY, 'dist/main/a.js', 'dist/main/b.js']);
     expect(result.findings).toHaveLength(1);
+  });
+
+  it('flags a named import that Node cannot detect in a CommonJS package (ssh2 utils)', async () => {
+    const files = {
+      [ENTRY]: [
+        "import { Client, utils as sshUtils } from 'ssh2';",
+        "export { Server } from 'ssh2';",
+        'console.log(Client, sshUtils);',
+      ].join('\n'),
+      'node_modules/ssh2/package.json': JSON.stringify({ name: 'ssh2', main: './lib/index.js' }),
+      'node_modules/ssh2/lib/client.js': 'module.exports = class Client {};\n',
+      'node_modules/ssh2/lib/server.js': 'module.exports = class Server {};\n',
+      'node_modules/ssh2/lib/keyParser.js': 'exports.parseKey = () => null;\n',
+      // The shape of ssh2@1.17.0 lib/index.js: the lexer stops at the first
+      // non-shorthand property after `Client: require(...)`.
+      'node_modules/ssh2/lib/index.js': [
+        "'use strict';",
+        "const { parseKey } = require('./keyParser.js');",
+        'const OpenSSHAgent = class {};',
+        'module.exports = {',
+        "  Client: require('./client.js'),",
+        '  OpenSSHAgent,',
+        "  Server: require('./server.js'),",
+        '  utils: { parseKey },',
+        '};',
+      ].join('\n'),
+    };
+    const root = makeRoot(files);
+    const result = scanMainRuntimeImports({
+      root,
+      entries: [ENTRY],
+      dependencies: ['ssh2'],
+      allowlist: {},
+    });
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        kind: 'missing-named-export',
+        file: ENTRY,
+        specifier: 'ssh2',
+        line: 1,
+        names: ['utils'],
+      }),
+      expect.objectContaining({
+        kind: 'missing-named-export',
+        file: ENTRY,
+        specifier: 'ssh2',
+        line: 2,
+        names: ['Server'],
+      }),
+    ]);
+    const loaded = await import(
+      pathToFileURL(path.join(root, 'node_modules/ssh2/lib/index.js')).href
+    );
+    expect(Object.keys(loaded)).toContain('Client');
+    expect(Object.keys(loaded)).not.toContain('utils');
+    expect(Object.keys(loaded)).not.toContain('Server');
+  });
+
+  it('accepts named imports Node detects, default and namespace imports, and ESM packages', () => {
+    const result = scanMainRuntimeImports({
+      root: makeRoot({
+        [ENTRY]: [
+          "import ssh2, { Client } from 'ssh2';",
+          "import * as everything from 'ssh2';",
+          "import { parseKey } from 'ssh2/lib/keyParser.js';",
+          "import { fromEsm } from 'dual';",
+          "import { fromModule } from 'esm-only';",
+          "import { fromSync } from 'sync';",
+          "import { fromA } from 'cycle';",
+          "import { fromA as viaB, fromB } from 'cycle/b.js';",
+          'console.log(ssh2, everything, Client, parseKey, fromEsm, fromModule, fromSync, fromA, viaB, fromB);',
+        ].join('\n'),
+        'node_modules/ssh2/package.json': JSON.stringify({ name: 'ssh2' }),
+        'node_modules/ssh2/index.js': "module.exports = require('./lib/impl.js');\n",
+        'node_modules/ssh2/lib/impl.js': 'exports.Client = class {};\nexports.utils = {};\n',
+        'node_modules/ssh2/lib/keyParser.js': 'exports.parseKey = () => null;\n',
+        'node_modules/dual/package.json': JSON.stringify({
+          name: 'dual',
+          exports: { '.': { import: './esm.mjs', require: './cjs.cjs' } },
+        }),
+        'node_modules/dual/esm.mjs': 'export const fromEsm = 1;\n',
+        'node_modules/dual/cjs.cjs': 'module.exports = { ...{ fromEsm: 1 } };\n',
+        'node_modules/esm-only/package.json': JSON.stringify({
+          name: 'esm-only',
+          type: 'module',
+          main: 'index.js',
+        }),
+        'node_modules/esm-only/index.js': 'export const fromModule = 1;\n',
+        'node_modules/sync/package.json': JSON.stringify({
+          name: 'sync',
+          exports: { 'module-sync': './sync.mjs', default: './cjs.cjs' },
+        }),
+        'node_modules/sync/sync.mjs': 'export const fromSync = 1;\n',
+        'node_modules/sync/cjs.cjs': 'module.exports = { ...{ fromSync: 1 } };\n',
+        'node_modules/cycle/package.json': JSON.stringify({
+          name: 'cycle',
+          main: 'a.js',
+          exports: { '.': './a.js', './b.js': './b.js' },
+        }),
+        'node_modules/cycle/a.js': "exports.fromA = 1;\nmodule.exports = require('./b.js');\n",
+        'node_modules/cycle/b.js': "exports.fromB = 1;\nmodule.exports = require('./a.js');\n",
+      }),
+      entries: [ENTRY],
+      dependencies: ['ssh2', 'dual', 'esm-only', 'sync', 'cycle'],
+      allowlist: {},
+    });
+    expect(result.findings).toEqual([]);
   });
 
   it('suppresses an allowlisted import and reports allowlist entries that match nothing', () => {

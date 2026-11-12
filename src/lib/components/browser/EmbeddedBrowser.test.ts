@@ -173,7 +173,10 @@ describe('EmbeddedBrowser', () => {
       webview.dispatchEvent(new Event('dom-ready'));
       await waitFor(() =>
         expect(registerCalls()).toEqual([
-          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+          [
+            'browser:register-tab',
+            { tabId: 'tab-1', webContentsId: 10, workspaceId: 'workspace-1' },
+          ],
         ]),
       );
 
@@ -182,8 +185,14 @@ describe('EmbeddedBrowser', () => {
       webview.dispatchEvent(new Event('dom-ready'));
       await waitFor(() =>
         expect(registerCalls()).toEqual([
-          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
-          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 11 }],
+          [
+            'browser:register-tab',
+            { tabId: 'tab-1', webContentsId: 10, workspaceId: 'workspace-1' },
+          ],
+          [
+            'browser:register-tab',
+            { tabId: 'tab-1', webContentsId: 11, workspaceId: 'workspace-1' },
+          ],
         ]),
       );
     });
@@ -212,8 +221,14 @@ describe('EmbeddedBrowser', () => {
       webview.dispatchEvent(new Event('dom-ready'));
       await waitFor(() =>
         expect(registerCalls()).toEqual([
-          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
-          ['browser:register-tab', { tabId: 'tab-1', webContentsId: 10 }],
+          [
+            'browser:register-tab',
+            { tabId: 'tab-1', webContentsId: 10, workspaceId: 'workspace-1' },
+          ],
+          [
+            'browser:register-tab',
+            { tabId: 'tab-1', webContentsId: 10, workspaceId: 'workspace-1' },
+          ],
         ]),
       );
     });

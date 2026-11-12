@@ -171,8 +171,7 @@
       "readZipEntry"
     ],
     "src/features/backend/splash-gate.ts": [
-      "SPLASH_FALLBACK_TIMEOUT_MS",
-      "startSplashGate"
+      "SPLASH_FALLBACK_TIMEOUT_MS"
     ],
     "src/features/browser-access/main/browser-access-auth.ts": [
       "SESSION_COOKIE",
@@ -442,9 +441,6 @@
     ],
     "src/features/hud/components/dock-shell-geometry.ts": [
       "DOCK_INTRO_HEIGHT"
-    ],
-    "src/features/hud/composer/dock-composer-presentation.ts": [
-      "dockClipPlaybackUrl"
     ],
     "src/features/hud/composer/dock-evidence-placement.ts": [
       "DockEvidencePlacementError",
@@ -1254,7 +1250,6 @@
       "faAsterisk",
       "faCalendar",
       "faCircleHalfStroke",
-      "faCirclePlus",
       "faCloudArrowUp",
       "faCompressAlt",
       "faEllipsisV",

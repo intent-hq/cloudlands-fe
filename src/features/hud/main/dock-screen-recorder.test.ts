@@ -167,6 +167,8 @@ describe('dock screen recorder', () => {
       'record',
       '--output',
       '/tmp/clips/clip_1.mp4',
+      '--clean-output',
+      '/tmp/clips/clip_1.original.mp4',
       '--display',
       '69733378',
       '--max-ms',
@@ -236,6 +238,8 @@ describe('dock screen recorder', () => {
     expect(h.children[0].commands).toEqual([{ cmd: 'stop' }]);
     h.children[0].emitLine({
       event: 'finished',
+      width: 1280,
+      height: 720,
       reason: 'stopped',
       durationMs: 14_200,
       hasMicAudio: true,
@@ -249,6 +253,14 @@ describe('dock screen recorder', () => {
       value: {
         clipId: 'clip_1',
         sourcePath: '/tmp/clips/clip_1.mp4',
+        original: {
+          sourcePath: '/tmp/clips/clip_1.original.mp4',
+          size: 734_003,
+          width: 1280,
+          height: 720,
+          clearAtMs: [],
+          hasMicAudio: true,
+        },
         mimeType: 'video/mp4',
         size: 734_003,
         durationMs: 14_200,
@@ -268,7 +280,13 @@ describe('dock screen recorder', () => {
     const h = harness();
     await started(h);
     const ended = new Promise((resolve) => h.recorder.onEnded((_id, result) => resolve(result)));
-    h.children[0].emitLine({ event: 'finished', reason: 'limit', durationMs: 120_004 });
+    h.children[0].emitLine({
+      event: 'finished',
+      width: 1280,
+      height: 720,
+      reason: 'limit',
+      durationMs: 120_004,
+    });
     h.children[0].close(0);
     const result = await ended;
     expect(result).toMatchObject({
@@ -322,7 +340,13 @@ describe('dock screen recorder', () => {
     await started(h);
     const stop = h.recorder.stop('clip_1');
     await h.flush();
-    h.children[0].emitLine({ event: 'finished', reason: 'stopped', durationMs: 900 });
+    h.children[0].emitLine({
+      event: 'finished',
+      width: 1280,
+      height: 720,
+      reason: 'stopped',
+      durationMs: 900,
+    });
     h.children[0].close(0);
     expect(await stop).toEqual({ ok: false, error: 'failed', detail: 'empty-clip' });
   });
@@ -354,11 +378,86 @@ describe('dock screen recorder', () => {
     await started(done);
     const finished = done.recorder.stop('clip_1');
     await done.flush();
-    done.children[0].emitLine({ event: 'finished', reason: 'stopped', durationMs: 5_000 });
+    done.children[0].emitLine({
+      event: 'finished',
+      width: 1280,
+      height: 720,
+      reason: 'stopped',
+      durationMs: 5_000,
+    });
     done.children[0].close(0);
     expect(await finished).toMatchObject({ ok: true });
     await done.recorder.cancel('clip_1');
-    expect(done.removed).toEqual(['/tmp/clips/clip_1.mp4']);
+    expect(done.removed).toEqual(['/tmp/clips/clip_1.mp4', '/tmp/clips/clip_1.original.mp4']);
+  });
+
+  it('keeps held completed files through result-cache eviction until release or disposal', async () => {
+    const files = new Set<string>();
+    const removed: string[] = [];
+    const h = harness({
+      fileSize: async (file) => (files.has(file) ? 4096 : 0),
+      removeFile: async (file) => {
+        removed.push(file);
+        files.delete(file);
+      },
+    });
+    const outputs: string[][] = [];
+    let releasePlacement!: () => void;
+    const placementGate = new Promise<void>((resolve) => (releasePlacement = resolve));
+    let heldPlacement: Promise<void> | undefined;
+    try {
+      // Six outcomes evict the first two from the four-result cache while placement waits.
+      for (let index = 0; index < 6; index += 1) {
+        const clipId = `held_${index}`;
+        const start = h.recorder.start({ ...request, clipId });
+        await h.flush();
+        const child = h.children[index];
+        child.emitLine({ event: 'started' });
+        expect(await start).toMatchObject({ ok: true });
+        const paths = [`/tmp/clips/${clipId}.mp4`, `/tmp/clips/${clipId}.original.mp4`];
+        for (const file of paths) files.add(file);
+        const stop = h.recorder.stop(clipId);
+        child.emitLine({
+          event: 'finished',
+          width: 1280,
+          height: 720,
+          reason: 'stopped',
+          durationMs: 5_000,
+        });
+        child.close(0);
+        const result = await stop;
+        expect(result).toMatchObject({ ok: true });
+        if (!result.ok || !result.value.original)
+          throw new Error('Expected both completed outputs');
+        outputs.push([result.value.sourcePath, result.value.original.sourcePath]);
+        expect(outputs[index]).toEqual(paths);
+        if (index === 0) {
+          // A consumer retains the returned paths while later recordings finish.
+          const heldPaths = outputs[0];
+          heldPlacement = placementGate.then(() => {
+            for (const file of heldPaths) expect(files.has(file)).toBe(true);
+          });
+        }
+      }
+      expect(removed).toEqual([]);
+      expect(files.size).toBe(12);
+      releasePlacement();
+      await heldPlacement;
+      await h.recorder.cancel('held_0');
+      expect(removed).toEqual(outputs[0]);
+      for (const file of outputs[0]) expect(files.has(file)).toBe(false);
+      for (const file of outputs.slice(1).flat()) expect(files.has(file)).toBe(true);
+      await h.recorder.cancel('held_0');
+      expect(removed).toEqual(outputs[0]);
+      // Disposal also owns held_1, whose outcome was evicted without explicit release.
+      await h.recorder.dispose();
+      expect(files.size).toBe(0);
+      expect([...removed].sort()).toEqual(outputs.flat().sort());
+    } finally {
+      releasePlacement();
+      await heldPlacement;
+      await h.recorder.dispose();
+    }
   });
 
   it('a stop or cancel before the helper is reserved leaves no helper, file or clip', async () => {
@@ -401,10 +500,16 @@ describe('dock screen recorder', () => {
     await started(h);
     const stop = h.recorder.stop('clip_1');
     await h.flush();
-    h.children[0].emitLine({ event: 'finished', reason: 'stopped', durationMs: 119_000 });
+    h.children[0].emitLine({
+      event: 'finished',
+      width: 1280,
+      height: 720,
+      reason: 'stopped',
+      durationMs: 119_000,
+    });
     h.children[0].close(0);
     expect(await stop).toEqual({ ok: false, error: 'limit', detail: 'too-large' });
-    expect(h.removed).toEqual(['/tmp/clips/clip_1.mp4']);
+    expect(h.removed).toEqual(['/tmp/clips/clip_1.mp4', '/tmp/clips/clip_1.original.mp4']);
   });
 
   it('a full-length clip at the encoder ceilings stays under the size stop', () => {
@@ -420,7 +525,13 @@ describe('dock screen recorder', () => {
     const stop = h.recorder.stop('clip_1');
     const cancel = h.recorder.cancel('clip_1');
     await h.flush();
-    h.children[0].emitLine({ event: 'finished', reason: 'stopped', durationMs: 3_000 });
+    h.children[0].emitLine({
+      event: 'finished',
+      width: 1280,
+      height: 720,
+      reason: 'stopped',
+      durationMs: 3_000,
+    });
     h.children[0].close(0);
     expect(await stop).toMatchObject({ ok: false, detail: 'cancelled' });
     await cancel;
@@ -446,6 +557,75 @@ describe('dock screen recorder', () => {
     h.children[0].emitLine({ event: 'mic', active: false });
     expect(await off).toEqual({ ok: true, value: { micActive: false } });
     expect(await h.recorder.setMicrophone('other', true)).toMatchObject({ ok: false });
+  });
+
+  it('pauses and resumes on request, cutting paused time from elapsed time and the limit', async () => {
+    const h = harness();
+    expect(await h.recorder.setPaused('clip_1', true)).toMatchObject({ ok: false });
+    await started(h);
+    h.advance(10_000);
+    const pause = h.recorder.setPaused('clip_1', true);
+    await h.flush();
+    expect(h.children[0].commands).toEqual([{ cmd: 'pause' }]);
+    h.children[0].emitLine({ event: 'paused', paused: true });
+    expect(await pause).toEqual({ ok: true, value: { paused: true } });
+    // Paused: the clock stops and the limit backstop is off.
+    h.advance(60_000);
+    expect(h.recorder.elapsedMs('clip_1')).toBe(10_000);
+    expect(h.fireTimer(123_000)).toBe(false);
+
+    const resume = h.recorder.setPaused('clip_1', false);
+    await h.flush();
+    expect(h.children[0].commands.at(-1)).toEqual({ cmd: 'resume' });
+    h.children[0].emitLine({ event: 'paused', paused: false });
+    expect(await resume).toEqual({ ok: true, value: { paused: false } });
+    h.advance(5_000);
+    expect(h.recorder.elapsedMs('clip_1')).toBe(15_000);
+    // The backstop now covers only the recorded time left (110 s) plus its grace.
+    expect(h.fireTimer(113_000)).toBe(true);
+    await h.flush();
+    expect(h.children[0].commands.at(-1)).toEqual({ cmd: 'stop' });
+  });
+
+  it('reports a pause the helper refused, or never answered, as a failure', async () => {
+    const h = harness();
+    await started(h);
+    const refused = h.recorder.setPaused('clip_1', true);
+    await h.flush();
+    h.children[0].emitLine({ event: 'paused', paused: false, reason: 'not-recording' });
+    expect(await refused).toEqual({ ok: false, error: 'failed', detail: 'not-recording' });
+    const silent = h.recorder.setPaused('clip_1', true);
+    await h.flush();
+    expect(h.fireTimer(5_000)).toBe(true);
+    expect(await silent).toEqual({ ok: false, error: 'failed', detail: 'timeout' });
+  });
+
+  it('forwards the live mic level, flat while paused or without a microphone', async () => {
+    const h = harness();
+    const signals: { clipId: string; level: number; mic: boolean }[] = [];
+    const stop = h.recorder.onSignal((clipId, signal) => signals.push({ clipId, ...signal }));
+    await started(h);
+    h.children[0].emitLine({ event: 'mic', active: true });
+    h.children[0].emitLine({ event: 'level', level: 0.5 });
+    h.children[0].emitLine({ event: 'level', level: 7 });
+    h.children[0].emitLine({ event: 'level', level: 'loud' });
+    await h.flush();
+    expect(signals).toEqual([
+      { clipId: 'clip_1', level: 0.5, mic: true },
+      { clipId: 'clip_1', level: 1, mic: true },
+    ]);
+    const pause = h.recorder.setPaused('clip_1', true);
+    await h.flush();
+    h.children[0].emitLine({ event: 'paused', paused: true });
+    await pause;
+    h.children[0].emitLine({ event: 'level', level: 0.9 });
+    await h.flush();
+    expect(signals.at(-1)).toEqual({ clipId: 'clip_1', level: 0, mic: true });
+    expect(signals).toHaveLength(3);
+    h.children[0].emitLine({ event: 'mic', active: false, reason: 'permission' });
+    await h.flush();
+    expect(signals.at(-1)).toEqual({ clipId: 'clip_1', level: 0, mic: false });
+    stop();
   });
 
   it('passes includeMic at start, and forwards authoritative marks and exclusion updates', async () => {

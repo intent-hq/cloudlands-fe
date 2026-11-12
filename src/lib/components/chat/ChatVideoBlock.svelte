@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { canLoadMediaUrl } from '$lib/utils/media-provenance';
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -14,6 +15,9 @@
     poster?: string;
     allowFileMedia?: boolean;
     canOpenFile?: () => boolean;
+    fluid?: boolean;
+    compact?: boolean;
+    compactPreview?: Snippet;
   }
 
   let {
@@ -22,6 +26,9 @@
     poster,
     allowFileMedia = true,
     canOpenFile,
+    fluid = false,
+    compact = false,
+    compactPreview,
   }: Props = $props();
   let lightboxOpen = $state(false);
   let frameReady = $state(false);
@@ -57,7 +64,11 @@
   }
 </script>
 
-<div class="my-2 min-w-0 max-w-2xl" data-chat-video>
+<div
+  class="my-2 min-w-0 max-w-2xl"
+  style:height={compactPreview ? '100%' : undefined}
+  data-chat-video
+>
   {#if blocked}
     <MediaUnavailable {name} reason="load-failed" />
   {:else if frameUnavailable}
@@ -77,11 +88,13 @@
     </div>
   {:else}
     <div
-      class="group relative aspect-video w-full max-h-40 max-w-2xl"
-      style="width: min(100%, calc(10rem * 16 / 9));"
+      class="group relative aspect-video w-full max-w-2xl {fluid ? 'max-h-72' : 'max-h-40'}"
+      style:height={compactPreview ? '100%' : undefined}
+      style:width={fluid ? 'min(100%, calc(18rem * 16 / 9))' : 'min(100%, calc(10rem * 16 / 9))'}
     >
       <Button
         bind:ref={triggerRef}
+        wrapContent={false}
         type="button"
         variant="ghost"
         size="default"
@@ -92,50 +105,60 @@
           if (canUseMedia(videoUrl)) lightboxOpen = true;
         }}
       >
-        <div
-          class="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
-          aria-hidden="true"
-        >
-          <svg viewBox="0 0 24 24" class="size-10" fill="none">
-            <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
-            <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
-          </svg>
-        </div>
-        <video
-          src={videoUrl}
-          poster={safePoster}
-          preload="metadata"
-          muted
-          playsinline
-          tabindex="-1"
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-0 size-full object-contain transition-opacity motion-reduce:transition-none {safePoster ||
-          (frameReady && !frameUnavailable)
-            ? 'opacity-100'
-            : 'opacity-0'}"
-          onloadeddata={markFrameReady}
-          onerror={() => (frameUnavailable = true)}
-        ></video>
-        <span
-          class="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/20 motion-reduce:transition-none forced-colors:bg-transparent"
-          aria-hidden="true"
-        >
-          <span
-            class="flex size-11 items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
+        {#if compactPreview}{@render compactPreview()}{:else}
+          <div
+            class="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
+            aria-hidden="true"
           >
-            <svg viewBox="0 0 20 20" class="ml-0.5 size-5" fill="currentColor">
-              <path d="m7 5 7 5-7 5V5Z" />
-            </svg>
+            {#if !fluid}<svg viewBox="0 0 24 24" class="size-10" fill="none">
+                <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
+                <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
+              </svg>{/if}
+          </div>
+          <video
+            src={videoUrl}
+            poster={safePoster}
+            preload="metadata"
+            muted
+            playsinline
+            tabindex="-1"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-0 size-full object-contain transition-opacity motion-reduce:transition-none {safePoster ||
+            (frameReady && !frameUnavailable)
+              ? 'opacity-100'
+              : 'opacity-0'}"
+            onloadeddata={markFrameReady}
+            onerror={() => (frameUnavailable = true)}
+          ></video>
+          <span
+            class="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/20 motion-reduce:transition-none forced-colors:bg-transparent"
+            aria-hidden="true"
+          >
+            <span
+              class="flex {compact
+                ? 'size-6'
+                : 'size-11'} shrink-0 aspect-square items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                class="ml-0.5 {compact ? 'size-3' : 'size-5'}"
+                fill="currentColor"
+              >
+                <path d="m7 5 7 5-7 5V5Z" />
+              </svg>
+            </span>
           </span>
-        </span>
+        {/if}
       </Button>
-      <VideoActionsMenu
-        {videoUrl}
-        videoName={name}
-        sourceKind={source.kind}
-        mimeType={source.mimeType}
-        triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-      />
+      {#if !compactPreview}
+        <VideoActionsMenu
+          {videoUrl}
+          videoName={name}
+          sourceKind={source.kind}
+          mimeType={source.mimeType}
+          triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+        />
+      {/if}
     </div>
   {/if}
 </div>

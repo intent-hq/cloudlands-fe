@@ -1,5 +1,21 @@
+import type { DraftSyncConnection } from '$lib/components/chat/chat-draft-sync';
+import type { DraftsClient } from '$lib/client/app-client';
+import type { DockConversationDraft } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
+import type {
+  PendingSubmission,
+  SubmissionScope,
+  SubmissionTombstone,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-types';
+import type { ChatDraftRestore } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
+import type { DockComposerEvidence } from '$shared/dock-evidence';
+import type { ComposerContextItem } from '$store/renderer/slices/transient-ui/transient-ui-types';
+import { dockEvidenceId } from '$shared/dock-evidence';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import { selectDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+import type { ChatDraftSnapshot } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
 import type { AgentMessage, ContentBlock, QueuedMessage } from '$shared/types';
-import { AgentId } from '$shared/types/branded-ids';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -7,8 +23,10 @@ import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { emitMockIpcEvent, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { initRendererStoreBridge } from '$store/renderer/renderer-store-bridge';
@@ -27,6 +45,56 @@ import { workspaceCatalogSaga } from '$store/renderer/slices/provider-catalog/wo
 import { providerModelsSaga } from '$store/renderer/slices/provider-models/sagas/provider-models-saga';
 import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+
+export interface ComposerDraftSnapshot {
+  workspaceId: string | null;
+  agentId: string | null;
+  draft: DockConversationDraft | undefined;
+  evidence: DockComposerEvidence | null;
+  restore: ChatDraftRestore | null;
+  scope: SubmissionScope | undefined;
+  submission: PendingSubmission | undefined;
+  tombstone: SubmissionTombstone | undefined;
+  contextItems: ComposerContextItem[];
+  recoveryItems: ComposerContextItem[];
+}
+
+export function readComposerDraftSnapshot(): ComposerDraftSnapshot {
+  const { workspaceId, agentId } = store.state.dockConversation;
+  const draft =
+    workspaceId && agentId
+      ? getItem(store.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))
+      : undefined;
+  const reference = draft?.delivery?.reference;
+  const entry = reference
+    ? selectPendingSubmissionEntry.select(store.state, reference.scope)
+    : undefined;
+  const restore =
+    getItems(store.state.chatDrafts.owners).find(
+      (owner) =>
+        owner.id.startsWith('dock-conversation:') &&
+        owner.restore?.workspaceId === workspaceId &&
+        owner.restore.agentId === agentId,
+    )?.restore ?? null;
+  return {
+    workspaceId,
+    agentId,
+    draft,
+    restore,
+    evidence:
+      workspaceId && agentId
+        ? selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence
+        : null,
+    scope: entry?.scope,
+    submission: entry && reference ? getItem(entry.submissions, reference.id) : undefined,
+    tombstone: entry && reference ? getItem(entry.tombstones, reference.id) : undefined,
+    contextItems:
+      workspaceId && agentId
+        ? selectComposerContextItems.select(store.state, workspaceId, agentId)
+        : [],
+    recoveryItems: draft?.delivery?.recovery ? getItems(draft.delivery.recovery.contextItems) : [],
+  };
+}
 
 export interface ConversationWireCall {
   method: string;
@@ -64,13 +132,20 @@ const questionRow: ConversationWireMessage = {
 export function setupConversationWire(
   record: (call: ConversationWireCall) => void,
   options: {
+    draftsClient?: DraftsClient;
+    draftSync?: DraftSyncConnection;
     failPlacementOnce?: boolean;
     initialMessage?: string;
+    /** Persisted synthetic draft, restored by the real owner saga on open. */
+    initialDraft?: ChatDraftSnapshot;
     dockAppearance?: boolean;
     /** Seed the main agent with this many assistant turns of operational (thinking) rows. */
     operationalHistory?: number;
     /** A second ready provider (Claude Code), and effort levels on Auggie's models. */
     providerChoice?: boolean;
+    /** Exercise the real composer's model/profile trigger at constrained widths. */
+    modelLabel?: string;
+    profileName?: string;
     /** Workspace the synthetic agents belong to (e.g. the virtual Assistant workspace). */
     workspaceId?: string;
     /** List no agents until `publishAgents()`. */
@@ -90,10 +165,15 @@ export function setupConversationWire(
     root.dataset.auxiliaryWindow = 'dock';
     ThemeManager.resetInstance();
   }
-  const previous = window.electronAPI;
-  const listeners = new Map<string, { channel: string; handler: (payload: unknown) => void }>();
   const subscriptions = new Map<string, { agentId: string; seq: number }>();
-  const drafts = createChatDraftFixture().client;
+  const drafts = options.draftsClient ?? createChatDraftFixture().client;
+  if (options.initialDraft)
+    void drafts.set(
+      wireWorkspace,
+      'wire-main',
+      options.initialDraft.text,
+      options.initialDraft.attachments,
+    );
   const placements = new Map<string, PlaceAttachmentResult>();
   let rejectPlacement = options.failPlacementOnce ?? false;
   let nextId = 0;
@@ -105,7 +185,12 @@ export function setupConversationWire(
     return {
       success: true,
       data: [
-        { value: 'opus4.7', label: 'Opus 4.7', isDefault: true, ...effortLevels },
+        {
+          value: 'opus4.7',
+          label: options.modelLabel ?? 'Opus 4.7',
+          isDefault: true,
+          ...effortLevels,
+        },
         { value: 'sonnet4.5', label: 'Sonnet 4.5', ...effortLevels },
       ],
     };
@@ -130,6 +215,7 @@ export function setupConversationWire(
       command: 'auggie',
       canBeDisabled: true,
       visible: true,
+      ...(options.profileName ? { supportsProfiles: true } : {}),
     },
     ...(options.providerChoice
       ? [
@@ -173,23 +259,28 @@ export function setupConversationWire(
   }
   /** Session fields accepted through `agent.update` (provider choice only). */
   const agentChanges = new Map<string, Record<string, unknown>>();
-  function agent(id: string) {
+  function agent(id: string, workspaceId = wireWorkspace) {
+    const main = id === 'wire-main' || id.endsWith(':wire-main');
     return {
       id,
-      workspaceId: wireWorkspace,
-      name: id === 'wire-main' ? 'Wire coordinator' : 'Wire specialist',
+      workspaceId,
+      name: main ? 'Wire coordinator' : 'Wire specialist',
       status: 'runtime_idle',
       provider: 'auggie',
       model: 'opus4.7',
       acpSessionId: id,
-      isInitialAgent: id === 'wire-main',
+      isInitialAgent: main,
       metadata: {
-        isInitialAgent: id === 'wire-main',
-        ...(id === 'wire-main' && pendingQuestion
+        isInitialAgent: main,
+        ...(main && pendingQuestion
           ? { pendingQuestionsMessageId: dismissedQuestion ? '' : conversationWireQuestionId }
           : {}),
       },
-      ...(id === 'wire-sub' ? { parentAgentId: 'wire-main' } : {}),
+      ...(!main
+        ? {
+            parentAgentId: workspaceId === wireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
+          }
+        : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
       ...agentChanges.get(id),
@@ -240,16 +331,49 @@ export function setupConversationWire(
         snapshot: transcript(entry.agentId),
       },
     };
-    for (const { channel, handler } of listeners.values())
-      if (channel === IPC_CHANNELS.BACKEND.NOTIFICATION) handler(notification);
+    emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, notification);
   }
+  let serviceRows: import('$features/scripts/types').ScriptListEntry[] = [];
+  let statusOverride: import('$features/scripts/types').ScriptRuntimeState | null = null;
+  let holdServiceList = false;
+  const serviceListWaiters: (() => void)[] = [];
   async function request(method: string, params: Record<string, unknown>) {
     record({ method, params: structuredClone(params) });
     const agentId = String(params.agentId ?? 'wire-main');
     switch (method) {
+      case 'client.hello':
+        return { server: { capabilities: { scriptActiveLists: 1, boundedReads: 1 } } };
+      case 'script.list': {
+        const scripts = structuredClone(
+          serviceRows.filter((row) => row.workspaceId === params.workspaceId),
+        );
+        if (holdServiceList) await new Promise<void>((resolve) => serviceListWaiters.push(resolve));
+        return { view: 'summary', scripts };
+      }
+      case 'script.status':
+        return structuredClone(
+          statusOverride ??
+            serviceRows.find(
+              (row) => row.workspaceId === params.workspaceId && row.id === params.scriptId,
+            )?.runtime ??
+            null,
+        );
       case 'providers.catalog':
         return {
           providers: providerEntries,
+          ...(options.profileName
+            ? {
+                profiles: [
+                  {
+                    id: 'footer-profile',
+                    providerRef: 'auggie@footer-profile',
+                    baseProviderId: 'auggie',
+                    name: 'Work',
+                  },
+                ],
+                defaultNames: { auggie: options.profileName },
+              }
+            : {}),
         };
       case 'host.providerDiscovery':
         return { providers: providerIds.map((id) => ({ id, installed: true })) };
@@ -266,8 +390,12 @@ export function setupConversationWire(
       case 'workspace.get':
         return {
           workspace: {
-            id: conversationWireWorkspace,
-            title: 'Connected companion fixture',
+            id: String(params.workspaceId ?? wireWorkspace),
+            title:
+              getItem(
+                store.state.workspace.workspaces,
+                WorkspaceId(String(params.workspaceId ?? wireWorkspace)),
+              )?.title ?? 'Connected companion fixture',
             status: 'active',
             myRole: 'owner',
             canManage: true,
@@ -283,11 +411,23 @@ export function setupConversationWire(
             : params.scope === 'background'
               ? []
               : params.scope === 'delegated'
-                ? [agent('wire-sub')]
-                : [agent('wire-sub'), agent('wire-main')],
+                ? [
+                    agent(
+                      params.workspaceId === wireWorkspace
+                        ? 'wire-sub'
+                        : `${params.workspaceId}:wire-sub`,
+                      String(params.workspaceId),
+                    ),
+                  ]
+                : ['wire-sub', 'wire-main'].map((id) =>
+                    agent(
+                      params.workspaceId === wireWorkspace ? id : `${params.workspaceId}:${id}`,
+                      String(params.workspaceId),
+                    ),
+                  ),
         };
       case 'agent.get':
-        return { agent: agent(agentId) };
+        return { agent: agent(agentId, String(params.workspaceId ?? wireWorkspace)) };
       case 'agent.update':
       case 'agent.setModel': {
         if (!options.providerChoice)
@@ -393,35 +533,9 @@ export function setupConversationWire(
         throw new Error(`Unscripted conversation wire method: ${method}`);
     }
   }
-  const api = {
-    versions: { electron: '0.0.0-browser' },
-    invoke: async (channel: string, payload?: unknown) => {
-      if (channel !== IPC_CHANNELS.BACKEND.REQUEST) return mockInvoke(channel, payload);
-      const { method, params = {} } = payload as {
-        method: string;
-        params?: Record<string, unknown>;
-      };
-      try {
-        return { ok: true, result: await request(method, params) };
-      } catch (error) {
-        return { ok: false, error: { code: 'MOCK_UNHANDLED_METHOD', message: String(error) } };
-      }
-    },
-    on: (channel: string, handler: (payload: unknown) => void) => {
-      const id = `wire-listener-${++nextId}`;
-      listeners.set(id, { channel, handler });
-      return id;
-    },
-    offById: (_channel: string, id: string) => {
-      listeners.delete(id);
-    },
-    off: () => {},
-    send: () => {},
-    removeAllListeners: () => {},
-    devInstance: null,
-    devPort: null,
-  };
-  window.electronAPI = api as unknown as Window['electronAPI'];
+  const restoreBridge = installMockElectronBridge((method, params) =>
+    request(method, (params ?? {}) as Record<string, unknown>),
+  );
   initRendererStoreBridge(store);
   admitLegacyPrincipal();
   const principal = store.state.principal;
@@ -454,8 +568,32 @@ export function setupConversationWire(
   ].map((saga) => store.runSaga(saga));
   // Drafts go through the mock backend. The shared helper replaces the CT
   // bootstrap's draft saga instead of running a second one beside it.
-  stops.push(...startChatFixtureSagas(store, appClient.drafts));
+  stops.push(
+    ...startChatFixtureSagas(store, {
+      get: (...args) => appClient.drafts.get(...args),
+      set: (...args) => appClient.drafts.set(...args),
+      clear: (...args) => appClient.drafts.clear(...args),
+      sync: options.draftSync,
+    }),
+  );
   return {
+    readDraft(workspaceId: string, agentId: string) {
+      return drafts.get(workspaceId, agentId);
+    },
+    setServices(
+      rows: import('$features/scripts/types').ScriptListEntry[],
+      override: import('$features/scripts/types').ScriptRuntimeState | null = null,
+    ) {
+      serviceRows = rows;
+      statusOverride = override;
+    },
+    holdServiceList(value: boolean) {
+      holdServiceList = value;
+      if (!value) for (const resolve of serviceListWaiters.splice(0)) resolve();
+    },
+    emit(channel: string, payload: unknown) {
+      emitMockIpcEvent(channel, payload);
+    },
     askQuestions(recover = false) {
       pendingQuestion = true;
       dismissedQuestion = false;
@@ -527,11 +665,10 @@ export function setupConversationWire(
         else root.setAttribute('data-theme-override', previousOverride);
         if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
       }
-      listeners.clear();
       subscriptions.clear();
       restoreModels();
       restoreClaudeModels();
-      window.electronAPI = previous;
+      restoreBridge();
     },
   };
 }

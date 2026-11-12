@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   clearLayout: vi.fn(),
   resolveOnboardingModel: vi.fn(),
   validateRepoPath: vi.fn(),
+  importSession: vi.fn(),
+}));
+vi.mock('$features/session-import/importable-sessions.client', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  importSession: mocks.importSession,
 }));
 vi.mock('$lib/utils/workspace-validation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/utils/workspace-validation')>();
@@ -59,6 +64,7 @@ import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/works
 import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createMockWorkspace } from '../../../../../test/factories/workspace.factory';
@@ -1679,5 +1685,125 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
         },
       ],
     ]);
+  });
+});
+
+describe('import a session as the first agent', () => {
+  const session = {
+    provider: 'claude-code',
+    sessionId: '6eca79e3-7963-44ad-b89e-e781d28df2b9',
+    title: 'Cloudflare account installation',
+  };
+  const createdWithoutAgent = { ok: true, data: { workspace } } as const;
+
+  beforeEach(() => {
+    mocks.validateRepoPath.mockResolvedValue({ valid: true });
+  });
+
+  function localImportSubmission(prompt: string) {
+    return compactSubmission({
+      repoType: 'local',
+      repoPath: '/repo',
+      remoteSetup: null,
+      prompt,
+      importSession: session,
+    });
+  }
+
+  it('creates without an initial agent, imports the session, and opens it', async () => {
+    create.mockResolvedValue(createdWithoutAgent);
+    mocks.importSession.mockResolvedValue({
+      agent: { id: 'imported-1', name: session.title },
+      forked: true,
+    });
+    const action = workspaceInitializationSubmitted(localImportSubmission(''), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toEqual({
+      workspaceId: 'ws-1',
+      agentId: 'imported-1',
+      workspacePath: '/wt/ws-1',
+    });
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty('initialAgent');
+    expect(mocks.importSession.mock.calls).toEqual([
+      [
+        {
+          workspaceId: 'ws-1',
+          provider: 'claude-code',
+          sessionId: session.sessionId,
+          name: session.title,
+        },
+      ],
+    ]);
+    expect(recorded).toContainEqual(setInitialAgentId('ws-1', 'imported-1'));
+    expect(recorded.find((a) => a.type === bootstrapNewWorkspaceLayout.type)).toMatchObject({
+      payload: { wsId: 'ws-1', initialAgentId: 'imported-1', initialAgentTitle: session.title },
+    });
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(notify.info).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ status: 'success', agentId: 'imported-1' });
+  });
+
+  it('tells the user when the CLI session now continues in Intent', async () => {
+    create.mockResolvedValue(createdWithoutAgent);
+    mocks.importSession.mockResolvedValue({ agent: { id: 'imported-1' }, forked: false });
+    const action = workspaceInitializationSubmitted(localImportSubmission(''), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ agentId: 'imported-1' });
+    expect(vi.mocked(notify.info).mock.calls).toEqual([
+      [
+        m.sessionImport_create_notForked_info({
+          provider: selectProviderDisplayName.select(appStore.state, 'claude-code'),
+        }),
+      ],
+    ]);
+  });
+
+  it('sends a typed prompt to the imported agent', async () => {
+    create.mockResolvedValue(createdWithoutAgent);
+    mocks.importSession.mockResolvedValue({ agent: { id: 'imported-1' }, forked: true });
+    const action = workspaceInitializationSubmitted(localImportSubmission('continue'), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ agentId: 'imported-1' });
+    expect(mocks.send.mock.calls[0]?.[0]).toMatchObject({
+      workspaceId: 'ws-1',
+      agentId: 'imported-1',
+      content: 'continue',
+    });
+  });
+
+  it('keeps a failed import resumable and imports on retry without creating again', async () => {
+    create.mockResolvedValue(createdWithoutAgent);
+    mocks.importSession.mockRejectedValueOnce(new Error('not-found'));
+    const action = workspaceInitializationSubmitted(localImportSubmission(''), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow(
+      m.sessionImport_create_importFailed_error({ detail: 'not-found' }),
+    );
+    expect(recorded).toEqual([]);
+    expect(outcome()).toMatchObject({
+      status: 'failure',
+      stage: 'post-create',
+      workspaceId: 'ws-1',
+      resumable: true,
+    });
+    expect(outcome()?.agentId).toBeUndefined();
+
+    mocks.importSession.mockResolvedValueOnce({ agent: { id: 'imported-2' }, forked: true });
+    const get = vi.spyOn(appClient.workspaces, 'get').mockResolvedValue(workspace);
+    const resume = workspaceInitializationResumeRequested(
+      { entrypoint: 'compact', admission: action.payload.submission.admission, stagedItems: [] },
+      consumer,
+    );
+    appStore.dispatch(resume);
+
+    await expect(resume.promise).resolves.toMatchObject({ agentId: 'imported-2' });
+    expect(get).toHaveBeenCalledWith('ws-1');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(mocks.importSession).toHaveBeenCalledTimes(2);
+    expect(recorded).toContainEqual(setInitialAgentId('ws-1', 'imported-2'));
   });
 });

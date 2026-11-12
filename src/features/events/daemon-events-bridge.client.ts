@@ -3,8 +3,9 @@ import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
 } from '$store/renderer/slices/scripts/scripts-selectors';
-import { parseRemoteMachine } from '$shared/types/remote-machines';
+import { parseMachineOrder, parseRemoteMachine } from '$shared/types/remote-machines';
 import {
+  machineOrderLoaded,
   remoteMachineChanged,
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
@@ -2111,6 +2112,19 @@ function handleTaskAgentUnlinkedEvent(event: WorkspaceEvent, workspaceId: string
  * prompt renders. The BE is the source of truth for `requestId` (used by
  * `agent.respondPermission` to route the answer back).
  */
+const PERMISSION_OPTION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'];
+const PERMISSION_OPTION_SCOPES = ['chat', 'workspace', 'allWorkspaces'];
+function isPermissionOptionKind(
+  value: unknown,
+): value is NonNullable<PermissionRequest['options'][number]['kind']> {
+  return typeof value === 'string' && PERMISSION_OPTION_KINDS.includes(value);
+}
+function isPermissionOptionScope(
+  value: unknown,
+): value is NonNullable<PermissionRequest['options'][number]['scope']> {
+  return typeof value === 'string' && PERMISSION_OPTION_SCOPES.includes(value);
+}
+
 function handlePermissionRequestEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -2135,11 +2149,15 @@ function handlePermissionRequestEvent(event: WorkspaceEvent): void {
     if (typeof id !== 'string' || typeof label !== 'string') continue;
     const description = (raw as { description?: unknown }).description;
     const destructive = (raw as { destructive?: unknown }).destructive;
+    const kind = (raw as { kind?: unknown }).kind;
+    const scope = (raw as { scope?: unknown }).scope;
     options.push({
       id,
       label,
       ...(typeof description === 'string' ? { description } : {}),
       ...(typeof destructive === 'boolean' ? { destructive } : {}),
+      ...(isPermissionOptionKind(kind) ? { kind } : {}),
+      ...(isPermissionOptionScope(scope) ? { scope } : {}),
     });
   }
   const description = data.description;
@@ -3417,6 +3435,28 @@ function handleSettingsChangedEvent(
   const revision = typeof data.revision === 'number' ? data.revision : undefined;
   if (onSettingsChanges) onSettingsChanges(changes, revision);
   else applySettingsChanges(changes);
+  if (changes.some((change) => change.path === PERMISSION_POLICY_SETTING_PATH)) {
+    refreshSessionsFollowingPermissionPolicyDefault();
+  }
+}
+
+const PERMISSION_POLICY_SETTING_PATH = 'agents.permissionPolicy';
+
+/**
+ * A daemon-wide `agents.permissionPolicy` change emits only `settings:changed`
+ * (no `agent:updated`), yet it moves `effectivePermissionPolicy` for every chat
+ * without a per-chat override (`permissionPolicy === null`). Refetch those
+ * loaded sessions so the chat menu's "Ask before using tools" switch matches
+ * the policy the next turn runs under. The value is never derived client-side:
+ * `INTENTD_PERMISSION_POLICY` on the daemon can override the setting.
+ */
+function refreshSessionsFollowingPermissionPolicyDefault(): void {
+  const byAgentId = appStore.state.agentSessions?.byAgentId;
+  if (!byAgentId) return;
+  for (const [agentId, session] of Object.entries(byAgentId)) {
+    if (session?.permissionPolicy !== null) continue;
+    void refreshAgentSessionAfterEvent(agentId, session.workspaceId);
+  }
 }
 
 /**
@@ -3606,6 +3646,9 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  */
 function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
+  // `machineOrder: 1`: `{ order }` after each change of the ordered machine list.
+  const order = parseMachineOrder(data?.order);
+  if (order) appStore.dispatch(machineOrderLoaded(order));
   if (data?.removed === true && typeof data.machineId === 'string' && data.machineId) {
     appStore.dispatch(remoteMachineRemoved(data.machineId));
     return;

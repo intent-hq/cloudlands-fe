@@ -2,9 +2,11 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import { describe, expect, it } from 'vitest';
 
 import type { ConnectionRecord } from '$shared/types/connections';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import {
   selectIsRailMachineShown,
   selectMachineRailCandidates,
+  selectMachineRailGuestCandidates,
   selectMachineRailItems,
 } from './machine-rail-selectors';
 import { machineRailReducer, machineRailStateReceived } from './machine-rail-slice';
@@ -24,16 +26,28 @@ function record(id: string, extra: Partial<ConnectionRecord> = {}): ConnectionRe
   };
 }
 
+function guest(id: string): GuestSessionRecord {
+  return { id, label: `${id}.example:5181`, hostname: id } as GuestSessionRecord;
+}
+
 function stateWith(
   rail: Partial<typeof initialState>,
   records: ConnectionRecord[],
   windowBackendId = 'local',
+  guests: { sessions: GuestSessionRecord[]; connectedIds: string[] } = {
+    sessions: [],
+    connectedIds: [],
+  },
 ) {
   return {
     machineRail: { ...initialState, ...rail },
     connections: {
       connections: createCollection<ConnectionRecord, 'id'>('id', records),
       windowBackendId,
+    },
+    guestSessions: {
+      sessions: createCollection<GuestSessionRecord, 'id'>('id', guests.sessions),
+      connectedIds: guests.connectedIds,
     },
   } as any;
 }
@@ -45,12 +59,22 @@ describe('machineRailReducer', () => {
       homeId: '',
       machineIds: [],
       selectedId: '',
-      menuRequests: 0,
+      shownId: '',
+      pendingId: '',
+      degradedIds: [],
     });
   });
 
   it('replaces the state with what main sent', () => {
-    const next = { enabled: true, homeId: 'local', machineIds: ['local', 'b'], selectedId: 'b' };
+    const next = {
+      enabled: true,
+      homeId: 'local',
+      machineIds: ['local', 'b'],
+      selectedId: 'b',
+      shownId: 'local',
+      pendingId: '',
+      degradedIds: [],
+    };
     expect(machineRailReducer(initialState, machineRailStateReceived(next))).toMatchObject(next);
   });
 });
@@ -92,6 +116,33 @@ describe('machine rail selectors', () => {
       ]),
     );
     expect(candidates.map((candidate) => candidate.id)).toEqual(['c']);
+  });
+
+  it('lists guest hosts after your own machines, whatever order they were added in', () => {
+    const items = selectMachineRailItems.select(
+      stateWith(
+        { ...rail, machineIds: ['local', 'g1', 'b', 'g2'], selectedId: 'local', pendingId: 'g2' },
+        [record('local'), record('b')],
+        'local',
+        { sessions: [guest('g1'), guest('g2')], connectedIds: ['g1'] },
+      ),
+    );
+    expect(items.map(({ id, guest, status }) => ({ id, guest: !!guest, status }))).toEqual([
+      { id: 'local', guest: false, status: 'connected' },
+      { id: 'b', guest: false, status: 'connected' },
+      { id: 'g1', guest: true, status: 'connected' },
+      { id: 'g2', guest: true, status: 'connecting' },
+    ]);
+  });
+
+  it('offers guest hosts that are not in the rail', () => {
+    const candidates = selectMachineRailGuestCandidates.select(
+      stateWith({ ...rail, machineIds: ['local', 'g1'] }, [record('local')], 'local', {
+        sessions: [guest('g1'), guest('g2')],
+        connectedIds: [],
+      }),
+    );
+    expect(candidates.map((candidate) => candidate.id)).toEqual(['g2']);
   });
 
   it('marks only the renderer of the selected machine as shown', () => {

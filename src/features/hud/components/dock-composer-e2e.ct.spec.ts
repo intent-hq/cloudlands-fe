@@ -1,13 +1,14 @@
+import type { DockScreenEvidenceMetadata } from '$shared/dock-evidence';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
-import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
+import ComposerE2EHarness, { type ComposerDraftSnapshot } from './DockComposerE2EHarness.svelte';
 import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry.fixtures';
 
 /**
  * End-to-end walkthrough of the dock composer with synthetic content only:
- * capture → annotate (box, pick) → dictate with click chips → delete a chip
+ * capture → annotate (box, arrow) → dictate with click chips → delete a chip
  * (renumber) → record start/stop → send. Production conversation, controller,
  * sagas, editor and send; the daemon wire and the native helper are scripted
  * (no screen capture, microphone, recording or real message).
@@ -31,12 +32,150 @@ type Harness = {
   reopen: () => void;
   holdPlacements: (value: boolean) => void;
   calls: { method: string; params: Record<string, unknown> }[];
-  fixture: { settle: (accepted?: boolean) => void };
+  fixture: {
+    settle: (accepted?: boolean) => void;
+    readDraft: (workspaceId: string, agentId: string) => Promise<{ text: string } | null>;
+  };
+  setCaption: (text: string) => void;
+  draftSnapshot: () => ComposerDraftSnapshot;
+  store: {
+    state: {
+      dockConversation: { workspaceId: string | null; agentId: string | null; loading: boolean };
+    };
+    dispatch: (action: { type: string; payload: unknown[] }) => void;
+  };
 };
+
+const draftSnapshot = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.draftSnapshot(),
+  );
+
+async function assertAdmitted(
+  page: Page,
+  before: ComposerDraftSnapshot,
+  send: Harness['calls'][number],
+) {
+  // Require the canonical draft to clear before acknowledging the held daemon response.
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.text).toBe('');
+  const admitted = await draftSnapshot(page);
+  const delivery = admitted.draft?.delivery;
+  expect(delivery).toBeDefined();
+  expect(delivery?.settled).not.toBe(true);
+  expect(admitted.scope).toEqual(delivery?.reference.scope);
+  expect(admitted.scope).toMatchObject({
+    workspaceId: before.workspaceId,
+    agentId: before.agentId,
+  });
+  expect(admitted.submission?.id).toBe(delivery?.reference.id);
+  expect(admitted.submission?.status).toBe('sending');
+  expect(admitted.submission?.content).toBe(before.draft?.text.trim());
+  expect(admitted.submission?.messageMetadata).toEqual(send.params.messageMetadata);
+  expect(admitted.submission?.imageBlocks).toEqual(send.params.imageBlocks);
+  expect(admitted.submission?.fileBlocks).toEqual(send.params.fileBlocks);
+  expect(delivery?.recovery?.text).toBe(before.draft?.text);
+  expect(delivery?.recovery?.evidence?.marks).toEqual(before.evidence?.marks);
+  expect(delivery?.recovery?.evidence?.images).toEqual(before.evidence?.images);
+  expect(admitted.recoveryItems).toEqual(before.contextItems);
+  expect(admitted.draft?.text).toBe('');
+  expect(admitted.contextItems).toEqual([]);
+  expect(admitted.evidence?.marks ?? []).toEqual([]);
+  return admitted;
+}
+
+async function settleAdmission(page: Page, admitted: ComposerDraftSnapshot) {
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.fixture.settle(),
+  );
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.delivery?.settled).toBe(true);
+  const settled = await draftSnapshot(page);
+  expect(settled.draft?.delivery?.reference).toEqual(admitted.draft?.delivery?.reference);
+  expect(settled.draft?.text).toBe('');
+  expect(settled.contextItems).toEqual([]);
+  expect(settled.evidence?.marks ?? []).toEqual([]);
+  expect(
+    settled.submission?.status === 'accepted' ||
+      (!!settled.tombstone && settled.tombstone.reason !== 'rejected'),
+  ).toBe(true);
+  return settled;
+}
+
+async function assertAcceptedDraftStaysEmpty(page: Page) {
+  const persistedText = () =>
+    page.evaluate(async () => {
+      const h = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
+      const { workspaceId, agentId } = h.draftSnapshot();
+      if (!workspaceId || !agentId) throw new Error('Missing admitted draft owner');
+      return (await h.fixture.readDraft(workspaceId, agentId))?.text ?? '';
+    });
+  await expect.poll(persistedText).toBe('');
+  const before = await draftSnapshot(page);
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.close(),
+  );
+  const editor = page.locator('[data-testid="message-input"] [contenteditable]');
+  await expect(editor).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.reopen(),
+  );
+  await expect(editor).toBeEditable();
+  await expect(editor).toHaveText('');
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.text).toBe('');
+  await expect.poll(persistedText).toBe('');
+  const after = await draftSnapshot(page);
+  expect(after.workspaceId).toBe(before.workspaceId);
+  expect(after.agentId).toBe(before.agentId);
+  expect(after.draft?.delivery?.reference).toEqual(before.draft?.delivery?.reference);
+  expect(after.draft?.delivery?.settled).toBe(true);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+          (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
+        ).length,
+    ),
+  ).toBe(1);
+  await writeFile(
+    test.info().outputPath('accepted-draft-reopen.json'),
+    JSON.stringify(
+      {
+        before,
+        after,
+        persistedText: await persistedText(),
+      },
+      null,
+      2,
+    ),
+  );
+  await page.screenshot({ path: test.info().outputPath('accepted-draft-reopened.png') });
+}
+
+/**
+ * Choose an annotate tool, as the recording tool bar or a tool key does: the
+ * composer itself has no annotate button (capture, record and dictate only).
+ */
+async function chooseTool(page: Page, tool: 'box' | 'arrow'): Promise<void> {
+  await page.evaluate((value) => {
+    const { store } = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
+    const { workspaceId, agentId } = store.state.dockConversation;
+    store.dispatch({
+      type: 'dockConversation/evidenceToolSelectRequested',
+      payload: [workspaceId, agentId, value],
+    });
+  }, tool);
+}
+
+async function caption(page: Page, text: string): Promise<void> {
+  await page.evaluate(
+    (value) =>
+      (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.setCaption(value),
+    text,
+  );
+}
 
 async function gesture(
   page: Page,
-  tool: 'box' | 'pick',
+  tool: 'box' | 'arrow',
   rect: { x: number; y: number; w: number; h: number },
   element: { role: string; name: string; path: string | null; source: string | null } | null,
 ): Promise<void> {
@@ -44,7 +183,9 @@ async function gesture(
     ([t, r, e]) =>
       (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.gesture(
         t,
-        { kind: 'rect', ...r },
+        t === 'arrow'
+          ? { kind: 'arrow', from: { x: r.x, y: r.y }, to: { x: r.x + r.w, y: r.y + r.h } }
+          : { kind: 'rect', ...r },
         e,
       ),
     [tool, rect, element] as const,
@@ -77,14 +218,15 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   const component = await mount(ComposerE2EHarness);
   const footer = component.locator('[data-dock-media-footer]');
   await expect(footer).toBeVisible();
-  const annotate = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  // Annotate and record enable only once the native capabilities were installed.
-  await expect(annotate).toBeEnabled();
+  // Capture, record and dictate only; record enables once native capabilities are installed.
+  await expect(footer.locator('.controls button')).toHaveCount(3);
+  await expect(component.getByRole('button', { name: /^Record the screen/ })).toBeEnabled();
   const editor = component.locator('.tiptap-editor');
   const tiles = component.locator('[data-dock-media-attachments] .tile');
   const chips = editor.locator('.screen-reference-chip');
 
   // 1 Idle
+  await caption(page, '1 · Idle: model, capture, record, mic, Send');
   await editor.click();
   await screen(page, 1);
 
@@ -95,15 +237,9 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
   await screen(page, 2);
 
-  // 3 Annotation tools
-  await annotate.focus();
-  await annotate.press('Space');
-  const tools = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(tools).toBeVisible();
-  await screen(page, 3);
-
   // 4 Annotating: box, two shapes
-  await tools.getByRole('button', { name: 'Box' }).click();
+  await caption(page, '4 · Annotate with Box: two shapes on the screen');
+  await chooseTool(page, 'box');
   await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
   const { card, save, cancel } = SYNTHETIC_ELEMENTS;
   await gesture(page, 'box', { x: card.x + 30, y: card.y + 90, w: card.w - 60, h: 100 }, null);
@@ -118,35 +254,23 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await page.mouse.move(5, VIEW.height - 5);
   await screen(page, 4);
 
-  // Pick: switch tool in the open session, then pick an element.
-  await annotate.focus();
-  await annotate.press('Space');
-  await expect(tools).toBeVisible();
-  await tools.getByRole('button', { name: 'Pick an element' }).click();
-  const saveElement = {
-    role: 'button',
-    name: 'Save',
-    path: 'main > form.settings > div.actions > button.save',
-    source: null,
-  };
-  await gesture(page, 'pick', { x: save.x, y: save.y, w: save.w, h: save.h }, saveElement);
+  // Arrow: switch to a supported tool in the open session.
+  await caption(page, 'Annotate with Arrow');
+  await chooseTool(page, 'arrow');
+  await gesture(page, 'arrow', { x: save.x, y: save.y, w: save.w, h: save.h }, null);
   await expect(
     component.getByRole('button', { name: 'Screenshot with 3 marks. Open' }),
   ).toBeVisible();
   await page.mouse.move(5, VIEW.height - 5);
 
-  // 5 Dictating with click chips
+  // 5 Dictating with shape reference chips
+  await chooseTool(page, 'box');
   await component.getByRole('button', { name: /^Dictate/ }).click();
   await expect(component.getByText('Listening', { exact: true })).toBeVisible();
   await say(page, 'Closer, but this');
-  await gesture(
-    page,
-    'pick',
-    { x: card.x, y: card.y, w: card.w, h: card.h },
-    { role: 'dialog', name: 'Workspace name', path: 'main > form.settings', source: null },
-  );
+  await gesture(page, 'box', { x: card.x, y: card.y, w: card.w, h: card.h }, null);
   await say(page, ' still has the old shadow, and this one');
-  await gesture(page, 'pick', { x: save.x, y: save.y, w: save.w, h: save.h }, saveElement);
+  await gesture(page, 'box', { x: save.x, y: save.y, w: save.w, h: save.h }, null);
   await say(page, ' drops its hover');
   await expect(component.locator('[data-screen-interim]')).toBeVisible();
   await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
@@ -157,6 +281,9 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(chips).toHaveCount(2);
   await expect(chips.nth(0)).toHaveAccessibleName(/^Reference 4:/);
   await expect(chips.nth(1)).toHaveAccessibleName(/^Reference 5:/);
+  await expect(
+    component.getByRole('button', { name: 'Screenshot with 5 marks. Open' }),
+  ).toBeVisible();
 
   // Delete chip 4 → its mark goes; chip 5 renumbers to 4 in text and image.
   const first = (await chips.nth(0).boundingBox())!;
@@ -206,6 +333,14 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   // Send
   const submit = component.getByTestId('composer-submit-button');
   await expect(submit).toBeEnabled();
+  const owner = await page.evaluate(() => {
+    const { workspaceId, agentId } = (window as unknown as { __dockComposerE2E: Harness })
+      .__dockComposerE2E.store.state.dockConversation;
+    return { workspaceId, agentId };
+  });
+  await expect(tiles).not.toHaveCount(0);
+  await expect(chips).toHaveCount(1);
+  const beforeSend = await draftSnapshot(page);
   await submit.click();
   await expect
     .poll(() =>
@@ -223,15 +358,27 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
       native: JSON.parse(JSON.stringify(h.native.log)) as unknown,
     };
   });
-  await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.fixture.settle(),
+  const sends = captured.calls.filter(
+    (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
   );
+  expect(sends).toHaveLength(1);
+  const [send] = sends;
+  const admitted = await assertAdmitted(page, beforeSend, send);
+  await expect(tiles).toHaveCount(0);
+  await expect(chips).toHaveCount(0);
+  const settled = await settleAdmission(page, admitted);
+  await assertAcceptedDraftStaysEmpty(page);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+          (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
+        ).length,
+    ),
+  ).toBe(1);
   await expect(tiles).toHaveCount(0);
   await expect(chips).toHaveCount(0);
 
-  const send = captured.calls.find(
-    (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
-  )!;
   const placements = captured.calls
     .filter((call) => call.method === 'file.placeAttachment')
     .map(({ params }) => {
@@ -255,6 +402,8 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
           note: 'Production dock composer, controller, sagas, editor and send; scripted daemon wire and native helper. No screen capture, microphone, recording or real message.',
         },
         send,
+        admissionId: admitted.submission?.id,
+        settled: settled.draft?.delivery?.settled,
         placements,
         native: captured.native,
       },
@@ -283,8 +432,136 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   expect(params.messageMetadata?.type).toBe('dock_screen_evidence');
   const marks = (params.messageMetadata?.images ?? []).flatMap((image) => image.marks ?? []);
   expect(marks.map((mark) => mark.n)).toEqual([1, 2, 3, 4]);
-  expect(marks.filter((mark) => mark.tool === 'pick').every((mark) => mark.element)).toBe(true);
+  expect(marks.map((mark) => mark.tool)).toEqual(['box', 'box', 'arrow', 'box']);
+  expect(send.params).toMatchObject(owner);
   expect(placements.filter((row) => 'sourcePath' in row)).toHaveLength(1);
+});
+
+test('restored legacy Pick marks retain metadata through reference deletion and send', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(ComposerE2EHarness, { props: { legacyPickDraft: true } });
+  await expect
+    .poll(async () => {
+      const state = await draftSnapshot(page);
+      return (
+        state.restore?.status === 'restored' &&
+        state.restore.workspaceId === state.workspaceId &&
+        state.restore.agentId === state.agentId &&
+        !!state.restore.requestId &&
+        state.draft?.restored === true
+      );
+    })
+    .toBe(true);
+  const restored = await draftSnapshot(page);
+  expect(restored.restore?.draft?.text).toBe('Review [[mark:1]] and [[mark:2]]');
+  expect(restored.restore?.draft?.attachments).toHaveLength(1);
+  const seeded = {
+    workspaceId: restored.workspaceId,
+    agentId: restored.agentId,
+    marks: restored.evidence?.marks ?? [],
+  };
+  expect(seeded.marks.map(({ id, tool, element }) => ({ id, tool, element }))).toEqual([
+    {
+      id: 'legacy-pick-1',
+      tool: 'pick',
+      element: {
+        role: 'button',
+        name: 'Cancel',
+        path: 'main > button.cancel',
+        source: 'https://example.test/settings',
+      },
+    },
+    {
+      id: 'legacy-pick-2',
+      tool: 'pick',
+      element: {
+        role: 'button',
+        name: 'Save',
+        path: 'main > button.save',
+        source: 'https://example.test/settings',
+      },
+    },
+  ]);
+  const editor = component.locator('.tiptap-editor');
+  const chips = editor.locator('.screen-reference-chip');
+  const tiles = component.locator('[data-dock-media-attachments] .tile');
+  await expect(chips).toHaveCount(2);
+  await expect(
+    component.getByRole('button', { name: 'Screenshot with 2 marks. Open' }),
+  ).toBeVisible();
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.insertText(' with the updated explanation');
+  const first = (await chips.first().boundingBox())!;
+  await page.mouse.click(first.x + first.width + 1, first.y + first.height / 2);
+  await page.keyboard.press('Backspace');
+  await expect(chips).toHaveCount(1);
+  await expect(chips.first()).toHaveAccessibleName(/^Reference 1:/);
+  await expect(
+    component.getByRole('button', { name: 'Screenshot with 1 marks. Open' }),
+  ).toBeVisible();
+  const beforeSend = await draftSnapshot(page);
+  await component.getByTestId('composer-submit-button').click();
+  const sends = () =>
+    page.evaluate(() =>
+      (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+        (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
+      ),
+    );
+  await expect.poll(async () => (await sends()).length).toBe(1);
+  const [send] = await sends();
+  expect(send.params).toMatchObject({ workspaceId: seeded.workspaceId, agentId: seeded.agentId });
+  const placements = await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+      (call) => call.method === 'file.placeAttachment',
+    ),
+  );
+  // This wire does not advertise raw retention: one restored screenshot places one composite.
+  expect(placements).toHaveLength(1);
+  expect(placements[0].params).toMatchObject({
+    workspaceId: seeded.workspaceId,
+    mimeType: 'image/jpeg',
+  });
+  expect(placements[0].params).not.toHaveProperty('sourcePath');
+  const metadata = send.params.messageMetadata as DockScreenEvidenceMetadata;
+  expect(metadata.type).toBe('dock_screen_evidence');
+  expect(metadata.images.flatMap((image) => image.marks)).toEqual([
+    expect.objectContaining({
+      n: 1,
+      id: 'legacy-pick-2',
+      tool: 'pick',
+      element: seeded.marks[1].element,
+    }),
+  ]);
+  const text = String(send.params.message ?? send.params.content ?? '');
+  expect(text).toContain('with the updated explanation');
+  expect(text).toContain('[[mark:1]]');
+  expect(text).not.toContain('[[mark:2]]');
+  const admitted = await assertAdmitted(page, beforeSend, send);
+  await expect(chips).toHaveCount(0);
+  await expect(tiles).toHaveCount(0);
+  const settled = await settleAdmission(page, admitted);
+  await assertAcceptedDraftStaysEmpty(page);
+  await expect(chips).toHaveCount(0);
+  await expect(tiles).toHaveCount(0);
+  expect(await sends()).toHaveLength(1);
+  await expect(editor).toHaveText('');
+  await info.attach('legacy-pick-send-receipt', {
+    body: JSON.stringify(
+      {
+        synthetic: true,
+        seeded,
+        send,
+        admissionId: admitted.submission?.id,
+        settled: settled.draft?.delivery?.settled,
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
 });
 
 test('closing retires transient media and preserves words and completed captures', async ({
@@ -344,4 +621,52 @@ test('closing retires transient media and preserves words and completed captures
     ),
     contentType: 'application/json',
   });
+});
+
+test('Record from the composer opens the recording tool bar in mouse mode, and Stop closes it', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerE2EHarness);
+  const footer = component.locator('[data-dock-media-footer]');
+  await expect(footer.locator('.controls button')).toHaveCount(3);
+  const native = () =>
+    page.evaluate(() => {
+      const { native } = (
+        window as unknown as {
+          __dockComposerE2E: {
+            native: {
+              sessionId: string | null;
+              log: {
+                annotations: { id: string; mode: string }[];
+                mouse: string[];
+                ended: string[];
+                clips: { started: string[]; stopped: string[] };
+              };
+            };
+          };
+        }
+      ).__dockComposerE2E;
+      return { sessionId: native.sessionId, ...structuredClone(native.log) };
+    });
+
+  await component.getByRole('button', { name: /^Record the screen/ }).click();
+  await expect(component.getByRole('button', { name: 'Stop recording' })).toBeVisible();
+  // One live session opened for the bar, switched to mouse mode, then the clip started.
+  await expect.poll(async () => (await native()).clips.started.length).toBe(1);
+  const opened = await native();
+  expect(opened.annotations).toHaveLength(1);
+  expect(opened.annotations[0]).toMatchObject({ mode: 'live' });
+  expect(opened.sessionId).toBe(opened.annotations[0]!.id);
+  expect(opened.mouse).toEqual([opened.annotations[0]!.id]);
+
+  // Stop from the composer: the clip is kept and the bar's session closes with it.
+  await component.getByRole('button', { name: 'Stop recording' }).click();
+  await expect.poll(async () => (await native()).sessionId).toBeNull();
+  const stopped = await native();
+  expect(stopped.clips.stopped).toHaveLength(1);
+  expect(stopped.ended).toContain(opened.annotations[0]!.id);
+  await expect(
+    component.locator('[data-dock-media-attachments] .tile[data-kind="clip"]'),
+  ).toHaveCount(1);
 });

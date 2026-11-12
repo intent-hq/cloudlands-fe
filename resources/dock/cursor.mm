@@ -8,6 +8,16 @@
 #include <unordered_set>
 #include <vector>
 
+// A 1x1 transparent panel that can take key status for an instant. Making it key and
+// ordering it out hands the keyboard back (to the active app, or to this app's own key
+// window) while the dock stays on screen. Electron's blur instead orders the dock itself
+// out and back, which blanks it.
+@interface IntentDockKeySink : NSPanel
+@end
+@implementation IntentDockKeySink
+- (BOOL)canBecomeKeyWindow { return YES; }
+@end
+
 namespace {
 struct Region {
   double x, y, width, height;
@@ -15,7 +25,7 @@ struct Region {
     return x == other.x && y == other.y && width == other.width && height == other.height;
   }
 };
-enum class Kind { None, Grab, Grabbing, NSResize, EWResize, NESWResize, NWSEResize, Pointer, Text };
+enum class Kind { None, Grab, Grabbing, NSResize, EWResize, NESWResize, NWSEResize, Pointer, Text, Custom };
 
 const char* KindName(Kind kind) {
   switch (kind) {
@@ -35,6 +45,8 @@ const char* KindName(Kind kind) {
       return "pointer";
     case Kind::Text:
       return "text";
+    case Kind::Custom:
+      return "custom";
     case Kind::None:
       return "none";
   }
@@ -72,6 +84,10 @@ NSCursor* CursorFor(Kind kind) {
   // Links and buttons, and text fields: the dock owns these too while it is not key.
   if (kind == Kind::Pointer) return NSCursor.pointingHandCursor;
   if (kind == Kind::Text) return NSCursor.IBeamCursor;
+  // Only the four resize kinds index the table below; anything else (Custom, a future
+  // kind) has no named cursor here and must never index it.
+  if (kind != Kind::NSResize && kind != Kind::EWResize && kind != Kind::NESWResize &&
+      kind != Kind::NWSEResize) return nil;
   // Stable instances retain the existing ownership/dedup semantics.
   static NSCursor* cursors[4];
   const size_t index = static_cast<size_t>(kind) - static_cast<size_t>(Kind::NSResize);
@@ -132,12 +148,17 @@ const char* CursorName(NSCursor* cursor) {
   BOOL disposed;
   BOOL ownsCursor;
   NSCursor* appliedCursor;
+  // A page-provided cursor (Chromium's CSS url() image), built once per image identity.
+  NSCursor* customCursor;
+  NSString* customId;
+  double customScale;
   NSString* lastApplied;
   uint64_t setCount;
 }
 - (instancetype)initWithView:(NSView*)target;
 - (NSPoint)localPoint;
 - (BOOL)eligible;
+- (NSCursor*)desiredCursor;
 - (void)refresh;
 - (void)releaseCursor;
 - (void)rebuildTracking;
@@ -172,10 +193,13 @@ const char* CursorName(NSCursor* cursor) {
   return NSMakePoint(p.x - NSMinX(target.bounds),
                      target.isFlipped ? p.y - NSMinY(target.bounds) : NSMaxY(target.bounds) - p.y);
 }
+- (NSCursor*)desiredCursor {
+  return kind == Kind::Custom ? customCursor : CursorFor(kind);
+}
 - (BOOL)eligible {
   NSView* target = view;
   NSWindow* window = target.window;
-  if (disposed || !enabled || kind == Kind::None || !target || !window ||
+  if (disposed || !enabled || kind == Kind::None || ![self desiredCursor] || !target || !window ||
       window != attachedWindow || !window.visible || window.miniaturized ||
       window.ignoresMouseEvents || target.hiddenOrHasHiddenAncestor) return NO;
   // A popup or another app can cover our view without changing its visible property.
@@ -214,7 +238,7 @@ const char* CursorName(NSCursor* cursor) {
 }
 - (void)refresh {
   if (![self eligible]) { [self releaseCursor]; return; }
-  NSCursor* desired = CursorFor(kind);
+  NSCursor* desired = [self desiredCursor];
   if (ownsCursor && appliedCursor == desired && SameCursor(NSCursor.currentSystemCursor, desired))
     return;
   [desired set];
@@ -275,7 +299,10 @@ struct Token {
   Environment* environment;
   IntentDockCursorOwner* __strong owner;
 };
-struct Environment { std::unordered_set<Token*> tokens; };
+struct Environment {
+  std::unordered_set<Token*> tokens;
+  IntentDockKeySink* __strong keySink = nil;
+};
 
 void Check(napi_env env, napi_status status) {
   if (status == napi_ok) return;
@@ -329,6 +356,8 @@ void Cleanup(void* data) {
     [token->owner dispose];
     token->environment = nullptr;
   }
+  [environment->keySink close];
+  environment->keySink = nil;
   delete environment;
 }
 
@@ -379,6 +408,36 @@ std::vector<Region> ParseRegions(napi_env env, napi_value list) {
   }
   return regions;
 }
+// Validated, bounded construction from Electron's cursor-changed payload: PNG pixels at
+// `scale`, hotspot in image pixels from the top-left. NSCursor takes points, top-left origin.
+NSCursor* BuildCustomCursor(napi_env env, napi_value image, double* scaleOut) {
+  napi_value png = Property(env, image, "png");
+  bool isBuffer = false;
+  Check(env, napi_is_buffer(env, png, &isBuffer));
+  Require(env, isBuffer, "Custom cursor PNG must be a Buffer");
+  void* bytes;
+  size_t length;
+  Check(env, napi_get_buffer_info(env, png, &bytes, &length));
+  Require(env, length >= 8 && length <= 262144, "Invalid custom cursor PNG size");
+  const double scale = Number(env, image, "scale");
+  const double hotX = Number(env, image, "hotspotX");
+  const double hotY = Number(env, image, "hotspotY");
+  Require(env, scale >= 1 && scale <= 4, "Invalid custom cursor scale");
+  NSBitmapImageRep* rep = [NSBitmapImageRep imageRepWithData:[NSData dataWithBytes:bytes length:length]];
+  Require(env, rep != nil, "Custom cursor PNG does not decode");
+  const double pw = double(rep.pixelsWide), ph = double(rep.pixelsHigh);
+  Require(env, pw >= 1 && ph >= 1 && pw <= 256 && ph <= 256, "Invalid custom cursor pixel size");
+  Require(env, pw / scale <= 64 && ph / scale <= 64, "Custom cursor is too large");
+  Require(env, hotX >= 0 && hotY >= 0 && hotX < pw && hotY < ph, "Custom cursor hotspot is outside the image");
+  const NSSize points = NSMakeSize(pw / scale, ph / scale);
+  rep.size = points;
+  NSImage* picture = [[NSImage alloc] initWithSize:points];
+  [picture addRepresentation:rep];
+  NSCursor* cursor = [[NSCursor alloc] initWithImage:picture hotSpot:NSMakePoint(hotX / scale, hotY / scale)];
+  Require(env, cursor != nil, "Cannot create custom cursor");
+  *scaleOut = scale;
+  return cursor;
+}
 napi_value Update(napi_env env, napi_value* args, Environment* environment) {
   Token* token = GetToken(env, args[0], environment);
   Require(env, !token->owner->disposed, "Dock cursor adapter is disposed");
@@ -396,6 +455,7 @@ napi_value Update(napi_env env, napi_value* args, Environment* environment) {
   else if (std::strcmp(text, "nwse-resize") == 0 && length == 11) kind = Kind::NWSEResize;
   else if (std::strcmp(text, "pointer") == 0 && length == 7) kind = Kind::Pointer;
   else if (std::strcmp(text, "text") == 0 && length == 4) kind = Kind::Text;
+  else if (std::strcmp(text, "custom") == 0 && length == 6) kind = Kind::Custom;
   else { Require(env, std::strcmp(text, "none") == 0 && length == 4, "Invalid cursor kind"); kind = Kind::None; }
   auto regions = ParseRegions(env, Property(env, args[1], "regions"));
   std::vector<Region> excludedRegions;
@@ -410,10 +470,34 @@ napi_value Update(napi_env env, napi_value* args, Environment* environment) {
     Require(env, std::isfinite(revision) && revision >= 0 && revision <= 9007199254740991.0 &&
                  std::floor(revision) == revision, "Invalid cursor revision");
   }
+  // A custom kind names its image; the PNG travels only when that identity changes.
+  NSString* imageId = token->owner->customId;
+  NSCursor* built = nil;
+  double builtScale = 0;
+  if (kind == Kind::Custom) {
+    napi_value image = Property(env, args[1], "image");
+    char idText[129];
+    size_t idLength;
+    Check(env, napi_get_value_string_utf8(env, Property(env, image, "id"), idText, sizeof(idText), &idLength));
+    Require(env, idLength > 0 && idLength < 128, "Invalid custom cursor id");
+    imageId = [NSString stringWithUTF8String:idText];
+    if (![imageId isEqualToString:token->owner->customId ?: @""]) {
+      bool hasPng = false;
+      Check(env, napi_has_named_property(env, image, "png", &hasPng));
+      Require(env, hasPng, "Custom cursor image changed without its PNG");
+      built = BuildCustomCursor(env, image, &builtScale);
+    }
+  }
   IntentDockCursorOwner* owner = token->owner;
   // Property getters can re-enter the module and dispose the token while parsing.
   Require(env, !owner->disposed, "Dock cursor adapter was disposed during update");
-  if (owner->enabled != enabled || owner->kind != kind || owner->regions != regions ||
+  const bool imageChanged = built != nil;
+  if (imageChanged) {
+    owner->customCursor = built;
+    owner->customId = imageId;
+    owner->customScale = builtScale;
+  }
+  if (imageChanged || owner->enabled != enabled || owner->kind != kind || owner->regions != regions ||
       owner->excludedRegions != excludedRegions || owner->revision != revision) {
     owner->enabled = enabled;
     owner->kind = kind;
@@ -462,12 +546,20 @@ napi_value Inspect(napi_env env, napi_value* args, Environment* environment) {
   Check(env, napi_set_named_property(env, result, "screenPoint", screenPoint));
   Set(env, result, "windowKey", bool(window.keyWindow));
   Set(env, result, "windowVisible", bool(window.visible));
+  Set(env, result, "appActive", bool(NSApp.active));
   Set(env, result, "interactive", bool(window && !window.ignoresMouseEvents));
   Set(env, result, "currentSystemCursor", CursorName(NSCursor.currentSystemCursor));
   Set(env, result, "processCurrent", CursorName(NSCursor.currentCursor));
   Set(env, result, "systemCursorMatchesRequested", owner->kind != Kind::None &&
-      SameCursor(NSCursor.currentSystemCursor, CursorFor(owner->kind)));
+      SameCursor(NSCursor.currentSystemCursor, [owner desiredCursor]));
   Set(env, result, "lastApplied", owner->lastApplied.UTF8String);
+  Set(env, result, "customId", (owner->customId ?: @"").UTF8String);
+  Set(env, result, "customScale", owner->customScale);
+  Set(env, result, "customWidth", owner->customCursor ? double(owner->customCursor.image.size.width) : 0.0);
+  Set(env, result, "customHeight", owner->customCursor ? double(owner->customCursor.image.size.height) : 0.0);
+  Set(env, result, "customHotspotX", owner->customCursor ? double(owner->customCursor.hotSpot.x) : -1.0);
+  Set(env, result, "customHotspotY", owner->customCursor ? double(owner->customCursor.hotSpot.y) : -1.0);
+  Set(env, result, "processCurrentIsCustom", bool(owner->customCursor && NSCursor.currentCursor == owner->customCursor));
   Set(env, result, "setCount", double(owner->setCount));
   Set(env, result, "revision", owner->revision);
   Set(env, result, "excludedRegionCount", double(owner->excludedRegions.size()));
@@ -478,6 +570,62 @@ napi_value Inspect(napi_env env, napi_value* args, Environment* environment) {
   return result;
 }
 
+napi_value ReleaseKey(napi_env env, napi_value* args, Environment* environment) {
+  IntentDockCursorOwner* owner = GetToken(env, args[0], environment)->owner;
+  NSWindow* window = owner->view.window;
+  napi_value result;
+  if (!window || !window.keyWindow || !window.visible) {
+    Check(env, napi_get_boolean(env, false, &result));
+    return result;
+  }
+  if (!environment->keySink) {
+    IntentDockKeySink* sink =
+        [[IntentDockKeySink alloc] initWithContentRect:NSMakeRect(0, 0, 1, 1)
+                                             styleMask:NSWindowStyleMaskBorderless |
+                                                       NSWindowStyleMaskNonactivatingPanel
+                                               backing:NSBackingStoreBuffered
+                                                 defer:YES];
+    sink.alphaValue = 0;
+    sink.opaque = NO;
+    sink.hasShadow = NO;
+    sink.ignoresMouseEvents = YES;
+    sink.releasedWhenClosed = NO;
+    sink.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                              NSWindowCollectionBehaviorFullScreenAuxiliary |
+                              NSWindowCollectionBehaviorTransient |
+                              NSWindowCollectionBehaviorIgnoresCycle;
+    environment->keySink = sink;
+  }
+  // This app is active (the person was in one of its windows): its frontmost other
+  // window takes the keyboard back, or with none the app deactivates. If the dock is
+  // still key (the panel never activated the app), the sink takes key for an instant
+  // and orders out, returning it to the active app. The dock never leaves the screen.
+  NSWindow* next = nil;
+  if (NSApp.active) {
+    for (NSWindow* candidate in NSApp.orderedWindows) {
+      if (candidate != window && candidate.visible && candidate.canBecomeKeyWindow &&
+          ![candidate isKindOfClass:[IntentDockKeySink class]]) {
+        next = candidate;
+        break;
+      }
+    }
+  }
+  if (next) {
+    [next makeKeyWindow];
+  } else if (NSApp.active) {
+    // Active with no other window to take the keyboard: step back so the app the
+    // person came from becomes active again.
+    [NSApp deactivate];
+  }
+  if (window.keyWindow) {
+    IntentDockKeySink* sink = environment->keySink;
+    sink.level = window.level;
+    [sink makeKeyAndOrderFront:nil];
+    [sink orderOut:nil];
+  }
+  Check(env, napi_get_boolean(env, !window.keyWindow && window.visible, &result));
+  return result;
+}
 template <napi_value (*Function)(napi_env, napi_value*, Environment*), size_t Count>
 napi_value Call(napi_env env, napi_callback_info info) {
   @autoreleasepool {
@@ -516,9 +664,17 @@ napi_value Initialize(napi_env env, napi_value exports) {
     {"update", nullptr, Call<Update, 2>, nullptr, nullptr, nullptr, napi_default, environment},
     {"dispose", nullptr, Call<Dispose, 1>, nullptr, nullptr, nullptr, napi_default, environment},
     {"inspect", nullptr, Call<Inspect, 1>, nullptr, nullptr, nullptr, napi_default, environment},
+    {"releaseKey", nullptr, Call<ReleaseKey, 1>, nullptr, nullptr, nullptr, napi_default, environment},
   };
-  if (napi_define_properties(env, exports, 4, methods) != napi_ok) {
+  if (napi_define_properties(env, exports, 5, methods) != napi_ok) {
     napi_throw_error(env, nullptr, "Cannot export dock cursor methods");
+    return nullptr;
+  }
+  // Feature flag: callers send `custom` cursors only to builds that understand them.
+  napi_value supportsCustom;
+  if (napi_get_boolean(env, true, &supportsCustom) != napi_ok ||
+      napi_set_named_property(env, exports, "supportsCustom", supportsCustom) != napi_ok) {
+    napi_throw_error(env, nullptr, "Cannot export dock cursor features");
     return nullptr;
   }
   return exports;

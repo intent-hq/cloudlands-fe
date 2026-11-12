@@ -141,6 +141,8 @@ type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
     tooltipDelayDuration?: number;
     /** Classes for the tooltip's trigger wrapper (e.g. `min-w-0` so the button can shrink). */
     tooltipClass?: string;
+    /** Optional appearance for the floating content; trigger geometry is unchanged. */
+    tooltipContentClass?: string;
   };
 
 type NamedIconButton =

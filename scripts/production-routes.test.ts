@@ -77,6 +77,7 @@ describe('production route graph', () => {
       'desktop-overlay/+page.svelte',
       'dev-console/+page.svelte',
       'dock-annotation/+page.svelte',
+      'dock-capture-editor/+page.svelte',
       'dock/+page.svelte',
       'hud/+layout.svelte',
       'hud/+page.svelte',

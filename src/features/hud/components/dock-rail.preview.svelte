@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import type { DockRecordingIndicator } from '$features/hud/utils/dock-recording-indicator';
   import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { onDestroy } from 'svelte';
   import type { DockPointerRect } from '$shared/dock-layout';
@@ -33,16 +34,38 @@
     placement: initialPlacement,
     failOpenOnce = false,
     focusRequest = 0,
+    closeRequest = 0,
+    sideDefaultWorkspaceId = null,
     placementError = false,
     floatingDisplay,
     controlledPlacement = false,
     manualResizeAcknowledgements = false,
     conversationFixture = false,
     conversationContent: conversationOverride,
+    conversationController,
+    recordingFixture,
     machineFixture = false,
     failMachineOnce = false,
     resizeAcknowledgement = 'accept',
   }: DockRailPreviewProps = $props();
+  const recordingStartedAt = catalogNow() - 70_000;
+  let recordingStopped = $state(false);
+  $effect(() => {
+    recordingFixture;
+    recordingStopped = false;
+  });
+  const previewRecording = $derived<DockRecordingIndicator | null>(
+    recordingFixture && !recordingStopped
+      ? {
+          workspaceId: String(workspaces[0]?.workspace.id ?? 'preview-recording'),
+          agentId: 'preview-agent',
+          clipId: 'preview-clip',
+          startedAt: recordingStartedAt,
+          pausedAt: recordingFixture === 'paused' ? recordingStartedAt + 65_000 : null,
+          pausedMs: 0,
+        }
+      : null,
+  );
   onDestroy(() => clearTimeout(machineTimer));
   const machineOptions = [
     { id: 'local', label: 'This Mac' },
@@ -498,6 +521,12 @@
     data-preview-commands={JSON.stringify(commands)}
   >
     <DockRail
+      recording={previewRecording}
+      recordingStopping={recordingFixture === 'stopping'}
+      onStopRecording={() => {
+        recordAction('recording:stop');
+        recordingStopped = true;
+      }}
       machines={machineFixture ? machineOptions : undefined}
       {machineId}
       {machineSwitching}
@@ -505,11 +534,24 @@
       onMachine={machineFixture ? switchMachine : undefined}
       {workspaces}
       conversation={conversationFixture ? (conversationOverride ?? conversationContent) : undefined}
-      {conversationWorkspaceId}
-      onOpenConversation={conversationFixture ? openConversation : undefined}
-      onCloseConversation={conversationFixture ? closeConversation : undefined}
+      conversationWorkspaceId={conversationController
+        ? conversationController.workspaceId
+        : conversationWorkspaceId}
+      onOpenConversation={conversationController
+        ? conversationController.open
+        : conversationFixture
+          ? openConversation
+          : undefined}
+      onCloseConversation={conversationController
+        ? conversationController.close
+        : conversationFixture
+          ? closeConversation
+          : undefined}
+      onHomeDismiss={conversationController?.dismiss}
       {placement}
       {focusRequest}
+      {closeRequest}
+      {sideDefaultWorkspaceId}
       {dragStartResult}
       {resizeStartResult}
       {placementError}

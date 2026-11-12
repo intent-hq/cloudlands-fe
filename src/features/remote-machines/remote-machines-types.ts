@@ -1,5 +1,6 @@
 import type {
   ExecutorBackend,
+  MachineOrderRow,
   RemoteMachine,
   RemoteMachineFailure,
 } from '$shared/types/remote-machines';
@@ -17,6 +18,18 @@ export interface RemoteMachinesState {
   initialAgentPlacement: boolean;
   /** `client.hello` also advertises the node-invite claim capability (`intent://node` links). */
   claimInvites: boolean;
+  /** `client.hello` also advertises `machineOrder: 1`: one user-ordered machine list. */
+  machineOrder: boolean;
+  /**
+   * `remoteMachines.order` (first = preferred); null until read or without
+   * `machineOrder: 1`. Owner reorders replace it optimistically.
+   */
+  order: MachineOrderRow[] | null;
+  /**
+   * The id of the `remoteMachines.setOrder` in flight, or null. Further moves
+   * wait for it, and only that save (or a new connection) settles it.
+   */
+  orderSaving: string | null;
   /** The current backend's exposed machines, keyed by machine (daemon) id. */
   machines: Record<string, RemoteMachine>;
   /** WSS certificate fingerprint of this computer's own daemon, to match its row. */

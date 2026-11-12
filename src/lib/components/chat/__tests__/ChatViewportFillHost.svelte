@@ -35,6 +35,8 @@
   import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
+  import { emitMockIpcEvent } from '$shared/ipc-mock-router';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
   let {
@@ -137,7 +139,6 @@
       ],
     }) as AgentMessage;
   let subscribed = $state(false);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT serves scripted wire responses; the production saga owns every request.
   installMockElectronBridge({
     'agent.get': (input) =>
       store.state.agentSessions.byAgentId[(input as { agentId: string }).agentId],
@@ -221,16 +222,6 @@
       };
     },
   });
-  let notify: ((value: unknown) => void) | undefined;
-  if (progressiveTotal !== undefined) {
-    const api = window.electronAPI!;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Test fixture captures the notification transport, not domain data.
-    const originalOn = api.on.bind(api);
-    api.on = (channel, handler) => {
-      if (channel === 'backend:notification') notify = handler;
-      return originalOn(channel, handler);
-    };
-  }
   const dispose = startRootStoreLifecycle(store, {
     startSagas: () => [
       ...startChatFixtureSagas(store),
@@ -304,7 +295,7 @@
     const finish = complete;
     untrack(() => {
       const push = (kind: string, payload: object) =>
-        notify?.({
+        emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, {
           method: 'subscription.push',
           params: {
             subscriptionId: 'progressive-initial',

@@ -7,6 +7,8 @@ import {
   type ShortcutId,
 } from '$lib/utils/shortcut-bindings';
 import { shortcutChord } from './shortcut-chords';
+import { createDockShortcutPreferences } from '../main/dock-shortcut-preferences';
+import { createDockShortcutRegistration } from '../main/dock-shortcut-registration';
 
 const isSingleChord = (binding: string) =>
   normalizeShortcut(binding) !== null &&
@@ -44,7 +46,7 @@ describe('shortcutChord', () => {
       expect(rejected).toEqual([]);
     });
 
-    it(`builds a keydown no other single-chord default claims on ${platform}`, () => {
+    it(`respects app/native ownership for every single-chord default on ${platform}`, async () => {
       const collisions = singleChordIds.flatMap((id) => {
         const { event } = shortcutChord(SHORTCUT_DEFAULTS[id], mac);
         return singleChordIds
@@ -56,7 +58,50 @@ describe('shortcutChord', () => {
           )
           .map((other) => `${id} -> ${other}`);
       });
-      expect(collisions).toEqual([]);
+      // Native Control+Shift+S and the app's Mod+Shift+S coincide only off macOS.
+      // Main blocks that exact native binding while the app default owns it; the
+      // shared table includes two owners, not only renderer keydown handlers.
+      expect(collisions).toEqual(
+        mac ? [] : ['workspace.set-aside -> dock.capture', 'dock.capture -> workspace.set-aside'],
+      );
+      if (!mac) {
+        for (const os of ['win32', 'linux']) {
+          const registered = new Set<string>();
+          const registrar = createDockShortcutRegistration(
+            {
+              register: (key) => {
+                registered.add(key);
+                return true;
+              },
+              unregister: (key) => {
+                registered.delete(key);
+              },
+            },
+            () => {},
+            () => {},
+            os,
+          );
+          const preferences = createDockShortcutPreferences({
+            registrar,
+            read: async () => undefined,
+            write: async () => {},
+            changed: () => {},
+            platform: os,
+          });
+          await preferences.load();
+          preferences.enable(true);
+          await Promise.resolve();
+          expect(preferences.snapshot().issues).toContainEqual({
+            code: 'app-conflict',
+            id: 'dock.capture',
+            otherId: 'workspace.set-aside',
+            key: SHORTCUT_DEFAULTS['dock.capture'],
+          });
+          expect(preferences.snapshot().registered).toEqual(['focus', 'record']);
+          expect([...registered].sort()).toEqual(['Control+Shift+D', 'Control+Shift+R']);
+          preferences.enable(false);
+        }
+      }
     });
   }
 

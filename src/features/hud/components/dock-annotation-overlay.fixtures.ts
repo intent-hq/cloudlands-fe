@@ -52,8 +52,29 @@ export const dockAnnotationMediaIdle: DockAnnotationMediaState = {
     alert: false,
     recording: false,
     startedAt: null,
+    pausedAt: null,
+    pausedMs: 0,
   },
 };
+
+/** The same, with a recording live since `startedAt` (paused at `pausedAt` when set). */
+export function dockAnnotationMediaRecording(
+  startedAt: number,
+  pausedAt: number | null = null,
+): DockAnnotationMediaState {
+  return {
+    ...dockAnnotationMediaIdle,
+    record: {
+      ...dockAnnotationMediaIdle.record,
+      label: 'Stop recording',
+      tooltip: 'Stop recording',
+      recording: true,
+      startedAt,
+      pausedAt,
+      pausedMs: 0,
+    },
+  };
+}
 
 /** Retina capture (2×): image pixels are twice the overlay DIP. */
 export const dockAnnotationLiveMarked: DockAnnotationOverlayState = {

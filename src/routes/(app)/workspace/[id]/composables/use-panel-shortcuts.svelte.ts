@@ -7,7 +7,6 @@
  * Keyboard shortcuts:
  * - Cmd+0: Native browser zoom reset (not intercepted)
  * - Cmd+O: Toggle spaces overlay
- * - Cmd+Shift+D: Open Agent Overview
  * - Cmd+Shift+E: Switch to Files tab
  * - Cmd+Shift+G: Switch to Changes tab
  * - Cmd+Shift+N: Switch to Notes tab
@@ -30,7 +29,6 @@ const logger = createLogger('PanelShortcuts');
 export interface UsePanelShortcutsOptions {
   enabled?: boolean;
   onToggleSidebar?: () => void;
-  onOpenAgentOverview?: () => void;
   onFocusSidebar?: () => void;
   onFocusMainContent?: () => void;
   onFocusDrawer?: () => void;
@@ -86,14 +84,6 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
       // conflicting with text editing shortcuts like Cmd+B (bold) in rich text editors.
 
       // Cmd+0: Let browser handle native zoom reset (don't intercept)
-
-      // Cmd+Shift+D: Open Agent Overview
-      if ((event.key === 'd' || event.key === 'D') && event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        logger.debug('Opening agent overview');
-        options.onOpenAgentOverview?.();
-        return;
-      }
 
       // Cmd+Shift+E: Focus explorer (files tab)
       if ((event.key === 'e' || event.key === 'E') && event.shiftKey && !event.altKey) {

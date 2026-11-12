@@ -137,7 +137,6 @@
     cursor = false,
   }: Props = $props();
   const restoreOpen = untrack(() =>
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only navigation interception; restores the original mock handler on teardown and never fetches domain data.
     onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
   );
   const previousStep = selectOnboardingStep.select(appStore.state);

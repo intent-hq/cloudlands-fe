@@ -24,13 +24,18 @@ const SYNTHETIC_SCREEN = { width: 1440, height: 900 } as const;
 
 interface SyntheticNativeLog {
   captures: number;
+  captureModes: string[];
   annotations: { id: string; tool: DockMarkTool; mode: string; still: boolean }[];
   tools: { id: string; tool: DockMarkTool }[];
+  /** Sessions switched to mouse mode (the screen stays usable). */
+  mouse: string[];
   synced: { id: string; marks: number[] }[];
   ended: string[];
   clips: { started: string[]; stopped: string[]; released: string[] };
   speech: { started: string[]; stopped: string[]; marks: string[] };
   markAnswers: { markId: string; accepted: boolean }[];
+  /** Media export jobs (no video is rendered: synthetic output paths only). */
+  exports: string[];
 }
 
 /** A fake app window, drawn once: deterministic pixels for tiles, composites and hashes. */
@@ -91,13 +96,16 @@ function createSyntheticNative() {
   const screen = drawScreen();
   const log: SyntheticNativeLog = {
     captures: 0,
+    captureModes: [],
     annotations: [],
     tools: [],
+    mouse: [],
     synced: [],
     ended: [],
     clips: { started: [], stopped: [], released: [] },
     speech: { started: [], stopped: [], marks: [] },
     markAnswers: [],
+    exports: [],
   };
   const evidenceListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
   const speechListeners = new Set<
@@ -106,6 +114,9 @@ function createSyntheticNative() {
   let session: { id: string; captured: boolean } | null = null;
   // Held annotate starts (the overlay "opening"), released by the test in order.
   let holdCaptures = false;
+  // Opt-in: finished recordings describe a canonical original (as native placement does),
+  // so the dock can build a media source and open the recording editor.
+  let recordingOriginal = false;
   const heldCaptures: Array<() => void> = [];
   let holdStarts = false;
   const heldStarts: Array<() => void> = [];
@@ -143,8 +154,9 @@ function createSyntheticNative() {
   };
 
   const service: DockEvidenceNativeService = {
-    capabilities: { capture: true, annotate: true, record: true },
-    captureDisplay: async () => {
+    capabilities: { capture: true, captureModes: true, annotate: true, record: true },
+    captureDisplay: async (mode = 'fullscreen') => {
+      log.captureModes.push(mode);
       log.captures += 1;
       if (holdCaptures) await new Promise<void>((resolve) => heldCaptures.push(resolve));
       return { ok: true, value: { ...screen } };
@@ -162,6 +174,10 @@ function createSyntheticNative() {
       // Production's command() rejects a session native no longer has.
       if (session?.id !== id) throw new Error('unavailable');
       log.tools.push({ id, tool });
+    },
+    setAnnotationMouse: async (id) => {
+      if (session?.id !== id) throw new Error('unavailable');
+      log.mouse.push(id);
     },
     syncMarks: async (id, marks) => {
       log.synced.push({ id, marks: marks.map((mark) => mark.n) });
@@ -189,6 +205,18 @@ function createSyntheticNative() {
           size: 48_000,
           durationMs,
           hasMicAudio: false,
+          ...(recordingOriginal
+            ? {
+                original: {
+                  sourcePath: `/synthetic/dock-clips/${clipId}-original.mp4`,
+                  size: 48_000,
+                  width: 1280,
+                  height: 720,
+                  clearAtMs: [],
+                  hasMicAudio: false,
+                },
+              }
+            : {}),
         },
       };
       emitEvidence({ type: 'clip-ended', clipId, result });
@@ -198,6 +226,42 @@ function createSyntheticNative() {
       log.clips.released.push(clipId);
       return { ok: true, value: undefined };
     },
+    // An edited recording's export: one video plus a frame per included edit mark.
+    exportMedia: async (request) => {
+      log.exports.push(request.jobId);
+      const marks = request.media.saved?.marks.filter((mark) => mark.included) ?? [];
+      return {
+        ok: true as const,
+        value: {
+          jobId: request.jobId,
+          video: {
+            sourcePath: `/synthetic/exports/${request.jobId}.mp4`,
+            mimeType: 'video/mp4',
+            size: 48_000,
+          },
+          // Tests may set the exported frames' byte size (as measured on real exports).
+          frames: marks.map((mark) => ({
+            markId: mark.id,
+            sourcePath: `/synthetic/exports/${request.jobId}-${mark.id}.jpg`,
+            // Main fits exported frames to bounded JPEGs and certifies their exact prompt
+            // bytes; tests may drop the certificate (an older or unfitted export).
+            mimeType: 'image/jpeg',
+            size: (globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000,
+            ...((globalThis as { __syntheticFrameUncertified?: boolean })
+              .__syntheticFrameUncertified
+              ? {}
+              : {
+                  promptBase64Bytes:
+                    Math.ceil(
+                      ((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ??
+                        4_000) / 3,
+                    ) * 4,
+                }),
+          })),
+        },
+      };
+    },
+    releaseMediaJob: async () => ({ ok: true as const, value: undefined }),
     reportMarkAcceptance: async (_annotationId, markId, accepted) => {
       log.markAnswers.push({ markId, accepted });
       return { ok: true, value: undefined };
@@ -208,6 +272,16 @@ function createSyntheticNative() {
     },
   };
 
+  const initialized = () => ({
+    ok: true as const,
+    value: {
+      capture: true,
+      captureModes: true,
+      annotate: true,
+      record: true,
+      speech: capability,
+    },
+  });
   const capability: DockSpeechCapability = {
     available: true,
     engine: 'analyzer',
@@ -218,10 +292,19 @@ function createSyntheticNative() {
   } as DockSpeechCapability;
 
   const adapter = {
-    initialize: async () => ({
-      ok: true as const,
-      value: { capture: true, annotate: true, record: true, speech: capability },
-    }),
+    // Opt-in: refuse the next N probes (as main refuses a session on a hidden dock).
+    initialize: async () => {
+      const probe = globalThis as {
+        __syntheticNativeRefusals?: number;
+        __syntheticNativeProbes?: number;
+      };
+      probe.__syntheticNativeProbes = (probe.__syntheticNativeProbes ?? 0) + 1;
+      if ((probe.__syntheticNativeRefusals ?? 0) > 0) {
+        probe.__syntheticNativeRefusals! -= 1;
+        return { ok: false as const, error: 'unavailable' as const };
+      }
+      return initialized();
+    },
     cancel: async () => {
       if (speech) clearInterval(speech.levels);
       speech = null;
@@ -293,6 +376,14 @@ function createSyntheticNative() {
   return {
     log,
     factory: () => ({ ...adapter, service: { ...service } }) as unknown as DockNativeAdapter,
+    /** Finished recordings carry a canonical original (opt-in; see `recordingOriginal`). */
+    recordingOriginal(value: boolean) {
+      recordingOriginal = value;
+    },
+    /** The recording ends by itself (a native limit): the dock is told, nobody pressed Stop. */
+    endClip(clipId: string) {
+      return service.stopClip!(clipId);
+    },
     holdCaptures(value: boolean) {
       holdCaptures = value;
       if (!value) for (const resolve of heldCaptures.splice(0)) resolve();

@@ -9,6 +9,7 @@
   import {
     initialAgentPlacement,
     START_ON_BACKEND,
+    startOnBackendLabel,
     startOnCloudId,
     startOnCloudMachineId,
     type StartOnPlacement,
@@ -82,7 +83,7 @@
     enabled && !active && !backendOnly && defaultValue !== START_ON_BACKEND
       ? m.chat_proposalCard_startOnGone_label({
           machine: missingLabelFor(defaultValue),
-          backend: $rows$[0]?.label ?? '',
+          backend: startOnBackendLabel($rows$),
         })
       : null,
   );
@@ -137,7 +138,7 @@
         onChange={(id) => (value = id)}
         lockedReason={backendOnly
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: choices.options[0]?.label ?? '',
+              backend: startOnBackendLabel(choices.options),
             })
           : undefined}
       />

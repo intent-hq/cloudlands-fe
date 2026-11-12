@@ -197,6 +197,8 @@ export interface HudState {
   dockDragStartResult: { id: number; token: string | null } | null;
   dockResizeStartResult: { id: number; token: string | null } | null;
   dockFocusRequest: number;
+  /** Counts "close as Escape would" requests (the open shortcut pressed again). */
+  dockCloseRequest: number;
   dockMachineSwitching: string | null;
   dockMachineSwitchError: boolean;
 }
@@ -225,6 +227,7 @@ export const initialState: HudState = {
   dockDragStartResult: null,
   dockResizeStartResult: null,
   dockFocusRequest: 0,
+  dockCloseRequest: 0,
   dockMachineSwitching: null,
   dockMachineSwitchError: false,
 };
@@ -252,6 +255,7 @@ export const dockMachineSwitchFinished = createAction<[backendId: string, failed
 );
 
 export const dockFocusRequested = createAction('hud/dockFocusRequested');
+export const dockCloseRequested = createAction('hud/dockCloseRequested');
 
 // ── Actions ──
 
@@ -524,6 +528,10 @@ hudReducer.with(dockPlacementFailed, (state, { payload: [failure] }) => ({
 hudReducer.with(dockFocusRequested, (state) => ({
   ...state,
   dockFocusRequest: state.dockFocusRequest + 1,
+}));
+hudReducer.with(dockCloseRequested, (state) => ({
+  ...state,
+  dockCloseRequest: state.dockCloseRequest + 1,
 }));
 
 hudReducer.with(dockDragStartResolved, (state, { payload: [token] }) => {

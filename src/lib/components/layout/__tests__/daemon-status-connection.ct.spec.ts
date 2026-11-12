@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../../../test/ct-test';
 import DaemonStatusIndicator from '../DaemonStatusIndicator.svelte';
 
@@ -47,22 +48,39 @@ for (const { state, fullValue } of scenarios) {
         row: box(element.parentElement!),
         panel: box(panel),
         lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+        valueClientBounds: {
+          left: element.getBoundingClientRect().left + element.clientLeft,
+          right: element.getBoundingClientRect().left + element.clientLeft + element.clientWidth,
+          top: element.getBoundingClientRect().top + element.clientTop,
+          bottom: element.getBoundingClientRect().top + element.clientTop + element.clientHeight,
+        },
+        valueScrollWidth: element.scrollWidth,
+        valueClientWidth: element.clientWidth,
+        valueScrollHeight: element.scrollHeight,
+        valueClientHeight: element.clientHeight,
+        valueOverflowX: getComputedStyle(element).overflowX,
+        valueOverflowY: getComputedStyle(element).overflowY,
+        panelScrollWidth: panel.scrollWidth,
+        panelClientWidth: panel.clientWidth,
         textLines,
         valueOverflowsX: element.scrollWidth > element.clientWidth,
         panelOverflowsX: panel.scrollWidth > panel.clientWidth,
       };
     });
+    await writeFile(
+      testInfo.outputPath('connection-layout.json'),
+      JSON.stringify(geometry, null, 2),
+    );
     await testInfo.attach('connection-layout.json', {
       body: JSON.stringify(geometry, null, 2),
       contentType: 'application/json',
     });
     await testInfo.attach('expanded-status-panel.png', {
-      body: await panel.screenshot(),
+      body: await panel.screenshot({ path: testInfo.outputPath('expanded-status-panel.png') }),
       contentType: 'image/png',
     });
 
     expect(geometry.panelOverflowsX).toBe(false);
-    expect(geometry.valueOverflowsX).toBe(false);
     expect(geometry.label.right).toBeLessThan(geometry.value.left);
     expect(geometry.value.right).toBeLessThanOrEqual(geometry.row.right + 1);
     expect(geometry.row.right).toBeLessThanOrEqual(geometry.panel.right);
@@ -76,10 +94,13 @@ for (const { state, fullValue } of scenarios) {
       expect(line.right).toBeLessThanOrEqual(geometry.value.right + 1);
     }
     if (fullValue) {
+      expect(geometry.valueOverflowsX).toBe(false);
       // Every line, including the route suffix, must be inside the visible box.
       expect(visibleLines).toHaveLength(geometry.textLines.length);
       expect(geometry.textLines.at(-1)!.bottom).toBeLessThanOrEqual(geometry.value.bottom + 1);
     } else {
+      // A clamped value can retain hidden scroll overflow. Its visible text must
+      // still satisfy the containment checks above, with extra lines clipped.
       expect(geometry.textLines.length).toBeGreaterThan(visibleLines.length);
     }
   });

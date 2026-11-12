@@ -960,6 +960,62 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
   });
 
+  describe('agents.permissionPolicy default change', () => {
+    const settingsChanged = (id: string, path: string, value: unknown) => ({
+      method: 'events.event',
+      params: {
+        event: {
+          id,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'settings:changed',
+          actor: { type: 'system' },
+          data: { changes: [{ path, value }] },
+        },
+      },
+    });
+
+    function seedPolicySessions(): void {
+      seedSession({
+        id: 'policy-default',
+        permissionPolicy: null,
+        effectivePermissionPolicy: 'interactive',
+      });
+      seedSession({
+        id: 'policy-override',
+        permissionPolicy: 'interactive',
+        effectivePermissionPolicy: 'interactive',
+      });
+      // Older daemon / remote agent: no permissionPolicy field at all.
+      seedSession({ id: 'policy-absent' });
+    }
+
+    it('refetches only loaded sessions without a per-chat override', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-1', 'agents.permissionPolicy', 'allow'));
+      await flush();
+
+      const refreshed = refreshAgentSessionAfterEventSpy.mock.calls.map(
+        (call) => (call as unknown[])[0],
+      );
+      expect(refreshed).toEqual(['policy-default']);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith('policy-default', WS);
+    });
+
+    it('refetches nothing for an unrelated settings key', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-2', 'mcp.enableUserServers', true));
+      await flush();
+
+      expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    });
+  });
+
   it('invalidates existing model catalogs on host settings invalidation without another reader', async () => {
     const { providerModelsLoaded, providerModelsObserved, providerModelsReleased } =
       await import('$store/renderer/slices/provider-models/provider-models-slice');
@@ -5631,6 +5687,52 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     });
   });
 
+  it('keeps option kind and allow_always scope from agent:permission:request (PROTOCOL §8)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:permission:request', {
+        requestId: 'perm-option-kind',
+        sessionId: AGENT,
+        title: 'Run command',
+        options: [
+          { id: 'allow-once', label: 'Yes', destructive: false, kind: 'allow_once' },
+          {
+            id: 'allow-with-updates',
+            label: 'Yes, and do not ask again',
+            destructive: false,
+            kind: 'allow_always',
+            scope: 'workspace',
+          },
+          { id: 'odd', label: 'Odd', kind: 'later_maybe', scope: 'galaxy' },
+        ],
+        timestamp: 1718600000000,
+      }),
+    );
+
+    expect(
+      readPermissionRequests().find((r) => r.requestId === 'perm-option-kind')?.options,
+    ).toEqual([
+      { id: 'allow-once', label: 'Yes', destructive: false, kind: 'allow_once' },
+      {
+        id: 'allow-with-updates',
+        label: 'Yes, and do not ask again',
+        destructive: false,
+        kind: 'allow_always',
+        scope: 'workspace',
+      },
+      { id: 'odd', label: 'Odd' },
+    ]);
+
+    handler(
+      notification('agent:permission:resolved', {
+        requestId: 'perm-option-kind',
+        outcome: { outcome: 'cancelled' },
+      }),
+    );
+  });
+
   it('clears the request via removePermissionRequest on agent:permission:resolved', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -6555,6 +6657,31 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     // transcript on metadata-only reads (see FE 69f8c74c).
     expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-keep');
+  });
+
+  it('agent:updated carrying permissionPolicy re-reads so the effective policy converges', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: 'backend-1',
+          workspaceId: WS,
+          name: 'A',
+          status: AgentStatus.Active,
+          messages: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    refreshAgentSessionAfterEventSpy.mockClear();
+
+    capturedHandlers[0]!(
+      notification('agent:updated', { agentId: AGENT, permissionPolicy: 'interactive' }),
+    );
+    await flush();
+
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('forwards an agent:updated event that arrives while the prior refresh is in flight', async () => {

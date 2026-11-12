@@ -75,7 +75,6 @@
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
@@ -100,7 +99,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Constructs a logger; no domain data is fetched.
   const logger = createLogger('workspace-page');
 
   interface Props {
@@ -668,16 +666,6 @@
       return active;
     },
     // Cmd+B is registered once by the global workspace shortcut router.
-    onOpenAgentOverview: () => {
-      // Open the Agent Overview panel tab
-      const layoutManager = getPanelLayoutManager(panelLayoutId);
-      layoutManager.openTab({
-        type: 'agent-overview',
-        title: m.layout_tabTypes_agentOverview_title(),
-        closable: true,
-        workspaceId,
-      });
-    },
     onFocusSidebar: () => {
       // Focus the first focusable element in the sidebar
       focusFirstInContainer('[data-panel="sidebar"]');

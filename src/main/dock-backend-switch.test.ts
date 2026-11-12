@@ -1,3 +1,4 @@
+import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const fixture = vi.hoisted(() => ({
   placementRevision: 1,
   dragging: false,
   captureHidden: vi.fn(),
+  cursor: undefined as undefined | Record<string, unknown>,
 }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
@@ -31,6 +33,8 @@ vi.mock('electron', async () => {
       getURL: () => this.url,
       send: vi.fn(),
       sendInputEvent: vi.fn(),
+      invalidate: vi.fn(),
+      focus: vi.fn(),
       setZoomMode: vi.fn(),
       setZoomLevel: vi.fn(),
     });
@@ -50,6 +54,10 @@ vi.mock('electron', async () => {
     setAlwaysOnTop = vi.fn();
     setFullScreenable = vi.fn();
     setVisibleOnAllWorkspaces = vi.fn();
+    setOpacity = vi.fn();
+    setFocusable = vi.fn();
+    blur = vi.fn();
+    moveTop = vi.fn();
     getBounds = () => ({ x: 0, y: 0, width: 224, height: 40 });
     isVisible = () => this.visible;
     isDestroyed = () => this.destroyed;
@@ -101,7 +109,7 @@ vi.mock('../features/backend/main/backend.ipc', () => ({
   getBackendClientForConnection: (id: string) => fixture.clients.get(id),
   openBackendWindow: fixture.openBackendWindow,
 }));
-vi.mock('./dock-cursor', () => ({ attachDockCursor: () => undefined }));
+vi.mock('./dock-cursor', () => ({ attachDockCursor: () => fixture.cursor }));
 vi.mock('./local-prefs', () => ({
   getLocalPref: async (key: string) => fixture.preferences.get(key),
   setLocalPref: fixture.setLocalPref,
@@ -199,6 +207,84 @@ const finishHandoff = async () => {
   await flush();
 };
 
+describe('region selection preserves only current dock click regions', () => {
+  const region = { x: 0, y: 0, width: 80, height: 40 };
+  const publish = (regions = [region], active = true) =>
+    dock.setDockPointerRegions(window, {
+      active,
+      regions,
+      revision: fixture.placementRevision,
+    });
+
+  it('restores unchanged geometry after the selection hide clears it', () => {
+    publish();
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(region);
+
+    dock.setDockHiddenForSelection(true, { window });
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(region);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not resurrect regions after a newer inactive publication', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    publish([], false);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('keeps newer active geometry instead of the pre-selection regions', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    const newer = { x: 0, y: 0, width: 120, height: 40 };
+    publish([newer]);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(newer);
+  });
+
+  it('leaves a declined reveal hidden with no restored click regions', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    vi.mocked(window.showInactive).mockClear();
+    dock.setDockHiddenForSelection(false, { window, restore: false });
+
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('does not restore a previous placement revision', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    fixture.placementRevision += 1;
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('does not restore a previous document after navigation', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    window.webContents.emit('did-start-navigation', {}, 'app://replacement/dock', false, true);
+    dock.markDockRendererReady(window);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('still clears regions for an ordinary hide', () => {
+    publish();
+    window.hide();
+    window.showInactive();
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+});
+
 describe('owned dock capture visibility release', () => {
   it('releases a stale document barrier without showing it and keeps legacy restoration', () => {
     dock.setDockHiddenForCapture(true, { window });
@@ -228,6 +314,131 @@ describe('owned dock capture visibility release', () => {
     expect(window.focus).not.toHaveBeenCalled();
   });
 
+  it('lets a live recording own its record shortcut under a pending editor hold', () => {
+    const sender = window.webContents as unknown as Electron.WebContents;
+    const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    expect(binding).toBeTruthy();
+    (window as unknown as { isFocused: () => boolean }).isFocused = () => false;
+    // A recording started: the dock is out of sight and the recording holds it for its editor.
+    dock.hideDockForRecording(window, 'clip-1');
+    expect(
+      dock.beginDockEditorHold(window, sender, binding, '00000000-0000-4000-8000-000000000001'),
+    ).toBe(true);
+    vi.mocked(window.webContents.send).mockClear();
+    vi.mocked(window.show).mockClear();
+    // Ctrl+Shift+R reaches that recording's own pair (owner-only), never shown or focused.
+    dock.focusDockWindow({ id: 'p1', backendId: 'local', action: 'record' });
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      'window:focus-dock',
+      expect.objectContaining({ action: 'record', recordingOwnerOnly: true }),
+    );
+    expect(window.show).not.toHaveBeenCalled();
+    expect(window.focus).not.toHaveBeenCalled();
+    // After the recording, an adopted editor blocks unrelated shortcuts entirely.
+    dock.releaseDockRecordingHide('clip-1');
+    expect(
+      dock.adoptDockEditorHold(
+        '00000000-0000-4000-8000-000000000001',
+        { window, sender, binding },
+        'open-1',
+      ),
+    ).toBe(true);
+    vi.mocked(window.webContents.send).mockClear();
+    dock.focusDockWindow({ id: 'p2', backendId: 'local', action: 'focus' });
+    expect(window.webContents.send).not.toHaveBeenCalled();
+    expect(window.show).not.toHaveBeenCalled();
+    dock.releaseDockEditorHolds('open-1', false);
+  });
+
+  it('a screenshot is captured, then hidden for its editor; a hold alone hides nothing', async () => {
+    // The real capture lease (DockEvidenceSessions) with the real dock hold: only the native
+    // pixel source is synthetic, and it records whether the dock was visible at that moment.
+    const { DockEvidenceSessions } = await import('../features/hud/main/dock-evidence-session');
+    const sender = window.webContents as unknown as Electron.WebContents;
+    const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    const owner = { sender, frame: sender.mainFrame };
+    const display = { id: 1, scaleFactor: 2, bounds: { x: 0, y: 0, width: 1280, height: 900 } };
+    const visibleAtPixels: boolean[] = [];
+    const pixels = {
+      base64: Buffer.from('synthetic PNG').toString('base64'),
+      mimeType: 'image/png' as const,
+      width: 2560,
+      height: 1800,
+      displayScale: 2,
+      capturedAt: '2026-11-12T04:00:00.000Z',
+      hash: 'c'.repeat(64),
+    };
+    const sessions = new DockEvidenceSessions({
+      dock: () => dock.getDockWindow(),
+      binding: (contents) => bindings.getStrictBackendBindingForWebContents(contents),
+      retired: () => () => {},
+      placement: () => ({ displayId: 1, captureHidden: false }) as never,
+      displays: () => [display as Electron.Display],
+      permissionDenied: () => false,
+      hidden: (target, hidden, restore) =>
+        dock.setDockHiddenForCapture(hidden, { window: target, restore }),
+      hiddenForSelection: (target, hidden, restore) =>
+        dock.setDockHiddenForSelection(hidden, { window: target, restore }),
+      settle: async () => {},
+      capture: async () => {
+        throw new Error('legacy capture not used');
+      },
+      captureVisible: async (target) => {
+        visibleAtPixels.push(target.isVisible());
+        return { ok: true, value: pixels };
+      },
+      hideForOwnScreenshot: dock.hideDockForOwnScreenshot,
+      id: () => crypto.randomUUID(),
+      now: () => Date.now(),
+    });
+    const begun = sessions.begin(owner, { workspaceId: 'w', agentId: 'a', draftId: 'd' });
+    if (!begun.ok) throw new Error('capture session not admitted');
+    const shot = '00000000-0000-4000-8000-000000000002';
+    const recordingStop = '00000000-0000-4000-8000-000000000003';
+    // A recording-stop hold (no hide) and a screenshot hold at the press change nothing yet:
+    // the capture is admitted only on a visible dock.
+    expect(dock.beginDockEditorHold(window, sender, binding, recordingStop)).toBe(true);
+    dock.endDockEditorHold(recordingStop, sender, binding);
+    expect(window.isVisible()).toBe(true);
+    expect(dock.beginDockEditorHold(window, sender, binding, shot, true)).toBe(true);
+    expect(window.isVisible()).toBe(true);
+    // Another document's binding cannot hide it.
+    expect(dock.hideDockForOwnScreenshot(window, sender, {})).toBe(false);
+    expect(window.isVisible()).toBe(true);
+    // The admitted capture hides the dock before its pixels; the hold keeps it hidden after
+    // the capture's release (and through selection ends and focus requests) for the editor.
+    vi.mocked(window.showInactive).mockClear();
+    const taken = await sessions.capture(owner, { ...begun.value, requestId: 'shot' });
+    expect(taken.ok).toBe(true);
+    expect(visibleAtPixels).toEqual([false]);
+    expect(window.isVisible()).toBe(false);
+    dock.setDockHiddenForSelection(true, { window });
+    dock.setDockHiddenForSelection(false, { window });
+    dock.focusDockWindow();
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(window.show).not.toHaveBeenCalled();
+    // Its editor adopts the hold; closing the editor brings the dock back, inactive.
+    expect(dock.adoptDockEditorHold(shot, { window, sender, binding }, 'open-1')).toBe(true);
+    expect(window.isVisible()).toBe(false);
+    dock.releaseDockEditorHolds('open-1', true);
+    expect(window.showInactive).toHaveBeenCalledTimes(1);
+    expect(window.focus).not.toHaveBeenCalled();
+    // Without a screenshot hold the capture leaves the dock as it is (native exclusion).
+    const plain = await sessions.capture(owner, { ...begun.value, requestId: 'plain' });
+    expect(plain.ok).toBe(true);
+    expect(visibleAtPixels).toEqual([false, true]);
+    expect(window.isVisible()).toBe(true);
+    // A screenshot that opens no editor: its hold's end reveals the dock it hid.
+    const refused = '00000000-0000-4000-8000-000000000004';
+    expect(dock.beginDockEditorHold(window, sender, binding, refused, true)).toBe(true);
+    expect((await sessions.capture(owner, { ...begun.value, requestId: 'no-editor' })).ok).toBe(
+      true,
+    );
+    expect(window.isVisible()).toBe(false);
+    dock.endDockEditorHold(refused, sender, binding);
+    expect(window.isVisible()).toBe(true);
+  });
+
   it('hides for a window or region selection without telling the dock document', () => {
     fixture.captureHidden.mockClear();
     vi.mocked(window.showInactive).mockClear();
@@ -250,6 +461,36 @@ describe('owned dock capture visibility release', () => {
     dock.setDockHiddenForCapture(false, { window });
     expect(window.showInactive).not.toHaveBeenCalled();
     powerMonitor.emit('unlock-screen');
+  });
+});
+
+describe('dock presence capture return', () => {
+  it('does not consume the first outside resync with inactive or empty regions', () => {
+    const region = { x: 0, y: 0, width: 80, height: 40 };
+    const publish = (active: boolean, regions = [region], x = 10) =>
+      dock.setDockPointerRegions(window, { active, regions, revision: 1 }, 'darwin', { x, y: 10 });
+    const events = () =>
+      vi
+        .mocked(window.webContents.send)
+        .mock.calls.filter(
+          ([channel]) => channel === WINDOW_CHANNELS.DOCK_POINTER_PRESENCE_CHANGED,
+        );
+    publish(true);
+    dock.setDockHiddenForCapture(true, { window });
+    publish(false, []);
+    dock.setDockHiddenForCapture(false, { window });
+    vi.mocked(window.webContents.send).mockClear();
+    publish(false, [], 300);
+    publish(true, [], 300);
+    expect(events()).toHaveLength(0);
+    publish(true, [region], 300);
+    expect(events()).toHaveLength(1);
+    expect(events()[0][1]).toMatchObject({ inside: false, x: 300, y: 10, revision: 1 });
+    publish(true, [region], 300);
+    expect(events()).toHaveLength(1);
+    publish(true);
+    expect(events()).toHaveLength(2);
+    expect(events()[1][1]).toMatchObject({ inside: true });
   });
 });
 
@@ -667,5 +908,137 @@ describe('dock reveal waits for a responsive renderer', () => {
     await fresh();
     expect(dock.markDockRendererReady(old)).toBe(false);
     expect(old.showInactive).not.toHaveBeenCalled();
+  });
+});
+
+describe('a transient close (release) keeps the dock; only its own Hide closes it', () => {
+  // macOS handing the keyboard back to the previous app is native behaviour, not covered here.
+  it('six focus/release cycles keep the same open dock, never Hide it or save anything', async () => {
+    // Native key focus for this window only (other tests rely on the shared mock as is).
+    let focused = false;
+    const native = window as unknown as {
+      focus: () => void;
+      isFocused: () => boolean;
+      blur: () => void;
+    };
+    native.focus = () => void (focused = true);
+    native.isFocused = () => focused;
+    native.blur = vi.fn(() => void (focused = false));
+    const hide = vi.fn();
+    dock.setDockHideHandler(hide);
+    fixture.setLocalPref.mockClear();
+    for (let cycle = 1; cycle <= 6; cycle++) {
+      await dock.updateDockPlacement(window, { action: 'focus' });
+      expect(window.isFocused()).toBe(true);
+      await dock.updateDockPlacement(window, { action: 'release' });
+      await vi.advanceTimersByTimeAsync(1);
+      await flush();
+      expect(window.isFocused()).toBe(false);
+      expect(window.blur).toHaveBeenCalledTimes(cycle);
+      expect(dock.getDockWindow()).toBe(window);
+      expect(window.isDestroyed()).toBe(false);
+    }
+    // Released while not focused: nothing to hand back.
+    await dock.updateDockPlacement(window, { action: 'release' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(window.blur).toHaveBeenCalledTimes(6);
+    expect(hide).not.toHaveBeenCalled();
+    expect(fixture.setLocalPref).not.toHaveBeenCalled();
+    expect(dock.getDockWindow()).toBe(window);
+  });
+
+  it("the dock's own Hide (dismiss) still goes to the hide handler", async () => {
+    const hide = vi.fn();
+    dock.setDockHideHandler(hide);
+    await dock.updateDockPlacement(window, { action: 'dismiss' });
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a transient close hands the keyboard back without taking the dock off screen', () => {
+  // Electron's blur on macOS is orderOut + orderBack (native_window_mac.mm): it takes the
+  // dock off screen and back. The native handback never calls blur.
+  function nativeFocus() {
+    let focused = false;
+    const native = window as unknown as {
+      focus: () => void;
+      isFocused: () => boolean;
+      blur: () => void;
+    };
+    native.focus = () => void (focused = true);
+    native.isFocused = () => focused;
+    native.blur = vi.fn(() => void (focused = false));
+    return { release: () => void (focused = false) };
+  }
+
+  it('six focus/release cycles hand the keyboard back natively: never blurred, hidden or reshown', async () => {
+    fixture.cursor = undefined;
+    vi.resetModules();
+    const focus = { current: null as null | ReturnType<typeof nativeFocus> };
+    const releaseKey = vi.fn(() => {
+      focus.current?.release();
+      return true;
+    });
+    fixture.cursor = {
+      update: vi.fn(),
+      cursorChanged: vi.fn(),
+      dispose: vi.fn(),
+      inspect: vi.fn(),
+      releaseKey,
+    };
+    dock.closeDockWindow();
+    dock = await import('./dock-window');
+    window = dock.createDockWindow();
+    await flush();
+    dock.markDockRendererReady(window);
+    focus.current = nativeFocus();
+    const hidden = vi.fn();
+    const shown = vi.fn();
+    window.on('hide', hidden);
+    window.on('show', shown);
+    vi.mocked(window.webContents.invalidate).mockClear();
+    for (let cycle = 1; cycle <= 6; cycle++) {
+      await dock.updateDockPlacement(window, { action: 'focus' });
+      expect(window.isFocused()).toBe(true);
+      await dock.updateDockPlacement(window, { action: 'release' });
+      expect(window.isFocused()).toBe(false);
+      expect(releaseKey).toHaveBeenCalledTimes(cycle);
+    }
+    expect(window.blur).not.toHaveBeenCalled();
+    expect(hidden).not.toHaveBeenCalled();
+    expect(shown).not.toHaveBeenCalled();
+    expect(window.webContents.invalidate).not.toHaveBeenCalled();
+    expect(dock.getDockWindow()).toBe(window);
+    // Not focused: nothing to hand back.
+    await dock.updateDockPlacement(window, { action: 'release' });
+    expect(releaseKey).toHaveBeenCalledTimes(6);
+    fixture.cursor = undefined;
+  });
+
+  it('falls back to blur when the native handback is unavailable or refused', async () => {
+    fixture.cursor = undefined;
+    vi.resetModules();
+    const releaseKey = vi.fn(() => false);
+    fixture.cursor = {
+      update: vi.fn(),
+      cursorChanged: vi.fn(),
+      dispose: vi.fn(),
+      inspect: vi.fn(),
+      releaseKey,
+    };
+    dock.closeDockWindow();
+    dock = await import('./dock-window');
+    window = dock.createDockWindow();
+    await flush();
+    dock.markDockRendererReady(window);
+    nativeFocus();
+    await dock.updateDockPlacement(window, { action: 'focus' });
+    await dock.updateDockPlacement(window, { action: 'release' });
+    expect(releaseKey).toHaveBeenCalledTimes(1);
+    expect(window.blur).toHaveBeenCalledTimes(1);
+    expect(window.isFocused()).toBe(false);
+    fixture.cursor = undefined;
   });
 });

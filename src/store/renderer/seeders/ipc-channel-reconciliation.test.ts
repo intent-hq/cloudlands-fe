@@ -67,6 +67,9 @@ const CALL_EFFECT_NAME_RE = /\bcall\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
 /** Function declarations whose first parameter is a string (wrapper candidates). */
 const WRAPPER_DECL_RE =
   /(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^(]*?>)?\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*string/g;
+/** Local typed arrow wrappers (e.g. the capture editor's send(channel, payload)). */
+const WRAPPER_ARROW_DECL_RE =
+  /\b(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*string/g;
 
 /**
  * Collect locally-declared passthrough wrappers: functions whose string-typed
@@ -79,11 +82,13 @@ const WRAPPER_DECL_RE =
  */
 function collectPassthroughWrapperNames(source: string): string[] {
   const names: string[] = [];
-  for (const decl of source.matchAll(WRAPPER_DECL_RE)) {
-    const [, name, parameter] = decl;
-    if (name === 'invoke' || name === 'typedInvoke') continue;
-    const forwards = new RegExp(`\\binvoke\\s*(?:<[^(]*?>)?\\(\\s*${parameter}\\s*[,)]`);
-    if (forwards.test(source.slice(decl.index))) names.push(name);
+  for (const pattern of [WRAPPER_DECL_RE, WRAPPER_ARROW_DECL_RE]) {
+    for (const decl of source.matchAll(pattern)) {
+      const [, name, parameter] = decl;
+      if (name === 'invoke' || name === 'typedInvoke') continue;
+      const forwards = new RegExp(`\\binvoke\\s*(?:<[^(]*?>)?\\(\\s*${parameter}\\s*[,)]`);
+      if (forwards.test(source.slice(decl.index))) names.push(name);
+    }
   }
   return names;
 }
@@ -94,6 +99,7 @@ function collectInvokeAliasNames(source: string): Set<string> {
   for (const clause of source.matchAll(IMPORT_CLAUSE_RE)) {
     for (const alias of clause[1].matchAll(INVOKE_ALIAS_RE)) names.add(alias[1]);
   }
+  for (const wrapper of collectPassthroughWrapperNames(source)) names.add(wrapper);
   return names;
 }
 
@@ -106,7 +112,6 @@ function collectInvokeAliasNames(source: string): Set<string> {
  */
 function buildCallHeadRegex(source: string): RegExp {
   const names = collectInvokeAliasNames(source);
-  for (const wrapper of collectPassthroughWrapperNames(source)) names.add(wrapper);
   const alternation = [...names].sort((a, b) => b.length - a.length).join('|');
   return new RegExp(`\\b(?:${alternation})\\s*(?=[<(])`, 'g');
 }
@@ -325,6 +330,19 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     });
   });
 
+  it('finds native dock shortcut calls through saga wrappers and editor arrow wrappers', () => {
+    for (const channel of ['dock-shortcuts:get', 'dock-shortcuts:set', 'dock-shortcuts:capture']) {
+      const sites = invoked.get(channel) ?? [];
+      expect(sites.length).toBeGreaterThan(0);
+      for (const site of sites) expect(site).toMatch(/sagas\/dock-shortcut-settings-saga\.ts:\d+$/);
+    }
+    for (const channel of ['dock-capture-editor:discard', 'dock-capture-editor:keep']) {
+      expect(invoked.get(channel)).toEqual([
+        expect.stringMatching(/media-editor\/capture-editor-bridge\.ts:\d+$/),
+      ]);
+    }
+  });
+
   it('resolves every constant-style channel reference', () => {
     expect(
       unresolved,
@@ -471,6 +489,15 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // web onboarding independently uses the captured BackendTransport. Covered by
   // provider-adapter-preparation.client.test.ts, including mock-router bypass.
   'providers:prepare-adapters',
+  // Transfer/import wrappers use the real preload: main owns native file dialogs,
+  // local archive handles and connection/session-bound relays. No preload means
+  // an explicit unavailable result, not a browser-side fake transfer. Their main
+  // handlers and saga boundary tests cover the real contract independently.
+  'transfer:start',
+  'transfer:finalize',
+  'transfer:cancel',
+  'transfer:import-start',
+  'transfer:import-cancel',
   // Resource details capture the original real preload bridge. Without it,
   // capture rejects before IPC; the mock client independently reports unavailable.
   // Mock bridging would bypass the original-connection admission and retirement.
@@ -497,12 +524,47 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // Experimental dock Labs setting: main owns and persists it and pushes
   // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
   // stays off; a mock bridge would create a second source of truth.
+  // Native-owned global shortcut settings/capture lease; no browser-side authority.
+  // Capture editor requests target the real main-owned editor/session and opening dock
+  // document. Its bridge/preview guard refuses outside Electron; a mock handler would
+  // invent native capture/editor/save authority. Keep exact invokes only (events omitted).
+  'dock-capture-editor:open',
+  'dock-capture-editor:get',
+  'dock-capture-editor:close',
+  'dock-capture-editor:delete',
+  'dock-capture-editor:delete-result',
+  'dock-capture-editor:discard',
+  'dock-capture-editor:keep',
+  'dock-capture-editor:save',
+  'dock-capture-editor:retake',
+  'dock-capture-editor:hold-begin',
+  'dock-capture-editor:hold-end',
+  'dock-capture-editor:hold-show',
+  'dock-capture-editor:attach-return',
+  'dock-capture-editor:retake-result',
+  'dock-capture-editor:transcript-update',
+  'dock-capture-editor:note-dictation',
+  'dock-capture-editor:note-dictation-text',
+  'dock-capture-editor:waveform-update',
+  'dock-capture-editor:save-result',
+  'dock-context:get',
+  'dock-shortcuts:get',
+  'dock-shortcuts:set',
+  'dock-shortcuts:capture',
   'window:get-dock-lab',
   'window:set-dock-lab',
   // Dock right-click asks main for a native menu over the dock window
   // (src/features/hud/dock-context-menu.ts). Without a bridge it does nothing;
   // a mock bridge would pretend a native menu opened.
   'window:show-dock-menu',
+  // Dock composer media copy/cut/paste (main's dock-media-clipboard).
+  'dock-media:clipboard-write',
+  'dock-media:clipboard-read',
+  'dock-media:menu',
+  // Dock header double-click asks main to bring Intent forward
+  // (src/features/hud/dock-context-menu.ts). Without a bridge it does nothing;
+  // a mock bridge would pretend a window came forward.
+  'window:activate-app',
   // Browser access (Settings > Machines): main owns the setting, the access key
   // and the loopback server (src/lib/browser-access-ipc.ts). The section only
   // renders when the real preload bridge exists, and the IPC functions reject
@@ -527,6 +589,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'dock-evidence:cancel',
   'dock-evidence:capture',
   'dock-evidence:control',
+  // Offline chat media preparation owns real main-process leases and helper
+  // outputs. chat-media-native.ts refuses missing preload and the browser-mock
+  // sentinel before invoking IPC; a seeder would invent native export success.
+  'chat-media:begin',
+  'chat-media:control',
+  'chat-media:close',
 ]);
 
 /**

@@ -67,6 +67,8 @@ export interface QueuedMessage extends SubmissionCorrelation {
   /** Ordered original text/attachment units in a combined retry; authority belongs to this row. */
   deliveryGroups?: Array<{
     content: string;
+    /** This original unit's provenance; outer metadata never authenticates another unit. */
+    messageMetadata?: Record<string, unknown>;
     imageBlocks?: QueuedMessage['imageBlocks'];
     fileBlocks?: QueuedMessage['fileBlocks'];
   }>;
@@ -200,6 +202,9 @@ interface ProviderReplacementRequired {
   providerRef: string;
   reason: 'profile-missing' | 'provider-disabled';
 }
+
+/** Values accepted by `agent.update { changes: { permissionPolicy } }` (§5.5). */
+export type AgentPermissionPolicy = 'interactive' | 'allow' | 'auto' | 'deny';
 
 export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
@@ -346,6 +351,22 @@ export interface AgentSession extends AgentNodeFields {
    * daemon cannot pin, so the menu hides the action.
    */
   pinned?: boolean;
+
+  /**
+   * Per-chat permission policy override (`permissionPolicy`, §5.5 AgentLite).
+   * Set via `agent.update { changes: { permissionPolicy } }`; `null` means the
+   * daemon default applies. A daemon that supports the override always sends
+   * the field (possibly `null`); absent means it cannot, so the chat settings
+   * menu hides the "Ask before using tools" toggle.
+   */
+  permissionPolicy?: AgentPermissionPolicy | null;
+
+  /**
+   * The policy the next turn runs under (`effectivePermissionPolicy`, §5.5
+   * AgentLite): the override, else the daemon default. Omitted for remote
+   * agents, which use `remoteAgents.permission` instead.
+   */
+  effectivePermissionPolicy?: string;
 
   /** Current turn number for this session */
   currentTurnNumber?: number;

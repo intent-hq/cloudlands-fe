@@ -409,12 +409,18 @@ export const IPC_CHANNELS = {
     UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
     // Dock right-click: main pops a native menu (move, hide) over the dock window.
     SHOW_DOCK_MENU: 'window:show-dock-menu',
+    // Dock header double-click: main brings Intent forward as it was, like a click
+    // on the app icon (focus the last window, or restore the saved session) → { activated }.
+    ACTIVATE_APP: 'window:activate-app',
     SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
     DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
     DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',
     // Main's cursor poll: { inside, x, y, revision } when the pointer enters or leaves
     // the dock's interactive regions; backs up hover delivery to the non-key window.
     DOCK_POINTER_PRESENCE_CHANGED: 'window:dock-pointer-presence-changed',
+    // Main → the dock document: its window was shown (no payload). A native session refused
+    // while the dock was hidden probes again on this, never on a timer.
+    DOCK_SHOWN: 'window:dock-shown',
     // One-shot from the dock document: hydrated, presence subscribed and first regions
     // published. Main shows the hidden dock (never focused) only after this.
     DOCK_RENDERER_READY: 'window:dock-renderer-ready',
@@ -427,6 +433,24 @@ export const IPC_CHANNELS = {
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
     // restored) → { cycled: boolean, windowCount: number }
     CYCLE_FOCUS: 'window:cycle-focus',
+  },
+
+  DOCK_CONTEXT: {
+    GET: 'dock-context:get',
+    CHANGED: 'dock-context:changed',
+  },
+
+  DOCK_SHORTCUTS: {
+    GET: 'dock-shortcuts:get',
+    SET: 'dock-shortcuts:set',
+    CAPTURE: 'dock-shortcuts:capture',
+    CHANGED: 'dock-shortcuts:changed',
+  },
+
+  CHAT_MEDIA: {
+    BEGIN: 'chat-media:begin',
+    CONTROL: 'chat-media:control',
+    CLOSE: 'chat-media:close',
   },
 
   DOCK_EVIDENCE: {
@@ -444,6 +468,64 @@ export const IPC_CHANNELS = {
     GET_STILL: 'dock-annotation:get-still',
     STATE: 'dock-annotation:state',
     TOOLBAR: 'dock-annotation:toolbar',
+    SIGNAL: 'dock-annotation:signal',
+  },
+
+  /** Capture editor window (recordings and screenshots), see shared/dock-capture-editor. */
+  DOCK_CAPTURE_EDITOR: {
+    OPEN: 'dock-capture-editor:open',
+    GET: 'dock-capture-editor:get',
+    CLOSE: 'dock-capture-editor:close',
+    DELETE: 'dock-capture-editor:delete',
+    DELETE_REQUESTED: 'dock-capture-editor:delete-requested',
+    DELETE_RESULT: 'dock-capture-editor:delete-result',
+    /** editor → main: the answer to main's CONFIRM_DISCARD request (by its id). */
+    DISCARD: 'dock-capture-editor:discard',
+    KEEP: 'dock-capture-editor:keep',
+    /** main → editor send: the session changed (re-read it with GET). */
+    CHANGED: 'dock-capture-editor:changed',
+    /** main → editor send: closing or switching would lose edits; ask first. */
+    CONFIRM_DISCARD: 'dock-capture-editor:confirm-discard',
+    /** editor → main: save this edit (DockMediaSaveRequest); resolves with the outcome. */
+    SAVE: 'dock-capture-editor:save',
+    /** main → the opening dock send: persist this save ({ requestId, request: DockMediaSaveRequest }). */
+    SAVE_REQUESTED: 'dock-capture-editor:save-requested',
+    /** editor → main: capture the screenshot again (same mode); resolves with a candidate. */
+    RETAKE: 'dock-capture-editor:retake',
+    /** main → the opening dock send: capture and place a candidate ({ requestId, pair, expected }). */
+    RETAKE_REQUESTED: 'dock-capture-editor:retake-requested',
+    /** dock → main: keep the dock out of sight from a capture until its editor ends ({ token }). */
+    HOLD_BEGIN: 'dock-capture-editor:hold-begin',
+    /** dock → main: the capture did not hand off to an editor; release that hold ({ token }). */
+    HOLD_END: 'dock-capture-editor:hold-end',
+    /** dock → main: the screenshot is taken and goes to the editor: show its loading shell ({ token }). */
+    HOLD_SHOW: 'dock-capture-editor:hold-show',
+    /** main → the opening dock send: its editor attached (DockCaptureEditorAttached). */
+    ATTACHED: 'dock-capture-editor:attached',
+    /** dock → main: the owner validated (or refused) the return for that attach ({ openId, accept }). */
+    ATTACH_RETURN: 'dock-capture-editor:attach-return',
+    /** dock → main: the placed candidate's canonical source, or failure (DockCaptureEditorRetakeResult). */
+    RETAKE_RESULT: 'dock-capture-editor:retake-result',
+    /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdateSchema). */
+    TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
+    /** editor → main: start or stop dictating into one mark's note. */
+    NOTE_DICTATION: 'dock-capture-editor:note-dictation',
+    /** main → the opening dock send: start/stop that note dictation (DockCaptureEditorNoteDictationRequested). */
+    NOTE_DICTATION_REQUESTED: 'dock-capture-editor:note-dictation-requested',
+    /** dock → main: the note dictation's text so far, or its end (DockCaptureEditorNoteDictationText). */
+    NOTE_DICTATION_TEXT: 'dock-capture-editor:note-dictation-text',
+    /** main → editor send: the note dictation's text (DockCaptureEditorNoteDictationUpdate). */
+    NOTE_DICTATION_UPDATE: 'dock-capture-editor:note-dictation-update',
+    /** dock → main: the open source's decoded waveform peaks (DockCaptureEditorWaveformUpdate). */
+    WAVEFORM_UPDATE: 'dock-capture-editor:waveform-update',
+    /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
+    SAVE_RESULT: 'dock-capture-editor:save-result',
+  },
+
+  DOCK_MEDIA: {
+    CLIPBOARD_WRITE: 'dock-media:clipboard-write',
+    CLIPBOARD_READ: 'dock-media:clipboard-read',
+    MENU: 'dock-media:menu',
   },
 
   // Power (Electron powerMonitor → renderer)
@@ -979,6 +1061,7 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     DESKTOP_PERMISSIONS: 'backend:desktop-permissions',
+    DESKTOP_OS_PERMISSIONS: 'backend:desktop-os-permissions',
     REQUEST: 'backend:request',
     PR_MONITOR: {
       READY: 'backend:pr-monitor:ready',
@@ -1121,19 +1204,22 @@ export const IPC_CHANNELS = {
     SELECT: 'machine-rail:select',
     ADD: 'machine-rail:add',
     REMOVE: 'machine-rail:remove',
+    REORDER: 'machine-rail:reorder',
     SET_ENABLED: 'machine-rail:set-enabled',
     CHANGED: 'machine-rail:changed',
     // A renderer whose machine is not shown hands a toast to main, which
     // pushes TOAST to the renderer the window shows (also in EVENT_CHANNELS).
     FORWARD_TOAST: 'machine-rail:forward-toast',
     TOAST: 'machine-rail:toast',
-    // Select a machine and ask its renderer to open its status menu;
-    // MENU_REQUESTED is the push to that renderer (also in EVENT_CHANNELS).
-    // A window's own renderer reports that it has painted after becoming the
-    // shown one, so main can take the previous machine's view away without a gap.
+    // A renderer reports that it has painted after becoming the selected one,
+    // so main can take the previous machine away without a gap.
     SHOWN: 'machine-rail:shown',
-    OPEN_MENU: 'machine-rail:open-menu',
-    MENU_REQUESTED: 'machine-rail:menu-requested',
+    // A machine's renderer reports that its startup is done (backend reached or
+    // given up on), so main can show it in place of the startup splash.
+    READY: 'machine-rail:ready',
+    // A renderer reports whether its machine's daemon is degraded, so every
+    // rail can mark it.
+    HEALTH: 'machine-rail:health',
   },
 
   // Workspace presence (multiplayer w5). The daemon connection is pooled per
@@ -1176,6 +1262,21 @@ export const IPC_CHANNELS = {
     INVITE_DISCARD: 'remote-machines:invite-discard',
   },
 
+  // Set up a new machine over SSH (Labs). The start payload carries the SSH
+  // password or key passphrase: its handler validates by hand and never logs.
+  MACHINE_SETUP: {
+    /** Renderer → main: `SshSetupDefaults` (is an SSH agent running?). */
+    SSH_DEFAULTS: 'machine-setup:ssh-defaults',
+    /** Renderer → main: start one SSH setup run → `SshSetupStartResult`. */
+    SSH_START: 'machine-setup:ssh-start',
+    /** Renderer → main: answer the unknown-host-key question. */
+    SSH_TRUST: 'machine-setup:ssh-trust',
+    /** Renderer → main: close the SSH connection; nothing is saved. */
+    SSH_CANCEL: 'machine-setup:ssh-cancel',
+    /** Main → renderer (the starting window only): `SshSetupEvent`. */
+    SSH_EVENT: 'machine-setup:ssh-event',
+  },
+
   // Hardware console (Codex Micro / Creator Micro 2)
   HARDWARE_CONSOLE: {
     // Main → renderer: ask the renderer to send the lighting off-frame
@@ -1195,8 +1296,19 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.DOCK_CONTEXT.CHANGED,
+  IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED,
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
   IPC_CHANNELS.DOCK_ANNOTATION.STATE,
+  IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.DELETE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.RETAKE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_UPDATE,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.ATTACHED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
@@ -1215,10 +1327,10 @@ export const EVENT_CHANNELS = [
   'window:focus-dock',
   'window:dock-placement-changed',
   'window:dock-pointer-presence-changed',
+  'window:dock-shown',
   'window:dock-lab-changed',
   'machine-rail:changed',
   'machine-rail:toast',
-  'machine-rail:menu-requested',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',
@@ -1421,6 +1533,9 @@ export const EVENT_CHANNELS = [
   'transfer:import-progress',
   // File menu → renderer: open the import-workspace wizard.
   'menu:import-workspace',
+  // SSH machine setup progress (main → renderer): steps, redacted log lines,
+  // the host-key question and the outcome. Never a secret or the link.
+  'machine-setup:ssh-event',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

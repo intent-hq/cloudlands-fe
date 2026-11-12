@@ -3,7 +3,6 @@
   import { Button } from '$lib/components/ui/button';
   import { fade } from '$lib/motion';
   import DockComposerIcon from './DockComposerIcon.svelte';
-  import DockComposerToolPicker from './DockComposerToolPicker.svelte';
   import DockComposerCapturePicker from './DockComposerCapturePicker.svelte';
   import type { DockComposerMediaFooterProps } from './dock-composer-media-presentation';
 
@@ -11,14 +10,11 @@
     state,
     labels,
     disabled = false,
-    annotationNotice,
     model,
     send,
     onCapture,
     onCaptureModeSelect,
     onRecordToggle,
-    onAnnotationToggle,
-    onToolSelect,
     onDictationToggle,
     onDictationHoldStart,
     onDictationHoldEnd,
@@ -100,13 +96,21 @@
       class="media-button recording-button"
       data-recording={state.recording || undefined}
       disabled={disabled || state.recordingDisabled || state.recordingPending}
-      aria-label={state.recording ? labels.stopRecording : labels.record}
+      aria-label={state.recording
+        ? labels.stopRecording
+        : (labels.actionHints?.record.label ?? labels.record)}
       aria-pressed={state.recording}
       aria-busy={state.recordingPending || undefined}
       data-alert={alerts.record ? '' : undefined}
+      tooltipContentClass="dock-chrome-tooltip"
       tooltip={alerts.record ??
         state.recordingTooltip ??
-        (state.recording ? labels.stopRecording : labels.record)}
+        (state.recording
+          ? labels.stopRecording
+          : (labels.actionHints?.record.label ?? labels.record))}
+      tooltipShortcut={!alerts.record && !state.recordingTooltip
+        ? labels.actionHints?.record.shortcut
+        : undefined}
       onpointerdown={(event) => {
         if (event.pointerType === 'mouse') event.preventDefault();
       }}
@@ -124,32 +128,27 @@
         </span>
       {/key}
     </Button>
-    <DockComposerToolPicker
-      tool={state.tool}
-      active={state.annotationActive}
-      used={state.toolUsed}
-      disabled={disabled || state.annotationDisabled}
-      notice={annotationNotice}
-      alert={alerts.annotate}
-      pickAlert={alerts.pick}
-      {labels}
-      onToggle={onAnnotationToggle}
-      onSelect={onToolSelect}
-      onAlert={(target) => onAlert?.(target)}
-    />
     <Button
       variant="ghost-light"
       size="icon-sm"
       class="media-button mic-button"
       data-recording={state.dictating || undefined}
       disabled={disabled || state.dictationDisabled || state.dictationPending}
-      aria-label={state.dictating ? labels.stopDictating : labels.dictate}
+      aria-label={state.dictating
+        ? labels.stopDictating
+        : (labels.actionHints?.dictate.label ?? labels.dictate)}
       aria-pressed={state.dictating}
       aria-busy={state.dictationPending || undefined}
       data-alert={alerts.mic ? '' : undefined}
+      tooltipContentClass="dock-chrome-tooltip"
       tooltip={alerts.mic ??
         state.dictationTooltip ??
-        (state.dictating ? labels.stopDictating : labels.dictate)}
+        (state.dictating
+          ? labels.stopDictating
+          : (labels.actionHints?.dictate.label ?? labels.dictate))}
+      tooltipShortcut={!alerts.mic && !state.dictationTooltip
+        ? labels.actionHints?.dictate.shortcut
+        : undefined}
       onpointerdown={beginHold}
       onpointerup={endHold}
       onpointercancel={() => {
