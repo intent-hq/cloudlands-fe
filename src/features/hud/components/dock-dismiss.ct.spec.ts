@@ -88,6 +88,7 @@ test('hover leave, outside click and Escape release disclosure and its input foo
   await expect(shell).toHaveAttribute('data-expanded', 'false');
   await expect(proof).toHaveAttribute('data-workspace', 'synthetic-workspace');
   await expect(proof).toHaveAttribute('data-draft', 'Keep this draft intact');
+  const compact = await page.getByTestId('dock-surface').boundingBox();
   await info.attach('dismissal.json', {
     body: JSON.stringify({
       hoverLeave: true,
@@ -133,18 +134,75 @@ test('stationary header pointer stays dismissed and deliberate click or shortcut
   await page.mouse.move(900, 700);
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await expect(shell).toHaveAttribute('data-reveal', '0');
-  const compact = (await page.getByTestId('dock-surface').boundingBox())!;
-  const point = { x: compact.x + 10, y: compact.y + compact.height / 2 };
+  const proof = page.getByTestId('dismiss-proof');
+  const headerPoint = () =>
+    proof.evaluate((node) => {
+      const shell = node.querySelector<HTMLElement>('[data-testid="dock-shell"]');
+      const header = shell?.querySelector('header');
+      if (!shell || !header || shell.dataset.expanded !== 'false' || shell.dataset.reveal !== '0')
+        return null;
+      const origin = shell.getBoundingClientRect();
+      const regions: { x: number; y: number; width: number; height: number }[] = JSON.parse(
+        node.getAttribute('data-regions') ?? '[]',
+      );
+      const region = regions[0];
+      if (!region || region.width <= 0 || region.height <= 0) return null;
+      // Native regions are shell-local; hit testing uses viewport coordinates.
+      for (const fraction of [0.9, 0.1, 0.98, 0.02]) {
+        const point = {
+          x: origin.left + region.x + region.width * fraction,
+          y: origin.top + region.y + region.height / 2,
+        };
+        const hit = document.elementFromPoint(point.x, point.y);
+        if (
+          hit &&
+          header.contains(hit) &&
+          !hit.closest(
+            'button, [role="button"], [data-dock-resize], [data-testid="dock-camera-exclusion"]',
+          )
+        )
+          return point;
+      }
+      return null;
+    });
+  await expect.poll(headerPoint).not.toBeNull();
+  const point = await headerPoint();
+  if (!point) throw new Error('No exposed compact header point in the published input region');
   await page.mouse.move(point.x, point.y);
   await expect(shell).toHaveAttribute('data-reveal', '1');
   await page.keyboard.press('Escape');
   await expect(shell).toHaveAttribute('data-reveal', '0');
   await staysExpanded(shell, false, 650);
   await expect(shell).toHaveAttribute('data-expanded', 'false');
-  const stillInside = await page.getByTestId('dock-surface').evaluate((node, p) => {
-    const b = node.getBoundingClientRect();
-    return p.x >= b.left && p.x < b.right && p.y >= b.top && p.y < b.bottom;
-  }, point);
+  const pointStillPublished = () =>
+    proof.evaluate((node, point) => {
+      const shell = node.querySelector<HTMLElement>('[data-testid="dock-shell"]');
+      const header = shell?.querySelector('header');
+      if (!shell || !header) return false;
+      const origin = shell.getBoundingClientRect();
+      const regions: { x: number; y: number; width: number; height: number }[] = JSON.parse(
+        node.getAttribute('data-regions') ?? '[]',
+      );
+      const x = point.x - origin.left;
+      const y = point.y - origin.top;
+      const hit = document.elementFromPoint(point.x, point.y);
+      return (
+        regions.some(
+          (region) =>
+            x >= region.x &&
+            x < region.x + region.width &&
+            y >= region.y &&
+            y < region.y + region.height,
+        ) &&
+        !!hit &&
+        header.contains(hit) &&
+        !hit.closest(
+          'button, [role="button"], [data-dock-resize], [data-testid="dock-camera-exclusion"]',
+        )
+      );
+    }, point);
+  await expect.poll(pointStillPublished).toBe(true);
+  const stillInside = await pointStillPublished();
   expect(stillInside).toBe(true);
   await page.mouse.click(point.x, point.y);
   await expect(shell).toHaveAttribute('data-expanded', 'true', { timeout: 100 });

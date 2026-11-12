@@ -279,6 +279,9 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
     );
     await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     await component.screenshot({ path: testInfo.outputPath(`notch-keyboard-${focusRequest}.png`) });
+    const commandsBeforeEscape = JSON.parse(
+      (await component.getAttribute('data-preview-commands')) ?? '[]',
+    ).length;
     await page.keyboard.press('Escape');
     await expect
       .poll(
@@ -286,7 +289,15 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
           JSON.parse((await component.getAttribute('data-preview-commands')) ?? '[]').at(-1)
             ?.action,
       )
-      .toBe('dismiss');
+      .toBe('release');
+    await expect(shell).toHaveAttribute('data-expanded', 'false');
+    await expect(shell).toHaveAttribute('data-reveal', '0');
+    const escapeCommands = JSON.parse(
+      (await component.getAttribute('data-preview-commands')) ?? '[]',
+    ).slice(commandsBeforeEscape);
+    expect(escapeCommands).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: 'dismiss' })]),
+    );
     await component.unmount();
   }
 });
