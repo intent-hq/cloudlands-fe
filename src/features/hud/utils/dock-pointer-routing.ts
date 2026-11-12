@@ -17,6 +17,8 @@ export interface DockPointerRegionController {
   activate(regions: DockPointerRect[], revision?: number): void;
   /** Preserve a real surface entry that can precede main's next cursor poll. */
   recordEnter?(): void;
+  /** Republish the current surface and wait for a receipt from main. */
+  flush?(): Promise<{ revision: number; version: number } | null>;
   deactivate(regions?: DockPointerRect[], revision?: number): void;
   destroy(): void;
 }
@@ -146,6 +148,38 @@ export function createDockPointerRegionController(
 
   return {
     activate: (regions, revision) => signal(true, regions, revision),
+    flush: async () => {
+      if (
+        !bridge ||
+        destroyed ||
+        !active ||
+        !publishedRegions.length ||
+        latestRevision === undefined
+      )
+        return null;
+      const signal = lastSignal;
+      const revision = latestRevision;
+      try {
+        const result = (await bridge.invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, {
+          active: true,
+          revision,
+          regions: publishedRegions.map(({ x, y, width, height }) => ({ x, y, width, height })),
+        })) as { success?: boolean; version?: number } | null;
+        if (
+          destroyed ||
+          signal !== lastSignal ||
+          !active ||
+          result?.success !== true ||
+          typeof result.version !== 'number' ||
+          !Number.isSafeInteger(result.version) ||
+          (result.version ?? -1) < 0
+        )
+          return null;
+        return { revision, version: result.version };
+      } catch {
+        return null;
+      }
+    },
     recordEnter: () => {
       nativeInside = true;
     },

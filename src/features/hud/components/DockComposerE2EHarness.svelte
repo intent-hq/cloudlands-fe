@@ -41,6 +41,7 @@
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
     selectDockCloseRequest,
+    selectDockEditorCompactRequest,
     selectDockFocusRequest,
   } from '$store/renderer/slices/hud/hud-selectors';
   import { selectDockSideDefaultWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-side-default';
@@ -51,6 +52,7 @@
   import '$lib/styles/dock-tokens.css';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { store } from '$store/renderer/store';
+  import { dockPlacementCommandRequested } from '$store/renderer/slices/hud/hud-slice';
   import {
     closeDockConversationRequested,
     openDockConversationRequested,
@@ -77,15 +79,18 @@
     height = 600,
     shell,
     legacyPickDraft = false,
+    nativePlacementFixture = false,
   }: {
     width?: number;
     height?: number;
     shell?: DockRailPreviewProps;
     legacyPickDraft?: boolean;
+    nativePlacementFixture?: boolean;
   } = $props();
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
   const closeRequest$ = selectDockCloseRequest();
+  const editorCompactRequest$ = selectDockEditorCompactRequest();
   const sideDefaultWorkspaceId$ = selectDockSideDefaultWorkspaceId();
   const workspaceId$ = selectDockConversationWorkspaceId();
   const home = $derived(!!$shortcut$ && $shortcut$.destination === null && !$shortcut$.resolving);
@@ -170,6 +175,7 @@
     const calls: ConversationWireCall[] = [];
     const fixture = setupConversationWire((call) => calls.push(call), {
       initialDraft: legacyPickDraft ? createLegacyDraft() : undefined,
+      nativePlacement: nativePlacementFixture,
     });
     // The local sidecar places a native clip by host path; the wire fixture only
     // accepts bytes, so answer that one placement here (no file is read).
@@ -347,6 +353,10 @@
       {...props}
       focusRequest={request + $storeFocusRequest$}
       closeRequest={$closeRequest$}
+      editorCompactRequest={$editorCompactRequest$}
+      onEditorCompactReady={nativePlacementFixture
+        ? (command) => store.dispatch(dockPlacementCommandRequested(command))
+        : undefined}
       sideDefaultWorkspaceId={$sideDefaultWorkspaceId$}
       workspaces={$workspaces$.map((workspace) => ({ ...props.workspaces[0], workspace }))}
       conversationFixture

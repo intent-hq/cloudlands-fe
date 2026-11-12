@@ -41,6 +41,7 @@ import { applyDockMediaSave, DockMediaSaveRequestSchema } from '$shared/dock-med
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DockCaptureEditorDeleteRequestSchema,
+  DockCaptureEditorEndedSchema,
   type DockCaptureEditorDeleteRequest,
   type DockCaptureEditorDeleteResult,
   type DockCaptureEditorOpenResult,
@@ -69,7 +70,11 @@ import {
 import { endDockEditorHold } from './dock-editor-hold';
 import { evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
 import { dockInputLive } from './dock-live-input';
-import { dockCloseRequested, dockFocusRequested } from '../../hud/hud-slice';
+import {
+  dockEditorCompactCancelled,
+  dockEditorCompactRequested,
+  dockFocusRequested,
+} from '../../hud/hud-slice';
 import {
   dockConversationLoaded,
   openDockConversationRequested,
@@ -483,6 +488,7 @@ function* openEditorWith(
   };
   const authority = getPrincipalActionContext(store.state),
     binding = captureDockPlacementBinding();
+  const conversationGeneration = store.state.dockConversation.generation;
   if (!authority) return;
   // The Assistant workspace keeps capture sources only where the connection advertises
   // it (as for its other attachments): say so instead of trying and failing silently.
@@ -709,9 +715,7 @@ function* openEditorWith(
       if (shownHere()) notify.warning(m.dock_captureEditor_assistantUnavailable_error());
       return;
     }
-    const opened = (yield* call(() =>
-      window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request),
-    )) as DockCaptureEditorOpenResult | undefined;
+    const opened = yield* call(openBoundEditor, request);
     mark('mainOpen');
     // Two lines: the logger prints at most five context keys (more become "{ N keys }").
     startupLogger.info('Capture editor startup', {
@@ -741,10 +745,20 @@ function* openEditorWith(
       agentId,
       generation: editorGeneration,
     };
-    // A new capture's editor takes over: the dock closes behind it, as Escape would,
-    // once the editor is open and only for the conversation still shown. Live input
-    // (dictation, a recording, an annotate session, the mic) keeps it open.
-    if (origin === 'capture' && shownHere() && !dockInputLive()) yield* put(dockCloseRequested());
+    // Every admitted editor requests an idempotent compact owner, without changing its pair,
+    // once the editor is open and only for the conversation still shown. The selector and
+    // shell defer this pending intent while live input continues; ending input resumes it.
+    if (shownHere())
+      yield* put(
+        dockEditorCompactRequested({
+          openId: opened.openId,
+          conversationGeneration,
+          workspaceId,
+          agentId,
+          authority,
+          backendId: store.state.connections.windowBackendId,
+        }),
+      );
     // Root-owned background work is outside the per-pair Edit FIFO. Attached
     // forks here would still keep that FIFO call blocked until recognition ends.
     yield* put(preparation, { workspaceId, agentId, logicalId, authority, binding });
@@ -848,6 +862,24 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
   } finally {
     // Every attach is answered: an invalid or superseded one refuses (main reveals as a close).
     if (!answered) yield* answer(false);
+  }
+}
+
+let openingEditors = 0;
+const endedWhileOpening = new Set<string>();
+async function openBoundEditor(
+  request: DockCaptureEditorOpenRequest,
+): Promise<DockCaptureEditorOpenResult | undefined> {
+  openingEditors += 1;
+  try {
+    const opened = (await window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request)) as
+      DockCaptureEditorOpenResult | undefined;
+    return opened?.ok && endedWhileOpening.has(opened.openId)
+      ? { ok: false, error: 'cancelled' }
+      : opened;
+  } finally {
+    openingEditors -= 1;
+    if (!openingEditors) endedWhileOpening.clear();
   }
 }
 
@@ -1176,10 +1208,30 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
     },
   );
   yield* takeEveryFromElectronChannel<object>(
+    DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED,
+    function* (value) {
+      const parsed = DockCaptureEditorEndedSchema.safeParse(value);
+      if (!parsed.success) return;
+      const openId = parsed.data.endedOpenId;
+      if (openingEditors) endedWhileOpening.add(openId);
+      if (admittedEditor?.openId === openId) admittedEditor = null;
+      yield* put(dockEditorCompactCancelled(openId));
+    },
+    {
+      bufferPolicy: {
+        kind: 'lossless',
+        rationale: 'Each ended editor cancels only its own pending compact handoff.',
+      },
+    },
+  );
+  yield* takeEveryFromElectronChannel<object>(
     DOCK_CAPTURE_EDITOR_CHANNELS.ATTACHED,
     function* (value) {
       const parsed = attachedSchema.safeParse(value);
-      if (parsed.success) yield* returnAfterAttach(parsed.data);
+      if (parsed.success) {
+        yield* put(dockEditorCompactCancelled(parsed.data.openId));
+        yield* returnAfterAttach(parsed.data);
+      }
     },
     {
       bufferPolicy: {

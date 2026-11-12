@@ -35,6 +35,7 @@
     selectDockPlacement,
     selectDockFocusRequest,
     selectDockCloseRequest,
+    selectDockEditorCompactRequest,
     selectDockPlacementError,
     selectDockDragStartResult,
     selectDockResizeStartResult,
@@ -102,6 +103,7 @@
   const placement$ = selectDockPlacement();
   const focusRequest$ = selectDockFocusRequest();
   const closeRequest$ = selectDockCloseRequest();
+  const editorCompactRequest$ = selectDockEditorCompactRequest();
   const placementError$ = selectDockPlacementError();
   const dragStartResult$ = selectDockDragStartResult();
   const resizeStartResult$ = selectDockResizeStartResult();
@@ -165,6 +167,7 @@
       placement={$placement$}
       focusRequest={$focusRequest$}
       closeRequest={$closeRequest$}
+      editorCompactRequest={$editorCompactRequest$}
       sideDefaultWorkspaceId={$sideDefaultWorkspaceId$}
       placementError={$placementError$}
       dragStartResult={$dragStartResult$}

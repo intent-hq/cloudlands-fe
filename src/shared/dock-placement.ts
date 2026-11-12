@@ -1,3 +1,9 @@
+/** One admitted editor asks its owner to collapse without toggling an already compact dock. */
+export interface DockEditorCompactIntent {
+  openId: string;
+  requestId: number;
+}
+
 import type { DockPointerRect } from './dock-layout';
 
 export type DockPlacement =
@@ -54,7 +60,10 @@ export type DockPlacementCommand =
    * A transient close (the open shortcut again, Escape, a click outside): the dock
    * collapses and gives up the keyboard; the window, its setting and shortcuts stay.
    */
-  | { action: 'release' }
+  | {
+      action: 'release';
+      editorCompact?: { openId: string; revision: number; pointerVersion: number };
+    }
   | { action: 'focus' }
   | { action: 'move'; target: DockPlacementTarget }
   | {

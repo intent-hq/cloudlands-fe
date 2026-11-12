@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { DockEditorCompactIntent } from '$shared/dock-placement';
   import type { DockRecordingIndicator } from '$features/hud/utils/dock-recording-indicator';
   import AdaptiveDockShell from './AdaptiveDockShell.svelte';
   import type { DockMachineOption } from './dock-machine-types';
@@ -76,6 +77,7 @@
     focusRequest?: number;
     /** Increments when the open shortcut is pressed again while the dock has the keyboard. */
     closeRequest?: number;
+    editorCompactRequest?: DockEditorCompactIntent | null;
     /** On a side, the chat the open shortcut returns to (see AdaptiveDockShell). */
     sideDefaultWorkspaceId?: string | null;
     placementError?: DockPlacementFailure | boolean | null;
@@ -106,6 +108,7 @@
     onPlacementCommand,
     focusRequest,
     closeRequest,
+    editorCompactRequest,
     sideDefaultWorkspaceId = null,
     placementError,
     dragStartResult,
@@ -647,6 +650,7 @@
     {onPlacementCommand}
     {focusRequest}
     {closeRequest}
+    {editorCompactRequest}
     {sideDefaultWorkspaceId}
     {placementError}
     {dragStartResult}

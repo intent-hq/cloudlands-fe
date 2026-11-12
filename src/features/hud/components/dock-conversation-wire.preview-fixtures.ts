@@ -30,6 +30,7 @@ import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { initRendererStoreBridge } from '$store/renderer/renderer-store-bridge';
+import { dockPlacementSaga } from '$store/renderer/slices/hud/sagas/dock-placement-saga';
 import { dockConversationSaga } from '$store/renderer/slices/dock-conversation/sagas/dock-conversation-saga';
 import { appClient } from '$lib/client';
 import { startChatFixtureSagas } from '../../../test/chat-fixture-sagas';
@@ -139,6 +140,7 @@ export function setupConversationWire(
     /** Persisted synthetic draft, restored by the real owner saga on open. */
     initialDraft?: ChatDraftSnapshot;
     dockAppearance?: boolean;
+    nativePlacement?: boolean;
     /** Seed the main agent with this many assistant turns of operational (thinking) rows. */
     operationalHistory?: number;
     /** A second ready provider (Claude Code), and effort levels on Auggie's models. */
@@ -564,6 +566,7 @@ export function setupConversationWire(
     chatSendSaga,
     agentMutationSaga,
     dockConversationSaga,
+    ...(options.nativePlacement ? [dockPlacementSaga] : []),
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
   // Drafts go through the mock backend. The shared helper replaces the CT

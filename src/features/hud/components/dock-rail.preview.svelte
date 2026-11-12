@@ -19,7 +19,10 @@
     type DockPlacementSnapshot,
   } from '$shared/dock-placement';
   import { adaptiveDockFixture } from './dock-rail.preview-fixtures';
-  import type { DockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
+  import {
+    createDockPointerRegionController,
+    type DockPointerRegionController,
+  } from '$features/hud/utils/dock-pointer-routing';
   import DockRail from './DockRail.svelte';
   import DockConversationPanel from './DockConversationPanel.svelte';
   import { conversationMessages } from './dock-conversation.preview-fixtures';
@@ -35,6 +38,8 @@
     failOpenOnce = false,
     focusRequest = 0,
     closeRequest = 0,
+    editorCompactRequest = null,
+    onEditorCompactReady,
     sideDefaultWorkspaceId = null,
     placementError = false,
     floatingDisplay,
@@ -249,6 +254,10 @@
   function onPlacementCommand(command: DockPlacementCommand): void {
     if (!placement) return;
     commands = [...commands, command];
+    if (command.action === 'release' && command.editorCompact) {
+      onEditorCompactReady?.(command);
+      return;
+    }
     // Fake native acknowledgement boundary. Geometry below uses production resolvers;
     // this does not exercise Electron pointer routing or native gesture authorization.
     if (command.action === 'begin-resize') {
@@ -446,15 +455,25 @@
       root.classList.toggle('dark', wasDark);
     };
   });
+  // The composed IPC harness uses the real renderer controller; standalone previews stay local.
+  // This controller belongs to the mounted fixture and must not change mid-session.
+  // svelte-ignore state_referenced_locally
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pointer-region state controller, not a domain-data request
+  const nativePointer = onEditorCompactReady ? createDockPointerRegionController() : null;
   const pointerController: DockPointerRegionController = {
+    recordEnter: () => nativePointer?.recordEnter?.(),
+    flush: () => nativePointer?.flush?.() ?? Promise.resolve(null),
     activate: (regions, revision) => {
       pointerState = { active: true, regions, revision };
+      nativePointer?.activate(regions, revision);
     },
     deactivate: (regions = [], revision) => {
       pointerState = { active: false, regions, revision };
+      nativePointer?.deactivate(regions, revision);
     },
     destroy: () => {
       pointerState = { active: false, regions: [] };
+      nativePointer?.destroy();
     },
   };
 </script>
@@ -551,6 +570,7 @@
       {placement}
       {focusRequest}
       {closeRequest}
+      {editorCompactRequest}
       {sideDefaultWorkspaceId}
       {dragStartResult}
       {resizeStartResult}
