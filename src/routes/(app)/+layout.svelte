@@ -48,7 +48,6 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import MachineRail from '$features/machine-rail/MachineRail.svelte';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
@@ -216,11 +215,8 @@
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
-  const machineRailEnabled$ = selectMachineRailEnabled();
   const applicationShellTint = $derived(
-    $machineRailEnabled$
-      ? undefined
-      : connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
+    connectionShellTint($currentConnection$?.accent, $currentConnection$?.isLocal ?? true),
   );
 
   // Register all tab types early

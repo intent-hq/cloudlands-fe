@@ -878,6 +878,8 @@ body.panel-resizing webview {
 
 :root[data-machine-rail] .panel-layout-container {
   background-color: transparent;
+  /* The rail's backdrop paints the accent tint (an inline style) for every machine. */
+  background-image: none !important;
 }
 
 .machine-rail-backdrop {
