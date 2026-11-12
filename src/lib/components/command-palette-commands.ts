@@ -116,6 +116,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-ssh-machine-setup',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalSshMachineSetup_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-ssh-machine-setup',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalSshMachineSetup_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'enable-experimental-browser-access',
     get label() {
       return m.lib_commandPalette_enableExperimentalBrowserAccess_label();

@@ -1255,6 +1255,21 @@ export const IPC_CHANNELS = {
     INVITE_DISCARD: 'remote-machines:invite-discard',
   },
 
+  // Set up a new machine over SSH (Labs). The start payload carries the SSH
+  // password or key passphrase: its handler validates by hand and never logs.
+  MACHINE_SETUP: {
+    /** Renderer → main: `SshSetupDefaults` (is an SSH agent running?). */
+    SSH_DEFAULTS: 'machine-setup:ssh-defaults',
+    /** Renderer → main: start one SSH setup run → `SshSetupStartResult`. */
+    SSH_START: 'machine-setup:ssh-start',
+    /** Renderer → main: answer the unknown-host-key question. */
+    SSH_TRUST: 'machine-setup:ssh-trust',
+    /** Renderer → main: close the SSH connection; nothing is saved. */
+    SSH_CANCEL: 'machine-setup:ssh-cancel',
+    /** Main → renderer (the starting window only): `SshSetupEvent`. */
+    SSH_EVENT: 'machine-setup:ssh-event',
+  },
+
   // Hardware console (Codex Micro / Creator Micro 2)
   HARDWARE_CONSOLE: {
     // Main → renderer: ask the renderer to send the lighting off-frame
@@ -1511,6 +1526,9 @@ export const EVENT_CHANNELS = [
   'transfer:import-progress',
   // File menu → renderer: open the import-workspace wizard.
   'menu:import-workspace',
+  // SSH machine setup progress (main → renderer): steps, redacted log lines,
+  // the host-key question and the outcome. Never a secret or the link.
+  'machine-setup:ssh-event',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

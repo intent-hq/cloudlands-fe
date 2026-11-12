@@ -27,7 +27,7 @@
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DaemonStatusIndicator from '$lib/components/layout/DaemonStatusIndicator.svelte';
-  import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
+  import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Header from '$lib/components/ui/Header.svelte';
@@ -96,7 +96,6 @@
     'focus-visible:outline-none [&:focus-visible>[data-slot=button-surface]]:bg-hover';
 
   let menuOpen = $state(false);
-  let connectModalOpen = $state(false);
   // The shown machine's status menu, rendered by DaemonStatusIndicator.
   let statusMenuOpen = $state(false);
   // Another machine's menu, anchored at its rail item.
@@ -328,7 +327,10 @@
           {/each}
           <Menu.Separator />
         {/if}
-        <Menu.Item data-testid="machine-rail-add-new" onSelect={() => (connectModalOpen = true)}>
+        <Menu.Item
+          data-testid="machine-rail-add-new"
+          onSelect={() => appStore.dispatch(machineSetupOpened())}
+        >
           {#snippet leading()}
             <Fa icon={faPlus} size="sm" />
           {/snippet}
@@ -357,8 +359,6 @@
       </Menu.Content>
     </Menu.Root>
   </nav>
-
-  <ConnectBackendModal bind:open={connectModalOpen} />
 
   {#if $isHomeRenderer$}
     <div

@@ -36,6 +36,7 @@ import type {
   PairLinkInspected,
 } from '$shared/types/pair-link';
 import type { NodeInviteClaimResult, NodeInviteInspectErrorCode } from '$shared/types/node-invite';
+import type { SshSetupLink } from '$shared/types/machine-setup';
 import { parseRemoteMachine } from '$shared/types/remote-machines';
 import { isPairingUri, maskPairingUri } from '$shared/utils/pairing-uri';
 import { isNodeInviteUri, maskNodeInviteUri } from '$shared/utils/node-invite-uri';
@@ -424,6 +425,24 @@ function* testPasted(text: string): SagaGenerator<void> {
   const error = yield* call(addInspected, inspected, true);
   if (error === 'cancelled') lastPasted = null;
   else if (error) yield* put(pasteFailed(error));
+}
+
+/**
+ * Add a link main captured itself (SSH machine setup): a held pair link is
+ * saved (a node only when the backend can use it, then the prompt); a held
+ * node invite is asked about and claimed. Returns the error to show, null
+ * once added, or 'cancelled' when the user declined the node prompt.
+ */
+export function* addHeldLink(link: SshSetupLink): SagaGenerator<NodeAddError | null | 'cancelled'> {
+  if (link.kind === 'invite')
+    return yield* call(claimInvite, { pendingId: link.pendingId, label: inviteLabel(link.label) });
+  return yield* call(addInspected, {
+    ok: true as const,
+    pendingId: link.pendingId,
+    kind: link.machineKind,
+    label: link.label,
+    existingId: link.existingId,
+  });
 }
 
 function* requestPaste(): SagaGenerator<void> {

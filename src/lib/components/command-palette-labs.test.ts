@@ -1,13 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), setDock: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  setDock: vi.fn(),
+  electron: { value: true },
+}));
 vi.mock('$lib/dock-lab', () => ({ setDockLabEnabled: mocks.setDock }));
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  isElectronPlatform: () => mocks.electron.value,
+}));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 
-import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
+import {
+  isLabCommandHidden,
+  isSshMachineSetupCommandHidden,
+  runLabCommand,
+} from './command-palette-labs';
 import {
   setLabsBrowserAccessEnabled,
   setLabsCloudMachinesEnabled,
+  setLabsSshMachineSetupEnabled,
   setLabsPlainFolderWorkspacesEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
@@ -16,6 +28,36 @@ describe('command palette Labs commands', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.setDock.mockClear();
+    mocks.electron.value = true;
+  });
+
+  it('offers SSH machine setup in the desktop app only, hiding the no-op command', () => {
+    expect(isSshMachineSetupCommandHidden('enable-experimental-ssh-machine-setup', false)).toBe(
+      false,
+    );
+    expect(isSshMachineSetupCommandHidden('disable-experimental-ssh-machine-setup', false)).toBe(
+      true,
+    );
+    expect(isSshMachineSetupCommandHidden('enable-experimental-ssh-machine-setup', true)).toBe(
+      true,
+    );
+    expect(isSshMachineSetupCommandHidden('new-workspace', true)).toBe(false);
+    mocks.electron.value = false;
+    expect(isSshMachineSetupCommandHidden('enable-experimental-ssh-machine-setup', false)).toBe(
+      true,
+    );
+    expect(isSshMachineSetupCommandHidden('disable-experimental-ssh-machine-setup', true)).toBe(
+      true,
+    );
+  });
+
+  it('toggles SSH machine setup through the preferences slice', () => {
+    expect(runLabCommand('enable-experimental-ssh-machine-setup')).toBe(true);
+    expect(runLabCommand('disable-experimental-ssh-machine-setup')).toBe(true);
+    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setLabsSshMachineSetupEnabled(true),
+      setLabsSshMachineSetupEnabled(false),
+    ]);
   });
 
   it('hides only the command that would set each lab to its current value', () => {
