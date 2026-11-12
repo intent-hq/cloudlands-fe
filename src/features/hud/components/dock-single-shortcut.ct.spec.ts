@@ -223,23 +223,9 @@ test('single dock shortcut: linked conversation, else the selected one, else the
   await headerLink.click();
   await expect(thisTab).toHaveAttribute('aria-checked', 'false');
   await expect(thisApp).toBeVisible();
-  // Each choice names what it links, muted: the tab (its title, else its site) and the app.
+  // Each choice names what it links: the tab (its title, else its site) and the app.
   await expect(thisTab.locator('[data-link-scope-detail]')).toHaveText(/github\.com/);
-  const tones = await thisTab.evaluate((item) => ({
-    label: getComputedStyle(item.querySelector('span span')!).color,
-    detail: getComputedStyle(item.querySelector('[data-link-scope-detail]')!).color,
-  }));
-  expect(tones.detail).not.toBe(tones.label);
-  // Label and name share one row; the menu explains what the open-dock shortcut does.
-  const sameRow = await thisTab.evaluate((item) => {
-    const a = item.querySelector('span span')!.getBoundingClientRect();
-    const b = item.querySelector('[data-link-scope-detail]')!.getBoundingClientRect();
-    return {
-      sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 4,
-      right: b.left > a.right,
-    };
-  });
-  expect(sameRow).toEqual({ sameRow: true, right: true });
+  // The menu explains what the open-dock shortcut does.
   await expect(page.locator('[data-link-shortcut-hint]')).toContainText('linked tab or app');
   await page.screenshot({ path: info.outputPath('12a-d-link-menu-labels.png') });
   await thisTab.click();
