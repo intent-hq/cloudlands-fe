@@ -281,7 +281,7 @@ describe('screenshot editor entry', () => {
     expect(timeline.at(-1)).toMatch(/cancelled editor closed/);
     expect(timeline.join()).not.toMatch(/cancelled editor shown/);
     expect(unused.webContents.sent).toEqual([]);
-    const openFor = (holdToken: string) =>
+    const openFor = (holdToken?: string) =>
       invoke(C.OPEN, io.dock, {
         kind: 'screenshot',
         workspaceId: 'workspace',
@@ -293,7 +293,7 @@ describe('screenshot editor entry', () => {
         source,
         marks: [],
         provenance: { visuals: 'clean' },
-        holdToken,
+        ...(holdToken ? { holdToken } : {}),
       });
     // A loading shell the person closes: that screenshot's editor never opens later.
     const closedToken = crypto.randomUUID();
@@ -313,6 +313,20 @@ describe('screenshot editor entry', () => {
     expect(timeline.at(-1)).toMatch(/retired-owner shell closed/);
     expect(orphan.webContents.sent).toEqual([]);
     expect(await invoke(C.HOLD_END, io.dock, { token: retiredToken })).toBe(true);
+    // Another OPEN (a pill, or an earlier request finishing) never takes a screenshot's
+    // preload: it is discarded unseen and that OPEN gets its own window.
+    const otherToken = crypto.randomUUID();
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token: otherToken, hide: true })).toBe(true);
+    const foreign = watch(io.windows.at(-1), 'foreign preload');
+    const pill = await openFor();
+    expect(pill.ok).toBe(true);
+    expect(timeline.at(-1)).toMatch(/foreign preload closed/);
+    expect(timeline.join()).not.toMatch(/foreign preload shown/);
+    const pillEditor = io.windows.at(-1);
+    expect(pillEditor).not.toBe(foreign);
+    expect(await invoke(C.HOLD_SHOW, io.dock, { token: otherToken })).toBe(false);
+    expect(await invoke(C.CLOSE, pillEditor, { openId: pill.openId })).toBe(true);
+    expect(await invoke(C.HOLD_END, io.dock, { token: otherToken })).toBe(true);
     // The screenshot that opens: loaded hidden at the press, inert without a session.
     expect(await invoke(C.HOLD_BEGIN, io.dock, { token, hide: true })).toBe(true);
     const editor = watch(io.windows.at(-1), 'editor');

@@ -292,7 +292,8 @@ function prewarmEditor(
     token,
     owner,
     begunAt: Date.now(),
-    expire: setTimeout(() => discardPrewarm(), PREWARM_IDLE_MS),
+    // Bound to this record's token: it can never discard a later preload.
+    expire: setTimeout(() => discardPrewarm(token), PREWARM_IDLE_MS),
     release: () => {
       stopRetired();
       owner.sender.removeListener('destroyed', gone);
@@ -387,6 +388,12 @@ function closeEditorNow(): void {
   const window = editor;
   editor = null;
   editorBackendId = null;
+  // Closing a preloaded window disposes its record (timer and owner watch) with it.
+  if (prewarm && prewarm.window === window) {
+    clearTimeout(prewarm.expire);
+    prewarm.release();
+    prewarm = null;
+  }
   if (!usable(window)) return;
   closingAllowed = true;
   try {
@@ -601,6 +608,16 @@ async function open(
     return unavailable();
 
   const owner = { window: dock, sender: event.sender, binding };
+  // A preloaded window belongs to its own screenshot only: this OPEN takes it only for that
+  // capture's token and dock document. Any other OPEN (a pill, an earlier request finishing
+  // meanwhile) discards it unseen and opens as it would without one; that screenshot then
+  // opens without its early shell.
+  const prepared =
+    !!holdToken &&
+    prewarm?.token === holdToken &&
+    prewarm.owner.sender === event.sender &&
+    prewarm.owner.binding === binding;
+  if (prewarm && !prepared) discardPrewarm(prewarm.token);
   openedAtMark = Date.now();
   /** Every admitted editor holds its owner's dock: the capture's token, else one of main's. */
   const holdDockFor = (id: string): void => {
