@@ -1,4 +1,4 @@
-import { expect, test, expectAnimationsToSettle } from '../../../test/ct-test';
+import { expect, test, expectAnimationsToSettle, installPausedClock } from '../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import Harness from './__fixtures__/QuickAttachHarness.svelte';
 
@@ -18,6 +18,7 @@ async function editText(page: Page, fixture: Locator, kind: 'screenshot' | 'reco
   await surface.click({ position: { x: 100, y: 100 } });
   const input = fixture.getByRole('textbox', { name: 'Text', exact: true });
   await input.fill('Local draft');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+Enter commits text or attaches; it is independent of chat shortcut settings.
   await page.keyboard.press('ControlOrMeta+Enter');
   await expect(input).not.toBeVisible();
   await expect(fixture).toHaveAttribute('data-dirty', 'true');
@@ -36,17 +37,20 @@ for (const kind of ['screenshot', 'recording'] as const) {
     });
     const attach = fixture.locator('[data-attach]');
     await expect(attach).toBeEnabled();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+Enter commits text or attaches; it is independent of chat shortcut settings.
     await page.keyboard.press('ControlOrMeta+Enter');
     await expect(fixture).toHaveAttribute('data-closes', '1');
     expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
     await fixture.update({ props: { kind, epoch: 1, admitted: true } });
     await editText(page, fixture, kind);
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+S contract is independent of the workspace editor.save shortcut.
     await page.keyboard.press('ControlOrMeta+s');
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
     expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
     await expect(fixture).toHaveAttribute('data-closes', '1');
     await fixture.update({ props: { kind, epoch: 1, mode: 'defer' } });
     await attach.click();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+Enter commits text or attaches; it is independent of chat shortcut settings.
     await page.keyboard.press('ControlOrMeta+Enter');
     await expect(attach).toBeDisabled();
     await expect
@@ -133,10 +137,12 @@ for (const kind of ['screenshot', 'recording'] as const) {
     }
     await beginText(0.3);
     await expect(attach).toBeDisabled();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+Enter commits text or attaches; it is independent of chat shortcut settings.
     await page.keyboard.press('ControlOrMeta+Enter');
     await expect(fixture.getByRole('textbox', { name: 'Text', exact: true })).not.toBeVisible();
     await expect(fixture).toHaveAttribute('data-closes', '0');
     await expect(attach).toBeEnabled();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+S contract is independent of the workspace editor.save shortcut.
     await page.keyboard.press('ControlOrMeta+s');
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
     expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
@@ -192,9 +198,11 @@ for (const kind of ['screenshot', 'recording'] as const) {
     const input = fixture.getByRole('textbox', { name: 'Text', exact: true });
     await input.fill('Pending local text');
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+W closes its own window; it is independent of workspace navigation.close-tab.
     await page.keyboard.press('ControlOrMeta+w');
     const dialog = page.getByRole('dialog', { name: 'Discard changes?' });
     await expect(dialog).toBeVisible();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+W closes its own window; it is independent of workspace navigation.close-tab.
     await page.keyboard.press('ControlOrMeta+w');
     await expect(dialog).toBeVisible();
     await expect(fixture).toHaveAttribute('data-closes', '0');
@@ -202,6 +210,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await expect(dialog).not.toBeVisible();
     await fixture.update({ props: { kind, nativeRequest: 1 } });
     await expect(dialog).toBeVisible();
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+W closes its own window; it is independent of workspace navigation.close-tab.
     await page.keyboard.press('ControlOrMeta+w');
     await expect(fixture).toHaveAttribute('data-discarded', '0');
     await dialog.getByRole('button', { name: 'Keep editing', exact: true }).click();
@@ -259,7 +268,7 @@ test('close IPC rejection and timeout release Attach busy state', async ({ mount
   await expect(attach).toBeEnabled();
   await fixture.update({ props: { epoch: 1, closeMode: 'hang' } });
   await expect(attach).toBeEnabled();
-  await page.clock.install();
+  await installPausedClock(page);
   await attach.click();
   await expect(attach).toBeDisabled();
   await page.clock.fastForward(5000);
@@ -283,6 +292,7 @@ test('pending crop is protected by Close and native discard request; clean ModW 
   const fixture = await mount(Harness, { hooksConfig: { mockBackend: {} } });
   await fixture.getByRole('button', { name: 'Crop', exact: true }).click();
   await expect(fixture).toHaveAttribute('data-dirty', 'true');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+W closes its own window; it is independent of workspace navigation.close-tab.
   await page.keyboard.press('ControlOrMeta+w');
   const dialog = page.getByRole('dialog', { name: 'Discard changes?' });
   await expect(dialog).toBeVisible();
@@ -296,6 +306,7 @@ test('pending crop is protected by Close and native discard request; clean ModW 
   await page.keyboard.press('Escape');
   await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toBeVisible();
   await expect(fixture).toHaveAttribute('data-dirty', 'false');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Capture editor's fixed Mod+W closes its own window; it is independent of workspace navigation.close-tab.
   await page.keyboard.press('ControlOrMeta+w');
   await expect(fixture).toHaveAttribute('data-closes', '1');
   expect(

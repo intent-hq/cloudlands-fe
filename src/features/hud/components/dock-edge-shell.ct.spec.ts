@@ -1,7 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
-import DockEdgeMotionHarness from './__tests__/DockEdgeMotionHarness.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
 import {
   dockLocalRect,

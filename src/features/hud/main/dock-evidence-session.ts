@@ -29,7 +29,6 @@ import type {
   DockNativeResult,
 } from '../../../shared/dock-evidence';
 import { cgWindowIdFromMediaSourceId, createDockScreenRecorder } from './dock-screen-recorder';
-import { Logger } from '../../../shared/logger';
 import type {
   DockEvidenceBeginRequest,
   DockEvidenceBeginResult,
@@ -114,7 +113,6 @@ interface Session {
   requests: Map<string, { source: string; promise: Promise<DockEvidencePixelsResult> | null }>;
 }
 
-const logger = new Logger('DockEvidenceSession');
 const unavailable = (): DockEvidencePixelsResult => ({ ok: false, error: 'unavailable' });
 /** The window picker lists windows as it starts: the hidden dock must be gone by then. */
 const SELECTION_SETTLE_MS = 250;

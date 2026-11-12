@@ -1,5 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../../test/ct-test';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
+import { shortcutChord } from '../../../test/shortcut-chords';
 import Harness from './DockComposerE2EHarness.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 import type { DockPlacementSnapshot } from '$shared/dock-placement';
@@ -71,8 +73,9 @@ for (const mode of ['notch', 'floating'] as const) {
     await component.getByRole('button', { name: /^Capture the screen/ }).click();
     await expect(component.locator('[data-dock-media-attachments] .tile')).toHaveCount(1);
     await editor.focus();
+    const isMac = await page.evaluate(() => /Mac/i.test(navigator.platform));
     for (const [index, line] of draft.split('\n').entries()) {
-      if (index) await editor.press('Shift+Enter');
+      if (index) await editor.press(shortcutChord(SHORTCUT_DEFAULTS['chat.new-line'], isMac).press);
       await page.keyboard.insertText(line);
     }
     await expect(editor).toContainText('A third line.');

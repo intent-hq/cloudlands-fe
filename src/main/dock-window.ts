@@ -1028,6 +1028,7 @@ export function setDockHiddenForCapture(
  * the recording's capture and its mark images keep their usual rules (the dock is
  * excluded from both either way), and its document, draft and owner stay mounted.
  * Held by one clip on one window; only that clip's end brings it back.
+ * @internal Legacy visibility-state seam for the owner-only shortcut admission regression test.
  */
 export function hideDockForRecording(window: BrowserWindow, clipId: string): void {
   if (window !== getDockWindow() || window.isDestroyed()) return;

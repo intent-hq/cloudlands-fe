@@ -16,10 +16,12 @@
   let request = $state<DockContextMenuRequest | null>(null);
   let finish: ((result: DockContextMenuResult) => void) | undefined;
   const restores = [
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- This test-only fixture installs synthetic IPC handlers, not live domain fetches.
     overrideMockIpcHandler(WINDOW_CHANNELS.ACTIVATE_APP, () => {
       activations += 1;
       return { activated: true };
     }),
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- This test-only fixture installs synthetic IPC handlers, not live domain fetches.
     overrideMockIpcHandler(WINDOW_CHANNELS.SHOW_DOCK_MENU, (state) => {
       request = structuredClone(state as DockContextMenuRequest);
       return new Promise<DockContextMenuResult>((resolve) => {
@@ -47,6 +49,7 @@
   />
   <Button
     onclick={() => {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- Exercise the native-menu bridge against the synthetic handlers installed above.
       void showDockContextMenu({ machines: reactiveMachines, currentId: 'local' });
     }}
   >

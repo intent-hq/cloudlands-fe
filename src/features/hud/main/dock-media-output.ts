@@ -355,9 +355,8 @@ async function run(
       });
       child.once('close', (code) => {
         finish();
-        code === 0 && completed && !job.stopped && context.isCurrent()
-          ? resolve(completed)
-          : fail();
+        if (code === 0 && completed && !job.stopped && context.isCurrent()) resolve(completed);
+        else fail();
       });
       child.stdin.on('error', fail);
       child.stdin.end(JSON.stringify(input));

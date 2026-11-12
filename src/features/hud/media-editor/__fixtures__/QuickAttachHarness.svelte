@@ -84,7 +84,9 @@
     };
   });
   const disposers = [
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- This test-only fixture installs a synthetic capture-editor IPC handler.
     overrideMockIpcHandler(channels.GET, () => null),
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- This test-only fixture installs a synthetic capture-editor IPC handler.
     overrideMockIpcHandler(channels.SAVE, async (raw) => {
       const request = raw as { openId: string; edit: DockMediaEdit };
       requests = [...requests, { channel: channels.SAVE, request }];
@@ -103,6 +105,7 @@
         saved: { ...request.edit, revision: request.edit.revision + 1 },
       };
     }),
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- This test-only fixture installs a synthetic capture-editor IPC handler.
     overrideMockIpcHandler(channels.CLOSE, async (raw) => {
       const request = raw as { openId: string; intent?: 'attach' };
       requests = [...requests, { channel: channels.CLOSE, request }];
@@ -110,6 +113,7 @@
       if (closeMode === 'hang') return await new Promise<boolean>(() => {});
       if (closeMode === 'fail') return false;
       if (
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- Validate a synthetic fixture payload; this pure schema check makes no domain request.
         !DockCaptureEditorCloseSchema.safeParse(request).success ||
         request.openId !== snapshot.openId ||
         principal !== 'A' ||
@@ -120,6 +124,7 @@
       return true;
     }),
   ];
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- Exercise the production bridge against this fixture's synthetic IPC handlers.
   const bridge = connectDockCaptureEditor(() => {});
   onDestroy(() => {
     bridge.dispose();
