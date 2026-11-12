@@ -102,7 +102,6 @@
       ],
     }) as AgentMessage;
 
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT serves scripted wire responses; the production saga owns every request.
   installMockElectronBridge({
     'agent.get': (input) =>
       store.state.agentSessions.byAgentId[(input as { agentId: string }).agentId],

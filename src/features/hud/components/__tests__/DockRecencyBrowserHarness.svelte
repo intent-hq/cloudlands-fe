@@ -16,7 +16,6 @@
 
   onMount(() => {
     const previousBridge = window.electronAPI;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- browser fixture mocks only the IPC boundary; production saga and selector own data
     installMockElectronBridge({
       'agent.list': (params) => {
         requests = [...requests, { method: 'agent.list', params }];

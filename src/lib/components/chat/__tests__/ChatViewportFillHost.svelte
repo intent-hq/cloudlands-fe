@@ -139,7 +139,6 @@
       ],
     }) as AgentMessage;
   let subscribed = $state(false);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT serves scripted wire responses; the production saga owns every request.
   installMockElectronBridge({
     'agent.get': (input) =>
       store.state.agentSessions.byAgentId[(input as { agentId: string }).agentId],
@@ -296,7 +295,6 @@
     const finish = complete;
     untrack(() => {
       const push = (kind: string, payload: object) =>
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- Test fixture drives the mock notification transport, not domain data.
         emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, {
           method: 'subscription.push',
           params: {

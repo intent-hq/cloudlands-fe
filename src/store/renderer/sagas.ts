@@ -82,6 +82,7 @@ import { chatChangesSaga } from './slices/chat-changes/sagas/chat-changes-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
+import { importableSessionsSaga } from './slices/importable-sessions/sagas/importable-sessions-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
@@ -255,6 +256,7 @@ export const sagas = [
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
   githubRepoSearchSaga,
+  importableSessionsSaga,
   githubUserSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,

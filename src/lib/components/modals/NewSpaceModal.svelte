@@ -18,6 +18,8 @@
     onClose?: () => void;
     /** Changing it while open re-applies the `workspace-prefill` entry. */
     prefillRequest?: number;
+    /** Default to the Home repository selection instead of the last-used one. */
+    defaultToHomeRepository?: boolean;
   }
 
   let {
@@ -26,6 +28,7 @@
     initializer,
     onClose,
     prefillRequest = 0,
+    defaultToHomeRepository = false,
   }: Props = $props();
 
   let isExpanded = $state(true);
@@ -100,7 +103,7 @@
         bind:this={initializerRef}
         bind:isExpanded
         autoFocus={false}
-        defaultToSidebarRepository
+        defaultToSidebarRepository={defaultToHomeRepository}
         oncreate={close}
         onNavigateAway={close}
       />

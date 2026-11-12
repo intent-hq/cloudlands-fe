@@ -106,7 +106,6 @@
     }) as AgentMessage;
 
   let aroundLookups = 0;
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT serves scripted wire responses; the production saga and seek helper own every request.
   installMockElectronBridge({
     'agent.get': (input) =>
       store.state.agentSessions.byAgentId[(input as { agentId: string }).agentId],

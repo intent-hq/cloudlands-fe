@@ -4,24 +4,16 @@
  * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
  * of a `system.status` or `server.pairingInfo` result (both carry the same
  * field with the same semantics). Returns `null` when the field is absent,
- * empty, or malformed — a conclusive "no tunnel" for a successful response.
+ * empty, or malformed.
  *
- * Known trade-off: the wire shape cannot distinguish "tunnel disabled" from
- * "tunnel sidecar momentarily down" — `system.status` omits the field in both
- * cases (including the daemon's restart-backoff window after an unexpected
- * sidecar exit). A reconnect landing in that window therefore clears a stored
- * address that would have come back on its own; it is re-learned from the
- * next post-connect status once the sidecar recovers. Now that the address is
- * keychain-synced, the blast radius is fleet-wide: the clear bumps the LWW
- * clock and propagates, so a device that can ONLY dial through the tunnel
- * loses its route until any directly-connected device reconnects after the
- * sidecar recovers and re-captures the address (the tunnel-only device cannot
- * rediscover it on its own). Deliberately accepted
- * over retaining stale values: a kept address whose tunnel was genuinely
- * disabled would add a perpetually-failing race candidate to every connect,
- * and the field's contract ("never advertises a route nothing is serving")
- * argues for mirroring it faithfully. Distinguishing the two states needs a
- * protocol change (tracked upstream), not FE-side guessing.
+ * The wire shape cannot tell "tunnel disabled" from "tunnel sidecar
+ * momentarily down": both omit the field, including the daemon's restart
+ * backoff after an unexpected sidecar exit. The address itself is stable (it
+ * derives from a key persisted in the daemon data dir), so the remote-record
+ * refreshes treat `null` as "no news" and keep the last known address: a
+ * cleared address would sync fleet-wide and strand a device that can only
+ * dial through the tunnel. The cost of a genuinely disabled tunnel is one
+ * failing race candidate. A certificate change still clears it.
  */
 export function extractTcAddress(result: unknown): string | null {
   if (result && typeof result === 'object') {

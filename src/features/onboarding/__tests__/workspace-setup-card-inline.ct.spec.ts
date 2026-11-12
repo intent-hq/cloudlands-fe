@@ -152,3 +152,24 @@ for (const width of [280, 360]) {
       .toBe('/demo/workspaces/a-very-long-workspace-name-without-spaces');
   });
 }
+
+for (const agentStatus of ['active', 'done'] as const) {
+  test(`picks the agent line from hasPrompt when ${agentStatus}`, async ({ mount }) => {
+    const props = {
+      repoName: 'sample-project',
+      branch: 'ui-polish',
+      specialistId: 'product-manager',
+      specialistName: 'Product Manager',
+      repoStatus: 'done' as const,
+      branchStatus: 'done' as const,
+      agentStatus,
+    };
+    const prompted = await mount(WorkspaceSetupCard, { props: { ...props, hasPrompt: true } });
+    await expect(prompted).toContainText('agent is on it.');
+    await expect(prompted).not.toContainText('say something to get started');
+    await prompted.unmount();
+
+    const idle = await mount(WorkspaceSetupCard, { props: { ...props, hasPrompt: false } });
+    await expect(idle).toContainText('say something to get started');
+  });
+}

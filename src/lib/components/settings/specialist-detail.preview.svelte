@@ -145,10 +145,8 @@
 
   let catalogFailure = false;
   let liveCatalog: SpecialistCatalog = { specialists: [] };
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
   const { detachAll: detachListeners, ...listeners } = createMockBridgeListeners();
   const notifyBackend = (method: string) =>
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
     emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, { method, params: {} });
   let stopCatalog: (() => void) | undefined;
 

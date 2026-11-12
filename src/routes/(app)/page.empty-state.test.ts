@@ -40,7 +40,7 @@ describe('home empty state', () => {
 
     expect(dispatch).toHaveBeenCalledExactlyOnceWith({
       type: 'sidebarNav/setShowCreateModal',
-      payload: [true],
+      payload: [true, { homeRepository: true }],
     });
   });
 });

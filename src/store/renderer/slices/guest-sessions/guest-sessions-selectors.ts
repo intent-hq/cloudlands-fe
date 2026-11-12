@@ -10,8 +10,10 @@ import {
 } from '../principal/principal-selectors';
 import {
   selectCanManageWorkspace,
+  selectWorkspaceAuthority,
   selectWorkspaceListLoadedForBackend,
 } from '../workspace/workspace-selectors';
+import { canManageWorkspace } from '../workspace/workspace-authority';
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -152,17 +154,18 @@ export const selectHostedSharingLoadState = store.createSelector(
 );
 
 /** Unknown rosters stay visible while read; proven unshared workspaces disappear. */
-export const selectHostedWorkspaces = store.createSelector((state): Workspace[] =>
-  getItems(state.workspace.workspaces).filter((ws) => {
-    if (!selectCollaborationReady.select(state) || !selectCanManageWorkspace.select(state, ws.id))
+export const selectHostedWorkspaces = store.createSelector((state): Workspace[] => {
+  const authority = selectWorkspaceAuthority.select(state);
+  return getItems(state.workspace.workspaces).filter((ws) => {
+    if (!authority.collaborationReady || !canManageWorkspace(authority, ws.id, () => ws))
       return false;
     const pending = selectHostedPendingInviteCount.select(state, ws.id);
     if ((ws.memberCount ?? Infinity) <= 1 && pending === 0) return false;
     const roster = state.guestSessions.hostedRosters[ws.id];
     if (!roster || roster.status !== 'loaded') return true;
     return roster.members.some(isWorkspaceGuest) || pending === null || pending > 0;
-  }),
-);
+  });
+});
 
 /** Saved role is a presentation hint only; an admitted current principal supersedes it. */
 export const selectJoinedInstanceSessions = store.createSelector((state) => {

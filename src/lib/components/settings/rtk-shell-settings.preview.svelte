@@ -70,7 +70,6 @@
     writes = [...writes, ...changes];
     return changes;
   };
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Registers a synthetic in-memory handler; never fetches domain data.
   const restoreProbe = overrideMockIpcHandler(SYSTEM_CHANNELS.CHECK_RTK, async () => {
     if (initial === 'loading-probe') await probeGate;
     return { success: true, data: { available: initial !== 'unavailable' } };

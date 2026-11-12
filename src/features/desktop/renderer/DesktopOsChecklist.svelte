@@ -12,11 +12,11 @@
       status: ok ? m.desktop_os_checklist_allowed() : m.desktop_os_checklist_missing(),
     });
     const capture = (): { state: ItemState; status: string } => {
-      if (!checklist.accessibility || !checklist.screenRecording)
+      if (checklist.screenCapture === 'blocked')
         return { state: 'waiting', status: m.desktop_os_checklist_blocked() };
       if (checklist.screenCapture === 'ready')
         return { state: 'done', status: m.desktop_os_checklist_ready() };
-      if (checklist.screenCapture === 'pending')
+      if (checklist.screenCapture === 'checking')
         return { state: 'waiting', status: m.desktop_os_checklist_checking() };
       return { state: 'failed', status: m.desktop_os_checklist_unconfirmed() };
     };

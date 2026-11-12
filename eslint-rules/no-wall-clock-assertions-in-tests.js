@@ -1,4 +1,7 @@
 import { relativeFilename } from './design-system/common.js';
+import { suppressedLines } from './lib/disable-directives.js';
+
+const RULE_NAME = 'no-wall-clock-assertions-in-tests';
 
 const MESSAGE =
   'Asserting an elapsed wall-clock difference against a millisecond budget fails under CI load: ' +
@@ -199,7 +202,15 @@ export default {
       },
       'Program:exit'() {
         if (fakeTimers) return;
-        for (const node of offenders.slice(allowed)) {
+        const suppressed = suppressedLines(context.sourceCode, RULE_NAME);
+        let seen = 0;
+        for (const node of offenders) {
+          // A reasoned disable still gets its report, so ESLint counts the directive as
+          // used, but it does not use up the baseline allowance.
+          if (!suppressed(node.loc.start.line)) {
+            seen += 1;
+            if (seen <= allowed) continue;
+          }
           context.report({ node, messageId: 'wallClockBudget' });
         }
       },

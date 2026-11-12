@@ -23,6 +23,9 @@ export interface PermissionRequest {
     label: string;
     description?: string;
     destructive?: boolean;
+    kind?: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    /** How far an `allow_always` approval reaches (PROTOCOL §8). */
+    scope?: 'chat' | 'workspace' | 'allWorkspaces';
   }>;
   agentName?: string;
   riskLevel?: 'low' | 'medium' | 'high';
