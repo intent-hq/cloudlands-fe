@@ -1,3 +1,4 @@
+import type { DockSendTiming } from './dock-send-timing';
 /** One evidence-to-message projection shared by the notch and ordinary chat. */
 import {
   dockMediaSendsOriginal,
@@ -50,6 +51,7 @@ export interface EvidenceMessagePreparation {
   service: DockMediaSendService | null;
   current(): boolean;
   onRecord(record: DockImagePlacementRecord): void;
+  timing?: DockSendTiming;
 }
 /** Caller freezes items/evidence first and admits only the returned prepared payload. */
 export async function prepareEvidenceMessage({
@@ -63,6 +65,7 @@ export async function prepareEvidenceMessage({
   service,
   current,
   onRecord,
+  timing,
 }: EvidenceMessagePreparation): Promise<(SendMessagePayload & { wsId: string }) | null> {
   const check = () => {
     if (!current() || !isDockBindingCurrent(binding))
@@ -104,7 +107,7 @@ export async function prepareEvidenceMessage({
   }
   // Composites come only from the click's snapshot (items + evidence).
   const materialized = evidence
-    ? await prepareDockMediaSend(workspaceId, evidence, binding, service, current)
+    ? await prepareDockMediaSend(workspaceId, evidence, binding, service, current, timing)
     : { images: {}, files: [], frames: [], framePromptBytes: [], metadata: [] };
   // A recording's markup screenshot only anchors marks the recording itself carries once it
   // is exported with them or sent as its marked original: then it is not sent again. An
@@ -129,6 +132,7 @@ export async function prepareEvidenceMessage({
         (mark) => mark.imageId === image.id && !(mark.clipId && carrying.has(mark.clipId)),
       ),
   );
+  timing?.stage('burn');
   let burned: Awaited<ReturnType<typeof burnEvidence>> = [];
   try {
     // Numbering stays the composer's: every mark counts, whichever images are sent.
@@ -202,6 +206,7 @@ export async function prepareEvidenceMessage({
   // Workspaces pre-place composites (and, on retention daemons, raws) before
   // admission so metadata names real references. The assistant workspace does
   // so only where the daemon advertises its registry; otherwise it stays inline.
+  timing?.stage('placement');
   const attachmentCapabilities = evidence ? await probeDockAttachmentCapabilities(binding) : null;
   check();
   if (

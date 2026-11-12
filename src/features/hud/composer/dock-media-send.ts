@@ -1,3 +1,4 @@
+import type { DockSendTiming } from './dock-send-timing';
 import { dockCertifiedFramePromptBytes } from '$shared/dock-media-frame-budget';
 import { dockMediaOverlaySpans } from '$shared/dock-media-animation';
 /** Materialize the click's immutable media edits before message admission. */
@@ -87,6 +88,7 @@ export async function prepareDockMediaSend(
   binding: DockPlacementBinding,
   service: DockMediaSendService | null,
   current: () => boolean,
+  timing?: DockSendTiming,
 ): Promise<DockMediaSendResult> {
   const output: DockMediaSendResult = {
     images: {},
@@ -103,6 +105,7 @@ export async function prepareDockMediaSend(
     };
     for (const row of [...evidence.images, ...evidence.clips]) {
       stage = 'validate';
+      timing?.stage(stage);
       if (row.mediaError) throw new Error('invalid-saved-edit');
       if (!row.media || dockMediaSendsOriginal(row.media)) continue;
       check();
@@ -118,6 +121,7 @@ export async function prepareDockMediaSend(
           media.transcript?.status !== 'ready'
         ) {
           stage = 'transcribe';
+          timing?.stage(stage);
           if (!service?.transcribeMedia) throw new Error('transcript-unavailable');
           const recognized = await service.transcribeMedia({ jobId, media });
           check();
@@ -127,6 +131,7 @@ export async function prepareDockMediaSend(
             edit = defaultDockMediaEdit(source, source.capturedMarks ?? [], media.transcript);
         }
         stage = 'plan';
+        timing?.stage(stage);
         const plan = planDockMediaOutput(edit, source, media.transcript);
         if (plan.errors.length) throw new Error(plan.errors[0]);
         const meta: Record<string, unknown> = {
@@ -149,6 +154,7 @@ export async function prepareDockMediaSend(
         };
         if (source.kind === 'screenshot') {
           stage = 'screenshot-source';
+          timing?.stage(stage);
           const encoded = source.path.split('/').map(encodeURIComponent).join('/');
           const resolved = intentFileMediaUrlToWorkspaceFile(
             `intent://local/file/${encoded}`,
@@ -171,6 +177,7 @@ export async function prepareDockMediaSend(
                 : 'image/png',
           };
           stage = 'screenshot-render';
+          timing?.stage(stage);
           output.images[row.id] = await renderDockMediaImage(source, edit, pixels);
           check();
         } else {
@@ -182,6 +189,7 @@ export async function prepareDockMediaSend(
             continue;
           }
           stage = 'overlay-render';
+          timing?.stage(stage);
           if (!service?.exportMedia) throw new Error('media-export-unavailable');
           const spans = dockMediaOverlaySpans(source, edit);
           if (spans.length > 10000) throw new Error('media-animation-layer-limit');
@@ -191,6 +199,8 @@ export async function prepareDockMediaSend(
             layers.push({ ...span, png: await renderDockMediaOverlay(source, edit, span.atMs) });
           }
           stage = 'export';
+          timing?.stage(stage);
+          timing?.exportAttempt(jobId);
           const exported = await service.exportMedia({
             outputVersion: DOCK_MEDIA_OUTPUT_VERSION,
             jobId,
@@ -201,6 +211,7 @@ export async function prepareDockMediaSend(
           if (!exported.ok)
             throw new Error(['media-export-failed', exported.error].filter(Boolean).join(':'));
           stage = 'placement';
+          timing?.stage(stage);
           const files = [exported.value.video, ...exported.value.frames];
           const references: string[] = [];
           for (let index = 0; index < files.length; index++) {
@@ -248,6 +259,7 @@ export async function prepareDockMediaSend(
         output.metadata.push(meta);
       } finally {
         // Only this exact native session may release this job; disposal also cancels it.
+        timing?.stage('release');
         await service?.releaseMediaJob?.(jobId).catch(() => {});
       }
     }

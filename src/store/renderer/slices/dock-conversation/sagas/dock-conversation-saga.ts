@@ -1,3 +1,5 @@
+import { dockSendTimingFor, settleDockSendTiming } from '$features/hud/composer/dock-send-timing';
+import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { selectDockDraftSynchronization } from '../dock-conversation-selectors';
 import type { SharedDraftSnapshot } from '$shared/types/chat-draft-sync';
 import {
@@ -552,7 +554,9 @@ function* sendReply(
   yield* put(dockConversationSendState(generation, true, null));
   // Cancelling the saga also retires its async shared preparation continuation.
   let preparationActive = true;
+  const timing = dockSendTimingFor(prompt?.submissionId);
   try {
+    timing?.stage('target');
     const target = yield* call([appClient.agents, appClient.agents.get], agentId, workspaceId);
     if (!current(generation, authority)) return;
     if (
@@ -574,7 +578,9 @@ function* sendReply(
     // The click owns this immutable snapshot. Edits made during validation are
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
+    timing?.stage('preparation');
     const payload = yield* call(prepareEvidenceMessage, {
+      timing,
       workspaceId,
       agentId,
       evidence,
@@ -600,6 +606,7 @@ function* sendReply(
       userAppMessageId: appMessageId,
     });
     if (!admitted) throw new Error('not-admitted');
+    timing?.admit(admitted.scope, admitted.submission.id);
     // Register draft ownership before dispatch can produce a fast acknowledgement.
     yield* put(
       dockConversationDeliveryTracked(workspaceId, agentId, {
@@ -631,6 +638,7 @@ function* sendReply(
     yield* reconcileDeliveries();
   } catch (error) {
     // Stage and bounded code only: never the prompt, file names or ids.
+    timing?.finish('failed');
     sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'admission'));
     if (current(generation, authority))
       yield* put(
@@ -645,6 +653,7 @@ function* sendReply(
     return;
   } finally {
     preparationActive = false;
+    timing?.cancelBeforeAdmission();
     if (current(generation, authority) && appStore.state.dockConversation.sending)
       yield* put(dockConversationSendState(generation, false, null));
   }
@@ -749,6 +758,9 @@ function* reconcileDeliveries(): SagaGenerator<void> {
   }
 }
 export function* dockConversationSaga(): SagaGenerator<void> {
+  yield* takeEvery(pendingSubmissionSettled, function* ({ payload: [scope, id, outcome] }) {
+    yield* call(settleDockSendTiming, scope, id, outcome);
+  });
   yield* fork(dockContextLinksSaga);
   yield* fork(dockShortcutSaga);
   yield* fork(dockEvidenceSaga);
