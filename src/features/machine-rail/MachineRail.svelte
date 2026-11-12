@@ -304,7 +304,8 @@
   // Each machine's renderer has its own rail, and one that stops being shown
   // never sees the pointer leave. A machine's name stays hidden after a click
   // on it, and every name while this rail is not on screen, until the pointer
-  // moves on, so a tooltip cannot stay open for when this rail shows again.
+  // or keyboard focus moves on, so a tooltip cannot stay open for when this
+  // rail shows again.
   let quietTooltips = $state<'all' | string | null>(null);
   $effect(() => {
     if (!$isShown$) quietTooltips = 'all';
@@ -411,6 +412,7 @@
     style:transform={entryOffset(item, group, index)}
     style:transition={entryTransition(item)}
     onpointerenter={() => wakeTooltips(item)}
+    onfocusin={() => wakeTooltips(item)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
     onpointermove={moveDrag}
     onpointerup={() => endDrag(true)}
@@ -499,6 +501,7 @@
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-1"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
+    onpointerenter={() => wakeTooltips()}
     onpointerleave={() => wakeTooltips()}
   >
     <div
