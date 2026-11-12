@@ -600,7 +600,12 @@ export function setupDockCaptureEditorIPC(): void {
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_BEGIN, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);
     const dock = fromDock(event);
-    return !!parsed.success && !!dock && beginDockEditorHold(dock, parsed.data.token);
+    if (!parsed.success || !dock || !beginDockEditorHold(dock, parsed.data.token)) return false;
+    // The dock document that asked goes (reload, backend switch): a hold no editor adopted
+    // ends with it, so the dock can never stay out of sight for a gone owner.
+    const token = parsed.data.token;
+    onStrictBackendBindingRetired(event.sender, () => endDockEditorHold(token, dock));
+    return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);

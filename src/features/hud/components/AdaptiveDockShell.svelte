@@ -1477,6 +1477,12 @@
     right: var(--header-wing-right);
     margin: 0;
   }
+  /* Collapsed, the status wing hugs its glyphs: 8px outer inset (not 12) and 3px between
+     glyphs (DOCK_COMPACT_STATUS_INSET / _GAP, which size the collapsed wing). */
+  .notch:not(.expanded) .header-state {
+    right: calc(var(--header-wing-right) - 4px);
+    --dock-status-gap: 3px;
+  }
   .notch .companion-header {
     padding-top: 0;
     padding-bottom: 0;

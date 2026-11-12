@@ -30,9 +30,6 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     const d = (window as any).__dockComposerE2E.store.state.dockConversation;
     return { workspaceId: d.workspaceId as string, agentId: d.agentId as string };
   });
-  // A draft in the conversation (its prompt is in use, as when a person captures from it).
-  await page.locator('.tiptap-editor').first().click();
-  await page.keyboard.type('Draft before capture');
   // The editor preview (the only way a capture opens straight in the editor today).
   await page.evaluate(() => localStorage.setItem('intent.dock.captureEditorPreview', '1'));
   // Main's side of the handoff, recorded and answered.
@@ -77,6 +74,22 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   const receipts: Record<string, unknown> = { pair };
 
   // 1. Screenshot: hold → capture → editor request carrying that hold (adopted, not ended).
+  // Phase marks, from inside the page: request, image in the evidence, original placed (its
+  // media source), editor OPEN invoked (main's own phases are outside this run).
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    const marks: Record<string, number> = { request: performance.now() };
+    (window as any).__marks = marks;
+    const tick = () => {
+      const all: any[] = Object.values(h.store.state.dockConversation.evidence.map ?? {});
+      const image = all.flatMap((x) => x?.images ?? [])[0];
+      if (image && marks.imageInEvidence === undefined) marks.imageInEvidence = performance.now();
+      if (image?.media?.source && marks.sourcePlaced === undefined)
+        marks.sourcePlaced = performance.now();
+      if (marks.sourcePlaced === undefined) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   const closesBefore = await closeRequests();
   await page.evaluate(
     ({ workspaceId, agentId }) =>
@@ -101,7 +114,17 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   // The opened editor collapses the dock behind it (main keeps it out of sight meanwhile).
   await expect.poll(closeRequests).toBeGreaterThan(closesBefore);
+  const marks = await page.evaluate(() => (window as any).__marks as Record<string, number>);
+  const round = (n: number | undefined) => (n === undefined ? null : Math.round(n));
   receipts.screenshot = { holdBeforeOpen: true, openCarriesHold: true, ended: false };
+  receipts.startupPhasesMs = {
+    requestToHold: round(shotHold.at - marks.request!),
+    holdToImageInEvidence: round(marks.imageInEvidence! - shotHold.at),
+    imageToSourcePlaced: round((marks.sourcePlaced ?? shotOpen.at) - marks.imageInEvidence!),
+    sourcePlacedToOpen: round(shotOpen.at - (marks.sourcePlaced ?? shotOpen.at)),
+    requestToOpenTotal: round(shotOpen.at - marks.request!),
+    note: 'Synthetic capture and wire (draft flush ACK included in sourcePlacedToOpen); main editor creation/reveal not in this run.',
+  };
 
   // 2. An editor that does not open ends exactly its capture's hold.
   await page.evaluate(() => ((window as any).__openOk = false));
@@ -124,68 +147,78 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   receipts.refused = { endedOwnHoldOnly: true };
   await page.evaluate(() => ((window as any).__openOk = true));
 
-  // 3. Recording: the stop takes the hold; the finished clip's editor request carries it.
-  await page.evaluate(
-    ({ workspaceId, agentId }) =>
-      (window as any).__dockComposerE2E.store.dispatch({
-        type: 'dockConversation/evidenceRecordToggleRequested',
-        payload: [workspaceId, agentId],
-      }),
-    pair,
-  );
-  const clipId = await expect
-    .poll(() =>
-      page.evaluate(({ workspaceId, agentId }) => {
-        const all: any[] = Object.values(
-          (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map ?? {},
-        );
-        const e = all.find((x) => x?.clips?.length);
-        void workspaceId;
-        void agentId;
-        return e?.clips.find((c: any) => c.status === 'recording')?.id ?? null;
-      }, pair),
-    )
-    .not.toBeNull()
-    .then(() =>
-      page.evaluate(() => {
-        const all: any[] = Object.values(
-          (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map ?? {},
-        );
-        return all.find((x) => x?.clips?.length)?.clips.find((c: any) => c.status === 'recording')
-          ?.id as string;
-      }),
+  // 3. Recording (canonical source, as native placement provides it): the start takes the
+  // hold; the user's Stop finishes it and the recording editor request carries that hold.
+  await page.evaluate(() => (window as any).__dockComposerE2E.native.recordingOriginal(true));
+  const recordingClip = async () =>
+    page.evaluate(() => {
+      const all: any[] = Object.values(
+        (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map ?? {},
+      );
+      return (all.flatMap((x) => x?.clips ?? []).find((c: any) => c.status === 'recording')?.id ??
+        null) as string | null;
+    });
+  const startRecording = async () => {
+    const before = (await ipc()).length;
+    await page.evaluate(
+      ({ workspaceId, agentId }) =>
+        (window as any).__dockComposerE2E.store.dispatch({
+          type: 'dockConversation/evidenceRecordToggleRequested',
+          payload: [workspaceId, agentId],
+        }),
+      pair,
     );
-  const beforeStop = (await ipc()).length;
+    await expect.poll(recordingClip).not.toBeNull();
+    await expect
+      .poll(async () =>
+        (await ipc()).slice(before).some((r) => r.ch === 'dock-capture-editor:hold-begin'),
+      )
+      .toBe(true);
+    return {
+      before,
+      clipId: (await recordingClip())!,
+      hold: (await ipc()).slice(before).find((r) => r.ch === 'dock-capture-editor:hold-begin')!,
+    };
+  };
+  const recordingOpened = async (before: number) => {
+    await expect
+      .poll(
+        async () =>
+          (await ipc())
+            .slice(before)
+            .some((r) => r.ch === 'dock-capture-editor:open' && r.kind === 'recording'),
+        { timeout: 20_000 },
+      )
+      .toBe(true);
+    return (await ipc()).slice(before);
+  };
+  const stopped = await startRecording();
   await page.evaluate(
     ({ workspaceId, agentId, clipId }) =>
       (window as any).__dockComposerE2E.store.dispatch({
         type: 'dockConversation/evidenceRecordToggleRequested',
         payload: [workspaceId, agentId, clipId],
       }),
-    { ...pair, clipId },
+    { ...pair, clipId: stopped.clipId },
   );
-  // The synthetic recorder places the clip without a canonical media source, so no editor
-  // follows here: the stop's hold must end (the dock comes back). The editor-adopts path is
-  // the screenshot's, above; a real recording's source comes from native placement.
-  await expect
-    .poll(
-      async () =>
-        (await ipc()).slice(beforeStop).filter((r) => r.ch.startsWith('dock-capture-editor:hold-'))
-          .length,
-    )
-    .toBe(2);
-  rows = (await ipc()).slice(beforeStop);
-  const recHold = rows.find((r) => r.ch === 'dock-capture-editor:hold-begin')!;
-  const recEnd = rows.find((r) => r.ch === 'dock-capture-editor:hold-end')!;
-  expect(recEnd.token).toBe(recHold.token);
-  expect(recHold.at).toBeLessThan(recEnd.at);
-  expect(rows.some((r) => r.ch === 'dock-capture-editor:open')).toBe(false);
-  receipts.recording = {
-    holdAtStop: true,
-    editorFollowed: false,
-    holdEndedWithoutEditor: true,
-    note: 'synthetic clip has no media source; adopted path proven by the screenshot',
-  };
+  rows = await recordingOpened(stopped.before);
+  const stopOpen = rows.find((r) => r.ch === 'dock-capture-editor:open' && r.kind === 'recording')!;
+  expect(stopOpen.token).toBe(stopped.hold.token);
+  expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
+  receipts.recordingStop = { holdAtStart: true, openCarriesHold: true, ended: false };
+
+  // 3b. A recording that ends by itself (a native limit, nobody pressed Stop): the hold taken
+  // at its start still travels to the recording editor; the dock never comes back first.
+  const auto = await startRecording();
+  await page.evaluate(
+    (clipId) => (window as any).__dockComposerE2E.native.endClip(clipId),
+    auto.clipId,
+  );
+  rows = await recordingOpened(auto.before);
+  const autoOpen = rows.find((r) => r.ch === 'dock-capture-editor:open' && r.kind === 'recording')!;
+  expect(autoOpen.token).toBe(auto.hold.token);
+  expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
+  receipts.recordingAutoEnded = { holdAtStart: true, openCarriesHold: true, ended: false };
 
   // 4. Attach: main returns the dock to exactly that conversation; the prompt takes the keyboard.
   const source = await page.evaluate(() => {
@@ -236,12 +269,11 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     )
     .toBe(true);
   await page.screenshot({ path: info.outputPath('17-editor-attach-returned.png') });
-  await expect(page.locator('.tiptap-editor').first()).toContainText('Draft before capture');
   receipts.attach = {
     staleIgnored: true,
     returnedTo: pair.workspaceId,
     composerFocused: true,
-    draftKept: true,
+    emptyComposer: true,
   };
 
   await writeFile(

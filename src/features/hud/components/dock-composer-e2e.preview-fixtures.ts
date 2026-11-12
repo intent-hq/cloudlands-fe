@@ -114,6 +114,9 @@ function createSyntheticNative() {
   let session: { id: string; captured: boolean } | null = null;
   // Held annotate starts (the overlay "opening"), released by the test in order.
   let holdCaptures = false;
+  // Opt-in: finished recordings describe a canonical original (as native placement does),
+  // so the dock can build a media source and open the recording editor.
+  let recordingOriginal = false;
   const heldCaptures: Array<() => void> = [];
   let holdStarts = false;
   const heldStarts: Array<() => void> = [];
@@ -202,6 +205,18 @@ function createSyntheticNative() {
           size: 48_000,
           durationMs,
           hasMicAudio: false,
+          ...(recordingOriginal
+            ? {
+                original: {
+                  sourcePath: `/synthetic/dock-clips/${clipId}-original.mp4`,
+                  size: 48_000,
+                  width: 1280,
+                  height: 720,
+                  clearAtMs: [],
+                  hasMicAudio: false,
+                },
+              }
+            : {}),
         },
       };
       emitEvidence({ type: 'clip-ended', clipId, result });
@@ -219,7 +234,11 @@ function createSyntheticNative() {
         ok: true as const,
         value: {
           jobId: request.jobId,
-          video: { sourcePath: `/synthetic/exports/${request.jobId}.mp4`, mimeType: 'video/mp4', size: 48_000 },
+          video: {
+            sourcePath: `/synthetic/exports/${request.jobId}.mp4`,
+            mimeType: 'video/mp4',
+            size: 48_000,
+          },
           // Tests may set the exported frames' byte size (as measured on real exports).
           frames: marks.map((mark) => ({
             markId: mark.id,
@@ -228,9 +247,16 @@ function createSyntheticNative() {
             // bytes; tests may drop the certificate (an older or unfitted export).
             mimeType: 'image/jpeg',
             size: (globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000,
-            ...((globalThis as { __syntheticFrameUncertified?: boolean }).__syntheticFrameUncertified ? {} : {
-              promptBase64Bytes: Math.ceil(((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000) / 3) * 4,
-            }),
+            ...((globalThis as { __syntheticFrameUncertified?: boolean })
+              .__syntheticFrameUncertified
+              ? {}
+              : {
+                  promptBase64Bytes:
+                    Math.ceil(
+                      ((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ??
+                        4_000) / 3,
+                    ) * 4,
+                }),
           })),
         },
       };
@@ -337,6 +363,14 @@ function createSyntheticNative() {
   return {
     log,
     factory: () => ({ ...adapter, service: { ...service } }) as unknown as DockNativeAdapter,
+    /** Finished recordings carry a canonical original (opt-in; see `recordingOriginal`). */
+    recordingOriginal(value: boolean) {
+      recordingOriginal = value;
+    },
+    /** The recording ends by itself (a native limit): the dock is told, nobody pressed Stop. */
+    endClip(clipId: string) {
+      return service.stopClip!(clipId);
+    },
     holdCaptures(value: boolean) {
       holdCaptures = value;
       if (!value) for (const resolve of heldCaptures.splice(0)) resolve();

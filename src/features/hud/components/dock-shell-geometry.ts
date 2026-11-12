@@ -32,8 +32,20 @@ export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
 export const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
 /** Width of the compact notch wing that shows one dot per status group. */
+/**
+ * Collapsed status wing: its outer inset, the 12px glyphs and the gaps between them (both
+ * tighter than in the open header), and 4px clear of the camera. Keep in step with the
+ * collapsed rules in AdaptiveDockShell (.header-state) and DockUpdateStatus (--dock-status-gap).
+ */
+export const DOCK_COMPACT_STATUS_INSET = 8;
+export const DOCK_COMPACT_STATUS_GAP = 3;
 export function dockCompactWingWidth(statusGroups: number): number {
-  return 12 + statusGroups * 12 + 6 * Math.max(0, statusGroups - 1) + 4;
+  return (
+    DOCK_COMPACT_STATUS_INSET +
+    statusGroups * 12 +
+    DOCK_COMPACT_STATUS_GAP * Math.max(0, statusGroups - 1) +
+    4
+  );
 }
 
 interface DockShellLayout {

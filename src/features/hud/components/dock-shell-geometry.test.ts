@@ -43,7 +43,7 @@ describe('getDockShellLayout with the intro', () => {
 
 describe('lifted shell helpers', () => {
   it('keeps the compact wing width formula', () => {
-    expect([0, 1, 2, 3].map(dockCompactWingWidth)).toEqual([16, 28, 46, 64]);
+    expect([0, 1, 2, 3].map(dockCompactWingWidth)).toEqual([12, 24, 39, 54]);
   });
 
   it('builds end and cancel drag commands', () => {

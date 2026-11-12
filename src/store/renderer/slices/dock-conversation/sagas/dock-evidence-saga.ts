@@ -127,6 +127,13 @@ import {
 } from '../dock-conversation-slice';
 
 let nativeService: DockEvidenceNativeService | null = null;
+/** A recording's dock hold (see the start of a recording), until its clip finishes. */
+const clipHolds = new Map<string, string>();
+/** A clip that never finishes (removed while recording) gives its hold back. */
+function endClipHold(clipId: string): void {
+  endDockEditorHold(clipHolds.get(clipId));
+  clipHolds.delete(clipId);
+}
 let unsubscribeNative: (() => void) | null = null;
 const nativeListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
 
@@ -1022,6 +1029,8 @@ function* removeClip({
   if (!activePair(workspaceId, agentId)) return;
   const clip = clipOf(workspaceId, agentId, clipId);
   if (!clip) return;
+  // Removed: no editor follows for it.
+  endClipHold(clip.id);
   yield* put(dockEvidenceClipChanged(workspaceId, agentId, clip.id, null));
   if (clip.contextItemId) {
     const items = selectComposerContextItems.select(appStore.state, workspaceId, agentId);
@@ -1114,23 +1123,14 @@ function* toggleRecording({
   if (clip) {
     if (!service) return;
     stampRecordingInSpeech(workspaceId, agentId, clip.id, true);
-    // The finished recording may open straight in the editor: keep the dock out of sight
-    // from its stop until that editor ends (or, when it does not open, until placed).
-    const hold = yield* beginDockEditorHold();
-    const handoff = { hold, handed: false };
+    let result: DockNativeResult<DockClipFile>;
     try {
-      let result: DockNativeResult<DockClipFile>;
-      try {
-        result = yield* call([service, service.stopClip], clip.id);
-      } catch {
-        result = { ok: false, error: 'failed' };
-      }
-      if (nativeService === service)
-        yield* finishClip(workspaceId, agentId, clip.id, result, handoff);
-      if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
-    } finally {
-      if (!handoff.handed) endDockEditorHold(hold);
+      result = yield* call([service, service.stopClip], clip.id);
+    } catch {
+      result = { ok: false, error: 'failed' };
     }
+    if (nativeService === service) yield* finishClip(workspaceId, agentId, clip.id, result);
+    if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
     return;
   }
   // Each finished recording is its own attachment; a new one starts beside them.
@@ -1179,8 +1179,15 @@ function* toggleRecording({
       !clipOf(workspaceId, agentId, id)
     )
       return 'cancelled';
-    if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
-    else yield* closeRecordingBar(workspaceId, agentId);
+    if (started.ok) {
+      stampRecordingInSpeech(workspaceId, agentId, id, false);
+      // The finished recording may open straight in the editor, however it ends (Stop, a
+      // limit, a failure): hold the dock from now (it is out of sight while recording) so
+      // the end of the recording cannot reveal it before that editor; finishing the clip
+      // hands the hold to the editor or ends it.
+      const hold = yield* beginDockEditorHold();
+      if (hold) clipHolds.set(id, hold);
+    } else yield* closeRecordingBar(workspaceId, agentId);
     if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
       yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));
       yield* notice(workspaceId, agentId, screenPermissionNotice('record'));
@@ -1217,15 +1224,17 @@ function* finishClip(
   agentId: string,
   clipId: string,
   result: DockNativeResult<DockClipFile>,
-  handoff?: { hold: string | null; handed: boolean },
 ): SagaGenerator<void> {
   if (completingClips.has(clipId) || clipOf(workspaceId, agentId, clipId)?.status !== 'recording')
     return;
   completingClips.add(clipId);
+  const handoff = { hold: clipHolds.get(clipId) ?? null, handed: false };
+  clipHolds.delete(clipId);
   try {
     yield* placeFinishedClip(workspaceId, agentId, clipId, result, handoff);
   } finally {
     completingClips.delete(clipId);
+    if (!handoff.handed) endDockEditorHold(handoff.hold);
   }
 }
 
