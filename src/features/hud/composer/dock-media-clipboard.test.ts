@@ -4,6 +4,7 @@
  * file; a pasted image as itself; nothing for a live or unplaced recording.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { defaultDockMediaEdit, type DockMediaSource } from '$shared/dock-media-edit';
 import { dockMediaCopyRequest, type DockMediaCopySource } from './dock-media-clipboard';
 
 const base64 = (bytes: number[]) => Buffer.from(bytes).toString('base64');
@@ -96,6 +97,59 @@ describe('dockMediaCopyRequest', () => {
         marks: [{ tool: 'arrow', geometry: mark.geometry, bounds: mark.bounds, element: null }],
       },
     });
+  });
+
+  // Failure paths: stale displayed preview, raw/private pixels resurfacing on paste,
+  // legacy marks painted twice, wrong cropped dimensions, render/read failure on Cut.
+  it('copies saved edits from a fresh render, with only flattened pixels for internal paste', async () => {
+    const input = source();
+    const canonical: DockMediaSource = {
+      id: 'source-1',
+      revision: 1,
+      kind: 'screenshot',
+      attachmentId: 'attachment-1',
+      path: '.intent/attachments/raw.png',
+      durationMs: 0,
+      width: 800,
+      height: 600,
+      audio: 'none',
+      batches: [],
+      visuals: 'clean',
+    };
+    const edit = {
+      ...defaultDockMediaEdit(canonical, [], null),
+      crop: { x: 50, y: 20, w: 300.4, h: 200.6 },
+      blurRegions: [{ id: 'blur-1', x: 60, y: 30, w: 20, h: 20 }],
+    };
+    input.view.tiles[0].image.media = { source: canonical, saved: edit, transcript: null };
+    const rendered = new Uint8Array([8, 6, 4]);
+    const createSavedPreviewUrl = vi.fn(async () => 'blob:fresh-edited');
+    const revokeUrl = vi.fn();
+    input.createSavedPreviewUrl = createSavedPreviewUrl;
+    input.revokeUrl = revokeUrl;
+    input.fetchBytes = vi.fn(async () => rendered);
+    const request = await dockMediaCopyRequest('img-1', input);
+    expect(createSavedPreviewUrl).toHaveBeenCalledWith('ws-1', {
+      source: canonical,
+      saved: edit,
+      transcript: null,
+    });
+    expect(input.fetchBytes).toHaveBeenCalledExactlyOnceWith('blob:fresh-edited');
+    expect(request).toMatchObject({
+      kind: 'image',
+      bytes: rendered,
+      intent: {
+        raw: rendered,
+        marks: [],
+        pixels: { mimeType: 'image/png', width: 300, height: 201 },
+      },
+    });
+    expect(revokeUrl).toHaveBeenCalledExactlyOnceWith('blob:fresh-edited');
+    input.fetchBytes = vi.fn().mockRejectedValue(new Error('read failed'));
+    await expect(dockMediaCopyRequest('img-1', input)).rejects.toThrow('read failed');
+    expect(revokeUrl).toHaveBeenCalledTimes(2);
+    createSavedPreviewUrl.mockRejectedValueOnce(new Error('render failed'));
+    await expect(dockMediaCopyRequest('img-1', input)).rejects.toThrow('render failed');
   });
 
   it('copies a finished recording from its playback file', async () => {

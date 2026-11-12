@@ -111,6 +111,30 @@ describe('dock media clipboard', () => {
     });
   });
 
+  it('round-trips flattened edited pixels without restoring old pixels or marks', async () => {
+    const service = make();
+    const flattened = {
+      ...screenshot,
+      intent: {
+        pixels: { ...screenshot.intent.pixels, width: 300, height: 201 },
+        raw: png,
+        marks: [],
+      },
+    };
+    expect(await service.write(flattened)).toEqual({ ok: true });
+    const content = await service.read();
+    expect(content).toMatchObject({
+      kind: 'image',
+      marks: [],
+      pixels: {
+        width: 300,
+        height: 201,
+        base64: Buffer.from(png).toString('base64'),
+      },
+    });
+    expect(await fs.readFile(calls[0]!.at(-1)!)).toEqual(Buffer.from(png));
+  });
+
   it('copies a recording as its video file and pastes it with its duration', async () => {
     const service = make();
     expect(await service.write(clip)).toEqual({ ok: true });

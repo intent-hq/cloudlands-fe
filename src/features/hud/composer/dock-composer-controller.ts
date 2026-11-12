@@ -464,6 +464,8 @@ export function createDockComposerController(
           items: selectComposerContextItems.select(appStore.state, workspaceId, agentId),
           previews: get(local).previews,
           fetchBytes: deps.fetchBytes,
+          createSavedPreviewUrl: deps.createSavedPreviewUrl,
+          revokeUrl: deps.revokeUrl,
         });
         return !!request && current() && (await deps.writeClipboard(request));
       } catch {

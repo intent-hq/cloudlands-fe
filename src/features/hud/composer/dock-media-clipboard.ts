@@ -2,11 +2,13 @@
  * Dock composer side of media copy/cut/paste (see `$shared/dock-media-clipboard`).
  *
  * Copy gathers what other apps need (the screenshot as shown, or the recording's
- * file) and, for a screenshot, what Intent needs to keep it editable (raw pixels
- * and its marks), and asks main to put it on the system clipboard. Paste lets text
+ * file). Unsaved captures retain raw pixels and editable marks; saved screenshots
+ * are flattened through the canonical exporter so internal paste cannot restore
+ * cropped or blurred pixels. Main puts the result on the system clipboard. Paste lets text
  * through untouched; when files are pasted it asks main whether they are Intent
  * media, and otherwise hands the very same clipboard to the editor's own paste.
  */
+import type { createDockSavedPreviewUrl } from './dock-saved-preview';
 import { DOCK_MEDIA_CHANNELS } from '$shared/dock-media-clipboard';
 import type {
   DockMediaClipboardContent,
@@ -40,6 +42,9 @@ export interface DockMediaCopySource {
   /** Composited preview (marks drawn in) per screenshot id. */
   previews: Readonly<Record<string, string>>;
   fetchBytes: (url: string) => Promise<Uint8Array>;
+  /** Fresh canonical export; displayed previews may still belong to an older edit. */
+  createSavedPreviewUrl?: typeof createDockSavedPreviewUrl;
+  revokeUrl?: (url: string) => void;
 }
 
 /** What to put on the clipboard for one composer tile, or null when it cannot be copied. */
@@ -51,6 +56,38 @@ export async function dockMediaCopyRequest(
   const tile = view.tiles.find(({ image }) => image.id === id || image.contextItemId === id);
   if (tile) {
     const raw = items.find((row) => row.id === tile.image.contextItemId);
+    const media = tile.image.media;
+    if (tile.image.mediaError) return null;
+    if (media?.saved) {
+      if (!source.createSavedPreviewUrl || !source.revokeUrl) return null;
+      // Internal paste must never resurrect pixels hidden by saved crop/blur.
+      // Bake all edits once and start the pasted capture with no legacy marks.
+      const saved = { ...media, saved: media.saved };
+      const url = await source.createSavedPreviewUrl(source.workspaceId, saved);
+      try {
+        const bytes = await source.fetchBytes(url);
+        const crop = saved.saved.crop;
+        return {
+          kind: 'image',
+          name: raw?.label || 'screenshot.png',
+          mimeType: 'image/png',
+          bytes,
+          intent: {
+            pixels: {
+              mimeType: 'image/png',
+              width: Math.max(1, Math.round(crop?.w ?? saved.source.width)),
+              height: Math.max(1, Math.round(crop?.h ?? saved.source.height)),
+              displayScale: tile.image.displayScale,
+              capturedAt: tile.image.capturedAt,
+            },
+            raw: bytes,
+            marks: [],
+          },
+        };
+      } finally {
+        source.revokeUrl(url);
+      }
+    }
     const rawType = imageType(raw?.imageMimeType);
     const preview = previews[tile.image.id];
     if (!raw?.imageData || !rawType || !preview) return null;
