@@ -254,7 +254,10 @@ describe('regenerateFromMessageSaga', () => {
     ];
 
     it('sources a hydrated history row from the history user message when the tail is contiguous', async () => {
-      const { channel, edits, task } = start(messages, { history: historyRows, detachedFromTail: false });
+      const { channel, edits, task } = start(messages, {
+        history: historyRows,
+        detachedFromTail: false,
+      });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'h-a0');
       channel.put(action);
       await settle();
@@ -329,7 +332,10 @@ describe('regenerateFromMessageSaga', () => {
     });
 
     it('still sources a history row within the hydrated segment while the gap is open', async () => {
-      const { channel, edits, task } = start(messages, { history: historyRows, detachedFromTail: true });
+      const { channel, edits, task } = start(messages, {
+        history: historyRows,
+        detachedFromTail: true,
+      });
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'h-a0');
       channel.put(action);
       await settle();

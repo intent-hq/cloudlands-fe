@@ -1002,7 +1002,10 @@ describe('full-walk scrollback harness', () => {
       if (target !== null) {
         sim.performSeek(target);
         fired = 'seek';
-      } else if (sim.meta.detachedFromTail && sim.sentinelIntersectsSweep(previous, sim.scrollTop)) {
+      } else if (
+        sim.meta.detachedFromTail &&
+        sim.sentinelIntersectsSweep(previous, sim.scrollTop)
+      ) {
         sim.fetchGapFillPage();
         fired = 'gap-fill';
       }
@@ -1034,7 +1037,9 @@ describe('full-walk scrollback harness', () => {
     // be CLOSED (no Load-more affordance between contiguous rows) and the
     // below spacer must be zero.
     if (split.below === 0) {
-      expect(meta.detachedFromTail, `phantom gap: hole empty but still open — ${summary}`).toBe(false);
+      expect(meta.detachedFromTail, `phantom gap: hole empty but still open — ${summary}`).toBe(
+        false,
+      );
       expect(sim.below, `phantom spacer: hole empty but below > 0 — ${summary}`).toBe(0);
     }
     // Convergence: the downward walk must actually close the gap by the
@@ -1080,7 +1085,9 @@ describe('full-walk scrollback harness', () => {
       `holeRowsEstimate=${meta.holeRowsEstimate}; rounds: ${JSON.stringify(trace)}`;
     // Phantom gap: a giant white below-spacer + Load-more affordance parked
     // between the history segment and the tail with NOTHING converging.
-    expect(meta.detachedFromTail, `gap never closes after the flick to the tail — ${summary}`).toBe(false);
+    expect(meta.detachedFromTail, `gap never closes after the flick to the tail — ${summary}`).toBe(
+      false,
+    );
     expect(sim.below, `below spacer stuck > 0 at the settled bottom — ${summary}`).toBe(0);
   });
 

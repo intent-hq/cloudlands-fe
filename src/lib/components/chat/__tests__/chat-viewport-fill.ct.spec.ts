@@ -214,9 +214,9 @@ for (const scenario of ['gap-error-once', 'gap-error', 'gap-stalled'] as const) 
     const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
     await expect.poll(async () => (await result()).requests.length).toBe(1);
     await expect(component.getByTestId('chat-history-forward-edge')).toHaveCount(1);
-    await expect(component.getByRole('button', { name: 'Load more of the conversation' })).toHaveCount(
-      0,
-    );
+    await expect(
+      component.getByRole('button', { name: 'Load more of the conversation' }),
+    ).toHaveCount(0);
     await component.update({ props: { scenario, height: 1700 } });
     await page.waitForTimeout(500);
     const { requests, maxInFlight } = await result();

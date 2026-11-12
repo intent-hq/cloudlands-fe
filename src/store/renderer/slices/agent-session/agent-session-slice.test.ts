@@ -6917,7 +6917,11 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, detachedFromTail: true, holeRowsEstimate: 5 },
+          a1: {
+            ...state.historySegmentsByAgentId!.a1,
+            detachedFromTail: true,
+            holeRowsEstimate: 5,
+          },
         },
       };
       state = agentSessionReducer(state, appendHistoryMessages('a1', [histMsg(2), histMsg(3)]));
@@ -6933,7 +6937,11 @@ describe('history segment (scrollback)', () => {
         ...state,
         historySegmentsByAgentId: {
           ...state.historySegmentsByAgentId,
-          a1: { ...state.historySegmentsByAgentId!.a1, detachedFromTail: true, holeRowsEstimate: 1 },
+          a1: {
+            ...state.historySegmentsByAgentId!.a1,
+            detachedFromTail: true,
+            holeRowsEstimate: 1,
+          },
         },
       };
       // Over-refill: 3 rows land while the estimate said 1 — floor 0, gap open.

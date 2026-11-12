@@ -2889,7 +2889,11 @@
   // tail ($agentMessages$) only for this iteration — history rows render but
   // are not indexed by those features.
   const composedTranscript = $derived(
-    composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.detachedFromTail),
+    composeTranscript(
+      $agentHistoryMessages$,
+      $agentMessages$,
+      $historySegmentMeta$.detachedFromTail,
+    ),
   );
   const failureTranscript = $derived(
     projectFailureTranscript(composedTranscript, {
@@ -3766,7 +3770,8 @@
 
   function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
-    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.detachedFromTail) return;
+    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.detachedFromTail)
+      return;
     // A failed or stalled page stops the settle chain; the forward edge
     // coming back into view is a deliberate retry. Keep the latch until that
     // request settles so the chain cannot restart on its own.

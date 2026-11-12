@@ -752,7 +752,8 @@ export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
   above: number;
   below: number;
 } {
-  const { totalMessages, residentCount, exhausted, startOrdinalEstimate, detachedFromTail } = params;
+  const { totalMessages, residentCount, exhausted, startOrdinalEstimate, detachedFromTail } =
+    params;
   const unloaded = Math.max(0, totalMessages - residentCount);
   if (!detachedFromTail) {
     return { above: exhausted ? 0 : unloaded, below: 0 };

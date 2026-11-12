@@ -2317,49 +2317,49 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
 agentSessionReducer.with(
   appendHistoryMessages,
   (state, { payload: [agentId, messages, reachedEnd] }) => {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
-  const incoming = normalizeSortHistoryMessages(messages);
-  const incomingWithoutTailRows = dropRowsPresentInTail(incoming, session.messages);
-  // Appended rows overlapping rows the tail already holds mean the forward
-  // walk reached the tail — the window attaches (overlap stays in the tail).
-  // So does a page with no newer rows left: the window then ends at the
-  // newest persisted row, and any tail row it lacks is newer still.
-  const overlapsTail = reachedEnd === true || incomingWithoutTailRows.length !== incoming.length;
-  const merged = dropRowsPresentInTail(
-    normalizeSortHistoryMessages([...existing.messages, ...incomingWithoutTailRows]),
-    session.messages,
-  );
-  const detachedFromTail = overlapsTail ? false : existing.detachedFromTail;
-  // Loaded rows left the unloaded region below the window: shrink the
-  // serial-walk estimate by the actual row gain (floor 0); attaching drops it.
-  const holeRowsEstimate =
-    !detachedFromTail || existing.holeRowsEstimate === undefined
-      ? undefined
-      : Math.max(0, existing.holeRowsEstimate - (merged.length - existing.messages.length));
-  if (merged.length <= HISTORY_SEGMENT_MAX) {
-    const { holeRowsEstimate: _dropped, ...rest } = existing;
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
+    const incoming = normalizeSortHistoryMessages(messages);
+    const incomingWithoutTailRows = dropRowsPresentInTail(incoming, session.messages);
+    // Appended rows overlapping rows the tail already holds mean the forward
+    // walk reached the tail — the window attaches (overlap stays in the tail).
+    // So does a page with no newer rows left: the window then ends at the
+    // newest persisted row, and any tail row it lacks is newer still.
+    const overlapsTail = reachedEnd === true || incomingWithoutTailRows.length !== incoming.length;
+    const merged = dropRowsPresentInTail(
+      normalizeSortHistoryMessages([...existing.messages, ...incomingWithoutTailRows]),
+      session.messages,
+    );
+    const detachedFromTail = overlapsTail ? false : existing.detachedFromTail;
+    // Loaded rows left the unloaded region below the window: shrink the
+    // serial-walk estimate by the actual row gain (floor 0); attaching drops it.
+    const holeRowsEstimate =
+      !detachedFromTail || existing.holeRowsEstimate === undefined
+        ? undefined
+        : Math.max(0, existing.holeRowsEstimate - (merged.length - existing.messages.length));
+    if (merged.length <= HISTORY_SEGMENT_MAX) {
+      const { holeRowsEstimate: _dropped, ...rest } = existing;
+      return setHistorySegment(state, agentId, {
+        ...rest,
+        messages: merged,
+        detachedFromTail,
+        ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
+      });
+    }
+    // Past the cap: prune from the OLDEST side (viewport is walking down). The
+    // true first message may be evicted, so oldestReached no longer holds; a
+    // tracked start ordinal shifts up by the pruned row count.
+    const prunedOlder = merged.length - HISTORY_SEGMENT_MAX;
     return setHistorySegment(state, agentId, {
-      ...rest,
-      messages: merged,
+      messages: merged.slice(prunedOlder),
       detachedFromTail,
+      oldestReached: false,
+      ...(existing.startOrdinalEstimate !== undefined
+        ? { startOrdinalEstimate: existing.startOrdinalEstimate + prunedOlder }
+        : {}),
       ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
     });
-  }
-  // Past the cap: prune from the OLDEST side (viewport is walking down). The
-  // true first message may be evicted, so oldestReached no longer holds; a
-  // tracked start ordinal shifts up by the pruned row count.
-  const prunedOlder = merged.length - HISTORY_SEGMENT_MAX;
-  return setHistorySegment(state, agentId, {
-    messages: merged.slice(prunedOlder),
-    detachedFromTail,
-    oldestReached: false,
-    ...(existing.startOrdinalEstimate !== undefined
-      ? { startOrdinalEstimate: existing.startOrdinalEstimate + prunedOlder }
-      : {}),
-    ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
-  });
   },
 );
 agentSessionReducer.with(
