@@ -179,6 +179,28 @@ export function shouldShowSetupCardOnly(state: SetupCardOnlyState): boolean {
   );
 }
 
+type SetupCardPromptState = {
+  onboardingPrompt: string | undefined;
+  hasUserMessage: boolean;
+  hasPendingUserMessage: boolean;
+  hasPendingConversationMessage: boolean;
+};
+
+/**
+ * Whether the setup card should use its "agent is on it" copy instead of
+ * "say something to get started". The onboarding prompt alone is unreliable:
+ * `workspace.initialPrompt` is not persisted, so after a remount only the
+ * transcript (history + tail) and pending sends prove the user already spoke.
+ */
+export function setupCardHasPrompt(state: SetupCardPromptState): boolean {
+  return (
+    Boolean(state.onboardingPrompt?.trim()) ||
+    state.hasUserMessage ||
+    state.hasPendingUserMessage ||
+    state.hasPendingConversationMessage
+  );
+}
+
 type TranscriptUtilityStackState = {
   transcriptHydratedOnce: boolean;
   hydrationSettled: boolean;
