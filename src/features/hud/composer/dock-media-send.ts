@@ -33,14 +33,13 @@ export interface DockMediaSendResult {
   metadata: Array<Record<string, unknown>>;
 }
 /**
- * A legacy recording whose marks are already in its frames, sent unchanged as Full
- * video with its audio: its original attachment is the output as-is (nothing to render,
- * cut, mute, crop or blur), sent like a recording without edits. Any other choice for
- * such a recording still goes through the plan and fails closed.
+ * Reuse a recording only when its original is already the chosen output. Clean
+ * recordings need an exact full-span Audio plan with no overlays or derived output.
+ * Legacy recordings retain their existing baked-mark identity rules. This is never
+ * a fallback for failed preparation of edited media.
  */
 export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boolean {
-  if (!media || media.source.kind !== 'recording' || media.source.visuals !== 'baked-marks')
-    return false;
+  if (!media || media.source.kind !== 'recording') return false;
   const source = media.source;
   const edit =
     media.saved ?? defaultDockMediaEdit(source, source.capturedMarks ?? [], media.transcript);
@@ -53,6 +52,21 @@ export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boole
   )
     return false;
   const plan = planDockMediaOutput(edit, source, media.transcript);
+  if (source.visuals === 'clean')
+    return (
+      !plan.errors.length &&
+      !plan.muted &&
+      edit.cuts.length === 0 &&
+      !edit.marks.some((mark) => mark.included) &&
+      plan.marks.length === 0 &&
+      plan.transcript === null &&
+      plan.kept.length === 1 &&
+      plan.kept[0].startMs === 0 &&
+      plan.kept[0].endMs === source.durationMs &&
+      plan.clips.length === 1 &&
+      plan.clips[0].startMs === 0 &&
+      plan.clips[0].endMs === source.durationMs
+    );
   return (
     !plan.errors.length &&
     !plan.muted &&
