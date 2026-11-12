@@ -22,12 +22,7 @@ import type {
   SshSetupStartResult,
   SshSetupStep,
 } from '$shared/types/machine-setup';
-import {
-  checkKnownHosts,
-  hostKeyType,
-  knownHostKeyTypes,
-  sha256Fingerprint,
-} from './known-hosts';
+import { checkKnownHosts, hostKeyType, knownHostKeyTypes, sha256Fingerprint } from './known-hosts';
 import { createLineSplitter, parseLinkMarker, parsePairUrl, redactLine } from './ssh-output';
 
 // i18n-ignore (remote shell commands and installer wire text)
@@ -58,6 +53,11 @@ const SYSTEM_KNOWN_HOSTS = '/etc/ssh/ssh_known_hosts';
 const HOST_KEY_ALGORITHMS: Record<string, string[]> = {
   'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
 };
+
+/** A keyboard-interactive prompt that asks for the account password, not a code. */
+function isPasswordPrompt(text: string): boolean {
+  return /password/i.test(text) && !/one[- ]?time|otp|code|token|verification/i.test(text);
+}
 
 /** Run under sh whatever the login shell is (fish and csh reject sh syntax). */
 function posixShell(command: string): string {
@@ -403,7 +403,9 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
         // instead of sending the password as a code.
         let answered = false;
         client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, reply) => {
-          if (answered || prompts.length !== 1 || prompts[0].echo) return reply([]);
+          const [prompt] = prompts;
+          if (answered || prompts.length !== 1 || prompt.echo || !isPasswordPrompt(prompt.prompt))
+            return reply([]);
           answered = true;
           reply([auth.password]);
         });

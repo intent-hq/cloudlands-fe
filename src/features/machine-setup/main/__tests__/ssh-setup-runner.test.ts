@@ -484,6 +484,26 @@ describe('ssh setup runner: failures', () => {
     expect(answers).toEqual([[PASSWORD], [], []]);
   });
 
+  it('never sends the password to a prompt that does not ask for one', async () => {
+    const h = harness();
+    h.runner.start(params());
+    await h.settle();
+    const answers: string[][] = [];
+    const ask = (prompt: string) =>
+      h.clients[0].emit(
+        'keyboard-interactive',
+        '',
+        '',
+        '',
+        [{ prompt, echo: false }],
+        (a: string[]) => answers.push(a),
+      );
+    ask('Verification code:');
+    ask('One-time password (OTP):');
+    ask("ci@build's password: ");
+    expect(answers).toEqual([[], [], [PASSWORD]]);
+  });
+
   it('runs every command under sh, whatever the login shell is', async () => {
     const h = harness();
     h.runner.start(params());
