@@ -477,7 +477,6 @@
   "chat_chatPanel_agentSpawnFailed_error": "智慧體建立失敗",
   "chat_chatPanel_assignedTask_fallback": "已指派的任務",
   "chat_chatPanel_fileChangesAggregate_suffix": "迄今為止的對話中",
-  "chat_chatPanel_historyGapLoad_label": "載入更多對話內容",
   "chat_chatPanel_historyGapLoading_label": "正在載入更多對話內容…",
   "chat_chatPanel_loadingOlderMessages_label": "正在載入較早的訊息…",
   "chat_chatPanel_nothingToRetry_toast": "沒有可重試的內容——錯誤已清除。傳送訊息以開始新一輪對話。",

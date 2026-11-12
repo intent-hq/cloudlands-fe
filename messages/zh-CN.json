@@ -477,7 +477,6 @@
   "chat_chatPanel_agentSpawnFailed_error": "智能体创建失败",
   "chat_chatPanel_assignedTask_fallback": "已指派的任务",
   "chat_chatPanel_fileChangesAggregate_suffix": "迄今为止的对话中",
-  "chat_chatPanel_historyGapLoad_label": "加载更多对话内容",
   "chat_chatPanel_historyGapLoading_label": "正在加载更多对话内容…",
   "chat_chatPanel_loadingOlderMessages_label": "正在加载较早的消息…",
   "chat_chatPanel_nothingToRetry_toast": "没有可重试的内容——错误已清除。发送消息以开始新一轮对话。",

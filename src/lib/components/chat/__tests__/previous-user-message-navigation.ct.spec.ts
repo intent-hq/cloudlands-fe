@@ -298,7 +298,11 @@ test('previous-message actions remain available at unloaded history boundaries',
       ],
     },
   });
-  await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+  // A detached window renders alone: the live tail is never shown behind a gap.
+  await expect(component.getByTestId('chat-history-forward-edge')).toHaveCount(1);
+  for (const id of ['live-orphan', 'live-human', 'live-reply']) {
+    await expect(component.locator(`[data-message-id="${id}"]`)).toHaveCount(0);
+  }
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   // Follow-bottom keeps the transcript pinned, so each hover's scroll into view is pulled
   // back and its hit test retries until the test times out under load. Wheel up as a
@@ -308,17 +312,17 @@ test('previous-message actions remain available at unloaded history boundaries',
   // A wheel that scrolled and was pulled back still counts as scrolled, so check the
   // release itself; otherwise a regression would resurface as the hover hang above.
   await bottomArrow(component).expectAtBottom(false);
-  for (const id of ['history-orphan', 'live-orphan']) {
+  for (const id of ['history-orphan']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
     await expect(row.getByRole('button', { name: 'Previous user message' })).toBeVisible();
   }
-  for (const id of ['history-human', 'live-human']) {
+  for (const id of ['history-human']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
     await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toBeVisible();
   }
-  for (const segment of ['history', 'live']) {
+  for (const segment of ['history']) {
     const row = component.locator(`[data-message-id="${segment}-reply"]`);
     await pressPreviousUserMessage(component, row);
     const target = component.locator(`[data-message-id="${segment}-human"]`);
@@ -452,7 +456,9 @@ for (const retired of [false, true]) {
     await releasePage(component);
     await expectAtMessage(component, 'paged-human');
     await expect(component.locator('[data-message-id="paged-human"]')).toHaveCount(1);
-    await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+    // The landing replaced the transcript with a detached window.
+    await expect(component.getByTestId('chat-history-forward-edge')).toHaveCount(1);
+    await expect(component.locator('[data-message-id="reply-tail"]')).toHaveCount(0);
     await page.waitForTimeout(700);
     await expectAtMessage(component, 'paged-human');
     await component
@@ -559,35 +565,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     );
   });
 }
-
-test('unloaded gap resolves the nearer human instead of crossing to the loaded older prompt', async ({
-  mount,
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(ChatMessageNavigatorIntegrationHost, {
-    props: {
-      messages: automatedTail,
-      historyStartLoaded: false,
-      historyGap: true,
-      historyMessages: [historyMessage('wrong-human', 'user', 'Too far back across a gap', 1)],
-      conversationPages: [
-        conversationPage(
-          [
-            historyMessage('gap-human', 'user', 'Correct human inside the unloaded gap', 899),
-            ...automatedTail,
-          ],
-          'older',
-        ),
-      ],
-    },
-  });
-  const source = component.locator('[data-message-id="reply-tail"]');
-  await pressPreviousUserMessage(component, source);
-  await component.getByTestId('settle-gap').evaluate((node: HTMLButtonElement) => node.click());
-  await expectAtMessage(component, 'gap-human');
-  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
-});
 
 test('loading failure leaves transcript intact and the arrow retries', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });

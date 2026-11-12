@@ -206,42 +206,23 @@ test('retained placeholders hydrate before requesting another page', async ({ mo
 });
 
 for (const scenario of ['gap-error-once', 'gap-error', 'gap-stalled'] as const) {
-  test(`${scenario} stops automatic forward paging but allows one page per retry click`, async ({
+  test(`${scenario} stops automatic forward paging without a Load more button`, async ({
     mount,
     page,
   }) => {
     const component = await mount(ChatViewportFillHost, { props: { scenario, height: 1600 } });
     const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
-    const retry = component.getByTestId('chat-history-gap-load-button');
     await expect.poll(async () => (await result()).requests.length).toBe(1);
-    await expect(retry).toBeVisible();
+    await expect(component.getByTestId('chat-history-forward-edge')).toHaveCount(1);
+    await expect(component.getByRole('button', { name: 'Load more of the conversation' })).toHaveCount(
+      0,
+    );
     await component.update({ props: { scenario, height: 1700 } });
     await page.waitForTimeout(500);
-    expect((await result()).requests).toHaveLength(1);
-    await retry.click();
-    await expect.poll(async () => (await result()).requests.length).toBe(2);
-    if (scenario === 'gap-error-once') {
-      await expect(component.getByTestId('chat-history-gap')).toHaveCount(0);
-      await expect(component.locator('[data-message-id="m-5"]').first()).toBeVisible();
-      await expect(component.locator('[data-message-id="m-6"]').first()).toBeVisible();
-    } else {
-      await expect(retry).toBeVisible();
-      await component.update({ props: { scenario, height: 1600 } });
-      await page.waitForTimeout(500);
-      expect((await result()).requests).toHaveLength(2);
-      await retry.click();
-      await expect.poll(async () => (await result()).requests.length).toBe(3);
-      await expect(retry).toBeVisible();
-    }
-    await page.waitForTimeout(500);
     const { requests, maxInFlight } = await result();
-    expect(requests).toHaveLength(scenario === 'gap-error-once' ? 2 : 3);
+    expect(requests).toHaveLength(1);
     expect(maxInFlight).toBe(1);
-    expect(requests.every((request: { limit: number }) => request.limit === 5)).toBe(true);
     expect(requests[0]).toMatchObject({ nextToken: 'after-4', limit: 5 });
-    expect(requests[1]).toMatchObject(
-      scenario === 'gap-stalled' ? { nextToken: 'after-4' } : { aroundMessageId: 'm-4' },
-    );
   });
 }
 

@@ -477,7 +477,6 @@
   "chat_chatPanel_agentSpawnFailed_error": "Échec du lancement de l'agent",
   "chat_chatPanel_assignedTask_fallback": "Tâche assignée",
   "chat_chatPanel_fileChangesAggregate_suffix": "dans la conversation jusqu'ici",
-  "chat_chatPanel_historyGapLoad_label": "Charger plus de la conversation",
   "chat_chatPanel_historyGapLoading_label": "Chargement de la suite de la conversation…",
   "chat_chatPanel_loadingOlderMessages_label": "Chargement des messages plus anciens…",
   "chat_chatPanel_nothingToRetry_toast": "Rien à réessayer — erreur effacée. Envoyez un message pour démarrer un nouveau tour.",

@@ -203,7 +203,7 @@ function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
 
 const EMPTY_HISTORY_SEGMENT: AgentHistorySegment = {
   messages: [],
-  gapToTail: false,
+  detachedFromTail: false,
   oldestReached: false,
 };
 
@@ -422,15 +422,21 @@ function isSameRow(a: AgentMessage, b: AgentMessage): boolean {
 }
 
 /**
- * Count rows of the PREVIOUS tail that a write dropped from its older side:
- * absent from `next` (identity by `id`/`appMessageId`) and ordered before
- * `next[0]`. Covers the cap prune (live growth past the cap) and any
- * replacement that rebased the tail onto a newer window (cloudlands-fe#4333).
- * Rows a prepend-shaped replacement adds and the cap slices back off were
- * never resident, so they never count.
+ * Rows of the PREVIOUS tail that a write dropped from its older side: absent
+ * from `next` (identity by `id`/`appMessageId`) and ordered before `next[0]`.
+ * Covers the cap prune (live growth past the cap) and any replacement that
+ * rebased the tail onto a newer window (cloudlands-fe#4333). Rows a
+ * prepend-shaped replacement adds and the cap slices back off were never
+ * resident, so they never count. `joinsNext` is true when `next` still holds
+ * a previous row: the dropped rows then lead straight into the new tail.
  */
-function countLostOlderTailRows(previous: AgentMessage[], next: AgentMessage[]): number {
-  if (previous.length === 0 || next.length === 0 || previous[0].id === next[0].id) return 0;
+function lostOlderTailRows(
+  previous: AgentMessage[],
+  next: AgentMessage[],
+): { rows: AgentMessage[]; joinsNext: boolean } {
+  if (previous.length === 0 || next.length === 0 || previous[0].id === next[0].id) {
+    return { rows: [], joinsNext: true };
+  }
   const nextIds = new Set(next.map((message) => message.id));
   const nextAppMessageIds = new Set(
     next
@@ -442,27 +448,34 @@ function countLostOlderTailRows(previous: AgentMessage[], next: AgentMessage[]):
       nextIds.has(message.id) ||
       (typeof message.appMessageId === 'string' && nextAppMessageIds.has(message.appMessageId)),
   );
+  const joinsNext = firstRetained !== -1;
   // Every row before the first retained one is dropped; when that retained
   // row is still the oldest, all of them were older than the new tail.
-  if (firstRetained !== -1 && isSameRow(previous[firstRetained], next[0])) return firstRetained;
-  const candidates = firstRetained === -1 ? previous.length : firstRetained;
-  let lost = 0;
-  for (let i = 0; i < candidates; i++) {
-    if (precedesInConversation(previous[i], next[0])) lost++;
+  if (joinsNext && isSameRow(previous[firstRetained], next[0])) {
+    return { rows: previous.slice(0, firstRetained), joinsNext };
   }
-  return lost;
+  const candidates = joinsNext ? firstRetained : previous.length;
+  const rows = previous
+    .slice(0, candidates)
+    .filter((message) => precedesInConversation(message, next[0]));
+  return { rows, joinsNext };
 }
 
 /**
- * The single guard for tail writes: when the stored tail lost older resident
- * rows (see `countLostOlderTailRows`), those rows now sit between history and
- * the tail's oldest retained row, so the history segment must never join
- * straight onto the tail. Latches `tailCapPruned` (older rows exist above the
- * tail), then either opens the gap of a segment holding rows — serial-walk
- * segments count the rows into the hole estimate — or, with no rows to carry
- * a gap, records that the history→tail boundary is unknown
- * (`tailBoundaryUnknown`; a held older-page cursor now continues below the
- * dropped rows). Call after every write that replaces or prunes the tail.
+ * The single guard for tail writes: the transcript never holds a gap. When
+ * the stored tail lost older resident rows (see `lostOlderTailRows`), latch
+ * `tailCapPruned` (older rows exist above the tail), then keep the window
+ * contiguous:
+ * - attached window, new tail still overlaps the old one: the dropped rows
+ *   move into the window's newest side, so window + tail stay one run;
+ * - attached window, no overlap: nothing joins the window to the new tail,
+ *   so the window is dropped (scrolling up reloads from the new tail);
+ * - detached window: the tail is not part of the transcript; serial-walk
+ *   windows count the dropped rows into the unloaded rows below them;
+ * - empty window: nothing to keep, but a reached start no longer holds.
+ * The older-page cursor is re-validated against the oldest loaded row by
+ * the scrollback saga, so no cursor state is needed here. Call after every
+ * write that replaces or prunes the tail.
  */
 function accountLostOlderTailRows(
   state: AgentSessionState,
@@ -471,32 +484,31 @@ function accountLostOlderTailRows(
 ): AgentSessionState {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const lost = countLostOlderTailRows(previous, session.messages);
-  if (lost === 0) return state;
+  const lost = lostOlderTailRows(previous, session.messages);
+  if (lost.rows.length === 0) return state;
   const next =
     session.tailCapPruned === true
       ? state
       : setSession(state, agentId, { ...session, tailCapPruned: true });
   const segment = getHistorySegment(next, agentId);
-  if (segment && segment.messages.length > 0) {
+  if (!segment) return next;
+  if (segment.messages.length === 0) {
+    return segment.oldestReached ? removeHistorySegment(next, agentId) : next;
+  }
+  if (segment.detachedFromTail) {
+    if (segment.startOrdinalEstimate !== undefined) return next;
     return setHistorySegment(next, agentId, {
       ...segment,
-      gapToTail: true,
-      ...(segment.startOrdinalEstimate === undefined
-        ? { holeRowsEstimate: (segment.holeRowsEstimate ?? 0) + lost }
-        : {}),
+      holeRowsEstimate: (segment.holeRowsEstimate ?? 0) + lost.rows.length,
     });
   }
-  // The dropped-row count rides `holeRowsEstimate` (ignored while no gap is
-  // open) so a gap opened by the next non-overlapping page sizes its hole.
-  const priorLost =
-    segment?.tailBoundaryUnknown === true && !segment.oldestReached
-      ? (segment.holeRowsEstimate ?? 0)
-      : 0;
+  if (!lost.joinsNext) return removeHistorySegment(next, agentId);
   return setHistorySegment(next, agentId, {
-    ...EMPTY_HISTORY_SEGMENT,
-    tailBoundaryUnknown: true,
-    holeRowsEstimate: priorLost + lost,
+    ...segment,
+    messages: dropRowsPresentInTail(
+      normalizeSortHistoryMessages([...segment.messages, ...lost.rows]),
+      session.messages,
+    ),
   });
 }
 
@@ -1801,23 +1813,24 @@ export const removeWorkspaceSessions = createAction<[wsId: string]>(
 export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 
 /**
- * Prepend OLDER rows to the scrollback history segment (normalize/dedup/sort).
- * Past `HISTORY_SEGMENT_MAX`, prunes from the NEWEST side of history and sets
- * `gapToTail: true` — the pruned rows severed contiguity with the tail.
+ * Prepend OLDER rows to the scrollback window (normalize/dedup/sort). Past
+ * `HISTORY_SEGMENT_MAX`, prunes from the NEWEST side and sets
+ * `detachedFromTail: true` — the window no longer joins the tail.
  */
 export const prependHistoryMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
   'agentSessions/prependHistoryMessages',
 );
 
 /**
- * Append NEWER rows to the scrollback history segment (hole refill;
- * normalize/dedup/sort). Past `HISTORY_SEGMENT_MAX`, prunes from the OLDEST
- * side. When appended rows overlap rows present in the tail, the overlap is
- * dropped from history and `gapToTail` flips false (hole closed).
+ * Append NEWER rows to a detached window (forward walk; normalize/dedup/sort).
+ * Past `HISTORY_SEGMENT_MAX`, prunes from the OLDEST side. When appended rows
+ * overlap rows present in the tail, or `reachedEnd` says no newer persisted
+ * rows remain, the overlap is dropped from the window and `detachedFromTail`
+ * flips false (window attached).
  */
-export const appendHistoryMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
-  'agentSessions/appendHistoryMessages',
-);
+export const appendHistoryMessages = createAction<
+  [agentId: string, messages: AgentMessage[], reachedEnd?: boolean]
+>('agentSessions/appendHistoryMessages');
 
 /** Mark that the conversation's true first message has been hydrated into history. */
 export const setHistoryOldestReached = createAction<[agentId: string, oldestReached?: boolean]>(
@@ -1829,9 +1842,9 @@ export const setHistoryOldestReached = createAction<[agentId: string, oldestReac
  * (`aroundIndex` far-flick seek): the old segment is discarded wholesale and
  * the landing rows seed a fresh one. `startOrdinalEstimate` is the estimated
  * conversation ordinal of the landing page's first row — it anchors the
- * above/below split of the virtual scroll extent. `gapToTail` opens unless
+ * above/below split of the virtual scroll extent. The window detaches unless
  * the landing rows overlap rows the tail already holds (landed at/near the
- * newest end ⇒ contiguous, mirroring the append overlap rule).
+ * newest end ⇒ attached, mirroring the append overlap rule).
  */
 export const seedHistoryAround = createAction<
   [agentId: string, messages: AgentMessage[], startOrdinalEstimate?: number]
@@ -2273,17 +2286,7 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
   const segment = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
   const sorted = normalizeSortHistoryMessages([...segment.messages, ...messages]);
   const merged = dropRowsPresentInTail(sorted, session.messages);
-  // Unknown boundary (the tail lost older rows while history was empty): a
-  // page overlapping the tail was anchored at it and is contiguous; any
-  // other page continued a cursor minted before the loss and lands BELOW
-  // the dropped rows — open the gap so the refill restores them; the
-  // dropped-row count carried in `holeRowsEstimate` sizes that hole.
-  const { tailBoundaryUnknown, ...known } = segment;
-  let existing: AgentHistorySegment = segment;
-  if (tailBoundaryUnknown === true && merged.length > 0) {
-    const { holeRowsEstimate: _contiguous, ...contiguous } = known;
-    existing = merged.length === sorted.length ? { ...known, gapToTail: true } : contiguous;
-  }
+  const existing: AgentHistorySegment = segment;
   // Seek-seeded segments track the estimated ordinal of the first row: rows
   // landing BEFORE the previous first row shift the estimate down by their
   // count (floor 0). An estimate only — oldestReached pins it to exactly 0.
@@ -2295,39 +2298,44 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
       startOrdinalEstimate,
     });
   }
-  // Past the cap: prune from the NEWEST side (viewport is walking up), which
-  // severs contiguity with the tail — a hole opens. Serial-walk segments
+  // Past the cap: prune from the NEWEST side (viewport is walking up). The
+  // window stays one contiguous run but no longer joins the tail, so it
+  // detaches: the transcript shows the window alone. Serial-walk windows
   // (untracked start ordinal) count the pruned rows into the hole estimate so
   // the virtual extent attributes them BELOW the segment, not above.
   const prunedNewer = merged.length - HISTORY_SEGMENT_MAX;
   return setHistorySegment(state, agentId, {
     ...existing,
     messages: merged.slice(0, HISTORY_SEGMENT_MAX),
-    gapToTail: true,
+    detachedFromTail: true,
     startOrdinalEstimate,
     ...(startOrdinalEstimate === undefined
       ? { holeRowsEstimate: (existing.holeRowsEstimate ?? 0) + prunedNewer }
       : {}),
   });
 });
-agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, messages] }) => {
+agentSessionReducer.with(
+  appendHistoryMessages,
+  (state, { payload: [agentId, messages, reachedEnd] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
   const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
   const incoming = normalizeSortHistoryMessages(messages);
   const incomingWithoutTailRows = dropRowsPresentInTail(incoming, session.messages);
-  // Appended rows overlapping rows the tail already holds mean the refill
-  // reached the tail — the hole is closed (overlap itself stays in the tail).
-  const overlapsTail = incomingWithoutTailRows.length !== incoming.length;
+  // Appended rows overlapping rows the tail already holds mean the forward
+  // walk reached the tail — the window attaches (overlap stays in the tail).
+  // So does a page with no newer rows left: the window then ends at the
+  // newest persisted row, and any tail row it lacks is newer still.
+  const overlapsTail = reachedEnd === true || incomingWithoutTailRows.length !== incoming.length;
   const merged = dropRowsPresentInTail(
     normalizeSortHistoryMessages([...existing.messages, ...incomingWithoutTailRows]),
     session.messages,
   );
-  const gapToTail = overlapsTail ? false : existing.gapToTail;
-  // Refilled rows moved OUT of the hole into history: shrink the serial-walk
-  // hole estimate by the actual row gain (floor 0); a closed hole drops it.
+  const detachedFromTail = overlapsTail ? false : existing.detachedFromTail;
+  // Loaded rows left the unloaded region below the window: shrink the
+  // serial-walk estimate by the actual row gain (floor 0); attaching drops it.
   const holeRowsEstimate =
-    !gapToTail || existing.holeRowsEstimate === undefined
+    !detachedFromTail || existing.holeRowsEstimate === undefined
       ? undefined
       : Math.max(0, existing.holeRowsEstimate - (merged.length - existing.messages.length));
   if (merged.length <= HISTORY_SEGMENT_MAX) {
@@ -2335,7 +2343,7 @@ agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, mes
     return setHistorySegment(state, agentId, {
       ...rest,
       messages: merged,
-      gapToTail,
+      detachedFromTail,
       ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
     });
   }
@@ -2345,23 +2353,21 @@ agentSessionReducer.with(appendHistoryMessages, (state, { payload: [agentId, mes
   const prunedOlder = merged.length - HISTORY_SEGMENT_MAX;
   return setHistorySegment(state, agentId, {
     messages: merged.slice(prunedOlder),
-    gapToTail,
+    detachedFromTail,
     oldestReached: false,
     ...(existing.startOrdinalEstimate !== undefined
       ? { startOrdinalEstimate: existing.startOrdinalEstimate + prunedOlder }
       : {}),
     ...(holeRowsEstimate !== undefined ? { holeRowsEstimate } : {}),
   });
-});
+  },
+);
 agentSessionReducer.with(
   setHistoryOldestReached,
   (state, { payload: [agentId, oldestReached] }) => {
     const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
     const next = oldestReached ?? true;
     if (existing.oldestReached === next && getHistorySegment(state, agentId)) return state;
-    // An empty page past an unknown boundary proves nothing about the rows
-    // the tail dropped: they are still unloaded, so the start is not reached.
-    if (next && existing.tailBoundaryUnknown === true) return state;
     // The true first row is resident — the estimate becomes exact.
     const startOrdinalEstimate =
       next && existing.startOrdinalEstimate !== undefined ? 0 : existing.startOrdinalEstimate;
@@ -2380,8 +2386,8 @@ agentSessionReducer.with(
     const incoming = normalizeSortHistoryMessages(messages);
     const seeded = dropRowsPresentInTail(incoming, session.messages).slice(0, HISTORY_SEGMENT_MAX);
     // Landing rows overlapping the tail mean the seek landed at/near the
-    // newest end — the segment is contiguous with the tail (no hole), same
-    // overlap rule as the gap-refill append.
+    // newest end — the window joins the tail (attached), same
+    // overlap rule as the forward append.
     const overlapsTail = seeded.length !== incoming.length;
     if (seeded.length === 0) {
       // Every landing row is already tail-resident: nothing older to show.
@@ -2389,7 +2395,7 @@ agentSessionReducer.with(
     }
     return setHistorySegment(state, agentId, {
       messages: seeded,
-      gapToTail: !overlapsTail,
+      detachedFromTail: !overlapsTail,
       // An estimated 0 start is still an estimate — exact only via the
       // walk's nextToken === null (setHistoryOldestReached).
       oldestReached: false,

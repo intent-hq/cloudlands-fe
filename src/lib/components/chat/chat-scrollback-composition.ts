@@ -1,9 +1,8 @@
 import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Pure helpers for the infinite-scrollback transcript (ChatPanel): compose
- * the hydrated history segment with the live tail into date groups, expose
- * where the gap affordance renders, and guard the older-history scroll
- * trigger. Keep this module dependency-light (no stores, no side effects).
+ * the hydrated scrollback window with the live tail into date groups and
+ * guard the older-history scroll trigger. Keep this module dependency-light (no stores, no side effects).
  */
 import type { AgentMessage } from '$shared/types';
 import { groupMessagesByDate, type MessageGroup } from '$lib/utils/timeFormatting';
@@ -24,18 +23,19 @@ interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
 export interface ComposedTranscript {
   groups: ComposedTranscriptGroup[];
   /**
-   * Index of the first tail group when the history→tail hole is open — the
-   * gap affordance renders immediately before this group. `null` when there
-   * is no gap (no history, or history is contiguous with the tail).
+   * true when the groups are a window detached from the live tail (far jump
+   * or walk past the cap): the tail is not part of the transcript, and the
+   * rows below the window are unloaded. Never a gap inside `groups`.
    */
-  gapBeforeGroupIndex: number | null;
+  detached: boolean;
+  /** Tail rows left out of a detached transcript (empty when attached). */
+  hiddenTail: AgentMessage[];
 }
 
 /**
  * Index nearest human prompts in the exact deduplicated render order. A null
  * target means the true conversation start is loaded and top fallback is safe.
- * Missing entries have an unknown predecessor: older rows are unloaded, or
- * the walk hit the history-to-tail gap before finding a human prompt.
+ * Missing entries have an unknown predecessor: older rows are unloaded.
  */
 export function indexPreviousUserMessages(
   transcript: ComposedTranscript,
@@ -43,8 +43,7 @@ export function indexPreviousUserMessages(
 ): Map<string, AgentMessage | null> {
   const targets = new Map<string, AgentMessage | null>();
   let previous: AgentMessage | null | undefined = conversationStartLoaded ? null : undefined;
-  for (const [groupIndex, group] of transcript.groups.entries()) {
-    if (groupIndex === transcript.gapBeforeGroupIndex) previous = undefined;
+  for (const group of transcript.groups) {
     for (const message of group.messages) {
       if (previous !== undefined) targets.set(message.id, previous);
       if (message.role === 'user' && !isAutomatedChatMessage(message)) previous = message;
@@ -110,40 +109,40 @@ export function dropTailResidentRows(
 }
 
 /**
- * Compose the rendered transcript from the scrollback history segment and
- * the live tail. History rows the tail re-acquired since the segment merge
- * are dropped from the history side first (see `dropTailResidentRows`).
+ * Compose the rendered transcript from the scrollback window and the live
+ * tail. Window rows the tail re-acquired since the merge are dropped from
+ * the window side first (see `dropTailResidentRows`). The result is always
+ * ONE contiguous run of rows:
  *
- * - No history hydrated → the tail-only grouping used today (no group keys,
- *   no gap): the default path is byte-identical to the pre-scrollback UI.
- * - History contiguous with the tail (`gapToTail` false) → one seamless
- *   list; a turn MAY stitch across the junction (same-day rows merge into
- *   one group, exactly as if the transcript had never been windowed).
- * - Gap open → history groups then tail groups, kept as SEPARATE groups
- *   even on the same day. `groupIntoTurns` runs per group, so the gap is a
- *   hard turn boundary — no turn is stitched across the hole — and the gap
- *   affordance renders before `gapBeforeGroupIndex`.
+ * - No window rows → the tail-only grouping used today (no group keys): the
+ *   default path is byte-identical to the pre-scrollback UI.
+ * - Attached window → one seamless list; a turn MAY stitch across the
+ *   junction (same-day rows merge into one group, exactly as if the
+ *   transcript had never been windowed).
+ * - Detached window → the window ALONE. The tail is left out (`hiddenTail`)
+ *   instead of rendering behind a hole; scrolling down loads forward pages
+ *   until the window reaches the tail, and reaching the end shows the tail.
  */
 export function composeTranscript(
   history: AgentMessage[],
   tail: AgentMessage[],
-  gapToTail: boolean,
+  detachedFromTail: boolean,
 ): ComposedTranscript {
   history = dropTailResidentRows(history, tail);
   if (history.length === 0) {
-    return { groups: groupMessagesByDate(tail), gapBeforeGroupIndex: null };
+    return { groups: groupMessagesByDate(tail), detached: false, hiddenTail: [] };
   }
-  if (!gapToTail) {
+  if (!detachedFromTail) {
     return {
       groups: withStableGroupKeys(groupMessagesByDate([...history, ...tail]), 'd'),
-      gapBeforeGroupIndex: null,
+      detached: false,
+      hiddenTail: [],
     };
   }
-  const historyGroups = withStableGroupKeys(groupMessagesByDate(history), 'h');
-  const tailGroups = withStableGroupKeys(groupMessagesByDate(tail), 't');
   return {
-    groups: [...historyGroups, ...tailGroups],
-    gapBeforeGroupIndex: historyGroups.length,
+    groups: withStableGroupKeys(groupMessagesByDate(history), 'h'),
+    detached: true,
+    hiddenTail: tail,
   };
 }
 
@@ -719,12 +718,19 @@ export interface UnloadedRowsSplitParams {
    * `holeRowsEstimate` instead).
    */
   startOrdinalEstimate: number | null;
-  /** A hole is open between the history segment and the live tail. */
-  gapToTail: boolean;
+  /** The window is detached from the live tail (the tail is not rendered). */
+  detachedFromTail: boolean;
   /**
-   * Reducer-tracked estimate of the rows inside the open history→tail hole
-   * (rows cap-pruned off the segment's newest side, minus gap refills).
-   * Splits SERIAL-walk segments, whose hole rows sit BELOW the viewport and
+   * Resident tail rows a detached transcript leaves out (`hiddenTail`). They
+   * sit below the window with the unloaded rows, so they size the spacer
+   * below it. Ignored while attached.
+   */
+  hiddenTailCount?: number;
+  /**
+   * Reducer-tracked estimate of the unloaded rows between a detached window
+   * and the tail (rows cap-pruned off the window's newest side, minus
+   * forward pages). Splits SERIAL-walk windows, whose rows below sit BELOW
+   * the viewport and
    * must not inflate the above extent (they used to be attributed all-above,
    * which overestimated the extent by up to 2x mid-walk and snapped the
    * thumb at the exhaustion boundary). Ignored when `startOrdinalEstimate`
@@ -734,31 +740,31 @@ export interface UnloadedRowsSplitParams {
 }
 
 /**
- * Split the estimated unloaded row count into the portion ABOVE the history
- * segment (rows older than its first row) and the portion BELOW it (rows in
- * the open history→tail hole). A seeded segment (seek landing) carries a
- * `startOrdinalEstimate` that anchors the split; a serial-walk segment is
- * split by the reducer-tracked `holeRowsEstimate` (rows its cap pruning
- * moved into the hole). `exhausted` zeroes the above side exactly; a closed
- * gap zeroes the below side exactly.
+ * Split the rows that are not rendered into the portion ABOVE the window
+ * (rows older than its first row) and the portion BELOW a detached window
+ * (unloaded rows plus the hidden tail). A seeded window (seek landing)
+ * carries a `startOrdinalEstimate` that anchors the split; a serial-walk
+ * window is split by the reducer-tracked `holeRowsEstimate` (rows its cap
+ * pruning unloaded). `exhausted` zeroes the above side exactly; an attached
+ * window zeroes the below side exactly.
  */
 export function splitUnloadedRows(params: UnloadedRowsSplitParams): {
   above: number;
   below: number;
 } {
-  const { totalMessages, residentCount, exhausted, startOrdinalEstimate, gapToTail } = params;
+  const { totalMessages, residentCount, exhausted, startOrdinalEstimate, detachedFromTail } = params;
   const unloaded = Math.max(0, totalMessages - residentCount);
-  if (unloaded === 0) return { above: 0, below: 0 };
-  if (!gapToTail) {
+  if (!detachedFromTail) {
     return { above: exhausted ? 0 : unloaded, below: 0 };
   }
-  if (exhausted) return { above: 0, below: unloaded };
+  const hidden = Math.max(0, params.hiddenTailCount ?? 0);
+  if (exhausted) return { above: 0, below: unloaded + hidden };
   if (startOrdinalEstimate !== null) {
     const above = Math.min(unloaded, Math.max(0, Math.round(startOrdinalEstimate)));
-    return { above, below: unloaded - above };
+    return { above, below: unloaded - above + hidden };
   }
   const below = Math.min(unloaded, Math.max(0, Math.round(params.holeRowsEstimate ?? 0)));
-  return { above: unloaded - below, below };
+  return { above: unloaded - below, below: below + hidden };
 }
 
 // Single shared copy of the daemon's `page_window_around` mirror — re-exported

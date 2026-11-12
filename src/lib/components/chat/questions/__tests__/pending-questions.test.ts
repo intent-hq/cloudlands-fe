@@ -1003,7 +1003,7 @@ describe('wizard gate honors the authoritative pending marker', () => {
       }),
     );
     state.agentSessions.historySegmentsByAgentId = {
-      [AGENT_ID]: { messages: [marked], gapToTail: true, oldestReached: false },
+      [AGENT_ID]: { messages: [marked], detachedFromTail: true, oldestReached: false },
     };
     expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toMatchObject({
       messageId: marked.id,
@@ -1037,7 +1037,7 @@ describe('wizard gate honors the authoritative pending marker', () => {
       }),
     );
     state.agentSessions.historySegmentsByAgentId = {
-      [AGENT_ID]: { messages: [marked], gapToTail: true, oldestReached: false },
+      [AGENT_ID]: { messages: [marked], detachedFromTail: true, oldestReached: false },
     };
     expect(deriveWizardPendingQuestions(state, AGENT_ID, unanswered)).toMatchObject({
       messageId: marked.id,

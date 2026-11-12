@@ -16,7 +16,9 @@ import { CHAT_PAGE_SIZE } from '$shared/constants';
  *      absent even after a full hydrate — once hydration settles without it,
  *      seek the page
  *      CONTAINING the message via `agent.getConversation`'s `aroundMessageId`
- *      (PROTOCOL §5.5) and seed the history segment with that page, retaining the live tail.
+ *      (PROTOCOL §5.5) and make that page the transcript window: the rest of the
+ *      conversation is abandoned from the transcript until the reader scrolls
+ *      back to the end (the live tail stays loaded for live features).
  *   4. Hand the DOM work to the mounted ChatPanel through the
  *      'chat:open-message' window event (dispatched on a retry ladder to
  *      cover slow cross-workspace mounts): the panel force-renders the
@@ -174,7 +176,11 @@ export async function seekConversationToMessage(
   if (isMessageInStore(agentId, messageId)) return true;
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
-  let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };
+  let tokens = {
+    nextToken: previous.scrollbackOlderToken,
+    prevToken: previous.scrollbackGapToken,
+    olderAnchorId: previous.scrollbackOlderTokenAnchorId,
+  };
   appStore.dispatch(scrollbackFetchStarted(agentId, 'seek'));
   const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
   const ownsSeek = () =>
@@ -199,7 +205,11 @@ export async function seekConversationToMessage(
     // position. Legacy rows without a sequence leave that estimate unknown.
     appStore.dispatch(seedHistoryAround(agentId, page.messages, page.messages[0]?.seq));
     if (page.nextToken === null) appStore.dispatch(setHistoryOldestReached(agentId));
-    tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
+    tokens = {
+      nextToken: page.nextToken,
+      prevToken: page.prevToken,
+      olderAnchorId: page.messages[0]?.id ?? null,
+    };
     return isMessageInStore(agentId, messageId);
   } catch (error) {
     logger.warn('[seekConversationToMessage] Seek fetch failed (message may no longer exist)', {
