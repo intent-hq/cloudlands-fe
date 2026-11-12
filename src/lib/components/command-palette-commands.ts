@@ -130,6 +130,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-local-pairing',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalLocalPairing_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-local-pairing',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalLocalPairing_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'enable-experimental-dock',
     get label() {
       return m.lib_commandPalette_enableExperimentalDock_label();

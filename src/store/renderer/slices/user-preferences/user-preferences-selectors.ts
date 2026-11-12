@@ -123,6 +123,11 @@ export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsBrowserAccessEnabled === true;
 });
 
+/** Experimental local code pairing (Settings > Machines) is shown only when this Labs flag is on. */
+export const selectLabsLocalPairingEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsLocalPairingEnabled === true;
+});
+
 export const selectLabsTabGroupsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsTabGroupsEnabled === true;
 });

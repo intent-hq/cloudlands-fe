@@ -6,6 +6,7 @@ import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import {
   setLabsBrowserAccessEnabled,
   setLabsCloudMachinesEnabled,
+  setLabsLocalPairingEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsTabGroupsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -20,6 +21,8 @@ const ENABLE_BROWSER_ACCESS = 'enable-experimental-browser-access';
 const DISABLE_BROWSER_ACCESS = 'disable-experimental-browser-access';
 const ENABLE_CLOUD_MACHINES = 'enable-experimental-cloud-machines';
 const DISABLE_CLOUD_MACHINES = 'disable-experimental-cloud-machines';
+const ENABLE_LOCAL_PAIRING = 'enable-experimental-local-pairing';
+const DISABLE_LOCAL_PAIRING = 'disable-experimental-local-pairing';
 const ENABLE_TAB_GROUPS = 'enable-experimental-tab-groups';
 const DISABLE_TAB_GROUPS = 'disable-experimental-tab-groups';
 
@@ -52,7 +55,23 @@ export function isMachineRailCommandHidden(commandId: string, railEnabled: boole
   return commandId === (railEnabled ? ENABLE_MACHINE_RAIL : DISABLE_MACHINE_RAIL);
 }
 
+/**
+ * Local pairing lets another Intent on this computer connect, which only the
+ * desktop app can host and redeem; elsewhere both commands are hidden, and in
+ * the desktop app the one that would not change the setting is.
+ */
+export function isLocalPairingCommandHidden(commandId: string, enabled: boolean): boolean {
+  if (commandId !== ENABLE_LOCAL_PAIRING && commandId !== DISABLE_LOCAL_PAIRING) return false;
+  if (!isElectronPlatform()) return true;
+  return commandId === (enabled ? ENABLE_LOCAL_PAIRING : DISABLE_LOCAL_PAIRING);
+}
+
 export function runLabCommand(commandId: string): boolean {
+  if (commandId === ENABLE_LOCAL_PAIRING || commandId === DISABLE_LOCAL_PAIRING) {
+    // Turning it off also cancels a shown code (local-pairing saga).
+    appStore.dispatch(setLabsLocalPairingEnabled(commandId === ENABLE_LOCAL_PAIRING));
+    return true;
+  }
   if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {
     appStore.dispatch(setMachineRailEnabledRequested(commandId === ENABLE_MACHINE_RAIL));
     return true;

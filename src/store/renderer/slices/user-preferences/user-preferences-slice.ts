@@ -77,6 +77,8 @@ export type UserPreferencesState = {
   labsPlainFolderWorkspacesEnabled: boolean;
   /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
   labsBrowserAccessEnabled: boolean;
+  /** Shows local code pairing (Settings > Machines); turning it off cancels a shown code. */
+  labsLocalPairingEnabled: boolean;
   labsTabGroupsEnabled: boolean;
   /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
   labsCloudMachinesEnabled: boolean;
@@ -164,6 +166,7 @@ export const initialState: UserPreferencesStoreState = {
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsBrowserAccessEnabled: false,
+  labsLocalPairingEnabled: false,
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
   nativeReviewEnabled: false,
@@ -470,6 +473,17 @@ export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction
 
 export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
 
+const labsLocalPairingPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsLocalPairingEnabled',
+  setActionName: 'setLabsLocalPairingEnabled',
+  toggleActionName: 'toggleLabsLocalPairing',
+});
+
+export const setLabsLocalPairingEnabled = labsLocalPairingPreference.setAction;
+
+export const toggleLabsLocalPairing = labsLocalPairingPreference.toggleAction;
+
 const labsTabGroupsPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsTabGroupsEnabled',
@@ -626,6 +640,7 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
+labsLocalPairingPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
 labsCloudMachinesPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);

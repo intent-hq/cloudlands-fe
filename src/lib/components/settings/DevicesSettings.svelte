@@ -55,6 +55,7 @@
   import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
   import { pasteLinkRequested } from '$features/nodes/nodes-slice';
+  import LocalPairingSection from '$features/local-pairing/LocalPairingSection.svelte';
 
   let {
     initialEditedMachine,
@@ -397,6 +398,7 @@
     </div>
   {/if}
 
+  <LocalPairingSection />
   <RemoteMachinesSection />
   <BackendsWithAccessSection />
 </div>

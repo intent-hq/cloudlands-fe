@@ -5,6 +5,11 @@ import {
 } from '$store/renderer/slices/scripts/scripts-selectors';
 import { parseRemoteMachine } from '$shared/types/remote-machines';
 import {
+  LOCAL_CODE_CHANGED_EVENT,
+  LOCAL_CREDENTIALS_CHANGED_EVENT,
+  localPairingEventAction,
+} from '$features/local-pairing/local-pairing-events';
+import {
   remoteMachineChanged,
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
@@ -4062,6 +4067,12 @@ export function routeDaemonEventsNotification(
     handleCloudMachineChangedEvent(event);
     return;
   }
+  // Local code pairing (§5.58) is global and local-transport only.
+  if (type === LOCAL_CODE_CHANGED_EVENT || type === LOCAL_CREDENTIALS_CHANGED_EVENT) {
+    const action = localPairingEventAction(type, (event as { data?: unknown }).data);
+    if (action) appStore.dispatch(action);
+    return;
+  }
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
@@ -4987,6 +4998,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `remoteMachine:changed` — the current backend's exposed machines
   // (`{ machine }` or `{ machineId, removed: true }`); owner connections only.
   'remoteMachine:changed',
+  // Local code pairing (§5.58), host side: the shown code's state and the
+  // Intents that connected with one. The daemon sends both only to local
+  // (UDS / named pipe) connections; the local-pairing saga consumes them.
+  'pairing:localCode-changed',
+  'pairing:localCredentials-changed',
   // `cloudMachine:changed` — the E2B provider and live sandboxes; owner and members.
   'cloudMachine:changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions

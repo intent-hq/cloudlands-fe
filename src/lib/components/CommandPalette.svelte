@@ -35,6 +35,7 @@
     selectLabsRemoteAgentsEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsBrowserAccessEnabled,
+    selectLabsLocalPairingEnabled,
     selectLabsTabGroupsEnabled,
     selectLabsCloudMachinesEnabled,
     selectLabsMultiplayerEnabled,
@@ -108,7 +109,11 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isLabCommandHidden, isMachineRailCommandHidden } from './command-palette-labs';
+  import {
+    isLabCommandHidden,
+    isLocalPairingCommandHidden,
+    isMachineRailCommandHidden,
+  } from './command-palette-labs';
   import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
@@ -157,6 +162,7 @@
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
+  const labsLocalPairing$ = selectLabsLocalPairingEnabled();
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
   const machineRailEnabled$ = selectMachineRailEnabled();
   const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
@@ -186,6 +192,7 @@
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
         !isMachineRailCommandHidden(command.id, $machineRailEnabled$) &&
+        !isLocalPairingCommandHidden(command.id, $labsLocalPairing$) &&
         !isLabCommandHidden(
           command.id,
           $dockLabEnabled,

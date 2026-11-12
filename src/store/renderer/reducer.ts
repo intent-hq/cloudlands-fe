@@ -3,6 +3,7 @@ import { desktopControlReducer } from './slices/desktop-control/desktop-control-
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
+import { localPairingReducer } from '$features/local-pairing/local-pairing-slice';
 import { nodesReducer } from '$features/nodes/nodes-slice';
 import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -272,6 +273,7 @@ export const reducers = {
   invitationAccountSearch: invitationAccountSearchReducer,
   hostMembership: hostMembershipReducer,
   remoteMachines: remoteMachinesReducer,
+  localPairing: localPairingReducer,
   nodes: nodesReducer,
   cloudMachines: cloudMachinesReducer,
 } as const;

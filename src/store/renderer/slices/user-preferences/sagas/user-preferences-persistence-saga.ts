@@ -30,6 +30,7 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
+  selectLabsLocalPairingEnabled,
   selectLabsTabGroupsEnabled,
   selectLabsCloudMachinesEnabled,
   selectLanguagePreference,
@@ -65,6 +66,7 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
+  setLabsLocalPairingEnabled,
   setLabsTabGroupsEnabled,
   setLabsCloudMachinesEnabled,
   setLanguagePreference,
@@ -85,6 +87,7 @@ import {
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
+  toggleLabsLocalPairing,
   toggleLabsTabGroups,
   toggleLabsCloudMachines,
   togglePauseAnimationsWhenUnfocused,
@@ -113,6 +116,7 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
+const LABS_LOCAL_PAIRING_STORAGE_KEY = 'labs:localPairingEnabled';
 const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
 const LABS_CLOUD_MACHINES_STORAGE_KEY = 'labs:cloudMachinesEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
@@ -272,6 +276,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof labsBrowserAccessEnabled === 'boolean') {
     yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
+  }
+
+  const labsLocalPairingEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_LOCAL_PAIRING_STORAGE_KEY,
+  );
+  if (typeof labsLocalPairingEnabled === 'boolean') {
+    yield* put(setLabsLocalPairingEnabled(labsLocalPairingEnabled));
   }
 
   const labsTabGroupsEnabled = yield* getLocalStorageJSON<boolean>(LABS_TAB_GROUPS_STORAGE_KEY);
@@ -438,6 +449,13 @@ function* persistLabsBrowserAccessWorker() {
   );
 }
 
+function* persistLabsLocalPairingWorker() {
+  yield* setLocalStorageJSON(
+    LABS_LOCAL_PAIRING_STORAGE_KEY,
+    yield* selectLabsLocalPairingEnabled.effect(),
+  );
+}
+
 function* persistLabsCloudMachinesWorker() {
   yield* setLocalStorageJSON(
     LABS_CLOUD_MACHINES_STORAGE_KEY,
@@ -576,6 +594,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
     persistLabsBrowserAccessWorker,
+  );
+  yield* takeEvery(
+    [setLabsLocalPairingEnabled, toggleLabsLocalPairing],
+    persistLabsLocalPairingWorker,
   );
   yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
   yield* takeEvery(
