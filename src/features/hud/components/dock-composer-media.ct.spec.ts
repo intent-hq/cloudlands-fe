@@ -53,7 +53,7 @@ test('the open screenshot menu never locks the rest of the dock', async ({ mount
   const component = await mount(ComposerMediaPreview);
   const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
   await trigger.focus();
-  await trigger.press('Space');
+  await trigger.press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu).toBeVisible();
   await expectDismissibleLayerArmed(menu);
