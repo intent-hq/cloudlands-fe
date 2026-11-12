@@ -29,6 +29,8 @@
     ConnectBackendStep,
   } from '$lib/components/layout/connect-backend';
   import { selectRemoteMachinesVisible } from '$features/remote-machines/remote-machines-selectors';
+  import { selectRemoteConnections } from '$store/renderer/slices/connections/connections-selectors';
+  import { SELECTABLE_CONNECTION_ACCENTS } from '$shared/types/connections';
   import PairLinkField from '$features/nodes/PairLinkField.svelte';
   import { selectNodePaste } from '$features/nodes/nodes-selectors';
   import { pasteLinkSubmitted } from '$features/nodes/nodes-slice';
@@ -57,6 +59,13 @@
   const setup$ = selectMachineSetup();
   const nodeOffered$ = selectRemoteMachinesVisible();
   const paste$ = selectNodePaste();
+  const remoteConnections$ = selectRemoteConnections();
+  // Each new machine gets the next accent, as Settings → Machines always did.
+  const defaultAccent = $derived(
+    SELECTABLE_CONNECTION_ACCENTS[
+      $remoteConnections$.length % SELECTABLE_CONNECTION_ACCENTS.length
+    ],
+  );
   const sshAvailable$ = selectSshMachineSetupAvailable();
 
   const setup = $derived($setup$);
@@ -240,6 +249,7 @@
         bind:busy={connectBusy}
         bind:canContinue={connectCanContinue}
         active={setup.open && screen === 'details'}
+        {defaultAccent}
         showHelp={false}
         onDone={close}
       />

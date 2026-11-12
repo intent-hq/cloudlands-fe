@@ -68,7 +68,6 @@ import {
   pasteCompleted,
   pasteFailed,
   pasteFieldOpened,
-  pasteLinkRequested,
   pasteLinkRetried,
   pasteLinkSubmitted,
   pasteTestingStarted,
@@ -104,14 +103,6 @@ const invokeInviteClaim = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM, { pendingId });
 const invokeInviteDiscard = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_DISCARD, { pendingId });
-
-async function readClipboard(): Promise<string> {
-  try {
-    return await navigator.clipboard.readText();
-  } catch {
-    return '';
-  }
-}
 
 function inspectReply(reply: unknown): PairLinkInspectResult {
   const value = (reply ?? {}) as Record<string, unknown>;
@@ -445,12 +436,6 @@ export function* addHeldLink(link: SshSetupLink): SagaGenerator<NodeAddError | n
   });
 }
 
-function* requestPaste(): SagaGenerator<void> {
-  const clipboard = (yield* call(readClipboard)).trim();
-  if (isPairingUri(clipboard) || isNodeInviteUri(clipboard)) yield* call(testPasted, clipboard);
-  else yield* put(pasteFieldOpened());
-}
-
 function* submitPaste(): SagaGenerator<void> {
   const text = takePastedLink();
   if (text !== null) yield* call(testPasted, text);
@@ -532,10 +517,9 @@ function* queueNodeHandoffs(): SagaGenerator<void> {
 export function* nodesSaga(): SagaGenerator<void> {
   // Leading: a new paste request is ignored while one is being tested or saved.
   yield* takeLeading(
-    [pasteLinkRequested, pasteLinkSubmitted, pasteLinkRetried],
+    [pasteLinkSubmitted, pasteLinkRetried],
     function* (action): SagaGenerator<void> {
-      if (action.type === pasteLinkRequested.toString()) yield* call(requestPaste);
-      else if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
+      if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
       else yield* call(retryPaste);
     },
   );

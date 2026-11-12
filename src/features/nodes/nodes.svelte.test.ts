@@ -2,15 +2,14 @@
  * @vitest-environment jsdom
  *
  * Settings → Machines with nodes: the Machines and Nodes lists, node rows, the
- * Add machine menu's paste item, and every state of the paste row.
+ * Add machine menu's Set up a new machine item, and every state of the link field.
  */
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { NODE_LINK, setupNodesFixture, type NodesPreviewState } from '../../test/nodes-preview';
-import PairLinkPaste from './PairLinkPaste.svelte';
-import { takePastedLink } from './pasted-link';
+import PairLinkField from './PairLinkField.svelte';
 
 let restore: (() => void) | null = null;
 function seed(state: NodesPreviewState) {
@@ -88,40 +87,19 @@ describe('Machines and Nodes', () => {
 });
 
 describe('Add machine menu', () => {
-  it('offers Paste an intent:// link, which asks the saga to read the clipboard', async () => {
+  it('starts with Set up a new machine, which opens the wizard', async () => {
     seed('no-nodes');
     render(DevicesSettings, { initialAddMenuOpen: true });
-    const item = await screen.findByTestId('add-machine-paste-link');
-    expect(item.textContent).toContain('From intentd pair on a computer or node');
-    await fireEvent.click(item);
-    expect(dispatched().map((a) => a.type)).toContain('nodes/pasteLinkRequested');
+    await fireEvent.click(await screen.findByTestId('add-machine-setup'));
+    expect(dispatched().map((a) => a.type)).toContain('machineSetup/opened');
+    expect(screen.queryByTestId('add-machine-paste-link')).toBeNull();
   });
 });
 
-describe('paste row', () => {
-  it('is hidden until opened', () => {
-    seed('no-nodes');
-    const view = render(PairLinkPaste);
-    expect(view.container.querySelector('form')).toBeNull();
-  });
-
-  it('submits the typed link and can be cancelled', async () => {
-    seed('paste-field');
-    const view = render(PairLinkPaste);
-    const add = view.getByRole('button', { name: 'Add' }) as HTMLButtonElement;
-    expect(add.disabled).toBe(true);
-    expect(view.getByText(/Run intentd pair on the computer or node/)).toBeTruthy();
-    await fireEvent.input(view.getByLabelText('intent:// link'), { target: { value: NODE_LINK } });
-    await fireEvent.click(add);
-    expect(dispatched().find((a) => a.type === 'nodes/pasteLinkSubmitted')?.payload).toEqual([]);
-    expect(takePastedLink()).toBe(NODE_LINK);
-    await fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
-    expect(dispatched().map((a) => a.type)).toContain('nodes/pasteClosed');
-  });
-
+describe('link field', () => {
   it('shows the link with its token masked while testing', () => {
     seed('testing');
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     expect(view.getByText('Testing the link…')).toBeTruthy();
     const masked = view.container.querySelector('[data-pair-link-masked]')!.textContent ?? '';
     expect(masked).toContain('token=••••');
@@ -139,14 +117,14 @@ describe('paste row', () => {
     ],
   ] as const)('%s shows its error inline', (state, text, retry) => {
     seed(state);
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     expect(view.getByRole('alert').textContent).toContain(text);
     expect(!!view.queryByRole('button', { name: 'Try again' })).toBe(retry);
   });
 
   it('lists each route tried when the link is unreachable, then offers Try again', async () => {
     seed('unreachable');
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     const alert = view.getByRole('alert');
     expect(alert.textContent).toContain('192.0.2.20:7443');
     expect(alert.textContent).toContain('tc-gpu-rig');

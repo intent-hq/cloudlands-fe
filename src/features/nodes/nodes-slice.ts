@@ -7,8 +7,6 @@ const initialState: NodesState = {
   highlightId: null,
 };
 
-/** "Paste an intent:// link": read the clipboard, else open the field. */
-export const pasteLinkRequested = createAction('nodes/pasteLinkRequested');
 /** Open the paste field; the wizard passes `'wizard'` so the inline row stays hidden. */
 export const pasteFieldOpened = createAction<[surface?: PasteSurface]>('nodes/pasteFieldOpened');
 /** Test and add the link typed in the field (stashed with `stashPastedLink`, never in the action). */

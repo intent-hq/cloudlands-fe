@@ -13,7 +13,7 @@ import {
   setupNodesFixture,
   type NodesPreviewState,
 } from '../../test/nodes-preview';
-import PairLinkPaste from './PairLinkPaste.svelte';
+import PairLinkField from './PairLinkField.svelte';
 
 let restore: (() => void) | null = null;
 function seed(state: NodesPreviewState) {
@@ -62,10 +62,10 @@ describe('a machine added from a node link', () => {
   });
 });
 
-describe('paste row with a node link', () => {
+describe('link field with a node link', () => {
   it('masks the invite secret while the backend claims it', () => {
     seed('invite-claiming');
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     const masked = view.container.querySelector('[data-pair-link-masked]')!.textContent ?? '';
     expect(masked).toContain('secret=••••');
     expect(view.container.textContent).not.toContain(NODE_INVITE_SECRET);
@@ -86,14 +86,14 @@ describe('paste row with a node link', () => {
     ['invite-unreachable-spent', 'this link may be used up', false],
   ] as const)('%s shows its error inline', (state, text, retry) => {
     seed(state);
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     expect(view.getByRole('alert').textContent).toContain(text);
     expect(!!view.queryByRole('button', { name: 'Try again' })).toBe(retry);
   });
 
   it('lists the routes the backend tried, then offers Try again', async () => {
     seed('invite-unreachable');
-    const view = render(PairLinkPaste);
+    const view = render(PairLinkField);
     const alert = view.getByRole('alert');
     expect(alert.textContent).toContain("Build box couldn't reach Lab node. Tried:");
     expect(alert.textContent).toContain('192.0.2.40:7443');

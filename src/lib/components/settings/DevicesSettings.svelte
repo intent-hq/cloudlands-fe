@@ -5,18 +5,12 @@
   import { Fa } from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
-  import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    LOCAL_CONNECTION_ID,
-    SELECTABLE_CONNECTION_ACCENTS,
-    type ConnectionRecord,
-  } from '$shared/types/connections';
+  import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
-    selectRemoteConnections,
     selectConnectionWorkflow,
     selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
@@ -64,11 +58,9 @@
     type CloudProviderKind,
   } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
-  import { faCirclePlus, faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
+  import { faCirclePlus, faCloud } from '$lib/icons/phosphor-icons';
   import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
-  import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
-  import { pasteLinkRequested } from '$features/nodes/nodes-slice';
 
   let {
     initialEditedMachine,
@@ -95,9 +87,8 @@
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
-  // together); the remote-only list keeps driving accent cycling.
+  // together).
   const connections$ = selectConnections();
-  const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
   const currentConnectionId$ = selectCurrentConnectionId();
   // The backend this window uses sits right after the local row.
@@ -214,7 +205,6 @@
     return (id && $connections$.find((device) => device.id === id)) || null;
   }
 
-  let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
   let activePanel = $state<DevicePanelMode>(untrack(() => (initialEditedMachine ? 'edit' : null)));
   let removeDialogOpen = $state(false);
@@ -235,10 +225,6 @@
       removeTarget = null;
     });
   });
-
-  const defaultAccent = $derived(
-    SELECTABLE_CONNECTION_ACCENTS[$devices$.length % SELECTABLE_CONNECTION_ACCENTS.length],
-  );
 
   function openPanel(deviceId: string, panel: Exclude<DevicePanelMode, null>) {
     activeDeviceId = deviceId;
@@ -376,8 +362,6 @@
     </section>
   {/if}
 
-  <PairLinkPaste />
-
   <div class="flex justify-end">
     <Menu.Root bind:open={addMenuOpen}>
       <Menu.Trigger>
@@ -398,27 +382,6 @@
             <span>{m.machineSetup_addMenu_label()}</span>
             <span class="type-caption text-muted-foreground"
               >{m.machineSetup_addMenu_description()}</span
-            >
-          </span>
-        </Menu.Item>
-        <Menu.Item onSelect={() => (connectModalOpen = true)}>
-          {#snippet leading()}<Fa icon={faDesktop} />{/snippet}
-          <span class="flex min-w-0 flex-col">
-            <span>{m.cloudMachines_addMenu_connect_label()}</span>
-            <span class="type-caption text-muted-foreground"
-              >{m.cloudMachines_addMenu_connect_description()}</span
-            >
-          </span>
-        </Menu.Item>
-        <Menu.Item
-          onSelect={() => appStore.dispatch(pasteLinkRequested())}
-          data-testid="add-machine-paste-link"
-        >
-          {#snippet leading()}<Fa icon={faLink} />{/snippet}
-          <span class="flex min-w-0 flex-col">
-            <span>{m.nodes_addMenu_paste_label()}</span>
-            <span class="type-caption text-muted-foreground"
-              >{m.nodes_addMenu_paste_description()}</span
             >
           </span>
         </Menu.Item>
@@ -527,8 +490,6 @@
     }}
   />
 {/snippet}
-
-<ConnectBackendModal bind:open={connectModalOpen} {defaultAccent} />
 
 <BulkActionConfirmDialog
   bind:open={removeDialogOpen}
