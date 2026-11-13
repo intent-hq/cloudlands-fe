@@ -247,10 +247,18 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
   );
 }
 
+/** Walk rank of each unread-cycle group: attention buckets, then unread. */
+const UNREAD_WALK_RANK: Record<SessionAttentionPriority | 'unread', number> = {
+  blocker: 0,
+  question: 1,
+  discussion: 2,
+  unread: 3,
+};
+
 /**
- * The unread-cycle walk: union of two walks, deduped by stop key, in tab
- * order. Within one tab, attention entries precede unread-workspace entries,
- * ordered by attention priority: (a) every attention-requesting
+ * The unread-cycle walk: union of two walks, deduped by stop key — each
+ * walk is in tab order, and attention entries precede unread-workspace
+ * entries, ordered by attention priority: (a) every attention-requesting
  * agent (the LED attention definition) bucketed blocker → pending wizard
  * question → discussion (`sessionAttentionPriority`; an agent with several
  * signals classifies at its highest bucket), following the
@@ -267,6 +275,7 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
  */
 function collectUnreadCycleEntries(state: ActionKeyState): {
   entries: CycleStopEntry[];
+  rankByStopKey: Map<string, number>;
   attentionAgentIds: Set<string>;
   workspaceClearingWsIds: Set<string>;
 } {
@@ -286,22 +295,25 @@ function collectUnreadCycleEntries(state: ActionKeyState): {
     const priority = sessionAttentionPriority(state.agentSessions.byAgentId[entry.agentId]);
     if (priority !== null) buckets[priority].push(entry);
   }
-  const seen = new Set<string>();
-  const entries = [
-    ...buckets.blocker,
-    ...buckets.question,
-    ...buckets.discussion,
-    ...unreadEntries,
-  ].filter((entry) => {
-    const key = cycleStopKey(entry);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  const tabIndex = cycleTabIndex(state);
-  entries.sort((a, b) => (tabIndex.get(a.wsId) ?? 0) - (tabIndex.get(b.wsId) ?? 0));
+  const rankByStopKey = new Map<string, number>();
+  const groups = [
+    ['blocker', buckets.blocker],
+    ['question', buckets.question],
+    ['discussion', buckets.discussion],
+    ['unread', unreadEntries],
+  ] as const;
+  const entries: CycleStopEntry[] = [];
+  for (const [group, groupEntries] of groups) {
+    for (const entry of groupEntries) {
+      const key = cycleStopKey(entry);
+      if (rankByStopKey.has(key)) continue;
+      rankByStopKey.set(key, UNREAD_WALK_RANK[group]);
+      entries.push(entry);
+    }
+  }
   return {
     entries,
+    rankByStopKey,
     attentionAgentIds: new Set(attentionEntries.map((entry) => entry.agentId)),
     workspaceClearingWsIds: new Set(
       unreadEntries.filter((entry) => entry.clearsWorkspace).map((entry) => entry.wsId),
@@ -327,7 +339,10 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
  * the walk at the same position press after press. Transient UI-only state
  * (like `layoutPresetCursor` below).
  */
-const lastCycledStopByAction = new Map<ActionKeyActionId, CycleStopEntry>();
+const lastCycledStopByAction = new Map<
+  ActionKeyActionId,
+  { entry: CycleStopEntry; rank: number }
+>();
 
 /**
  * Per-family stop whose side effects failed on the last press — either threw
@@ -378,14 +393,17 @@ interface GlobalCycleSpec {
    * entries at once (e.g. workspace-level unread).
    */
   countRemaining?(state: ActionKeyState, entries: CycleStopEntry[], next: CycleStopEntry): number;
+  /** Stops in walk order: by `rankOf` group (default one group), then tab. */
   collect(state: ActionKeyState): CycleStopEntry[];
+  /** The walk group of each collected stop, lowest first (default 0). */
+  rankOf?(state: ActionKeyState): (entry: CycleStopEntry) => number;
 }
 
 /**
  * Shared shape of the global cycle actions: collect the matching agents (in
  * tab order), step to the entry after the walk anchor (the family's own
  * cursor when it is still a candidate, else the focused agent, else the
- * first stop at or after the cursor's tab, wrapping), switch workspace
+ * first stop at or after the cursor's group and tab, wrapping), switch workspace
  * when needed, and focus the agent's tab + composer. The cursor is
  * preferred because the state anchor can lag or be re-pointed between
  * presses (async navigation, workspace loaders) — anchoring on it alone is
@@ -413,6 +431,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       cycleAttemptByAction.set(spec.id, attempt);
       const entries = spec.collect(state);
       if (entries.length === 0) return;
+      const rankOf = spec.rankOf?.(state) ?? (() => 0);
       const retryKey = retryStopByAction.get(spec.id);
       retryStopByAction.delete(spec.id);
       const retryIndex =
@@ -427,7 +446,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           ? entries[0].agentId === focused
           : entries[0].wsId === activeWorkspaceId(context));
       if (alreadyThere) {
-        lastCycledStopByAction.set(spec.id, entries[0]);
+        lastCycledStopByAction.set(spec.id, { entry: entries[0], rank: rankOf(entries[0]) });
         // Workspace-level stop we're already on: still (re-)request hydration
         // so the press converges the session cache even if the route-mount
         // hydration failed.
@@ -441,7 +460,8 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       if (retryIndex !== -1) {
         next = entries[retryIndex];
       } else {
-        const cursor = lastCycledStopByAction.get(spec.id);
+        const cursorStop = lastCycledStopByAction.get(spec.id);
+        const cursor = cursorStop?.entry;
         const cursorKey = cursor === undefined ? undefined : cycleStopKey(cursor);
         let index =
           cursorKey === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursorKey);
@@ -454,17 +474,18 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         if (index === -1 && focused !== null) {
           index = entries.findIndex((e) => e.agentId === focused);
         }
-        if (index === -1) {
+        const tabIndex = cycleTabIndex(state);
+        const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.wsId);
+        if (index === -1 && cursorStop !== undefined && cursorTab !== undefined) {
           // The last stop dropped out (e.g. visiting it marked it read):
-          // resume at the first stop on its tab or a later one, so the walk
-          // keeps going round the strip instead of restarting at the left.
-          const tabIndex = cycleTabIndex(state);
-          const anchorTab =
-            tabIndex.get(cursor?.wsId ?? '') ?? tabIndex.get(activeWorkspaceId(context) ?? '');
-          if (anchorTab !== undefined) {
-            const resume = entries.findIndex((e) => (tabIndex.get(e.wsId) ?? 0) >= anchorTab);
-            index = (resume === -1 ? entries.length : resume) - 1;
-          }
+          // resume at the first stop in its group on its tab or a later one,
+          // so the walk keeps going round instead of restarting.
+          const resume = entries.findIndex((e) => {
+            const rank = rankOf(e);
+            if (rank !== cursorStop.rank) return rank > cursorStop.rank;
+            return (tabIndex.get(e.wsId) ?? 0) >= cursorTab;
+          });
+          index = (resume === -1 ? entries.length : resume) - 1;
         }
         next = entries[(index + 1) % entries.length];
       }
@@ -508,7 +529,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       // middleware hides it after inactivity): a throw above leaves the
       // cursor on the previous stop so the next press retries this one
       // instead of skipping it.
-      lastCycledStopByAction.set(spec.id, next);
+      lastCycledStopByAction.set(spec.id, { entry: next, rank: rankOf(next) });
       const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
       context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
     },
@@ -586,6 +607,10 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       }).length;
     },
     collect: (state) => collectUnreadCycleEntries(state).entries,
+    rankOf: (state) => {
+      const { rankByStopKey } = collectUnreadCycleEntries(state);
+      return (entry) => rankByStopKey.get(cycleStopKey(entry)) ?? 0;
+    },
   }),
   makeGlobalCycleAction({
     id: 'cycle-failed-agents',
