@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.329.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.1...v2.329.2) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** dim a machine until it is connected ([#4542](https://github.com/intent-hq/cloudlands-fe/issues/4542)) ([8d3e177](https://github.com/intent-hq/cloudlands-fe/commit/8d3e177c7cbef906aab3c1abc7590fe48226f902))
+* **machine-rail:** restore a window straight onto the machine it showed ([#4545](https://github.com/intent-hq/cloudlands-fe/issues/4545)) ([17b7d9d](https://github.com/intent-hq/cloudlands-fe/commit/17b7d9d2115b9a44fd0eb1185e10302389ede63e))
+
 ## [2.329.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.0...v2.329.1) (2026-11-13)
 
 
