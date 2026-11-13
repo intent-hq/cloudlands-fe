@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { driverCommand, mergeCatalogs, serializeCatalog } from './i18n-json-merge.mjs';
+import { driverCommand, mergeCatalogs, mergeTexts, serializeCatalog } from './i18n-json-merge.mjs';
 
 const scriptPath = join(process.cwd(), 'scripts/i18n-json-merge.mjs');
 const CATALOG = 'messages/en.json';
@@ -37,26 +37,32 @@ function gitOk(dir: string, ...args: string[]) {
   return result.stdout;
 }
 
-function commitCatalog(dir: string, catalog: Record<string, string>, message: string) {
-  writeFileSync(join(dir, CATALOG), serializeCatalog(catalog));
+function commitCatalog(dir: string, catalog: Record<string, string> | null, message: string) {
+  if (catalog) {
+    mkdirSync(join(dir, 'messages'), { recursive: true });
+    writeFileSync(join(dir, CATALOG), serializeCatalog(catalog));
+  }
   gitOk(dir, 'add', '-A');
   gitOk(dir, 'commit', '-q', '-m', message);
 }
 
-/** A repo whose `main` and `other` branches each changed the base catalog. */
+/**
+ * A repo whose `main` and `other` branches each changed the base catalog (`null`: no
+ * catalog in the base commit). `driver` is false, true, or the driver script path.
+ */
 function forkedRepo(
-  base: Record<string, string>,
+  base: Record<string, string> | null,
   ours: Record<string, string>,
   theirs: Record<string, string>,
-  { driver }: { driver: boolean },
+  { driver }: { driver: boolean | string },
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'i18n-json-merge-'));
   tempDirs.push(dir);
   gitOk(dir, 'init', '-q', '-b', 'main');
-  mkdirSync(join(dir, 'messages'));
   writeFileSync(join(dir, '.gitattributes'), readFileSync('.gitattributes', 'utf8'));
   if (driver) {
-    gitOk(dir, 'config', 'merge.i18n-json.driver', driverCommand(scriptPath, process.execPath));
+    const script = typeof driver === 'string' ? driver : scriptPath;
+    gitOk(dir, 'config', 'merge.i18n-json.driver', driverCommand(script, process.execPath));
   }
   commitCatalog(dir, base, 'base');
   gitOk(dir, 'switch', '-q', '-c', 'other');
@@ -120,6 +126,40 @@ describe('git merge with the i18n-json driver', () => {
     expect(text).toContain('"a_label": "Theirs A"');
     expect(gitOk(dir, 'ls-files', '-u', CATALOG)).not.toBe('');
   });
+  it('stops with conflict markers when a key conflicts but the text merge is clean', () => {
+    const dir = forkedRepo(
+      BASE,
+      { ...BASE, dup_label: 'Ours' },
+      { $schema: BASE.$schema, dup_label: 'Theirs', a_label: 'A', b_label: 'B' },
+      { driver: true },
+    );
+
+    const merge = git(dir, 'merge', '--no-edit', 'other');
+
+    expect(merge.status).not.toBe(0);
+    expect(merge.stderr).toContain('dup_label');
+    expect(readFileSync(join(dir, CATALOG), 'utf8')).toMatch(/^<<<<<<< /m);
+  });
+
+  it('falls back to conflict markers when the checkout has no driver script', () => {
+    const dir = forkedRepo(BASE, OURS_APPEND, THEIRS_APPEND, {
+      driver: join(tmpdir(), 'missing-i18n-json-merge.mjs'),
+    });
+
+    const merge = git(dir, 'merge', '--no-edit', 'other');
+
+    expect(merge.status).not.toBe(0);
+    expect(readFileSync(join(dir, CATALOG), 'utf8')).toMatch(/^<<<<<<< /m);
+  });
+
+  it('merges a catalog that both branches created', () => {
+    const dir = forkedRepo(null, OURS_APPEND, THEIRS_APPEND, { driver: true });
+
+    const merge = git(dir, 'merge', '--no-edit', 'other');
+
+    expect(merge.status, merge.stdout + merge.stderr).toBe(0);
+    expect(Object.keys(readCatalog(dir))).toEqual(BOTH_APPENDS);
+  });
 });
 
 describe('i18n-json-merge resolve', () => {
@@ -154,6 +194,20 @@ describe('i18n-json-merge resolve', () => {
     expect(resolve.status).not.toBe(0);
     expect(resolve.stderr).toContain('a_label');
     expect(gitOk(dir, 'ls-files', '-u', CATALOG)).not.toBe('');
+  });
+  it('leaves a catalog without conflict markers alone so hand edits survive', () => {
+    const dir = forkedRepo(BASE, OURS_APPEND, THEIRS_APPEND, { driver: false });
+    expect(git(dir, 'merge', '--no-edit', 'other').status).not.toBe(0);
+    const handEdit = serializeCatalog({ ...OURS_APPEND, hand_label: 'Mine' });
+    writeFileSync(join(dir, CATALOG), handEdit);
+
+    const resolve = spawnSync(process.execPath, [scriptPath, 'resolve'], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+
+    expect(resolve.status).not.toBe(0);
+    expect(readFileSync(join(dir, CATALOG), 'utf8')).toBe(handEdit);
   });
 });
 
@@ -211,6 +265,14 @@ describe('mergeCatalogs', () => {
     const result = mergeCatalogs(base, { a: 'a', c: 'c', z: 'z' }, { a: 'a', b: 'b', c: 'c' });
 
     expect(result.entries.map(([key]) => key)).toEqual(['a', 'b', 'c', 'z']);
+  });
+});
+
+describe('mergeTexts', () => {
+  it('refuses a catalog with a duplicated key instead of dropping one value', () => {
+    const dup = '{\n  "k1": "first",\n  "k1": "second"\n}\n';
+
+    expect(mergeTexts('{}', '{}', dup)).toEqual({ error: 'theirs repeats key "k1"' });
   });
 });
 

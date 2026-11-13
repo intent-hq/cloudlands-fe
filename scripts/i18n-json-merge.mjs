@@ -21,10 +21,20 @@ import { fileURLToPath } from 'node:url';
 const DRIVER_NAME = 'i18n-json';
 const CATALOG_GLOB = 'messages/*.json';
 
+const TOP_LEVEL_KEY = /^ {2}("(?:[^"\\]|\\.)*")\s*:/gm;
+const CONFLICT_MARKER = /^<{7}(?: |$)/m;
+
 function parseCatalog(text, label) {
   const value = JSON.parse(text);
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${label} is not a JSON object`);
+  }
+  // JSON.parse keeps only the last of repeated keys; refuse rather than drop a value.
+  const seen = new Set();
+  for (const [, quoted] of text.matchAll(TOP_LEVEL_KEY)) {
+    const key = JSON.parse(quoted);
+    if (seen.has(key)) throw new Error(`${label} repeats key ${quoted}`);
+    seen.add(key);
   }
   return value;
 }
@@ -96,12 +106,15 @@ export function serializeCatalog(catalog) {
   return `{\n${body}\n}\n`;
 }
 
-/** Merge three catalog texts; returns the merged text, or `{ conflicts }` / `{ error }`. */
-function mergeTexts(baseText, oursText, theirsText) {
+/**
+ * Merge three catalog texts; returns `{ text }`, `{ conflicts }` or `{ error }`. An
+ * empty base (both sides added the file) counts as an empty catalog.
+ */
+export function mergeTexts(baseText, oursText, theirsText) {
   let catalogs;
   try {
     catalogs = [
-      parseCatalog(baseText, 'base'),
+      baseText.trim() === '' ? {} : parseCatalog(baseText, 'base'),
       parseCatalog(oursText, 'ours'),
       parseCatalog(theirsText, 'theirs'),
     ];
@@ -135,15 +148,18 @@ export function driverCommand(scriptPath = 'scripts/i18n-json-merge.mjs', node =
 }
 
 function runDriver([basePath, oursPath, theirsPath, displayPath = oursPath]) {
-  const outcome = mergeTexts(
-    readFileSync(basePath, 'utf8'),
-    readFileSync(oursPath, 'utf8'),
-    readFileSync(theirsPath, 'utf8'),
-  );
+  const oursText = readFileSync(oursPath, 'utf8');
+  const theirsText = readFileSync(theirsPath, 'utf8');
+  const outcome = mergeTexts(readFileSync(basePath, 'utf8'), oursText, theirsText);
   if (outcome.text === undefined) {
     console.error(`i18n-json-merge: ${describeFailure(displayPath, outcome)}`);
-    // Exits non-zero for conflicts; the merge stops even when the text merge is clean.
-    spawnSync('git', [...MERGE_FILE_ARGS, oursPath, basePath, theirsPath], { stdio: 'ignore' });
+    const textMerge = spawnSync('git', [...MERGE_FILE_ARGS, oursPath, basePath, theirsPath], {
+      stdio: 'ignore',
+    });
+    // A clean text merge would hide the key conflict (e.g. a duplicated key): mark the whole file.
+    if (textMerge.status === 0) {
+      writeFileSync(oursPath, `<<<<<<< ours\n${oursText}=======\n${theirsText}>>>>>>> theirs\n`);
+    }
     return CONFLICT_EXIT;
   }
   writeFileSync(oursPath, outcome.text);
@@ -177,10 +193,22 @@ function runResolve() {
 
   let failed = 0;
   for (const [path, stage] of stages) {
-    const outcome =
-      stage[2] === undefined || stage[3] === undefined
-        ? { error: 'one side deleted the file' }
-        : mergeTexts(stage[1] ?? '{}', stage[2], stage[3]);
+    let worktreeText = '';
+    try {
+      worktreeText = readFileSync(join(root, path), 'utf8');
+    } catch {
+      // Deleted in the worktree; reported below.
+    }
+    let outcome;
+    if (stage[2] === undefined || stage[3] === undefined) {
+      outcome = { error: 'one side deleted the file' };
+    } else if (!CONFLICT_MARKER.test(worktreeText)) {
+      outcome = {
+        error: 'no conflict markers left; keeping your edits (`git checkout -m` restores them)',
+      };
+    } else {
+      outcome = mergeTexts(stage[1] ?? '', stage[2], stage[3]);
+    }
     if (outcome.text === undefined) {
       console.error(`i18n-json-merge: ${describeFailure(path, outcome)}`);
       failed += 1;
