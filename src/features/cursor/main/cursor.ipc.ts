@@ -13,7 +13,9 @@ import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-cata
 export function setupCursorIPC() {
   ipcMain.handle(
     CURSOR_CHANNELS.GET_MODELS,
-    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
-      getProviderModelsEnvelope('cursor', params, event),
+    async (
+      event,
+      params?: { forceRefresh?: boolean; workspaceId?: string; providerRef?: string },
+    ) => getProviderModelsEnvelope('cursor', params, event),
   );
 }
