@@ -2613,6 +2613,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS denied speech recognition — allow Intent under System Settings › Privacy & Security › Speech Recognition",
   "hardwareConsole_voice_osUnavailable_error": "OS dictation is unavailable on this device — choose another provider in Settings › Voice dictation",
   "hardwareConsole_voice_transcribeFailed_error": "Voice transcription failed",
+  "hardwareConsole_voice_transcribeRetrying_warning": "Voice transcription failed — retrying ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "Transcribing…",
   "home_activity_content": "Conversation or note activity",
   "home_activity_created": "Workspace created",

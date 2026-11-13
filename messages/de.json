@@ -2613,6 +2613,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS hat die Spracherkennung verweigert — erlauben Sie Intent unter Systemeinstellungen › Datenschutz & Sicherheit › Spracherkennung",
   "hardwareConsole_voice_osUnavailable_error": "OS-Diktat ist auf diesem Gerät nicht verfügbar — wählen Sie in den Einstellungen › Sprachdiktat einen anderen Anbieter",
   "hardwareConsole_voice_transcribeFailed_error": "Sprachtranskription fehlgeschlagen",
+  "hardwareConsole_voice_transcribeRetrying_warning": "Sprachtranskription fehlgeschlagen — neuer Versuch ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "Wird transkribiert…",
   "home_activity_content": "Aktivität in Unterhaltungen oder Notizen",
   "home_activity_created": "Arbeitsbereich erstellt",

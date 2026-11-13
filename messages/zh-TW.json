@@ -2613,6 +2613,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS 拒絕了語音辨識 — 請在系統設定 › 隱私權與安全性 › 語音辨識中允許 Intent",
   "hardwareConsole_voice_osUnavailable_error": "此裝置不支援系統聽寫 — 請在設定 › 語音聽寫中選擇其他供應商",
   "hardwareConsole_voice_transcribeFailed_error": "語音轉錄失敗",
+  "hardwareConsole_voice_transcribeRetrying_warning": "語音轉錄失敗 — 正在重試 ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "轉錄中…",
   "home_activity_content": "對話或筆記活動",
   "home_activity_created": "工作區建立時間",

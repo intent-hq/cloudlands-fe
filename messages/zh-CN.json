@@ -2613,6 +2613,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS 拒绝了语音识别 — 请在系统设置 › 隐私与安全性 › 语音识别中允许 Intent",
   "hardwareConsole_voice_osUnavailable_error": "此设备不支持系统听写 — 请在设置 › 语音听写中选择其他提供商",
   "hardwareConsole_voice_transcribeFailed_error": "语音转写失败",
+  "hardwareConsole_voice_transcribeRetrying_warning": "语音转写失败 — 正在重试 ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "转写中…",
   "home_activity_content": "对话或笔记活动",
   "home_activity_created": "工作区创建时间",
