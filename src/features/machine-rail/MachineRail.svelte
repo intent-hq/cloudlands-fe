@@ -333,7 +333,7 @@
   function forgetHiddenPointer() {
     drag = null;
     settle = null;
-    coolNames();
+    namesWarm = false;
     const focused = document.activeElement;
     if (
       focused instanceof HTMLElement &&
@@ -359,26 +359,21 @@
     }
   }
 
-  // Once the pointer has rested on the rail for one delay, names show at
-  // once while it slides along, until it leaves the rail.
+  // Once a name has shown, the others show at once while the pointer slides
+  // along the rail, until it leaves the rail. Each tooltip has its own
+  // provider, so their own skip-delay never carries between buttons. The
+  // delay only drops once a name is open: changing it cancels a pending open.
   let namesWarm = $state(false);
-  let warmTimer: ReturnType<typeof setTimeout> | undefined;
   const tooltipDelay = $derived(namesWarm ? 0 : RAIL_TOOLTIP_DELAY_MS);
 
-  function warmNames() {
-    clearTimeout(warmTimer);
-    warmTimer = setTimeout(() => (namesWarm = true), RAIL_TOOLTIP_DELAY_MS);
-  }
-
-  function coolNames() {
-    clearTimeout(warmTimer);
-    namesWarm = false;
+  function nameOpened(open: boolean) {
+    if (open) namesWarm = true;
   }
 
   /** The pointer left the rail: the next visit is a deliberate one. */
   function leaveRail() {
     quietTooltips = null;
-    coolNames();
+    namesWarm = false;
   }
 
   function selectMachine(id: string) {
@@ -509,6 +504,7 @@
       tooltip={itemLabel(item)}
       tooltipSide="right"
       tooltipDelayDuration={tooltipDelay}
+      tooltipOnOpenChange={nameOpened}
       tooltipDisabled={tooltipQuiet(item)}
       aria-current={item.selected ? 'true' : undefined}
       aria-busy={item.pending || undefined}
@@ -564,7 +560,6 @@
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
     bind:this={railNav}
-    onpointerenter={warmNames}
     onpointerleave={leaveRail}
   >
     <div
@@ -604,6 +599,7 @@
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
             tooltipDelayDuration={tooltipDelay}
+            tooltipOnOpenChange={nameOpened}
             tooltipDisabled={quietTooltips === 'all'}
             onpointerenter={() => wakeTooltips(ADD_TOOLTIP_ID)}
             data-testid="machine-rail-add"

@@ -15,6 +15,7 @@
     sideOffset?: number;
     delayDuration?: number;
     disabled?: boolean;
+    onOpenChange?: (open: boolean) => void;
     portalTarget?: Element | string;
     class?: string;
     contentClass?: string;
@@ -33,6 +34,7 @@
     sideOffset = 4,
     delayDuration = 500,
     disabled = false,
+    onOpenChange,
     portalTarget,
     class: className = '',
     contentClass = '',
@@ -112,6 +114,7 @@
   {sideOffset}
   {delayDuration}
   {disabled}
+  {onOpenChange}
   {portalTarget}
   class={className}
   contentClass={cn(
