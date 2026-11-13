@@ -2606,6 +2606,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS denegó el reconocimiento de voz — permite Intent en Ajustes del Sistema › Privacidad y seguridad › Reconocimiento de voz",
   "hardwareConsole_voice_osUnavailable_error": "El dictado del SO no está disponible en este dispositivo — elige otro proveedor en Ajustes › Dictado por voz",
   "hardwareConsole_voice_transcribeFailed_error": "Error en la transcripción de voz",
+  "hardwareConsole_voice_transcribeRetrying_warning": "Error en la transcripción de voz — reintentando ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "Transcribiendo…",
   "home_activity_content": "Actividad en conversaciones o notas",
   "home_activity_created": "Creación del espacio de trabajo",

@@ -65,8 +65,10 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 const toastError = vi.fn();
+const toastWarning = vi.fn();
+const toastDismiss = vi.fn();
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: toastError, info: vi.fn() },
+  notify: { error: toastError, warning: toastWarning, dismiss: toastDismiss, info: vi.fn() },
 }));
 
 const transcribeWithOsMock = vi.fn();
@@ -98,6 +100,7 @@ import {
   gatherTranscriptionContext,
   handleFinishedRecording,
   mergeOsContextualStrings,
+  TRANSCRIBE_RETRY_DELAYS_MS,
   resolveTargetAgentId,
   runTranscriptionFlow,
 } from '../transcription-service';
@@ -524,9 +527,10 @@ describe('handleFinishedRecording', () => {
       focusComposer: vi.fn(),
       insertText: vi.fn().mockReturnValue(true),
     });
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(10_000);
     await flow;
 
+    expect(transcribeWithOsMock).toHaveBeenCalledTimes(1 + TRANSCRIBE_RETRY_DELAYS_MS.length);
     expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
     expect(dispatched.some((action) => action.type === actionHudHidden.type)).toBe(true);
     expect(toastError).toHaveBeenCalledWith(
@@ -682,11 +686,14 @@ describe('handleFinishedRecording', () => {
         data: 'elevenlabs returned 401 Unauthorized: invalid key',
       }),
     );
-    await handleFinishedRecording(RECORDING, {
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
       transcribe,
       insertText: vi.fn(),
       focusComposer: vi.fn(),
     });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flow;
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_transcribeFailed_error(),
       expect.objectContaining({ description: 'elevenlabs returned 401 Unauthorized: invalid key' }),
@@ -800,6 +807,143 @@ describe('handleFinishedRecording', () => {
       m.hardwareConsole_voice_insertFailedCopied_error(),
       expect.objectContaining({ description: TRANSCRIBE_RESULT.text }),
     );
+  });
+});
+
+describe('handleFinishedRecording transcription retries', () => {
+  const transientError = () =>
+    Object.assign(new Error('Internal error'), { data: 'elevenlabs request timed out' });
+  const retryToast = (attempt: number) =>
+    m.hardwareConsole_voice_transcribeRetrying_warning({
+      attempt,
+      max: TRANSCRIBE_RETRY_DELAYS_MS.length,
+    });
+
+  it('retries a transient failure three times, toasting each retry, then shows the failure toast', async () => {
+    const transcribe = vi.fn().mockRejectedValue(transientError());
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flow;
+
+    expect(TRANSCRIBE_RETRY_DELAYS_MS).toHaveLength(3);
+    expect(transcribe).toHaveBeenCalledTimes(4);
+    expect(toastWarning.mock.calls.map(([message]) => message)).toEqual([
+      retryToast(1),
+      retryToast(2),
+      retryToast(3),
+    ]);
+    expect(toastWarning).toHaveBeenCalledWith(
+      retryToast(1),
+      expect.objectContaining({ description: 'elevenlabs request timed out' }),
+    );
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_transcribeFailed_error(),
+      expect.objectContaining({ description: 'elevenlabs request timed out' }),
+    );
+    // Every toast shares one id, so each replaces the previous one.
+    const ids = [...toastWarning.mock.calls, ...toastError.mock.calls].map(([, opts]) => opts.id);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it('keeps the Transcribing… state until the retries finish', async () => {
+    const transcribe = vi.fn().mockRejectedValue(transientError());
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_RETRY_DELAYS_MS[0]);
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flow;
+    expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
+  });
+
+  it('inserts the transcript and clears the retry toast when a retry succeeds', async () => {
+    const transcribe = vi
+      .fn()
+      .mockRejectedValueOnce(transientError())
+      .mockResolvedValueOnce(TRANSCRIBE_RESULT);
+    const insertText = vi.fn().mockReturnValue(true);
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText,
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flow;
+
+    expect(transcribe).toHaveBeenCalledTimes(2);
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    expect(toastDismiss).toHaveBeenCalledWith(toastWarning.mock.calls[0][1].id);
+    expect(toastError).not.toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+  });
+
+  it('does not retry a missing API key (retrying cannot fix configuration)', async () => {
+    const transcribe = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Internal error'), {
+        data: { code: 'voice-no-api-key', detail: 'voice: no API key found for elevenlabs' },
+      }),
+    );
+    await handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(toastWarning).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(
+      m.hardwareConsole_voice_noKey_error(),
+      expect.anything(),
+    );
+  });
+
+  it('does not retry OS engine authorization or availability failures', async () => {
+    const { OsTranscriptionError } = await import('$features/voice/os-transcription-service');
+    for (const code of [
+      'authorization-denied',
+      'helper-missing',
+      'unsupported-platform',
+    ] as const) {
+      const transcribe = vi.fn().mockRejectedValue(new OsTranscriptionError(code, code));
+      await handleFinishedRecording(RECORDING, {
+        transcribe,
+        insertText: vi.fn(),
+        focusComposer: vi.fn(),
+      });
+      expect(transcribe).toHaveBeenCalledTimes(1);
+    }
+    expect(toastWarning).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying when the user cancels during the retry wait', async () => {
+    const transcribe = vi.fn().mockRejectedValue(transientError());
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    expect(cancelActiveTranscription()).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flow;
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastDismiss).toHaveBeenCalled();
   });
 });
 

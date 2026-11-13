@@ -2606,6 +2606,7 @@
   "hardwareConsole_voice_osAuthDenied_error": "macOS が音声認識を拒否しました — システム設定 › プライバシーとセキュリティ › 音声認識で Intent を許可してください",
   "hardwareConsole_voice_osUnavailable_error": "OS音声入力はこのデバイスでは利用できません — 設定 › 音声入力で別のプロバイダを選択してください",
   "hardwareConsole_voice_transcribeFailed_error": "音声文字起こしに失敗しました",
+  "hardwareConsole_voice_transcribeRetrying_warning": "音声文字起こしに失敗しました — 再試行中 ({attempt}/{max})…",
   "hardwareConsole_voice_transcribing_label": "文字起こし中…",
   "home_activity_content": "会話またはノートのアクティビティ",
   "home_activity_created": "ワークスペースの作成",
