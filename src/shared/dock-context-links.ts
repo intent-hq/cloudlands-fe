@@ -89,7 +89,7 @@ function browserApp(appId: string | null): boolean {
     )
   );
 }
-/** Local preview addresses are ephemeral process/tunnel evidence, never saved port ownership. */
+/** Implicit defaults never persist preview-port ownership; explicit tab links are separate. */
 export function defaultDockContextLinkKey(value: DockForegroundObservation): string | null {
   if (value.self) return null;
   const context = contextAsShortcut(value);
@@ -99,6 +99,22 @@ export function defaultDockContextLinkKey(value: DockForegroundObservation): str
   }
   return browserApp(value.appId) ? null : dockLinkKey(context, 'app');
 }
+/** Canonical document address selected by an explicit link gesture. */
+function exactDocumentLinkKey(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) &&
+      !!url.hostname &&
+      !url.username &&
+      !url.password
+      ? `url:${url.href}`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Explicit tab means this verified URL, never the legacy project/directory default. */
 export function dockContextLinkKey(
   value: Pick<DockForegroundObservation, 'self' | 'url' | 'appId'>,
@@ -106,13 +122,7 @@ export function dockContextLinkKey(
 ): string | null {
   if (value.self) return null;
   const key =
-    scope === 'app'
-      ? value.appId
-        ? `app:${value.appId}`
-        : null
-      : value.url
-        ? dockLinkKey({ id: 'scoped-link', backendId: '', action: 'focus', url: value.url }, 'url')
-        : null;
+    scope === 'app' ? (value.appId ? `app:${value.appId}` : null) : exactDocumentLinkKey(value.url);
   return key && safeSavedKey(key) ? key : null;
 }
 
@@ -130,8 +140,10 @@ function safeSavedKey(key: string): boolean {
       action: 'focus',
       url: raw,
     };
-    if (!dockLinkKey(context, 'url')) return false;
-    return kind === 'url' || (!url.search && !url.hash && url.pathname.endsWith('/'));
+    // An explicit tab link names an exact address, including a local preview or
+    // custom port. It never asserts ownership of the service running there.
+    if (kind === 'url') return exactDocumentLinkKey(raw) !== null;
+    return !!dockLinkKey(context, 'url') && !url.search && !url.hash && url.pathname.endsWith('/');
   } catch {
     return false;
   }
@@ -170,14 +182,7 @@ export function dockContextLinkKeys(
   preferences: DockContextLinkPreferences,
 ): string[] {
   if (value.self) return [];
-  const context: DockShortcutContext = {
-    id: 'context-link',
-    backendId: '',
-    action: 'focus',
-    ...(value.appId ? { appId: value.appId } : {}),
-    ...(value.url ? { url: value.url } : {}),
-  };
-  const exact = dockLinkKey(context, 'url');
+  const exact = dockContextLinkKey(value, 'tab');
   const keys = Object.keys(preferences.links).filter((key) => {
     if (!safeSavedKey(key)) return false;
     if (value.url) {
