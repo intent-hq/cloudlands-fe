@@ -33,7 +33,12 @@ export interface SshLoginPrefill {
   keyPath: string;
 }
 
-export type SshSetupStep = 'connecting' | 'installing' | 'starting' | 'pairing' | 'adding';
+/**
+ * `found` replaces `installing` when the computer already runs intentd: the
+ * runner then never installs, restarts or reconfigures it.
+ */
+export type SshSetupStep =
+  'connecting' | 'installing' | 'found' | 'starting' | 'pairing' | 'adding';
 
 export type SshSetupErrorCode =
   /** No route, DNS failure, refused or timed-out TCP connection. */
@@ -56,6 +61,18 @@ export type SshSetupErrorCode =
   | 'no-link'
   /** The captured link failed the pair-link or node-invite check. */
   | 'link-rejected'
+  /** Installed intentd is stopped and has no `start` subcommand (a direct, non-sitter build). */
+  | 'no-start'
+  /** Installed intentd did not come up after the start. */
+  | 'did-not-start'
+  /** An intentd process runs, but not on a data dir this setup can find. */
+  | 'running-elsewhere'
+  /** Installed intentd cannot pair: no `--tunnel` / `--node`, or no node invites. */
+  | 'too-old'
+  /** Node card on an orchestrator-mode backend (it runs no agents itself). */
+  | 'orchestrator'
+  /** `intentd pair` failed for another reason. */
+  | 'pair-failed'
   | 'failed';
 
 /** The pairing link main captured and holds; the renderer adds it. */
@@ -82,6 +99,10 @@ export interface SshSetupResult {
    * out; the success screen shows `sudo loginctl enable-linger <user>`.
    */
   lingerUser: string | null;
+  /** intentd was already installed: nothing was installed or restarted. */
+  existing: boolean;
+  /** Pairing turned on remote connections or the Tailcat tunnel (existing installs). */
+  remoteTurnedOn: boolean;
 }
 
 export type SshSetupEvent =

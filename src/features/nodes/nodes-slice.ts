@@ -10,7 +10,11 @@ const initialState: NodesState = {
 /** Open the paste field; the wizard passes `'wizard'` so the inline row stays hidden. */
 export const pasteFieldOpened = createAction<[surface?: PasteSurface]>('nodes/pasteFieldOpened');
 /** Test and add the link typed in the field (stashed with `stashPastedLink`, never in the action). */
-export const pasteLinkSubmitted = createAction('nodes/pasteLinkSubmitted');
+/**
+ * `consented`: the link comes from the Set up a new machine Install flows,
+ * so a node is made available without the prompt.
+ */
+export const pasteLinkSubmitted = createAction<[consented?: boolean]>('nodes/pasteLinkSubmitted');
 /** Test the last submitted link again (kept in the saga, never in state). */
 export const pasteLinkRetried = createAction('nodes/pasteLinkRetried');
 export const pasteTestingStarted = createAction<[masked: string]>('nodes/pasteTestingStarted');
