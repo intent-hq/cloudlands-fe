@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.331.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.330.0...v2.331.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **voice:** retry failed transcriptions with a toast per retry ([#4550](https://github.com/intent-hq/cloudlands-fe/issues/4550)) ([ddec939](https://github.com/intent-hq/cloudlands-fe/commit/ddec939224b53a1417f255015d792b9525f7a498))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.201 ([#4559](https://github.com/intent-hq/cloudlands-fe/issues/4559)) ([1308ef2](https://github.com/intent-hq/cloudlands-fe/commit/1308ef219b619e16d1f9b3853347dd17a276d4c0))
+* **hardware-console:** keep Home open when a knob press repeats ([#4551](https://github.com/intent-hq/cloudlands-fe/issues/4551)) ([fbe507d](https://github.com/intent-hq/cloudlands-fe/commit/fbe507d0569f571d3d158d19615fad486f6a0d7b))
+* **machine-rail:** give keyboard focus to the machine on screen when the window is activated ([#4546](https://github.com/intent-hq/cloudlands-fe/issues/4546)) ([90f441e](https://github.com/intent-hq/cloudlands-fe/commit/90f441e699ff1541a0ccf2d1025d9ca4d10b6fdd))
+* **machines:** remote machine rows show their providers while disconnected ([#4555](https://github.com/intent-hq/cloudlands-fe/issues/4555)) ([2c67be4](https://github.com/intent-hq/cloudlands-fe/commit/2c67be41e764a5a6e389aa54b9ed28ba173c1898))
+* **model-picker:** say when an agent's cloud sandbox isn't running ([#4553](https://github.com/intent-hq/cloudlands-fe/issues/4553)) ([c70b97d](https://github.com/intent-hq/cloudlands-fe/commit/c70b97d97dd5864d8b918590d6a6b8cc101bbf3b))
+
 ## [2.330.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.2...v2.330.0) (2026-11-13)
 
 
