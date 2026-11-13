@@ -111,6 +111,8 @@ interface Transition {
 const transitions = new WeakMap<BrowserWindowType, Transition>();
 /** Machine views whose renderer has finished starting up. */
 const readyViews = new WeakSet<Electron.WebContents>();
+/** Callers waiting for a renderer to report ready. */
+const readyWaiters = new WeakMap<Electron.WebContents, Array<() => void>>();
 
 function transitionOf(window: BrowserWindowType): Transition {
   let transition = transitions.get(window);
@@ -360,8 +362,38 @@ function markReady(window: BrowserWindowType, sender: Electron.WebContents): voi
   const entry = [...viewsOf(window)].find(([, view]) => view.webContents === sender);
   if (!entry) return;
   readyViews.add(sender);
+  for (const resolve of readyWaiters.get(sender) ?? []) resolve();
+  readyWaiters.delete(sender);
   if (isMachineRailEnabled() && transitions.get(window)?.pendingId === entry[0]) {
     showMachine(window, entry[0]);
+  }
+}
+
+/** Settles once `contents` reports ready, or after the longest a start may take. */
+function whenReady(contents: Electron.WebContents): Promise<void> {
+  if (contents.isDestroyed() || readyViews.has(contents)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, READY_TIMEOUT_MS);
+    const waiters = readyWaiters.get(contents) ?? [];
+    waiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+    readyWaiters.set(contents, waiters);
+  });
+}
+
+/**
+ * Start each connected machine's renderer in the background, one at a time
+ * and hidden, so picking it later shows it at once. A machine that is offline
+ * now starts when picked, as before.
+ */
+async function preloadMachines(window: BrowserWindowType, ids: string[]): Promise<void> {
+  for (const id of ids) {
+    if (window.isDestroyed() || !isMachineRailEnabled()) return;
+    if (!readWindowRail(window).machineIds.includes(id)) continue;
+    if (!(deps?.isConnected(id) ?? false)) continue;
+    await whenReady(ensureView(window, id).webContents);
   }
 }
 
@@ -515,7 +547,8 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   clearTransition(window);
   writeWindowRail(window, rail);
   broadcastState(window);
-  // Every machine reconnects now; only the one that was shown gets a renderer.
+  // Every machine reconnects now. The one that was shown starts first; the
+  // others start in the background once it is ready.
   const selected = rail.selectedId;
   await Promise.all(
     rail.machineIds.slice(1).map(async (id) => {
@@ -526,6 +559,13 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
         broadcastState(window);
       }
     }),
+  );
+  if (window.isDestroyed()) return;
+  const shown = viewsOf(window).get(selected);
+  if (shown) await whenReady(shown.webContents);
+  await preloadMachines(
+    window,
+    rail.machineIds.slice(1).filter((id) => id !== selected),
   );
 }
 

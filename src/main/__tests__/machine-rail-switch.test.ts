@@ -373,6 +373,48 @@ describe('machine rail switching', () => {
     expect(viewOf('c').visible).toBe(true);
   });
 
+  it('loads the other connected machines in the background once the shown one is ready, one at a time', async () => {
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    // Nothing else loads while the machine on screen is still starting.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
+
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('b').visible).toBe(false);
+    await invoke(RAIL.READY, viewOf('b').webContents);
+
+    // A machine loaded in the background shows at once when picked.
+    expect(await invoke(RAIL.SELECT, home(), { id: 'b' })).toMatchObject({
+      selectedId: 'b',
+      pendingId: '',
+    });
+  });
+
+  it('starts loading at once when the window shows its own machine, waiting for each before the next', async () => {
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(viewOf('b').visible).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('c').visible).toBe(false);
+  });
+
+  it('leaves a machine that is offline at startup to load when picked', async () => {
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
+  });
+
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
     await invoke(RAIL.ADD, home(), { id: 'b' });
     await invoke(RAIL.READY, viewOf('b').webContents);
