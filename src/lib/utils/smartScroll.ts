@@ -17,7 +17,10 @@ export interface FollowBottomOptions {
   enabled?: boolean;
   /** Whether to follow (auto-scroll) - reactive */
   follow: boolean;
-  /** Threshold in pixels from bottom to consider "at bottom" (default: 100) */
+  /**
+   * Distance in pixels from bottom reported as `isAtBottom` (default: 100).
+   * User input re-locks follow only at the true bottom, never inside this band.
+   */
   threshold?: number;
   /** Callback when follow state changes due to user interaction */
   onFollowChange?: (follow: boolean) => void;
@@ -85,6 +88,9 @@ const inertFollowBottomMutation: FollowBottomMutation = {
 const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
 const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
 const FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS = 2000;
+// Absorbs fractional scrollTop under zoom; anything farther is a reader's chosen position.
+const RESUME_FOLLOW_TOLERANCE_PX = 1;
+const DOWNWARD_INTENT_WINDOW_MS = 1000;
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
@@ -105,7 +111,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let pointerMovedTowardBottom = false;
   let userStateFrame: number | null = null;
   let userStateWheel: WheelEvent | undefined;
-  let pendingWheel: { event: WheelEvent; expiresAt: number } | null = null;
+  // A downward user gesture (wheel, keys, touch) whose scroll may still land on the bottom.
+  let pendingDownward: { wheel?: WheelEvent; expiresAt: number } | null = null;
+  let touchMovedDown = false;
   let lastReportedState: FollowBottomState | null = null;
 
   let mutationObserver: MutationObserver | null = null;
@@ -216,8 +224,20 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     return { maximum: geometry.maximum, scrollTop: geometry.maximum };
   }
 
-  function checkIfAtBottom(geometry = readScrollGeometry()): boolean {
-    return geometry.maximum - geometry.scrollTop <= threshold;
+  function hasReachedBottom(geometry = readScrollGeometry()): boolean {
+    return geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX;
+  }
+
+  function startDownwardIntent(wheel?: WheelEvent) {
+    pendingDownward = { wheel, expiresAt: performance.now() + DOWNWARD_INTENT_WINDOW_MS };
+  }
+
+  function hasDownwardIntent(wheel?: WheelEvent): boolean {
+    if (!pendingDownward) return false;
+    if (wheel && pendingDownward.wheel !== wheel) return false;
+    return (
+      !pendingDownward.wheel?.defaultPrevented && performance.now() < pendingDownward.expiresAt
+    );
   }
 
   function reportState(geometry = readScrollGeometry()) {
@@ -246,20 +266,14 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       const wheel = userStateWheel;
       userStateWheel = undefined;
       if (destroyed || !enabled) return;
-      if (
-        wheel &&
-        (pendingWheel?.event !== wheel ||
-          wheel.defaultPrevented ||
-          performance.now() >= pendingWheel.expiresAt)
-      )
-        return;
-      if (checkIfAtBottom()) follower.followAndScroll();
+      if (wheel && !hasDownwardIntent(wheel)) return;
+      if (hasReachedBottom()) follower.followAndScroll();
       else reportState();
     });
   }
 
   function setFollowing(value: boolean, notify = true) {
-    pendingWheel = null;
+    pendingDownward = null;
     if (!enabled) {
       isFollowing = value;
       return;
@@ -478,30 +492,24 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // gestures (for example, a descendant consuming the wheel without moving)
       // so a later unrelated scroll cannot reuse this intent. Repeated wheel
       // events refresh the window for an ongoing gesture.
-      pendingWheel = { event: e, expiresAt: performance.now() + 1000 };
+      startDownwardIntent(e);
       scheduleUserStateCheck(e);
     }
   }
 
   function handleScrollEnd(event: Event) {
-    const wheel = pendingWheel;
-    pendingWheel = null;
-    // The native wheel scroll can land after its animation-frame check.
-    // Consume this gesture at completion, even when it stopped above the bottom.
-    if (
-      event.target === container &&
-      wheel &&
-      !wheel.event.defaultPrevented &&
-      performance.now() < wheel.expiresAt &&
-      checkIfAtBottom()
-    )
-      follower.followAndScroll();
+    const downward = hasDownwardIntent();
+    pendingDownward = null;
+    // The native scroll can land after its animation-frame check. Consume
+    // this gesture at completion, even when it stopped above the bottom.
+    if (event.target === container && downward && hasReachedBottom()) follower.followAndScroll();
   }
 
   // Handle touch events - user is scrolling on touch device
   let touchStartY = 0;
   function handleTouchStart(e: TouchEvent) {
-    pendingWheel = null;
+    pendingDownward = null;
+    touchMovedDown = false;
     touchStartY = e.touches[0]?.clientY ?? 0;
   }
 
@@ -509,24 +517,26 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const touchY = e.touches[0]?.clientY ?? 0;
     const deltaY = touchStartY - touchY; // positive = scrolling down, negative = scrolling up
 
+    touchMovedDown = deltaY > 0;
     if (deltaY < 0) {
       setFollowing(false);
     }
-    // For scrolling down, we'll check in touchend
   }
 
   function handleTouchEnd() {
-    // Check if at bottom after touch scroll ends
+    // Momentum can carry a downward swipe to the bottom after the finger lifts.
+    if (touchMovedDown) startDownwardIntent();
     scheduleUserStateCheck();
   }
 
   // Handle keyboard events for scroll keys
   function handleKeyDown(e: KeyboardEvent) {
-    pendingWheel = null;
+    pendingDownward = null;
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
-      // Check if at bottom after keyboard scroll
+      // Smooth keyboard scrolling lands over several frames.
+      startDownwardIntent();
       scheduleUserStateCheck();
     }
   }
@@ -550,6 +560,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // the echo of that pin, and re-reading would double the layout work.
       if (isFollowing && settleFrame !== null) return;
       let geometry = readScrollGeometry();
+      // Re-lock as the downward gesture lands, before streamed growth can
+      // move the bottom away ahead of the gesture's frame check.
+      if (!isFollowing && hasDownwardIntent() && hasReachedBottom(geometry)) {
+        follower.followAndScroll();
+        return;
+      }
       if (isFollowing) geometry = setExactBottom(geometry);
       reportState(geometry);
       return;
@@ -572,13 +588,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       setFollowing(false);
     } else if (distanceDelta < 0) {
       pointerMovedTowardBottom = true;
-      if (checkIfAtBottom()) follower.followAndScroll();
+      if (hasReachedBottom()) follower.followAndScroll();
       else reportState();
     } else reportState();
   }
 
   function handlePointerDown(e: PointerEvent) {
-    pendingWheel = null;
+    pendingDownward = null;
     pointerScrolling = isVerticalScrollbarPointer(e);
     pointerMaximum = maximumScrollTop();
     pointerDistanceFromBottom = Math.max(0, pointerMaximum - container.scrollTop);
@@ -588,7 +604,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function handlePointerUp() {
     if (!pointerScrolling) return;
     pointerScrolling = false;
-    if (pointerMovedTowardBottom && checkIfAtBottom()) follower.followAndScroll();
+    if (pointerMovedTowardBottom && hasReachedBottom()) follower.followAndScroll();
     else reportState();
   }
 
@@ -682,7 +698,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function detachLifecycle() {
-    pendingWheel = null;
+    pendingDownward = null;
+    touchMovedDown = false;
     userStateWheel = undefined;
     activeLeases.clear();
     mutationElements.clear();

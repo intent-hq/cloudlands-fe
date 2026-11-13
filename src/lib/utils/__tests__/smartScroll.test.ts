@@ -534,6 +534,12 @@ describe('followBottom policy', () => {
     );
   }
 
+  function touchEvent(type: string, clientY: number) {
+    const event = new TouchEvent(type);
+    Object.defineProperty(event, 'touches', { value: [{ clientY }] });
+    return event;
+  }
+
   function runSettleTail() {
     for (let frame = 0; frame < 10 && animationFrames.length > 0; frame += 1) runFrame();
   }
@@ -1558,7 +1564,7 @@ describe('followBottom policy', () => {
     expect(isFollowingBottom(container)).toBe(false);
 
     // Native scrolling can land after the wheel event's animation frame.
-    scrollTop = 590;
+    scrollTop = 600;
     container.dispatchEvent(new Event('scroll'));
     container.dispatchEvent(new Event('scrollend'));
     expect(isFollowingBottom(container)).toBe(true);
@@ -1567,6 +1573,74 @@ describe('followBottom policy', () => {
     fireResize();
     runSettleTail();
     expect(scrollTop).toBe(680);
+    action.destroy();
+  });
+
+  it.each(['wheel', 'keyboard', 'touch', 'scrollbar'])(
+    'leaves a reader who %s-scrolls near, but not to, the bottom where they stopped',
+    (input) => {
+      const followChanges: boolean[] = [];
+      const action = followBottom(container, {
+        follow: false,
+        onFollowChange: (follow) => followChanges.push(follow),
+      });
+      scrollTop = 300;
+      if (input === 'scrollbar')
+        container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+      if (input === 'wheel') container.dispatchEvent(new WheelEvent('wheel', { deltaY: 260 }));
+      if (input === 'keyboard')
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown' }));
+      if (input === 'touch') container.dispatchEvent(touchEvent('touchstart', 400));
+
+      // The gesture stops inside the "near bottom" reporting threshold.
+      scrollTop = 560;
+      container.dispatchEvent(new Event('scroll'));
+      if (input === 'touch') container.dispatchEvent(new TouchEvent('touchend'));
+      if (input === 'scrollbar') window.dispatchEvent(new MouseEvent('pointerup'));
+      runFrame();
+      container.dispatchEvent(new Event('scrollend'));
+      scrollHeight += 80;
+      fireResize();
+      runSettleTail();
+
+      expect(scrollTop).toBe(560);
+      expect(isFollowingBottom(container)).toBe(false);
+      expect(followChanges).toEqual([]);
+      action.destroy();
+    },
+  );
+
+  it('resumes following when a downward wheel reaches the bottom before content grows', () => {
+    const action = followBottom(container, { follow: false });
+    scrollTop = 300;
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 400 }));
+    scrollTop = 600;
+    container.dispatchEvent(new Event('scroll'));
+    // Streaming output grows the transcript before the gesture's frame check.
+    scrollHeight += 40;
+    runFrame();
+
+    expect(isFollowingBottom(container)).toBe(true);
+    fireResize();
+    runSettleTail();
+    expect(scrollTop).toBe(640);
+    action.destroy();
+  });
+
+  it('resumes following when touch momentum reaches the bottom after the finger lifts', () => {
+    const action = followBottom(container, { follow: false });
+    scrollTop = 300;
+    container.dispatchEvent(touchEvent('touchstart', 400));
+    container.dispatchEvent(touchEvent('touchmove', 200));
+    container.dispatchEvent(new TouchEvent('touchend'));
+    scrollTop = 450;
+    container.dispatchEvent(new Event('scroll'));
+    runFrame();
+    expect(isFollowingBottom(container)).toBe(false);
+
+    scrollTop = 600;
+    container.dispatchEvent(new Event('scroll'));
+    expect(isFollowingBottom(container)).toBe(true);
     action.destroy();
   });
 
