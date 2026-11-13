@@ -8744,7 +8744,6 @@
   "cloudMachines_northflank_startFailure_unknown_cause": "Intent couldn't get a service from Northflank. Details say why.",
   "nodes_section_title": "Nodes",
   "nodes_section_description": "Nodes only run agents for your backends.",
-  "nodes_notUsed_label": "Not used by {backend}",
   "nodes_paste_field_label": "intent:// link",
   "nodes_paste_hint": "Run intentd pair on the computer or node, then paste the link it prints.",
   "nodes_paste_add_label": "Add",

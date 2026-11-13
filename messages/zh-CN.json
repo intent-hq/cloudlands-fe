@@ -8744,7 +8744,6 @@
   "cloudMachines_northflank_startFailure_unknown_cause": "Intent 无法从 Northflank 获取服务。详情中说明了原因。",
   "nodes_section_title": "节点",
   "nodes_section_description": "节点只为你的后端运行代理。",
-  "nodes_notUsed_label": "{backend} 未使用",
   "nodes_paste_field_label": "intent:// 链接",
   "nodes_paste_hint": "在电脑或节点上运行 intentd pair，然后粘贴它输出的链接。",
   "nodes_paste_add_label": "添加",

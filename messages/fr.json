@@ -8744,7 +8744,6 @@
   "cloudMachines_northflank_startFailure_unknown_cause": "Intent n'a pas pu obtenir de service de Northflank. Les détails indiquent pourquoi.",
   "nodes_section_title": "Nœuds",
   "nodes_section_description": "Les nœuds exécutent uniquement des agents pour vos backends.",
-  "nodes_notUsed_label": "Non utilisé par {backend}",
   "nodes_paste_field_label": "Lien intent://",
   "nodes_paste_hint": "Exécutez intentd pair sur l’ordinateur ou le nœud, puis collez le lien affiché.",
   "nodes_paste_add_label": "Ajouter",

@@ -48,7 +48,7 @@ describe('Machines and Nodes', () => {
     const gpu = nodes.querySelector('[data-device-row="gpu-rig"]') as HTMLElement;
     const pi = nodes.querySelector('[data-device-row="pi-node"]') as HTMLElement;
     expect(within(gpu).queryByText('Runs agents for Build box')).toBeNull();
-    expect(within(pi).getByText('Not used by Build box')).toBeTruthy();
+    expect(within(pi).queryByText('Not used by Build box')).toBeNull();
     const machines = view.container.querySelector('[aria-label="Machines"]') as HTMLElement;
     expect(within(machines).getByText('Studio Mac')).toBeTruthy();
     expect(within(machines).queryByText('GPU rig')).toBeNull();

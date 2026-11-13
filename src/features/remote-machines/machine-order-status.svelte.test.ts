@@ -60,12 +60,12 @@ describe('machine status pills in the ordered list', () => {
 });
 
 describe('machine status pills in the Nodes list', () => {
-  it('shows "Not used by" but no "Runs agents for" pill', () => {
+  it('shows neither "Not used by" nor "Runs agents for" pills', () => {
     store.init();
     restore = setupNodesFixture('machines-and-nodes');
     const view = render(DevicesSettings);
     const nodes = view.container.querySelector('[data-nodes-section]') as HTMLElement;
     expect(within(nodes).queryByText('Runs agents for Build box')).toBeNull();
-    expect(within(nodes).getByText('Not used by Build box')).toBeTruthy();
+    expect(within(nodes).queryByText('Not used by Build box')).toBeNull();
   });
 });

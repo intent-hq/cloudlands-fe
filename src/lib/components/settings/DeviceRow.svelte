@@ -679,8 +679,6 @@
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
-        {:else if isNode && $remoteSupported$}
-          <NodeStatusBadge label={m.nodes_notUsed_label({ backend: $backendLabel$ })} />
         {/if}
         <!-- The version shows only when it is behind this app's pin. -->
         {#if openStatus === 'connected' && device.intentdVersion && daemonBehindTooltip}

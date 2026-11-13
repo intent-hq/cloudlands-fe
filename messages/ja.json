@@ -8744,7 +8744,6 @@
   "cloudMachines_northflank_startFailure_unknown_cause": "Intent は Northflank からサービスを取得できませんでした。理由は詳細を参照してください。",
   "nodes_section_title": "ノード",
   "nodes_section_description": "ノードはバックエンドのためにエージェントを実行するだけです。",
-  "nodes_notUsed_label": "{backend} では未使用",
   "nodes_paste_field_label": "intent:// リンク",
   "nodes_paste_hint": "コンピュータまたはノードで intentd pair を実行し、表示されたリンクを貼り付けてください。",
   "nodes_paste_add_label": "追加",
