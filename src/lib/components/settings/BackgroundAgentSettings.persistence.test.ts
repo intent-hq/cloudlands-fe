@@ -167,8 +167,8 @@ it.each([0, 1].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, cho
     );
     const model = choice === 'legacy' ? 'legacy-model' : 'shared-model';
     const overrides = { ...emptyOverrides, [['commit', 'pr'][row]]: model };
-    // The first edit retires the shared default effort into each action.
-    const efforts = { commit: 'high', pr: 'low', review: 'low' };
+    // Commit's own effort still falls back to the shared one, so both stay.
+    const efforts = { commit: 'high' };
     await waitFor(() => {
       expect(writes).toHaveLength(1);
       expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
@@ -177,7 +177,7 @@ it.each([0, 1].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, cho
       { path: 'model.defaultProvider', value: 'claude-code' },
       { path: 'quickActions.defaultModel', value: '' },
       { path: 'quickActions.typeOverrides', value: overrides },
-      { path: 'quickActions.defaultReasoningEffort', value: '' },
+      { path: 'quickActions.defaultReasoningEffort', value: 'low' },
       { path: 'quickActions.typeReasoningEffortOverrides', value: efforts },
       {
         path: 'quickActions.providerSettings',
@@ -209,7 +209,7 @@ it.each([0, 1].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, cho
       providerId: 'claude-code',
       defaultModel: '',
       typeOverrides: overrides,
-      defaultReasoningEffort: '',
+      defaultReasoningEffort: 'low',
       typeReasoningEffortOverrides: efforts,
     });
   },

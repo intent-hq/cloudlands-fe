@@ -334,7 +334,8 @@ describe('editQuickAction', () => {
     initialState,
     hydrateSettings({
       defaultModel: 'shared',
-      typeOverrides: { commit: '', pr: 'pr-pinned', review: '', fast: '' },
+      // The daemon trims each rung, so a blank override inherits.
+      typeOverrides: { commit: ' ', pr: 'pr-pinned', review: '', fast: '' },
       defaultReasoningEffort: 'low',
       typeReasoningEffortOverrides: { pr: 'high' },
     }),
@@ -345,13 +346,83 @@ describe('editQuickAction', () => {
       legacy,
       editQuickAction({ type: 'pr', model: 'pr-new' }),
     );
+    // The walkthrough has no settings row; it keeps the shared default too.
+    // PR's own effort still falls back to the shared one, so that stays.
     expect(state).toMatchObject({
       defaultModel: '',
-      defaultReasoningEffort: '',
-      typeOverrides: { commit: 'shared', pr: 'pr-new', review: 'shared', fast: '' },
-      typeReasoningEffortOverrides: { commit: 'low', pr: 'high', review: 'low' },
+      defaultReasoningEffort: 'low',
+      typeOverrides: {
+        commit: 'shared',
+        pr: 'pr-new',
+        review: 'shared',
+        walkthrough: 'shared',
+        fast: '',
+      },
+      typeReasoningEffortOverrides: { pr: 'high' },
       persistencePending: true,
     });
+  });
+
+  it('retires the shared effort when no action has its own effort', () => {
+    const hydrated = backgroundAgentSettingsReducer(
+      initialState,
+      hydrateSettings({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+        defaultReasoningEffort: 'low',
+        typeReasoningEffortOverrides: {},
+      }),
+    );
+    const state = backgroundAgentSettingsReducer(
+      hydrated,
+      editQuickAction({ type: 'pr', effort: '' }),
+    );
+    expect(state).toMatchObject({
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: { commit: 'low', review: 'low', walkthrough: 'low' },
+    });
+  });
+
+  it('keeps a retired default for the walkthrough across a provider snapshot restore', () => {
+    const edited = backgroundAgentSettingsReducer(
+      legacy,
+      editQuickAction({ type: 'commit', model: 'c' }),
+    );
+    const restored = backgroundAgentSettingsReducer(
+      initialState,
+      restoreProviderSettings({
+        defaultModel: edited.defaultModel,
+        typeOverrides: edited.typeOverrides,
+      }),
+    );
+    expect(restored.typeOverrides).toMatchObject({ commit: 'c', walkthrough: 'shared' });
+  });
+
+  it.each([
+    { saved: 'codex:legacy', expected: 'legacy' },
+    { saved: 'claude-code:foreign', expected: '' },
+  ])('folds a compound shared default $saved as a bare id or not at all', ({ saved, expected }) => {
+    const hydrated = backgroundAgentSettingsReducer(
+      initialState,
+      hydrateSettings({
+        providerId: 'codex',
+        defaultModel: saved,
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    const state = backgroundAgentSettingsReducer(
+      hydrated,
+      editQuickAction({ type: 'commit', model: 'c' }),
+    );
+    // settings.update rejects any compound value, so none may reach the write.
+    expect(state.typeOverrides).toEqual({
+      commit: 'c',
+      pr: expected,
+      review: expected,
+      walkthrough: expected,
+      fast: '',
+    });
+    expect(state.defaultModel).toBe('');
   });
 
   it('sends an action to the provider default instead of the retired shared default', () => {

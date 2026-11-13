@@ -146,10 +146,10 @@ test('the first edit retires a legacy shared default without changing other acti
   await pr.click();
   await page.getByRole('option', { name: /Provider default/ }).click();
   await expect(output).toContainText(
-    '"defaultModel":"","overrides":{"commit":"codex-preview-balanced","pr":"","review":"codex-preview-balanced","fast":""}',
+    '"defaultModel":"","overrides":{"commit":"codex-preview-balanced","pr":"","review":"codex-preview-balanced","fast":"","walkthrough":"codex-preview-balanced"}',
   );
   await expect(output).toContainText(
-    '"quickEffort":"","quickEffortOverrides":{"commit":"medium","pr":"medium","review":"medium"}',
+    '"quickEffort":"","quickEffortOverrides":{"commit":"medium","pr":"medium","review":"medium","walkthrough":"medium"}',
   );
   await expect(pr).toContainText('Default (');
   await expect(commit).not.toContainText('Default (');
