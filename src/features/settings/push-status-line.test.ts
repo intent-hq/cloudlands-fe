@@ -21,7 +21,13 @@ describe('pushStatusLine', () => {
 
   it('falls back to a countless line before the relay reports devices', () => {
     expect(
-      pushStatusLine({ ...off, enabled: true, linked: false, linkedDevices: null, publishing: true }),
+      pushStatusLine({
+        ...off,
+        enabled: true,
+        linked: false,
+        linkedDevices: null,
+        publishing: true,
+      }),
     ).toBe(m.settings_push_sending());
   });
 
