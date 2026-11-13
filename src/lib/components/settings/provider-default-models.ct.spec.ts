@@ -16,13 +16,10 @@ for (const scenario of [
       (dark) => document.documentElement.classList.toggle('dark', dark),
       scenario.dark,
     );
-    const quickActionDefaultModel = 'codex:codex-preview-balanced';
-    const root = await mount(Preview, {
-      props: { narrowPane: scenario.narrowPane, quickActionDefaultModel },
-    });
+    const root = await mount(Preview, { props: { narrowPane: scenario.narrowPane } });
     await page.evaluate(() => document.fonts.ready);
     const rows = root.locator('[data-slot="settings-field-row"]');
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(3);
     const edges = await rows.evaluateAll((elements) =>
       elements.map((row) => {
         const rect = row.getBoundingClientRect();
@@ -53,39 +50,34 @@ for (const scenario of [
     );
     expect(await root.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
-    // Real override selection, not a geometry-only mock: inherited selection
-    // clears only that action and leaves the general quick-action default alone.
+    // Real selection, not a geometry-only mock: the provider default clears
+    // only that action.
     const commit = root.locator('#background-agent-commit button[aria-haspopup="listbox"]');
     const defaults = root.getByTestId('defaults-state');
-    await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
     await expect(defaults).toContainText('"commit":"claude-code:claude-code-preview-deep"');
     await commit.click();
-    await page.getByRole('option', { name: /Use default quick action model/ }).click();
-    await expect(defaults).toContainText('"commit":""');
-    await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
-    // The foreign-provider row has no effort footer until it inherits the local model.
+    await page.getByRole('option', { name: /Provider default/ }).click();
+    await expect(defaults).toContainText(
+      '"defaultModel":"","overrides":{"commit":"","pr":"","review":"","fast":""}',
+    );
     await expect(commit).toHaveAttribute('aria-expanded', 'false');
     await commit.click();
-    await expect(
-      page.getByRole('option', { name: /Use default quick action model/ }),
-    ).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('option', { name: /Provider default/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     await page.keyboard.press('Escape');
     await expect(commit).toBeFocused();
   });
 }
 
-for (const action of ['default', 'commit', 'pr']) {
-  test(`quick-action ${action} effort supports inherited models and keyboard reset`, async ({
+for (const action of ['commit', 'pr']) {
+  test(`quick-action ${action} effort supports the provider default model and keyboard reset`, async ({
     mount,
     page,
   }) => {
     await page.setViewportSize({ width: 1000, height: 1000 });
-    const root = await mount(Preview, {
-      props: {
-        quickActionDefaultModel: 'codex:codex-preview-balanced',
-        quickActionEffort: 'medium',
-      },
-    });
+    const root = await mount(Preview, { props: { commitModel: '' } });
     const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
     const output = root.getByTestId('defaults-state');
     await trigger.click();
@@ -94,15 +86,13 @@ for (const action of ['default', 'commit', 'pr']) {
     await effort.press('Enter');
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
-    if (action === 'default') await expect(output).toContainText('"quickEffort":"high"');
-    else await expect(output).toContainText(`"quickEffortOverrides":{"${action}":"high"}`);
+    await expect(output).toContainText(`"quickEffortOverrides":{"${action}":"high"}`);
     await expect(output).toContainText('"overrides":{"commit":"","pr":"","review":"","fast":""}');
     await expect(effort).toBeFocused();
     await effort.press('Enter');
     await page.keyboard.press('Home');
     await page.keyboard.press('Enter');
-    if (action === 'default') await expect(output).toContainText('"quickEffort":""');
-    else await expect(output).toContainText('"quickEffortOverrides":{}');
+    await expect(output).toContainText('"quickEffortOverrides":{}');
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
   });
@@ -117,20 +107,50 @@ test('Auggie catalog effort remains available for ordinary agents but not quick 
       quickActionProvider: 'auggie',
       quickActionDefaultModel: 'auggie-preview-balanced',
       quickActionEffort: 'medium',
+      commitModel: '',
     },
   });
   const main = root.locator('#default-agent-model button[aria-haspopup="listbox"]');
   await main.click();
   await expect(page.getByTestId('effort-picker-trigger')).toBeVisible();
   await page.keyboard.press('Escape');
-  for (const action of ['default', 'commit', 'pr']) {
+  for (const action of ['commit', 'pr']) {
     const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
     await expect(trigger).not.toContainText('Medium');
     await trigger.click();
     await expect(page.getByTestId('effort-picker-trigger')).toHaveCount(0);
     await page.keyboard.press('Escape');
   }
-  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(3);
+  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(2);
   await expect(root.getByTestId('defaults-state')).toContainText('"quickEffort":"medium"');
   await expect(root.getByTestId('defaults-state')).toContainText('"quickEffortOverrides":{}');
+});
+
+test('the first edit retires a legacy shared default without changing other actions', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  const root = await mount(Preview, {
+    props: {
+      quickActionDefaultModel: 'codex-preview-balanced',
+      quickActionEffort: 'medium',
+      commitModel: '',
+    },
+  });
+  const output = root.getByTestId('defaults-state');
+  const commit = root.locator('#background-agent-commit button[aria-haspopup="listbox"]');
+  const pr = root.locator('#background-agent-pr button[aria-haspopup="listbox"]');
+  await expect(commit).toHaveText(await pr.innerText());
+  await expect(commit).not.toContainText('Default (');
+  await pr.click();
+  await page.getByRole('option', { name: /Provider default/ }).click();
+  await expect(output).toContainText(
+    '"defaultModel":"","overrides":{"commit":"codex-preview-balanced","pr":"","review":"codex-preview-balanced","fast":"","walkthrough":"codex-preview-balanced"}',
+  );
+  await expect(output).toContainText(
+    '"quickEffort":"","quickEffortOverrides":{"commit":"medium","pr":"medium","review":"medium","walkthrough":"medium"}',
+  );
+  await expect(pr).toContainText('Default (');
+  await expect(commit).not.toContainText('Default (');
 });

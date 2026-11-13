@@ -617,9 +617,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   },
   {
     path: 'quickActions.defaultModel',
-    label: 'Default quick action model',
+    label: 'Legacy quick action model',
     description:
-      'Default model for single-shot quick actions (commit messages and PR descriptions). Never applied to agent sessions.',
+      'Legacy fallback model for quick actions without their own model. Settings does not show it; the first quick action edit there copies it into each action and clears it. Never applied to agent sessions.',
     category: 'agents',
     type: 'string',
     source: 'local-storage',
@@ -630,8 +630,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   },
   {
     path: 'quickActions.typeOverrides',
-    label: 'Quick action model overrides',
-    description: 'Per-quick-action model overrides.',
+    label: 'Quick action models',
+    description:
+      'Model per quick action (commit, pr). Empty falls back to quickActions.defaultModel, then the provider default.',
     category: 'agents',
     type: 'object',
     source: 'local-storage',

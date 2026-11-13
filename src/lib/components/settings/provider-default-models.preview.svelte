@@ -6,6 +6,7 @@
     quickActionDefaultModel?: string;
     quickActionEffort?: string;
     quickActionProvider?: string;
+    commitModel?: string;
   }>({
     id: 'provider-default-models',
     title: 'Provider default models',
@@ -18,12 +19,15 @@
           quickActionProvider: 'auggie',
           quickActionDefaultModel: 'auggie-preview-balanced',
           quickActionEffort: 'medium',
+          commitModel: '',
         },
       },
-      'quick-action-effort': {
+      'quick-action-effort': { props: { commitModel: '' } },
+      'legacy-shared-default': {
         props: {
-          quickActionDefaultModel: 'codex:codex-preview-balanced',
+          quickActionDefaultModel: 'codex-preview-balanced',
           quickActionEffort: 'medium',
+          commitModel: '',
         },
       },
     },
@@ -71,11 +75,13 @@
     quickActionDefaultModel = '',
     quickActionEffort = '',
     quickActionProvider = 'codex',
+    commitModel = 'claude-code:claude-code-preview-deep',
   }: {
     narrowPane?: boolean;
     quickActionDefaultModel?: string;
     quickActionEffort?: string;
     quickActionProvider?: string;
+    commitModel?: string;
   } = $props();
   // The sandbox/CT root owns the isolated store; no persistence sagas run here.
   const previous = {
@@ -146,7 +152,7 @@
       defaultReasoningEffort: quickActionEffort,
       typeReasoningEffortOverrides: {},
       typeOverrides: {
-        commit: quickActionEffort ? '' : 'claude-code:claude-code-preview-deep',
+        commit: commitModel,
         pr: '',
         review: '',
         fast: '',

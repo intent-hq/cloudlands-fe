@@ -1,6 +1,8 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { m } from '$shared/paraglide/messages.js';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { providerRefBaseId } from '$shared/provider-profiles';
 
 // ============================================================================
 // Types & Constants (re-exported from old store)
@@ -154,6 +156,11 @@ export const resetTypeOverride = createAction<[type: BackgroundAgentType]>(
 );
 
 export const resetSettings = createAction('backgroundAgentSettings/resetSettings');
+
+/** Edit one action's model or effort ('' = provider default) from the settings pane. */
+export const editQuickAction = createAction<
+  [payload: { type: BackgroundAgentType; model?: string; effort?: string }]
+>('backgroundAgentSettings/editQuickAction');
 
 /** Hydrate active settings from the daemon snapshot or a reconciled settings delta */
 export const hydrateSettings = createAction<
@@ -311,11 +318,12 @@ backgroundAgentSettingsReducer.with(
     defaultModel,
     defaultReasoningEffort: defaultReasoningEffort?.trim() || '',
     typeReasoningEffortOverrides: normalizeEffortOverrides(typeReasoningEffortOverrides),
+    // Keep keys without a settings row (e.g. a folded walkthrough model).
     typeOverrides: {
-      commit: typeOverrides.commit || '',
-      pr: typeOverrides.pr || '',
-      review: typeOverrides.review || '',
-      fast: typeOverrides.fast || '',
+      ...DEFAULT_TYPE_OVERRIDES,
+      ...Object.fromEntries(
+        Object.entries(typeOverrides).map(([key, model]) => [key, model || '']),
+      ),
     },
   }),
 );
@@ -345,6 +353,56 @@ backgroundAgentSettingsReducer.with(resetTypeOverride, (state, { payload: [type]
     typeReasoningEffortOverrides: overrides,
   };
 });
+
+// The pane no longer shows a shared default. The first edit copies a saved one
+// into each executor type that inherits it, so no action changes model silently.
+// `walkthrough` has no settings row but resolves through the same chain.
+const SHARED_DEFAULT_TYPES = ['commit', 'pr', 'review', 'walkthrough'];
+backgroundAgentSettingsReducer.with(
+  editQuickAction,
+  (state, { payload: [{ type, model, effort }] }) => {
+    const typeOverrides: Record<string, string> = { ...state.typeOverrides };
+    const efforts = { ...state.typeReasoningEffortOverrides };
+    const fields: LocalField[] = [];
+    if (state.defaultModel) {
+      // settings.update rejects compound ids, so a model that does not belong to
+      // the active provider falls back to the provider default.
+      const legacy = splitLegacyCompoundId(state.defaultModel);
+      const ownProvider =
+        !legacy.providerId || legacy.providerId === providerRefBaseId(state.providerId ?? '');
+      const shared = ownProvider && !legacy.modelId.includes(':') ? legacy.modelId : '';
+      for (const key of SHARED_DEFAULT_TYPES)
+        if (!typeOverrides[key]?.trim()) typeOverrides[key] = shared;
+      fields.push('defaultModel', 'typeOverrides');
+    }
+    if (model !== undefined) {
+      typeOverrides[type] = model;
+      fields.push(`typeOverrides.${type}`);
+    }
+    if (effort !== undefined) {
+      if (effort.trim()) efforts[type] = effort.trim();
+      else delete efforts[type];
+      fields.push(`typeReasoningEffortOverrides.${type}`);
+    }
+    // Effort is a candidate list: the daemon tries an action's own effort, then
+    // the shared one. Retire the shared effort only when no action needs it as
+    // a fallback; otherwise it stays, and an action without its own inherits it.
+    let sharedEffort = state.defaultReasoningEffort;
+    if (sharedEffort && SHARED_DEFAULT_TYPES.every((key) => !efforts[key])) {
+      for (const key of SHARED_DEFAULT_TYPES) efforts[key] = sharedEffort;
+      if (effort !== undefined && !effort.trim()) delete efforts[type];
+      sharedEffort = '';
+      fields.push('defaultReasoningEffort', 'typeReasoningEffortOverrides');
+    }
+    return {
+      ...pending(state, fields),
+      defaultModel: '',
+      defaultReasoningEffort: sharedEffort,
+      typeOverrides: typeOverrides as Record<BackgroundAgentType, string>,
+      typeReasoningEffortOverrides: efforts,
+    };
+  },
+);
 
 backgroundAgentSettingsReducer.with(
   setTypeReasoningEffortOverrides,
