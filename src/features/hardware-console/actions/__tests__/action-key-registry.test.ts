@@ -1598,7 +1598,174 @@ describe('cycling follows the top workspace tabs', () => {
     expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'u-2']]);
   });
 
-  it('restarts at the first stop when the last visited tab was closed', () => {
+  it('the first press starts at the current tab and wraps', () => {
+    const state = makeState({
+      currentWorkspaceId: 'ws-2',
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'] },
+        'ws-2': { ids: ['b-1'] },
+        'ws-3': { ids: ['c-1'] },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-3'],
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-3', 'c-1'],
+      ['ws-1', 'a-1'],
+    ]);
+  });
+
+  it('the first unread press keeps blockers first, wrapping to an earlier blocker tab', () => {
+    const state = makeState({
+      currentWorkspaceId: 'ws-2',
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['b-1'] },
+        'ws-2': { ids: ['x-2'] },
+        'ws-3': { ids: ['u-3'] },
+      },
+      unreadWorkspaceIds: ['ws-3'],
+      sessionOverrides: { 'b-1': { attentionRequestKind: 'blocker' } },
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-1', 'b-1']]);
+  });
+
+  it('finishes a priority group round the strip before the next group', () => {
+    const state = makeState({
+      currentWorkspaceId: 'ws-2',
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['b-1'] },
+        'ws-2': { ids: ['x-2'] },
+        'ws-3': { ids: ['b-3'] },
+        'ws-4': { ids: ['u-4'] },
+      },
+      unreadWorkspaceIds: ['ws-4'],
+      sessionOverrides: {
+        'b-1': { attentionRequestKind: 'blocker' },
+        'b-3': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    for (let press = 0; press < 4; press += 1) definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-3', 'b-3'],
+      ['ws-1', 'b-1'],
+      ['ws-4', 'u-4'],
+      ['ws-3', 'b-3'],
+    ]);
+  });
+
+  it('a walk started mid-strip keeps going round from that tab', () => {
+    const state = makeState({
+      currentWorkspaceId: 'ws-3',
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'] },
+        'ws-2': { ids: ['b-1'] },
+        'ws-3': { ids: ['c-1'], activeAgentId: 'c-1' },
+        'ws-4': { ids: ['d-1'] },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-workspace-agents');
+    for (let press = 0; press < 5; press += 1) definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-4', 'd-1'],
+      ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+      ['ws-3', 'c-1'],
+      ['ws-4', 'd-1'],
+    ]);
+  });
+
+  it('a round started off the strip keeps its left-edge order after navigating', () => {
+    const options = {
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['u-1'] },
+        'ws-2': { ids: ['x-2'] },
+        'ws-3': { ids: ['b-3'] },
+        'ws-4': { ids: ['u-4'] },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-4'],
+      sessionOverrides: { 'b-3': { attentionRequestKind: 'blocker' } },
+    };
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const fromHome = makeContext(makeState({ ...options, currentWorkspaceId: null }));
+    definition.execute(fromHome.context);
+    expect(activeAgentDispatches(fromHome.dispatch)).toEqual([['ws-3', 'b-3']]);
+
+    // Navigation landed on ws-3: the round keeps walking from the left edge.
+    const onTab = makeContext(makeState({ ...options, currentWorkspaceId: 'ws-3' }));
+    definition.execute(onTab.context);
+    definition.execute(onTab.context);
+    expect(activeAgentDispatches(onTab.dispatch)).toEqual([
+      ['ws-1', 'u-1'],
+      ['ws-4', 'u-4'],
+    ]);
+  });
+
+  it('the first press skips the workspace-level stop of the current tab', () => {
+    const state = makeState({
+      currentWorkspaceId: 'ws-2',
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: { 'ws-3': { ids: ['c-1'] } },
+      unreadWorkspaceIds: ['ws-2', 'ws-3'],
+    });
+    const { context, dispatch, showWorkspace } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(showWorkspace).toHaveBeenCalledWith('ws-3');
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-3', 'c-1']]);
+  });
+
+  it('continues from the current tab when the last visited tab was closed', () => {
+    const workspaces = ['ws-1', 'ws-2', 'ws-3', 'ws-4'];
+    const agentsByWorkspace = {
+      'ws-1': { ids: ['a-1'] },
+      'ws-2': { ids: ['b-1'] },
+      'ws-3': { ids: ['c-1'], activeAgentId: 'c-1' },
+      'ws-4': { ids: ['d-1'] },
+    };
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const first = makeContext(
+      makeState({
+        currentWorkspaceId: null,
+        workspaces,
+        agentsByWorkspace,
+        unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-4'],
+      }),
+    );
+    definition.execute(first.context);
+    definition.execute(first.context);
+    expect(activeAgentDispatches(first.dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+    ]);
+
+    // ws-2 was closed and the user moved to ws-3: the walk continues from
+    // ws-3 rightwards (ws-4), not back at the leftmost unread tab.
+    const second = makeContext(
+      makeState({
+        currentWorkspaceId: 'ws-3',
+        workspaces,
+        tabs: ['ws-1', 'ws-3', 'ws-4'],
+        agentsByWorkspace,
+        unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-4'],
+      }),
+    );
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-4', 'd-1']]);
+  });
+
+  it('restarts at the first stop when the last visited tab was closed and no tab is current', () => {
     const workspaces = ['ws-1', 'ws-2', 'ws-3'];
     const agentsByWorkspace = {
       'ws-1': { ids: ['a-1'] },
