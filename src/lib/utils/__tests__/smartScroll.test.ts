@@ -1930,6 +1930,53 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it.each(['frame check', 'scrollend'])(
+    'does not re-lock from the %s after a collapse clamps a short scroll back to where it began',
+    (completion) => {
+      const action = followBottom(container, { follow: false });
+      scrollTop = 460;
+      runFrame();
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
+      // The wheel moves the reader to 560, then a collapse in the same frame
+      // clamps them to the new bottom at 460: one scroll event, no net move.
+      scrollHeight = 760;
+      container.dispatchEvent(new Event('scroll'));
+      if (completion === 'frame check') runFrame();
+      else container.dispatchEvent(new Event('scrollend'));
+      scrollHeight += 80;
+      fireResize();
+      runSettleTail();
+
+      expect(isFollowingBottom(container)).toBe(false);
+      expect(scrollTop).toBe(460);
+      action.destroy();
+    },
+  );
+
+  it('does not re-lock after a layout report reads a collapse before its scroll event', () => {
+    const action = followBottom(container, { follow: false });
+    scrollTop = 300;
+    runFrame();
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 260 }));
+    scrollTop = 560;
+    container.dispatchEvent(new Event('scroll'));
+    runFrame();
+    // A block collapses; the layout report's read observes the clamp first.
+    scrollHeight = 760;
+    scrollTop = 460;
+    fireResize();
+    runFrame();
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scrollend'));
+    scrollHeight += 80;
+    fireResize();
+    runSettleTail();
+
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(scrollTop).toBe(460);
+    action.destroy();
+  });
+
   describe('in every gesture event order', () => {
     type GestureInput = 'wheel' | 'keyboard' | 'touch' | 'scrollbar';
     type GestureEvent = 'scroll' | 'frame check' | 'scrollend' | 'growth' | 'clamp';
@@ -1974,8 +2021,17 @@ describe('followBottom policy', () => {
      * lands on `target`, clamped by the bottom as it stands at that moment;
      * growth adds 40px below, and a clamp collapses 140px and moves the
      * reader up onto the new bottom when it is now past it.
+     *
+     * With `delivery: 'next frame'`, a moved reader's scroll event waits for
+     * the next frame check (or scrollend), as browsers dispatch scroll events
+     * in the frame's rendering steps. Moves in one frame merge into one event.
      */
-    function replay(input: GestureInput, order: GestureEvent[], target: number) {
+    function replay(
+      input: GestureInput,
+      order: GestureEvent[],
+      target: number,
+      delivery: 'immediate' | 'next frame',
+    ) {
       animationFrames = [];
       resizeCallbacks = [];
       mutationCallbacks = [];
@@ -1991,35 +2047,57 @@ describe('followBottom policy', () => {
 
       let reached = false;
       let scrolled = false;
+      let delivered = false;
+      let scrollEventPending = false;
       let scrollendFirst = false;
       let layoutFirst = false;
+      // A collapse that no frame or scroll event has observed yet. When the
+      // gesture's scroll event is the first to observe it, the reader on the
+      // bottom may be a clamp, so that arrival is ambiguous.
+      let collapseUnseen = false;
+      let ambiguous = false;
+      const moveReader = (top: number) => {
+        scrollTop = top;
+        if (delivery === 'next frame') scrollEventPending = true;
+        else dispatchScroll();
+      };
+      const dispatchScroll = () => {
+        scrollEventPending = false;
+        if (scrolled && !delivered) ambiguous = collapseUnseen;
+        delivered ||= scrolled;
+        collapseUnseen = false;
+        container.dispatchEvent(new Event('scroll'));
+      };
       for (const event of order) {
         if (event === 'scroll') {
           scrolled = true;
           reached = target >= maximum();
-          scrollTop = Math.min(target, maximum());
-          container.dispatchEvent(new Event('scroll'));
+          moveReader(Math.min(target, maximum()));
         }
-        if (event === 'frame check') runFrame();
+        if (event === 'frame check') {
+          if (scrollEventPending) dispatchScroll();
+          runFrame();
+          collapseUnseen = false;
+        }
         if (event === 'scrollend') {
           scrollendFirst ||= !scrolled;
+          if (scrollEventPending) dispatchScroll();
           container.dispatchEvent(new Event('scrollend'));
         }
         if (event === 'growth') {
-          layoutFirst ||= !scrolled;
+          layoutFirst ||= !delivered;
           scrollHeight += 40;
           fireResize();
         }
         if (event === 'clamp') {
-          layoutFirst ||= !scrolled;
+          layoutFirst ||= !delivered;
+          collapseUnseen = true;
           scrollHeight -= 140;
-          if (scrollTop > maximum()) {
-            scrollTop = maximum();
-            container.dispatchEvent(new Event('scroll'));
-          }
+          if (scrollTop > maximum()) moveReader(maximum());
           fireResize();
         }
       }
+      if (scrollEventPending) dispatchScroll();
       if (input === 'scrollbar') window.dispatchEvent(new MouseEvent('pointerup'));
 
       const readerTop = scrollTop;
@@ -2030,10 +2108,13 @@ describe('followBottom policy', () => {
       action.destroy();
 
       // A scroll always lands before its scrollend. A drag measures its
-      // progress against an unchanged bottom, so layout first voids it.
-      const mustRelock = reached && (input === 'scrollbar' ? !layoutFirst : !scrollendFirst);
+      // progress against an unchanged bottom, so layout before its scroll
+      // event voids it. An ambiguous arrival never re-locks.
+      const mustStay = !reached || ambiguous;
+      const mustRelock =
+        reached && !ambiguous && (input === 'scrollbar' ? !layoutFirst : !scrollendFirst);
       const steps = order.join(' → ');
-      if (!reached && (following || followChanges.includes(true) || scrollTop !== readerTop))
+      if (mustStay && (following || followChanges.includes(true) || scrollTop !== readerTop))
         return `${steps}: pulled the reader down from ${readerTop} to ${scrollTop}`;
       if (mustRelock && (!following || scrollTop !== maximum()))
         return `${steps}: stayed at ${scrollTop} of ${maximum()} after reaching the bottom`;
@@ -2042,15 +2123,22 @@ describe('followBottom policy', () => {
 
     it.each(
       (['wheel', 'keyboard', 'touch', 'scrollbar'] as const).flatMap((input) =>
-        (['reaches', 'stops short of'] as const).map((scenario) => [input, scenario] as const),
+        (['reaches', 'stops short of'] as const).flatMap((scenario) =>
+          (['immediate', 'next frame'] as const).map(
+            (delivery) => [input, scenario, delivery] as const,
+          ),
+        ),
       ),
-    )('re-locks a %s gesture that %s the bottom only when it arrives', (input, scenario) => {
-      const target = scenario === 'reaches' ? Number.POSITIVE_INFINITY : 560;
-      const failures = orders
-        .map((order) => replay(input, order, target))
-        .filter((failure) => failure !== null);
-      expect(failures).toEqual([]);
-    });
+    )(
+      're-locks a %s gesture that %s the bottom only when it arrives (%s scroll events)',
+      (input, scenario, delivery) => {
+        const target = scenario === 'reaches' ? Number.POSITIVE_INFINITY : 560;
+        const failures = orders
+          .map((order) => replay(input, order, target, delivery))
+          .filter((failure) => failure !== null);
+        expect(failures).toEqual([]);
+      },
+    );
   });
 
   it('keeps an active lease pinned beyond 80 frames, settles idle, and restarts later', () => {

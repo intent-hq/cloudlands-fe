@@ -219,7 +219,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const scrollTop = container.scrollTop;
     const previous = lastRead ?? undefined;
     lastRead = { maximum, scrollTop };
-    return { maximum, scrollTop, previous };
+    const geometry = { maximum, scrollTop, previous };
+    gesture.observe(geometry);
+    return geometry;
   }
 
   function setExactBottom(geometry = readScrollGeometry()): ScrollGeometry {
@@ -498,6 +500,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       return true;
     }
 
+    function landDownward(wheel?: WheelEvent): boolean {
+      // The read can end the gesture (see `observe`), so check it after.
+      const geometry = readScrollGeometry();
+      return isLive(wheel) && relockIfReached(geometry, true);
+    }
+
     function landNextFrame(wheel?: WheelEvent) {
       landFrameWheel = wheel;
       if (landFrame !== null) return;
@@ -506,7 +514,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         const wheel = landFrameWheel;
         landFrameWheel = undefined;
         if (destroyed || !enabled || !isLive(wheel)) return;
-        if (!relockIfReached(readScrollGeometry(), true)) reportState();
+        if (!landDownward(wheel)) reportState();
       });
     }
 
@@ -585,15 +593,31 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           return;
         }
         if (source === 'scrollend') {
-          const live = isLive();
+          if (isLive()) landDownward();
           downward = null;
-          if (live) relockIfReached(readScrollGeometry(), true);
           return;
         }
         if (!drag) return;
         const { movedTowardBottom } = drag;
         drag = null;
         if (!(movedTowardBottom && relockIfReached(readScrollGeometry(), false))) reportState();
+      },
+      /**
+       * Every geometry read passes through here. A read that finds the bottom
+       * moved up with the reader on it cannot tell arrival from a collapse
+       * that clamped the reader there (browsers merge both into one scroll
+       * event), so it ends a downward gesture. A reader who did arrive
+       * scrolls again or presses End.
+       */
+      observe(geometry: ScrollGeometry) {
+        const previous = geometry.previous;
+        if (
+          downward &&
+          previous !== undefined &&
+          geometry.maximum < previous.maximum &&
+          geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
+        )
+          downward = null;
       },
       cancel() {
         downward = null;
