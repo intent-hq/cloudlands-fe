@@ -399,31 +399,36 @@ describe('editQuickAction', () => {
   });
 
   it.each([
-    { saved: 'codex:legacy', expected: 'legacy' },
-    { saved: 'claude-code:foreign', expected: '' },
-  ])('folds a compound shared default $saved as a bare id or not at all', ({ saved, expected }) => {
-    const hydrated = backgroundAgentSettingsReducer(
-      initialState,
-      hydrateSettings({
-        providerId: 'codex',
-        defaultModel: saved,
-        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-      }),
-    );
-    const state = backgroundAgentSettingsReducer(
-      hydrated,
-      editQuickAction({ type: 'commit', model: 'c' }),
-    );
-    // settings.update rejects any compound value, so none may reach the write.
-    expect(state.typeOverrides).toEqual({
-      commit: 'c',
-      pr: expected,
-      review: expected,
-      walkthrough: expected,
-      fast: '',
-    });
-    expect(state.defaultModel).toBe('');
-  });
+    { saved: 'codex:legacy', providerId: 'codex', expected: 'legacy' },
+    { saved: 'codex:legacy', providerId: 'codex@pwork00000001', expected: 'legacy' },
+    { saved: 'claude-code:foreign', providerId: 'codex', expected: '' },
+    { saved: 'codex:a:b', providerId: 'codex', expected: '' },
+  ])(
+    'folds a compound shared default $saved for $providerId as a bare id or not at all',
+    ({ saved, providerId, expected }) => {
+      const hydrated = backgroundAgentSettingsReducer(
+        initialState,
+        hydrateSettings({
+          providerId,
+          defaultModel: saved,
+          typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+        }),
+      );
+      const state = backgroundAgentSettingsReducer(
+        hydrated,
+        editQuickAction({ type: 'commit', model: 'c' }),
+      );
+      // settings.update rejects any compound value, so none may reach the write.
+      expect(state.typeOverrides).toEqual({
+        commit: 'c',
+        pr: expected,
+        review: expected,
+        walkthrough: expected,
+        fast: '',
+      });
+      expect(state.defaultModel).toBe('');
+    },
+  );
 
   it('sends an action to the provider default instead of the retired shared default', () => {
     let state = backgroundAgentSettingsReducer(
@@ -432,8 +437,15 @@ describe('editQuickAction', () => {
     );
     state = backgroundAgentSettingsReducer(state, editQuickAction({ type: 'commit', effort: '' }));
     expect(state.typeOverrides.commit).toBe('');
-    expect(state.typeReasoningEffortOverrides.commit).toBeUndefined();
     expect(state.typeOverrides.pr).toBe('pr-pinned');
+    // The daemon falls back to a saved shared effort, so an explicit provider
+    // default must retire it. Actions that inherited it keep it as their own.
+    expect(state.defaultReasoningEffort).toBe('');
+    expect(state.typeReasoningEffortOverrides).toEqual({
+      pr: 'high',
+      review: 'low',
+      walkthrough: 'low',
+    });
   });
 
   it('changes only the edited field when no shared default is saved', () => {

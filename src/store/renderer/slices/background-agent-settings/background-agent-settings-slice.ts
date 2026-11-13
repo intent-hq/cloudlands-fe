@@ -2,6 +2,7 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { m } from '$shared/paraglide/messages.js';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { providerRefBaseId } from '$shared/provider-profiles';
 
 // ============================================================================
 // Types & Constants (re-exported from old store)
@@ -318,7 +319,12 @@ backgroundAgentSettingsReducer.with(
     defaultReasoningEffort: defaultReasoningEffort?.trim() || '',
     typeReasoningEffortOverrides: normalizeEffortOverrides(typeReasoningEffortOverrides),
     // Keep keys without a settings row (e.g. a folded walkthrough model).
-    typeOverrides: { ...DEFAULT_TYPE_OVERRIDES, ...typeOverrides },
+    typeOverrides: {
+      ...DEFAULT_TYPE_OVERRIDES,
+      ...Object.fromEntries(
+        Object.entries(typeOverrides).map(([key, model]) => [key, model || '']),
+      ),
+    },
   }),
 );
 
@@ -359,10 +365,12 @@ backgroundAgentSettingsReducer.with(
     const efforts = { ...state.typeReasoningEffortOverrides };
     const fields: LocalField[] = [];
     if (state.defaultModel) {
-      // settings.update rejects compound ids. The daemon drops a foreign one.
+      // settings.update rejects compound ids, so a model that does not belong to
+      // the active provider falls back to the provider default.
       const legacy = splitLegacyCompoundId(state.defaultModel);
-      const shared =
-        !legacy.providerId || legacy.providerId === state.providerId ? legacy.modelId : '';
+      const ownProvider =
+        !legacy.providerId || legacy.providerId === providerRefBaseId(state.providerId ?? '');
+      const shared = ownProvider && !legacy.modelId.includes(':') ? legacy.modelId : '';
       for (const key of SHARED_DEFAULT_TYPES)
         if (!typeOverrides[key]?.trim()) typeOverrides[key] = shared;
       fields.push('defaultModel', 'typeOverrides');
@@ -377,12 +385,13 @@ backgroundAgentSettingsReducer.with(
       fields.push(`typeReasoningEffortOverrides.${type}`);
     }
     // Effort is a candidate list: the daemon tries an action's own effort, then
-    // the shared one. Retire the shared effort only when no action needs it as
-    // a fallback; otherwise it stays as the hidden second candidate.
+    // the shared one. Keep the shared effort as that hidden fallback unless the
+    // user asks for the provider default, which only its removal can express.
     let sharedEffort = state.defaultReasoningEffort;
-    if (sharedEffort && SHARED_DEFAULT_TYPES.every((key) => !efforts[key])) {
-      for (const key of SHARED_DEFAULT_TYPES) efforts[key] = sharedEffort;
-      if (effort !== undefined && !effort.trim()) delete efforts[type];
+    const clearsEffort = effort !== undefined && !effort.trim();
+    if (sharedEffort && (clearsEffort || SHARED_DEFAULT_TYPES.every((key) => !efforts[key]))) {
+      for (const key of SHARED_DEFAULT_TYPES) efforts[key] ||= sharedEffort;
+      if (clearsEffort) delete efforts[type];
       sharedEffort = '';
       fields.push('defaultReasoningEffort', 'typeReasoningEffortOverrides');
     }
