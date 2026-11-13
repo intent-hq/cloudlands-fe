@@ -604,7 +604,7 @@
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
             tooltipDelayDuration={tooltipDelay}
-            tooltipDisabled={quietTooltips === 'all' || quietTooltips === ADD_TOOLTIP_ID}
+            tooltipDisabled={quietTooltips === 'all'}
             onpointerenter={() => wakeTooltips(ADD_TOOLTIP_ID)}
             data-testid="machine-rail-add"
           >
