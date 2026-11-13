@@ -64,6 +64,9 @@ function notifySubscribers(): void {
 vi.mock('./ProposalStartOn.svelte', async () => ({
   default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
 }));
+vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
+  default: (await import('./__tests__/MockModelPicker.svelte')).default,
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: vi.fn(() =>
     readable(() => ({
@@ -162,6 +165,15 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       return () => {};
     },
   }),
+  selectActiveProviderId: () => readable(() => ''),
+}));
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
+  selectProviderModels: () => readable(() => ({})),
+  selectSelectedModel: () => readable(() => undefined),
+}));
+vi.mock('$features/providers/provider-availability.client', () => ({
+  getProviderAvailability: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
   selectProviderModelsCacheMap: () => ({
@@ -182,6 +194,14 @@ vi.mock(
         provider === 'claude-code' ? 'Claude Code' : undefined,
       ),
     },
+    selectProviderCatalogEntries: () => ({
+      subscribe: (run: (value: unknown[]) => void) => {
+        run([]);
+        return () => {};
+      },
+    }),
+    selectProviderCatalogProfiles: () => readable(() => []),
+    selectEffectiveDefaultProviderId: () => readable(() => ''),
   }),
 );
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({

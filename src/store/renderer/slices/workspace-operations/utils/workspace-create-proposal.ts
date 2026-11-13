@@ -25,29 +25,20 @@ function specialistOverride(value: unknown, fallback?: string): string | undefin
 }
 
 /**
- * Provider / model / effort the card adopted from the repository's remembered
- * New Workspace setup (`editedFields.agentSetup`), applied only when the
- * proposal's own initial agent sets none of them.
+ * What the card's Model row shows (`editedFields.agentPick`), or `undefined`
+ * when the request did not come from the card. A blank effort is the wire's
+ * explicit clear.
  */
-function agentSetupOverrides(
+function agentPickOverrides(
   value: unknown,
-  initialAgent: Partial<InitialAgentRequest> | undefined,
-): Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> {
-  const setup = recordValue(value);
-  // Provider, model and effort travel together: a proposal that set any of
-  // them keeps its own choice rather than a mixed triple.
-  if (
-    !setup ||
-    initialAgent?.provider !== undefined ||
-    initialAgent?.model !== undefined ||
-    initialAgent?.reasoningEffort !== undefined
-  )
-    return {};
+): Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> | undefined {
+  const pick = recordValue(value);
+  if (!pick) return undefined;
   const overrides: Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> =
     {};
-  if (typeof setup.provider === 'string' && setup.provider) overrides.provider = setup.provider;
-  if (typeof setup.model === 'string' && setup.model) overrides.model = setup.model;
-  if (typeof setup.reasoningEffort === 'string') overrides.reasoningEffort = setup.reasoningEffort;
+  if (typeof pick.provider === 'string' && pick.provider) overrides.provider = pick.provider;
+  if (typeof pick.model === 'string' && pick.model) overrides.model = pick.model;
+  if (typeof pick.reasoningEffort === 'string') overrides.reasoningEffort = pick.reasoningEffort;
   return overrides;
 }
 
@@ -107,6 +98,16 @@ export function buildCreateWorkspaceRequestFromProposal(
   if (placementEdit === null) delete initialAgentFields.placement;
   else if (recordValue(placementEdit))
     initialAgentFields.placement = placementEdit as InitialAgentRequest['placement'];
+  // The card's Model row (provider, model, effort) replaces the proposal's
+  // triple as a whole: only what the row showed is sent, never mixed with
+  // values it didn't show.
+  const agentPick = agentPickOverrides(editedFields?.agentPick);
+  if (agentPick) {
+    delete initialAgentFields.provider;
+    delete initialAgentFields.model;
+    delete initialAgentFields.reasoningEffort;
+    Object.assign(initialAgentFields, agentPick);
+  }
 
   const githubUrl = stringOverride(
     siblingScoped ? undefined : editedFields?.githubUrl,
@@ -147,7 +148,6 @@ export function buildCreateWorkspaceRequestFromProposal(
     ...(options.origin ? { origin: options.origin } : {}),
     initialAgent: {
       ...initialAgentFields,
-      ...agentSetupOverrides(editedFields?.agentSetup, initialAgent),
       name: payloadName ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,
