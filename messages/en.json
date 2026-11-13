@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Try again",
   "sessionImport_list_search_placeholder": "Search sessions",
   "sessionImport_list_untitled_label": "Untitled session",
-  "sessionImport_picker_clear_ariaLabel": "Do not import a session",
-  "sessionImport_picker_label": "Session",
   "sessionImport_picker_none_label": "Import a session",
   "sessionImport_picker_note_description": "The session becomes the first agent, with its history. Uncommitted changes in its folder are not copied.",
   "settings_browserAccess_accessKey_description": "A browser asks for this key once. Resetting it signs out every browser.",
@@ -9051,5 +9049,8 @@
   "machineSetup_error_tooOld": "Intent on {host} is too old to pair. Update it there, then try again.",
   "machineSetup_error_orchestrator": "{host} is set to run no agents itself, so it can't be a node.",
   "machineSetup_error_pairFailed": "Intent on {host} could not pair.",
-  "machineSetup_error_runningElsewhere": "Intent is already running on {host}, but this setup can't reach it. Run intentd pair there and paste the link it prints."
+  "machineSetup_error_runningElsewhere": "Intent is already running on {host}, but this setup can't reach it. Run intentd pair there and paste the link it prints.",
+  "sessionImport_tab_label": "Sessions",
+  "sessionImport_list_noRepository_reason": "No git repository found",
+  "sessionImport_list_refresh_label": "Refresh"
 }

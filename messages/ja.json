@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "再試行",
   "sessionImport_list_search_placeholder": "セッションを検索",
   "sessionImport_list_untitled_label": "無題のセッション",
-  "sessionImport_picker_clear_ariaLabel": "セッションをインポートしない",
-  "sessionImport_picker_label": "セッション",
   "sessionImport_picker_none_label": "セッションをインポート",
   "sessionImport_picker_note_description": "セッションは履歴付きで最初のエージェントになります。フォルダー内のコミットされていない変更はコピーされません。",
   "settings_browserAccess_accessKey_description": "ブラウザはこのキーを最初に 1 回だけ求めます。リセットするとすべてのブラウザがサインアウトします。",
@@ -9051,5 +9049,8 @@
   "machineSetup_error_tooOld": "{host} の Intent は古すぎてペアリングできません。そちらで更新してから、もう一度お試しください。",
   "machineSetup_error_orchestrator": "{host} は自身でエージェントを実行しない設定のため、ノードにはなれません。",
   "machineSetup_error_pairFailed": "{host} の Intent はペアリングできませんでした。",
-  "machineSetup_error_runningElsewhere": "{host} では Intent がすでに動いていますが、このセットアップからは接続できません。そちらで intentd pair を実行し、表示されたリンクを貼り付けてください。"
+  "machineSetup_error_runningElsewhere": "{host} では Intent がすでに動いていますが、このセットアップからは接続できません。そちらで intentd pair を実行し、表示されたリンクを貼り付けてください。",
+  "sessionImport_tab_label": "セッション",
+  "sessionImport_list_noRepository_reason": "git リポジトリが見つかりません",
+  "sessionImport_list_refresh_label": "更新"
 }

@@ -24,6 +24,7 @@
     plainFolderMode = false,
     plainFolder = null,
     gitChoice = undefined,
+    sessions = undefined,
   }: {
     onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
     onBranchChange?: (event: { detail: { branch: string } }) => void;
@@ -53,6 +54,10 @@
       disabled?: boolean;
       onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
     };
+    sessions?: {
+      selected: { title: string; sessionId: string } | null;
+      onSelect: (session: Record<string, unknown>) => void;
+    };
     [key: string]: unknown;
   } = $props();
 
@@ -74,7 +79,13 @@
 
   $effect(() => {
     const registry = window as unknown as Record<string, unknown>;
-    const callbacks = { onRepoChange, onBranchChange, onSkipIsolationChange, onBranchStatusChange };
+    const callbacks = {
+      onRepoChange,
+      onBranchChange,
+      onSkipIsolationChange,
+      onBranchStatusChange,
+      onSessionSelect: sessions?.onSelect,
+    };
     registry.__mockRepoAndBranchPicker = callbacks;
     return () => {
       if (registry.__mockRepoAndBranchPicker === callbacks) {
@@ -95,6 +106,7 @@
 <div data-testid="picker-remote-path">{remoteSetup?.workspacePath ?? ''}</div>
 <div data-testid="picker-plain-folder-mode">{String(plainFolderMode)}</div>
 <div data-testid="picker-plain-folder">{plainFolder ?? ''}</div>
+<div data-testid="picker-session">{sessions?.selected?.sessionId ?? ''}</div>
 {#if gitChoice}
   <!-- Stands in for the git choice inside the picker's Existing folder / New tabs:
        a picked git repo shows its worktree setting, anything else the git choice. -->

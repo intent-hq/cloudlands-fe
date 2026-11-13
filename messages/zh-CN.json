@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "重试",
   "sessionImport_list_search_placeholder": "搜索会话",
   "sessionImport_list_untitled_label": "未命名会话",
-  "sessionImport_picker_clear_ariaLabel": "不导入会话",
-  "sessionImport_picker_label": "会话",
   "sessionImport_picker_none_label": "导入会话",
   "sessionImport_picker_note_description": "该会话将连同其历史记录成为第一个代理。其文件夹中未提交的更改不会被复制。",
   "settings_browserAccess_accessKey_description": "浏览器只会询问一次此密钥。重置后所有浏览器都会退出登录。",
@@ -9051,5 +9049,8 @@
   "machineSetup_error_tooOld": "{host} 上的 Intent 版本太旧，无法配对。请在那里更新后再试。",
   "machineSetup_error_orchestrator": "{host} 被设置为自身不运行智能体，因此不能作为节点。",
   "machineSetup_error_pairFailed": "{host} 上的 Intent 无法配对。",
-  "machineSetup_error_runningElsewhere": "Intent 已在 {host} 上运行，但此设置无法连接到它。请在那里运行 intentd pair，然后粘贴它输出的链接。"
+  "machineSetup_error_runningElsewhere": "Intent 已在 {host} 上运行，但此设置无法连接到它。请在那里运行 intentd pair，然后粘贴它输出的链接。",
+  "sessionImport_tab_label": "会话",
+  "sessionImport_list_noRepository_reason": "未找到 git 仓库",
+  "sessionImport_list_refresh_label": "刷新"
 }

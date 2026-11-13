@@ -28,14 +28,3 @@ export const selectImportableSessionProviders = store.createSelector(
 export const selectImportableSessionsStatus = store.createSelector(
   (state): ImportableSessionsStatus => state.importableSessions?.status ?? 'idle',
 );
-
-/**
- * Whether New Workspace offers "Import a session": the host advertises
- * `sessionImport: 1` and has sessions (or a provider failed to list), or the first page
- * failed and can be retried.
- */
-export const selectImportableSessionsAvailable = store.createSelector((state): boolean => {
-  const slice = state.importableSessions;
-  if (!slice || !selectSessionImportSupported.select(state)) return false;
-  return slice.hasAny || (slice.status === 'error' && slice.query === '' && slice.provider === '');
-});

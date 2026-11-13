@@ -10,12 +10,16 @@
   import AgentProviderIcon, {
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
-  import type { ImportableSession, ImportableSessionProvider } from './importable-session';
+  import {
+    importableSessionKey,
+    type ImportableSession,
+    type ImportableSessionProvider,
+  } from './importable-session';
   import { cwdBasename, sessionSearchText } from './utils/session-import-match';
 
   /**
-   * New Workspace → Import a session: the searchable session list shown in
-   * the picker popover. Presentational; the host owns loading and import.
+   * The searchable session list of the Sessions tab (codebase selector and
+   * onboarding). Presentational; the host owns loading and import.
    */
   interface Props {
     /** `loading` and `error` describe the first, unfiltered page. */
@@ -34,6 +38,10 @@
     onproviderchange?: (provider: string) => void;
     open?: boolean;
     inputRef?: HTMLInputElement | null;
+    /** Why a row cannot be picked (no codebase for it), or null when it can. */
+    disabledReason?: (session: ImportableSession) => string | null;
+    /** Key (`provider:sessionId`) of the picked session, shown as selected. */
+    selectedKey?: string;
   }
 
   let {
@@ -49,11 +57,16 @@
     onproviderchange,
     open = true,
     inputRef = $bindable(null),
+    disabledReason,
+    selectedKey = '',
   }: Props = $props();
+
+  const optionValue = (key: string) => `session:${key}`;
 
   function optionFor(session: ImportableSession): ComboboxOption {
     return {
-      value: `session:${session.provider}:${session.sessionId}`,
+      value: optionValue(importableSessionKey(session)),
+      disabled: !!disabledReason?.(session),
       label: session.title.trim() || m.sessionImport_list_untitled_label(),
       // Every searchable field, so the daemon's matches survive the row filter.
       description: sessionSearchText(session),
@@ -122,6 +135,7 @@
   {:else}
     <Combobox
       {options}
+      value={selectedKey ? optionValue(selectedKey) : ''}
       {open}
       loading={status === 'loading'}
       bind:inputRef
@@ -160,6 +174,7 @@
       {#snippet optionDescription(option)}
         {@const session = option.data as ImportableSession}
         {@const updated = updatedDate(session)}
+        {@const reason = disabledReason?.(session) ?? null}
         <span
           class="type-caption order-last flex min-w-0 basis-full items-center gap-1.5 ps-6 text-muted-foreground"
           data-testid="import-session-meta"
@@ -173,7 +188,12 @@
           {/if}
           <span aria-hidden="true">·</span>
           <span class="min-w-0 truncate" title={session.cwd}>{cwdBasename(session.cwd)}</span>
-          {#if session.gitBranch}
+          {#if reason}
+            <span aria-hidden="true">·</span>
+            <span class="min-w-0 shrink truncate" data-testid="import-session-disabled-reason"
+              >{reason}</span
+            >
+          {:else if session.gitBranch}
             <span aria-hidden="true">·</span>
             <span class="min-w-0 max-w-1/3 shrink truncate" title={session.gitBranch}
               >{session.gitBranch}</span

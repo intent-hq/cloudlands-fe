@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Erneut versuchen",
   "sessionImport_list_search_placeholder": "Sitzungen durchsuchen",
   "sessionImport_list_untitled_label": "Unbenannte Sitzung",
-  "sessionImport_picker_clear_ariaLabel": "Keine Sitzung importieren",
-  "sessionImport_picker_label": "Sitzung",
   "sessionImport_picker_none_label": "Sitzung importieren",
   "sessionImport_picker_note_description": "Die Sitzung wird mit ihrem Verlauf zum ersten Agenten. Nicht committete Änderungen in ihrem Ordner werden nicht kopiert.",
   "settings_browserAccess_accessKey_description": "Ein Browser fragt einmal nach diesem Schlüssel. Wenn du ihn zurücksetzt, werden alle Browser abgemeldet.",
@@ -9051,5 +9049,8 @@
   "machineSetup_error_tooOld": "Intent auf {host} ist zu alt zum Koppeln. Aktualisiere es dort und versuche es dann erneut.",
   "machineSetup_error_orchestrator": "{host} ist so eingestellt, dass es selbst keine Agenten ausführt, und kann daher kein Node sein.",
   "machineSetup_error_pairFailed": "Intent auf {host} konnte nicht koppeln.",
-  "machineSetup_error_runningElsewhere": "Intent läuft bereits auf {host}, aber diese Einrichtung erreicht es nicht. Führe dort intentd pair aus und füge den ausgegebenen Link ein."
+  "machineSetup_error_runningElsewhere": "Intent läuft bereits auf {host}, aber diese Einrichtung erreicht es nicht. Führe dort intentd pair aus und füge den ausgegebenen Link ein.",
+  "sessionImport_tab_label": "Sitzungen",
+  "sessionImport_list_noRepository_reason": "Kein Git-Repository gefunden",
+  "sessionImport_list_refresh_label": "Aktualisieren"
 }
