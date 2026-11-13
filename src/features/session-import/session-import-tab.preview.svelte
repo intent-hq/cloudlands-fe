@@ -1,5 +1,10 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupRecentRepositoriesPreview } from '$lib/components/workspace/initializer/recent-repositories.preview-fixtures';
+
+  function setupFixture() {
+    return setupRecentRepositoriesPreview();
+  }
 
   type Scenario =
     | 'closed'
@@ -73,7 +78,6 @@
   import { Toast, toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
   import RepoSelector from '$lib/components/workspace/initializer/RepoSelector.svelte';
-  import { setupRecentRepositoriesPreview } from '$lib/components/workspace/initializer/recent-repositories.preview-fixtures';
   import ImportSessionTab from './ImportSessionTab.svelte';
   import {
     importableSessionKey,
@@ -225,7 +229,7 @@
   );
 
   // The selector scenes need the host's `sessionImport: 1` and the form fixtures.
-  const cleanupFixture = inSelector ? setupRecentRepositoriesPreview() : null;
+  const cleanupFixture = inSelector ? setupFixture() : null;
   if (inSelector) {
     const { context, snapshot, invalidation, presentationVersion } = store.state.principal;
     if (context && snapshot)
