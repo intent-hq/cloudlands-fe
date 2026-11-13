@@ -47,7 +47,7 @@ export const ENCODER_HUD_HIDE_MS = 1200;
  * (switch bounce, held-knob repeat) and keep Home open. Each one extends it;
  * turning the knob on Home ends it.
  */
-export const ENCODER_HOME_SETTLE_MS = 750;
+const ENCODER_HOME_SETTLE_MS = 750;
 
 export interface EncoderDeps {
   /** Navigate the app to a non-workspace route (Home). Defaults to `navigateToRoute`. */
