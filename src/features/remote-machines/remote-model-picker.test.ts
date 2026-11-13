@@ -248,6 +248,25 @@ describe('buildMachineModelGroups', () => {
     expect(keys).toEqual(['claude-code']);
   });
 
+  it('gives a provider the machine hides (visible: false) no tab, even with models', () => {
+    const keys = buildMachineModelGroups({
+      machine: machine({
+        capabilities: {
+          providers: [
+            { id: 'claude-code', status: 'ready', models: ['opus'] },
+            { id: 'cortex', status: 'ready', models: ['cortex-1'], visible: false },
+            { id: 'opencode', status: 'cli-missing', models: ['oc-1'] },
+          ],
+        },
+      }),
+      providerRefs: ['claude-code', 'cortex', 'opencode'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: [],
+    }).map((group) => group.key);
+    expect(keys).toEqual(['claude-code']);
+  });
+
   it('offers a marked profile on a signed-out machine', () => {
     expect(byKey['codex@p-key'].options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
   });
