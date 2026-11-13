@@ -137,8 +137,8 @@
     }
   });
 
-  // The ordered list's title already says the entry runs agents; the dot carries it instead.
-  const pillHidden = $derived(!!order && entry?.state === 'ready');
+  // A ready entry shows no pill; the dot carries it.
+  const pillHidden = $derived(entry?.state === 'ready');
 
   const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
 

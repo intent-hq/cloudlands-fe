@@ -3,19 +3,17 @@
   import type { RemoteMachine } from '$shared/types/remote-machines';
   import { remoteMachineBadge } from './remote-machines-messages';
 
+  // Only a problem gets a pill; a machine that can run agents shows none.
   let {
     machine,
     backendLabel,
-    exceptionsOnly = false,
   }: {
     machine: RemoteMachine;
     backendLabel: string;
-    /** In the ordered "Where … runs agents" list: no pill while the machine can run agents. */
-    exceptionsOnly?: boolean;
   } = $props();
   const badge = $derived(remoteMachineBadge(machine, backendLabel));
 </script>
 
-{#if !exceptionsOnly || badge.color !== 'green'}
+{#if badge.color !== 'green'}
   <Badge variant="dot" color={badge.color}>{badge.label}</Badge>
 {/if}

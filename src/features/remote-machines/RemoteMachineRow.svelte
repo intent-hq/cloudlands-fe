@@ -142,7 +142,7 @@
         {:else if platform}
           <span>{platform}</span>
         {/if}
-        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} exceptionsOnly={!!order} />
+        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
         {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update

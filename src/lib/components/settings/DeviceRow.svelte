@@ -676,11 +676,7 @@
           <MachinePlatformIcon {platform} />
         {/if}
         {#if exposedMachine}
-          <RemoteMachineBadge
-            machine={exposedMachine}
-            backendLabel={$backendLabel$}
-            exceptionsOnly={!!order}
-          />
+          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
         {:else if isNode && $remoteSupported$}
