@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Native Markdown media reproduction</title>
+  </head>
+  <body>
+    <main id="fixture" style="padding: 24px"></main>
+    <script>
+      window.process = { env: { NODE_ENV: 'test' } };
+    </script>
+    <script type="module">
+      import '../../../src/app.css';
+      import { mount, unmount } from 'svelte';
+      import MarkdownViewer from '../../../src/lib/components/markdown/MarkdownViewer.svelte';
+      let component;
+      window.renderMedia = async (props) => {
+        if (component) await unmount(component);
+        component = mount(MarkdownViewer, { target: document.getElementById('fixture'), props });
+      };
+    </script>
+  </body>
+</html>
