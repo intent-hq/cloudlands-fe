@@ -46,7 +46,13 @@
     normalizeBrowserAddressInput,
   } from './embedded-browser-url-validation';
   import Fa from 'svelte-fa';
-  import { faArrowLeft, faArrowRight, faRefresh, faLock } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowLeft,
+    faArrowRight,
+    faRefresh,
+    faLock,
+    faCircleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
@@ -204,6 +210,7 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; navigation events keep this current
   let isSecure = $state(url?.startsWith('https://') ?? false);
   let errorMessage = $state('');
+  const loadErrorDescriptionId = $props.id();
   let refreshButtonRef: HTMLButtonElement | null = $state(null);
   let webviewReady = $state(false);
   let consoleErrorCount = $state(0);
@@ -708,6 +715,7 @@
 
     // Error handling
     addWebviewListener('did-fail-load', (e: any) => {
+      if (e.isMainFrame === false) return;
       if (e.errorCode !== -3) {
         // Ignore aborted loads (error code -3)
         // Provide friendlier error messages for common scenarios
@@ -1287,6 +1295,7 @@
           actionLabel={m.chat_shared_retry_label()}
           onAction={retryLoadError}
           actionFocusTarget={refreshButtonRef}
+          descriptionId={loadErrorDescriptionId}
         />
       {/if}
     </div>
@@ -1411,25 +1420,15 @@
   </div>
 
   <!-- Browser content -->
-  <div class="flex-1 relative overflow-hidden">
-    {#if isGuestDestroyed}
-      <div class="flex h-full items-center justify-center p-6" data-browser-guest-destroyed>
-        <ErrorState
-          density="compact"
-          retryLabel={m.chat_shared_retry_label()}
-          onRetry={retryLoadError}
-        >
-          {#snippet message()}{errorMessage}{/snippet}
-        </ErrorState>
-      </div>
-    {:else if isUrlValid && !isRecreatingWebview}
+  <div class="min-h-0 flex-1 relative overflow-hidden">
+    {#if isUrlValid && !isRecreatingWebview && !isGuestDestroyed}
       <BrowserDeviceFrame
         {viewport}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
       >
         {@render browserWebview()}
       </BrowserDeviceFrame>
-    {:else if url && !isRecreatingWebview}
+    {:else if url && !isRecreatingWebview && !isGuestDestroyed}
       <!-- URL is invalid or blocked - show error with details -->
       <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
@@ -1445,13 +1444,32 @@
           <p class="text-xs mt-2 max-w-md break-all text-muted-foreground">{url}</p>
         </div>
       </div>
-    {:else}
+    {:else if !isGuestDestroyed}
       <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">🌐</div>
           <p class="text-lg font-medium mb-1">{m.browser_embedded_noUrl_label()}</p>
           <p class="text-sm">{m.browser_embedded_noUrl_description()}</p>
         </div>
+      </div>
+    {/if}
+    {#if errorMessage}
+      <div
+        class="absolute inset-0 z-30 flex flex-col overflow-y-auto bg-background"
+        data-browser-load-error
+        data-browser-guest-destroyed={isGuestDestroyed || undefined}
+      >
+        <ErrorState
+          class="my-auto min-h-0 w-full shrink-0 py-6 [overflow-wrap:anywhere]"
+          severity="danger"
+          retryLabel={m.chat_shared_retry_label()}
+          onRetry={retryLoadError}
+        >
+          {#snippet icon()}<Fa icon={faCircleExclamation} size="lg" />{/snippet}
+          {#snippet message()}
+            <p id={loadErrorDescriptionId} class="text-foreground">{errorMessage}</p>
+          {/snippet}
+        </ErrorState>
       </div>
     {/if}
   </div>

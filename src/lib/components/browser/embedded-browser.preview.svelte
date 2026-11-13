@@ -4,7 +4,7 @@
   interface Props {
     loading?: boolean;
     brokenFavicon?: boolean;
-    error?: 'connection' | 'closed';
+    error?: 'connection' | 'long' | 'closed';
     showDetails?: boolean;
   }
 
@@ -17,6 +17,7 @@
       loading: { props: { loading: true } },
       'broken-favicon': { props: { brokenFavicon: true } },
       'load-error': { props: { error: 'connection' } },
+      'long-load-error': { props: { error: 'long' } },
       'load-error-details': { props: { error: 'connection', showDetails: true } },
       'page-closed': { props: { error: 'closed' } },
     },
@@ -41,7 +42,8 @@
       if (!webview) throw new Error('Embedded browser fixture webview missing');
       // The only native src is about:blank. No tabId, registration, transport, or remote page.
       // Fake guest events exercise the production toolbar without live browsing.
-      let currentUrl = 'https://example.invalid/docs';
+      let currentUrl =
+        error === 'connection' ? 'http://localhost:5173' : 'https://example.invalid/docs';
       let guestClosed = false;
       const emit = (type: string, fields: Record<string, unknown> = {}) =>
         webview.dispatchEvent(Object.assign(new Event(type), fields));
@@ -60,11 +62,15 @@
           emit('did-navigate', { url });
           emit('did-stop-loading');
         },
-        reload: () => (lastAction = 'refresh'),
+        reload: () => {
+          lastAction = 'refresh';
+          emit('did-navigate', { url: currentUrl });
+          emit('did-stop-loading');
+        },
         setAudioMuted: () => {},
       });
       emit('did-navigate', { url: currentUrl });
-      emit('page-title-updated', { title: 'Example docs' });
+      if (error !== 'connection') emit('page-title-updated', { title: 'Example docs' });
       emit('dom-ready');
       if (brokenFavicon) {
         emit('page-favicon-updated', { favicons: ['data:image/png;base64,broken'] });
@@ -72,8 +78,16 @@
       emit(loading ? 'did-start-loading' : 'did-stop-loading');
       if (error === 'connection')
         emit('did-fail-load', {
+          isMainFrame: true,
           errorCode: -102,
           validatedURL: 'http://localhost:5173',
+        });
+      if (error === 'long')
+        emit('did-fail-load', {
+          isMainFrame: true,
+          errorCode: -105,
+          validatedURL: currentUrl,
+          errorDescription: `The server could not be reached at https://${'unreachable-'.repeat(12)}example.invalid. Check the connection and try again.`,
         });
       if (error === 'closed') {
         guestClosed = true;
@@ -93,7 +107,7 @@
 </script>
 
 <section class="grid w-full gap-3" bind:this={root} data-embedded-browser-fixture={ready}>
-  <div class="h-48 overflow-hidden rounded-lg border border-border">
+  <div class="overflow-hidden rounded-lg border border-border {error === 'long' ? 'h-48' : 'h-80'}">
     <EmbeddedBrowser
       {url}
       workspaceId="preview-browser-address"

@@ -1,12 +1,82 @@
 import { expect, test } from '../../../test/ct-test';
 import ViewerPreview, { ONLINE_HOST, OFFLINE_HOST } from './browser-viewer-tab.preview.svelte';
 import BrowserHarness from '$features/layout/tab-types/__tests__/mocks/BrowserTabTypeHeaderHarness.svelte';
+import EmbeddedPreview from './embedded-browser.preview.svelte';
 
 const mirror = {
   url: 'https://intentapp.dev/docs',
   title: 'Intent docs',
   host: ONLINE_HOST,
 };
+
+test('connection errors appear in the preview and Retry recovers the same guest', async ({
+  mount,
+}, testInfo) => {
+  const component = await mount(EmbeddedPreview, { props: { error: 'connection' } });
+  const guest = component.locator('webview');
+  await guest.evaluate((element) => (element.dataset.retainedGuest = 'true'));
+  const error = component.locator('[data-browser-load-error]');
+  await expect(error.getByRole('alert')).toContainText('Cannot connect to localhost:5173');
+  await expect(component.getByRole('button', { name: 'Edit browser address' })).toBeEnabled();
+  await testInfo.attach('connection-error-in-preview', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+  await error.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(component.locator('[data-preview-last-action]')).toHaveText('refresh');
+  await expect(guest).toHaveAttribute('data-retained-guest', 'true');
+  await expect(error).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'Refresh page' })).toBeFocused();
+});
+
+test('subframe failures and cancelled navigations do not cover the page', async ({ mount }) => {
+  const component = await mount(EmbeddedPreview);
+  await expect(component).toHaveAttribute('data-embedded-browser-fixture', 'true');
+  const guest = component.locator('webview');
+  for (const fields of [
+    { isMainFrame: false, errorCode: -102 },
+    { isMainFrame: true, errorCode: -3 },
+  ]) {
+    await guest.evaluate((element, failure) => {
+      element.dispatchEvent(
+        Object.assign(new Event('did-fail-load'), {
+          validatedURL: 'http://localhost:5173',
+          ...failure,
+        }),
+      );
+    }, fields);
+    await expect(component.locator('[data-browser-load-error]')).toHaveCount(0);
+    await expect(component.getByRole('button', { name: 'Page error', exact: true })).toHaveCount(0);
+  }
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`long preview errors keep keyboard recovery reachable in a narrow ${theme} panel`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 280, height: 260 });
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle('dark', dark),
+      theme === 'dark',
+    );
+    const component = await mount(EmbeddedPreview, { props: { error: 'long' } });
+    const error = component.locator('[data-browser-load-error]');
+    const retry = error.getByRole('button', { name: 'Retry', exact: true });
+    await retry.focus();
+    await expect(retry).toBeFocused();
+    await expect(retry).toBeInViewport();
+    const overflow = await error.evaluate((element) => element.scrollWidth > element.clientWidth);
+    expect(overflow).toBe(false);
+    await testInfo.attach(`narrow-preview-error-${theme}`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
+    await retry.press('Enter');
+    await expect(error).toHaveCount(0);
+    await expect(component.getByRole('button', { name: 'Refresh page' })).toBeFocused();
+  });
+}
 
 test('host details follow disconnect and reconnect without losing recovery actions', async ({
   mount,
