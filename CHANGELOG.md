@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.5...v2.334.6) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.206 ([#4597](https://github.com/intent-hq/cloudlands-fe/issues/4597)) ([7ab3593](https://github.com/intent-hq/cloudlands-fe/commit/7ab3593c49c3d6193b2d88eb69b0d11d4db1d8ab))
+* **dock:** recognize Figma desktop documents ([#4592](https://github.com/intent-hq/cloudlands-fe/issues/4592)) ([b1225f9](https://github.com/intent-hq/cloudlands-fe/commit/b1225f9e4bd42e2ed137d8c5b0f1dce7e822341d))
+
 ## [2.334.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.4...v2.334.5) (2026-11-13)
 
 
