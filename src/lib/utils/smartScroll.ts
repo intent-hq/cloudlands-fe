@@ -498,6 +498,24 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       return true;
     }
 
+    function landDownward(geometry: ScrollGeometry): boolean {
+      // A read that finds the bottom moved up with the reader on it cannot
+      // tell arrival from a collapse that clamped the reader there: browsers
+      // merge both into one scroll event. Ending the gesture keeps a reader
+      // who stopped short unlocked; one who did arrive scrolls again or
+      // presses End.
+      const previous = geometry.previous;
+      if (
+        previous !== undefined &&
+        geometry.maximum < previous.maximum &&
+        geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
+      ) {
+        downward = null;
+        return false;
+      }
+      return relockIfReached(geometry, true);
+    }
+
     function landNextFrame(wheel?: WheelEvent) {
       landFrameWheel = wheel;
       if (landFrame !== null) return;
@@ -506,7 +524,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         const wheel = landFrameWheel;
         landFrameWheel = undefined;
         if (destroyed || !enabled || !isLive(wheel)) return;
-        if (!relockIfReached(readScrollGeometry(), true)) reportState();
+        if (!landDownward(readScrollGeometry())) reportState();
       });
     }
 
@@ -542,7 +560,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // Re-lock as the gesture lands, before streamed growth can move the
       // bottom away ahead of the gesture's frame check.
       const movedDown = !previous || geometry.scrollTop > previous.scrollTop;
-      return movedDown && isLive() && relockIfReached(geometry, true);
+      return movedDown && isLive() && landDownward(geometry);
     }
 
     return {
@@ -587,7 +605,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         if (source === 'scrollend') {
           const live = isLive();
           downward = null;
-          if (live) relockIfReached(readScrollGeometry(), true);
+          if (live) landDownward(readScrollGeometry());
           return;
         }
         if (!drag) return;
