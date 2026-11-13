@@ -9,6 +9,10 @@
  *   --project  Check only the named programs. `type-check:renderer` (prebuild, CI) uses
  *              it because build:main and build:preload compile their own programs.
  *   --quiet    Print nothing on success and only the diagnostics on failure.
+ *
+ * TYPE_CHECK_SKIP_RENDERER=1 drops the renderer program, but only under GitHub Actions: the
+ * PR workflow's "Architecture validation" step sets it because its own "Type check
+ * (renderer)" step already ran it. Local runs ignore it, so a stray export never hides errors.
  */
 
 import { spawn } from 'child_process';
@@ -88,8 +92,15 @@ async function main() {
     console.error(`${(error as Error).message}\n${USAGE}`);
     return 2;
   }
-  const { quiet, names } = options;
+  const { quiet } = options;
   const log = (line: string) => quiet || console.log(line);
+  const skipRenderer =
+    process.env.TYPE_CHECK_SKIP_RENDERER === '1' && process.env.GITHUB_ACTIONS === 'true';
+  const names = options.names.filter((name) => !(skipRenderer && name === 'renderer'));
+  if (names.length < options.names.length) {
+    log('⏭️  Renderer type check skipped (TYPE_CHECK_SKIP_RENDERER=1): CI ran it as its own step.');
+  }
+  if (!names.length) return 0;
 
   for (const name of names) {
     for (const step of PROJECTS[name].generate) {
