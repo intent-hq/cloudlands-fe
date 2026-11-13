@@ -1,4 +1,3 @@
-import { m } from '$shared/paraglide/messages.js';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -31,7 +30,7 @@ import {
 import { resolveWorkspaceTabGroupToggle } from './workspace-tab-group-items';
 import { resolveWorkspaceTabProjects } from './workspace-tab-projects';
 
-/** Regroups the open tabs by project, or explains why that would change nothing. */
+/** Regroups the open tabs by project; no `run` when that would change nothing. */
 export function groupTabsByProjectAction(): WorkspaceTabGroupByProject {
   const state = appStore.state;
   const groups = selectWorkspaceTabGroups.select(state);
@@ -43,12 +42,7 @@ export function groupTabsByProjectAction(): WorkspaceTabGroupByProject {
   const unchanged =
     JSON.stringify(layout.workspaceStacks) === JSON.stringify(stacks) &&
     membership(layout.groups) === membership(groups);
-  if (!layout.groups.some(isWorkspaceTabProjectGroup)) {
-    return { disabledReason: m.layout_workspaceTabGroup_groupByProject_noProjects_reason() };
-  }
-  if (unchanged) {
-    return { disabledReason: m.layout_workspaceTabGroup_groupByProject_alreadyGrouped_reason() };
-  }
+  if (!layout.groups.some(isWorkspaceTabProjectGroup) || unchanged) return {};
   return { run: () => appStore.dispatch(groupWorkspaceTabsByProject(projects)) };
 }
 

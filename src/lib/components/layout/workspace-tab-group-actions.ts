@@ -20,10 +20,9 @@ import {
   workspaceTabGroupDisplayName,
 } from './workspace-tab-group-labels';
 
-/** Group by project: `run` when it would change the tabs, else why it is unavailable. */
+/** Group by project; without `run` the entry shows disabled because nothing would change. */
 export interface WorkspaceTabGroupByProject {
   run?: () => void;
-  disabledReason?: string;
 }
 
 export interface WorkspaceTabGroupEntriesOptions {
@@ -78,17 +77,13 @@ export function buildWorkspaceTabGroupEntries({
   return entries;
 }
 
-function groupByProjectEntry({
-  run,
-  disabledReason,
-}: WorkspaceTabGroupByProject): SidebarMenuEntry {
+function groupByProjectEntry({ run }: WorkspaceTabGroupByProject): SidebarMenuEntry {
   return {
     id: 'tab-group-by-project',
     label: m.layout_workspaceTabGroup_groupByProject_label(),
     icon: faFolderTree,
     onClick: run ?? (() => {}),
     disabled: !run,
-    disabledReason: run ? undefined : disabledReason,
   };
 }
 
