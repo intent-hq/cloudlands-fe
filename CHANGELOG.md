@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.4...v2.334.5) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** show load errors in the preview ([#4590](https://github.com/intent-hq/cloudlands-fe/issues/4590)) ([c8071ee](https://github.com/intent-hq/cloudlands-fe/commit/c8071ee6e55869be4b797ecb8560c43fd828c376))
+* bump intentd sidecar to v0.11.205 ([#4591](https://github.com/intent-hq/cloudlands-fe/issues/4591)) ([7eec5ba](https://github.com/intent-hq/cloudlands-fe/commit/7eec5ba87bc0065e6df35ece664754acb564afd2))
+* **dock:** allow explicit local tab links ([#4588](https://github.com/intent-hq/cloudlands-fe/issues/4588)) ([cdf40d0](https://github.com/intent-hq/cloudlands-fe/commit/cdf40d005b3e22519d135eb4bd86050493d96070))
+* open share invitations in the active window ([#4586](https://github.com/intent-hq/cloudlands-fe/issues/4586)) ([4fc0d2b](https://github.com/intent-hq/cloudlands-fe/commit/4fc0d2b55d5acc9f2362ee1dcbc45b6c7298a6a7))
+
 ## [2.334.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.3...v2.334.4) (2026-11-13)
 
 
