@@ -241,6 +241,18 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
   });
 
+  it("keeps the card's Start on placement alongside a picked provider", () => {
+    const placement = { target: 'remote', checkout: 'isolated', nodeId: 'd-mac' };
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: '/repo',
+        initialAgent: { prompt: 'Go', placement: { target: 'local', checkout: 'worktree' } },
+      }),
+      { providerOverride: 'codex', placement },
+    );
+    expect(request.initialAgent).toMatchObject({ provider: 'codex', placement });
+  });
+
   it('ignores a malformed adopted setup', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),
