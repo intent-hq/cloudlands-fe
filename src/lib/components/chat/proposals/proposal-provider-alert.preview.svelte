@@ -8,13 +8,23 @@
   function setupProviders(auggieEnabled: boolean) {
     const restoreProviders = setupProviderDisablePreview('signed-out', auggieEnabled);
     // Codex is the default provider; its models name the agent's default.
-    store.dispatch(
-      providerModelsLoaded(
-        'codex',
-        { models: [{ value: 'gpt-5.5', label: 'GPT-5.5' }] },
-        store.state.providerModels.clearEpoch,
-      ),
-    );
+    // Both enabled providers list models with effort levels, so the open
+    // Model row shows the provider rail and the effort footer.
+    const efforts = ['low', 'medium', 'high'];
+    const catalogs = {
+      codex: [
+        { value: 'gpt-5.5', label: 'GPT-5.5', effortLevels: efforts },
+        { value: 'gpt-5.5-mini', label: 'GPT-5.5 mini', effortLevels: efforts },
+      ],
+      'claude-code': [
+        { value: 'claude-opus-4-5', label: 'Opus 4.5', effortLevels: [...efforts, 'max'] },
+        { value: 'claude-sonnet-4-5', label: 'Sonnet 4.5', effortLevels: efforts },
+      ],
+    };
+    for (const [providerId, models] of Object.entries(catalogs))
+      store.dispatch(
+        providerModelsLoaded(providerId, { models }, store.state.providerModels.clearEpoch),
+      );
     return restoreProviders;
   }
 
