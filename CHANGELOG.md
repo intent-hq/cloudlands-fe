@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.2...v2.334.3) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* preserve live machine rail device details ([#4583](https://github.com/intent-hq/cloudlands-fe/issues/4583)) ([f90413c](https://github.com/intent-hq/cloudlands-fe/commit/f90413c5e5b8ba743e58b8c54d54f16c3ad27e50))
+
 ## [2.334.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.1...v2.334.2) (2026-11-13)
 
 
