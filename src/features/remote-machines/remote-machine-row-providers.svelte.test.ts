@@ -88,13 +88,13 @@ describe('status dots and platforms in the ordered list', () => {
 
   it('greys a machine without a live link and names the state', () => {
     const garage = row(renderState('disconnected'), 'Garage node');
-    expect(dot(garage).className).toContain('bg-muted-foreground');
+    expect(dot(garage).dataset.remoteMachineDot).toBe('disconnected');
     expect(dot(garage).getAttribute('aria-label')).toMatch(/disconnected/i);
   });
 
   it('colours a problem and leaves its name to the badge', () => {
     const garage = row(renderState('exceptions'), 'Garage node');
-    expect(dot(garage).className).toContain('bg-warning');
+    expect(dot(garage).dataset.remoteMachineDot).toBe('unreachable');
     expect(dot(garage).getAttribute('aria-hidden')).toBe('true');
     expect(within(garage).getByText('Unreachable')).toBeTruthy();
   });
