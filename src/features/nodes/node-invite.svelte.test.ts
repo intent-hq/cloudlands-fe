@@ -40,7 +40,7 @@ describe('a machine added from a node link', () => {
     const nodes = view.container.querySelector('[data-nodes-section]') as HTMLElement;
     const row = nodes.querySelector('[data-remote-machine-row="d-lab-node"]') as HTMLElement;
     expect(within(row).getByText('Lab node')).toBeTruthy();
-    expect(within(row).getByText('Runs agents for Build box')).toBeTruthy();
+    expect(within(row).queryByText('Runs agents for Build box')).toBeNull();
     expect(row.dataset.highlighted).toBe('true');
     expect(
       view.container.querySelector('section[aria-labelledby="remote-machines-title"]'),

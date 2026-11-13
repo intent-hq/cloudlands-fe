@@ -23,7 +23,8 @@
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { runningAgentsLabel } from './remote-machines-messages';
+  import { remoteMachineBadge, runningAgentsLabel } from './remote-machines-messages';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
   import PreferredMachineBadge from './PreferredMachineBadge.svelte';
   import MachinePlatformIcon from './MachinePlatformIcon.svelte';
@@ -70,6 +71,22 @@
     );
   });
   const report = $derived(machineRowReport(machine));
+  // Green while the backend holds a link to it, grey without one; a
+  // problem shows its badge colour, and the badge names it.
+  const dot = $derived.by((): { class: string; label: string | null } => {
+    if (machine.state === 'connected')
+      return {
+        class: 'bg-success',
+        label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
+      };
+    if (machine.state === 'disconnected')
+      return {
+        class: 'bg-muted-foreground/50',
+        label: m.settings_devices_statusDisconnected_label(),
+      };
+    const badge = remoteMachineBadge(machine, $backendLabel$);
+    return { class: badge.color === 'red' ? 'bg-danger' : 'bg-warning', label: null };
+  });
   const actions = $derived<ActionDefinition[]>(
     withOrderActions(
       [
@@ -103,10 +120,27 @@
   data-highlighted={highlighted || undefined}
 >
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
+    {#snippet leading()}
+      <span class="flex items-center gap-3">
+        <span
+          class={cn(
+            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+            dot.class,
+          )}
+          role={dot.label ? 'status' : undefined}
+          aria-label={dot.label
+            ? m.settings_devices_status_ariaLabel({ status: dot.label })
+            : undefined}
+          aria-hidden={dot.label ? undefined : 'true'}
+          data-remote-machine-dot={machine.state}
+        ></span>
+        <DeviceIcon record={{ os: machine.platform?.os }} size={20} class="text-foreground" />
+      </span>
+    {/snippet}
     {#snippet title()}{machine.name}{/snippet}
     {#snippet meta()}
       <!-- Laid out like a saved machine's row (DeviceRow): platform icon,
-           version, then the providers its last report can run. -->
+           then the providers its last report can run. -->
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if platformIcon}
@@ -114,8 +148,7 @@
         {:else if platform}
           <span>{platform}</span>
         {/if}
-        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} exceptionsOnly={!!order} />
-        {#if report?.intentdVersion}<span>{report.intentdVersion}</span>{/if}
+        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
         {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
