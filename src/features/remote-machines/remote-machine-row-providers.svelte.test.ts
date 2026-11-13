@@ -54,6 +54,13 @@ describe('remote machine rows while disconnected', () => {
     expect(within(cache).getByText('No providers ready')).toBeTruthy();
   });
 
+  it('says so on a saved machine row too', () => {
+    const studio = row(renderDisconnected(), 'Studio Mac');
+    expect(studio.hasAttribute('data-device-row')).toBe(true);
+    expect(within(studio).queryByRole('list', { name: 'Available AI providers' })).toBeNull();
+    expect(within(studio).getByText('No providers ready')).toBeTruthy();
+  });
+
   it('adds no "Disconnected" pill', () => {
     const section = renderDisconnected();
     expect(within(row(section, 'Garage node')).queryByText(/disconnected/i)).toBeNull();

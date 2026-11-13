@@ -70,6 +70,14 @@ const CACHE_IDLE: RemoteMachine = {
   addedAt: '2026-11-03T00:00:00Z',
 };
 
+/** A saved machine, idle, whose last report has no provider it can run. */
+const STUDIO_IDLE: RemoteMachine = {
+  ...STUDIO,
+  state: 'disconnected',
+  runningAgents: 0,
+  capabilities: CACHE_IDLE.capabilities,
+};
+
 const ORDER: MachineOrderRow[] = [
   { kind: 'machine', nodeId: GARAGE.id, name: GARAGE.name },
   { kind: 'local', name: 'build-box' },
@@ -102,7 +110,7 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
             { ...GARAGE, state: 'unreachable' },
           ]
         : disconnected
-          ? [STUDIO, GARAGE_IDLE, CACHE_IDLE]
+          ? [STUDIO_IDLE, GARAGE_IDLE, CACHE_IDLE]
           : [STUDIO, GARAGE],
       localFingerprint: 'EE:FF',
       executorBackends: [],
