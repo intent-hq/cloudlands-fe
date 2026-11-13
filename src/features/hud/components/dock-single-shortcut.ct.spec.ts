@@ -482,3 +482,141 @@ test('single dock shortcut: linked conversation, else the selected one, else the
     ),
   );
 });
+
+for (const context of [
+  {
+    name: 'local port page',
+    url: 'http://127.0.0.1:5173/project/?view=design#canvas',
+    appId: 'com.apple.Safari',
+    appName: 'Synthetic Safari',
+  },
+  {
+    name: 'verified Figma document',
+    url: 'https://www.figma.com/design/fixtureDocument/Review?node-id=1-2',
+    appId: 'com.figma.Desktop',
+    appName: 'Figma',
+  },
+]) {
+  test(`explicit tab menu saves, follows and unlinks ${context.name}`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 1000, height: 740 });
+    await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).__dockComposerE2E?.store.state.dockConversation.loading,
+        ),
+      )
+      .toBe(false);
+    const origin = await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      h.contextReady();
+      return h.store.state.dockConversation.workspaceId as string;
+    });
+    const read = () =>
+      page.evaluate(() =>
+        (window as any).__dockComposerE2E.contextSnapshot(),
+      ) as Promise<DockLinkedContextSnapshot>;
+    const observe = (url: string, sequence: number) =>
+      page.evaluate(
+        ({ url, sequence, context }) => {
+          const h = (window as any).__dockComposerE2E;
+          h.context({
+            sequence,
+            contextVersion: `explicit-${sequence}`,
+            backendId: h.store.state.connections.windowBackendId,
+            identityKey: `url:${url}`,
+            identityKind: 'url',
+            self: false,
+            appId: context.appId,
+            appName: context.appName,
+            url,
+            icon: null,
+          });
+        },
+        { url, sequence, context },
+      );
+    await observe(context.url, 1);
+    await expect.poll(() => read().then((s) => s.url)).toBe(context.url);
+    const header = page.locator('[data-dock-header-link]');
+    const tab = page.getByRole('menuitemcheckbox', { name: 'Link to active tab' });
+    const app = page.getByRole('menuitemcheckbox', { name: 'Link to active app' });
+    await header.click();
+    await expect(tab).toBeEnabled();
+    await expect(tab).toHaveAttribute('aria-checked', 'false');
+    await expect(app).toBeVisible();
+    await page.screenshot({ path: info.outputPath('menu-before-link.png') });
+    await tab.click();
+    await expect.poll(() => read().then((s) => s.linkScopes?.tab.savedWorkspaceId)).toBe(origin);
+    await expect.poll(() => read().then((s) => s.linkScopes?.app.savedWorkspaceId)).toBeNull();
+    const saved = await read();
+    // A different document/port cannot inherit an exact tab association.
+    const other = context.url.replace(
+      context.name === 'local port page' ? ':5173' : 'fixtureDocument',
+      context.name === 'local port page' ? ':5174' : 'otherDocument',
+    );
+    await observe(other, 2);
+    await expect.poll(() => read().then((s) => s.linkedWorkspaceId)).toBeNull();
+    await observe(context.url, 3);
+    await expect.poll(() => read().then((s) => s.linkedWorkspaceId)).toBe(origin);
+    await page.evaluate(() => (window as any).__dockComposerE2E.close());
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).__dockComposerE2E.store.state.dockConversation.workspaceId,
+        ),
+      )
+      .toBeNull();
+    await page.evaluate(
+      ({ context }) => {
+        const h = (window as any).__dockComposerE2E;
+        h.shortcut({
+          id: 'explicit-follow',
+          action: 'focus',
+          backendId: h.store.state.connections.windowBackendId,
+          contextVersion: 'explicit-3',
+          identityKey: `url:${context.url}`,
+          url: context.url,
+          appId: context.appId,
+        });
+      },
+      { context },
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).__dockComposerE2E.store.state.dockConversation.workspaceId,
+        ),
+      )
+      .toBe(origin);
+    await header.click();
+    await expect(tab).toHaveAttribute('aria-checked', 'true');
+    await page.screenshot({ path: info.outputPath('menu-after-link.png') });
+    await tab.click();
+    await expect.poll(() => read().then((s) => s.linkScopes?.tab.savedWorkspaceId)).toBeNull();
+    await expect.poll(() => read().then((s) => s.linkedWorkspaceId)).toBeNull();
+    // Changing the observation retires an open menu without saving another link.
+    await header.click();
+    await expect(tab).toBeVisible();
+    await observe(other, 4);
+    await expect(tab).toBeHidden();
+    await expect.poll(() => read().then((s) => s.linkScopes?.tab.savedWorkspaceId)).toBeNull();
+    await writeFile(
+      info.outputPath('explicit-tab-link.json'),
+      JSON.stringify(
+        {
+          boundary:
+            'Real renderer menu/store/sagas; verified URL observation is synthetic. No native Figma AX detection, OS input or user data.',
+          context,
+          origin,
+          saved,
+          final: await read(),
+        },
+        null,
+        2,
+      ),
+    );
+  });
+}
