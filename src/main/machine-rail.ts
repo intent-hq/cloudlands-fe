@@ -227,6 +227,12 @@ function observeWindow(window: BrowserWindowType): void {
   window.on('resize', relayout);
   window.on('enter-full-screen', relayout);
   window.on('leave-full-screen', relayout);
+  // A window that becomes active again focuses its own page; hand keyboard
+  // focus to the machine on screen, so its shortcuts work without a click.
+  window.on('focus', () => {
+    const shown = getShownRendererWebContents(window);
+    if (shown !== window.webContents && !shown.isDestroyed()) shown.focus();
+  });
   window.once('closed', () => {
     const rail = readWindowRail(window);
     clearTransition(window);

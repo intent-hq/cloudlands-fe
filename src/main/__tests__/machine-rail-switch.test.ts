@@ -46,12 +46,15 @@ const fakes = vi.hoisted(() => {
     getContentSize: () => [800, 600],
     isDestroyed: () => false,
     isFocused: () => false,
-    on: () => {},
+    on: (event: string, listener: () => void) => {
+      (windowListeners[event] ??= []).push(listener);
+    },
     once: () => {},
   };
   const bindings = new Map<unknown, string>();
+  const windowListeners: Record<string, Array<() => void>> = {};
   const shown = { current: null as unknown };
-  return { webContents, handlers, views, children, window, bindings, shown };
+  return { webContents, handlers, views, children, window, bindings, shown, windowListeners };
 });
 
 vi.mock('electron', () => {
@@ -343,6 +346,20 @@ describe('machine rail switching', () => {
       pendingId: '',
     });
     expect(viewOf('c').visible).toBe(true);
+  });
+
+  it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SHOWN, viewOf('b').webContents);
+    viewOf('b').webContents.focus.mockClear();
+    for (const listener of fakes.windowListeners.focus ?? []) listener();
+    expect(viewOf('b').webContents.focus).toHaveBeenCalled();
+
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    viewOf('b').webContents.focus.mockClear();
+    for (const listener of fakes.windowListeners.focus ?? []) listener();
+    expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
   });
 
   it('forgets the wait for a machine removed while it starts', async () => {
