@@ -125,7 +125,9 @@
         {#if providers.length > 0}
           <MachineProviderIcons {providers} />
         {:else if report}
-          <span data-machine-no-providers>{m.remoteMachines_noProviders_label()}</span>
+          <span class="ml-1 border-l border-border pl-2" data-machine-no-providers
+            >{m.remoteMachines_noProviders_label()}</span
+          >
         {/if}
       </span>
     {/snippet}

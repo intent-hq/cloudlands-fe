@@ -10,12 +10,7 @@ import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machin
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
 export type MachineOrderPreviewState =
-  | 'owner'
-  | 'member'
-  | 'saving'
-  | 'unsupported'
-  | 'exceptions'
-  | 'disconnected';
+  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'disconnected';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
