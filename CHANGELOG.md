@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.333.0...v2.334.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **machines:** trim machine rows to status, platform and providers ([#4573](https://github.com/intent-hq/cloudlands-fe/issues/4573)) ([c993e2d](https://github.com/intent-hq/cloudlands-fe/commit/c993e2d95b75d4f7f95030d87469eda1cca58155))
+
+
+### 🐛 Bug Fixes
+
+* hide gated (visible:false) providers in the remote model picker ([#4572](https://github.com/intent-hq/cloudlands-fe/issues/4572)) ([fab42b8](https://github.com/intent-hq/cloudlands-fe/commit/fab42b8b0a33916c761e43060f8664ebcad62079))
+* **machine-rail:** faster machine names, and no stale ones after switching ([#4570](https://github.com/intent-hq/cloudlands-fe/issues/4570)) ([fdfeac3](https://github.com/intent-hq/cloudlands-fe/commit/fdfeac3d94e8faf6e9e21867fa2a0b92a6be00a2))
+* **machine-rail:** send keychain sync status and transfer progress to every machine ([#4569](https://github.com/intent-hq/cloudlands-fe/issues/4569)) ([73e7c81](https://github.com/intent-hq/cloudlands-fe/commit/73e7c815d7139295c23fd2511d52b4b56a76e842))
+* **providers:** list Cursor models in the model picker ([#4567](https://github.com/intent-hq/cloudlands-fe/issues/4567)) ([ee76d06](https://github.com/intent-hq/cloudlands-fe/commit/ee76d0634fc929747c099d4dd574b0d43d3e162a))
+
 ## [2.333.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.332.2...v2.333.0) (2026-11-13)
 
 
