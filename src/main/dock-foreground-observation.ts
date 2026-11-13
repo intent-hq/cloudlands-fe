@@ -21,7 +21,7 @@ export async function readDockForegroundObservation(
       reading = null;
     });
   const { snapshot: sample } = await reading;
-  let url: string | null = foregroundDocumentUrl(sample.url);
+  let url: string | null = foregroundDocumentUrl(sample.url, sample.appId);
   // Native window titles are document labels only when that read verified a document URL.
   // Intent's own browser must instead pass the focused embedded-tab ownership check below.
   let tabTitle = sample.pid !== process.pid && url ? sample.title?.trim() || null : null;

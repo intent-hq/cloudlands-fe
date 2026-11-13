@@ -1,3 +1,5 @@
+import Foundation
+
 // Pure prompt policy: checks never imply grants; only a new local Allow gesture
 // calls this policy. One gesture asks for every missing permission (Accessibility,
 // then Screen Recording) so the user relaunches at most once; each permission is
@@ -71,4 +73,55 @@ struct PermissionReadiness {
         abandon()
         return true
     }
+}
+
+
+// Pure ownership policy shared by the native adapter and synthetic policy tests.
+// Chromium can take seconds to expose its tree. Keep our readiness transition
+// across short foreground samples, without blocking a sample or acquiring input.
+final class FigmaAccessibilityReadiness<Owner: Equatable> {
+    private struct Lease { let owner: Owner; let changed: Bool; var lastSample: UInt64 }
+    private var lease: Lease?
+    private let lock = NSLock()
+    private let current: () -> Owner?
+    private let alive: (Owner) -> Bool
+    private let read: (Owner) -> Bool?
+    private let settable: (Owner) -> Bool
+    private let write: (Owner, Bool) -> Bool
+    init(current: @escaping () -> Owner?, alive: @escaping (Owner) -> Bool,
+         read: @escaping (Owner) -> Bool?, settable: @escaping (Owner) -> Bool,
+         write: @escaping (Owner, Bool) -> Bool) {
+        self.current = current; self.alive = alive; self.read = read
+        self.settable = settable; self.write = write
+    }
+    private func restore() {
+        guard let held = lease else { return }
+        if !held.changed || !alive(held.owner) { lease = nil; return }
+        // Do not overwrite an independently changed setting. Never write an
+        // unknown original, and retain ownership if restoration cannot complete.
+        guard let enabled = read(held.owner) else { return }
+        if !enabled { lease = nil; return }
+        if write(held.owner, false), read(held.owner) == false { lease = nil }
+    }
+    func observe(_ owner: Owner, now: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        if let held = lease, held.owner != owner || current() != owner || now - held.lastSample >= 3000 { restore() }
+        guard current() == owner else { return }
+        if let held = lease {
+            if held.owner == owner { lease?.lastSample = now }
+            return
+        }
+        guard let original = read(owner) else { return }
+        if original { lease = Lease(owner: owner, changed: false, lastSample: now); return }
+        guard settable(owner), current() == owner else { return }
+        // Record ownership before the write so even a failed acknowledgement has
+        // a restoration path. Unknown/missing attributes never reach this point.
+        lease = Lease(owner: owner, changed: true, lastSample: now)
+        if !write(owner, true) || current() != owner { restore() }
+    }
+    func validate(now: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        if let held = lease, current() != held.owner || now - held.lastSample >= 3000 { restore() }
+    }
+    func retire() { lock.lock(); defer { lock.unlock() }; restore() }
 }

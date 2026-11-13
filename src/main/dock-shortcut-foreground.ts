@@ -57,10 +57,24 @@ export async function sampleDockForeground(reader: {
 }
 
 /** Only a real, supported document URL is usable as a tab; app/title text is never a URL. */
-export function foregroundDocumentUrl(value: unknown): string | null {
+export function foregroundDocumentUrl(value: unknown, appId?: string): string | null {
   if (typeof value !== 'string') return null;
   try {
     const url = new URL(value);
+    // The native Figma tab is a file, not its selected node or mutable filename.
+    // Only normalize the observed HTTPS document grammar; never infer figma://,
+    // local shell URLs, file keys from titles, or browser address semantics.
+    if (appId === 'com.figma.Desktop') {
+      const match = /^\/design\/([A-Za-z0-9]+)(?:\/[^/]*)?$/.exec(url.pathname);
+      return url.protocol === 'https:' &&
+        ['figma.com', 'www.figma.com'].includes(url.hostname) &&
+        !url.port &&
+        !url.username &&
+        !url.password &&
+        match
+        ? `https://www.figma.com/design/${match[1]}`
+        : null;
+    }
     return ['http:', 'https:'].includes(url.protocol) &&
       !!url.hostname &&
       !url.username &&
