@@ -16,7 +16,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { WINDOW_CHANNELS } from '$shared/ipc/channels';
   import { machineRailStateReceived } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import {
     setLabsBrowserAccessEnabled,
@@ -45,12 +44,11 @@
   }
   if (desktop) {
     appStore.dispatch(machineRailStateReceived({ ...previousRail, enabled: true }));
-    // A non-mock version makes the desktop-only rows render; the dock lab reads it once.
+    // A non-mock version makes the desktop-only rows render.
     window.electronAPI = {
       ...previousApi,
       versions: { electron: '39.0.0' },
-      invoke: async (channel: string) =>
-        channel === WINDOW_CHANNELS.GET_DOCK_LAB ? { enabled: false } : undefined,
+      invoke: async () => undefined,
       on: () => 'labs-preview',
       offById: () => {},
     } as unknown as typeof window.electronAPI;
