@@ -8487,7 +8487,6 @@
   "remoteMachines_order_moveDown_label": "Move down",
   "remoteMachines_order_announcement": "{name} moved to position {position}",
   "remoteMachines_order_local_label": "This computer",
-  "remoteMachines_order_backendHost_label": "The computer {backend} runs on",
   "remoteMachines_order_saveFailed_error": "Couldn't save the machine order. Try again.",
   "remoteMachines_order_stale_info": "The machine order changed elsewhere, so the list now shows the latest order.",
   "remoteMachines_state_available_label": "Runs agents for {backend}",

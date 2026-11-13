@@ -8487,7 +8487,6 @@
   "remoteMachines_order_moveDown_label": "下移",
   "remoteMachines_order_announcement": "已將 {name} 移到第 {position} 位",
   "remoteMachines_order_local_label": "這台電腦",
-  "remoteMachines_order_backendHost_label": "執行 {backend} 的電腦",
   "remoteMachines_order_saveFailed_error": "無法儲存機器順序。請再試一次。",
   "remoteMachines_order_stale_info": "機器順序已在別處變更，清單現在顯示最新順序。",
   "remoteMachines_state_available_label": "為 {backend} 執行代理程式",

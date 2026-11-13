@@ -8487,7 +8487,6 @@
   "remoteMachines_order_moveDown_label": "Descendre",
   "remoteMachines_order_announcement": "{name} déplacée en position {position}",
   "remoteMachines_order_local_label": "Cet ordinateur",
-  "remoteMachines_order_backendHost_label": "L’ordinateur sur lequel tourne {backend}",
   "remoteMachines_order_saveFailed_error": "Impossible d’enregistrer l’ordre des machines. Réessayez.",
   "remoteMachines_order_stale_info": "L’ordre des machines a été modifié ailleurs ; la liste affiche maintenant l’ordre le plus récent.",
   "remoteMachines_state_available_label": "Exécute des agents pour {backend}",
