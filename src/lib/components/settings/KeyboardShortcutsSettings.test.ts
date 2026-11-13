@@ -30,6 +30,7 @@ vi.mock('$store/renderer/store', async () => {
 import KeyboardShortcutsSettings from './KeyboardShortcutsSettings.svelte';
 
 const hiddenShortcutIds = new Set([
+  'navigation.go-to-device',
   'chat.focus-input',
   'chat.mention-context',
   'editor.copy',

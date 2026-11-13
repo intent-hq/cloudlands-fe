@@ -22,11 +22,13 @@
   import { closeCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
 
   const isOpen = selectIsCheatSheetOpen();
 
   const shortcutOverrides = selectShortcutOverrides();
-  const categories = $derived(getAllShortcutCategories($shortcutOverrides));
+  const machineRailEnabled = selectMachineRailEnabled();
+  const categories = $derived(getAllShortcutCategories($shortcutOverrides, $machineRailEnabled));
   const categoryOrder: ShortcutCategory[] = [
     'global',
     'dock',

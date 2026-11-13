@@ -148,6 +148,9 @@
     return ordered.every((item) => item !== undefined) ? (ordered as MachineRailItem[]) : $items$;
   });
   const ownItems = $derived(orderedItems.filter((item) => !item.guest));
+  export function getMachineIds(): string[] {
+    return orderedItems.map((item) => item.id);
+  }
   // Everything but the window's own machine can leave the rail.
   const removableItems = $derived(orderedItems.filter((item) => !item.home));
   const guestItems = $derived(orderedItems.filter((item) => item.guest));

@@ -583,6 +583,7 @@ export class TerminalAdapter {
           event,
           appStore.state.userPreferences?.shortcutOverrides ?? {},
           isMac,
+          appStore.state.machineRail?.enabled ?? false,
         )
       ) {
         return false;

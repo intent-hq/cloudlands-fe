@@ -250,6 +250,7 @@ export const SHORTCUT_CATEGORIES: Record<
     },
     shortcuts: [
       entry('navigation.go-to-tab', () => m.ui_shortcuts_goToTab_label(), ['global']),
+      entry('navigation.go-to-device', () => m.machineRail_nav_ariaLabel(), ['global']),
       entry('navigation.new-tab', () => SHORTCUTS.NEW_TAB.label, ['global']),
       entry('navigation.close-tab', () => SHORTCUTS.CLOSE_TAB.label, ['global']),
       entry('navigation.close-space-tab', () => SHORTCUTS.CLOSE_WORKSPACE_TAB.label, ['global']),
@@ -389,6 +390,7 @@ export function getShortcutsForContext(
  */
 export function getAllShortcutCategories(
   overrides: ShortcutOverrides = {},
+  machineRailEnabled = false,
 ): Record<ShortcutCategory, { title: string; shortcuts: ShortcutEntry[] }> {
   return Object.fromEntries(
     (
@@ -400,10 +402,12 @@ export function getAllShortcutCategories(
       category,
       {
         title: data.title,
-        shortcuts: data.shortcuts.map((shortcut) => ({
-          ...shortcut,
-          key: resolveShortcut(shortcut.id, overrides),
-        })),
+        shortcuts: data.shortcuts
+          .filter((shortcut) => machineRailEnabled || shortcut.id !== 'navigation.go-to-device')
+          .map((shortcut) => ({
+            ...shortcut,
+            key: resolveShortcut(shortcut.id, overrides),
+          })),
       },
     ]),
   ) as Record<ShortcutCategory, { title: string; shortcuts: ShortcutEntry[] }>;

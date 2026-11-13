@@ -100,7 +100,7 @@ describe('dock shortcut async admission', () => {
         const snapshot = fixture.service!.snapshot();
         await fixture.service!.update({
           id: 'dock.focus',
-          key: 'ctrl+alt+9',
+          key: 'ctrl+alt+f9',
           expectedRevision: snapshot.revision,
         });
       } else {
