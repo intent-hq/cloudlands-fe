@@ -105,7 +105,18 @@ export function buildCreateWorkspaceRequestFromProposal(
   // The card's Start on: a placement object, or null for the backend.
   const placementEdit = editedFields?.placement;
   if (placementEdit === null) delete initialAgentFields.placement;
-  else if (recordValue(placementEdit))
+  // A provider the user picked on the card because the agent's own one is
+  // turned off replaces the proposal's and any remembered provider, model and
+  // effort as a whole, so the daemon starts that provider's default model.
+  const providerOverride =
+    typeof editedFields?.providerOverride === 'string' && editedFields.providerOverride
+      ? editedFields.providerOverride
+      : undefined;
+  if (providerOverride) {
+    initialAgentFields.provider = providerOverride;
+    delete initialAgentFields.model;
+    delete initialAgentFields.reasoningEffort;
+  } else if (recordValue(placementEdit))
     initialAgentFields.placement = placementEdit as InitialAgentRequest['placement'];
 
   const githubUrl = stringOverride(
@@ -147,7 +158,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     ...(options.origin ? { origin: options.origin } : {}),
     initialAgent: {
       ...initialAgentFields,
-      ...agentSetupOverrides(editedFields?.agentSetup, initialAgent),
+      ...(providerOverride ? {} : agentSetupOverrides(editedFields?.agentSetup, initialAgent)),
       name: payloadName ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,

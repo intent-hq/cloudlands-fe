@@ -22,6 +22,7 @@ const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
   showWorkspace: vi.fn(async () => true),
   openCreated: vi.fn(async () => true),
+  navigateToSettings: vi.fn(async () => {}),
 }));
 
 // The New Workspace modal's effective specialist (null = General), as the
@@ -68,7 +69,7 @@ const workspaceInitializerHydratedState = vi.hoisted(() => {
 
 // The specialist catalog, which also loads asynchronously.
 const specialistsState = vi.hoisted(() => {
-  type SpecialistRow = { id: string };
+  type SpecialistRow = { id: string; name?: string; codingAgent?: string };
   const listeners = new Set<(value: SpecialistRow[]) => void>();
   const initial: SpecialistRow[] = [];
   return {
@@ -213,8 +214,21 @@ vi.mock(
         provider === 'claude-code' ? 'Claude Code' : undefined,
       ),
     },
+    selectProviderCatalogEntries: () => ({
+      subscribe: (run: (value: { id: string; displayName: string }[]) => void) => {
+        run([
+          { id: 'auggie', displayName: 'Auggie' },
+          { id: 'codex', displayName: 'Codex' },
+          { id: 'claude-code', displayName: 'Claude Code' },
+        ]);
+        return () => {};
+      },
+    }),
   }),
 );
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: navigationMocks.navigateToSettings,
+}));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerAgentByRepo: {
     select: vi.fn(() => newWorkspaceDefaultState.agentByRepo),
@@ -269,6 +283,16 @@ vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) =
   },
 }));
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
+  // Enabled providers the alert offers (the turned-off one never is).
+  selectAvailableEnabledProviderIds: () => ({
+    subscribe: (run: (value: string[]) => void) => {
+      const emit = (enabled: Record<string, boolean>) =>
+        run(['codex', 'claude-code'].filter((id) => enabled[id] !== false));
+      emit(enabledProvidersState.value);
+      enabledProvidersState.listeners.add(emit);
+      return () => enabledProvidersState.listeners.delete(emit);
+    },
+  }),
   selectEnabledProviders: () => ({
     subscribe: (run: (value: Record<string, boolean>) => void) => {
       run(enabledProvidersState.value);
@@ -2045,6 +2069,178 @@ describe('ProposalCard', () => {
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
       expect(await appliedFields()).not.toHaveProperty('agentSetup');
+    });
+  });
+
+  describe("agent pinned to a provider that's turned off", () => {
+    const TEAM_OPUS_HIGH = {
+      isTeamMode: false,
+      selectedSpecialist: 'implementor',
+      selectedProvider: 'claude-code',
+      selectedModel: 'claude-opus-4-5',
+      modelWasOverridden: true,
+      selectedReasoningEffort: 'high',
+    };
+
+    function renderSibling(workspaceCreate: Record<string, unknown> = {}) {
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+              specialist: 'implementor',
+              ...workspaceCreate,
+            },
+          }),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      const applyButton = () => screen.getByRole('button', { name: /Create workspace|Retry/ });
+      const appliedFields = async () => {
+        await fireEvent.click(applyButton());
+        const call = applyListener.mock.calls.at(-1)?.[0] as CustomEvent | undefined;
+        return call?.detail.editedFields as Record<string, unknown> | undefined;
+      };
+      return { applyButton, appliedFields };
+    }
+
+    async function pickProvider(name: string) {
+      const trigger = screen.getByRole('combobox');
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      const option = await screen.findByRole('option', { name });
+      // Keyboard selection: arrow to the option, then Enter.
+      for (let step = 0; step < 5 && option.getAttribute('data-highlighted') === null; step++) {
+        await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      }
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => expect(trigger.textContent).toContain(name));
+    }
+
+    beforeEach(() => {
+      specialistsState.specialists = [
+        { id: 'implementor', name: 'Implementor', codingAgent: 'auggie' },
+        { id: 'ui-designer', name: 'UI Designer' },
+      ];
+      enabledProvidersState.set({ auggie: false });
+    });
+
+    it('shows the alert and blocks Apply until a provider is picked', async () => {
+      const { applyButton, appliedFields } = renderSibling();
+
+      const alert = screen.getByTestId('proposal-provider-alert');
+      expect(alert.textContent).toContain('Implementor');
+      expect(alert.textContent).toContain('Auggie');
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(true);
+      expect(await appliedFields()).toBeUndefined();
+
+      // Only enabled providers are offered.
+      const trigger = screen.getByRole('combobox');
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      const options = (await screen.findAllByRole('option')).map((o) => o.textContent?.trim());
+      expect(options).toEqual(['Codex', 'Claude Code']);
+      await fireEvent.keyDown(trigger, { key: 'Escape' });
+    });
+
+    it('sends the picked provider for this workspace only', async () => {
+      const { applyButton, appliedFields } = renderSibling();
+
+      await pickProvider('Codex');
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+      const fields = await appliedFields();
+      expect(fields).toMatchObject({ specialist: 'implementor', providerOverride: 'codex' });
+      expect(fields).not.toHaveProperty('agentSetup');
+    });
+
+    it('never mixes the picked provider with a remembered setup', async () => {
+      // The remembered setup's provider is off too, so the pin decides.
+      enabledProvidersState.set({ auggie: false, 'claude-code': false });
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling({ specialist: undefined });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
+      await pickProvider('Codex');
+      const fields = await appliedFields();
+      expect(fields?.providerOverride).toBe('codex');
+      expect(fields).not.toHaveProperty('agentSetup');
+    });
+
+    it('shows no alert when an enabled remembered provider overrides the pin', async () => {
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling({ specialist: undefined });
+
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((await appliedFields())?.agentSetup).toMatchObject({ provider: 'claude-code' });
+    });
+
+    it('clears the alert when another agent is picked', async () => {
+      const { applyButton, appliedFields } = renderSibling();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+      const fields = await appliedFields();
+      expect(fields?.specialist).toBe('ui-designer');
+      expect(fields).not.toHaveProperty('providerOverride');
+    });
+
+    it('clears the alert when the pinned provider is turned back on', async () => {
+      const { applyButton } = renderSibling();
+
+      enabledProvidersState.set({ auggie: true });
+      await tick();
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('shows no alert for an agent pinned to an enabled provider', () => {
+      enabledProvidersState.set({});
+      renderSibling();
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+    });
+
+    it('opens Settings > Providers from the alert', async () => {
+      renderSibling();
+
+      await fireEvent.click(screen.getByTestId('proposal-provider-alert-settings'));
+      expect(navigationMocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'providers' });
+    });
+
+    it('shows the alert instead of the raw error when create refuses a turned-off provider', async () => {
+      // Settings here still say Auggie is on; the daemon disagreed.
+      enabledProvidersState.set({});
+      lifecycleSelectorState.status = 'failed';
+      lifecycleSelectorState.error =
+        'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
+      const { applyButton, appliedFields } = renderSibling();
+
+      const alert = screen.getByTestId('proposal-provider-alert');
+      expect(alert.textContent).toContain('Auggie');
+      expect(screen.queryByText(/is not enabled/)).toBeNull();
+      // Retry stays available: the provider may have been turned back on.
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+
+      await pickProvider('Claude Code');
+      expect((await appliedFields())?.providerOverride).toBe('claude-code');
+    });
+
+    it('drops the refusal alert once another agent is picked', async () => {
+      enabledProvidersState.set({});
+      lifecycleSelectorState.status = 'failed';
+      lifecycleSelectorState.error =
+        'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
+      renderSibling();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
     });
   });
 });

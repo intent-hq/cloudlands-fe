@@ -224,6 +224,23 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
   });
 
+  it("replaces the proposal's and the remembered provider, model and effort with a picked provider", () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: '/repo',
+        initialAgent: { prompt: 'Go', provider: 'auggie', model: 'auggie-fixture' },
+      }),
+      {
+        specialist: 'implementor',
+        providerOverride: 'codex',
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+      },
+    );
+    expect(request.initialAgent).toMatchObject({ specialist: 'implementor', provider: 'codex' });
+    expect(request.initialAgent).not.toHaveProperty('model');
+    expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
+  });
+
   it('ignores a malformed adopted setup', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),

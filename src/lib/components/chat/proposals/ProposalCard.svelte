@@ -68,7 +68,18 @@
     type ProposalRepoAgentDefault,
   } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import {
+    disabledPinnedProvider,
+    providerNotEnabledFromError,
+    specialistPinnedProvider,
+  } from './proposal-pinned-provider';
+  import ProposalProviderAlert from './ProposalProviderAlert.svelte';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -197,6 +208,14 @@
   // repository (read, not subscribed, like the modal default above).
   let repoAgentDefault = $state<ProposalRepoAgentDefault | null>(null);
   const enabledProviders = selectEnabledProviders();
+  const availableProviderIds = selectAvailableEnabledProviderIds();
+  const providerCatalogEntries = selectProviderCatalogEntries();
+  // Provider picked in the turned-off-provider alert, for this workspace only
+  // and only while the card still starts the agent it was picked for.
+  let pickedProvider = $state<{ specialist: string | null; provider: string } | null>(null);
+  // The agent was changed after the last Apply/Retry, so a refusal no longer
+  // describes the selected one.
+  let agentChangedSinceApply = $state(false);
 
   function readRepoAgentDefault(): ProposalRepoAgentDefault | null {
     const state = appStore.state;
@@ -273,6 +292,49 @@
     if (workspaceSpecialist !== repoAgentDefault.specialist) return null;
     return adoptableProposalAgentSetup(repoAgentDefault.settings, $enabledProviders);
   });
+  // The agent's pinned provider is turned off and nothing in the request
+  // overrides it: Apply waits for a picked provider (or another agent).
+  const pinnedProviderOff = $derived(
+    isWorkspaceCreate && !isApplied
+      ? disabledPinnedProvider({
+          specialistId: workspaceSpecialist,
+          specialists: $specialists,
+          requestProvider: proposalProviderRef() ?? adoptedAgentSetup?.provider,
+          enabledProviders: $enabledProviders,
+        })
+      : null,
+  );
+  // workspace.create still refused a turned-off provider (settings changed
+  // elsewhere): the same alert replaces the raw error, while the agent that
+  // failed is still selected.
+  const refusedProviderOff = $derived.by(() => {
+    if (!isWorkspaceCreate || !isFailed || agentChangedSinceApply) return null;
+    const refused = providerNotEnabledFromError($lifecycleError);
+    if (refused === undefined) return null;
+    return (
+      refused ??
+      proposalProviderRef() ??
+      adoptedAgentSetup?.provider ??
+      specialistPinnedProvider($specialists, workspaceSpecialist) ??
+      ''
+    );
+  });
+  const providerOffAlert = $derived(pinnedProviderOff ?? refusedProviderOff);
+  const providerChoices = $derived(
+    $availableProviderIds.map((id) => ({
+      value: id,
+      label: $providerCatalogEntries.find((entry) => entry.id === id)?.displayName ?? id,
+    })),
+  );
+  // The picked provider replaces the proposal's and the remembered
+  // provider/model/effort as a whole; never mixed with them.
+  const providerOverride = $derived(
+    providerOffAlert !== null &&
+      pickedProvider?.specialist === workspaceSpecialist &&
+      $availableProviderIds.includes(pickedProvider.provider)
+      ? pickedProvider.provider
+      : null,
+  );
   const statusMessage = $derived(getStatusMessage());
   const prBranchLookup = $derived(
     prBranchLookupKey ? $prBranchLookupEntries[prBranchLookupKey] : undefined,
@@ -301,7 +363,11 @@
   const actionDisabled = $derived(
     disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
-  const applyDisabled = $derived(actionDisabled || (isWorkspaceCreate && startOnUnavailable));
+  const applyDisabled = $derived(
+    actionDisabled ||
+      (isWorkspaceCreate &&
+        (startOnUnavailable || (pinnedProviderOff !== null && !providerOverride))),
+  );
   const showWorkspaceShortcutHint = $derived(
     isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,
   );
@@ -643,6 +709,15 @@
     return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
   }
 
+  function providerAlertAgentName(): string {
+    if (!workspaceSpecialist) return '';
+    return (
+      $specialists.find((s) => s.id === workspaceSpecialist)?.name ??
+      getSpecialistById(workspaceSpecialist)?.name ??
+      workspaceSpecialist
+    );
+  }
+
   function proposalProviderRef(): string | undefined {
     const provider = getInitialAgentValue('provider');
     return typeof provider === 'string' && provider ? provider : undefined;
@@ -875,7 +950,8 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
-    if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
+    if (providerOverride) editedFields.providerOverride = providerOverride;
+    else if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
     if (startOnPlacement !== undefined) editedFields.placement = startOnPlacement;
     return editedFields;
   }
@@ -935,6 +1011,8 @@
       if (isAwaitingPrBranchLookup) return m.chat_proposalCard_detectingPrBranch_label();
       if (isApplying) return m.chat_proposalCard_creatingWorkspace_label();
       if (isFailed) {
+        // The provider alert below explains the refusal and offers the fixes.
+        if (refusedProviderOff !== null) return m.chat_proposalCard_workspaceCreationFailed_label();
         const message = `${m.chat_proposalCard_workspaceCreationFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
         return isBaseRefFailure
           ? `${message}${m.chat_proposalCard_chooseDifferentBranch_label()}`
@@ -952,6 +1030,7 @@
 
   function handleApply() {
     if (applyDisabled) return;
+    agentChangedSinceApply = false;
     const detail = buildDetail();
     onApply?.(detail);
     emitAction('proposalapply', detail);
@@ -1261,6 +1340,7 @@
                   onchange={(id) => {
                     workspaceSpecialist = id;
                     specialistIsModalDefault = false;
+                    agentChangedSinceApply = true;
                   }}
                 />
               </div>
@@ -1272,10 +1352,26 @@
               bind:unavailable={startOnUnavailable}
               defaultValue={startOnDefault}
               {proposer}
-              providerRef={adoptedAgentSetup?.provider ?? proposalProviderRef()}
+              providerRef={providerOverride ?? adoptedAgentSetup?.provider ?? proposalProviderRef()}
               backendOnly={workspaceIsNewRepo}
             />
           </div>
+
+          {#if providerOffAlert !== null}
+            <ProposalProviderAlert
+              agentName={providerAlertAgentName()}
+              providerName={$providerCatalogEntries.find((entry) => entry.id === providerOffAlert)
+                ?.displayName ?? providerOffAlert}
+              choices={providerChoices}
+              value={providerOverride ?? ''}
+              failed={pinnedProviderOff === null}
+              disabled={actionDisabled}
+              onpick={(provider) => {
+                pickedProvider = { specialist: workspaceSpecialist, provider };
+              }}
+              onopensettings={() => void navigateToSettings({ tab: 'providers' })}
+            />
+          {/if}
 
           {#if proposal.preview.warnings?.length}
             <div class="type-caption text-warning-ink">

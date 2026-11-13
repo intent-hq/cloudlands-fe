@@ -162,6 +162,12 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       return () => {};
     },
   }),
+  selectAvailableEnabledProviderIds: () => ({
+    subscribe: (run: (value: string[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
   selectProviderModelsCacheMap: () => ({
@@ -182,6 +188,12 @@ vi.mock(
         provider === 'claude-code' ? 'Claude Code' : undefined,
       ),
     },
+    selectProviderCatalogEntries: () => ({
+      subscribe: (run: (value: unknown[]) => void) => {
+        run([]);
+        return () => {};
+      },
+    }),
   }),
 );
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
