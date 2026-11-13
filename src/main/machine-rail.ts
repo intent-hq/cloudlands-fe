@@ -75,6 +75,8 @@ export interface MachineRailDeps {
   connect(id: string): Promise<unknown>;
   /** Whether the machine's pooled client is connected right now. */
   isConnected(id: string): boolean;
+  /** Call `listener` each time a machine's pooled client connects; returns a disposer. */
+  onConnected(listener: (id: string) => void): () => void;
   /** Dial the machine now; `true` once connected, `false` once that attempt fails. */
   retry(id: string): Promise<boolean>;
   /** Drop the pooled client of a machine no window or rail uses any more. */
@@ -388,15 +390,52 @@ function whenReady(contents: Electron.WebContents): Promise<void> {
   });
 }
 
+/** Longest the background start waits for a machine that is still connecting. */
+const PRELOAD_CONNECT_WAIT_MS = 60_000;
+
+/** Background starts waiting for one of their machines to connect. */
+const connectionWaits = new Set<{ ids: string[]; finish: (id: string | null) => void }>();
+let connectedFeed: (() => void) | null = null;
+
+/** Settles with the first of `ids` to connect, or `null` once the wait runs out. */
+function nextConnection(ids: string[]): Promise<string | null> {
+  if (!deps) return Promise.resolve(null);
+  connectedFeed ??= deps.onConnected((id) => {
+    for (const wait of [...connectionWaits]) if (wait.ids.includes(id)) wait.finish(id);
+  });
+  return new Promise((resolve) => {
+    const wait = {
+      ids,
+      finish: (id: string | null) => {
+        clearTimeout(timer);
+        connectionWaits.delete(wait);
+        resolve(id);
+      },
+    };
+    const timer = setTimeout(() => wait.finish(null), PRELOAD_CONNECT_WAIT_MS);
+    connectionWaits.add(wait);
+  });
+}
+
 /**
- * Start a connected machine's renderer in the background, hidden, so picking
- * it later shows it at once. A machine that is offline now starts when picked.
+ * Start each machine's renderer in the background, hidden and one at a time,
+ * as it connects, so picking it later shows it at once. One that is still
+ * offline once the wait runs out starts when picked, as before.
  */
-async function preloadMachine(window: BrowserWindowType, id: string): Promise<void> {
-  if (window.isDestroyed() || !isMachineRailEnabled()) return;
-  if (!readWindowRail(window).machineIds.includes(id)) return;
-  if (!(deps?.isConnected(id) ?? false)) return;
-  await whenReady(ensureView(window, id).webContents);
+async function preloadMachines(window: BrowserWindowType, ids: string[]): Promise<void> {
+  const remaining = new Set(ids);
+  while (remaining.size > 0) {
+    if (window.isDestroyed() || !isMachineRailEnabled()) return;
+    const inRail = readWindowRail(window).machineIds;
+    for (const id of remaining) if (!inRail.includes(id)) remaining.delete(id);
+    const next = [...remaining].find((id) => deps?.isConnected(id) ?? false);
+    if (next === undefined) {
+      if (remaining.size === 0 || (await nextConnection([...remaining])) === null) return;
+      continue;
+    }
+    remaining.delete(next);
+    await whenReady(ensureView(window, next).webContents);
+  }
 }
 
 /** A started machine that is offline: try it once more, then show it either way. */
@@ -550,15 +589,12 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   writeWindowRail(window, rail);
   broadcastState(window);
   // Every machine reconnects now. The one that was shown starts first; the
-  // others start in the background once it is ready, in the order they connect.
+  // others start in the background once it is ready, as each one connects.
   const selected = rail.selectedId;
-  const connects = rail.machineIds.slice(1).map((id) => ({
-    id,
-    settled: connectQuietly(id).then(() => id),
-  }));
-  const shownConnect = connects.find((connect) => connect.id === selected);
-  if (shownConnect) {
-    await shownConnect.settled;
+  const others = rail.machineIds.slice(1).filter((id) => id !== selected);
+  for (const id of others) void connectQuietly(id);
+  if (selected !== rail.machineIds[0]) {
+    await connectQuietly(selected);
     if (window.isDestroyed()) return;
     if (readWindowRail(window).selectedId === selected) {
       applySelection(window);
@@ -567,12 +603,7 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
     const shown = viewsOf(window).get(selected);
     if (shown) await whenReady(shown.webContents);
   }
-  let waiting = connects.filter((connect) => connect !== shownConnect);
-  while (waiting.length > 0) {
-    const id = await Promise.race(waiting.map((connect) => connect.settled));
-    waiting = waiting.filter((connect) => connect.id !== id);
-    await preloadMachine(window, id);
-  }
+  await preloadMachines(window, others);
 }
 
 function resetWindow(window: BrowserWindowType): void {
@@ -617,6 +648,9 @@ function assertEnabled(): void {
 }
 
 export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
+  connectedFeed?.();
+  connectedFeed = null;
+  for (const wait of [...connectionWaits]) wait.finish(null);
   deps = railDeps;
   setMachineRailRestoreHandler((window, session) => {
     void restoreRail(window, session).catch((error: unknown) =>

@@ -178,6 +178,16 @@ describe('machine rail switching', () => {
   const connection = {
     connected: new Set<string>(['local', 'b', 'c']),
     retry: vi.fn<(id: string) => Promise<boolean>>(),
+    listeners: new Set<(id: string) => void>(),
+    /** A machine's client finished connecting. */
+    connect(id: string) {
+      this.connected.add(id);
+      for (const listener of this.listeners) listener(id);
+    },
+    onConnected(listener: (id: string) => void) {
+      connection.listeners.add(listener);
+      return () => connection.listeners.delete(listener);
+    },
   };
 
   beforeEach(() => {
@@ -185,10 +195,12 @@ describe('machine rail switching', () => {
     setMachineRailEnabledFlag(true);
     connection.connected = new Set(['local', 'b', 'c']);
     connection.retry.mockReset();
+    connection.listeners.clear();
     registerMachineRailHandlers({
       listMachineIds: async () => ['local', 'b', 'c'],
       connect: async () => undefined,
       isConnected: (id) => connection.connected.has(id),
+      onConnected: (listener) => connection.onConnected(listener),
       retry: connection.retry,
       disconnect: () => {},
     });
@@ -426,6 +438,7 @@ describe('machine rail switching', () => {
           ? new Promise<undefined>((_, reject) => (failB = () => reject(new Error('offline'))))
           : Promise.resolve(undefined),
       isConnected: (id) => connection.connected.has(id),
+      onConnected: (listener) => connection.onConnected(listener),
       retry: connection.retry,
       disconnect: () => {},
     });
@@ -437,6 +450,20 @@ describe('machine rail switching', () => {
     await vi.waitFor(() => expect(fakes.views.length).toBe(1));
     expect(fakes.bindings.get(fakes.views[0].webContents)).toBe('c');
     failB();
+  });
+
+  it('loads a machine that is still connecting at startup once it connects', async () => {
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(fakes.bindings.get(fakes.views[0].webContents)).toBe('c');
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    connection.connect('b');
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('b').visible).toBe(false);
   });
 
   it('leaves a machine that is offline at startup to load when picked', async () => {
