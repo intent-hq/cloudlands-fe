@@ -607,9 +607,6 @@
       "fetchReleaseNotes",
       "fetchReleaseNotesRange"
     ],
-    "src/features/remote-machines/machine-facts.ts": [
-      "machinePlatform"
-    ],
     "src/features/remote-machines/remote-machines-slice.ts": [
       "initialState"
     ],
