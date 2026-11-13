@@ -100,13 +100,14 @@ function focusDictationComposer(agentId: string): void {
 
 /**
  * Backoff before each transcription retry; its length is the retry count.
- * Exported for tests.
+ * @internal Exported for tests.
  */
 export const TRANSCRIBE_RETRY_DELAYS_MS = [500, 1_000, 2_000] as const;
 
 /**
  * An attempt that fails after this long most likely timed out; retrying it
- * would hold "Transcribing…" for several more timeouts. Exported for tests.
+ * would hold "Transcribing…" for several more timeouts.
+ * @internal Exported for tests.
  */
 export const TRANSCRIBE_RETRY_MAX_ATTEMPT_MS = 30_000;
 
