@@ -1,3 +1,4 @@
+import { isProviderDisabledInSettings } from '$lib/components/chat/input/model-picker-utils';
 import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
 import { agentSettingsRepoKey } from '$store/renderer/slices/workspace-initializer/utils/agent-settings-repo-key';
 import type { WorkspaceInitializerAgentSettings } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
@@ -73,9 +74,7 @@ export interface ProposalAgentSetup {
   reasoningEffort?: string;
 }
 
-export function proposalAgentSetup(
-  settings: WorkspaceInitializerAgentSettings,
-): ProposalAgentSetup {
+function proposalAgentSetup(settings: WorkspaceInitializerAgentSettings): ProposalAgentSetup {
   const setup: ProposalAgentSetup = {};
   const explicitModel =
     settings.modelWasOverridden && settings.selectedModel ? settings.selectedModel : undefined;
@@ -94,6 +93,25 @@ export function proposalAgentSetup(
 }
 
 /** Whether a remembered setup names a provider, a model, or a non-empty effort. */
-export function hasAgentSetupFields(setup: ProposalAgentSetup): boolean {
+function hasAgentSetupFields(setup: ProposalAgentSetup): boolean {
   return Boolean(setup.provider || setup.model || setup.reasoningEffort);
+}
+
+/**
+ * The setup a card adopts from a remembered one, or `null` when there is
+ * nothing to send or its provider is turned off in Settings > Providers
+ * (provider, model and effort belong together, so none of them is kept;
+ * creation then uses the daemon's default provider, like New Workspace's
+ * fallback).
+ */
+export function adoptableProposalAgentSetup(
+  settings: WorkspaceInitializerAgentSettings,
+  enabledProviders: Readonly<Record<string, boolean>>,
+): ProposalAgentSetup | null {
+  const setup = proposalAgentSetup(settings);
+  if (!hasAgentSetupFields(setup)) return null;
+  if (setup.provider && isProviderDisabledInSettings(enabledProviders, setup.provider)) {
+    return null;
+  }
+  return setup;
 }

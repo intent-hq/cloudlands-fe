@@ -41,6 +41,19 @@ const newWorkspaceDefaultState = vi.hoisted(() => {
 
 // Whether the workspace-initializer slice has restored its persisted settings
 // (settings.get is async, so a card can mount before it resolves).
+// Settings > Providers enablement, as `selectEnabledProviders` would emit it.
+const enabledProvidersState = vi.hoisted(() => {
+  const listeners = new Set<(value: Record<string, boolean>) => void>();
+  return {
+    value: {} as Record<string, boolean>,
+    listeners,
+    set(value: Record<string, boolean>) {
+      this.value = value;
+      for (const listener of listeners) listener(value);
+    },
+  };
+});
+
 const workspaceInitializerHydratedState = vi.hoisted(() => {
   const listeners = new Set<(value: boolean) => void>();
   return {
@@ -254,6 +267,15 @@ vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) =
       provider === 'claude-code' && model === 'claude-opus-4-5' ? 'Opus 4.5' : undefined,
     ),
   },
+}));
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
+  selectEnabledProviders: () => ({
+    subscribe: (run: (value: Record<string, boolean>) => void) => {
+      run(enabledProvidersState.value);
+      enabledProvidersState.listeners.add(run);
+      return () => enabledProvidersState.listeners.delete(run);
+    },
+  }),
 }));
 vi.mock('$store/renderer/store', () => ({
   store: {
@@ -1880,6 +1902,7 @@ describe('ProposalCard', () => {
       newWorkspaceDefaultState.specialist = 'implementor';
       specialistsState.specialists = [{ id: 'coordinator' }, { id: 'implementor' }];
       specialistsState.orchestratorId = 'coordinator';
+      enabledProvidersState.set({});
     });
 
     it("starts on the repository's remembered orchestration setup and applies its model and effort", async () => {
@@ -1949,6 +1972,26 @@ describe('ProposalCard', () => {
       const { appliedFields } = renderSibling();
 
       expect((await appliedFields()).agentSetup).toEqual({ provider: 'claude-code' });
+    });
+
+    it('adopts none of a remembered setup whose provider is turned off', async () => {
+      enabledProvidersState.set({ 'claude-code': false });
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+      const fields = await appliedFields();
+      expect(fields.specialist).toBe('coordinator');
+      expect(fields).not.toHaveProperty('agentSetup');
+    });
+
+    it('drops the remembered setup when its provider is turned off while the card is open', async () => {
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling();
+
+      enabledProvidersState.set({ 'claude-code': false });
+      await tick();
+      expect(await appliedFields()).not.toHaveProperty('agentSetup');
     });
 
     it('follows a repository change for the remembered setup after an explicit agent pick', async () => {
