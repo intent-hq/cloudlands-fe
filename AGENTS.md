@@ -248,10 +248,10 @@ viewer, and close the clean session. Do not commit the media, load saved browser
 or inspect cookies, credentials, or unrelated tabs.
 
 Before linking any generated image or video, verify that the actual file exists in the
-message's owning workspace. Use its exact workspace-relative path or its contained
-absolute workspace path. Never invent an `artifacts/...` path, substitute a similarly
-named file, or read a sibling workspace. If the expected artifact is absent, report it
-as missing instead of emitting a link.
+message's owning workspace. Embed `![alt](intent://local/file/<percent-encoded-workspace-relative-path>)`
+or the exact URL returned by `ws.note.saveAsset`; absolute filesystem paths do not render
+as workspace media. Never invent an `artifacts/...` path, substitute a similarly named
+file, or read a sibling workspace. If the artifact is absent, report it as missing.
 
 For focused browser validation, run:
 
