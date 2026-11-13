@@ -26,6 +26,10 @@
   import { runningAgentsLabel } from './remote-machines-messages';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
   import PreferredMachineBadge from './PreferredMachineBadge.svelte';
+  import MachinePlatformIcon from './MachinePlatformIcon.svelte';
+  import MachineProviderIcons from './MachineProviderIcons.svelte';
+  import { machinePlatform, machineRowProviders, machineRowReport } from './machine-facts';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   let {
     machine,
@@ -49,12 +53,23 @@
   const failures$ = selectRemoteMachineFailures();
   const backendLabel$ = selectCurrentBackendLabel();
   const remoteScriptsSupported$ = selectRemoteScriptsSupported();
+  const catalogEntries$ = selectProviderCatalogEntries();
 
   const connectionId = $derived(connectionForMachine(machine, $connections$, $localFingerprint$));
   const removing = $derived($operations$[machine.id] === 'removing');
+  const platformIcon = $derived(machinePlatform(machine.platform?.os));
   const platform = $derived(
     machine.platform ? `${machine.platform.os} · ${machine.platform.arch}` : null, // i18n-ignore (OS/arch identifiers)
   );
+  const providers = $derived.by(() => {
+    const entries = $catalogEntries$;
+    return machineRowProviders(
+      {},
+      machine,
+      (id) => entries.find((entry) => entry.id === id)?.displayName,
+    );
+  });
+  const report = $derived(machineRowReport(machine));
   const actions = $derived<ActionDefinition[]>(
     withOrderActions(
       [
@@ -90,15 +105,25 @@
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet title()}{machine.name}{/snippet}
     {#snippet meta()}
-      {#if order?.preferred}<PreferredMachineBadge />{/if}
-      <RemoteMachineBadge {machine} backendLabel={$backendLabel$} exceptionsOnly={!!order} />
-      {#if platform}<span>{platform}</span>{/if}
-      {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
-      {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
-        <span class="text-warning-ink" data-machine-scripts-update
-          >{m.remoteMachines_scriptsUpdate_label()}</span
-        >
-      {/if}
+      <!-- Laid out like a saved machine's row (DeviceRow): platform icon,
+           version, then the providers its last report can run. -->
+      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+        {#if order?.preferred}<PreferredMachineBadge />{/if}
+        {#if platformIcon}
+          <MachinePlatformIcon platform={platformIcon} />
+        {:else if platform}
+          <span>{platform}</span>
+        {/if}
+        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} exceptionsOnly={!!order} />
+        {#if report?.intentdVersion}<span>{report.intentdVersion}</span>{/if}
+        {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
+        {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
+          <span class="text-warning-ink" data-machine-scripts-update
+            >{m.remoteMachines_scriptsUpdate_label()}</span
+          >
+        {/if}
+        <MachineProviderIcons {providers} reported={!!report} />
+      </span>
     {/snippet}
     {#snippet trailing()}
       <RowActions

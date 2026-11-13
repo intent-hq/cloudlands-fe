@@ -8485,6 +8485,7 @@
   "remoteMachines_revoke_confirm_description": "{backend} will no longer be able to run agents on this machine. Its agents running here are stopped.",
   "remoteMachines_revoke_label": "Revoke",
   "remoteMachines_scriptsUpdate_label": "Needs an update to run scripts",
+  "remoteMachines_noProviders_label": "No providers ready",
   "remoteMachines_section_description": "{backend} can run agents on these machines. Their owners can revoke this at any time.",
   "remoteMachines_section_title": "Machines {backend} can run agents on",
   "remoteMachines_order_title": "Where {backend} runs agents",

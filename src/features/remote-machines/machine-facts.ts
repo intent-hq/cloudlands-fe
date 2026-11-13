@@ -29,6 +29,13 @@ export function machineRowPlatform(
   return machinePlatform(device.hostOs ?? machine?.platform?.os);
 }
 
+const REPORT_STATES = new Set<RemoteMachine['state']>(['connected', 'disconnected']);
+
+/** The machine's last report, while it is connected or idle (disconnected). */
+export function machineRowReport(machine: RemoteMachine | null) {
+  return machine && REPORT_STATES.has(machine.state) ? machine.capabilities : undefined;
+}
+
 export interface MachineRowProvider {
   id: string;
   name: string;
@@ -36,10 +43,12 @@ export interface MachineRowProvider {
 
 /**
  * The providers available on a Machines row's machine: the connected daemon's
- * installed providers, else the installed providers in the backend's report
- * for a machine made available to it while that machine is connected. Empty
- * when neither is known, so an offline row shows nothing rather than a stale
- * or misleading list. `catalogName` supplies the provider's display name.
+ * installed providers, else the installed providers in the backend's last
+ * report for a machine made available to it. That report counts while the
+ * machine is connected or disconnected (its idle state: the backend connects
+ * on demand); any other state shows nothing rather than a misleading list.
+ * Providers the machine hides (`visible: false`) are left out.
+ * `catalogName` supplies the provider's display name.
  */
 export function machineRowProviders(
   device: Pick<ConnectionRecord, 'providers'>,
@@ -51,8 +60,12 @@ export function machineRowProviders(
       id: provider.id,
       name: catalogName(provider.id) ?? provider.displayName,
     }));
-  if (machine?.state !== 'connected' || !machine.capabilities) return [];
-  return machine.capabilities.providers
-    .filter((provider) => !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status))
+  const report = machineRowReport(machine);
+  if (!report) return [];
+  return report.providers
+    .filter(
+      (provider) =>
+        provider.visible !== false && !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status),
+    )
     .map((provider) => ({ id: provider.id, name: catalogName(provider.id) ?? provider.id }));
 }

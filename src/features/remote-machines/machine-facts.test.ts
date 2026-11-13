@@ -112,6 +112,33 @@ describe('machineRowProviders', () => {
     ]);
   });
 
+  it('uses the last report of a disconnected machine (its idle state)', () => {
+    expect(
+      machineRowProviders(device, machine({ state: 'disconnected' }), noNames).map(
+        (provider) => provider.id,
+      ),
+    ).toEqual(['claude-code', 'codex', 'unsloth']);
+  });
+
+  it('drops providers the machine hides (visible: false)', () => {
+    const report = machine().capabilities!;
+    expect(
+      machineRowProviders(
+        device,
+        machine({
+          capabilities: {
+            ...report,
+            providers: [
+              ...report.providers,
+              { id: 'cortex', visible: false, status: 'signed-in', models: [] },
+            ],
+          },
+        }),
+        noNames,
+      ).map((provider) => provider.id),
+    ).toEqual(['claude-code', 'codex', 'unsloth']);
+  });
+
   it('shows nothing for an unreachable machine or one without a report', () => {
     expect(machineRowProviders(device, machine({ state: 'unreachable' }), noNames)).toEqual([]);
     expect(machineRowProviders(device, machine({ capabilities: undefined }), noNames)).toEqual([]);
