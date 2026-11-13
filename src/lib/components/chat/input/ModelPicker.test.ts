@@ -1032,6 +1032,58 @@ describe('ModelPicker guest / collaborator lock', () => {
       );
     });
 
+    const CLOUD_SESSION = {
+      ...REMOTE_SESSION,
+      nodeName: 'Personal E2B',
+      placement: { target: 'e2b' as const, checkout: 'isolated' as const, cloudMachineId: 'e2b' },
+    };
+    const expectCloudNotRunning = async (title: string, description: RegExp) => {
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      const missing = await screen.findByTestId('model-picker-remote-missing');
+      expect(missing.textContent).toContain(title);
+      expect(missing.textContent).toMatch(description);
+      expect(missing.textContent).not.toContain('Personal E2B');
+      expect(missing.textContent).not.toContain('connects to this backend');
+      // remoteMachines.refresh can't reach a sandbox, and must not start one.
+      expect(within(missing).queryByRole('button', { name: /Check again/ })).toBeNull();
+      expect(screen.queryByTestId('model-picker-remote-refresh')).toBeNull();
+      const header = screen.getByTestId('model-picker-remote-header');
+      expect(header.textContent).toContain('Not running');
+      expect(header.textContent).not.toContain('No report yet');
+    };
+
+    it("names a paused sandbox that isn't running, not its cloud entry", async () => {
+      mockAgentSession$.set(CLOUD_SESSION);
+      withMachine(
+        machineRow({
+          name: 'Personal E2B · Coder',
+          platform: undefined,
+          capabilities: undefined,
+          observedAt: undefined,
+          cloud: {
+            provider: 'northflank',
+            cloudMachineId: 'e2b',
+            sandboxId: 'intent-1c0e7b9ea4dc',
+            state: 'paused',
+          },
+        }),
+      );
+      await expectCloudNotRunning(
+        "Sandbox intent-1c0e7b9ea4dc isn't running",
+        /next message resumes it/,
+      );
+    });
+
+    it('says an agent whose sandbox was deleted gets a new one with its next message', async () => {
+      mockAgentSession$.set({ ...CLOUD_SESSION, nodeId: undefined });
+      withMachine(null);
+      await expectCloudNotRunning(
+        "This agent's sandbox isn't running",
+        /next message starts a sandbox/,
+      );
+    });
+
     it('stays locked on an older backend whose profile rows lack remoteCompatible', async () => {
       withMachine();
       mockCatalogProfiles.current = [
