@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.333.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.332.2...v2.333.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **hardware-console:** cycle keys start from the current tab ([#4562](https://github.com/intent-hq/cloudlands-fe/issues/4562)) ([1d80b02](https://github.com/intent-hq/cloudlands-fe/commit/1d80b020a242ef027def926138e0264a7bc7889b))
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** keep guest host status current on every machine's rail ([#4561](https://github.com/intent-hq/cloudlands-fe/issues/4561)) ([c7ba68d](https://github.com/intent-hq/cloudlands-fe/commit/c7ba68dcefeb523089c84818411ff92cf6af5a7c))
+
 ## [2.332.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.332.1...v2.332.2) (2026-11-13)
 
 
