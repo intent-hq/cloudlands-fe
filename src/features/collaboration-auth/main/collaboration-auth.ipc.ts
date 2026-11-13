@@ -1,3 +1,4 @@
+import { getShownRendererWebContents, getWindowForWebContents } from '../../../main/window-backend';
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow, ipcMain, shell, type WebContents } from 'electron';
 import { z } from 'zod';
@@ -108,21 +109,30 @@ export function captureCollaborationPolicy(contentsId: number | null): () => boo
 /** Narrow continuation consumed by invitation joining; no redemption or session storage here. */
 export function prepareCollaborationIdentity(
   request: CollaborationRequest,
-  options: { attempt?: CollaborationAttempt; parent?: BrowserWindow | null } = {},
+  options: {
+    attempt?: CollaborationAttempt;
+    parent?: BrowserWindow | null;
+    contents?: Electron.WebContents | null;
+  } = {},
 ): Promise<CollaborationOutcome<PreparedCollaborationIdentity>> {
   const parent =
     options.parent === undefined
       ? (BrowserWindow.getFocusedWindow() ?? getMainWindow())
       : options.parent;
   request = structuredClone(request);
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed())
+  const contents =
+    options.contents === undefined
+      ? parent && !parent.isDestroyed()
+        ? getShownRendererWebContents(parent)
+        : null
+      : options.contents;
+  if (!parent || parent.isDestroyed() || !contents || contents.isDestroyed())
     return Promise.resolve({ kind: 'cancelled', request });
   registerCollaborationAuthHandlers();
   active?.flow.cancel();
   releaseAttempt?.();
   const generation = ++sequence;
   const requestId = randomUUID();
-  const contents = parent.webContents;
   let windowAlive = true;
   const original = options.attempt ?? { id: requestId, metadataRevision: 0, current: () => true };
   const attempt: CollaborationAttempt = {
@@ -206,8 +216,11 @@ export function registerCollaborationAuthHandlers(): void {
   });
   ipcMain.handle(COLLABORATION_AUTH.OPEN, (event) => {
     // Only the local sign-in surface can open; it performs the flag handshake before any RPC.
-    const parent = BrowserWindow.fromWebContents(event.sender);
-    void prepareCollaborationIdentity({ scope: 'settings' }, { parent }).catch(() => {});
+    const parent = getWindowForWebContents(event.sender);
+    void prepareCollaborationIdentity(
+      { scope: 'settings' },
+      { parent, contents: event.sender },
+    ).catch(() => {});
     return { ok: true };
   });
   ipcMain.handle(COLLABORATION_AUTH.ACTION, async (event, input: unknown) => {

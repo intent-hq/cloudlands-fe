@@ -139,6 +139,13 @@ export function bindMachineViewToBackend(
   window.once('closed', release);
 }
 
+/** Resolve the owning window of a native renderer or a main-created machine view. */
+export function getWindowForWebContents(sender: Electron.WebContents): BrowserWindowType | null {
+  if (sender.isDestroyed()) return null;
+  const window = machineViewBindings.get(sender)?.window ?? BrowserWindow.fromWebContents(sender);
+  return window && !window.isDestroyed() ? window : null;
+}
+
 /**
  * Every live renderer hosted by `window`: its own web contents first, then its
  * machine views. Use it wherever a message must reach each renderer.

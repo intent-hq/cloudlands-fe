@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, WebContents } from 'electron';
 
 import type {
   InviteConsentDismissPayload,
@@ -47,6 +47,7 @@ function makeWindow() {
   const send = vi.fn();
   const goneListeners = new Map<string, (() => void)[]>();
   const webContents = {
+    id: 41,
     isDestroyed: () => false,
     send,
     once: vi.fn((event: string, listener: () => void) => {
@@ -71,7 +72,12 @@ async function getHandlers() {
       event: unknown,
       data: unknown,
     ) => Promise<unknown>;
-  return { ack: find('invite-consent:ack'), response: find('invite-consent:response') };
+  const withSender = (handler: ReturnType<typeof find>) => (event: unknown, data: unknown) =>
+    handler({ sender: { id: 41 }, ...(event as object) }, data);
+  return {
+    ack: withSender(find('invite-consent:ack')),
+    response: withSender(find('invite-consent:response')),
+  };
 }
 
 function dismissesSent(send: ReturnType<typeof vi.fn>): InviteConsentDismissPayload[] {
@@ -90,6 +96,23 @@ afterEach(() => {
 });
 
 describe('showInviteConsent — renderer round-trip', () => {
+  it('keeps the prompt on the original visible machine renderer', async () => {
+    const home = makeWindow();
+    const renderer = makeWindow();
+    const prompt = showInviteConsent(PAYLOAD, {
+      getParentWindow: () => home.window,
+      getRendererWebContents: () => renderer.window.webContents as WebContents,
+    });
+    expect(home.send).not.toHaveBeenCalled();
+    expect(renderer.send).toHaveBeenCalledWith('invite-consent:show', PAYLOAD);
+    const handlers = await getHandlers();
+    await handlers.ack({ sender: renderer.window.webContents }, { requestId: PAYLOAD.requestId });
+    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'open' });
+    expect(await prompt.decision).toBe('open');
+    prompt.dismiss('joined');
+    expect(home.send).not.toHaveBeenCalled();
+  });
+
   it('sends the show payload and resolves the decision after ack + open', async () => {
     const { window, send } = makeWindow();
     const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });

@@ -1404,11 +1404,26 @@ let keychainSyncLifecycle: KeychainSyncLifecycle | null = null;
  * tests never pull in the Electron window module.
  */
 interface BackendWindowHooks {
+  openInWindow?(
+    backendId: string,
+    window: Electron.BrowserWindow,
+    workspaceId?: string,
+    mayOpen?: () => boolean,
+  ): boolean | Promise<boolean>;
+  showWorkspace?(backendId: string, workspaceId: string): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
   ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
 }
 const defaultWindowHooks: BackendWindowHooks = {
+  async openInWindow(backendId, window, workspaceId, mayOpen) {
+    const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
+    return openInvitedMachineInWindow(window, backendId, workspaceId, mayOpen);
+  },
+  async showWorkspace(backendId, workspaceId) {
+    const { showWorkspaceInBackendWindow } = await import('../../../main/window');
+    showWorkspaceInBackendWindow(backendId, workspaceId);
+  },
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
       openOrFocusWindowsForBackend: (id: string) => Promise<void>;
@@ -4337,14 +4352,24 @@ async function remoteIsNodeOwned(
 
 export function openBackendWindow(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: {
+    probeTimeoutMs?: number;
+    mayOpen?: () => boolean;
+    parentWindow?: Electron.BrowserWindow | null;
+    workspaceId?: string;
+  },
 ): Promise<{ id: string }> {
   return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
 }
 
 function performOpenBackendWindowOwned(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: {
+    probeTimeoutMs?: number;
+    mayOpen?: () => boolean;
+    parentWindow?: Electron.BrowserWindow | null;
+    workspaceId?: string;
+  },
   parent?: PoolOwner,
 ): Promise<{ id: string }> {
   return poolWork('performOpenBackendWindow', parent, (owner) =>
@@ -4354,7 +4379,12 @@ function performOpenBackendWindowOwned(
 
 async function performOpenBackendWindowOriginal(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: {
+    probeTimeoutMs?: number;
+    mayOpen?: () => boolean;
+    parentWindow?: Electron.BrowserWindow | null;
+    workspaceId?: string;
+  },
   owner?: PoolOwner,
 ): Promise<{ id: string }> {
   if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
@@ -4393,7 +4423,20 @@ async function performOpenBackendWindowOriginal(
       if (await remoteIsNodeOwned(id, target, owner)) throw new NodeWindowRefusedError(id);
     }
     if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
+    if (
+      options?.parentWindow &&
+      (await windowHooks.openInWindow?.(
+        id,
+        options.parentWindow,
+        options.workspaceId,
+        options.mayOpen,
+      ))
+    )
+      return { id };
+    if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
     await windowHooks.openOrFocus?.(id);
+    if (options?.workspaceId && (!options.mayOpen || options.mayOpen()))
+      await windowHooks.showWorkspace?.(id, options.workspaceId);
     return { id };
   } catch (error) {
     recordPoolError(owner, error);

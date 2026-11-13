@@ -129,6 +129,7 @@ vi.mock('../invite-attempt', () => ({
       id: 'controlled-invite-attempt',
       metadataRevision: 0,
       parent: null,
+      contents: null,
       current: () => live && lifetimeCurrent,
       alive: () => live && lifetimeCurrent,
       admit: () => live && lifetimeCurrent,
@@ -491,7 +492,14 @@ describe('handleInviteDeepLink', () => {
       token: TOKEN,
       workspace: { id: 'ws-1', title: 'Shared workspace' },
     });
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({
+        mayOpen: expect.any(Function),
+        parentWindow: null,
+        workspaceId: CREDENTIAL.workspaceId,
+      }),
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -568,7 +576,10 @@ describe('handleInviteDeepLink', () => {
         token: TOKEN,
       }),
     );
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   // The daemon's tunnel-only invite omits `host` entirely (no empty `host=`):
@@ -593,7 +604,10 @@ describe('handleInviteDeepLink', () => {
         token: TOKEN,
       }),
     );
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('refuses a first write when OS encryption is unavailable', async () => {
@@ -783,7 +797,10 @@ describe('handleInviteDeepLink', () => {
     });
     await handleInviteDeepLink(LINK);
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(showMessageBox).toHaveBeenCalledTimes(1);
     await vi.waitFor(() =>
       expect(logLines.join('\n')).toContain('Could not delete the identity proof'),
@@ -909,7 +926,10 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     });
     expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
   });
@@ -1056,7 +1076,10 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(box.message).toContain(CHALLENGE.workspaceTitle);
     expect(box.message).not.toContain(CONNECT.userCode);
     expect(openExternal).not.toHaveBeenCalled();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('prove refusal after join: dismiss failed before the failure box, gist deleted', async () => {
@@ -1111,7 +1134,10 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
       // Both gists are deleted: the refused one and the accepted one.
       expect(localCalls('github.identityProof.delete')).toHaveLength(2);
       expect(guestAdd).toHaveBeenCalledTimes(1);
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+      expect(openBackendWindow).toHaveBeenCalledWith(
+        'guest-id',
+        expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+      );
     },
   );
 
@@ -1343,7 +1369,10 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     releaseStore();
     await pending;
 
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
@@ -1389,7 +1418,10 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     await pending;
 
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(logLines.join('\n')).toContain('cancel-after-grant');
@@ -1489,7 +1521,10 @@ describe('handleInviteDeepLink — returning guest', () => {
       workspace: { id: 'ws-1', title: 'Shared workspace' },
     });
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -1545,7 +1580,10 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'confirm', login: 'octocat' });
     expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('a tunnel-only link matches the session keyed on the tc address', async () => {
@@ -1574,7 +1612,10 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(guestAdd).toHaveBeenCalledWith(
       expect.objectContaining({ token: STORED_TOKEN, retainPairing: true }),
     );
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
   it('cancel on the confirm prompt: dismiss cancelled, nothing accepted, stored, or opened', async () => {
     const { prompt } = fakeConsent('cancel');
@@ -1647,7 +1688,10 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(box.message).not.toContain(CONNECT.userCode);
     expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('cancelling the native confirm box aborts without accepting', async () => {
@@ -1684,7 +1728,10 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(prove).toHaveBeenCalledTimes(1);
     expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
     expect(provePrompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(logLines.join('\n')).toContain('"reason":"credential-invalid"');
   });
 
@@ -1754,7 +1801,10 @@ describe('handleInviteDeepLink — returning guest', () => {
       expect(showInviteConsent).toHaveBeenCalledTimes(1);
       expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'prove' });
       expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+      expect(openBackendWindow).toHaveBeenCalledWith(
+        'guest-id',
+        expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+      );
       expect(logLines.join('\n')).toContain(`"reason":"${reason}"`);
     },
   );
@@ -2190,7 +2240,10 @@ describe('handleInviteDeepLink — GitLab identity', () => {
       expect.objectContaining({ principalId: 'gl:4711', login: 'gl-user', token: TOKEN }),
     );
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('legacy missing pin metadata keeps GitHub first when both forges are connected', async () => {
@@ -2962,7 +3015,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(payload).toEqual({ requestId: expect.any(String), phase: 'connecting' });
     expect(JSON.stringify(payload)).not.toContain(SECRET);
     expect(connecting.handle.update).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('connecting is dismissed before the native prove box when no renderer shows the consent', async () => {
@@ -2978,7 +3034,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await handleInviteDeepLink(LINK);
 
     expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'native-box']);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('connecting is dismissed before the failure notice when the dial fails', async () => {
@@ -3028,7 +3087,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
 
     // The in-flight guard was released.
     await handleInviteDeepLink(LINK);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('cancel while the challenge is in flight: connection closed, nothing proven, no notice', async () => {
@@ -3106,7 +3168,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
     // The in-flight guard was released.
     signedInDaemon();
     await handleInviteDeepLink(LINK);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 
   it('cancel while the stored session is looked up: nothing inspected or proven, connection closed', async () => {
@@ -3296,7 +3361,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
     opening.cancel();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(openBackendWindow).toHaveBeenCalledTimes(1);
     expect(guestAdd).toHaveBeenCalledTimes(1);
     expect(logLines.join('\n')).not.toContain('window not opened');
@@ -3317,7 +3385,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
 
     const pending = handleInviteDeepLink(LINK);
     await vi.waitFor(() =>
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) }),
+      expect(openBackendWindow).toHaveBeenCalledWith(
+        'guest-id',
+        expect.objectContaining({ mayOpen: expect.any(Function) }),
+      ),
     );
     expect(opening.handle.dismiss).not.toHaveBeenCalled();
     opening.cancel();
@@ -3364,7 +3435,10 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await handleInviteDeepLink(LINK);
     expect(progressPhases()).toEqual(['connecting', 'opening']);
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
 });
 
@@ -3372,7 +3446,10 @@ describe('routeInviteLinkFromOs', () => {
   it('handles the link when the app is ready even with no window', async () => {
     const park = vi.fn();
     await routeInviteLinkFromOs(LINK, park);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(park).not.toHaveBeenCalled();
   });
 
@@ -3444,6 +3521,7 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
         },
         {
           parent: null,
+          contents: null,
           attempt: expect.objectContaining({ id: expect.any(String), metadataRevision: 0 }),
         },
       );
@@ -3569,7 +3647,10 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
       }),
     );
     expect(guestAdd.mock.calls[0][0]).not.toHaveProperty('workspace');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
     expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
   });
   it.each([
@@ -3841,7 +3922,10 @@ describe('host-scoped invitations (controlled FE protocol fixtures)', () => {
       }),
     );
     expect(guestAdd.mock.calls[0][0]).not.toHaveProperty('workspace');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+    expect(openBackendWindow).toHaveBeenCalledWith(
+      'guest-id',
+      expect.objectContaining({ mayOpen: expect.any(Function), parentWindow: null }),
+    );
   });
   it.each([
     { ...preview, scope: undefined },

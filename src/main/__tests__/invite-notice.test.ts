@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, WebContents } from 'electron';
 
 import type {
   InviteNoticeDismissPayload,
@@ -44,6 +44,7 @@ function makeWindow() {
   const send = vi.fn();
   const goneListeners = new Map<string, (() => void)[]>();
   const webContents = {
+    id: 41,
     isDestroyed: () => false,
     send,
     once: vi.fn((event: string, listener: () => void) => {
@@ -68,7 +69,12 @@ async function getHandlers() {
       event: unknown,
       data: unknown,
     ) => Promise<unknown>;
-  return { ack: find('invite-notice:ack'), response: find('invite-notice:response') };
+  const withSender = (handler: ReturnType<typeof find>) => (event: unknown, data: unknown) =>
+    handler({ sender: { id: 41 }, ...(event as object) }, data);
+  return {
+    ack: withSender(find('invite-notice:ack')),
+    response: withSender(find('invite-notice:response')),
+  };
 }
 
 function dismissesSent(send: ReturnType<typeof vi.fn>): InviteNoticeDismissPayload[] {
@@ -87,6 +93,22 @@ afterEach(() => {
 });
 
 describe('showInviteNotice — renderer round-trip', () => {
+  it('keeps the prompt on the original visible machine renderer', async () => {
+    const home = makeWindow();
+    const renderer = makeWindow();
+    const prompt = showInviteNotice(PAYLOAD, {
+      getParentWindow: () => home.window,
+      getRendererWebContents: () => renderer.window.webContents as WebContents,
+    });
+    expect(home.send).not.toHaveBeenCalled();
+    expect(renderer.send).toHaveBeenCalledWith('invite-notice:show', PAYLOAD);
+    const handlers = await getHandlers();
+    await handlers.ack({ sender: renderer.window.webContents }, { requestId: PAYLOAD.requestId });
+    await handlers.response({}, { requestId: PAYLOAD.requestId });
+    expect(await prompt).toBe(true);
+    expect(home.send).not.toHaveBeenCalled();
+  });
+
   it('sends the show payload synchronously and resolves true after ack + response', async () => {
     const { window, send } = makeWindow();
     const acknowledged = showInviteNotice(PAYLOAD, { getParentWindow: () => window });

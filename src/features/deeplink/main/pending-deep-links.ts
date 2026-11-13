@@ -31,10 +31,15 @@ function queueFor(webContents: WebContents): DeepLinkAction[] {
 
 /** Queue `action` for `window` and nudge its renderer. Does not focus. */
 export function queueDeepLinkForWindow(window: BrowserWindow, action: DeepLinkAction): void {
-  queueFor(window.webContents).push(action);
+  queueDeepLinkForRenderer(window.webContents, action);
+}
+
+/** Queue for the exact backend renderer, including machine views. Does not focus. */
+export function queueDeepLinkForRenderer(contents: WebContents, action: DeepLinkAction): void {
+  queueFor(contents).push(action);
   // A renderer that is not listening yet ignores the nudge; it drains the
   // queue on startup instead.
-  window.webContents.send('deep-link', DEEP_LINK_NUDGE);
+  contents.send('deep-link', DEEP_LINK_NUDGE);
 }
 
 /**

@@ -3,14 +3,17 @@
   import type { CollaborationView } from '../types';
   import CollaborationSignInModal from './CollaborationSignInModal.svelte';
   import { collaborationAction, installCollaborationAuth } from './collaboration-auth.client';
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   let view = $state<CollaborationView | null>(null);
   onMount(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- installs the transient main-process consent dialog; auth state and polling stay in main
     installCollaborationAuth({
       show: (next) => {
         view = next;
+        open = true;
       },
       dismiss: () => {
+        open = false;
         view = null;
       },
     }),

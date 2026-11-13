@@ -9,6 +9,7 @@ vi.mock('electron', () => ({
 import {
   bindMachineViewToBackend,
   getRendererWebContents,
+  getWindowForWebContents,
   getShownBackendIdForWindow,
   getShownRendererWebContents,
   isShownRenderer,
@@ -95,6 +96,16 @@ describe('machine views inside a window', () => {
     windows.set(sender, host as unknown as EventEmitter);
     return sender as unknown as WebContents;
   }
+
+  it('finds a bound view owner when Electron has no BrowserWindow mapping', () => {
+    const host = makeWindow();
+    const view = makeView(host.window);
+    windows.delete(view);
+    bindMachineViewToBackend(host.window, view, 'machine-b');
+    expect(getWindowForWebContents(view)).toBe(host.window);
+    view.emit('destroyed');
+    expect(getWindowForWebContents(view)).toBeNull();
+  });
 
   it('routes a view to its own backend while the window keeps its stamp', () => {
     const host = makeWindow();

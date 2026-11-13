@@ -9,7 +9,7 @@
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { acknowledgeInviteNotice, installInviteNoticeService } from './invite-notice-service';
 
-  let open = $state(false);
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   let payload = $state<InviteNoticeShowPayload | null>(null);
 
   onMount(() =>

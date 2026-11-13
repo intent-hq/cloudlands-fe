@@ -278,6 +278,12 @@
   // Invite consent modal state (main-process intent://invite GitHub identity prompt)
   let showInviteConsentModal = $state(false);
   let inviteConsentPayload = $state<InviteConsentShowPayload | null>(null);
+  let showCollaborationSignIn = $state(false);
+  let showInviteNotice = $state(false);
+  let showInviteProgress = $state(false);
+  const invitationDialogOpen = $derived(
+    showInviteConsentModal || showCollaborationSignIn || showInviteNotice || showInviteProgress,
+  );
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -1134,10 +1140,8 @@
 
   <SetupPromptDialog />
 
-  <!-- Interrupted-agent recovery owns the startup modal slot. Keeping release
-       notes in Redux while this component is unmounted avoids consuming the
-       queued payload through the dialog's close callback. -->
-  {#if !showInterruptedAgentsModal}
+  <!-- Keep notes queued while recovery or invitation dialogs use the modal slot. -->
+  {#if !showInterruptedAgentsModal && !invitationDialogOpen}
     <ReleaseNotesModal
       open={$showReleaseNotesModal$}
       releaseNotes={$releaseNotes$}
@@ -1177,8 +1181,7 @@
     }}
   />
 
-  <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
-  <CollaborationSignInHost />
+  <CollaborationSignInHost bind:open={showCollaborationSignIn} />
   <InviteConsentModal
     bind:open={showInviteConsentModal}
     payload={inviteConsentPayload}
@@ -1188,11 +1191,8 @@
     }}
   />
 
-  <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
-  <InviteNoticeHost />
-
-  <!-- Invite progress (spinner + Cancel during the silent phases of an intent://invite join) -->
-  <InviteProgressHost />
+  <InviteNoticeHost bind:open={showInviteNotice} />
+  <InviteProgressHost bind:open={showInviteProgress} />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

@@ -12,8 +12,8 @@
     retryInviteProgress,
     installInviteProgressService,
   } from './invite-progress-service';
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   let recoveryState = $state({ busy: false, failed: false });
-  let open = $state(false);
   let payload = $state<InviteProgressShowPayload | null>(null);
 
   onMount(() =>

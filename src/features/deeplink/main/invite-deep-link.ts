@@ -229,7 +229,7 @@ interface ConnectingProgress {
 function showConnectingProgress(attempt: InviteAttempt): ConnectingProgress {
   const handle = showInviteProgress(
     { requestId: randomUUID(), phase: 'connecting' },
-    { getParentWindow: () => attempt.parent },
+    { getParentWindow: () => attempt.parent, getRendererWebContents: () => attempt.contents },
   );
   const cancelled: Promise<never> = Promise.race([handle.cancelled, attempt.cancelled]).then(() => {
     throw new InviteCancelledError();
@@ -274,7 +274,10 @@ function createConsentPrompts(
     show(payload) {
       if (!attempt.current()) throw new InviteCancelledError();
       connecting.dismiss();
-      const prompt = showInviteConsent(payload, { getParentWindow: () => attempt.parent });
+      const prompt = showInviteConsent(payload, {
+        getParentWindow: () => attempt.parent,
+        getRendererWebContents: () => attempt.contents,
+      });
       const previous = current;
       let ended = false;
       const handle: InviteConsentPrompt = {
@@ -318,6 +321,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
       { requestId, phase: 'admission' },
       {
         getParentWindow: () => attempt.parent,
+        getRendererWebContents: () => attempt.contents,
         onRetry: () => {
           if (attempt.admit()) settle(true);
         },
@@ -326,7 +330,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
     void recovery.cancelled.then(() => settle(false));
   };
   // Publication replays readiness in the original renderer. Only its acknowledged response admits.
-  const offPolicy = onCollaborationPolicyPublished(attempt.parent.webContents.id, show);
+  const offPolicy = onCollaborationPolicyPublished(attempt.contents!.id, show);
   const timer = setTimeout(() => settle(false), 5 * 60_000);
   show();
   try {
@@ -936,7 +940,7 @@ async function signInForCollaboration(
       ...(Object.hasOwn(challenge, 'pinIdentity') ? { pinIdentity: challenge.pinIdentity } : {}),
       ...labels,
     },
-    { attempt, parent: attempt.parent },
+    { attempt, parent: attempt.parent, contents: attempt.contents },
   );
   if (result.kind === 'cancelled') return result;
   if (result.kind === 'error') throw new InviteFlowError('sign-in-failed');
@@ -1410,7 +1414,8 @@ function requireSameInvitation(original: InviteInspection, next: InviteInspectio
 /**
  * Persist the minted credential as a GUEST session (the store upserts by
  * daemon identity: a returning guest's record keeps its id, takes the fresh
- * token, and gains the workspace) and open the daemon's window, under the
+ * token, and gains the workspace) and show the invited workspace in the original
+ * window's enabled machine rail, or the daemon's window, under the
  * `opening` progress dialog. A store failure here surfaces as a failure,
  * never as a cancellation; a Cancel on the dialog closes it at once and only
  * skips opening the window — the credential is stored, the membership stands,
@@ -1438,7 +1443,7 @@ async function storeCredentialAndOpen(
           phase: 'opening',
           ...labels,
         },
-        { getParentWindow: () => attempt.parent },
+        { getParentWindow: () => attempt.parent, getRendererWebContents: () => attempt.contents },
       )
     : null;
   let cancelled = false;
@@ -1492,7 +1497,13 @@ async function storeCredentialAndOpen(
       logger.info('User closed the join progress dialog; window not opened', { id: record.id });
       return;
     }
-    await openBackendWindow(record.id, { mayOpen: () => !cancelled && mayOpen() });
+    await openBackendWindow(record.id, {
+      mayOpen: () => !cancelled && mayOpen(),
+      parentWindow: attempt.parent,
+      ...(envelope.scope === 'workspace' && credential.workspaceId
+        ? { workspaceId: credential.workspaceId }
+        : {}),
+    });
   } finally {
     dismissOpening();
   }
@@ -1665,7 +1676,7 @@ async function showNotice(
   if (!attempt.current()) return;
   const acknowledged = showInviteNotice(
     { requestId: randomUUID(), ...payload },
-    { getParentWindow: () => attempt.parent },
+    { getParentWindow: () => attempt.parent, getRendererWebContents: () => attempt.contents },
   );
   handoff?.consent?.dismiss(handoff.outcome);
   if (await acknowledged) return;

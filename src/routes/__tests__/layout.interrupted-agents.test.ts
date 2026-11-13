@@ -9,6 +9,12 @@ import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import type { InterruptedAgent } from '$lib/client/app-client';
 import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
+import {
+  COLLABORATION_AUTH_CHANNELS,
+  INVITE_CONSENT_CHANNELS,
+  INVITE_NOTICE_CHANNELS,
+  INVITE_PROGRESS_CHANNELS,
+} from '$shared/ipc/channels';
 
 // Guard against layout onMount deferred work logging after the last test and
 // racing worker teardown (intent-hq/monorepo#1774).
@@ -111,6 +117,18 @@ vi.mock('$lib/components/modals/WorkspaceWarningDialogs.svelte', async () => ({
 vi.mock('$lib/components/modals/ReleaseNotesModal.svelte', async () => ({
   default: (await import('./mocks/ReleaseNotesModalProbe.svelte')).default,
 }));
+vi.mock('$features/collaboration-auth/renderer/CollaborationSignInModal.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
+vi.mock('$lib/components/modals/InviteConsentModal.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
+vi.mock('$lib/components/modals/InviteNoticeModal.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
+vi.mock('$lib/components/modals/InviteProgressModal.svelte', async () => ({
+  default: (await import('./mocks/Marker.svelte')).default,
+}));
 vi.mock('$features/stats/StatsOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
@@ -194,6 +212,34 @@ function showInterruptedAgents(agents: InterruptedAgent[]) {
 
 function queueReleaseNotes() {
   appStore.dispatch(showReleaseNotesSuccess(NOTES));
+}
+
+const invitationDialogs = [
+  { name: 'progress', channels: INVITE_PROGRESS_CHANNELS, payload: { phase: 'connecting' } },
+  {
+    name: 'sign-in',
+    channels: COLLABORATION_AUTH_CHANNELS,
+    payload: { request: { scope: 'workspace' } },
+  },
+  {
+    name: 'consent',
+    channels: INVITE_CONSENT_CHANNELS,
+    payload: { mode: 'confirm', workspaceTitle: 'Design review', hostLabel: 'Studio' },
+  },
+  {
+    name: 'notice',
+    channels: INVITE_NOTICE_CHANNELS,
+    payload: { kind: 'failed', reason: 'expired' },
+  },
+];
+
+function emitInvitationEvent(channel: string, payload: unknown) {
+  const api = window.electronAPI as unknown as {
+    _getRegisteredHandlers(channel: string): Array<(payload: unknown) => void>;
+  };
+  const handler = api._getRegisteredHandlers(channel).at(-1);
+  expect(handler).toBeTypeOf('function');
+  handler!(payload);
 }
 
 describe('+layout.svelte interrupted-agents resolve handlers', () => {
@@ -313,5 +359,55 @@ describe('+layout.svelte interrupted-agents resolve handlers', () => {
     await waitFor(() => expect(screen.queryByTestId('interrupted-agents-modal-marker')).toBeNull());
     expect(screen.queryByTestId('release-notes-modal-marker')).toBeNull();
     expect(appStore.state.releaseNotes.showModal).toBe(false);
+  });
+
+  it.each(invitationDialogs)(
+    'suspends open release notes during invitation $name without consuming them',
+    async ({ channels, payload }) => {
+      await renderLayout();
+      queueReleaseNotes();
+      await waitFor(() => expect(screen.getByTestId('release-notes-modal-marker')).toBeTruthy());
+
+      emitInvitationEvent(channels.SHOW, { requestId: 'invitation', ...payload });
+
+      await waitFor(() => expect(screen.queryByTestId('release-notes-modal-host')).toBeNull());
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+      expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
+
+      emitInvitationEvent(channels.DISMISS, { requestId: 'previous-invitation' });
+      expect(screen.queryByTestId('release-notes-modal-host')).toBeNull();
+      emitInvitationEvent(channels.DISMISS, { requestId: 'invitation' });
+
+      await waitFor(() => expect(screen.getByTestId('release-notes-modal-marker')).toBeTruthy());
+    },
+  );
+
+  it('keeps incoming release notes queued across invitation dialog handoffs', async () => {
+    await renderLayout();
+    emitInvitationEvent(INVITE_PROGRESS_CHANNELS.SHOW, {
+      requestId: 'connecting',
+      phase: 'connecting',
+    });
+    queueReleaseNotes();
+    await waitFor(() => expect(screen.queryByTestId('release-notes-modal-host')).toBeNull());
+
+    emitInvitationEvent(COLLABORATION_AUTH_CHANNELS.SHOW, {
+      requestId: 'sign-in',
+      request: { scope: 'workspace' },
+    });
+    emitInvitationEvent(INVITE_PROGRESS_CHANNELS.DISMISS, { requestId: 'connecting' });
+    await waitFor(() => expect(screen.queryByTestId('release-notes-modal-host')).toBeNull());
+
+    emitInvitationEvent(INVITE_NOTICE_CHANNELS.SHOW, {
+      requestId: 'failed',
+      kind: 'failed',
+      reason: 'expired',
+    });
+    emitInvitationEvent(COLLABORATION_AUTH_CHANNELS.DISMISS, { requestId: 'sign-in' });
+    await waitFor(() => expect(screen.queryByTestId('release-notes-modal-host')).toBeNull());
+
+    emitInvitationEvent(INVITE_NOTICE_CHANNELS.DISMISS, { requestId: 'failed' });
+    await waitFor(() => expect(screen.getByTestId('release-notes-modal-marker')).toBeTruthy());
+    expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
   });
 });

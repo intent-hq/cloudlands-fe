@@ -31,6 +31,7 @@ import { Logger } from '../shared/logger';
 import { InviteNoticeAckSchema, InviteNoticeResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
 import { getMainWindow } from './state';
+import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteNotice');
 
@@ -45,6 +46,8 @@ const RENDERER_ACK_TIMEOUT_MS = 3_000;
 export interface InviteNoticeDeps {
   /** Window to show the modal in (focused window, else main window). */
   getParentWindow(): BrowserWindow | null;
+  /** Original renderer for the attempt, retained across machine or focus changes. */
+  getRendererWebContents?(): WebContents | null;
 }
 
 function defaultGetParentWindow(): BrowserWindow | null {
@@ -58,6 +61,7 @@ function defaultGetParentWindow(): BrowserWindow | null {
 /** The renderer request main is currently waiting on. */
 interface PendingRendererRequest {
   requestId: string;
+  contentsId: number;
   ack: () => void;
   acknowledge: () => void;
 }
@@ -77,8 +81,11 @@ function registerRendererHandlers(): void {
     INVITE_NOTICE_CHANNELS.ACK,
     createValidatedHandler(
       InviteNoticeAckSchema,
-      async (_event, payload: InviteNoticeAckPayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteNoticeAckPayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           pendingRendererRequest.ack();
         }
         return { success: true };
@@ -90,8 +97,11 @@ function registerRendererHandlers(): void {
     INVITE_NOTICE_CHANNELS.RESPONSE,
     createValidatedHandler(
       InviteNoticeResponseSchema,
-      async (_event, payload: InviteNoticeResponsePayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteNoticeResponsePayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           // A valid response proves the modal mounted — treat it as an
           // implicit ack so a lost ack invoke cannot let the timeout fire and
           // show the native dialog over an answered modal.
@@ -126,7 +136,12 @@ export function showInviteNotice(
 ): Promise<boolean> {
   const deps: InviteNoticeDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
   const parent = deps.getParentWindow();
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed()) {
+  const contents = deps.getRendererWebContents
+    ? deps.getRendererWebContents()
+    : parent && !parent.isDestroyed()
+      ? getShownRendererWebContents(parent)
+      : null;
+  if (!parent || parent.isDestroyed() || !contents || contents.isDestroyed()) {
     logger.info('No window for the invite notice modal; using native dialog', {
       requestId: payload.requestId,
       kind: payload.kind,
@@ -134,7 +149,6 @@ export function showInviteNotice(
     return Promise.resolve(false);
   }
   registerRendererHandlers();
-  const contents = parent.webContents;
 
   let ackReceived!: () => void;
   const acked = new Promise<void>((resolve) => {
@@ -146,6 +160,7 @@ export function showInviteNotice(
   });
   const request: PendingRendererRequest = {
     requestId: payload.requestId,
+    contentsId: contents.id,
     ack: ackReceived,
     acknowledge: settleAcknowledged,
   };

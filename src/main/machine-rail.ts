@@ -13,7 +13,7 @@
  * {@link MachineRailDeps} so it never imports that module graph.
  */
 
-import { app, BrowserWindow, ipcMain, WebContentsView } from 'electron';
+import { app, ipcMain, WebContentsView } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 import { Logger } from '../shared/logger';
@@ -47,6 +47,7 @@ import {
   writeWindowRail,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
+import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
 import {
   buildLoadUrl,
   buildRendererWebPreferences,
@@ -57,6 +58,7 @@ import {
   getBackendIdForWindow,
   getBackendIdForWebContents,
   getRendererWebContents,
+  getWindowForWebContents,
   getShownRendererWebContents,
   isShownRenderer,
   setShownMachineView,
@@ -410,11 +412,23 @@ async function connectQuietly(id: string): Promise<void> {
   }
 }
 
-async function addMachine(window: BrowserWindowType, id: string): Promise<MachineRailState> {
+class MachineRailFullError extends Error {
+  constructor() {
+    super('This window has no room for another machine');
+    this.name = 'MachineRailFullError';
+  }
+}
+
+async function addMachine(
+  window: BrowserWindowType,
+  id: string,
+  mayOpen: () => boolean = () => true,
+): Promise<MachineRailState> {
   if (!deps || !(await deps.listMachineIds()).includes(id)) throw new Error('Unknown machine');
+  if (!mayOpen() || window.isDestroyed()) throw new Error('Invitation is no longer current');
   const rail = readWindowRail(window);
   const machineIds = addRailMachine(rail.machineIds, id);
-  if (!machineIds.includes(id)) throw new Error('This window has no room for another machine');
+  if (!machineIds.includes(id)) throw new MachineRailFullError();
   observeWindow(window);
   writeWindowRail(window, { machineIds, selectedId: rail.selectedId });
   awaitMachine(window, id);
@@ -422,8 +436,40 @@ async function addMachine(window: BrowserWindowType, id: string): Promise<Machin
   await connectQuietly(id);
   if (window.isDestroyed()) throw new Error('Window closed');
   // The user may have picked another machine (or removed this one) meanwhile.
+  if (!mayOpen()) {
+    if (transitions.get(window)?.pendingId === id) clearPending(window);
+    return stateOf(window);
+  }
   if (transitions.get(window)?.pendingId !== id) return stateOf(window);
   return selectMachine(window, id);
+}
+
+/** Open a joined host in the original window only when its machine rail is enabled. */
+export async function openInvitedMachineInWindow(
+  window: BrowserWindowType,
+  id: string,
+  workspaceId?: string,
+  mayOpen: () => boolean = () => true,
+): Promise<boolean> {
+  if (!isMachineRailEnabled() || window.isDestroyed() || !mayOpen()) return false;
+  const canContinue = () => isMachineRailEnabled() && !window.isDestroyed() && mayOpen();
+  try {
+    await addMachine(window, id, canContinue);
+  } catch (error) {
+    // A full rail leaves this window untouched; the caller can open the backend window.
+    if (error instanceof MachineRailFullError) return false;
+    throw error;
+  }
+  if (!canContinue()) return true;
+  const rail = readWindowRail(window);
+  const contents =
+    id === rail.machineIds[0] ? window.webContents : ensureView(window, id).webContents;
+  if (workspaceId)
+    queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  return true;
 }
 
 function removeMachine(window: BrowserWindowType, id: string): MachineRailState {
@@ -515,7 +561,7 @@ export async function loadMachineRailEnabled(): Promise<void> {
 }
 
 function windowOf(sender: Electron.WebContents): BrowserWindowType {
-  const window = BrowserWindow.fromWebContents(sender);
+  const window = getWindowForWebContents(sender);
   if (!window || window.isDestroyed()) throw new Error('No window for this request');
   return window;
 }

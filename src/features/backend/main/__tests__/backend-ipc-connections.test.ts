@@ -497,6 +497,33 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('openBackendWindow connect-before-open', () => {
+  it('routes an invitation through its original window before considering a new window', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const openInWindow = vi.fn(async () => true);
+    mod.__setBackendWindowHooksForTesting({ openOrFocus, openInWindow });
+    const parentWindow = {} as BrowserWindow;
+    const mayOpen = () => true;
+    await mod.openBackendWindow('remote-1', { parentWindow, workspaceId: 'invited-ws', mayOpen });
+    expect(openInWindow).toHaveBeenCalledWith('remote-1', parentWindow, 'invited-ws', mayOpen);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('opens the invited workspace in a backend window when the rail is disabled', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const showWorkspace = vi.fn();
+    mod.__setBackendWindowHooksForTesting({
+      openOrFocus,
+      openInWindow: async () => false,
+      showWorkspace,
+    });
+    await mod.openBackendWindow('remote-1', {
+      parentWindow: {} as BrowserWindow,
+      workspaceId: 'invited-ws',
+    });
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(showWorkspace).toHaveBeenCalledWith('remote-1', 'invited-ws');
+  });
+
   it('keeps local connected, connects the target, then opens its window', async () => {
     const { mod, openOrFocus } = await loadModule();
     mod.getBackendClient(); // client #1 (local)
