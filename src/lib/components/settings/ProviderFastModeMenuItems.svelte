@@ -13,6 +13,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { setProviderFastMode } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { selectProviderFastModeValues } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import ProviderMenuHelp from './ProviderMenuHelp.svelte';
+  import ProviderMenuHelpText from './ProviderMenuHelpText.svelte';
 
   interface Props {
     providerRef: string;
@@ -57,7 +59,7 @@
       {@render boltIcon()}
       {m.settings_providers_serviceTier_label()}
     </Menu.SubTrigger>
-    <Menu.SubContent class="w-64">
+    <Menu.SubContent class="w-48">
       <Menu.RadioGroup
         value={enabled ? 'fast' : 'standard'}
         aria-label={m.settings_providers_serviceTier_label()}
@@ -65,7 +67,6 @@
         <Menu.RadioItem
           value="standard"
           onSelect={(event) => handleSelectServiceTier(false, event)}
-          aria-describedby={descriptionId}
         >
           {m.settings_providers_serviceTierStandard_label()}
         </Menu.RadioItem>
@@ -74,19 +75,23 @@
           onSelect={(event) => handleSelectServiceTier(true, event)}
           aria-describedby={descriptionId}
         >
-          {m.settings_providers_serviceTierFast_label()}
+          <span class="flex min-w-0 flex-1 items-start gap-1.5">
+            {m.settings_providers_serviceTierFast_label()}
+            <ProviderMenuHelp text={m.settings_providers_fastMode_description()} />
+          </span>
         </Menu.RadioItem>
         <Menu.RadioItem value="ultra-fast" disabled aria-describedby={ultraFastDescriptionId}>
-          {m.settings_providers_serviceTierUltraFast_label()}
+          <span class="flex min-w-0 flex-1 items-start gap-1.5">
+            {m.settings_providers_serviceTierUltraFast_label()}
+            <ProviderMenuHelp text={m.settings_providers_serviceTierUltraFast_description()} />
+          </span>
         </Menu.RadioItem>
       </Menu.RadioGroup>
-      <Menu.Separator />
-      <p id={descriptionId} class="px-2 py-1.5 type-caption {Menu.menuDescription}">
-        {m.settings_providers_fastMode_description()}
-      </p>
-      <p id={ultraFastDescriptionId} class="px-2 py-1.5 type-caption {Menu.menuDescription}">
-        {m.settings_providers_serviceTierUltraFast_description()}
-      </p>
+      <ProviderMenuHelpText id={descriptionId} text={m.settings_providers_fastMode_description()} />
+      <ProviderMenuHelpText
+        id={ultraFastDescriptionId}
+        text={m.settings_providers_serviceTierUltraFast_description()}
+      />
     </Menu.SubContent>
   </Menu.Sub>
 {:else}
@@ -98,9 +103,10 @@
     aria-describedby={descriptionId}
   >
     {@render boltIcon()}
-    {m.settings_providers_fastMode_label()}
+    <span class="flex min-w-0 flex-1 items-start gap-1.5">
+      {m.settings_providers_fastMode_label()}
+      <ProviderMenuHelp text={m.settings_providers_fastMode_description()} />
+    </span>
   </Menu.CheckboxItem>
-  <p id={descriptionId} class="py-1.5 ps-9 pe-2.5 type-caption {Menu.menuDescription}">
-    {m.settings_providers_fastMode_description()}
-  </p>
+  <ProviderMenuHelpText id={descriptionId} text={m.settings_providers_fastMode_description()} />
 {/if}

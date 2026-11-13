@@ -1823,8 +1823,7 @@
     ],
     "src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts": [
       "checkAllProvidersWorker",
-      "checkSingleProviderWorker",
-      "openClaudeLoginWorker"
+      "checkSingleProviderWorker"
     ],
     "src/store/renderer/slices/agent-lock/agent-lock-slice.ts": [
       "initialState"

@@ -235,9 +235,7 @@ describe('ProviderSelector progressive rendering', () => {
     expect(result.getByText('npm/npx too old — npm 7+ required')).toBeTruthy();
   });
 
-  it('shows the catalog login command with copy when a provider needs login', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+  it('runs the catalog login command in a terminal from Log in', async () => {
     // auggie carries loginCommandHint ('auggie login') in the catalog fixture.
     mocks.state.current = await buildState({
       auggie: { available: true, authenticated: false },
@@ -248,10 +246,14 @@ describe('ProviderSelector progressive rendering', () => {
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Augment Auggie' }),
     );
-    const hint = result.getByTestId('provider-login-hint');
-    expect(hint.textContent).toContain('auggie login');
-    await fireEvent.click(hint.querySelector('button')!);
-    expect(writeText).toHaveBeenCalledWith('auggie login');
+    await fireEvent.click(result.getByRole('menuitem', { name: 'Log in' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentAvailability/providerLoginRequested',
+        payload: ['auggie'],
+      }),
+    );
+    expect(mocks.shellOpen).not.toHaveBeenCalled();
   });
 
   it('falls back to the docs-link Log in action when the catalog has no hint', async () => {
@@ -263,7 +265,6 @@ describe('ProviderSelector progressive rendering', () => {
     const result = render(ProviderSelector);
 
     await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
-    expect(result.queryByText('Run in a terminal to log in:')).toBeNull();
     await fireEvent.click(result.getByRole('menuitem', { name: 'Log in' }));
     expect(mocks.shellOpen).toHaveBeenCalledWith('https://opencode.ai/docs#configure');
   });
@@ -285,38 +286,6 @@ describe('ProviderSelector progressive rendering', () => {
         payload: ['auggie'],
       }),
     );
-  });
-
-  it('shows the claude-code desktop-app sign-in note when it needs login', async () => {
-    mocks.state.current = await buildState({
-      'claude-code': { available: true, authenticated: false },
-    });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-
-    await fireEvent.click(
-      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
-    );
-    expect(
-      result.getByText(
-        "Signing in to the Claude desktop app doesn't carry over to the CLI — run the CLI login.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it('does not show the desktop-app note for other providers needing login', async () => {
-    mocks.state.current = await buildState({
-      opencode: { available: true, authenticated: false },
-    });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-
-    await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));
-    expect(
-      result.queryByText(
-        "Signing in to the Claude desktop app doesn't carry over to the CLI — run the CLI login.",
-      ),
-    ).toBeNull();
   });
 });
 

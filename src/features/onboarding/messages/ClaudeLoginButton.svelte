@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import { claudeLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { providerLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { store as appStore } from '$store/renderer/store';
 
   let opening = $state(false);
@@ -14,7 +14,7 @@
     error = null;
 
     try {
-      await appStore.dispatch(claudeLoginRequested());
+      await appStore.dispatch(providerLoginRequested('claude-code'));
     } catch (cause) {
       error = cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error();
     } finally {
