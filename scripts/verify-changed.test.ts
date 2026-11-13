@@ -3449,6 +3449,18 @@ describe('static-only lane (--static)', () => {
     expect(planned).toEqual([REPO_WIDE]);
   });
 
+  it('still runs the repo-wide checks when the given paths match no existing file', async () => {
+    const root = gitRepository();
+    const planned: string[][] = [];
+    const runPlan = async (plan: { checks: Array<{ id: string }> }) => {
+      planned.push(plan.checks.map((check) => check.id));
+    };
+    expect(
+      await runCli(['--static', 'src/missing.ts'], root, { log: () => {}, ...gates, runPlan }),
+    ).toBe(0);
+    expect(planned).toEqual([REPO_WIDE]);
+  });
+
   it('names the static mode on the first line of a run with changes', async () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);

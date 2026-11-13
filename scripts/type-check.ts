@@ -25,7 +25,7 @@ try {
   // Quiet hides progress, never the diagnostics (manual signed build run 43173439392).
   if (quiet) {
     const { stdout, stderr } = error as { stdout?: string; stderr?: string };
-    process.stderr.write(`${stdout ?? ''}${stderr ?? ''}`);
+    process.stderr.write(`${stdout ?? ''}${stderr ?? ''}` || `${(error as Error).message}\n`);
   } else console.error('❌ Type check failed');
   process.exit(1);
 }

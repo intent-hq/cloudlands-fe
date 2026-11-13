@@ -436,7 +436,7 @@ worktree; never stop a lock owner — two runs in one worktree share its port, s
 Before every push, and after any structural change, run `pnpm run verify:static` (a few
 minutes; same paths and `--base` as `verify:changed`). It runs Prettier and ESLint on the
 changed files, then knip, `pnpm run check` and the renderer, main and preload `tsc` checks
-repo-wide, with no tests: the static failures CI's Type Check & Lint reports
+repo-wide, with no tests: the static failures CI's Type Check & Lint reports most often
 (cloudlands-fe#4491). Update onto `origin/main` first; ESLint `max-lines` counts the merged file.
 
 ## Frontend philosophy & testing
