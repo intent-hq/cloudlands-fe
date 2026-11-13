@@ -98,10 +98,21 @@ func main() async throws {
     }
     return image.cropped(to: extent)
   }
+  // Recorder stop metadata uses its capture clock. Finalized media can end slightly
+  // earlier, so validate edits against that declared source before bounding playable output.
+  let videoRange = try await originalVideo.load(.timeRange)
+  let playableStart = max(0, videoRange.start.seconds * 1000)
+  let playableEnd = min(duration, videoRange.end.seconds * 1000)
+  guard playableStart.isFinite, playableEnd.isFinite, playableEnd > playableStart,
+    abs(playableEnd - job.expectedDurationMs) <= 1000 else { throw failure("source-changed") }
   var previous = -Double.infinity
-  for range in job.ranges {
-    guard range.startMs.isFinite, range.endMs.isFinite, range.startMs >= 0, range.endMs > range.startMs, range.endMs <= duration + 1, range.startMs >= previous else { throw failure("invalid-range") }
+  let ranges = try job.ranges.map { range -> Range in
+    guard range.startMs.isFinite, range.endMs.isFinite, range.startMs >= 0, range.endMs > range.startMs, range.endMs <= job.expectedDurationMs + 1, range.startMs >= previous else { throw failure("invalid-range") }
     previous = range.endMs
+    let start = max(playableStart, range.startMs), end = min(playableEnd, range.endMs)
+    // Never silently discard a requested segment with no source video.
+    guard end > start else { throw failure("invalid-range") }
+    return Range(startMs: start, endMs: end)
   }
   var success = false
   var createdOutput = false
@@ -122,8 +133,8 @@ func main() async throws {
   let audioRange = try await originalAudio?.load(.timeRange)
   var cursor = CMTime.zero
   var timeline: [(start: Double, source: Double, length: Double)] = []
-  for range in job.ranges {
-    let span = CMTimeRange(start: time(range.startMs), end: time(min(duration, range.endMs)))
+  for range in ranges {
+    let span = CMTimeRange(start: time(range.startMs), end: time(range.endMs))
     timeline.append((cursor.seconds * 1000, range.startMs, span.duration.seconds * 1000))
     try video.insertTimeRange(span, of: originalVideo, at: cursor)
     if let originalAudio, let audio, let audioRange {
@@ -134,10 +145,14 @@ func main() async throws {
     }
     cursor = cursor + span.duration
   }
-  let layers = try job.layers.map { layer -> (CIImage, Double, Double) in
-    guard layer.startMs.isFinite, layer.endMs.isFinite, layer.startMs >= 0, layer.endMs > layer.startMs, layer.endMs <= duration + 1,
+  let layers = try job.layers.compactMap { layer -> (CIImage, Double, Double)? in
+    guard layer.startMs.isFinite, layer.endMs.isFinite, layer.startMs >= 0, layer.endMs > layer.startMs, layer.endMs <= job.expectedDurationMs + 1,
       let image = CIImage(contentsOf: URL(fileURLWithPath: layer.path)) else { throw failure("invalid-overlay") }
-    return (image, layer.startMs, layer.endMs)
+    let start = max(playableStart, layer.startMs), end = min(playableEnd, layer.endMs)
+    // A valid overlay beyond finalized video has no effect; requested frames
+    // still require playable source video below.
+    guard end > start else { return nil }
+    return (image, start, end)
   }
   guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw failure("export-unavailable") }
   exporter.outputURL = output; exporter.outputFileType = .mp4
@@ -174,7 +189,8 @@ func main() async throws {
   let context = CIContext()
   for frame in job.frames {
     let target = URL(fileURLWithPath: frame.path)
-    guard frame.atMs.isFinite, frame.atMs >= 0, frame.atMs < duration,
+    guard frame.atMs.isFinite, frame.atMs >= playableStart, frame.atMs < playableEnd,
+      frame.atMs < job.expectedDurationMs,
       target.standardizedFileURL != source.standardizedFileURL,
       target.standardizedFileURL != output.standardizedFileURL,
       !FileManager.default.fileExists(atPath: target.path) else { throw failure("invalid-frame") }

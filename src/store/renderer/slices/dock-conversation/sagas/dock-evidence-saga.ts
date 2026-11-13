@@ -1,3 +1,8 @@
+import {
+  createDockRecordingWarm,
+  type DockRecordingReview,
+} from '$features/hud/composer/dock-recording-warm';
+import type { DockMediaSendService } from '$features/hud/composer/dock-media-send';
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
 import { beginDockEditorHold, endDockEditorHold, showDockEditorShell } from './dock-editor-hold';
@@ -130,6 +135,7 @@ import {
 } from '../dock-conversation-slice';
 
 let nativeService: DockEvidenceNativeService | null = null;
+let recordingWarm: ReturnType<typeof createDockRecordingWarm> | null = null;
 /** A recording's dock hold (see the start of a recording), until its clip finishes. */
 const clipHolds = new Map<string, string>();
 /** A clip that never finishes (removed while recording) gives its hold back. */
@@ -142,6 +148,8 @@ const nativeListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
 
 /** Install (or remove) the native boundary. Events from a replaced service stop immediately. */
 export function configureDockEvidenceNative(service: DockEvidenceNativeService | null): void {
+  recordingWarm?.dispose();
+  recordingWarm = null;
   unsubscribeNative?.();
   unsubscribeNative = null;
   // Answers belong to the replaced native session, which releases its holds on retirement.
@@ -153,6 +161,7 @@ export function configureDockEvidenceNative(service: DockEvidenceNativeService |
     markAnswersOverflowed = false;
   }
   nativeService = service;
+  if (service) recordingWarm = createDockRecordingWarm(service);
   if (service)
     unsubscribeNative = service.subscribe((event) => {
       for (const listener of nativeListeners) listener(event);
@@ -190,8 +199,19 @@ export function setDockDictationMarkSink(sink: DictationMarkSink | null): void {
 }
 
 /** Same exact draft/principal-scoped adapter used by capture, never a new session. */
-export function dockMediaNativeService(): DockEvidenceNativeService | null {
-  return nativeService;
+export function dockRecordingReviewOpened(review: DockRecordingReview | null): void {
+  recordingWarm?.reviewOpened(review);
+}
+export function dockRecordingReviewEnded(openId: string): void {
+  recordingWarm?.reviewEnded(openId);
+}
+export function dockRecordingReviewReturn(openId: string, accepted?: boolean): void {
+  if (accepted === undefined) recordingWarm?.beginReturn(openId);
+  else recordingWarm?.finishReturn(openId, accepted);
+}
+export function dockMediaNativeService():
+  (DockEvidenceNativeService & DockMediaSendService) | null {
+  return recordingWarm?.service ?? nativeService;
 }
 
 export function evidenceOf(workspaceId: string, agentId: string): DockComposerEvidence | undefined {
@@ -1039,7 +1059,31 @@ function* removeClip({
 }: ReturnType<typeof dockEvidenceClipRemoveRequested>): SagaGenerator<void> {
   if (!activePair(workspaceId, agentId)) return;
   const clip = clipOf(workspaceId, agentId, clipId);
-  if (!clip) return;
+  if (!clip || clip.discarding === 'stopping') return;
+  // Dismiss immediately, but keep the native lease represented until Stop settles.
+  // This blocks a replacement recording and prevents late completion from attaching it.
+  const service = nativeService;
+  if (clip.status === 'recording' && service) {
+    yield* put(
+      dockEvidenceClipChanged(workspaceId, agentId, clip.id, { ...clip, discarding: 'stopping' }),
+    );
+    endClipHold(clip.id);
+    try {
+      const result = yield* call([service, service.stopClip], clip.id);
+      // The adapter resolves transport/authority failures without reaching native Stop.
+      if (!result.ok) return;
+    } catch {
+      // An unacknowledged Stop must not free the lease for another capture.
+      return;
+    }
+    if (
+      nativeService === service &&
+      activePair(workspaceId, agentId) &&
+      clipOf(workspaceId, agentId, clip.id)
+    )
+      yield* put(dockEvidenceClipChanged(workspaceId, agentId, clip.id, null));
+    return;
+  }
   // Removed: no editor follows for it.
   endClipHold(clip.id);
   yield* put(dockEvidenceClipChanged(workspaceId, agentId, clip.id, null));
@@ -1052,12 +1096,6 @@ function* removeClip({
         items.filter((row) => row.id !== clip.contextItemId),
       ),
     );
-  }
-  const service = nativeService;
-  // Removing a live recording discards it; its late result is ignored by id.
-  if (clip.status === 'recording' && service) {
-    yield* call([service, service.stopClip], clip.id);
-    return;
   }
   // A finished clip's native temp file is no longer needed; best-effort and never re-stops.
   if (service?.releaseClip)
@@ -1124,6 +1162,7 @@ function* toggleRecording({
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
   const clip = recordingDockClip(evidence);
+  if (clip?.discarding) return 'cancelled';
   if (
     discardedSessions.has(evidence?.annotation?.id ?? '') &&
     (!clip || expectedClipId !== clip.id)
@@ -1190,6 +1229,7 @@ function* toggleRecording({
       !clipOf(workspaceId, agentId, id)
     )
       return 'cancelled';
+    if (clipOf(workspaceId, agentId, id)?.discarding) return 'cancelled';
     if (started.ok) {
       stampRecordingInSpeech(workspaceId, agentId, id, false);
       // The finished recording may open straight in the editor, however it ends (Stop, a
@@ -1235,9 +1275,25 @@ function* finishClip(
   agentId: string,
   clipId: string,
   result: DockNativeResult<DockClipFile>,
+  nativeEnded = false,
 ): SagaGenerator<void> {
-  if (completingClips.has(clipId) || clipOf(workspaceId, agentId, clipId)?.status !== 'recording')
+  const current = clipOf(workspaceId, agentId, clipId);
+  if (current?.discarding) {
+    // Unlike a failed command reply, this owned event certifies native termination,
+    // even when no file was produced. Never place a confirmed-discarded clip.
+    if (current.discarding === 'stopping' && nativeEnded && activePair(workspaceId, agentId)) {
+      endClipHold(clipId);
+      yield* put(dockEvidenceClipChanged(workspaceId, agentId, clipId, null));
+      return;
+    }
+    // A natural end during Undo is retained by that exact discard, never presented.
+    const sessionId = evidenceOf(workspaceId, agentId)?.annotation?.id;
+    const held = sessionId ? discardWaits.get(sessionId) : undefined;
+    if (current.discarding === 'undo' && held?.clipId === clipId && (nativeEnded || result.ok))
+      held.result ??= result;
     return;
+  }
+  if (completingClips.has(clipId) || current?.status !== 'recording') return;
   completingClips.add(clipId);
   const handoff = { hold: clipHolds.get(clipId) ?? null, handed: false };
   clipHolds.delete(clipId);
@@ -1661,6 +1717,7 @@ const discardWaits = new Map<
     undoRequested: boolean;
     inputRevision?: number;
     clipId: string | null;
+    result?: DockNativeResult<DockClipFile>;
   }
 >();
 
@@ -1702,10 +1759,11 @@ function* recordingToolbarAction(
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
       !held.service ||
-      !held.paused ||
+      (!held.paused && !held.result) ||
       held.inputRevision === undefined ||
       (held.clipId !== null &&
-        recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
+        (recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId ||
+          clipOf(workspaceId, agentId, held.clipId)?.discarding !== 'undo'))
     )
       return;
     try {
@@ -1725,11 +1783,22 @@ function* recordingToolbarAction(
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
       (held.clipId !== null &&
-        recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
+        (recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId ||
+          clipOf(workspaceId, agentId, held.clipId)?.discarding !== 'undo'))
     )
       return;
     discardedSessions.delete(session.id);
     discardWaits.delete(session.id);
+    const restored = held.clipId && clipOf(workspaceId, agentId, held.clipId);
+    if (restored) {
+      yield* put(
+        dockEvidenceClipChanged(workspaceId, agentId, restored.id, {
+          ...restored,
+          discarding: undefined,
+        }),
+      );
+      if (held.result) yield* finishClip(workspaceId, agentId, restored.id, held.result);
+    }
     return;
   }
   const clip = recordingDockClip(evidenceOf(workspaceId, agentId));
@@ -1750,6 +1819,10 @@ function* recordingToolbarAction(
       clipId: clip?.id ?? null,
     };
     discardWaits.set(session.id, held);
+    if (clip)
+      yield* put(
+        dockEvidenceClipChanged(workspaceId, agentId, clip.id, { ...clip, discarding: 'undo' }),
+      );
     try {
       try {
         if (held.service?.setAnnotationMouse)
@@ -1772,6 +1845,28 @@ function* recordingToolbarAction(
       finish();
     }
     return;
+  }
+  if (recoveringDone) {
+    const held = discardWaits.get(lockedSessionId);
+    if (!held) return;
+    yield* call(() => held.done);
+    if (
+      discardWaits.get(lockedSessionId) !== held ||
+      nativeService !== held.service ||
+      getPrincipalActionContext(appStore.state) !== held.authority ||
+      !activePair(workspaceId, agentId) ||
+      evidenceOf(workspaceId, agentId)?.annotation?.id !== lockedSessionId
+    )
+      return;
+    const current = clip && clipOf(workspaceId, agentId, clip.id);
+    if (current?.discarding !== 'undo') return;
+    // Done immediately after Undo is still a stop, even if tool restoration is pending.
+    yield* put(
+      dockEvidenceClipChanged(workspaceId, agentId, current.id, {
+        ...current,
+        discarding: undefined,
+      }),
+    );
   }
   yield* clearAnnotation(workspaceId, agentId);
   if (clip)
@@ -1859,6 +1954,7 @@ function* watchNative(): SagaGenerator<void> {
             yield* put(dockEvidenceToolSet(workspaceId, event.tool));
         }
       } else if (event.type === 'annotation-ended') {
+        const discardedClipId = discardWaits.get(event.sessionId)?.clipId;
         discardedSessions.delete(event.sessionId);
         discardWaits.delete(event.sessionId);
         discardGenerations.delete(event.sessionId);
@@ -1869,6 +1965,12 @@ function* watchNative(): SagaGenerator<void> {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           rememberEndedSession(event.sessionId, workspaceId, agentId);
           yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, null));
+          // With the Undo surface gone, finish discarding its exact hidden lease.
+          if (
+            discardedClipId &&
+            clipOf(workspaceId, agentId, discardedClipId)?.discarding === 'undo'
+          )
+            yield* put(dockEvidenceClipRemoveRequested(workspaceId, agentId, discardedClipId));
         }
       } else if (event.type === 'clip-ended') {
         const owner = getItems(appStore.state.dockConversation.evidence).find((row) =>
@@ -1876,7 +1978,7 @@ function* watchNative(): SagaGenerator<void> {
         );
         if (owner) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
-          yield* finishClip(workspaceId, agentId, event.clipId, event.result);
+          yield* finishClip(workspaceId, agentId, event.clipId, event.result, true);
         }
       }
     }

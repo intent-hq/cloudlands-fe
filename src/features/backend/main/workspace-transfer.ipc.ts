@@ -17,6 +17,7 @@ import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { m } from '$shared/paraglide/messages.js';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { getRendererWebContents } from '../../../main/window-backend';
 import type {
   TransferFinalizeParams,
   TransferProgressEvent,
@@ -46,14 +47,15 @@ let relay: WorkspaceTransferRelay | null = null;
 
 function broadcastProgress(event: TransferProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(TRANSFER.PROGRESS, event);
-    } catch (error) {
-      logger.warn('Failed to broadcast transfer progress', {
-        windowId: win.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const renderer of getRendererWebContents(win)) {
+      try {
+        renderer.send(TRANSFER.PROGRESS, event);
+      } catch (error) {
+        logger.warn('Failed to broadcast transfer progress', {
+          windowId: win.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }

@@ -13,6 +13,7 @@ import { app, nativeImage } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   defaultDockMediaEdit,
   planDockMediaOutput,
@@ -42,6 +43,7 @@ export interface DockMediaJobContext {
 import { requestRouted } from '../../backend/main/transfer-connections';
 
 const logger = new Logger('DockMediaOutput');
+const timingLogger = new Logger('DockSendTiming');
 const TRANSCRIPT_CODES = new Set([
   'speech-not-authorized',
   'on-device-unavailable',
@@ -122,6 +124,8 @@ interface Job {
   sessionId: string;
   id: string;
   fingerprint: string;
+  completed?: boolean;
+  adopted?: boolean;
   directory: string;
   child?: ChildProcessWithoutNullStreams;
   stopped: boolean;
@@ -223,23 +227,11 @@ async function createJob(
     [...jobs.values()].filter((job) => job.sessionId === context.scope.sessionId).length >= 2
   )
     throw new Error('media-job-busy');
-  const root = path.join(app.getPath('userData'), 'dock-media-jobs');
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  check(context);
-  const directory = await mkdtemp(path.join(root, 'job-'));
-  if (
-    !context.isCurrent() ||
-    jobs.has(key) ||
-    [...jobs.values()].filter((entry) => entry.sessionId === context.scope.sessionId).length >= 2
-  ) {
-    await rm(directory, { recursive: true, force: true });
-    throw new Error('media-job-busy');
-  }
   const job: Job = {
     sessionId: context.scope.sessionId,
     id,
     fingerprint,
-    directory,
+    directory: '',
     stopped: false,
     stopWatching: () => {},
     expiry: setTimeout(() => {
@@ -251,8 +243,32 @@ async function createJob(
   job.stopWatching = context.onDispose(() => {
     void releaseDockMediaJob(context.scope.sessionId, id);
   });
-  check(context, job);
-  return job;
+  // Reserve synchronously before filesystem/helper awaits, so cancellation cannot
+  // miss an export admitted while no temporary directory exists yet.
+  try {
+    const root = path.join(app.getPath('userData'), 'dock-media-jobs');
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    check(context, job);
+    job.directory = await mkdtemp(path.join(root, 'job-'));
+    check(context, job);
+    return job;
+  } catch (error) {
+    if (job.directory) await rm(job.directory, { recursive: true, force: true });
+    if (jobs.get(key) === job) await releaseDockMediaJob(context.scope.sessionId, id);
+    throw error;
+  }
+}
+/** Same-owner liveness handshake; no path or result crosses native session ownership. */
+export function adoptDockMediaJob(context: DockMediaJobContext, id: string): boolean {
+  const job = jobs.get(`${context.scope.sessionId}:${id}`);
+  if (!context.isCurrent() || !job || job.stopped || !job.completed || job.adopted) return false;
+  job.adopted = true;
+  clearTimeout(job.expiry);
+  job.expiry = setTimeout(() => {
+    void releaseDockMediaJob(context.scope.sessionId, id);
+  }, 10 * 60_000);
+  job.expiry.unref();
+  return true;
 }
 export async function releaseDockMediaJob(sessionId: string, id: string): Promise<void> {
   const key = `${sessionId}:${id}`,
@@ -268,7 +284,7 @@ export async function releaseDockMediaJob(sessionId: string, id: string): Promis
     await job.done?.catch(() => {});
     clearTimeout(force);
   }
-  await rm(job.directory, { recursive: true, force: true });
+  if (job.directory) await rm(job.directory, { recursive: true, force: true });
   if (jobs.get(key) === job) jobs.delete(key);
 }
 async function copySource(
@@ -427,6 +443,22 @@ export async function exportDockMedia(
 ): Promise<DockNativeResult<DockMediaNativeOutput>> {
   let job: Job | undefined;
   let stage = 'plan';
+  const started = performance.now();
+  let stageStarted = started;
+  let succeeded = false;
+  const durationsMs: Record<string, number> = {};
+  // The existing fresh export job UUID is an ephemeral correlation token, never a source ID.
+  const exportToken = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    request.jobId,
+  )
+    ? request.jobId
+    : randomUUID();
+  const enterStage = (next: string) => {
+    const now = performance.now();
+    durationsMs[stage] = (durationsMs[stage] ?? 0) + Math.max(0, now - stageStarted);
+    stageStarted = now;
+    stage = next;
+  };
   try {
     const { media } = request,
       { source } = media;
@@ -443,16 +475,17 @@ export async function exportDockMedia(
       request.layers.reduce((sum, layer) => sum + layer.png.length, 0) > MAX_BYTES
     )
       throw new Error('media-layers');
-    stage = 'helper';
-    const binary = await helper('intent-dock-media-export');
-    stage = 'capability';
-    await requireExporterVersion(binary);
-    check(context);
-    stage = 'job';
+    enterStage('job');
     job = await createJob(context, request.jobId, JSON.stringify(request));
-    stage = 'source';
+    enterStage('helper');
+    const binary = await helper('intent-dock-media-export');
+    check(context, job);
+    enterStage('capability');
+    await requireExporterVersion(binary);
+    check(context, job);
+    enterStage('source');
     const file = await copySource(context, job, media);
-    stage = 'layers';
+    enterStage('layers');
     const layers: { path: string; startMs: number; endMs: number }[] = [];
     for (let index = 0; index < spans.length; index++) {
       check(context, job);
@@ -475,7 +508,7 @@ export async function exportDockMedia(
       if (atMs === null) throw new Error('media-frame-outside-kept-span');
       return { path: path.join(job!.directory, `frame-${index}.png`), atMs };
     });
-    stage = 'encode';
+    enterStage('encode');
     const completed = await run(
       context,
       job,
@@ -499,12 +532,12 @@ export async function exportDockMedia(
       progress,
     );
     check(context, job);
-    stage = 'output';
+    enterStage('output');
     if (completed.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION)
       throw new Error('media-output-version-mismatch');
     const videoSize = (await stat(output)).size;
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
-    stage = 'frames';
+    enterStage('frames');
     const fitted = frames.length
       ? await fitDockMediaFrames(
           frames.map((frame) => frame.path),
@@ -529,6 +562,8 @@ export async function exportDockMedia(
       }),
     );
     check(context, job);
+    job.completed = true;
+    succeeded = true;
     return {
       ok: true,
       value: {
@@ -553,8 +588,41 @@ export async function exportDockMedia(
           }
         : {}),
     });
+    enterStage('cleanup');
     if (job) await releaseDockMediaJob(context.scope.sessionId, job.id);
     return { ok: false, error: 'failed' };
+  } finally {
+    enterStage(stage);
+    try {
+      const ms = (name: string) => Math.round(durationsMs[name] ?? 0);
+      // The main logger abbreviates nested objects and records with more than five keys.
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
+      timingLogger.info('Local media export timing', {
+        exportToken,
+        stage: 'prepare',
+        capabilityMs: ms('capability'),
+        sourceMs: ms('source'),
+        layersMs: ms('layers'),
+      });
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
+      timingLogger.info('Local media export timing', {
+        exportToken,
+        stage: 'render',
+        encodeMs: ms('encode'),
+        framesMs: ms('frames'),
+        outputMs: ms('output'),
+      });
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
+      timingLogger.info('Local media export timing', {
+        exportToken,
+        stage: 'complete',
+        succeeded,
+        totalMs: Math.round(performance.now() - started),
+        setupAndCleanupMs: ms('plan') + ms('helper') + ms('job') + ms('cleanup'),
+      });
+    } catch {
+      // Observability must not change native job ownership or the send result.
+    }
   }
 }
 export async function transcribeDockMedia(

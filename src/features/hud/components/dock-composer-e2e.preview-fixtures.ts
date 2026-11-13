@@ -36,6 +36,7 @@ interface SyntheticNativeLog {
   markAnswers: { markId: string; accepted: boolean }[];
   /** Media export jobs (no video is rendered: synthetic output paths only). */
   exports: string[];
+  jobEvents: { action: string; id: string }[];
 }
 
 /** A fake app window, drawn once: deterministic pixels for tiles, composites and hashes. */
@@ -92,7 +93,8 @@ function drawScreen(): DockCapturedPixels {
   };
 }
 
-function createSyntheticNative() {
+function createSyntheticNative(warmMedia = false) {
+  const completedExports = new Set<string>();
   const screen = drawScreen();
   const log: SyntheticNativeLog = {
     captures: 0,
@@ -106,6 +108,7 @@ function createSyntheticNative() {
     speech: { started: [], stopped: [], marks: [] },
     markAnswers: [],
     exports: [],
+    jobEvents: [],
   };
   const evidenceListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
   const speechListeners = new Set<
@@ -121,6 +124,12 @@ function createSyntheticNative() {
   let holdStarts = false;
   const heldStarts: Array<() => void> = [];
   let clip: { id: string; startedAt: number } | null = null;
+  let holdClipStops = false;
+  let holdClipPauses = false;
+  let failNextClipPause = false;
+  let failNextClipStop = false;
+  const heldClipStops: Array<() => void> = [];
+  const heldClipPauses: Array<() => void> = [];
   // Held speech stops (the recognizer "finalizing"), released by the test.
   let holdStops = false;
   const heldStops: Array<() => void> = [];
@@ -193,8 +202,23 @@ function createSyntheticNative() {
       clip = { id: clipId, startedAt: catalogNow() };
       return { ok: true, value: undefined };
     },
+    pauseClip: async (clipId, paused) => {
+      if (failNextClipPause) {
+        failNextClipPause = false;
+        throw new Error('Synthetic pause transport failure');
+      }
+      if (holdClipPauses) await new Promise<void>((resolve) => heldClipPauses.push(resolve));
+      if (clip?.id !== clipId) return { ok: false, error: 'unavailable' };
+      return { ok: true, value: { paused } };
+    },
     stopClip: async (clipId) => {
       log.clips.stopped.push(clipId);
+      if (failNextClipStop) {
+        failNextClipStop = false;
+        // Like the production adapter: resolved failure, no native termination/event.
+        return { ok: false, error: 'transport' };
+      }
+      if (holdClipStops) await new Promise<void>((resolve) => heldClipStops.push(resolve));
       const durationMs = clip?.id === clipId ? catalogNow() - clip.startedAt : 0;
       clip = null;
       const result = {
@@ -229,6 +253,8 @@ function createSyntheticNative() {
     // An edited recording's export: one video plus a frame per included edit mark.
     exportMedia: async (request) => {
       log.exports.push(request.jobId);
+      log.jobEvents.push({ action: 'export', id: request.jobId });
+      completedExports.add(request.jobId);
       const marks = request.media.saved?.marks.filter((mark) => mark.included) ?? [];
       return {
         ok: true as const,
@@ -261,7 +287,11 @@ function createSyntheticNative() {
         },
       };
     },
-    releaseMediaJob: async () => ({ ok: true as const, value: undefined }),
+    releaseMediaJob: async (jobId) => {
+      log.jobEvents.push({ action: 'release', id: jobId });
+      completedExports.delete(jobId);
+      return { ok: true as const, value: undefined };
+    },
     reportMarkAcceptance: async (_annotationId, markId, accepted) => {
       log.markAnswers.push({ markId, accepted });
       return { ok: true, value: undefined };
@@ -375,13 +405,48 @@ function createSyntheticNative() {
 
   return {
     log,
-    factory: () => ({ ...adapter, service: { ...service } }) as unknown as DockNativeAdapter,
+    factory: () =>
+      ({
+        ...adapter,
+        service: {
+          ...service,
+          ...(warmMedia
+            ? {
+                adoptMediaJob: async (jobId: string) => {
+                  log.jobEvents.push({ action: 'adopt', id: jobId });
+                  return { ok: true, value: completedExports.has(jobId) };
+                },
+              }
+            : {}),
+        },
+      }) as unknown as DockNativeAdapter,
+    holdClipStops(value: boolean) {
+      holdClipStops = value;
+      if (!value) for (const resolve of heldClipStops.splice(0)) resolve();
+    },
+    failNextClipStop() {
+      failNextClipStop = true;
+    },
+    failNextClipPause() {
+      failNextClipPause = true;
+    },
+    holdClipPauses(value: boolean) {
+      holdClipPauses = value;
+      if (!value) for (const resolve of heldClipPauses.splice(0)) resolve();
+    },
+    emitEvidence,
     /** Finished recordings carry a canonical original (opt-in; see `recordingOriginal`). */
     recordingOriginal(value: boolean) {
       recordingOriginal = value;
     },
     /** The recording ends by itself (a native limit): the dock is told, nobody pressed Stop. */
-    endClip(clipId: string) {
+    endClip(clipId: string, failed = false) {
+      if (failed) {
+        if (clip?.id === clipId) clip = null;
+        const result = { ok: false as const, error: 'failed' as const, detail: 'helper-ended' };
+        emitEvidence({ type: 'clip-ended', clipId, result });
+        return Promise.resolve(result);
+      }
       return service.stopClip!(clipId);
     },
     holdCaptures(value: boolean) {
@@ -440,8 +505,8 @@ function createSyntheticNative() {
 }
 
 /** Install a synthetic native for the next dock pair; returns its controls and an uninstall. */
-export function installSyntheticNative() {
-  const native = createSyntheticNative();
+export function installSyntheticNative(warmMedia = false) {
+  const native = createSyntheticNative(warmMedia);
   // The root native-session saga reads the factory when the pair opens.
   configureDockNativeFactory(native.factory);
   return { native, uninstall: () => configureDockNativeFactory(null) };

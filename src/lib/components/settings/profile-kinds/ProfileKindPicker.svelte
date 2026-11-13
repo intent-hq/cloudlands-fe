@@ -25,20 +25,36 @@
     disabled?: boolean;
     /** Mark each kind as working on remote machines or on this machine only. */
     remoteMarks?: boolean;
+    /**
+     * Offer Different login. Off on an orchestrator: its login folder would
+     * sit on the orchestrator, where no agent runs, and machines refuse
+     * account folders (`account-folder`).
+     */
+    differentLogin?: boolean;
     onPick: (kind: ProfileKindChoice) => void;
   }
 
-  let { provider, disabled = false, remoteMarks = false, onPick }: Props = $props();
+  let {
+    provider,
+    disabled = false,
+    remoteMarks = false,
+    differentLogin = true,
+    onPick,
+  }: Props = $props();
 
   const cards = $derived<
     { kind: ProfileKindChoice; icon: IconDefinition; title: string; description: string }[]
   >([
-    {
-      kind: 'differentLogin',
-      icon: faUserPlus,
-      title: m.settings_providerProfileKinds_differentLogin_label(),
-      description: m.settings_providerProfileKinds_differentLogin_description(),
-    },
+    ...(differentLogin
+      ? [
+          {
+            kind: 'differentLogin' as const,
+            icon: faUserPlus,
+            title: m.settings_providerProfileKinds_differentLogin_label(),
+            description: m.settings_providerProfileKinds_differentLogin_description(),
+          },
+        ]
+      : []),
     ...(provider === 'claude'
       ? [
           {

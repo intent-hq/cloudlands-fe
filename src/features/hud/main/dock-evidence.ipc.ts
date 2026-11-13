@@ -1,6 +1,7 @@
 import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
 import {
   exportDockMedia,
+  adoptDockMediaJob,
   transcribeDockMedia,
   releaseDockMediaJob,
   analyzeDockMedia,
@@ -111,6 +112,7 @@ const controlSchema = z.discriminatedUnion('action', [
     .strict(),
   z.object({ action: z.literal('media-job-cancel'), jobId: z.guid() }).strict(),
   z.object({ action: z.literal('media-job-release'), jobId: z.guid() }).strict(),
+  z.object({ action: z.literal('media-job-adopt'), jobId: z.guid() }).strict(),
   z.object({ action: z.literal('capabilities') }).strict(),
   z.object({ action: z.literal('accessibility-status') }).strict(),
   z
@@ -487,6 +489,9 @@ function createMediaBinder() {
             event: { type: 'media-progress', jobId: control.request.jobId, fraction },
           });
         });
+        break;
+      case 'media-job-adopt':
+        result = { ok: true, value: adoptDockMediaJob(state.context, control.jobId) };
         break;
       case 'media-job-cancel':
       case 'media-job-release':

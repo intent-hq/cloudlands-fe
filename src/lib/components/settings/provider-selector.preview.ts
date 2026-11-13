@@ -33,6 +33,7 @@ import ProviderSelector from './ProviderSelector.svelte';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 import { MOCK_CURSOR_PROVIDER } from '../../../test/fixtures/provider-catalog.fixture';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 export const previewProviders = [
   {
@@ -254,6 +255,20 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
       props: {},
       setup: () => setupCursorProviderPreview('signed-in', { enabled: true }),
     },
+    // An orchestrator runs no CLI: only enable/disable and profiles, no status.
+    orchestrator: {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
+        admitLegacyPrincipal('owner', {}, 'orchestrator');
+        return () => {
+          admitLegacyPrincipal('owner');
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     profiles: {
       props: {},
       setup: () => {
@@ -356,6 +371,47 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         return () => {
           restoreFastMode();
           restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Claude signed out with Fast mode and the Default's remote toggle: the full ⋯ menu.
+    'claude-signed-out': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreRemote = setupRemoteReadyPreview();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withoutProfiles: true,
+          remote: { markedProfileIds: [], markedDefaults: [] },
+        });
+        const restoreFastMode = setupProviderFastModePreview();
+        appStore.dispatch(
+          providerCatalogLoaded({
+            providers: previewProviders.map((provider) =>
+              provider.id === 'claude-code'
+                ? {
+                    ...provider,
+                    supportsProfiles: true,
+                    loginCommandHint: 'claude auth login',
+                    loginDocsUrl: 'https://code.claude.com/docs/en/quickstart',
+                  }
+                : provider,
+            ),
+          }),
+        );
+        appStore.dispatch(
+          checkSingleProviderSuccess('claude-code', {
+            available: true,
+            authenticated: false,
+            version: PREVIEW_CLI_VERSIONS['claude-code'],
+          }),
+        );
+        return () => {
+          restoreFastMode();
+          restoreProfiles();
+          restoreRemote();
           restoreProviders();
         };
       },

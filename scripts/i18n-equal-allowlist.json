@@ -421,7 +421,6 @@
   "cloudMachines_startOn_northflank_label": "*",
   "cloudMachines_northflank_form_region_label": ["de"],
   "cloudMachines_form_name_label": ["de"],
-  "cloudMachines_row_template": "*",
   "cloudMachines_size_label": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
   "cloudMachines_form_minutes": ["fr"],
   "cloudMachines_form_hours": ["fr", "es"],
@@ -430,5 +429,5 @@
   "cloudMachines_uptime_hoursMinutes": ["fr", "es"],
   "cloudMachines_sandboxes_group_ariaLabel_one": ["fr", "es"],
   "cloudMachines_sandboxes_group_ariaLabel_many": ["fr", "es"],
-  "sessionImport_picker_label": ["fr"]
+  "sessionImport_tab_label": ["fr"]
 }

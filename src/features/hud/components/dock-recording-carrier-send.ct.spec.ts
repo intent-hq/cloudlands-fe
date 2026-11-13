@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
+import { dockRailPreview } from './dock-rail.preview-fixtures';
 
 /**
  * The screenshot a recording's markup was drawn on only anchors that markup; the
@@ -21,7 +22,7 @@ type H = {
   };
 };
 
-async function recordWithMark(page: Page, component: { getByRole: Function }) {
+async function recordWithMark(page: Page, component: { getByRole: Function }, nativeEnd = false) {
   await (component.getByRole('button', { name: /^Record the screen/ }) as any).click();
   await expect(component.getByRole('button', { name: 'Stop recording' }) as any).toBeVisible();
   await page.evaluate(() => {
@@ -67,7 +68,16 @@ async function recordWithMark(page: Page, component: { getByRole: Function }) {
       ),
     )
     .toBe(1);
-  await (component.getByRole('button', { name: 'Stop recording' }) as any).click();
+  if (nativeEnd) {
+    // The full shell collapses during recording; use the existing native-ended seam.
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      const evidence = Object.values(h.store.state.dockConversation.evidence.map)[0] as any;
+      return h.native.endClip(evidence.clips[0].id);
+    });
+  } else {
+    await (component.getByRole('button', { name: 'Stop recording' }) as any).click();
+  }
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -210,6 +220,7 @@ async function sendAndRead(page: Page, component: { getByRole: Function }) {
       // The agent-readable evidence leads the message body.
       context: String(send.params.content ?? send.params.message ?? send.params.text ?? ''),
       exports: harness.native.log.exports.length,
+      jobEvents: (harness.native.log as any).jobEvents,
     };
   });
 }
@@ -218,6 +229,16 @@ test('an exported recording does not resend its markup screenshot; an explicit c
   mount,
   page,
 }, info) => {
+  const timings: Record<string, any>[] = [];
+  page.on('console', async (message) => {
+    // Read the actual formatted first argument; ConsoleMessage.text also appends the object argument.
+    const text = await message.args()[0]?.jsonValue();
+    if (typeof text !== 'string') return;
+    if (text.includes('[DockSendTiming]') && text.includes('Dock send timing')) {
+      const start = text.indexOf('{');
+      if (start >= 0) timings.push(JSON.parse(text.slice(start)));
+    }
+  });
   const component = await mount(ComposerE2EHarness);
   await recordWithMark(page, component);
   await (component.getByRole('button', { name: /^Capture the screen/ }) as any).click();
@@ -254,6 +275,47 @@ test('an exported recording does not resend its markup screenshot; an explicit c
       name.startsWith(`screenshot-${carrier.id.slice(0, 8)}`),
     ),
   ).toBe(false);
+  await expect.poll(() => timings.some((row) => row.stage === 'local-admission')).toBe(true);
+  // This wire deliberately holds its reply. Admission must not masquerade as an ACK.
+  expect(timings.some((row) => row.stage === 'daemon-result')).toBe(false);
+  await page.evaluate(() => (window as any).__dockComposerE2E.fixture.settle());
+  await expect.poll(() => timings.some((row) => row.stage === 'daemon-result')).toBe(true);
+  expect(timings.map((row) => row.stage)).toEqual([
+    'export-start',
+    'local-admission',
+    'daemon-result',
+  ]);
+  expect(new Set(timings.map((row) => row.attemptToken)).size).toBe(1);
+  const admission = timings[1],
+    result = timings[2];
+  expect(result.outcome).toBe('accepted');
+  expect(result.clickToResultMs).toBeGreaterThanOrEqual(admission.clickToAdmissionMs);
+  for (const stage of ['barrier', 'target', 'overlay-render', 'export', 'placement', 'release'])
+    expect(admission.durationsMs[stage]).toBeGreaterThanOrEqual(0);
+  const allowed = new Set([
+    'attemptToken',
+    'exportToken',
+    'stage',
+    'outcome',
+    'durationsMs',
+    'clickToAdmissionMs',
+    'clickToResultMs',
+    'admissionToResultMs',
+  ]);
+  for (const row of timings) {
+    expect(Object.keys(row).every((key) => allowed.has(key))).toBe(true);
+    expect(row.attemptToken).toMatch(/^[0-9a-f-]{36}$/);
+    for (const value of [
+      ...Object.values(row.durationsMs ?? {}),
+      ...Object.entries(row)
+        .filter(([key]) => key.endsWith('Ms') && key !== 'durationsMs')
+        .map(([, value]) => value),
+    ]) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+  }
+  await writeFile(info.outputPath('send-timing-receipt.json'), JSON.stringify(timings, null, 2));
   await writeFile(
     info.outputPath('carrier-exported-receipt.json'),
     JSON.stringify({ images, sent: { ...sent, context: undefined } }, null, 2),
@@ -333,4 +395,156 @@ test('mark numbers on the wire stay the composer numbers when an exported record
     info.outputPath('carrier-numbering-receipt.json'),
     JSON.stringify({ composer, sent: { ...sent, context: undefined } }, null, 2),
   );
+});
+
+test('dock prepares one owner-local recording before Send without early placement', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(ComposerE2EHarness, { props: { warmMedia: true } });
+  await recordWithMark(page, component);
+  expect(await editRecording(page)).toBe(true);
+  await page.evaluate(() => (window as any).__dockComposerE2E.native.endNatively());
+  const editor = component.locator('[contenteditable="true"]').first();
+  await editor.fill('Review the prepared recording');
+  const read = () =>
+    page.evaluate(() => {
+      const h = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E;
+      return {
+        exports: h.native.log.exports.length,
+        calls: h.calls.map((c) => ({ method: c.method, params: c.params })),
+      };
+    });
+  await expect.poll(async () => (await read()).exports).toBe(1);
+  const before = await read();
+  expect(
+    before.calls.filter(
+      (c) => c.method === 'agent.sendMessage' || c.method === 'agent.queueMessage',
+    ),
+  ).toEqual([]);
+  expect(
+    before.calls.filter(
+      (c) =>
+        c.method === 'file.placeAttachment' &&
+        String(c.params.sourcePath ?? '').startsWith('/synthetic/exports/'),
+    ),
+  ).toEqual([]);
+  const sent = await sendAndRead(page, component);
+  await info.attach('warm-send-attempt', {
+    body: JSON.stringify(sent),
+    contentType: 'application/json',
+  });
+  expect(sent.exports).toBe(1);
+  expect(sent.fileBlocks).toBe(1);
+  expect(sent.editedCaptures).toEqual([{ kind: 'recording', frames: 1 }]);
+  await info.attach('dock-warm-preparation-receipt', {
+    body: JSON.stringify({ before, sent: { ...sent, context: undefined } }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('owned recording editor review prepares the committed default before Attach and typing', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(ComposerE2EHarness, {
+    props: { warmMedia: true, shell: dockRailPreview.states.notch.props },
+  });
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockActivated' }),
+  );
+  await recordWithMark(page, component, true);
+  expect(await editRecording(page)).toBe(true);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E,
+      d = h.store.state.dockConversation;
+    const clip = (Object.values(d.evidence.map)[0] as any).clips[0];
+    const media = {
+      ...clip.media,
+      source: { ...clip.media.source, audio: 'none', capturedMarks: clip.media.saved.marks },
+      saved: null,
+    };
+    const review = document.createElement('button');
+    review.textContent = 'Synthetic native editor';
+    document.body.append(review);
+    review.focus();
+    h.store.dispatch({
+      type: 'dockConversation/evidenceMediaChanged',
+      payload: [d.workspaceId, d.agentId, clip.id, null, media],
+    });
+    h.native.endNatively();
+    localStorage.setItem('intent.dock.captureEditorPreview', '1');
+    const api = (window as any).electronAPI,
+      prior = api.invoke.bind(api);
+    (window as any).__warmReview = {};
+    api.invoke = async (ch: string, payload: any) => {
+      if (ch === 'dock-capture-editor:open') {
+        const openId = crypto.randomUUID();
+        (window as any).__warmReview = { openId, request: payload };
+        return { ok: true, openId };
+      }
+      if (ch === 'dock-capture-editor:attach-return') {
+        (window as any).__warmReview.accepted = payload.accept;
+        h.fixture.emit('dock-capture-editor:changed', { endedOpenId: payload.openId });
+        return payload.accept === true;
+      }
+      return prior(ch, payload);
+    };
+    h.store.dispatch({
+      type: 'dockConversation/mediaEditorOpenRequested',
+      payload: [d.workspaceId, d.agentId, clip.id],
+    });
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__dockComposerE2E.native.log.exports.length))
+    .toBe(1);
+  const before = await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    return {
+      opened: !!(window as any).__warmReview.openId,
+      focusedInComposer: !!document.activeElement?.closest('[data-dock-conversation]'),
+      calls: h.calls,
+    };
+  });
+  expect(before.opened).toBe(true);
+  expect(before.focusedInComposer).toBe(false);
+  expect(
+    before.calls.filter(
+      (c: any) =>
+        c.method === 'agent.sendMessage' ||
+        c.method === 'agent.queueMessage' ||
+        (c.method === 'file.placeAttachment' &&
+          String(c.params.sourcePath ?? '').startsWith('/synthetic/exports/')),
+    ),
+  ).toEqual([]);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E,
+      { openId, request } = (window as any).__warmReview;
+    h.fixture.emit('dock-capture-editor:attached', {
+      openId,
+      workspaceId: request.workspaceId,
+      agentId: request.agentId,
+      attachmentId: request.attachmentId,
+      sourceId: request.source.id,
+      sourceRevision: request.source.revision,
+    });
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__warmReview.accepted)).toBe(true);
+  const editor = component.locator('[contenteditable="true"]').first();
+  await expect(editor).toBeFocused();
+  await editor.fill('Current text after recording review');
+  const sent = await sendAndRead(page, component);
+  await info.attach('warm-send-attempt', {
+    body: JSON.stringify(sent),
+    contentType: 'application/json',
+  });
+  expect(sent.exports).toBe(1);
+  expect(sent.fileBlocks).toBe(1);
+  expect(sent.context).toContain('Current text after recording review');
+  expect(sent.editedCaptures).toEqual([{ kind: 'recording', frames: 1 }]);
+  await info.attach('owned-editor-preparation-receipt', {
+    body: JSON.stringify({ before, sent: { ...sent, context: undefined } }, null, 2),
+    contentType: 'application/json',
+  });
 });

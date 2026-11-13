@@ -1,7 +1,6 @@
 <script lang="ts">
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
-  import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
   import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
@@ -109,16 +108,6 @@
               set: (enabled) => {
                 appStore.dispatch(setMachineRailEnabledRequested(enabled));
               },
-            },
-            {
-              kind: 'switch',
-              id: 'labs-dock',
-              size: 'sm',
-              label: m.settings_dockLab_label(),
-              description: m.settings_dockLab_description(),
-              when: () => desktop,
-              get: () => $dockLabEnabled,
-              set: setDockLabEnabled,
             },
           ],
         },

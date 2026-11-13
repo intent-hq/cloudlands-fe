@@ -8,7 +8,10 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
-  import RepoSelector, { type RepoSelectorGitChoice } from './RepoSelector.svelte';
+  import RepoSelector, {
+    type RepoSelectorGitChoice,
+    type RepoSelectorSessions,
+  } from './RepoSelector.svelte';
   import GitLabBranchPicker from './GitLabBranchPicker.svelte';
   import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
@@ -90,6 +93,8 @@
     plainFolder?: 'existing' | 'new' | null;
     /** The git choice (Labs), forwarded to the repo selector's folder tabs. */
     gitChoice?: RepoSelectorGitChoice;
+    /** The Sessions tab of the form's codebase picker (see RepoSelector). */
+    sessions?: RepoSelectorSessions;
   }
 
   let {
@@ -119,6 +124,7 @@
     plainFolderMode = false,
     plainFolder = null,
     gitChoice,
+    sessions,
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
@@ -290,6 +296,7 @@
       {gitlab}
       {plainFolderMode}
       {gitChoice}
+      {sessions}
       bind:this={repoSelector}
       variant="ghost"
       gitlabSelected={repoType === 'gitlab'}

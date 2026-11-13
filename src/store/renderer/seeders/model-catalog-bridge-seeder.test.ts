@@ -26,6 +26,7 @@ const ALL_CHANNELS: Array<[string, string]> = [
   ['claude-code', 'claude-code:get-models'],
   ['codex', 'codex:get-models'],
   ['cortex', 'cortex:get-models'],
+  ['cursor', 'cursor:get-models'],
   ['droid', 'droid:get-models'],
   ['grok', 'grok:get-models'],
   ['opencode', 'opencode:get-models'],

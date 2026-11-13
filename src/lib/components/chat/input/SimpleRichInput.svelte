@@ -28,6 +28,7 @@
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
+    enhanceUnavailableDetail,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
@@ -202,6 +203,9 @@
     composerActions?: Snippet;
     /** Hosts may render the existing attachment collection as a single compact row. */
     renderAttachments?: Snippet<[ContextItem[]]>;
+    /** A host can replace selected attachment tiles without hiding ordinary context items. */
+    renderCustomAttachments?: Snippet;
+    customContextAttachmentIds?: readonly string[];
     fileAttachmentPolicy?: FileAttachmentPolicy;
     screenReferences?: readonly EditorScreenReference[];
     screenInsertions?: readonly DockEvidenceInsertion[];
@@ -298,6 +302,8 @@
     tooltipPortalTarget,
     composerActions,
     renderAttachments,
+    renderCustomAttachments,
+    customContextAttachmentIds = [],
     fileAttachmentPolicy,
     screenReferences,
     screenInsertions,
@@ -1019,6 +1025,9 @@
           : error instanceof Error && error.message
             ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
             : m.chat_richInput_enhanceFailed_error(),
+        // The backend's reason (e.g. no machine for quick actions is online)
+        // is temporary: the button stays and the next use asks again.
+        enhanceUnavailableDetail(error),
       );
     } finally {
       if (currentRequestId === enhanceRequestId) {
@@ -1723,13 +1732,25 @@
     {#if renderAttachments}
       {@render renderAttachments(contextItems)}
     {/if}
+    {#if !renderAttachments && renderCustomAttachments}
+      <!-- Keep the controller/dialog mounted even when the attachment row becomes empty. -->
+      <div
+        class={cn(
+          'min-w-0',
+          contextItems.some((item) => customContextAttachmentIds.includes(item.id)) &&
+            `pt-1 ${contentInsetClasses}`,
+        )}
+      >
+        {@render renderCustomAttachments()}
+      </div>
+    {/if}
     <!-- Non-image context items and selections - shown above editor when present -->
-    {#if !renderAttachments && nonImageItems.length > 0}
+    {#if !renderAttachments && nonImageItems.some((item) => !customContextAttachmentIds.includes(item.id))}
       <div
         class="flex min-w-0 items-center gap-1 overflow-x-auto pt-1 scrollbar-none {contentInsetClasses}"
         style="-ms-overflow-style: none; scrollbar-width: none;"
       >
-        {#each nonImageItems as item (item.id)}
+        {#each nonImageItems.filter((item) => !customContextAttachmentIds.includes(item.id)) as item (item.id)}
           {#if item.type === 'selection' && item.content}
             <TooltipRich side="top" align="start" maxWidth="24rem" delayDuration={300}>
               {#snippet children()}

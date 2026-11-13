@@ -24,6 +24,7 @@
   import {
     checkAllProvidersRequested,
     checkSingleProviderRequested,
+    providerLoginRequested,
     providerAvailabilityPanelOpened,
     providerAvailabilityPanelClosed,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
@@ -57,10 +58,10 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { faRightToBracket } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
     Button,
-    CopyButton,
     GrokLogo,
     IntentMarkLoader,
     Menu,
@@ -79,6 +80,8 @@
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
+  import { notify } from '$lib/components/patterns/notify';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const sessionId = crypto.randomUUID();
@@ -93,6 +96,10 @@
   const providerStatusMap$ = selectProviderStatusMap();
   const providerLoadingMap$ = selectProviderLoadingMap();
   const npxStatus$ = selectNpxStatus();
+  // An orchestrator runs no provider CLI, so it checks none: the status map
+  // reports every provider as available with no sign-in, version or warning
+  // (selectProviderStatusMap), and its rows have no CLI path either.
+  const orchestrator$ = selectIsOrchestratorBackend();
 
   const checkError = $derived($discoveryError$);
   const providerPaths = $derived($paths$.configured);
@@ -274,11 +281,29 @@
     shell.open(url);
   }
 
+  /** Runs the catalog login command in a terminal; providers without one open their docs. */
+  async function logIn(providerId: string, docsUrl: string | undefined) {
+    const hasCommand = !!$catalogEntries$.find((p) => p.id === providerId)?.loginCommandHint;
+    if (!hasCommand) {
+      if (docsUrl) openDocs(docsUrl);
+      return;
+    }
+    try {
+      await appStore.dispatch(providerLoginRequested(providerId));
+    } catch (cause) {
+      notify.error(cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error());
+    }
+  }
+
   let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
 </script>
 
 <div class="flex flex-col gap-6">
-  {#if checkError}
+  {#if $orchestrator$}
+    <p class="max-w-2xl type-body text-muted-foreground" data-testid="providers-orchestrator-note">
+      {m.settings_providers_orchestrator_description()}
+    </p>
+  {:else if checkError}
     <div
       data-slot="settings-section-body"
       class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4"
@@ -324,7 +349,7 @@
             {@const canDisable = canManageEnablement && isEnabled}
             {@const canEnable = canManageEnablement && !isEnabled && isReady}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = needsLogin && provider.loginDocsUrl}
+            {@const canLogIn = needsLogin && !!(provider.loginCommandHint || provider.loginDocsUrl)}
             {@const canInstall = !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
@@ -458,18 +483,20 @@
                       >
                         <div
                           class={hasWarning ||
-                          needsLogin ||
-                          canAddProfile ||
+                          defaultOnlyRemote ||
                           ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
                             ? 'w-64'
-                            : 'w-44'}
+                            : canAddProfile
+                              ? 'w-56'
+                              : 'w-44'}
                         >
                           {#if $fastModeProviders$.includes(provider.id)}
                             <ProviderFastModeMenuItems providerRef={provider.id} />
-                            <Menu.Separator />
                           {/if}
                           {#if defaultOnlyRemote}
                             <ProviderRemoteMenuItems providerId={provider.id} />
+                          {/if}
+                          {#if $fastModeProviders$.includes(provider.id) || defaultOnlyRemote}
                             <Menu.Separator />
                           {/if}
                           {#if hasWarning}
@@ -526,17 +553,20 @@
                             </p>
                           {/if}
 
-                          <Menu.Item
-                            class="cursor-pointer text-foreground"
-                            onSelect={() => {
-                              pathConfigOpen = { [provider.id]: true };
-                            }}
-                          >
-                            <span class="flex size-4 shrink-0 items-center justify-center">
-                              <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
-                            </span>
-                            {m.settings_providerPath_setCustomPath_label()}
-                          </Menu.Item>
+                          {#if !$orchestrator$}
+                            <!-- An orchestrator runs no CLI, so it has no CLI path. -->
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                pathConfigOpen = { [provider.id]: true };
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerPath_setCustomPath_label()}
+                            </Menu.Item>
+                          {/if}
 
                           {#if canAddProfile}
                             <Menu.Item
@@ -581,30 +611,19 @@
 
                           {#if needsLogin}
                             <Menu.Separator />
-                            {#if provider.loginCommandHint}
-                              <!-- Actionable login guidance: the catalog's login
-                                   command with copy-to-clipboard; docs link stays
-                                   as the secondary action below. -->
-                              <div data-testid="provider-login-hint" class="px-2 py-1.5">
-                                <p class="type-body text-muted-foreground">
-                                  {m.settings_providers_runToLogIn_label()}
-                                </p>
-                                <div class="mt-1 flex items-center gap-1">
-                                  <code
-                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
-                                    >{provider.loginCommandHint}</code
-                                  >
-                                  <CopyButton
-                                    text={provider.loginCommandHint}
-                                    class="hover:bg-muted/50"
+                            {#if canLogIn}
+                              <Menu.Item
+                                class="cursor-pointer text-foreground"
+                                onSelect={() => logIn(provider.id, provider.loginDocsUrl)}
+                              >
+                                <span class="flex size-4 shrink-0 items-center justify-center">
+                                  <Fa
+                                    icon={faRightToBracket}
+                                    class="size-3.5 text-muted-foreground"
                                   />
-                                </div>
-                              </div>
-                            {/if}
-                            {#if provider.id === 'claude-code'}
-                              <p class="px-2 py-1.5 type-body text-muted-foreground">
-                                {m.settings_providers_claudeDesktopNote_label()}
-                              </p>
+                                </span>
+                                {m.settings_providers_logIn()}
+                              </Menu.Item>
                             {/if}
                             <Menu.Item
                               class="cursor-pointer text-foreground"
@@ -624,18 +643,6 @@
                                 {/if}
                               </span>
                               {m.settings_providers_recheck_label()}
-                            </Menu.Item>
-                          {/if}
-
-                          {#if canLogIn}
-                            <Menu.Item
-                              class="cursor-pointer text-foreground"
-                              onSelect={() => {
-                                openDocs(provider.loginDocsUrl!);
-                              }}
-                            >
-                              <span class="size-4 shrink-0" aria-hidden="true"></span>
-                              {m.settings_providers_logIn()}
                             </Menu.Item>
                           {/if}
 

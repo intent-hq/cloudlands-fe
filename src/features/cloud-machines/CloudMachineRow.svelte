@@ -36,12 +36,9 @@
     cloudMachinesRemoveRequested,
     cloudRemoveKey,
   } from './cloud-machines-slice';
-  import {
-    cloudEntryNameError,
-    cloudErrorText,
-    cloudSizeLabel,
-    templateVersionLabel,
-  } from './cloud-machines-format';
+  import { cloudEntryNameError, cloudErrorText } from './cloud-machines-format';
+  import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
+  import { machinePlatform } from '$features/remote-machines/machine-facts';
   import CloudMachineSetupForm from './CloudMachineSetupForm.svelte';
   import CloudSandboxList from './CloudSandboxList.svelte';
   import {
@@ -107,8 +104,8 @@
   );
   let renameError = $state<string | null>(null);
 
-  /** "intent-node 0.212.0" from "<project>/intent-node-4x8:0.212.0". */
-  const templateLabel = $derived(entry ? templateVersionLabel(entry.template) : null);
+  // Sandboxes run Linux; a running one's own report wins.
+  const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os || 'linux'));
 
   const status = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
     if (!entry) return null;
@@ -139,6 +136,9 @@
         };
     }
   });
+
+  // A ready entry shows no pill; the dot carries it.
+  const pillHidden = $derived(entry?.state === 'ready');
 
   const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
 
@@ -194,7 +194,9 @@
             'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
             status?.dot ?? 'bg-transparent',
           )}
-          aria-hidden="true"
+          role={pillHidden ? 'img' : undefined}
+          aria-label={pillHidden ? status?.label : undefined}
+          aria-hidden={pillHidden ? undefined : 'true'}
         ></span>
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
@@ -220,16 +222,12 @@
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if status}
-          <Badge variant="dot" color={status.color}>{status.label}</Badge>
+          {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
+          {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}
           {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
           {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
               >{entry.northflank.region}</span
             >{/if}
-          {#if templateLabel}{#if providerLabel || entry?.northflank?.region}<span
-                aria-hidden="true">·</span
-              >{/if}<span>{templateLabel}</span>{/if}
-          <span aria-hidden="true">·</span>
-          <span>{cloudSizeLabel(entry?.size ?? '')}</span>
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}

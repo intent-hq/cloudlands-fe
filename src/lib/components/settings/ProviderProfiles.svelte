@@ -93,6 +93,7 @@
   import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
   import RemoteReadyPill from './RemoteReadyPill.svelte';
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import ProfileDeleteConfirm from './profile-kinds/ProfileDeleteConfirm.svelte';
 
   interface Props {
@@ -120,6 +121,8 @@
   const identity$ = selectProviderProfileIdentityMap();
   const setups$ = selectProviderProfileSetups();
   const remoteReady$ = selectRemoteReadyProfilesVisible();
+  // An orchestrator checks no sign-in: no status, Recheck or Log In on its rows.
+  const orchestrator$ = selectIsOrchestratorBackend();
   // svelte-ignore state_referenced_locally
   const kindProvider = profileProviderFromBaseId(providerId);
   // Each profile has its own Fast mode / service tier, offered exactly when
@@ -539,7 +542,7 @@
               {/if}
             </div>
             <div class="flex shrink-0 items-center gap-2 type-caption">
-              {@render statusLabel(defaultStatus)}
+              {#if !$orchestrator$}{@render statusLabel(defaultStatus)}{/if}
               <Menu.Root>
                 <Menu.Trigger>
                   {#snippet child({ props })}
@@ -578,19 +581,21 @@
                       </span>
                       {m.settings_providerProfiles_edit_label()}
                     </Menu.Item>
-                    <Menu.Item
-                      class="cursor-pointer text-foreground"
-                      disabled={defaultStatus === 'checking'}
-                      onSelect={() => {
-                        recheck = 'requested';
-                        appStore.dispatch(checkSingleProviderRequested(providerId));
-                      }}
-                    >
-                      <span class="flex size-4 shrink-0 items-center justify-center">
-                        <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                      </span>
-                      {m.settings_providers_recheck_label()}
-                    </Menu.Item>
+                    {#if !$orchestrator$}
+                      <Menu.Item
+                        class="cursor-pointer text-foreground"
+                        disabled={defaultStatus === 'checking'}
+                        onSelect={() => {
+                          recheck = 'requested';
+                          appStore.dispatch(checkSingleProviderRequested(providerId));
+                        }}
+                      >
+                        <span class="flex size-4 shrink-0 items-center justify-center">
+                          <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                        </span>
+                        {m.settings_providers_recheck_label()}
+                      </Menu.Item>
+                    {/if}
                   </div>
                 </Menu.Content>
               </Menu.Root>
@@ -684,7 +689,7 @@
                     <IntentMarkLoader size={12} class="text-muted-foreground" />
                     {m.settings_providerProfileKinds_waiting_label()}
                   </span>
-                {:else}
+                {:else if !$orchestrator$}
                   {@render statusLabel(status, true)}
                 {/if}
                 <Menu.Root>
@@ -723,7 +728,7 @@
                         </span>
                         {m.settings_providerProfiles_edit_label()}
                       </Menu.Item>
-                      {#if folder}
+                      {#if folder && !$orchestrator$}
                         <Menu.Item
                           class="cursor-pointer text-foreground"
                           disabled={status === 'checking'}
@@ -736,17 +741,19 @@
                           {m.settings_providerProfileKinds_logIn_label()}
                         </Menu.Item>
                       {/if}
-                      <Menu.Item
-                        class="cursor-pointer text-foreground"
-                        disabled={status === 'checking'}
-                        onSelect={() =>
-                          appStore.dispatch(providerProfileCheckRequested(profile.id))}
-                      >
-                        <span class="flex size-4 shrink-0 items-center justify-center">
-                          <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                        </span>
-                        {m.settings_providers_recheck_label()}
-                      </Menu.Item>
+                      {#if !$orchestrator$}
+                        <Menu.Item
+                          class="cursor-pointer text-foreground"
+                          disabled={status === 'checking'}
+                          onSelect={() =>
+                            appStore.dispatch(providerProfileCheckRequested(profile.id))}
+                        >
+                          <span class="flex size-4 shrink-0 items-center justify-center">
+                            <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                          </span>
+                          {m.settings_providers_recheck_label()}
+                        </Menu.Item>
+                      {/if}
                       <Menu.Separator />
                       <Menu.Item
                         class="cursor-pointer text-foreground"

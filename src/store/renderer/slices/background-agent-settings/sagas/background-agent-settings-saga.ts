@@ -17,6 +17,7 @@ import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
 import {
   clearTypeOverride,
+  editQuickAction,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
   setTypeReasoningEffortOverrides,
@@ -155,6 +156,7 @@ function* persistLoop() {
       setDefaultModel,
       setTypeOverride,
       clearTypeOverride,
+      editQuickAction,
       resetSettings,
       setDefaultReasoningEffort,
       setTypeReasoningEffortOverride,

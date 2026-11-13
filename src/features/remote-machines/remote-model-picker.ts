@@ -72,8 +72,31 @@ export function machineReportFreshness(
   return 'fresh';
 }
 
+/**
+ * The models a machine reports for `providerRef` (its base provider), as
+ * evidence for checking a saved model choice; undefined when there is none:
+ * no report or an old one, the provider not reported, or an empty list (the
+ * machine then defers to the backend's catalog). An orchestrator has no
+ * catalog of its own, so its pickers validate against this.
+ */
+export function machineReportedModels(
+  machine: RemoteMachine | null | undefined,
+  providerRef: string,
+  now: number,
+): string[] | undefined {
+  if (!machine || machineReportFreshness(machine, now) !== 'fresh') return undefined;
+  const base = providerRefBaseId(providerRef);
+  const reported = machine.capabilities?.providers.find((provider) => provider.id === base);
+  return reported && reported.models.length > 0 ? reported.models : undefined;
+}
+
 /** Placement treats these as not installed. */
-export const MACHINE_PROVIDER_NOT_INSTALLED = new Set(['cli-missing', 'prerequisite-missing']);
+const MACHINE_PROVIDER_NOT_INSTALLED = new Set(['cli-missing', 'prerequisite-missing']);
+
+/** The machine offers the provider: installed and not hidden (`visible: false`). */
+export function isMachineProviderOffered(provider: { status: string; visible?: false }): boolean {
+  return provider.visible !== false && !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status);
+}
 const SIGNED_OUT = new Set(['signed-out', 'auth-failed']);
 
 /** The machine reports the provider as signed out (or its sign-in failed). */

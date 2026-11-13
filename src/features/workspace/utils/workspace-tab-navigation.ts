@@ -30,7 +30,16 @@ import { resolveWindowEmptyDestination } from './window-empty-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
-import { isEventClaimedByCustomBinding, type ShortcutId } from '$lib/utils/shortcut-bindings';
+import {
+  isEventClaimedByCustomBinding,
+  SHORTCUT_DEFAULTS,
+  type ShortcutId,
+} from '$lib/utils/shortcut-bindings';
+import {
+  selectMachineRailEnabled,
+  selectMachineRailItems,
+} from '$store/renderer/slices/machine-rail/machine-rail-selectors';
+import { selectRailMachineRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
 import type { WorkspaceTabMovedEventDetail } from './workspace-tab-move-event';
 
@@ -50,7 +59,8 @@ interface WorkspaceTabNavigationStore {
       | ReturnType<typeof openBlankWorkingPanel>
       | ReturnType<typeof reopenClosedPanelColumn>
       | ReturnType<typeof reopenClosedTab>
-      | ReturnType<typeof toggleSidebar>,
+      | ReturnType<typeof toggleSidebar>
+      | ReturnType<typeof selectRailMachineRequested>,
   ): unknown;
 }
 
@@ -82,6 +92,8 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  /** Includes an unconfirmed reorder already displayed by the rail. */
+  getRailMachineIds?: () => readonly string[];
   onCreateAgent?: (workspaceId: string) => void;
   onCreateNote?: (workspaceId: string) => void;
   onCreateTerminal?: (workspaceId: string) => void;
@@ -358,6 +370,7 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  getRailMachineIds,
   onCreateAgent,
   onCreateNote,
   onCreateTerminal,
@@ -375,6 +388,7 @@ export function registerWorkspaceTabShortcuts({
   };
   const effective = (id: ShortcutId) =>
     resolveBinding ? { binding: () => resolveBinding(id) } : {};
+  const resolve = (id: ShortcutId) => resolveBinding?.(id) ?? SHORTCUT_DEFAULTS[id];
 
   register({
     ...effective('global.new-space'),
@@ -539,30 +553,70 @@ export function registerWorkspaceTabShortcuts({
     });
   }
 
+  const selectTab = (digit: number) => {
+    if (digit === 1) navigate('/');
+    else
+      selectWorkspaceTabByPosition(
+        store,
+        digit === 9 ? 'last' : digit - 2,
+        getCurrentPath(),
+        navigate,
+      );
+  };
   for (let digit = 1; digit <= 9; digit++) {
     register({
-      ...(resolveBinding
-        ? {
-            binding: () => {
-              const pattern = resolveBinding('navigation.go-to-tab');
-              return pattern.replace(/([1-8])-9$/, String(digit));
-            },
-          }
-        : {}),
       ...mod,
       key: String(digit),
+      binding: () => resolve('navigation.go-to-device').replace(/([1-8])-9$/, String(digit)),
       global: true,
+      allowInTerminal: true,
+      enabled: (event) =>
+        selectMachineRailEnabled.select(store.state) &&
+        !isEventClaimedByCustomBinding('navigation.go-to-device', event, resolve, isMac),
+      description: m.machineRail_nav_ariaLabel(),
+      action: () => {
+        const ids =
+          getRailMachineIds?.() ??
+          selectMachineRailItems.select(store.state).map((item) => item.id);
+        const id = ids[digit === 9 ? ids.length - 1 : digit - 1];
+        if (id) store.dispatch(selectRailMachineRequested(id));
+      },
+    });
+  }
+  // Keep the familiar workspace digits while the Labs rail is off, unless a user binding owns them.
+  for (let digit = 1; digit <= 9; digit++) {
+    register({
+      ...mod,
+      key: String(digit),
+      binding: () =>
+        SHORTCUT_DEFAULTS['navigation.go-to-device'].replace(/([1-8])-9$/, String(digit)),
+      global: true,
+      allowInTerminal: true,
+      enabled: (event) =>
+        !selectMachineRailEnabled.select(store.state) &&
+        resolve('navigation.go-to-tab') === SHORTCUT_DEFAULTS['navigation.go-to-tab'] &&
+        !isEventClaimedByCustomBinding('navigation.go-to-device', event, resolve, isMac),
+      description: m.ui_shortcuts_goToTab_label(),
+      action: () => selectTab(digit),
+    });
+  }
+  for (let digit = 1; digit <= 9; digit++) {
+    register({
+      binding: () => resolve('navigation.go-to-tab').replace(/([1-8])-9$/, String(digit)),
+      ...mod,
+      alt: true,
+      key: String(digit),
+      global: true,
+      allowInTerminal: true,
+      enabled: (event) =>
+        !isEventClaimedByCustomBinding('navigation.go-to-tab', event, resolve, isMac),
       description:
         digit === 1
           ? m.home_navigation_description()
           : digit === 9
             ? m.workspace_shortcuts_selectLastSpaceTab_description()
             : m.workspace_shortcuts_selectSpaceTab_description({ digit }),
-      action: withRoute((path) =>
-        digit === 1
-          ? navigate('/')
-          : selectWorkspaceTabByPosition(store, digit === 9 ? 'last' : digit - 2, path, navigate),
-      ),
+      action: () => selectTab(digit),
     });
   }
 }

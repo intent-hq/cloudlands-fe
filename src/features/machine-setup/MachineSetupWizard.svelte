@@ -124,7 +124,6 @@
       icon: faTerminal,
       title: m.machineSetup_method_ssh_label(),
       description: m.machineSetup_method_ssh_description(),
-      tag: m.machineSetup_method_recommended_label(),
     },
     {
       id: 'manual' as MethodId,
@@ -193,7 +192,8 @@
   function submitLink() {
     if (!linkText.trim() || testing) return;
     stashPastedLink(linkText);
-    appStore.dispatch(pasteLinkSubmitted());
+    // The Install screens' link: choosing to install was the consent.
+    appStore.dispatch(pasteLinkSubmitted(screen === 'manual'));
   }
 
   function tryAgain() {

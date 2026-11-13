@@ -20,7 +20,7 @@ import type { ProviderProfileSummary, RemoteIncompatibility } from '$shared/prov
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
-  MACHINE_PROVIDER_NOT_INSTALLED,
+  isMachineProviderOffered,
   defaultRemoteOwnSignIn,
   defaultRemoteSends,
   remoteAutoPickProfile,
@@ -261,7 +261,7 @@ interface BuildMachineModelGroupsParams {
 /**
  * The configurations a remote machine can run, one group each, listing the
  * machine's models (labels from the backend catalog, else the raw id). A
- * provider must be installed there; then (a) its Default runs with the
+ * provider must be installed there and not hidden (`visible: false`); then (a) its Default runs with the
  * machine's own sign-in when it has one (signed in, or unknown), and (b) a
  * remote-compatible configuration from this backend may be sent: a marked
  * profile, or the marked Default when it brings credentials. Anything else is
@@ -294,7 +294,7 @@ export function buildMachineModelGroups({
   for (const ref of providerRefs) {
     const base = providerRefBaseId(ref);
     const provider = reported.get(base);
-    if (!provider || MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status)) continue;
+    if (!provider || !isMachineProviderOffered(provider)) continue;
     const isProfile = isProviderProfileRef(ref);
     const sendable = isProfile
       ? !remoteIncompatibilityFor(ref, catalogProfiles)

@@ -10,7 +10,8 @@ export const SHORTCUT_DEFAULTS = {
   'global.previous-space': 'ctrl+shift+tab',
   'global.next-space-alt': 'mod+shift+]',
   'global.previous-space-alt': 'mod+shift+[',
-  'navigation.go-to-tab': 'mod+1-9',
+  'navigation.go-to-device': 'mod+1-9',
+  'navigation.go-to-tab': 'mod+alt+1-9',
   'navigation.new-tab': 'mod+t',
   'navigation.close-tab': 'mod+w',
   'navigation.close-space-tab': 'mod+shift+w',
@@ -317,7 +318,8 @@ export function matchesShortcut(
 ): boolean {
   const parsed = parseShortcut(shortcut);
   if (!parsed) return false;
-  const eventKey = KEY_ALIASES[event.key.toLowerCase()] ?? event.key.toLowerCase();
+  const key = event.altKey && event.code?.startsWith('Digit') ? event.code.slice(5) : event.key;
+  const eventKey = KEY_ALIASES[key.toLowerCase()] ?? key.toLowerCase();
   const implicitShift = parsed.key.length === 1 && '~!@#$%^&*()_+{}|:"<>?'.includes(parsed.key);
   const equivalentKeys = new Set([
     eventKey,

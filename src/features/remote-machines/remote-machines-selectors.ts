@@ -5,6 +5,7 @@ import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machin
 import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 import {
   selectProviderCatalogDefaultRemoteIncompatibility,
   selectProviderCatalogDefaultRemoteLaunch,
@@ -38,11 +39,15 @@ export const selectRemoteMachinesVisible = store.createSelector(
 
 /**
  * Remote-ready marks and the Default's "Use on remote machines" option: only
- * with remote machines visible and a backend that stores the choice.
+ * with remote machines visible and a backend that stores the choice. Never on
+ * an orchestrator, where every profile counts as remote-compatible without
+ * the mark (PROTOCOL `provider-profiles.md` → "Profiles on an orchestrator").
  */
 export const selectRemoteReadyProfilesVisible = store.createSelector(
   (state) =>
-    selectRemoteMachinesVisible.select(state) && selectRemoteReadyProfilesSupported.select(state),
+    selectRemoteMachinesVisible.select(state) &&
+    selectRemoteReadyProfilesSupported.select(state) &&
+    !selectIsOrchestratorBackend.select(state),
 );
 
 /**
@@ -170,19 +175,24 @@ function backendHostPlatform(state: Parameters<typeof selectCurrentBackendLabel.
 
 /**
  * The backend first (by its label), then each machine available to it, usable
- * or not; in the stored order with `machineOrder: 1`.
+ * or not; in the stored order with `machineOrder: 1`. On an orchestrator the
+ * first row is "First available machine" (no placement) instead of the
+ * backend, and it stays first: the list it walks has no row for the backend.
  */
 export const selectStartOnRows = store.createSelector((state): StartOnOption[] => {
+  const orchestrator = selectIsOrchestratorBackend.select(state);
   const options = startOnOptions({
     backendLabel: selectCurrentBackendLabel.select(state),
     backendPlatform: backendHostPlatform(state),
     machines: selectRemoteMachines.select(state),
     cloud: startOnCloud(state),
+    orchestrator,
   });
+  if (!selectMachineOrderVisible.select(state)) return options;
   // With `machineOrder: 1` the rows follow the user's ordered machine list.
-  return selectMachineOrderVisible.select(state)
-    ? sortByMachineOrder(options, selectMachineOrder.select(state))
-    : options;
+  if (!orchestrator) return sortByMachineOrder(options, selectMachineOrder.select(state));
+  const [first, ...machines] = options;
+  return [first, ...sortByMachineOrder(machines, selectMachineOrder.select(state))];
 });
 
 /** `selectStartOnRows`; empty while hidden. */

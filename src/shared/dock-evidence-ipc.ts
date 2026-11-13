@@ -52,6 +52,7 @@ export type DockEvidenceControl =
     }
   | { action: 'media-job-cancel'; jobId: string }
   | { action: 'media-job-release'; jobId: string }
+  | { action: 'media-job-adopt'; jobId: string }
   | { action: 'capabilities' }
   /** Probe only (never prompts): `{ trusted }` for element picking. */
   | { action: 'accessibility-status' }

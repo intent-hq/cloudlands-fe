@@ -7,7 +7,13 @@ import {
   parseReport,
   trustedRun,
 } from './nightly-test-report.mjs';
-import { entries, fixture, report, testRecord } from './test-fixtures/nightly-browser.mjs';
+import {
+  buildSmokeFixture,
+  entries,
+  fixture,
+  report,
+  testRecord,
+} from './test-fixtures/nightly-browser.mjs';
 
 describe.each([
   ['ct', 'test-ct / Component Tests (shard 2/4)', 'playwright-ct-report-2-of-4'],
@@ -595,5 +601,89 @@ describe('Playwright identities and expected outcomes', () => {
     expect(trustedRun({ ...run, head_branch: 'feature' })).toBe(false);
     expect(trustedRun({ ...run, head_repository: { full_name: 'fork/repo' } })).toBe(false);
     expect(trustedRun({ ...run, path: '.github/workflows/other.yml' })).toBe(false);
+  });
+});
+
+describe('nightly Build Smoke evidence', () => {
+  it('trusts only scheduled or manual main runs of the Build Smoke workflow', () => {
+    const run = buildSmokeFixture().run;
+    expect(trustedRun(run)).toBe(true);
+    expect(trustedRun({ ...run, event: 'workflow_dispatch' })).toBe(true);
+    expect(trustedRun({ ...run, head_branch: 'bugfix/build-smoke-mock-create-options' })).toBe(
+      false,
+    );
+    expect(trustedRun({ ...run, path: '.github/workflows/nightly-browser-tests.yml' })).toBe(false);
+    expect(trustedRun({ ...run, name: 'Nightly Browser Tests' })).toBe(false);
+  });
+
+  it('reports the failing packaged test, not the maxFailures stop, as one issue candidate', () => {
+    const result = analyzeReports(buildSmokeFixture());
+    expect(result.incidents).toEqual([]);
+    expect(result.lanes).toEqual([
+      { artifact: 'build-smoke-reports', attempt: 1, job: 77, tests: 3 },
+    ]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      suite: 'build-smoke',
+      file: 'e2e/build-smoke-multi-agent.e2e.ts',
+      title:
+        'Build Smoke — Multi-Agent Orchestration UI › child agent creation updates sidebar and chat isolation',
+      category: 'assertion',
+      artifacts: ['build-smoke-reports'],
+      occurrences: [{ attempt: 1, job: 77 }],
+    });
+  });
+
+  it('accepts a green run without a browser manifest', () => {
+    const result = analyzeReports(buildSmokeFixture({ failed: false }));
+    expect(result.incidents).toEqual([]);
+    expect(result.items).toEqual([]);
+    expect(result.lanes).toHaveLength(1);
+  });
+
+  it('files a broken packaged build as a Build Smoke CI incident', () => {
+    const result = analyzeReports(buildSmokeFixture({ buildFailed: true }));
+    expect(result.incidents).toEqual(['build-smoke-reports: Test execution skipped or cancelled']);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      suite: 'infrastructure',
+      file: '.github/workflows/build-smoke.yml',
+      title: 'Nightly build smoke CI evidence is incomplete',
+    });
+  });
+
+  it('files nothing for a dispatch that ran only a --grep subset', () => {
+    const data = buildSmokeFixture();
+    data.run.event = 'workflow_dispatch';
+    data.documents['build-smoke-reports'].outcome.event = 'workflow_dispatch';
+    data.documents['build-smoke-reports'].outcome.testFilter = 'multi-agent';
+    const result = analyzeReports(data);
+    expect(result.items).toEqual([]);
+    expect(result.incidents).toEqual([]);
+    expect(result.filtered).toEqual(['build-smoke-reports']);
+  });
+
+  it('still treats a global error other than the maxFailures stop as an incident', () => {
+    const data = buildSmokeFixture();
+    data.documents['build-smoke-reports'].report.errors.push({ message: 'worker crashed' });
+    const result = analyzeReports(data);
+    expect(result.incidents).toEqual([
+      'build-smoke-reports: Interrupted tests or global runner error',
+    ]);
+  });
+
+  it('keeps the browser incident identity so existing tracker issues still match', () => {
+    const data = fixture();
+    data.artifacts = data.artifacts.filter((a) => a.name !== 'playwright-root-report-1');
+    const [incident] = analyzeReports(data).items;
+    expect(incident.key).toBe(
+      failureKey({
+        suite: 'infrastructure',
+        project: 'nightly',
+        file: '.github/workflows/nightly-browser-tests.yml',
+        title: 'Nightly browser CI evidence is incomplete',
+        category: 'incomplete-ci-evidence',
+      }),
+    );
   });
 });

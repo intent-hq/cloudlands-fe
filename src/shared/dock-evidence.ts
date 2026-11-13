@@ -124,6 +124,8 @@ export interface DockEvidenceClip {
   mediaError?: 'invalid-saved-edit';
   id: string;
   status: 'recording' | 'placing' | 'ready' | 'failed';
+  /** Runtime presentation only: retain native ownership while discard/Undo settles. */
+  discarding?: 'undo' | 'stopping';
   startedAt: number;
   durationMs: number;
   hasMicAudio: boolean;
@@ -1281,7 +1283,10 @@ export type DockDraftEvidence =
       /** Message-wide creation index keeps numbering across images on restore. */
       marks: { index: number; mark: DockMark }[];
     }
-  | { kind: 'clip'; clip: Omit<DockEvidenceClip, 'contextItemId' | 'status' | 'error'> };
+  | {
+      kind: 'clip';
+      clip: Omit<DockEvidenceClip, 'contextItemId' | 'status' | 'error' | 'discarding'>;
+    };
 
 /** A safe workspace-relative attachment path: relative, no dot segments, bounded. */
 export function isDockAttachmentPath(value: unknown): value is string {
@@ -1539,6 +1544,8 @@ export interface DockEvidenceNativeService {
   transcribeMedia?(
     request: import('./dock-media-output').DockMediaTranscribeRequest,
   ): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;
+  /** Revalidate and retain a completed output under this exact native owner. */
+  adoptMediaJob?(jobId: string): Promise<DockNativeResult<boolean>>;
   cancelMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   releaseMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   /** Absent means only `captureDisplay` is implemented (annotate and record stay disabled). */

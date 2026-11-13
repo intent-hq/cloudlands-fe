@@ -4,7 +4,8 @@
  * Reads the resolved 6-slot key assignment (same pure resolver the
  * key-switch service uses) and derives one `AgentKeyLedState` per slot from
  * the assigned workspace plus its top-level (foreground) agents, and the
- * ambient state from all assignable workspaces.
+ * ambient state from the assignable workspaces open as top tabs — the same
+ * workspaces the cycle action keys walk.
  *
  * Dependency-light per src/store/renderer/AGENTS.md middleware conventions:
  * no selector imports — reads plain state through a narrow structural type
@@ -46,6 +47,8 @@ export interface LedSnapshotState {
    * default to connected.
    */
   daemonHealth?: { health: DaemonHealth };
+  /** The top workspace tab strip: only these workspaces drive the ambient. */
+  tabState: { workspaceStacks: readonly (readonly string[])[] };
 }
 
 /** Blocked = a pending `blocker` attention request (spec orange palette row). */
@@ -147,7 +150,8 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
     return deriveAgentKeyLedState(workspace, foregroundSessions(state, workspace.id));
   });
 
-  // Ambient scans ALL assignable workspaces (not just the 6 assigned), in
+  // Ambient scans every assignable workspace open as a top tab (not just the
+  // 6 assigned), so it never signals work the cycle keys cannot reach, in
   // spec mapping-table precedence: failed > blocked > question/discussion >
   // unread > running (breath speed ∝ count) > complete > dark. `unread`
   // outranks `running` so unseen output stays visible even while other
@@ -160,7 +164,9 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
   let runningCount = 0;
   let anyUnread = false;
   let anyComplete = false;
+  const openTabIds = new Set(state.tabState.workspaceStacks.flat());
   for (const workspace of workspaces) {
+    if (!openTabIds.has(workspace.id)) continue;
     const agents = foregroundSessions(state, workspace.id);
     if (agents.some(hasFailed)) anyFailed = true;
     if (agents.some(isBlocked)) anyBlocked = true;

@@ -247,6 +247,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'antigravity:get-models',
   },
 
+  // Cursor Integration
+  CURSOR: {
+    GET_MODELS: 'cursor:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',

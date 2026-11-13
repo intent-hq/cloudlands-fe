@@ -22,6 +22,7 @@
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
+    enhanceUnavailableDetail,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import {
@@ -972,7 +973,9 @@
       previous.type !== selection.type ||
       previous.repoPath !== selection.repoPath ||
       previous.githubUrl !== selection.githubUrl ||
-      previous.projectName !== selection.projectName;
+      previous.projectName !== selection.projectName ||
+      previous.importSession?.sessionId !== selection.importSession?.sessionId ||
+      previous.importSession?.provider !== selection.importSession?.provider;
 
     // Guard: skip the update entirely when nothing meaningful changed.
     // This prevents effect_update_depth_exceeded caused by BranchSelector
@@ -1150,6 +1153,7 @@
           : error instanceof Error && error.message
             ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
             : m.onboarding_page_enhanceFailed_error(),
+        enhanceUnavailableDetail(error),
       );
     } finally {
       isOnboardingEnhancing = false;
@@ -1444,6 +1448,15 @@
           branch: projectSelection.branch,
           scope: projectSelection.scope,
         },
+        ...(projectSelection.importSession
+          ? {
+              importSession: {
+                provider: projectSelection.importSession.provider,
+                sessionId: projectSelection.importSession.sessionId,
+                title: projectSelection.importSession.title,
+              },
+            }
+          : {}),
         treatAsNewRepo,
         effectiveBranch,
         selectedModel: onboardingSelectedModel,

@@ -18,7 +18,11 @@ import { WorkspaceStatus, type Workspace } from '$shared/types';
 import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
 import type { Snippet } from 'svelte';
 
+import type { DockRecordingIndicator } from '$features/hud/utils/dock-recording-indicator';
+
 export interface DockRailPreviewProps {
+  /** Production selector supplied by the native-boundary conversation harness. */
+  recordingOverride?: DockRecordingIndicator | null;
   workspaces: DockWorkspaceView[];
   viewportHeight: number;
   viewportWidth?: number;

@@ -9,8 +9,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { runSaga } from 'redux-saga';
-import { openClaudeLoginWorker } from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
-import { claudeLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+import { openProviderLoginWorker } from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
+import { providerLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 const mocks = vi.hoisted(() => {
@@ -213,8 +213,12 @@ describe('ProviderCard login guidance', () => {
 
   beforeEach(() => {
     mocks.dispatch.mockImplementation((action) => {
-      if (action.type === claudeLoginRequested.type) {
-        void runSaga({ dispatch: mocks.dispatch }, openClaudeLoginWorker, action).toPromise();
+      if (action.type === providerLoginRequested.type) {
+        void runSaga(
+          { dispatch: mocks.dispatch, getState: () => ({}) },
+          openProviderLoginWorker,
+          action,
+        ).toPromise();
       }
       return action;
     });

@@ -6,6 +6,185 @@ import type { ComposerDraftRequest } from './mocks/composer-draft-transport';
 
 const scope = { workspaceId: 'chat-panel-composer-geometry', agentId: 'regular-composer-agent' };
 
+test('shared recording uses the same editable tile and persists edits through reopen and removal', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(SharedDraftEditorsHarness);
+  const main = component.getByTestId('shared-main');
+  const dock = component.getByTestId('shared-dock');
+  await expect(main.locator('.tiptap-editor')).toHaveAttribute('contenteditable', 'true');
+  await component.getByRole('button', { name: 'Seed recording draft', exact: true }).click();
+  await expect(main.locator('[data-kind="clip"]')).toHaveCount(1);
+  await expect(dock.locator('[data-kind="clip"]')).toHaveCount(1);
+  await expect(main.getByText('clip-shared-recording.mp4', { exact: true })).toHaveCount(0);
+  await expect(main.locator('[data-clip-summary]')).toHaveText('Full · Audio');
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
+  const editor = page.getByRole('dialog').filter({ has: page.locator('[data-send-options]') });
+  await expect(editor).toBeVisible();
+  await info.attach('main-recording-editor', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await editor.locator('button').filter({ hasText: /^Off$/ }).click();
+  await page.keyboard.press('Escape');
+  const discard = page.getByRole('dialog', { name: 'Discard changes?' });
+  await expect(discard).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByRole('dialog', { name: 'Discard changes?', includeHidden: true }),
+  ).toHaveCount(0);
+  await expect(editor.getByRole('radio', { name: 'Off', exact: true })).toBeFocused();
+  await expect(editor).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(main.locator('[data-clip-summary]')).toHaveText('Full · Audio');
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
+  await editor.locator('button').filter({ hasText: /^Off$/ }).click();
+  await editor.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(main.locator('[data-clip-summary]')).toHaveText('Full · No voice');
+  await expect(dock.locator('[data-clip-summary]')).toHaveText('Full · No voice');
+  const saved = await page.evaluate(async () => window.__sharedDraftFixture?.saved());
+  expect(saved).toMatchObject({
+    text: 'Review this recording',
+    attachments: [
+      expect.objectContaining({
+        id: 'shared-recording',
+        attachmentId: 'shared-recording-file',
+        path: '.intent/attachments/shared-recording.mp4',
+        screen: {
+          kind: 'clip',
+          clip: expect.objectContaining({
+            media: expect.objectContaining({
+              saved: expect.objectContaining({ voice: 'off', revision: 1 }),
+            }),
+          }),
+        },
+      }),
+    ],
+  });
+  await component.getByRole('button', { name: 'Close notch draft', exact: true }).click();
+  await component.getByRole('button', { name: 'Open notch draft', exact: true }).click();
+  await expect(dock.locator('[data-clip-summary]')).toHaveText('Full · No voice');
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(editor.locator('button').filter({ hasText: /^Off$/ })).toHaveAttribute(
+    'data-state',
+    'on',
+  );
+  await page.keyboard.press('Escape');
+  await expect(editor).not.toBeVisible();
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(main.locator('[data-kind="clip"]')).toHaveCount(0);
+  await expect(dock.locator('[data-kind="clip"]')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await window.__sharedDraftFixture?.saved())?.attachments ?? []),
+    )
+    .toEqual([]);
+  await info.attach('shared-recording-edit-receipt', {
+    body: JSON.stringify(saved, null, 2),
+    contentType: 'application/json',
+  });
+  await info.attach('shared-recording-after-removal', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('shared recording save preserves peer typing during its durability wait', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(SharedDraftEditorsHarness);
+  const main = component.getByTestId('shared-main');
+  await expect(main.locator('.tiptap-editor')).toHaveAttribute('contenteditable', 'true');
+  await component.getByRole('button', { name: 'Seed recording draft', exact: true }).click();
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
+  const editor = page.getByRole('dialog').filter({ has: page.locator('[data-send-options]') });
+  await editor.locator('button').filter({ hasText: /^Off$/ }).click();
+  await page.evaluate(() => window.__sharedDraftFixture?.holdPersistence());
+  await editor.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(main.locator('[data-clip-summary]')).toHaveText('Full · No voice');
+  await page.evaluate(() =>
+    window.__sharedDraftFixture?.peerRecordingText('Newer text from notch'),
+  );
+  await page.evaluate(() => window.__sharedDraftFixture?.releasePersistence());
+  await expect
+    .poll(() => page.evaluate(async () => (await window.__sharedDraftFixture?.saved())?.text))
+    .toBe('Newer text from notch');
+  await expect(main.locator('.tiptap-editor')).toHaveText('Newer text from notch');
+  const saved = await page.evaluate(async () => window.__sharedDraftFixture?.saved());
+  expect(saved?.attachments).toEqual([
+    expect.objectContaining({
+      attachmentId: 'shared-recording-file',
+      screen: expect.objectContaining({
+        clip: expect.objectContaining({
+          media: expect.objectContaining({ saved: expect.objectContaining({ voice: 'off' }) }),
+        }),
+      }),
+    }),
+  ]);
+  await info.attach('shared-recording-peer-save-receipt', {
+    body: JSON.stringify(saved, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('shared recording without output capability keeps edits out of the saved draft', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(SharedDraftEditorsHarness, { props: { outputReady: false } });
+  const main = component.getByTestId('shared-main');
+  await expect(main.locator('.tiptap-editor')).toHaveAttribute('contenteditable', 'true');
+  await component.getByRole('button', { name: 'Seed recording draft', exact: true }).click();
+  await main.locator('[data-kind="clip"]').hover();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
+  const editor = page.getByRole('dialog').filter({ has: page.locator('[data-send-options]') });
+  await expect(editor.getByRole('radio', { name: 'Off', exact: true })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: 'Save changes', exact: true })).toHaveCount(0);
+  const saved = await page.evaluate(async () => window.__sharedDraftFixture?.saved());
+  expect(saved?.attachments[0].screen).toMatchObject({
+    clip: { media: { saved: { voice: 'audio', revision: 0 } } },
+  });
+  await expect(main.locator('[data-clip-summary]')).toHaveText('Full · Audio');
+});
+
+test('shared recording editor retires across removal or clear before the same source returns', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(SharedDraftEditorsHarness);
+  const main = component.getByTestId('shared-main');
+  await expect(main.locator('.tiptap-editor')).toHaveAttribute('contenteditable', 'true');
+  for (const clear of [false, true]) {
+    await page.evaluate(() => window.__sharedDraftFixture?.seedRecording());
+    await main.locator('[data-kind="clip"]').hover();
+    await main.getByRole('button', { name: 'Edit', exact: true }).click();
+    const editor = page.getByRole('dialog').filter({ has: page.locator('[data-send-options]') });
+    await editor.getByRole('radio', { name: 'Off', exact: true }).click();
+    await page.evaluate((clear) => window.__sharedDraftFixture?.removeRecording(clear), clear);
+    await expect(editor).not.toBeVisible();
+    await page.evaluate(() => window.__sharedDraftFixture?.seedRecording());
+    await expect(main.locator('[data-clip-summary]')).toHaveText('Full · Audio');
+    const saved = await page.evaluate(async () => window.__sharedDraftFixture?.saved());
+    expect(saved?.attachments[0].screen).toMatchObject({
+      clip: { media: { saved: { voice: 'audio', revision: 0 } } },
+    });
+    await expect(
+      page.getByRole('dialog').filter({ has: page.locator('[data-send-options]') }),
+    ).toHaveCount(0);
+  }
+});
+
 /**
  * Replace the restored draft through the editor's own select-all. The composer
  * refocuses itself when the restore gate releases, and ProseMirror re-syncs the

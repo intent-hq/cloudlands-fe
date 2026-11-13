@@ -216,6 +216,150 @@ export function fixture() {
   return { run, jobs, artifacts, documents };
 }
 
+// Shaped like Build Smoke run 43154107750: one packaged default suite, stopped
+// by maxFailures after the first failure, so later tests were never run.
+export const buildSmokeEntry = {
+  suite: 'build-smoke',
+  shard: 1,
+  shardCount: 1,
+  artifactName: 'build-smoke-reports',
+  advisory: false,
+  reportPath: 'e2e-reports/packaged-run/default-suite/results.json',
+  outcomePath: 'e2e-reports/build-smoke-outcome.json',
+};
+
+function buildSmokeReport(failed = true) {
+  const test = (status, results) => ({
+    projectName: '',
+    projectId: '',
+    status,
+    expectedStatus: 'passed',
+    annotations: [],
+    results,
+  });
+  const spec = (file, describe, title, record) => ({
+    file,
+    title: file,
+    specs: [],
+    suites: [{ title: describe, specs: [{ title, file, line: 72, tests: [record] }] }],
+  });
+  return {
+    config: { rootDir: '/home/runner/work/cloudlands-fe/cloudlands-fe/e2e' },
+    errors: failed ? [{ message: 'Testing stopped early after 1 maximum allowed failures.' }] : [],
+    suites: [
+      spec(
+        'build-smoke-commit.e2e.ts',
+        'Build Smoke — Commit',
+        'stage files and commit locally',
+        test('expected', [{ status: 'passed' }]),
+      ),
+      spec(
+        'build-smoke-multi-agent.e2e.ts',
+        'Build Smoke — Multi-Agent Orchestration UI',
+        'child agent creation updates sidebar and chat isolation',
+        failed
+          ? test('unexpected', [
+              {
+                status: 'failed',
+                error: {
+                  message:
+                    "Error: expect(locator).toBeVisible() failed\n\nLocator: locator('[data-message-role]').filter({ hasText: 'PARENT_ONLY:' })",
+                },
+              },
+            ])
+          : test('expected', [{ status: 'passed' }]),
+      ),
+      spec(
+        'build-smoke-navigation.e2e.ts',
+        'Build Smoke — Navigation',
+        'chat messages persist after navigating away and back',
+        failed ? test('skipped', []) : test('expected', [{ status: 'passed' }]),
+      ),
+    ],
+  };
+}
+
+export function buildSmokeFixture({ failed = true, buildFailed = false } = {}) {
+  const run = {
+    id: 43154107750,
+    run_attempt: 1,
+    name: 'Build Smoke',
+    path: '.github/workflows/build-smoke.yml',
+    status: 'completed',
+    conclusion: failed || buildFailed ? 'failure' : 'success',
+    event: 'schedule',
+    head_branch: 'main',
+    head_sha: 'b'.repeat(40),
+    repository: { full_name: 'intent-hq/cloudlands-fe', id: 12 },
+    head_repository: { full_name: 'intent-hq/cloudlands-fe', id: 12 },
+    updated_at: '2026-11-12T04:36:00Z',
+  };
+  const job = {
+    id: 77,
+    name: 'Build Smoke (linux x64)',
+    run_id: run.id,
+    run_attempt: 1,
+    head_sha: run.head_sha,
+    status: 'completed',
+    conclusion: run.conclusion,
+    completed_at: run.updated_at,
+    steps: [
+      { name: 'Build unpacked Linux app', conclusion: buildFailed ? 'failure' : 'success' },
+      {
+        name: 'Build smoke tests',
+        conclusion: buildFailed ? 'skipped' : failed ? 'failure' : 'success',
+      },
+      { name: 'Record build smoke outcome', conclusion: 'success' },
+      { name: 'Upload build-smoke reports', conclusion: 'success' },
+    ],
+  };
+  const report = buildSmokeReport(failed);
+  return {
+    run,
+    jobs: [
+      {
+        id: 76,
+        name: 'runner-route / probe',
+        run_id: run.id,
+        run_attempt: 1,
+        head_sha: run.head_sha,
+        status: 'completed',
+        conclusion: 'success',
+        completed_at: run.updated_at,
+        steps: [],
+      },
+      job,
+    ],
+    artifacts: [
+      {
+        id: 200,
+        name: 'build-smoke-reports',
+        expired: false,
+        workflow_run: { id: run.id, head_sha: run.head_sha, repository_id: 12 },
+      },
+    ],
+    documents: {
+      'build-smoke-reports': {
+        outcome: {
+          schemaVersion: 1,
+          repository: 'intent-hq/cloudlands-fe',
+          runId: String(run.id),
+          runAttempt: '1',
+          sha: run.head_sha,
+          ref: 'refs/heads/main',
+          event: 'schedule',
+          ...buildSmokeEntry,
+          testOutcome: buildFailed ? 'skipped' : failed ? 'failure' : 'success',
+          jobStatus: buildFailed || failed ? 'failure' : 'success',
+          reportPresent: !buildFailed,
+          testCount: buildFailed ? null : 3,
+        },
+        ...(buildFailed ? {} : { report }),
+      },
+    },
+  };
+}
+
 export function issueStore(initial = []) {
   const issues = structuredClone(initial);
   const comments = [];

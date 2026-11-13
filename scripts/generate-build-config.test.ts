@@ -238,7 +238,7 @@ describe('cold prebuild configuration', () => {
         scripts: {
           prebuild: scripts.prebuild,
           'generate:build-config': scripts['generate:build-config'],
-          'type-check:quiet': scripts['type-check:quiet'],
+          'type-check:renderer': scripts['type-check:renderer'],
           // Catalog and IPC generation are independent of this compiler input.
           'generate:i18n': 'node -e ""',
           'generate:ipc-types': 'node -e ""',

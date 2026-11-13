@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../shared/paraglide/messages.js', () => ({ m: {} }));
 
 import { JsonRpcError } from '../json-rpc-errors';
-import { detectDaemonMode, reportedDaemonMode } from '../daemon-mode';
+import { detectDaemonMode, reportedDaemonMode, reportsDaemonMode } from '../daemon-mode';
 
 const hello = (daemonMode?: unknown) => ({
   server: { version: '0.11.150', ...(daemonMode === undefined ? {} : { daemonMode }) },
@@ -20,6 +20,14 @@ describe('reportedDaemonMode', () => {
   it('reads the reported mode', () => {
     expect(reportedDaemonMode(hello('node'))).toBe('node');
     expect(reportedDaemonMode(hello('regular'))).toBe('regular');
+    expect(reportedDaemonMode(hello('orchestrator'))).toBe('orchestrator');
+  });
+
+  it('tells a reported unknown value apart from an older daemon that omits it', () => {
+    expect(reportsDaemonMode(hello('hub'))).toBe(true);
+    expect(reportsDaemonMode(hello('orchestrator'))).toBe(true);
+    expect(reportsDaemonMode(hello())).toBe(false);
+    expect(reportsDaemonMode(null)).toBe(false);
   });
 
   it('treats a missing or unknown value as unknown', () => {
@@ -36,6 +44,14 @@ describe('detectDaemonMode', () => {
     const request = vi.fn();
     await expect(detectDaemonMode(hello('node'), request)).resolves.toBe('node');
     await expect(detectDaemonMode(hello('regular'), request)).resolves.toBe('regular');
+    await expect(detectDaemonMode(hello('orchestrator'), request)).resolves.toBe('orchestrator');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('a reported value it does not know stays unknown, without the node probe', async () => {
+    // A node-mode refusal would turn a probed daemon into a node.
+    const request = vi.fn().mockRejectedValue(nodeRefusal());
+    await expect(detectDaemonMode(hello('hub'), request)).resolves.toBeNull();
     expect(request).not.toHaveBeenCalled();
   });
 

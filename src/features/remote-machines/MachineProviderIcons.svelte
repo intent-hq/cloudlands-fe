@@ -7,7 +7,14 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { MachineRowProvider } from './machine-facts';
 
-  let { providers }: { providers: MachineRowProvider[] } = $props();
+  let {
+    providers,
+    reported = false,
+  }: {
+    providers: MachineRowProvider[];
+    /** The list comes from a report: an empty one says no provider is ready. */
+    reported?: boolean;
+  } = $props();
 </script>
 
 {#if providers.length > 0}
@@ -42,4 +49,8 @@
       </span>
     {/each}
   </span>
+{:else if reported}
+  <span class="ml-1 border-l border-border pl-2" data-machine-no-providers
+    >{m.remoteMachines_noProviders_label()}</span
+  >
 {/if}

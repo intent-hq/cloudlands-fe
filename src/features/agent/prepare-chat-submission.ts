@@ -22,6 +22,10 @@ import {
 import { createChatMediaNative } from '$features/hud/composer/chat-media-native';
 import { submitChatMessage } from './chat-submission';
 import { m } from '$shared/paraglide/messages.js';
+import type {
+  ChatRecordingWarmOwner,
+  ChatRecordingWarmLease,
+} from '$lib/components/chat/chat-recording-warm.svelte';
 
 export type PreparedChatDraftCapture = ChatDraftCapture;
 export interface PreparedChatDraftPort {
@@ -36,6 +40,7 @@ export async function submitPreparedChatMessage(input: {
   payload: SendMessagePayload & { wsId: string };
   items: ContextItem[];
   signal: AbortSignal;
+  warm?: ChatRecordingWarmOwner;
 }): Promise<boolean> {
   const { drafts, signal } = input;
   const capture = structuredClone(input.capture),
@@ -70,7 +75,7 @@ export async function submitPreparedChatMessage(input: {
   const unsubscribe = appStore.getReadableState().subscribe(() => {
     if (!current()) abort.abort();
   });
-  let native: ReturnType<typeof createChatMediaNative> | null = null;
+  let native: ReturnType<typeof createChatMediaNative> | ChatRecordingWarmLease | null = null;
   try {
     if (!current() || hasBlockingAttachments(clickedItems)) return false;
     const screens = readDraftAttachmentScreens(capture.attachments);
@@ -94,6 +99,7 @@ export async function submitPreparedChatMessage(input: {
       !validDockWireTokens(clickedPayload.text, evidence)
     )
       throw new Error('invalid-evidence');
+    native = input.warm?.take(capture, abort.signal) ?? null;
     if (!(await drafts.flushDraft(capture)) || !current()) return false;
     const target = await appClient.agents.get(agentId, workspaceId);
     if (!current()) return false;
@@ -106,7 +112,7 @@ export async function submitPreparedChatMessage(input: {
     )
       throw new Error('unavailable');
     const media = evidence.clips.flatMap((row) => (row.media ? [row.media] : []));
-    if (media.length)
+    if (media.length && !native)
       native = createChatMediaNative(
         {
           workspaceId,

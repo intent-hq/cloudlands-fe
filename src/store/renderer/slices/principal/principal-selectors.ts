@@ -5,6 +5,7 @@ import {
 } from './principal-context';
 import { store } from '../../store';
 import type { HostRole } from '$shared/types/principal';
+import type { DaemonMode } from '$shared/types/connections';
 import { selectLabsMultiplayerEnabled } from '../user-preferences/user-preferences-selectors';
 
 export const selectPrincipalState = store.createSelector((state) => state.principal);
@@ -19,6 +20,23 @@ export const selectPrincipalSnapshot = store.createSelector((state) => {
     ? principal.snapshot
     : null;
 });
+
+/**
+ * The connected backend's running mode (`client.hello` `server.daemonMode`),
+ * or null while unknown (not read yet, omitted by an older daemon, or a value
+ * this client does not know).
+ */
+export const selectBackendDaemonMode = store.createSelector(
+  (state): DaemonMode | null => selectPrincipalSnapshot.select(state)?.daemonMode ?? null,
+);
+
+/**
+ * The connected backend is an orchestrator: it never runs agents or provider
+ * CLIs itself (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
+ */
+export const selectIsOrchestratorBackend = store.createSelector(
+  (state) => selectBackendDaemonMode.select(state) === 'orchestrator',
+);
 
 /** True when the connected daemon manages app-wide Agent Plugins (PROTOCOL §5.57). */
 export const selectAgentPluginsSupported = store.createSelector(

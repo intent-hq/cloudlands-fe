@@ -1,16 +1,19 @@
 /**
  * Shared helpers for the global agent-cycling action keys: one parameterized
  * collect step (predicate + optional ordering + scope) over agents across
- * all workspaces, plus the next-entry step the cycle actions share. Scope
+ * the workspaces open as top tabs, in tab strip order, plus the next-entry
+ * step the cycle actions share. Scope
  * picks the walked list: `top-level` = foreground agents only, `all` =
  * every listed agent including delegated sub-agents (see cycle-scope.ts).
  *
  * The attention/failed predicates mirror the LED engine (led/snapshot.ts)
- * definitions so key behavior and lighting agree. Workspaces are filtered
- * through `isKeyAssignableWorkspace` (assignment/key-assignment.ts), so the
- * chief virtual workspace and archived/deleted workspaces are never cycled
- * into. Dependency-light per src/store/renderer/AGENTS.md middleware
- * conventions: no selector imports — narrow structural state only.
+ * definitions so keys and lighting classify agents alike; the LEDs still
+ * summarize every workspace, while the keys only walk open tabs. Workspaces
+ * not open as top tabs are never cycled into, and tabs are filtered through
+ * `isKeyAssignableWorkspace` (assignment/key-assignment.ts), so the chief
+ * virtual workspace and archived/deleted workspaces are skipped too.
+ * Dependency-light per src/store/renderer/AGENTS.md middleware conventions:
+ * no selector imports — narrow structural state only.
  */
 
 import { AgentStatus, type Workspace } from '$shared/types';
@@ -20,7 +23,7 @@ import {
   getAgentStopReasonTimestamp,
 } from '$shared/utils/agent-attention';
 import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
-import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import type { CycleScope } from './cycle-scope';
@@ -35,6 +38,8 @@ export interface AgentCycleState {
     >;
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
+  /** The top workspace tab strip; cycling walks only these, in this order. */
+  tabState: { workspaceStacks: readonly (readonly string[])[] };
 }
 
 /**
@@ -56,7 +61,7 @@ export interface CycleAgentEntry extends CycleStopEntry {
 }
 
 /** Key prefix marking a workspace-level stop in `cycleStopKey` values. */
-export const WORKSPACE_STOP_KEY_PREFIX = 'workspace:';
+const WORKSPACE_STOP_KEY_PREFIX = 'workspace:';
 
 /**
  * Stable cursor/dedup key for a stop. Agent stops key by agent id;
@@ -202,12 +207,30 @@ export function pickLastActivePerWorkspace(
 }
 
 /**
- * Collect matching agents across all key-assignable workspaces (the chief
- * virtual workspace and archived/deleted workspaces are skipped), in
- * workspace order. Scope picks the walked list per workspace: `top-level`
- * (default) walks the foreground agents; `all` walks every listed agent
- * (sub-agents included). An optional comparator re-orders the result
- * (stable sort, ties keep workspace order).
+ * The key-assignable workspaces open as top tabs, in tab strip order (the
+ * chief virtual workspace and archived/deleted workspaces are skipped).
+ */
+function cycleWorkspaces(state: Pick<AgentCycleState, 'workspace' | 'tabState'>): Workspace[] {
+  return state.tabState.workspaceStacks.flat().flatMap((wsId) => {
+    const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
+    return workspace !== undefined && isKeyAssignableWorkspace(workspace) ? [workspace] : [];
+  });
+}
+
+/** Tab strip position per workspace id (`cycleWorkspaces` order). */
+export function cycleTabIndex(
+  state: Pick<AgentCycleState, 'workspace' | 'tabState'>,
+): Map<string, number> {
+  return new Map(cycleWorkspaces(state).map((workspace, index) => [workspace.id, index]));
+}
+
+/**
+ * Collect matching agents across the workspaces open as top tabs, in tab
+ * order (`cycleWorkspaces`). Scope picks the walked list per workspace:
+ * `top-level` (default) walks the foreground agents; `all` walks every
+ * listed agent (sub-agents included). An optional comparator re-orders the
+ * agents within each workspace only (stable sort), so the walk always
+ * follows the tab strip.
  */
 export function collectCycleAgents(
   state: AgentCycleState,
@@ -215,12 +238,11 @@ export function collectCycleAgents(
   compare?: (a: StoredAgentSession, b: StoredAgentSession) => number,
   scope: CycleScope = 'top-level',
 ): CycleAgentEntry[] {
-  const entries: { entry: CycleAgentEntry; session: StoredAgentSession }[] = [];
-  for (const workspace of getItems(state.workspace.workspaces)) {
-    if (!isKeyAssignableWorkspace(workspace)) continue;
+  return cycleWorkspaces(state).flatMap((workspace) => {
     const workspaceState = state.workspaceAgents.byWorkspaceId[workspace.id];
     const ids =
       (scope === 'all' ? workspaceState?.agentIds : workspaceState?.foregroundAgentIds) ?? [];
+    const entries: { entry: CycleAgentEntry; session: StoredAgentSession }[] = [];
     for (const rawId of ids) {
       const agentId = String(rawId);
       const session = state.agentSessions.byAgentId[agentId];
@@ -228,9 +250,9 @@ export function collectCycleAgents(
         entries.push({ entry: { wsId: workspace.id, agentId }, session });
       }
     }
-  }
-  if (compare) entries.sort((a, b) => compare(a.session, b.session));
-  return entries.map((item) => item.entry);
+    if (compare) entries.sort((a, b) => compare(a.session, b.session));
+    return entries.map((item) => item.entry);
+  });
 }
 
 /** One unread-walk stop, tagged with its remaining-count semantics. */
@@ -246,7 +268,7 @@ export interface UnreadStopEntry extends CycleStopEntry {
 }
 
 /**
- * The unread-workspace stops, grouped by workspace in workspace order
+ * The unread-workspace stops, grouped by workspace in tab order
  * (unread is workspace-level, BE-owned `workspace.attention`). Per
  * workspace: when hydrated cyclable top-level sessions carry the per-agent
  * unread flag (`hasUnread`, FE-derived from the §5.5 `lastMessageId`
@@ -259,8 +281,8 @@ export interface UnreadStopEntry extends CycleStopEntry {
  * walk never misses an unread workspace (intent-hq/monorepo#2438).
  */
 export function collectUnreadWorkspaceStops(state: AgentCycleState): UnreadStopEntry[] {
-  const unreadWorkspaceIds: string[] = getItems(state.workspace.workspaces)
-    .filter((workspace) => workspace.attention === 'unread' && isKeyAssignableWorkspace(workspace))
+  const unreadWorkspaceIds: string[] = cycleWorkspaces(state)
+    .filter((workspace) => workspace.attention === 'unread')
     .map((workspace) => workspace.id);
   const unreadIdSet = new Set(unreadWorkspaceIds);
   const cyclable = collectCycleAgents(state, isSessionCyclable).filter((entry) =>

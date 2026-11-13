@@ -18,7 +18,7 @@ export interface MachineRailItem {
   /** The machine this renderer serves; its status menu opens from this item. */
   own: boolean;
   status: MachineRailItemStatus;
-  /** Not connected right now: shown greyed out. */
+  /** Not connected (yet) right now: shown greyed out. */
   offline: boolean;
   /** Connected, but its daemon reports degraded health: marked with a warning dot. */
   degraded: boolean;
@@ -38,6 +38,7 @@ export const selectMachineRailEnabled = store.createSelector(
  */
 export const selectMachineRailItems = store.createSelector((state): MachineRailItem[] => {
   const { machineIds, selectedId, homeId, pendingId, degradedIds } = state.machineRail;
+  const own = state.connections.windowBackendId;
   const items = machineIds.map((id): MachineRailItem => {
     const record = getItem(state.connections.connections, id) ?? null;
     const guest = record ? null : (getItem(state.guestSessions.sessions, id) ?? null);
@@ -56,13 +57,18 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
       id,
       record,
       guest,
-      selected: id === selectedId,
+      // A renderer's rail is only seen while its own machine is shown, so it
+      // is drawn that way even while hidden: no stale selection or spinner
+      // flashes when it comes on screen.
+      selected: own ? id === own : id === selectedId,
       home: id === homeId,
-      own: id === state.connections.windowBackendId,
+      own: id === own,
       status,
-      offline: status === 'disconnected',
+      // Dimmed until connected: a machine that cannot be reached can stay
+      // "connecting" for a long time (startup connects every rail machine).
+      offline: record !== null || guest !== null ? status !== 'connected' : false,
       degraded: status === 'connected' && degradedIds.includes(id),
-      pending: id === pendingId,
+      pending: id === pendingId && id !== own,
     };
   });
   return [...items.filter((item) => !item.guest), ...items.filter((item) => item.guest)];
@@ -72,7 +78,8 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
 export const selectMachineRailCandidates = store.createSelector((state): ConnectionRecord[] => {
   const inRail = new Set(state.machineRail.machineIds);
   return getItems(state.connections.connections).filter(
-    (connection) => connection.daemonMode !== 'node' && !inRail.has(connection.id),
+    (connection) =>
+      !connection.displayOnly && connection.daemonMode !== 'node' && !inRail.has(connection.id),
   );
 });
 

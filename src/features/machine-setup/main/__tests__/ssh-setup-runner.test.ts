@@ -5,6 +5,10 @@ import type { SshSetupEvent, SshSetupLink, SshSetupStartParams } from '$shared/t
 import {
   createSshSetupRunner,
   installCommand,
+  environmentWords,
+  parseExecStart,
+  parseExistingInstall,
+  settingEnabled,
   SSH_SETUP_TIMEOUTS,
   sshErrorCode,
   type SshChannelLike,
@@ -122,7 +126,29 @@ class FakeClient extends EventEmitter {
   }
 }
 
+/** A computer that already runs intentd. */
+interface Existing {
+  /** Path the binary lookup finds. */
+  binary: string;
+  /** The installer's user unit, if any. */
+  /** The unit as systemd shows it (`show`), or as the installer's file has it. */
+  unit?: { exec?: string; dataDir?: string; shown?: boolean };
+  /** An intentd process runs that `status` can't reach. */
+  elsewhere?: boolean;
+  running?: boolean;
+  /** systemd reports the unit active (while the daemon is still starting). */
+  active?: boolean;
+  /** `intentd status` answers once started. */
+  comesUp?: boolean;
+  start?: Reply;
+  pair?: Reply;
+  /** `settings server.wsApi.enabled` / `server.tunnel.enabled` before and after pairing. */
+  settings?: [boolean, boolean];
+  settingsAfter?: [boolean, boolean];
+}
+
 interface Script {
+  existing?: Existing;
   os?: string;
   install?: Reply;
   pair?: Reply;
@@ -133,9 +159,54 @@ interface Script {
 function server(script: Script = {}): (command: string) => Reply {
   const lingerStates = [...(script.linger ?? ['Linger=yes'])];
   let enabled = false;
+  let settingsCalls = 0;
   return (command) => {
     if (command.startsWith('uname -s'))
       return { stdout: `${script.os ?? 'Linux'}\nbuild-box\ndev\n` };
+    const existing = script.existing;
+    if (command.includes('intentd.service')) {
+      const unit = existing?.unit;
+      if (!unit) return { stdout: '' };
+      const quotedDir = unit.dataDir
+        ? `"INTENTD_DATA_DIR=${unit.dataDir.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+        : '';
+      return {
+        stdout: [
+          'unit=1',
+          ...(unit.exec
+            ? [
+                unit.shown
+                  ? `execshow={ path=${unit.exec} ; argv[]=${unit.exec} serve ; ignore_errors=no }`
+                  : `exec=${unit.exec}`,
+              ]
+            : []),
+          ...(unit.dataDir ? [`env=OTHER=1 ${quotedDir}`] : []),
+        ].join('\n'),
+      };
+    }
+    if (command.startsWith('for p in'))
+      return existing ? { stdout: `${existing.binary}\n` } : { code: 1 };
+    if (existing) {
+      if (command.startsWith('i=0; while')) return { code: existing.comesUp === false ? 1 : 0 };
+      if (command.startsWith('pgrep')) return { stdout: existing.elsewhere ? '4242\n' : '' };
+      if (command.includes('is-active'))
+        return { stdout: existing.active ? 'active\n' : 'inactive\n' };
+      if (command.includes('systemctl --user start')) return { code: 0 };
+      if (command.endsWith(' status')) return { code: existing.running ? 0 : 1 };
+      if (command.endsWith(' start')) return existing.start ?? { code: 0 };
+      if (command.includes('settings server.wsApi.enabled')) {
+        const values =
+          settingsCalls++ === 0 ? existing.settings : (existing.settingsAfter ?? existing.settings);
+        const [ws, tunnel] = values ?? [true, true];
+        // The real output: `<key> = <value>`, then indented details.
+        const block = (key: string, value: boolean) =>
+          `${key} = ${value}\n  type: boolean\n  default: false\n  origin: file\n  A description.\n`;
+        return {
+          stdout: block('server.wsApi.enabled', ws) + block('server.tunnel.enabled', tunnel),
+        };
+      }
+      if (command.includes(' pair ')) return existing.pair ?? { stdout: PAIR_OUTPUT };
+    }
     if (command.includes('install.sh'))
       return script.install ?? { stdout: installerOutput(PAIR_URI) };
     if (command.includes('command -v intentd')) return script.pair ?? { stdout: PAIR_OUTPUT };
@@ -233,12 +304,12 @@ describe('ssh setup runner: success', () => {
     expect(end).toEqual({
       runId: 'run-1',
       type: 'done',
-      result: { link: PAIR_LINK, lingerUser: null },
+      result: { link: PAIR_LINK, lingerUser: null, existing: false, remoteTurnedOn: false },
     });
     expect(steps(h.events)).toEqual(['connecting', 'installing', 'starting', 'pairing', 'adding']);
     expect(h.holdLink).toHaveBeenCalledWith(PAIR_URI, 'build-box');
     expect(h.clients[0].commands).toContain(installCommand('backend'));
-    expect(h.clients[0].commands.some((c) => c.includes('command -v intentd'))).toBe(false);
+    expect(h.clients[0].commands.some((c) => c.startsWith('INTENTD='))).toBe(false);
     expect(logLines(h.events)).toContain(
       'install.sh: waiting for the daemon to respond (first start downloads the daemon binary)...',
     );
@@ -268,7 +339,7 @@ describe('ssh setup runner: success', () => {
     const h = harness({ script: { install: { stdout: installerOutput(null) } } });
     h.runner.start(params());
     expect((await h.settle())?.type).toBe('done');
-    const pair = h.clients[0].commands.find((c) => c.includes('command -v intentd'));
+    const pair = h.clients[0].commands.find((c) => c.startsWith('INTENTD='));
     expect(pair).toContain('/usr/local/bin/intentd');
     expect(pair).toContain('$HOME/.local/bin/intentd');
     expect(pair).toContain('pair --yes --tunnel');
@@ -285,7 +356,7 @@ describe('ssh setup runner: success', () => {
     });
     h.runner.start(params({ target: 'node' }));
     expect((await h.settle())?.type).toBe('done');
-    const pair = h.clients[0].commands.find((c) => c.includes('command -v intentd'));
+    const pair = h.clients[0].commands.find((c) => c.startsWith('INTENTD='));
     expect(pair).toContain('pair --node --tunnel --yes');
     expect(h.holdLink).toHaveBeenCalledWith(NODE_URI, 'build-box');
     expectNoSecretsEmitted(h.events);
@@ -297,7 +368,7 @@ describe('ssh setup runner: success', () => {
     });
     h.runner.start(params());
     expect((await h.settle())?.type).toBe('done');
-    expect(h.clients[0].commands.some((c) => c.includes('command -v intentd'))).toBe(false);
+    expect(h.clients[0].commands.some((c) => c.startsWith('INTENTD='))).toBe(false);
     expect(h.holdLink).toHaveBeenCalledWith(PAIR_URI, 'build-box');
     expectNoSecretsEmitted(h.events);
   });
@@ -746,5 +817,223 @@ describe('ssh setup runner: after install', () => {
       os: 'Darwin',
     });
     expect(h.clients[0].commands.some((c) => c.includes('install.sh'))).toBe(false);
+  });
+});
+
+describe('ssh setup runner: intentd already installed', () => {
+  const unitDir = { exec: '"/opt/intent bin/intentd" serve', dataDir: '/srv/intent data' };
+  const existing = (over: Partial<Existing> = {}): Existing => ({
+    binary: '/opt/intent bin/intentd',
+    unit: unitDir,
+    running: true,
+    ...over,
+  });
+  const intentdCalls = (h: ReturnType<typeof harness>) =>
+    h.clients[0].commands.filter(
+      (c) => c.includes("'/opt/intent bin/intentd'") && !c.startsWith('for p in'),
+    );
+
+  it('reads the unit: quoted binary and data dir', () => {
+    expect(parseExecStart('"/opt/intent bin/intentd" serve')).toBe('/opt/intent bin/intentd');
+    expect(parseExecStart('/usr/bin/intentd serve --flag')).toBe('/usr/bin/intentd');
+    expect(parseExecStart('-"/a\\"b/intentd" serve')).toBe('/a"b/intentd');
+    expect(
+      parseExistingInstall('unit=1\nexec="/x/intentd" serve\nenv=\"INTENTD_DATA_DIR=/d 100%%\"'),
+    ).toEqual({ unit: true, execPath: '/x/intentd', dataDir: '/d 100%' });
+    expect(parseExistingInstall('')).toEqual({ unit: false, execPath: null, dataDir: null });
+  });
+
+  it("reads systemd's view: any unit path, drop-ins, quoted and escaped values", () => {
+    expect(
+      parseExistingInstall(
+        [
+          'unit=1',
+          'execshow={ path=/usr/bin/intentd ; argv[]=/usr/bin/intentd serve ; ignore_errors=no }',
+          'env=FOO=1 "INTENTD_DATA_DIR=/srv/a\\x20b/\\"q\\"" BAR=2',
+        ].join('\n'),
+      ),
+    ).toEqual({ unit: true, execPath: '/usr/bin/intentd', dataDir: '/srv/a b/"q"' });
+    expect(environmentWords('A=1 "B=x y" C=\\\\z')).toEqual(['A=1', 'B=x y', 'C=\\z']);
+  });
+
+  it('reads a setting from its first line, not its details', () => {
+    const out = 'server.tunnel.enabled = true\n  type: boolean\n  default: false\n';
+    expect(settingEnabled(out, 'server.tunnel.enabled')).toBe(true);
+    expect(settingEnabled(out, 'server.wsApi.enabled')).toBe(false);
+    expect(
+      settingEnabled('server.wsApi.enabled = false\n  default: true\n', 'server.wsApi.enabled'),
+    ).toBe(false);
+  });
+
+  it('pairs a running backend without installing, restarting or changing it', async () => {
+    const h = harness({ script: { existing: existing() } });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({
+      type: 'done',
+      result: { link: PAIR_LINK, existing: true, remoteTurnedOn: false, lingerUser: null },
+    });
+    const commands = h.clients[0].commands;
+    expect(commands.some((c) => c.includes('install.sh'))).toBe(false);
+    expect(
+      commands.some((c) => /restart|daemon\.mode|systemctl --user start| start$/.test(c)),
+    ).toBe(false);
+    expect(steps(h.events)).toEqual(['connecting', 'found', 'pairing', 'adding']);
+    expect(h.holdLink).toHaveBeenCalledWith(PAIR_URI, 'build-box');
+    for (const call of intentdCalls(h))
+      expect(call.startsWith("INTENTD_DATA_DIR='/srv/intent data' ")).toBe(true);
+    expect(commands).toContain(
+      "INTENTD_DATA_DIR='/srv/intent data' '/opt/intent bin/intentd' pair --yes --tunnel",
+    );
+  });
+
+  it('pairs a node on the node card, still without changing its mode', async () => {
+    const h = harness({
+      script: { existing: existing({ pair: { stdout: PAIR_NODE_OUTPUT } }) },
+    });
+    h.runner.start(params({ target: 'node' }));
+    expect(await h.settle()).toMatchObject({ type: 'done', result: { existing: true } });
+    expect(h.holdLink).toHaveBeenCalledWith(NODE_URI, 'build-box');
+    expect(h.clients[0].commands.some((c) => c.endsWith('pair --node --tunnel --yes'))).toBe(true);
+    expect(h.clients[0].commands.some((c) => c.includes('daemon.mode'))).toBe(false);
+  });
+
+  it('starts a stopped unit through systemd, never a second daemon', async () => {
+    const h = harness({ script: { existing: existing({ running: false }) } });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done' });
+    const commands = h.clients[0].commands;
+    expect(commands.some((c) => c.includes('systemctl --user start intentd'))).toBe(true);
+    expect(commands.some((c) => c.endsWith(' start'))).toBe(false);
+    expect(steps(h.events)).toEqual(['connecting', 'found', 'starting', 'pairing', 'adding']);
+  });
+
+  it('waits for a unit that systemd reports active instead of starting it again', async () => {
+    const h = harness({ script: { existing: existing({ running: false, active: true }) } });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done' });
+    expect(h.clients[0].commands.some((c) => c.includes('systemctl --user start'))).toBe(false);
+  });
+
+  it('starts a stopped install without a unit with intentd start', async () => {
+    const h = harness({
+      script: {
+        existing: existing({ unit: undefined, binary: '/opt/intent bin/intentd', running: false }),
+      },
+    });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done' });
+    expect(h.clients[0].commands).toContain("'/opt/intent bin/intentd' start");
+  });
+
+  it('reports a build without start, and one that does not come up', async () => {
+    const noStart = harness({
+      script: {
+        existing: existing({
+          unit: undefined,
+          running: false,
+          start: { code: 2, stderr: "error: unrecognized subcommand 'start'\n" },
+        }),
+      },
+    });
+    noStart.runner.start(params());
+    expect(await noStart.settle()).toMatchObject({
+      type: 'failed',
+      code: 'no-start',
+      step: 'starting',
+    });
+
+    const down = harness({ script: { existing: existing({ running: false, comesUp: false }) } });
+    down.runner.start(params());
+    expect(await down.settle()).toMatchObject({ type: 'failed', code: 'did-not-start' });
+  });
+
+  it.each([
+    [
+      'clap without --tunnel',
+      { code: 2, stderr: "error: unexpected argument '--tunnel' found\n" },
+      'too-old',
+    ],
+    [
+      'clap without --node',
+      { code: 2, stderr: "error: unexpected argument '--node' found\n" },
+      'too-old',
+    ],
+    [
+      'no node invites',
+      { code: 1, stderr: 'Error: cannot create a node invite: Method not found\n' },
+      'too-old',
+    ],
+    [
+      'orchestrator',
+      {
+        code: 1,
+        stderr:
+          'Error: cannot create a node invite: node invites is off: this backend runs agents only on other machines\n',
+      },
+      'orchestrator',
+    ],
+    ['other', { code: 1, stderr: 'Error: the tunnel did not come up\n' }, 'pair-failed'],
+  ] as const)('maps a pair failure (%s)', async (_name, reply, code) => {
+    const h = harness({ script: { existing: existing({ pair: reply }) } });
+    h.runner.start(params({ target: 'node' }));
+    expect(await h.settle()).toMatchObject({ type: 'failed', code, step: 'pairing' });
+    expect(h.clients[0].commands.some((c) => c.includes('install.sh'))).toBe(false);
+  });
+
+  it('says when pairing turned on only the tunnel', async () => {
+    const h = harness({
+      script: { existing: existing({ settings: [true, false], settingsAfter: [true, true] }) },
+    });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done', result: { remoteTurnedOn: true } });
+  });
+
+  it('does not say so when nothing changed', async () => {
+    const h = harness({ script: { existing: existing({ settings: [true, true] }) } });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done', result: { remoteTurnedOn: false } });
+  });
+
+  it('uses a unit systemd reports from another path, with the data dir from a drop-in', async () => {
+    const h = harness({
+      script: {
+        existing: existing({
+          binary: '/usr/bin/intentd',
+          unit: { exec: '/usr/bin/intentd', dataDir: '/srv/d', shown: true },
+          running: false,
+        }),
+      },
+    });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done' });
+    const commands = h.clients[0].commands;
+    expect(commands.some((c) => c.includes('systemctl --user start intentd'))).toBe(true);
+    expect(commands.some((c) => c.endsWith(' start') && !c.includes('systemctl'))).toBe(false);
+    expect(commands).toContain("INTENTD_DATA_DIR='/srv/d' '/usr/bin/intentd' pair --yes --tunnel");
+  });
+
+  it('never starts a second daemon beside one it cannot reach', async () => {
+    const h = harness({
+      script: { existing: existing({ unit: undefined, running: false, elsewhere: true }) },
+    });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'failed', code: 'running-elsewhere' });
+    expect(h.clients[0].commands.some((c) => c.endsWith(' start'))).toBe(false);
+  });
+
+  it('says when pairing turned on remote connections or the tunnel', async () => {
+    const h = harness({
+      script: { existing: existing({ settings: [true, false], settingsAfter: [true, true] }) },
+    });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done', result: { remoteTurnedOn: true } });
+  });
+
+  it('still checks lingering, and never logs the token from pair', async () => {
+    const h = harness({ script: { existing: existing(), linger: ['Linger=no'] } });
+    h.runner.start(params());
+    expect(await h.settle()).toMatchObject({ type: 'done', result: { lingerUser: 'dev' } });
+    expect(JSON.stringify(h.events)).not.toContain(PAIR_TOKEN);
+    expect(JSON.stringify(h.events)).not.toContain('intent://pair?');
   });
 });

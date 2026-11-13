@@ -34,12 +34,6 @@ export function sandboxLabel(machine: Pick<RemoteMachine, 'name'>, entryName?: s
   return name.trim() || machine.name;
 }
 
-/** "intent-node 0.212.0" for "<project>/intent-node-4x8:0.212.0"; null without a tag. */
-export function templateVersionLabel(template: string): string | null {
-  const version = template.split(':')[1];
-  return version ? m.cloudMachines_row_template({ version }) : null;
-}
-
 /** "4 vCPU · 8 GiB" for a size id ("4x8"); the id itself when unknown. */
 export function cloudSizeLabel(size: string): string {
   const resources = cloudSizeResources(size);

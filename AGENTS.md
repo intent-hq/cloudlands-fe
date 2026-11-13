@@ -38,6 +38,9 @@ affected guide section or explain why there is no user-help impact. Full rule:
   battery" via `prefersReducedMotion()` / `data-reduce-motion`, or "Pause animations when not in
   focus" via `data-window-blurred` — or add a new Appearance setting that defaults to off.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
+- Popover menus hold short labels, not prose. Never add sentences that explain options,
+  instructions, or captions under items; if an option needs explaining, rename it or move the
+  explanation out of the menu.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
 - Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
 
@@ -118,6 +121,7 @@ All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, er
 - **Exemptions** — log lines, wire/IPC constants, agent-generated content, brand names, file paths, URLs, shell commands — mark with `// i18n-ignore (reason)` or `<!-- i18n-ignore (reason) -->` on the same line or the line above.
 - **Enforcement**: `scripts/check-hardcoded-strings.mjs` (chained into `pnpm run lint`) blocks hardcoded strings inside `ENFORCED_DIRS`. New features in enforced dirs must be string-free from day one; when you migrate a directory to messages, add it to `ENFORCED_DIRS`.
 - **Catalog completeness**: `scripts/check-i18n-completeness.mjs` (also chained into `pnpm run lint`) fails CI when any locale catalog diverges from `messages/en.json` — missing keys, extra keys, per-key `{param}` placeholder mismatches, unpaired `_one`/`_many` plurals — or when `messages/*.json` files and the `project.inlang/settings.json` locale registration disagree. It also flags non-base values byte-identical to the English value when they contain letters (letter-free values are auto-exempt): translate them, or record intentional invariants (brand names, placeholder-only strings, etc.) in `scripts/i18n-equal-allowlist.json` (per key, `"*"` or a locale array); stale allowlist entries fail the check.
+- **Merging catalogs**: `pnpm install` registers a key-level git merge driver for `messages/*.json` (`scripts/i18n-json-merge.mjs`), so keys appended on both branches merge cleanly; a key changed differently on both sides still conflicts. If a merge already conflicted (driver not registered), run `pnpm run i18n:resolve`.
 - **Reference example**: `src/lib/components/settings` (the pilot extraction).
 
 ## Common commands
@@ -433,17 +437,11 @@ fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,
 worktree; never stop a lock owner — two runs in one worktree share its port, so pick a free
 `CT_PORT` to run CT concurrently there (intent-hq/intent#4964).
 
-After any structural change (moving files, changing imports, extracting modules):
-
-```bash
-pnpm vitest run <targeted-test-files>
-pnpm run check                              # Svelte + TypeScript consumers
-pnpm tsc -p tsconfig.json --noEmit          # renderer
-pnpm tsc -p tsconfig.main.json --noEmit     # main process
-pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit  # preload
-```
-
-`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once; the preload typecheck requires `pnpm run generate:ipc-channels` first, since the untracked `src/preload/index.ts` is the preload `tsconfig`'s only input and is absent after a fresh install.
+Before every push, and after any structural change, run `pnpm run verify:static` (a few
+minutes; same paths and `--base` as `verify:changed`). It runs Prettier and ESLint on the
+changed files, then knip, `pnpm run check` and the renderer, main and preload `tsc` checks
+repo-wide, with no tests: the static failures CI's Type Check & Lint reports most often
+(cloudlands-fe#4491). Update onto `origin/main` first; ESLint `max-lines` counts the merged file.
 
 ## Frontend philosophy & testing
 

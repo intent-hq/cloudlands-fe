@@ -11,6 +11,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
@@ -357,5 +358,95 @@ describe('Settings → Machines with machineOrder: 1', () => {
       ),
     ).toBeTruthy();
     expect(orderedSection().querySelector('[data-machine-order-handle]')).toBeNull();
+  });
+});
+
+describe('Settings → Machines against another backend', () => {
+  /** This computer's daemon, exposed to the remote backend "Spare box". */
+  const LAPTOP = machine('d-laptop', 'My laptop', 'LO:CA:L1');
+
+  function seedRemoteBackend(daemonMode?: 'orchestrator') {
+    store.dispatch(
+      connectionsListReceived({
+        connections: [local, studio, spare],
+        activeId: 'spare',
+        windowBackendId: 'spare',
+      }),
+    );
+    admitLegacyPrincipal('owner', {}, daemonMode);
+    store.dispatch(setLabsRemoteAgentsEnabled(true));
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machineOrder: true,
+        // An orchestrator's list has no "This computer" (backend) row.
+        order: [
+          { kind: 'machine', nodeId: 'd-studio', name: 'Studio Mac' },
+          { kind: 'machine', nodeId: 'd-laptop', name: 'My laptop' },
+        ],
+        machines: [STUDIO, LAPTOP],
+        localFingerprint: 'LO:CA:L1',
+        executorBackends: [],
+      }),
+    );
+  }
+
+  function remoteOrderedSection() {
+    return screen.getByRole('region', {
+      name: m.remoteMachines_order_title({ backend: formatConnectionLabel(spare) }),
+    });
+  }
+
+  // cloudlands-fe#4494 follow-up: the local row stayed above and the exposed
+  // machine showed again in the ordered list.
+  it('shows this computer once, in the ordered list, when it is exposed to the backend', () => {
+    seedRemoteBackend();
+    render(DevicesSettings);
+
+    expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
+    const row = remoteOrderedSection().querySelector<HTMLElement>(
+      '[data-machine-order-row="machine:d-laptop"]',
+    )!;
+    expect(row.querySelector('#device-local-name')).not.toBeNull();
+    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
+    expect(machines.querySelector('#device-local-name')).toBeNull();
+  });
+
+  it('keeps this computer in the Machines list while it is not exposed', () => {
+    seedRemoteBackend();
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machineOrder: true,
+        order: [{ kind: 'machine', nodeId: 'd-studio', name: 'Studio Mac' }],
+        machines: [STUDIO],
+        localFingerprint: 'LO:CA:L1',
+        executorBackends: [],
+      }),
+    );
+    render(DevicesSettings);
+
+    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
+    expect(machines.querySelector('#device-local-name')).not.toBeNull();
+    expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
+  });
+
+  it('says an orchestrator backend runs agents on your machines, on its row only', () => {
+    seedRemoteBackend('orchestrator');
+    render(DevicesSettings);
+
+    const marks = document.querySelectorAll('[data-testid="device-orchestrator-mode"]');
+    expect(marks).toHaveLength(1);
+    // The mark sits on the backend's own row ("Spare box").
+    expect(
+      document.querySelector('#device-spare-name')!.closest('article')!.contains(marks[0]),
+    ).toBe(true);
+  });
+
+  it('marks no row on a full backend', () => {
+    seedRemoteBackend();
+    render(DevicesSettings);
+
+    expect(document.querySelector('[data-testid="device-orchestrator-mode"]')).toBeNull();
   });
 });

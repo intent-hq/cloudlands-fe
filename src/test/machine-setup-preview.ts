@@ -42,7 +42,14 @@ export type MachineSetupPreviewState =
   | 'ssh-install-failed'
   | 'ssh-no-link'
   | 'ssh-link-rejected'
-  | 'ssh-done-linger';
+  | 'ssh-done-linger'
+  | 'ssh-existing-pairing'
+  | 'ssh-existing-started'
+  | 'ssh-existing-done'
+  | 'ssh-no-start'
+  | 'ssh-did-not-start'
+  | 'ssh-too-old'
+  | 'ssh-orchestrator';
 
 const LOGIN: SshLoginPrefill = {
   host: 'build-2.example.com',
@@ -187,9 +194,36 @@ export function setupMachineSetupFixture(state: MachineSetupPreviewState): () =>
     case 'ssh-link-rejected':
       fail('adding', { code: 'link-rejected', addError: { code: 'unreachable' } });
       break;
+    case 'ssh-existing-pairing':
+    case 'ssh-existing-started':
+    case 'ssh-existing-done': {
+      const event = run('found', []);
+      if (state === 'ssh-existing-started') event({ type: 'step', step: 'starting' });
+      event({ type: 'step', step: 'pairing' });
+      if (state === 'ssh-existing-done') store.dispatch(sshSetupDone(null, true));
+      break;
+    }
+    case 'ssh-no-start':
+      run('found', [])({ type: 'step', step: 'starting' });
+      store.dispatch(sshSetupFailed({ step: 'starting', code: 'no-start' }));
+      break;
+    case 'ssh-did-not-start':
+      run('found', [])({ type: 'step', step: 'starting' });
+      store.dispatch(sshSetupFailed({ step: 'starting', code: 'did-not-start' }));
+      break;
+    case 'ssh-too-old':
+    case 'ssh-orchestrator':
+      run('found', [])({ type: 'step', step: 'pairing' });
+      store.dispatch(
+        sshSetupFailed({
+          step: 'pairing',
+          code: state === 'ssh-too-old' ? 'too-old' : 'orchestrator',
+        }),
+      );
+      break;
     case 'ssh-done-linger':
       run('adding');
-      store.dispatch(sshSetupDone('deploy'));
+      store.dispatch(sshSetupDone('deploy', false));
       break;
   }
 

@@ -15,10 +15,11 @@
  *
  * While the RPC is in flight the bottom-center action HUD shows a
  * "Transcribing…" label (re-shown on an interval shorter than the HUD's
- * inactivity timeout so it stays visible for long transcriptions). Errors
- * surface as toasts: the daemon's no-API-key `-32603` becomes a hint pointing
- * at Settings (the daemon message names the provider), any other failure an
- * error toast.
+ * inactivity timeout so it stays visible for long transcriptions). A
+ * transient failure is retried up to three times with backoff, each failed
+ * attempt shown as a "retrying" toast. Final errors surface as toasts: the
+ * daemon's no-API-key `-32603` becomes a hint pointing at Settings (the
+ * daemon message names the provider), any other failure an error toast.
  *
  * The request carries lightweight dynamic context (workspace title, branch,
  * visible agent names) as `context.keyterms` + `context.prompt`, gathered
@@ -97,8 +98,41 @@ function focusDictationComposer(agentId: string): void {
   focusAgentComposer(agentId, { source: 'dictation' });
 }
 
+/**
+ * Backoff before each transcription retry; its length is the retry count.
+ * @internal Exported for tests.
+ */
+export const TRANSCRIBE_RETRY_DELAYS_MS = [500, 1_000, 2_000] as const;
+
+/**
+ * An attempt that fails after this long most likely timed out; retrying it
+ * would hold "Transcribing…" for several more timeouts.
+ * @internal Exported for tests.
+ */
+export const TRANSCRIBE_RETRY_MAX_ATTEMPT_MS = 30_000;
+
+/** OS engine failures that repeat on every attempt with the same audio. */
+const NON_RETRYABLE_OS_CODES = new Set([
+  'authorization-denied',
+  'authorization-failed',
+  'helper-missing',
+  'unsupported-platform',
+  'recognizer-unavailable',
+  'audio-unreadable',
+  'bad-arguments',
+]);
+
+/** Provider rejections of the credentials (string `error.data` from the daemon). */
+const AUTH_REJECTED_PATTERN = /\b(401|403)\b|unauthori[sz]ed|forbidden/i;
+
 /** Shared id: transcription toasts replace one another instead of stacking. */
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
+
+/**
+ * Retry toasts get a per-run id so a cancelled run can only ever dismiss its
+ * own toast, never the shared-id toast of a later dictation.
+ */
+let retryToastSequence = 0;
 
 /** Lazily pull the toast lib so this service stays light. */
 let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
@@ -314,6 +348,25 @@ function isNoApiKeyError(error: unknown): boolean {
   return parts.some((part) => typeof part === 'string' && /no API key/i.test(part));
 }
 
+/**
+ * Configuration failures (missing or rejected key, OS engine denied or
+ * unavailable, unreadable audio) and rejected params fail the same way on
+ * every attempt, so only other failures are retried.
+ */
+function isRetryableTranscriptionError(error: unknown): boolean {
+  if (error instanceof OsTranscriptionError) return !NON_RETRYABLE_OS_CODES.has(error.code);
+  if (isNoApiKeyError(error)) return false;
+  const data = (error as { data?: unknown })?.data;
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { code?: unknown }).code === 'invalid-params'
+  ) {
+    return false;
+  }
+  return !AUTH_REJECTED_PATTERN.test(errorDetail(error) ?? '');
+}
+
 function errorDetail(error: unknown): string | undefined {
   const data = (error as { data?: unknown })?.data;
   if (typeof data === 'object' && data !== null) {
@@ -517,17 +570,68 @@ export async function handleFinishedRecording(
   // buttons' cancel affordance runs `settle` immediately (spinner clears,
   // a new recording can start) and abandons the session, so the checks
   // below discard the late-arriving result instead of applying it.
-  const sessionToken = beginTranscriptionSession(settle);
+  const retryToastId = `${TRANSCRIPTION_TOAST_ID}:retry:${++retryToastSequence}`;
+  let retryToastNotify: Awaited<ReturnType<typeof getToast>> | null = null;
+  const clearRetryToast = () => {
+    retryToastNotify?.dismiss(retryToastId);
+    retryToastNotify = null;
+  };
+  let wakeBackoff: (() => void) | null = null;
+  const sessionToken = beginTranscriptionSession(() => {
+    settle();
+    clearRetryToast();
+    wakeBackoff?.();
+  });
   explicitTarget?.onStarted(() => {
     if (isTranscriptionSessionCurrent(sessionToken)) cancelActiveTranscription();
   });
 
+  const isAbandoned = () =>
+    !isTranscriptionSessionCurrent(sessionToken) ||
+    (explicitTarget !== undefined && !explicitTarget.isActive());
+  const transcribeWithRetries = async (): Promise<{ text: string }> => {
+    for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAt = Date.now();
+      try {
+        return await transcribe(recording.blob, recording.mimeType, context, workspaceId);
+      } catch (error) {
+        const retryDelay = TRANSCRIBE_RETRY_DELAYS_MS[attempt];
+        if (
+          retryDelay === undefined ||
+          isAbandoned() ||
+          !isRetryableTranscriptionError(error) ||
+          Date.now() - attemptStartedAt > TRANSCRIBE_RETRY_MAX_ATTEMPT_MS
+        ) {
+          throw error;
+        }
+        logger.warn('voice.transcribe failed; retrying', { error, retry: attempt + 1 });
+        const notify = await getToast();
+        if (isAbandoned()) throw error;
+        notify.warning(
+          m.hardwareConsole_voice_transcribeRetrying_warning({
+            attempt: attempt + 1,
+            max: TRANSCRIBE_RETRY_DELAYS_MS.length,
+          }),
+          { id: retryToastId, description: errorDetail(error) },
+        );
+        retryToastNotify = notify;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, retryDelay);
+          wakeBackoff = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        wakeBackoff = null;
+        if (isAbandoned()) throw error;
+      }
+    }
+  };
+
   try {
-    const result = await transcribe(recording.blob, recording.mimeType, context, workspaceId);
-    if (
-      !isTranscriptionSessionCurrent(sessionToken) ||
-      (explicitTarget && !explicitTarget.isActive())
-    ) {
+    const result = await transcribeWithRetries();
+    clearRetryToast();
+    if (isAbandoned()) {
       logger.info('Transcription session was cancelled; discarding the late result');
       return;
     }
@@ -583,10 +687,8 @@ export async function handleFinishedRecording(
       send();
     }
   } catch (error) {
-    if (
-      !isTranscriptionSessionCurrent(sessionToken) ||
-      (explicitTarget && !explicitTarget.isActive())
-    ) {
+    clearRetryToast();
+    if (isAbandoned()) {
       logger.info('Transcription session was cancelled; discarding the late failure', { error });
       return;
     }

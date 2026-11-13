@@ -227,6 +227,9 @@
   import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
+  import ChatRecordingAttachments from './ChatRecordingAttachments.svelte';
+  import { chatRecordingEvidence } from './chat-recording-attachments';
+  import { createChatRecordingWarm } from './chat-recording-warm.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
@@ -2378,6 +2381,17 @@
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
   });
+  const recordingDraft = $derived(draftManager.captureDraft());
+  const recordingWarm = createChatRecordingWarm({
+    capture: () => recordingDraft,
+    active: () => isActive && isChatFocused && !pendingEvidenceSend,
+    drafts: draftManager,
+  });
+  const recordingAttachmentIds = $derived(
+    chatRecordingEvidence(recordingDraft)?.clips.flatMap((clip) =>
+      clip.contextItemId ? [clip.contextItemId] : [],
+    ) ?? [],
+  );
 
   // The event travels only through the originating transcript's DOM ancestors.
   // Queue until this exact panel has completed its draft restore; never send.
@@ -6428,6 +6442,7 @@
           isInitialWorkspaceAgent,
         },
         signal: pending.controller.signal,
+        warm: recordingWarm,
       })
         .then((admitted) => {
           if (admitted && draftManager.isCurrentDraft(capture)) {
@@ -8560,6 +8575,7 @@
                   {/if}
                   <SimpleRichInput
                     bind:this={inputComponent}
+                    customContextAttachmentIds={recordingAttachmentIds}
                     bind:contextItems={getContextItems, setContextItems}
                     bind:value={inputValue}
                     onvaluechange={(value) => {
@@ -8587,7 +8603,19 @@
                     externalDropTarget
                     requiresModelSwitchConfirmation={!canChangeProvider}
                     providerId={inputProviderId}
-                  />
+                  >
+                    {#snippet renderCustomAttachments()}
+                      <ChatRecordingAttachments
+                        capture={recordingDraft}
+                        drafts={draftManager}
+                        beforeOpen={() => recordingWarm.beforeEditorOpen()}
+                        onReviewChange={(opening, review) =>
+                          recordingWarm.editorState(opening, review)}
+                        disabled={!workspace || !$agentSession$ || draftManager.gateActive}
+                        onRemove={(id) => inputComponent?.removeAttachment(id) ?? false}
+                      />
+                    {/snippet}
+                  </SimpleRichInput>
                 </div>
               {/if}
             </QuestionComposer>

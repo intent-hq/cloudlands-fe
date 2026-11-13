@@ -40,6 +40,7 @@
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
+    selectDockRecordingIndicator,
     selectDockCloseRequest,
     selectDockEditorCompactRequest,
     selectDockFocusRequest,
@@ -80,13 +81,16 @@
     shell,
     legacyPickDraft = false,
     nativePlacementFixture = false,
+    warmMedia = false,
   }: {
     width?: number;
     height?: number;
     shell?: DockRailPreviewProps;
     legacyPickDraft?: boolean;
     nativePlacementFixture?: boolean;
+    warmMedia?: boolean;
   } = $props();
+  const recording$ = selectDockRecordingIndicator();
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
   const closeRequest$ = selectDockCloseRequest();
@@ -171,7 +175,7 @@
     const hadLight = root.classList.contains('light');
     root.classList.add('dark');
     root.classList.remove('light');
-    const { native, uninstall } = installSyntheticNative();
+    const { native, uninstall } = installSyntheticNative(warmMedia);
     const calls: ConversationWireCall[] = [];
     const fixture = setupConversationWire((call) => calls.push(call), {
       initialDraft: legacyPickDraft ? createLegacyDraft() : undefined,
@@ -351,6 +355,7 @@
     {@const props = shell ?? dockRailPreview.states.notch.props}
     <DockRailPreview
       {...props}
+      recordingOverride={$recording$}
       focusRequest={request + $storeFocusRequest$}
       closeRequest={$closeRequest$}
       editorCompactRequest={$editorCompactRequest$}

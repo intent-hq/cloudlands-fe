@@ -90,6 +90,27 @@ describe('parseRemoteMachine', () => {
     expect(parseRemoteMachine({ ...row, nodeProtocol: -1 })).not.toHaveProperty('nodeProtocol');
   });
 
+  it("keeps a provider's visible: false gate from the report", () => {
+    const providers = parseRemoteMachine({
+      id: 'd-mac',
+      name: 'Mac',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'disconnected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+      capabilities: {
+        providers: [
+          { id: 'cortex', visible: false, status: 'signed-in', models: [] },
+          { id: 'claude-code', visible: true, status: 'signed-in', models: [] },
+        ],
+      },
+    })?.capabilities?.providers;
+    expect(providers?.[0]).toMatchObject({ id: 'cortex', visible: false });
+    expect(providers?.[1]).not.toHaveProperty('visible');
+  });
+
   it('keeps a tailcat-only machine (no LAN hosts)', () => {
     expect(
       parseRemoteMachine({

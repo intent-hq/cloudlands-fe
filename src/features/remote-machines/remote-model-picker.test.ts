@@ -5,6 +5,7 @@ import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker
 import {
   isRemoteRefSignedOut,
   machineReportFreshness,
+  machineReportedModels,
   MACHINE_REPORT_STALE_MS,
   defaultRemoteSends,
   remoteAutoPickProfile,
@@ -141,6 +142,29 @@ describe('machineReportFreshness', () => {
   });
 });
 
+describe('machineReportedModels', () => {
+  const now = Date.parse('2026-11-02T12:30:00Z');
+  it("lists a fresh report's models for a provider or one of its profiles", () => {
+    expect(machineReportedModels(machine(), 'claude-code', now)).toEqual([
+      'opus',
+      'sonnet',
+      'only-on-machine',
+    ]);
+    expect(machineReportedModels(machine(), 'codex@p-key', now)).toEqual(['gpt-6']);
+  });
+
+  it('gives no evidence without a fresh report, the provider, or any model', () => {
+    expect(machineReportedModels(null, 'claude-code', now)).toBeUndefined();
+    expect(
+      machineReportedModels(machine({ capabilities: undefined }), 'claude-code', now),
+    ).toBeUndefined();
+    const old = machine({ observedAt: new Date(now - MACHINE_REPORT_STALE_MS - 1).toISOString() });
+    expect(machineReportedModels(old, 'claude-code', now)).toBeUndefined();
+    expect(machineReportedModels(machine(), 'grok', now)).toBeUndefined();
+    expect(machineReportedModels(machine(), 'opencode', now)).toBeUndefined();
+  });
+});
+
 describe('isRemoteRefSignedOut', () => {
   it('flags only a Default whose provider is signed out on the machine', () => {
     expect(isRemoteRefSignedOut(machine(), 'codex')).toBe(true);
@@ -220,6 +244,25 @@ describe('buildMachineModelGroups', () => {
       catalogProfiles: [],
       defaultHasOverrides: { 'claude-code': false },
       defaultRemoteIncompatibility: { 'claude-code': { reason: 'not-marked', keys: [] } },
+    }).map((group) => group.key);
+    expect(keys).toEqual(['claude-code']);
+  });
+
+  it('gives a provider the machine hides (visible: false) no tab, even with models', () => {
+    const keys = buildMachineModelGroups({
+      machine: machine({
+        capabilities: {
+          providers: [
+            { id: 'claude-code', status: 'ready', models: ['opus'] },
+            { id: 'cortex', status: 'ready', models: ['cortex-1'], visible: false },
+            { id: 'opencode', status: 'cli-missing', models: ['oc-1'] },
+          ],
+        },
+      }),
+      providerRefs: ['claude-code', 'cortex', 'opencode'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: [],
     }).map((group) => group.key);
     expect(keys).toEqual(['claude-code']);
   });

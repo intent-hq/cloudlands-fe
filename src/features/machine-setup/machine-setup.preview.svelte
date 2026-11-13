@@ -43,6 +43,13 @@
       'ssh-no-link': scene('ssh-no-link'),
       'ssh-link-rejected': scene('ssh-link-rejected'),
       'ssh-done-linger': scene('ssh-done-linger'),
+      'ssh-existing-pairing': scene('ssh-existing-pairing'),
+      'ssh-existing-started': scene('ssh-existing-started'),
+      'ssh-existing-done': scene('ssh-existing-done'),
+      'ssh-no-start': scene('ssh-no-start'),
+      'ssh-did-not-start': scene('ssh-did-not-start'),
+      'ssh-too-old': scene('ssh-too-old'),
+      'ssh-orchestrator': scene('ssh-orchestrator'),
     },
     captureReadiness: { selector: '[data-machine-setup-scene][data-ready]' },
   });

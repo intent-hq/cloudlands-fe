@@ -3,18 +3,8 @@
  * file names, paths or ids. Only allowlisted internal codes are kept; anything else
  * (a localized message, a native description, a file or project name) is `unclassified`.
  */
-export type DockSendStage =
-  | 'validate'
-  | 'transcribe'
-  | 'plan'
-  | 'screenshot-source'
-  | 'screenshot-render'
-  | 'overlay-render'
-  | 'export'
-  | 'placement'
-  | 'burn'
-  | 'admission'
-  | 'barrier';
+import type { DockSendStage } from '$store/renderer/utils/submission-timing';
+export type { DockSendStage } from '$store/renderer/utils/submission-timing';
 
 /** The internal failure codes a dock send can raise; anything else is unclassified. */
 const KNOWN_CODES = new Set([

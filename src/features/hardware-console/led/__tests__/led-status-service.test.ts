@@ -35,6 +35,7 @@ function makeStateSource() {
   const state: LedSnapshotState = {
     workspace: { workspaces: createCollection('id', []) },
     hardwareConsole: { keyPins: [null, null, null, null, null, null] },
+    tabState: { workspaceStacks: [] },
   };
   const listeners = new Set<() => void>();
   return {

@@ -147,7 +147,6 @@ describe('BrowserViewerTabHeader', () => {
     expect(handlers.onGoForward).toHaveBeenCalledTimes(1);
     expect(handlers.onRefresh).toHaveBeenCalledTimes(1);
     expect(toolbarCloseButton()).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('disables history when the mirror webview cannot go back or forward', () => {
@@ -180,8 +179,9 @@ describe('BrowserViewerTabHeader', () => {
       screen.queryByRole('textbox', { name: m.browser_embedded_addressInput_ariaLabel() }),
     ).toBeNull();
 
-    const banner = screen.getByRole('status');
-    expect(banner.textContent).toContain('travel-air');
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('travel-air');
+    await fireEvent.click(screen.getByRole('button', { name: /travel-air/ }));
     expect(toolbarCloseButton()).toBeNull();
     await fireEvent.click(
       screen.getByRole('button', { name: m.browser_viewer_forceClose_label() }),

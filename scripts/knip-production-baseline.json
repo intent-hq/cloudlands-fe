@@ -607,9 +607,6 @@
       "fetchReleaseNotes",
       "fetchReleaseNotesRange"
     ],
-    "src/features/remote-machines/machine-facts.ts": [
-      "machinePlatform"
-    ],
     "src/features/remote-machines/remote-machines-slice.ts": [
       "initialState"
     ],
@@ -1819,8 +1816,7 @@
     ],
     "src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts": [
       "checkAllProvidersWorker",
-      "checkSingleProviderWorker",
-      "openClaudeLoginWorker"
+      "checkSingleProviderWorker"
     ],
     "src/store/renderer/slices/agent-lock/agent-lock-slice.ts": [
       "initialState"

@@ -13,6 +13,7 @@ import { promises as fs } from 'node:fs';
 import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { getRendererWebContents } from '../../../main/window-backend';
 import type {
   ImportProgressEvent,
   ImportStartParams,
@@ -33,14 +34,15 @@ let relay: WorkspaceImportRelay | null = null;
 
 function broadcastProgress(event: ImportProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(TRANSFER.IMPORT_PROGRESS, event);
-    } catch (error) {
-      logger.warn('Failed to broadcast import progress', {
-        windowId: win.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const renderer of getRendererWebContents(win)) {
+      try {
+        renderer.send(TRANSFER.IMPORT_PROGRESS, event);
+      } catch (error) {
+        logger.warn('Failed to broadcast import progress', {
+          windowId: win.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }

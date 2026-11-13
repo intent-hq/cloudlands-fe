@@ -140,8 +140,14 @@ test('a legacy recording whose raw attachment does not match is not sent and the
   page,
 }, info) => {
   const logged: string[] = [];
-  page.on('console', (message) => {
-    if (message.text().includes('Dock reply send failed')) logged.push(message.text());
+  const timings: Record<string, unknown>[] = [];
+  page.on('console', async (message) => {
+    // Read the actual formatted first argument; ConsoleMessage.text also appends the object argument.
+    const text = await message.args()[0]?.jsonValue();
+    if (typeof text !== 'string') return;
+    if (text.includes('Dock reply send failed')) logged.push(text);
+    if (text.includes('[DockSendTiming]') && text.includes('Dock send timing'))
+      timings.push(JSON.parse(text.slice(text.indexOf('{'))));
   });
   const component = await mount(ComposerE2EHarness);
   await recordClip(page, component);
@@ -167,8 +173,15 @@ test('a legacy recording whose raw attachment does not match is not sent and the
         .sendError,
   );
   expect(sendError).toBeTruthy();
+  expect(timings).toHaveLength(1);
+  expect(timings[0]).toMatchObject({ stage: 'pre-admission-end', outcome: 'failed' });
+  expect(timings[0].clickToResultMs).toBeGreaterThanOrEqual(0);
   await writeFile(
     info.outputPath('legacy-mismatch-receipt.json'),
-    JSON.stringify({ sends: 0, tileKept: true, sendErrorShown: !!sendError, logged }, null, 2),
+    JSON.stringify(
+      { sends: 0, tileKept: true, sendErrorShown: !!sendError, logged, timings },
+      null,
+      2,
+    ),
   );
 });

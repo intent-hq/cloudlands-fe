@@ -1407,6 +1407,8 @@ describe('global workspace tab navigation', () => {
       'meta+7',
       'meta+8',
       'meta+9',
+      ...Array.from({ length: 9 }, (_, index) => `meta+${index + 1}`),
+      ...Array.from({ length: 9 }, (_, index) => `meta+alt+${index + 1}`),
     ]);
 
     shortcuts[0].action();

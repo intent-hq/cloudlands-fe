@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { synchronizeIssues } from './nightly-test-issues.mjs';
 import { githubClient } from './nightly-test-github.mjs';
 import { analyzeReports, marker, occurrenceMarker } from './nightly-test-report.mjs';
-import { fixture, issueStore, report } from './test-fixtures/nightly-browser.mjs';
+import {
+  buildSmokeFixture,
+  fixture,
+  issueStore,
+  report,
+} from './test-fixtures/nightly-browser.mjs';
 
 function plan() {
   const data = fixture();
@@ -28,6 +33,14 @@ function rerun(data, artifact, jobIndex, completedAt) {
 }
 
 describe('issue synchronization', () => {
+  it('names the Build Smoke source in a Build Smoke CI incident body', () => {
+    const client = issueStore();
+    synchronizeIssues(analyzeReports(buildSmokeFixture({ buildFailed: true })), client, {
+      write: true,
+    });
+    expect(client.issues[0].body).toContain('Nightly build smoke recurrence');
+    expect(client.issues[0].body).not.toContain('Nightly browser');
+  });
   it('reuses the same CT issue and occurrence for relative and absolute report locations', () => {
     const data = fixture();
     const raw = report('flaky');

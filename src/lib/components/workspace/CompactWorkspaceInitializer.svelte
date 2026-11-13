@@ -119,6 +119,7 @@
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
+    enhanceUnavailableDetail,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
@@ -132,7 +133,6 @@
   import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
-  import ImportSessionPicker from '$features/session-import/ImportSessionPicker.svelte';
   import type { SessionImportSelection } from '$features/session-import/importable-session';
   import {
     gitRootFromSubdirectory,
@@ -140,7 +140,6 @@
     sessionBaseBranch,
   } from '$features/session-import/utils/session-import-match';
   import { appClient } from '$lib/client';
-  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import IssueSuggestions, {
     preloadIssues,
     type IssueSelectionData,
@@ -2202,7 +2201,11 @@
       plainFolder?: 'existing' | 'new';
     }>,
   ) {
-    if (!applyingImportSessionMatch) cancelImportSessionMatch();
+    // Another codebase pick replaces the session's codebase: drop the import.
+    if (!applyingImportSessionMatch) {
+      cancelImportSessionMatch();
+      importSessionPick = null;
+    }
     const repositoryChanged =
       repositorySelectionChanged({
         repoPath: event.detail.path,
@@ -2287,8 +2290,13 @@
     }
   }
 
-  /** The git root holding `cwd` on the daemon host, else null. */
-  async function sessionRepositoryRoot(cwd: string): Promise<string | null> {
+  /**
+   * The git root holding the session: the daemon's `repoRoot` (the tab picks it),
+   * else a known repository or the folder's status on the daemon host.
+   */
+  async function sessionRepositoryRoot(pick: SessionImportSelection): Promise<string | null> {
+    if (pick.repoRoot) return pick.repoRoot;
+    const cwd = pick.cwd;
     const recent = matchSessionRepository(cwd, [
       ...(repoPath && repoType === 'local' ? [{ path: repoPath, type: 'local' as const }] : []),
       ...$recentRepos$,
@@ -2326,7 +2334,7 @@
     if (!pick) return;
     const current = () => mounted && revision === importSessionRevision;
     try {
-      const root = await sessionRepositoryRoot(pick.cwd);
+      const root = await sessionRepositoryRoot(pick);
       if (!current() || !root) return;
       if (repoType !== 'local' || repoPath !== root) {
         const detail = { path: root, type: 'local' as const, isValidPath: true };
@@ -2345,9 +2353,18 @@
     }
   }
 
-  function importProviderLabel(provider: string): string {
-    return selectProviderDisplayName.select(appStore.state, provider);
-  }
+  // A GitLab or other non-local pick also replaces the session's codebase.
+  $effect(() => {
+    if (importSessionPick && !importSessionMatching && repoType !== 'local')
+      untrack(() => (importSessionPick = null));
+  });
+
+  const importSessionChoice = {
+    get selected() {
+      return importSessionPick;
+    },
+    onSelect: (pick: SessionImportSelection) => void selectImportSession(pick),
+  };
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
     logger.debug('handleBranchChange called', { branch: event.detail.branch });
@@ -3455,6 +3472,7 @@
                 message: error.message,
               })
             : m.workspace_compactInitializer_enhanceFailed_error(),
+        enhanceUnavailableDetail(error),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
@@ -3861,7 +3879,13 @@
             onSkipIsolationChange={(value) => (skipIsolation = value)}
             onGitHubAuthNeededChange={(value) => (githubAuthNeeded = value)}
             onBranchStatusChange={handleBranchStatusChange}
+            sessions={importSessionChoice}
           />
+          {#if importSessionPick}
+            <p class="type-caption text-muted-foreground" data-testid="import-session-note">
+              {m.sessionImport_picker_note_description()}
+            </p>
+          {/if}
         </div>
         <!-- Setup script -->
         <div
@@ -3911,12 +3935,6 @@
         {/if}
 
         <div class="mt-3 border-t border-border pt-3">
-          <ImportSessionPicker
-            selected={importSessionPick}
-            onSelect={(pick) => void selectImportSession(pick)}
-            disabled={isCreating}
-            providerLabel={importProviderLabel}
-          />
           {#if !importSessionPick}
             <InitialAgentPicker
               presentation="form"

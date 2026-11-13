@@ -382,6 +382,7 @@
   });
 
   let paletteShortcuts: KeyboardShortcutManager | null = null;
+  let machineRail: { getMachineIds(): string[] } | undefined = $state();
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
@@ -544,6 +545,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      getRailMachineIds: () => machineRail?.getMachineIds() ?? [],
       onCreateAgent: (workspaceId) => {
         // `agent.create` is refused (-32003) for a collaborator connection.
         if (selectHidesAgentCreationActions.select(appStore.state, workspaceId)) return;
@@ -636,7 +638,6 @@
       },
       resolveBinding: getEffectiveShortcut,
     });
-    // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
     const goToDefinition = () => {
       dispatchWindowEvent('editor:go-to-definition');
@@ -1000,7 +1001,7 @@
     <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
-        <MachineRail />
+        <MachineRail bind:this={machineRail} />
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main

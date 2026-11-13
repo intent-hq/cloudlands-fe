@@ -6,6 +6,7 @@ import {
   delay,
   put,
   race,
+  select,
   take,
   takeEvery,
   takeLatest,
@@ -19,6 +20,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { closeTerminalOverlay, openTerminalOverlay } from '../../terminals/terminals-slice';
 import { selectWorkspaceTerminalState } from '../../terminals/terminals-selectors';
+import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import {
   PROVIDER_AVAILABILITY_KEY_TO_ID,
   type ProviderAvailabilityResult,
@@ -39,8 +41,8 @@ import {
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,
-  claudeLoginRequested,
-  claudeLoginStarted,
+  providerLoginRequested,
+  providerLoginStarted,
   checkSingleProviderFailure,
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
@@ -220,18 +222,31 @@ function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProvi
   yield* call(checkSingleProviderWorker, action.payload[0]);
 }
 
-export function* openClaudeLoginWorker(action: ReturnType<typeof claudeLoginRequested>) {
+type LoginAction = ReturnType<typeof providerLoginRequested>;
+
+/** Only the daemon catalog's login command runs, never a caller string. */
+function* resolveLoginCommand(providerId: string) {
+  const entry = yield* select(selectProviderCatalogEntry.select, providerId);
+  if (entry?.loginCommandHint) return entry.loginCommandHint;
+  return providerId === 'claude-code' ? 'claude auth login' : undefined;
+}
+
+/** @internal */
+export function* openProviderLoginWorker(action: LoginAction) {
   try {
+    const [providerId] = action.payload;
+    const command = yield* resolveLoginCommand(providerId);
+    if (!command) throw new Error(m.terminal_adapter_openFailed_error());
     const result = yield* call(
       invoke<{ ok: boolean; terminalId?: string; error?: string }>,
       IPC_CHANNELS.TERMINAL.CREATE_WITH_COMMAND,
-      { workspaceId: ROOT_WORKSPACE_ID, command: 'claude auth login', interactive: true },
+      { workspaceId: ROOT_WORKSPACE_ID, command, interactive: true },
     );
     if (!result.ok || !result.terminalId) {
       throw new Error(result.error || m.terminal_adapter_openFailed_error());
     }
     yield* put(openTerminalOverlay(ROOT_WORKSPACE_ID, result.terminalId));
-    yield* put(claudeLoginStarted(result.terminalId));
+    yield* put(providerLoginStarted(providerId, result.terminalId));
     yield* put(action.success(undefined));
   } catch (cause) {
     yield* put(
@@ -246,22 +261,21 @@ export function* openClaudeLoginWorker(action: ReturnType<typeof claudeLoginRequ
   }
 }
 
-function* coalesceClaudeLoginRequests(
-  launch: { pending?: ReturnType<typeof claudeLoginRequested> },
-  action: ReturnType<typeof claudeLoginRequested>,
-) {
-  if (!launch.pending) {
-    launch.pending = action;
+/** Repeat clicks for a provider share its in-flight launch instead of opening more terminals. */
+function* coalesceProviderLoginRequests(pending: Map<string, LoginAction>, action: LoginAction) {
+  const [providerId] = action.payload;
+  const leader = pending.get(providerId);
+  if (!leader) {
+    pending.set(providerId, action);
     try {
-      yield* call(openClaudeLoginWorker, action);
+      yield* call(openProviderLoginWorker, action);
     } finally {
-      launch.pending = undefined;
+      pending.delete(providerId);
     }
     return;
   }
-  const pending = launch.pending;
   try {
-    yield* call(() => pending.promise);
+    yield* call(() => leader.promise);
     yield* put(action.success(undefined));
   } catch (cause) {
     yield* put(action.failure(cause instanceof Error ? cause : new Error(String(cause))));
@@ -272,14 +286,14 @@ function* coalesceClaudeLoginRequests(
   }
 }
 
-function* dismissClaudeLoginOnSuccess(action: ReturnType<typeof claudeLoginStarted>) {
-  const [terminalId] = action.payload;
+function* dismissLoginOnSuccess(action: ReturnType<typeof providerLoginStarted>) {
+  const [providerId, terminalId] = action.payload;
   while (true) {
     yield* delay(2000);
     const before = yield* selectWorkspaceTerminalState.effect(ROOT_WORKSPACE_ID);
     if (!before.isOpen || before.activeTerminalId !== terminalId || before.selectedScriptId) return;
-    if ((yield* selectProviderLoadingMap.effect())['claude-code']) continue;
-    const status = yield* call(checkSingleProviderWorker, 'claude-code');
+    if ((yield* selectProviderLoadingMap.effect())[providerId]) continue;
+    const status = yield* call(checkSingleProviderWorker, providerId);
     if (status?.available && status.authenticated === true) {
       const current = yield* selectWorkspaceTerminalState.effect(ROOT_WORKSPACE_ID);
       if (current.isOpen && current.activeTerminalId === terminalId && !current.selectedScriptId) {
@@ -296,8 +310,8 @@ export function* providerAvailabilitySaga() {
     // boot-time ensure cannot be missed. This removes the need for setup polling
     // without initiating an extra sweep from provider availability itself.
     yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
-    yield* takeEvery(claudeLoginRequested, coalesceClaudeLoginRequests, {});
-    yield* takeLatest(claudeLoginStarted, dismissClaudeLoginOnSuccess);
+    yield* takeEvery(providerLoginRequested, coalesceProviderLoginRequests, new Map());
+    yield* takeLatest(providerLoginStarted, dismissLoginOnSuccess);
     yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
     yield* takeSingleFlightInContext(
       checkAllProvidersRequested,

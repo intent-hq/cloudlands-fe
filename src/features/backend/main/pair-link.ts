@@ -31,6 +31,8 @@ export interface PairLinkDeps {
   inspect(candidate: InvitedCandidate): Promise<{
     snapshot: PrincipalSnapshot;
     daemonMode: DaemonMode | null;
+    /** The hello reported a mode, even one this app does not know (never a node). */
+    modeReported?: boolean;
     name: string | null;
   }>;
   findMatching(identity: {
@@ -61,7 +63,8 @@ export interface PairLinks {
   /**
    * Hold a link whose owner credential was already tested (the deep-link
    * route tests it once for every principal kind). `daemonMode` null with a
-   * `mode=node` hint counts as a node.
+   * `mode=node` hint counts as a node, unless the daemon reported a mode this
+   * app does not know (a newer mode is never a node).
    */
   hold(link: TestedPairLink): Promise<PairLinkInspected>;
   commit(pendingId: string): Promise<PairLinkCommitResult>;
@@ -76,6 +79,7 @@ export interface TestedPairLink {
   tcAddress: string | null;
   modeHint: 'node' | null;
   daemonMode: DaemonMode | null;
+  modeReported?: boolean;
   name: string | null;
 }
 
@@ -124,6 +128,7 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
       tcAddress,
       modeHint,
       daemonMode: inspected.daemonMode,
+      modeReported: inspected.modeReported,
       name: inspected.name ?? (options.label?.trim() || null),
     });
   }
@@ -131,7 +136,8 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
   async function hold(link: TestedPairLink): Promise<PairLinkInspected> {
     const { hosts, port, fingerprint, token, tcAddress } = link;
     const host = hosts[0] ?? tcAddress ?? '';
-    const daemonMode = link.daemonMode ?? (link.modeHint === 'node' ? 'node' : null);
+    const daemonMode =
+      link.daemonMode ?? (!link.modeReported && link.modeHint === 'node' ? 'node' : null);
     const kind: PairLinkKind = daemonMode === 'node' ? 'node' : 'machine';
     const match = await deps.findMatching({
       hosts: hosts.length ? hosts : [host],

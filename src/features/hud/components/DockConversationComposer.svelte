@@ -1,4 +1,8 @@
 <script lang="ts" module>
+  import {
+    beginDockSendTiming,
+    type DockSendTiming,
+  } from '$store/renderer/utils/submission-timing';
   import type { Workspace } from '$shared/types';
   import { dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
   import { createLogger } from '$lib/utils/client-logger';
@@ -284,10 +288,10 @@
     return { text, contextItems: items, ...(forceSubmit ? { forceSubmit: true } : {}) };
   }
 
-  function commitSubmission(text: string, forceSubmit = false): void {
+  function commitSubmission(text: string, forceSubmit = false, timing?: DockSendTiming): void {
     if (disposed) return;
     const snapshot = submission(text, forceSubmit);
-    snapshot.submissionId = crypto.randomUUID();
+    snapshot.submissionId = timing?.composerId ?? crypto.randomUUID();
     // A late admission cannot clear a draft the user edited after an older click.
     for (const [id, submitted] of submittedDrafts) {
       if (submitted.generation !== userEditGeneration) submittedDrafts.delete(id);
@@ -310,17 +314,19 @@
       (media && composing)
     )
       return;
+    const timing = beginDockSendTiming(crypto.randomUUID());
     const beforeSubmit = media?.beforeSubmit;
     if (!beforeSubmit) {
-      commitSubmission(text, forceSubmit);
+      commitSubmission(text, forceSubmit, timing);
       return;
     }
-    void prepareSubmission(beforeSubmit, forceSubmit);
+    void prepareSubmission(beforeSubmit, forceSubmit, timing);
   }
 
   async function prepareSubmission(
     beforeSubmit: () => Promise<boolean>,
     forceSubmit: boolean,
+    timing: DockSendTiming,
   ): Promise<void> {
     const workspaceId = workspace.id;
     const ownerPrincipalId = workspace.ownerPrincipalId;
@@ -346,7 +352,8 @@
       // The barrier may have committed final speech and mark chips. Freeze their
       // acknowledged text as the editor holds it now (the `value` prop can lag a
       // store notification), never the pre-barrier string from the original click.
-      commitSubmission(input?.getValue() ?? value, forceSubmit);
+      timing.stage('validate');
+      commitSubmission(input?.getValue() ?? value, forceSubmit, timing);
     } catch (error) {
       // Stage and bounded code only: never the prompt, file names or ids.
       // i18n-ignore (bounded log diagnostic; the displayed failure uses the message below)
@@ -354,6 +361,7 @@
       if (isCurrent()) notify.error(m.dock_conversation_sendFailed_error());
     } finally {
       preparingSubmission = false;
+      if (!submittedDrafts.has(timing.composerId)) timing.cancelBeforeAdmission();
     }
   }
 

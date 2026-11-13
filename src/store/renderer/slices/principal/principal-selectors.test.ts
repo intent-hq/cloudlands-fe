@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import {
+  withBackendDaemonMode,
+  withLegacyPrincipal,
+} from '../../../../test/fixtures/principal-state';
+import {
+  selectBackendDaemonMode,
+  selectIsOrchestratorBackend,
   selectCanAdministerHost,
   selectCanCreateWorkspace,
   selectHostRole,
@@ -20,6 +25,28 @@ import {
   selectWorkspaceUpdateContext,
 } from '../workspace/workspace-selectors';
 import { initialState as workspace } from '../workspace/workspace-slice';
+
+describe('backend daemon mode', () => {
+  it('is an orchestrator only when the admitted hello reports one', () => {
+    const admitted = withLegacyPrincipal({ workspace });
+    expect(selectBackendDaemonMode.select(admitted)).toBeNull();
+    expect(selectIsOrchestratorBackend.select(admitted)).toBe(false);
+
+    const orchestrator = withBackendDaemonMode(admitted, 'orchestrator');
+    expect(selectBackendDaemonMode.select(orchestrator)).toBe('orchestrator');
+    expect(selectIsOrchestratorBackend.select(orchestrator)).toBe(true);
+
+    const regular = withBackendDaemonMode(admitted, 'regular');
+    expect(selectIsOrchestratorBackend.select(regular)).toBe(false);
+  });
+
+  it('is unknown while the principal is not ready for the current connection', () => {
+    const state = withBackendDaemonMode(withLegacyPrincipal({ workspace }), 'orchestrator');
+    const loading = { ...state, principal: { ...state.principal, status: 'loading' as const } };
+    expect(selectBackendDaemonMode.select(loading)).toBeNull();
+    expect(selectIsOrchestratorBackend.select(loading)).toBe(false);
+  });
+});
 
 describe('legacy authority and capability selectors', () => {
   it.each(['owner', 'guest'] as const)(

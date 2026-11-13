@@ -288,8 +288,16 @@ const outputContent = await format(templateContent, {
   filepath: preloadOutputPath,
 });
 
-// Write the output file
-fs.writeFileSync(preloadOutputPath, outputContent, 'utf-8');
+// Unchanged output is left alone, and a change is renamed into place, so a concurrent
+// tsc or build never reads a half-written file.
+const existing = fs.existsSync(preloadOutputPath)
+  ? fs.readFileSync(preloadOutputPath, 'utf-8')
+  : null;
+if (existing !== outputContent) {
+  const temporaryPath = `${preloadOutputPath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporaryPath, outputContent, 'utf-8');
+  fs.renameSync(temporaryPath, preloadOutputPath);
+}
 
 console.log(`✅ Inlined IPC channels into: ${preloadOutputPath}`);
 console.log(`📊 Total static channels: ${getAllowedChannels().length}`);

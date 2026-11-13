@@ -139,6 +139,8 @@ type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     tooltipAlign?: 'start' | 'center' | 'end';
     tooltipDelayDuration?: number;
+    /** Called when the tooltip opens or closes. */
+    tooltipOnOpenChange?: (open: boolean) => void;
     /** Classes for the tooltip's trigger wrapper (e.g. `min-w-0` so the button can shrink). */
     tooltipClass?: string;
     /** Optional appearance for the floating content; trigger geometry is unchanged. */
