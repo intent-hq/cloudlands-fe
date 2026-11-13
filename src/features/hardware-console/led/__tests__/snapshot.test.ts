@@ -58,6 +58,8 @@ interface StateInput {
   sessions?: StoredAgentSession[];
   pttRecording?: boolean;
   health?: 'healthy' | 'degraded' | 'down';
+  /** Workspace ids open as top tabs (default: every workspace). */
+  tabs?: string[];
 }
 
 function makeState(input: StateInput = {}): LedSnapshotState {
@@ -76,6 +78,11 @@ function makeState(input: StateInput = {}): LedSnapshotState {
     workspaceAgents: { byWorkspaceId },
     agentSessions: { byAgentId },
     daemonHealth: { health: input.health ?? 'healthy' },
+    tabState: {
+      workspaceStacks: (input.tabs ?? (input.workspaces ?? []).map((ws) => ws.id)).map((id) => [
+        id,
+      ]),
+    },
   };
 }
 
@@ -403,6 +410,33 @@ describe('buildHardwareLedSnapshot', () => {
       sessions: [makeSession('agent-bg', { attentionRequestKind: 'blocker' })],
     });
     expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
+  });
+
+  it('ambient ignores workspaces not open as tabs; their assigned keys still light', () => {
+    const state = makeState({
+      workspaces: [
+        makeWorkspace('ws-open'),
+        makeWorkspace('ws-closed', { attention: 'unread', activity: 'agent_running' }),
+      ],
+      tabs: ['ws-open'],
+      agentsByWorkspace: { 'ws-closed': ['agent-1'] },
+      sessions: [makeSession('agent-1', { attentionRequestKind: 'blocker' })],
+    });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.ambient).toEqual({ kind: 'dark' });
+    expect(snapshot.keys.slice(0, 2)).toEqual(['idle', 'blocked']);
+  });
+
+  it('ambient running counts only workspaces open as tabs', () => {
+    const state = makeState({
+      workspaces: [
+        makeWorkspace('ws-1', { activity: 'agent_running' }),
+        makeWorkspace('ws-2', { activity: 'agent_running' }),
+        makeWorkspace('ws-3', { activity: 'agent_running' }),
+      ],
+      tabs: ['ws-1', 'ws-3'],
+    });
+    expect(buildHardwareLedSnapshot(state).ambient).toEqual({ kind: 'running', runningCount: 2 });
   });
 
   it('an in-progress push-to-talk recording drives ambient recording, outranking blocked', () => {
