@@ -1930,6 +1930,129 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  describe('in every gesture event order', () => {
+    type GestureInput = 'wheel' | 'keyboard' | 'touch' | 'scrollbar';
+    type GestureEvent = 'scroll' | 'frame check' | 'scrollend' | 'growth' | 'clamp';
+
+    function permutations<T>(items: T[]): T[][] {
+      if (items.length <= 1) return [items];
+      return items.flatMap((item, index) =>
+        permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [
+          item,
+          ...rest,
+        ]),
+      );
+    }
+
+    const orders = permutations<GestureEvent>([
+      'scroll',
+      'frame check',
+      'scrollend',
+      'growth',
+      'clamp',
+    ]);
+
+    function maximum() {
+      return scrollHeight - clientHeight;
+    }
+
+    function startGesture(input: GestureInput) {
+      if (input === 'wheel') container.dispatchEvent(new WheelEvent('wheel', { deltaY: 400 }));
+      if (input === 'keyboard')
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown' }));
+      if (input === 'touch') {
+        container.dispatchEvent(touchEvent('touchstart', 400));
+        container.dispatchEvent(touchEvent('touchmove', 100));
+        container.dispatchEvent(new TouchEvent('touchend'));
+      }
+      if (input === 'scrollbar')
+        container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+    }
+
+    /**
+     * Replays one order from a reader at 300 of 600. The gesture's own scroll
+     * lands on `target`, clamped by the bottom as it stands at that moment;
+     * growth adds 40px below, and a clamp collapses 140px and moves the
+     * reader up onto the new bottom when it is now past it.
+     */
+    function replay(input: GestureInput, order: GestureEvent[], target: number) {
+      animationFrames = [];
+      resizeCallbacks = [];
+      mutationCallbacks = [];
+      scrollHeight = 900;
+      scrollTop = 300;
+      const followChanges: boolean[] = [];
+      const action = followBottom(container, {
+        follow: false,
+        onFollowChange: (follow) => followChanges.push(follow),
+      });
+      runFrame();
+      startGesture(input);
+
+      let reached = false;
+      let scrolled = false;
+      let scrollendFirst = false;
+      let layoutFirst = false;
+      for (const event of order) {
+        if (event === 'scroll') {
+          scrolled = true;
+          reached = target >= maximum();
+          scrollTop = Math.min(target, maximum());
+          container.dispatchEvent(new Event('scroll'));
+        }
+        if (event === 'frame check') runFrame();
+        if (event === 'scrollend') {
+          scrollendFirst ||= !scrolled;
+          container.dispatchEvent(new Event('scrollend'));
+        }
+        if (event === 'growth') {
+          layoutFirst ||= !scrolled;
+          scrollHeight += 40;
+          fireResize();
+        }
+        if (event === 'clamp') {
+          layoutFirst ||= !scrolled;
+          scrollHeight -= 140;
+          if (scrollTop > maximum()) {
+            scrollTop = maximum();
+            container.dispatchEvent(new Event('scroll'));
+          }
+          fireResize();
+        }
+      }
+      if (input === 'scrollbar') window.dispatchEvent(new MouseEvent('pointerup'));
+
+      const readerTop = scrollTop;
+      scrollHeight += 80;
+      fireResize();
+      runSettleTail();
+      const following = isFollowingBottom(container);
+      action.destroy();
+
+      // A scroll always lands before its scrollend. A drag measures its
+      // progress against an unchanged bottom, so layout first voids it.
+      const mustRelock = reached && (input === 'scrollbar' ? !layoutFirst : !scrollendFirst);
+      const steps = order.join(' → ');
+      if (!reached && (following || followChanges.includes(true) || scrollTop !== readerTop))
+        return `${steps}: pulled the reader down from ${readerTop} to ${scrollTop}`;
+      if (mustRelock && (!following || scrollTop !== maximum()))
+        return `${steps}: stayed at ${scrollTop} of ${maximum()} after reaching the bottom`;
+      return null;
+    }
+
+    it.each(
+      (['wheel', 'keyboard', 'touch', 'scrollbar'] as const).flatMap((input) =>
+        (['reaches', 'stops short of'] as const).map((scenario) => [input, scenario] as const),
+      ),
+    )('re-locks a %s gesture that %s the bottom only when it arrives', (input, scenario) => {
+      const target = scenario === 'reaches' ? Number.POSITIVE_INFINITY : 560;
+      const failures = orders
+        .map((order) => replay(input, order, target))
+        .filter((failure) => failure !== null);
+      expect(failures).toEqual([]);
+    });
+  });
+
   it('keeps an active lease pinned beyond 80 frames, settles idle, and restarts later', () => {
     const followChanges: boolean[] = [];
     const child = document.createElement('div');
