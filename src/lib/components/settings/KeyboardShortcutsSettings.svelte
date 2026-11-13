@@ -23,8 +23,10 @@
     setShortcutOverride,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
 
   const shortcutOverrides = selectShortcutOverrides();
+  const machineRailEnabled = selectMachineRailEnabled();
   const dockSettings = selectDockShortcutSettings();
   const dockPending = selectDockShortcutPending();
   const captureToken = selectDockShortcutCaptureToken();
@@ -47,7 +49,11 @@
     'editor.redo',
     'leader.resize-panels',
   ]);
-  const fixedShortcutIds = new Set<ShortcutId>(['navigation.go-to-tab', 'leader.navigate-panels']);
+  const fixedShortcutIds = new Set<ShortcutId>([
+    'navigation.go-to-tab',
+    'navigation.go-to-device',
+    'leader.navigate-panels',
+  ]);
   const categories = Object.entries(SHORTCUT_CATEGORIES).filter(
     ([, category]) => category.shortcuts.length > 0,
   );
@@ -167,7 +173,7 @@
             {@const definition = SHORTCUT_REGISTRY.filter((entry) => entry.category === categoryId)[
               index
             ]}
-            {#if definition && !hiddenShortcutIds.has(definition.id)}
+            {#if definition && !hiddenShortcutIds.has(definition.id) && ($machineRailEnabled || definition.id !== 'navigation.go-to-device')}
               {@const isFixed = fixedShortcutIds.has(definition.id)}
               <div class="flex justify-between gap-4" data-shortcut-entry>
                 <dt class="min-w-0 pt-1.5 type-body text-foreground">
