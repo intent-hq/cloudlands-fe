@@ -8982,7 +8982,6 @@
   "machineSetup_method_ariaLabel": "설치 방법",
   "machineSetup_method_ssh_label": "SSH로 대신 설정",
   "machineSetup_method_ssh_description": "Linux 컴퓨터만 지원합니다. 로그인하면 Intent가 설치, 시작, 추가를 합니다.",
-  "machineSetup_method_recommended_label": "권장",
   "machineSetup_method_manual_label": "직접 실행",
   "machineSetup_method_manual_description": "다른 컴퓨터에서 실행할 명령 하나를 복사합니다.",
   "machineSetup_manual_description": "다른 컴퓨터에서 이 명령을 실행한 다음 출력된 링크를 붙여넣습니다.",

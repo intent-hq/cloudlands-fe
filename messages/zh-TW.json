@@ -8982,7 +8982,6 @@
   "machineSetup_method_ariaLabel": "安裝方式",
   "machineSetup_method_ssh_label": "透過 SSH 為我設定",
   "machineSetup_method_ssh_description": "僅限 Linux 電腦。登入後，Intent 會安裝、啟動並新增它。",
-  "machineSetup_method_recommended_label": "建議",
   "machineSetup_method_manual_label": "我自己執行",
   "machineSetup_method_manual_description": "複製一條指令，在另一台電腦上執行。",
   "machineSetup_manual_description": "在另一台電腦上執行此指令，然後貼上它輸出的連結。",

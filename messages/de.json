@@ -8982,7 +8982,6 @@
   "machineSetup_method_ariaLabel": "Installationsart",
   "machineSetup_method_ssh_label": "Per SSH für mich einrichten",
   "machineSetup_method_ssh_description": "Nur Linux-Computer. Melde dich an, und Intent installiert, startet und fügt ihn hinzu.",
-  "machineSetup_method_recommended_label": "Empfohlen",
   "machineSetup_method_manual_label": "Ich führe es selbst aus",
   "machineSetup_method_manual_description": "Kopiere einen Befehl, den du auf dem anderen Computer ausführst.",
   "machineSetup_manual_description": "Führe diesen Befehl auf dem anderen Computer aus und füge dann den ausgegebenen Link ein.",

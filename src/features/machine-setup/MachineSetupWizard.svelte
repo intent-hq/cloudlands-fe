@@ -124,7 +124,6 @@
       icon: faTerminal,
       title: m.machineSetup_method_ssh_label(),
       description: m.machineSetup_method_ssh_description(),
-      tag: m.machineSetup_method_recommended_label(),
     },
     {
       id: 'manual' as MethodId,

@@ -8982,7 +8982,6 @@
   "machineSetup_method_ariaLabel": "Install method",
   "machineSetup_method_ssh_label": "Set it up for me over SSH",
   "machineSetup_method_ssh_description": "Linux computers only. Sign in, and Intent installs, starts and adds it.",
-  "machineSetup_method_recommended_label": "Recommended",
   "machineSetup_method_manual_label": "I'll run it myself",
   "machineSetup_method_manual_description": "Copy one command to run on the other computer.",
   "machineSetup_manual_description": "Run this command on the other computer, then paste the link it prints.",
