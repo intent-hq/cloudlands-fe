@@ -59,7 +59,10 @@
     selectKnownRepos,
     selectKnownReposLoaded,
   } from '$store/renderer/slices/known-repos/known-repos-selectors';
-  import { loadKnownRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
+  import {
+    loadKnownRepos,
+    removeRecentRepository,
+  } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
     openPanel,
     closePanel,
@@ -203,6 +206,11 @@
     const position = getSidebarContextPosition(event);
     if (position) contextMenu = { ...position, repo };
   }
+  // Leaving the selected repository, or an org with nothing else, shows All repos.
+  function leaveRepository(repo: RepositoryGroup) {
+    if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
+      updateView({ repoKey: null, selectedId: null });
+  }
   function repositoryMenu(repo: RepositoryGroup): SidebarMenuEntry[] {
     const then = (action: () => void) => () => {
       contextMenu = null;
@@ -216,13 +224,21 @@
         chooseRepo(repo.key);
         createWorkspace();
       }),
+      local: !repo.owner,
       onHide: then(() => {
-        // Leaving the selected repository, or an org with nothing else, shows All repos.
-        if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
-          updateView({ repoKey: null, selectedId: null });
+        leaveRepository(repo);
         store.dispatch(
           homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
         );
+      }),
+      onDelete: then(() => {
+        leaveRepository(repo);
+        if (repo.repoPath) store.dispatch(removeRecentRepository(repo.repoPath));
+        // Existing workspaces would keep the folder listed, so it is also hidden.
+        if (repo.workspaces.length)
+          store.dispatch(
+            homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
+          );
       }),
       onUnhide: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
     });
@@ -771,8 +787,7 @@
       {/snippet}
       {#snippet repoButton(repo: (typeof repositoryGroups)[number], hidden = false)}
         {@const unassigned = repo.key === m.workspace_grouping_unknownRepository_label()}
-        <Tooltip.Tooltip content={repo.label} class="flex w-full">
-          <Button
+        <Button
             variant={hidden ? 'ghost-light' : 'ghost'}
             active={repoKey === repo.key && destination === 'workspaces'}
             class="w-full justify-start px-2"
@@ -790,7 +805,6 @@
             >
             {@render sidebarCounts(repo.workspaces)}
           </Button>
-        </Tooltip.Tooltip>
       {/snippet}
       <Tabs.Root
         value={destination}

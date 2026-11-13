@@ -1,14 +1,17 @@
-import { faEye, faEyeSlash, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface HomeRepositoryMenuOptions {
   canCreate: boolean;
   hidden: boolean;
+  /** Local folders are deleted from the list; GitHub repositories are hidden. */
+  local: boolean;
   /** Hiding records the newest workspace, so it waits for the full list. */
   loaded: boolean;
   onNewWorkspace: () => void;
   onHide: () => void;
+  onDelete: () => void;
   onUnhide: () => void;
 }
 
@@ -32,12 +35,21 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
           icon: faEye,
           onClick: options.onUnhide,
         }
-      : {
-          id: 'hide',
-          label: m.home_repository_menu_hide_label(),
-          icon: faEyeSlash,
-          disabled: !options.loaded,
-          onClick: options.onHide,
-        },
+      : options.local
+        ? {
+            id: 'delete',
+            label: m.menu_delete(),
+            icon: faTrash,
+            destructive: true,
+            disabled: !options.loaded,
+            onClick: options.onDelete,
+          }
+        : {
+            id: 'hide',
+            label: m.home_repository_menu_hide_label(),
+            icon: faEyeSlash,
+            disabled: !options.loaded,
+            onClick: options.onHide,
+          },
   ];
 }

@@ -24,13 +24,18 @@ export const setRepos = createAction<[repos: KnownRepo[]]>('knownRepos/setRepos'
 
 export const removeRepo = createAction<[repoPath: string]>('knownRepos/removeRepo');
 
+/** Removes a folder from the daemon's recent list; the row leaves at once. */
+export const removeRecentRepository = createAction<[repoPath: string]>(
+  'knownRepos/removeRecentRepository',
+);
+
 export const knownReposReducer = createReducer<KnownReposState>(initialState);
 knownReposReducer.with(setRepos, (state, { payload: [repos] }) => ({
   ...state,
   repos: createCollection<KnownRepo, 'path'>('path', repos),
   loaded: true,
 }));
-knownReposReducer.with(removeRepo, (state, { payload: [repoPath] }) => {
+const removeKnownRepo = (state: KnownReposState, repoPath: string): KnownReposState => {
   const repos = removeItem(state.repos, repoPath);
   if (repos === state.repos) {
     return state;
@@ -40,6 +45,12 @@ knownReposReducer.with(removeRepo, (state, { payload: [repoPath] }) => {
     ...state,
     repos,
   };
-});
+};
+knownReposReducer.with(removeRepo, (state, { payload: [repoPath] }) =>
+  removeKnownRepo(state, repoPath),
+);
+knownReposReducer.with(removeRecentRepository, (state, { payload: [repoPath] }) =>
+  removeKnownRepo(state, repoPath),
+);
 
 knownReposReducer.with(hostExecutionConnectionChanged, () => initialState);
