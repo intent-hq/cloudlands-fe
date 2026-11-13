@@ -1,7 +1,7 @@
 /**
  * Model catalog bridge — routes the per-provider `*:get-models` channels
- * (antigravity / auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
- * unsloth) to the daemon's per-provider model catalog (`models.list { providerId,
+ * (antigravity / auggie / claude-code / codex / cortex / cursor / droid / grok / opencode /
+ * pi / unsloth) to the daemon's per-provider model catalog (`models.list { providerId,
  * forceRefresh }`, PROTOCOL §6.7) for daemon/web builds where no Electron
  * main process serves these channels.
  *
@@ -26,6 +26,7 @@ import {
   CLAUDE_CODE_CHANNELS,
   CODEX_CHANNELS,
   CORTEX_CHANNELS,
+  CURSOR_CHANNELS,
   DROID_CHANNELS,
   GROK_CHANNELS,
   OPENCODE_CHANNELS,
@@ -49,6 +50,7 @@ const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
   ['claude-code', CLAUDE_CODE_CHANNELS.GET_MODELS],
   ['codex', CODEX_CHANNELS.GET_MODELS],
   ['cortex', CORTEX_CHANNELS.GET_MODELS],
+  ['cursor', CURSOR_CHANNELS.GET_MODELS],
   ['droid', DROID_CHANNELS.GET_MODELS],
   ['grok', GROK_CHANNELS.GET_MODELS],
   ['opencode', OPENCODE_CHANNELS.GET_MODELS],
