@@ -84,6 +84,8 @@ type ProviderProfileSetupPhase =
   | 'checkingKey'
   | 'keyWorks'
   | 'keyRejected'
+  /** Saved without a key check: the backend runs no test prompt (`supportsTestPrompt: false`). */
+  | 'keySaved'
   | 'failed';
 
 /** A save failure leaves no profile; folder and terminal failures leave it saved. */

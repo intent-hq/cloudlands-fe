@@ -16,6 +16,8 @@
       unsupported: state('unsupported'),
       exceptions: state('exceptions'),
       disconnected: state('disconnected'),
+      // The backend runs no agents: it reads "Orchestrator — agents run on your machines".
+      orchestrator: state('orchestrator'),
     },
     captureReadiness: { selector: '[data-machine-order-section], [data-nodes-section]' },
   });

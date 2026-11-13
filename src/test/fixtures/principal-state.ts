@@ -12,6 +12,7 @@ import {
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
 import { createAdmittedLegacyPrincipal } from './admitted-legacy-principal';
+import type { DaemonMode } from '$shared/types/connections';
 
 /** An admitted legacy caller for consumer tests that previously assumed a saved window was authority. */
 export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'owner'): StoreState {
@@ -37,6 +38,7 @@ export function admitLegacyPrincipal(
     gitlabCheckout?: boolean;
     sessionImport?: 1;
   } = {},
+  daemonMode?: DaemonMode,
 ): void {
   const { connections: current } = store.state;
   store.dispatch(
@@ -56,9 +58,18 @@ export function admitLegacyPrincipal(
       {
         ...principal.snapshot!,
         capabilities: { ...principal.snapshot!.capabilities, ...capabilities },
+        ...(daemonMode ? { daemonMode } : {}),
       },
     ),
   );
+}
+
+/** The admitted backend reports `daemonMode` in its hello (e.g. an orchestrator). */
+export function withBackendDaemonMode(state: StoreState, daemonMode: DaemonMode): StoreState {
+  return {
+    ...state,
+    principal: { ...state.principal, snapshot: { ...state.principal.snapshot!, daemonMode } },
+  };
 }
 
 /** Current admitted host roles for consumer tests, without a linked external profile. */

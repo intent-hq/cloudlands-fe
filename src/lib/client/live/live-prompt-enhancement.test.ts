@@ -22,6 +22,7 @@ import {
   generateLayout,
   isEnhancePromptAvailable,
   EnhancePromptUnavailableError,
+  enhanceUnavailableDetail,
 } from './live-prompt-enhancement';
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -137,5 +138,30 @@ describe('live prompt-enhancement seam (fake transport)', () => {
     expect(isEnhancePromptAvailable('')).toBe(false);
     expect(isEnhancePromptAvailable(null)).toBe(false);
     expect(isEnhancePromptAvailable(undefined)).toBe(false);
+  });
+
+  // An orchestrator answers `available: false` while no machine can run quick
+  // actions (PROTOCOL agent-aux.md "Quick actions on an orchestrator"). The
+  // reason is temporary: nothing is remembered, the next use asks again.
+  it('asks the backend again on the next use after an unavailable answer', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      available: false,
+      reason: 'no machine for quick actions is online',
+    });
+    const first = await enhancePrompt('raw').catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(EnhancePromptUnavailableError);
+    expect(enhanceUnavailableDetail(first)).toEqual({
+      description: 'no machine for quick actions is online',
+    });
+
+    const envelope = { enhanced: 'Enhanced', original: 'raw', mode: 'enhance' as const };
+    mockedRequest.mockResolvedValueOnce(envelope);
+    await expect(enhancePrompt('raw')).resolves.toEqual(envelope);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('adds no toast detail for other errors or an empty reason', () => {
+    expect(enhanceUnavailableDetail(new Error('timeout'))).toBeUndefined();
+    expect(enhanceUnavailableDetail(new EnhancePromptUnavailableError('  '))).toBeUndefined();
   });
 });

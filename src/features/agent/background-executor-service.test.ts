@@ -184,6 +184,30 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     expect(toastErrorSpy).toHaveBeenCalledTimes(1);
   });
 
+  // An orchestrator answers `available: false` while no machine can run quick
+  // actions (PROTOCOL agent-aux.md "Quick actions on an orchestrator"). The
+  // reason is temporary: the next run asks the backend again.
+  it('asks again on the next run after an orchestrator says no machine is online', async () => {
+    completeOnceSpy.mockResolvedValueOnce({
+      available: false,
+      reason: 'no machine for quick actions is online',
+    });
+    appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
+    await waitForSettled('commit', ['error']);
+    expect(readExecutor('commit')?.error).toBe('no machine for quick actions is online');
+
+    completeOnceSpy.mockResolvedValueOnce({ text: '{"subject": "fix: machine is back"}' });
+    appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
+    await waitForSettled('commit', ['success']);
+
+    expect(completeOnceSpy).toHaveBeenCalledTimes(2);
+    expect(completeOnceSpy.mock.calls[1][0]).toMatchObject({ workspaceId: WS, type: 'commit' });
+    expect(readExecutor('commit')).toMatchObject({
+      status: 'success',
+      result: 'fix: machine is back',
+    });
+  });
+
   it("surfaces the -32603 data.detail instead of the generic 'Internal error'", async () => {
     // The daemon maps Error::Internal to message "Internal error" with the
     // actionable cause in `data` (PROTOCOL §5.32 Errors); the transport

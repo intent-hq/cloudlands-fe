@@ -28,6 +28,7 @@
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
+    enhanceUnavailableDetail,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
@@ -1024,6 +1025,9 @@
           : error instanceof Error && error.message
             ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
             : m.chat_richInput_enhanceFailed_error(),
+        // The backend's reason (e.g. no machine for quick actions is online)
+        // is temporary: the button stays and the next use asks again.
+        enhanceUnavailableDetail(error),
       );
     } finally {
       if (currentRequestId === enhanceRequestId) {

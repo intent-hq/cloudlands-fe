@@ -44,6 +44,19 @@ export class EnhancePromptUnavailableError extends Error {
   }
 }
 
+/**
+ * Toast options carrying the backend's `reason` for an unavailable
+ * enhancement, or undefined for any other error. The reason is temporary
+ * (an orchestrator's machines may be offline): callers keep the affordance
+ * and ask again on the next use (PROTOCOL `agent-aux.md` → "Quick actions on
+ * an orchestrator").
+ */
+export function enhanceUnavailableDetail(error: unknown): { description: string } | undefined {
+  return error instanceof EnhancePromptUnavailableError && error.reason.trim()
+    ? { description: error.reason }
+    : undefined;
+}
+
 function isUnavailable(
   result: EnhancePromptResult | EnhancePromptUnavailable,
 ): result is EnhancePromptUnavailable {

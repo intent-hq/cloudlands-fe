@@ -32,13 +32,23 @@ export function reportedDaemonMode(hello: unknown): DaemonMode | null {
   return isDaemonMode(mode) ? mode : null;
 }
 
-/** The reported mode, else the refusal probe; null while unknown. */
+/** The hello reports a mode at all, known or not. */
+export function reportsDaemonMode(hello: unknown): boolean {
+  return record(hello) && record(hello.server) && hello.server.daemonMode !== undefined;
+}
+
+/**
+ * The reported mode, else the refusal probe; null while unknown. A reported
+ * value this client does not know stays unknown: only an older daemon, which
+ * omits the field, is probed (a newer mode is never a node).
+ */
 export async function detectDaemonMode(
   hello: unknown,
   request: Request,
 ): Promise<DaemonMode | null> {
   const reported = reportedDaemonMode(hello);
   if (reported) return reported;
+  if (reportsDaemonMode(hello)) return null;
   try {
     await request(PROBE_METHOD, PROBE_PARAMS, { timeoutMs: PROBE_TIMEOUT_MS });
     return 'regular';

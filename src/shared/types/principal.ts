@@ -1,3 +1,5 @@
+import { isDaemonMode, type DaemonMode } from './connections';
+
 /** Raw discovery reads from one acknowledged connection, before wire validation. */
 export interface PrincipalDiscovery {
   hello: unknown;
@@ -52,6 +54,11 @@ interface HostCapabilities {
 export interface PrincipalSnapshot {
   principal: PrincipalMe;
   capabilities: HostCapabilities;
+  /**
+   * The running mode the hello reports (`server.daemonMode`); absent when the
+   * daemon omits it or reports a value this client does not know (unknown).
+   */
+  daemonMode?: DaemonMode;
 }
 
 export interface HostMembershipChange {
@@ -120,5 +127,10 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
       value.isAdministrator !== (value.hostRole === 'owner'))
   )
     return null;
-  return { principal: value as unknown as PrincipalMe, capabilities };
+  const daemonMode = hello.server.daemonMode;
+  return {
+    principal: value as unknown as PrincipalMe,
+    capabilities,
+    ...(isDaemonMode(daemonMode) ? { daemonMode } : {}),
+  };
 }

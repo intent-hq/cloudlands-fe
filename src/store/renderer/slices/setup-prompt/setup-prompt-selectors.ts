@@ -7,6 +7,7 @@ import { selectWorkspaceItems } from '../workspace/workspace-selectors';
 import type { SetupEvaluation } from './setup-prompt-types';
 import { hasReadyProvider } from './setup-prompt-utils';
 import { selectHostRole } from '../principal/principal-selectors';
+import { selectProviderStatusMap } from '../agent-availability/agent-availability-selectors';
 
 /** Latest completed evaluation, or null until the first one resolves. */
 export const selectSetupEvaluation = store.createSelector((state) => state.setupPrompt.evaluation);
@@ -65,7 +66,7 @@ export const selectBackendSetupGate = store.createSelector(
     // immediately instead of holding the home page blank for the duration of
     // the bulk provider check (whose per-provider auth checks can take
     // seconds).
-    if (hasReadyProvider(state.agentAvailability.providerStatusMap)) return 'none';
+    if (hasReadyProvider(selectProviderStatusMap.select(state))) return 'none';
     const evaluation = selectActiveSetupEvaluation.select(state);
     if (!evaluation) return 'pending';
     return evaluation.setupNeeded ? 'redirect' : 'none';

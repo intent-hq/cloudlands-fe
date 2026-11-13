@@ -5265,8 +5265,10 @@ function registerConnectionsHandlers(): void {
           // written, so a refused link never changes a saved node either.
           if (inspected.daemonMode === 'node' && refuseNode)
             throw new Error(`${NODE_REFUSED_MARKER}:${refuseNode}`);
-          // Unknown mode while nodes are refused: it could be a node, so save nothing.
-          if (!inspected.daemonMode && refuseNode)
+          // Unknown mode while nodes are refused: an older daemon could be a
+          // node, so save nothing. A reported mode this app doesn't know is
+          // never a node.
+          if (!inspected.daemonMode && !inspected.modeReported && refuseNode)
             throw new Error(`${NODE_REFUSED_MARKER}:unknown`);
           const { connection, activeId } = await saveOwnerConnectionOwned(
             {

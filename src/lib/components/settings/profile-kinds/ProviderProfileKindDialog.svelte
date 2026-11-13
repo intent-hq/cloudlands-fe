@@ -104,6 +104,8 @@
     envErrors?: Record<string, string>;
     /** Mark kinds for remote machines and show Advanced's toggle. */
     remoteMarks?: boolean;
+    /** Add: offer the Different login kind (off on an orchestrator). */
+    differentLogin?: boolean;
     /** Advanced: "Use on remote machines". */
     remoteCompatible?: boolean;
     /** Different login create; the parent closes the dialog once the terminal opens. */
@@ -125,6 +127,7 @@
     mode,
     step = $bindable(mode === 'edit' ? 'details' : 'pick'),
     kind = $bindable('differentLogin'),
+    differentLogin = true,
     name = $bindable(''),
     backup = $bindable(false),
     savedName = '',
@@ -332,7 +335,7 @@
   onSubmit={submit}
 >
   {#if picking}
-    <ProfileKindPicker {provider} disabled={busy} {remoteMarks} onPick={pick} />
+    <ProfileKindPicker {provider} disabled={busy} {remoteMarks} {differentLogin} onPick={pick} />
   {:else}
     <div class="space-y-5" data-testid="provider-profile-kind-details" data-kind={kind}>
       <FormField

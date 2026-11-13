@@ -211,6 +211,10 @@
       } else if (current.phase === 'keyWorks') {
         open = false;
         savedToast(name.trim(), true, m.settings_providerProfileKinds_keyWorks_label());
+      } else if (current.phase === 'keySaved') {
+        // No key check on this backend: the saved key is the outcome.
+        open = false;
+        savedToast(name.trim(), true);
       }
     });
   });

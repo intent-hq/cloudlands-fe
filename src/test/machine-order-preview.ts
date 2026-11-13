@@ -10,7 +10,7 @@ import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machin
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
 export type MachineOrderPreviewState =
-  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'disconnected';
+  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'disconnected' | 'orchestrator';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
@@ -95,6 +95,8 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   const disconnected = state === 'disconnected';
   const restoreCloud = setupCloudMachinesFixture(exceptions ? 'entries-key-rejected' : 'entries');
   const ordered = state !== 'unsupported';
+  // An orchestrator's list has no "This computer" row: it never runs agents.
+  const order = state === 'orchestrator' ? ORDER.filter((row) => row.kind !== 'local') : ORDER;
   store.dispatch(
     remoteMachinesLoaded({
       supported: true,
@@ -102,8 +104,8 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
       order: !ordered
         ? null
         : disconnected
-          ? [...ORDER, { kind: 'machine', nodeId: CACHE_IDLE.id, name: CACHE_IDLE.name }]
-          : ORDER,
+          ? [...order, { kind: 'machine', nodeId: CACHE_IDLE.id, name: CACHE_IDLE.name }]
+          : order,
       machines: exceptions
         ? [
             { ...STUDIO, state: 'update-required' },
@@ -118,7 +120,7 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   );
   if (state === 'saving') store.dispatch(machineOrderSaveStarted('preview-save', ORDER));
   // The owner reorders; a member reads the same list.
-  admitLegacyPrincipal('owner');
+  admitLegacyPrincipal('owner', {}, state === 'orchestrator' ? 'orchestrator' : undefined);
   const { context, invalidation, presentationVersion } = store.state.principal;
   const member = withHostPrincipal(store.state, 'member').principal.snapshot;
   if (state === 'member' && context && member)

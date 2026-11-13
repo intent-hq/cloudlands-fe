@@ -92,15 +92,19 @@
     selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
-  import { machineReportFreshness } from '$features/remote-machines/remote-model-picker';
+  import {
+    machineReportFreshness,
+    machineReportedModels,
+  } from '$features/remote-machines/remote-model-picker';
   import {
     machineModelFallback,
     resolveStartOn,
     START_ON_BACKEND,
     startOnBackendLabel,
+    startOnModelMachineId,
     startOnCloudId,
-    startOnCloudMachineId,
   } from '$features/remote-machines/start-on';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
   const logger = createLogger('InitialAgentPicker');
   // Unique per mount: the picker can render more than once on a page.
@@ -237,8 +241,13 @@
       ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
       : START_ON_BACKEND,
   );
+  // The machine whose models the Model row lists (an orchestrator has none of its own).
+  const orchestratorBackend$ = selectIsOrchestratorBackend();
+  const modelMachineId = $derived(
+    startOnModelMachineId(effectiveStartOn, $startOnOptions$, $orchestratorBackend$),
+  );
   const startOnMachine = $derived(
-    $startOnMachines$.find((machine) => machine.id === effectiveStartOn) ?? null,
+    $startOnMachines$.find((machine) => machine.id === modelMachineId) ?? null,
   );
   const remoteMachinesVisible$ = selectRemoteMachinesVisible();
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport();
@@ -261,7 +270,7 @@
   // the daemon would refuse it.
   $effect(() => {
     const machine = startOnMachine;
-    if (!effectiveStartOn || !machine || $remoteSwitchSupport$ !== 'supported') return;
+    if (!modelMachineId || !machine || $remoteSwitchSupport$ !== 'supported') return;
     if (machineReportFreshness(machine, Date.now()) === 'missing') return;
     const groups = buildMachineModelGroups({
       machine,
@@ -686,6 +695,11 @@
   function knownModelsForProvider(
     providerId: string,
   ): Array<{ value: string; effortLevels?: string[] }> | undefined {
+    // A machine as model source (chosen, or an orchestrator's first) is the evidence.
+    if (startOnMachine)
+      return machineReportedModels(startOnMachine, providerId, Date.now())?.map((value) => ({
+        value,
+      }));
     const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
     const cachedModels = $providerModelsCacheMap$[normalizedProviderId]?.models;
     if (cachedModels) return cachedModels;
@@ -1133,9 +1147,7 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
-      machineId={effectiveStartOn && !startOnCloudMachineId(effectiveStartOn)
-        ? effectiveStartOn
-        : undefined}
+      machineId={modelMachineId}
       showMachine={false}
       silentFallback
       portal={true}

@@ -59,6 +59,7 @@
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
   import { advancedCreateRemoteChoice } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import type {
     ProfileKindStep,
     ProfileSetupError,
@@ -87,6 +88,8 @@
   const mutations$ = selectProviderProfileMutations();
   const appOwned$ = selectIsDaemonAppOwned();
   const remoteReady$ = selectRemoteReadyProfilesVisible();
+  // An orchestrator has nowhere to use a login folder: no Different login.
+  const orchestrator$ = selectIsOrchestratorBackend();
   const remoteChoiceSupported$ = selectRemoteReadyProfilesSupported();
   // svelte-ignore state_referenced_locally
   const profiles$ = selectProviderProfilesForBase(providerId);
@@ -186,6 +189,13 @@
       if (current.phase === 'keyWorks') {
         toasted.add(key);
         notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
+      } else if (current.phase === 'keySaved') {
+        // No key check on this backend: the saved profile is the outcome.
+        toasted.add(key);
+        notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
+        dismissSetup();
+        setupId = null;
+        open = false;
       }
     });
   });
@@ -348,6 +358,7 @@
   bind:envRows
   envErrors={errors}
   remoteMarks={$remoteReady$}
+  differentLogin={!$orchestrator$}
   bind:remoteCompatible
   onCreateAndSignIn={createAndSignIn}
   onCreate={create}

@@ -1,4 +1,7 @@
-import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import {
+  withBackendDaemonMode,
+  withLegacyPrincipal,
+} from '../../../../test/fixtures/principal-state';
 /**
  * Setup Prompt Selectors Tests
  */
@@ -129,6 +132,23 @@ describe('selectShowRemoteSetupPrompt', () => {
 });
 
 describe('selectBackendSetupGate', () => {
+  // An orchestrator reports no installed CLI (its machines run the providers),
+  // so a fresh one must not be sent to the setup wizard for that.
+  it("returns 'none' on an orchestrator with no workspaces and no CLI found", () => {
+    const base = stateWith({});
+    const state = withBackendDaemonMode(
+      {
+        ...base,
+        providerCatalog: {
+          providers: createCollection('id', [{ id: 'codex' }, { id: 'claude-code' }]),
+        },
+      } as unknown as StoreState,
+      'orchestrator',
+    );
+    expect(selectBackendSetupGate.select(state)).toBe('none');
+    expect(selectBackendSetupGate.select(base)).toBe('pending');
+  });
+
   it("returns 'none' when the backend has workspaces", () => {
     const state = stateWith({ workspaceIds: ['ws-1'] });
     expect(selectBackendSetupGate.select(state)).toBe('none');

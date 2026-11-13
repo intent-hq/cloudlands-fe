@@ -42,7 +42,11 @@ vi.mock('svelte-fa', async () => ({
 
 const slice = () => import('$store/renderer/slices/provider-settings/provider-settings-slice');
 
-async function seed(profiles: ProviderProfile[] = [], transportMode = 'sidecar-uds') {
+async function seed(
+  profiles: ProviderProfile[] = [],
+  transportMode = 'sidecar-uds',
+  daemonMode?: 'orchestrator',
+) {
   const { reducers } = await import('$store/renderer/reducer');
   mocks.reducers = reducers as never;
   const init = { type: '@@test/init' };
@@ -58,6 +62,12 @@ async function seed(profiles: ProviderProfile[] = [], transportMode = 'sidecar-u
     providerProfilesLoaded(profiles, 3),
   );
   state.daemonHealth = { ...state.daemonHealth, transport: { mode: transportMode } };
+  if (daemonMode) {
+    const { withBackendDaemonMode, withLegacyPrincipal } =
+      await import('../../../test/fixtures/principal-state');
+    mocks.state.current = withBackendDaemonMode(withLegacyPrincipal(state), daemonMode) as never;
+    return;
+  }
   mocks.state.current = state;
 }
 
@@ -274,6 +284,48 @@ describe('ProviderProfileAddDialog', () => {
     expect(mocks.notify.success).toHaveBeenCalledWith(
       m.settings_providerProfiles_created_label({ name: 'Key' }),
     );
+  });
+
+  // An orchestrator has nowhere to use a login folder (machines refuse
+  // account folders), so it offers no Different login.
+  it.each([
+    [undefined, true],
+    ['orchestrator', false],
+  ] as const)('offers Different login on a %s backend: %s', async (daemonMode, offered) => {
+    await seed([], 'sidecar-uds', daemonMode);
+    await openDialog('claude');
+    expect(screen.queryByTestId('provider-profile-kind-differentLogin') !== null).toBe(offered);
+    expect(screen.getByTestId('provider-profile-kind-apiKey')).toBeTruthy();
+  });
+
+  // An orchestrator runs no test prompt (`supportsTestPrompt: false`): the
+  // saved key is the outcome, so the dialog closes with the created toast.
+  it('API key on a backend without a key check: closes once the key is saved', async () => {
+    await seed();
+    await openDialog('claude');
+    await fireEvent.click(screen.getByTestId('provider-profile-kind-apiKey'));
+    await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: 'Key' } });
+    await fireEvent.input(screen.getByTestId('provider-profile-secret-input'), {
+      target: { value: 'sk-ant-first' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    const {
+      providerProfileSecretSetupRequested,
+      providerProfileSetupChanged,
+      providerProfileSetupDismissed,
+    } = await slice();
+    const setupId = lastOf(providerProfileSecretSetupRequested.type)!.payload.setupId;
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'saving' }));
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'keySaved', profileId: 'p1' }));
+
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledWith(
+      m.settings_providerProfiles_created_label({ name: 'Key' }),
+    );
+    expect(lastOf(providerProfileSetupDismissed.type)?.payload).toEqual([setupId]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('Codex token: rejects a non-JWT value inline, then sends CODEX_ACCESS_TOKEN with its unsets', async () => {
