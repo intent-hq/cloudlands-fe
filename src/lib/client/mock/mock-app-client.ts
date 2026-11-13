@@ -268,6 +268,17 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     }),
   };
 
+  readonly push: AppClient['push'] = {
+    status: async () => ({
+      enabled: false,
+      relayUrl: '',
+      daemonId: null,
+      linked: false,
+      linkedDevices: null,
+      publishing: false,
+    }),
+  };
+
   readonly events: AppClient['events'] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],
