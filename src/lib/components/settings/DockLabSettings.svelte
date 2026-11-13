@@ -29,9 +29,8 @@
   );
 </script>
 
-<!-- A row of the Appearance card (Settings › Display); desktop-only. While the lab is
-off the row is hidden; Settings › Labs turns it on. -->
-{#if isElectronPlatform() && $dockLabEnabled}
+<!-- The desktop-only notch control lives in the Appearance card (Settings › Display). -->
+{#if isElectronPlatform()}
   <section
     id="notch-dock"
     data-highlight-id="notch-dock"
