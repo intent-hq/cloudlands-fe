@@ -101,6 +101,7 @@ import {
   handleFinishedRecording,
   mergeOsContextualStrings,
   TRANSCRIBE_RETRY_DELAYS_MS,
+  TRANSCRIBE_RETRY_MAX_ATTEMPT_MS,
   resolveTargetAgentId,
   runTranscriptionFlow,
 } from '../transcription-service';
@@ -674,6 +675,7 @@ describe('handleFinishedRecording', () => {
       insertText: vi.fn(),
       focusComposer: vi.fn(),
     });
+    expect(transcribe).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_transcribeFailed_error(),
       expect.objectContaining({ description: 'audio must be non-empty base64' }),
@@ -686,14 +688,14 @@ describe('handleFinishedRecording', () => {
         data: 'elevenlabs returned 401 Unauthorized: invalid key',
       }),
     );
-    vi.useFakeTimers();
-    const flow = handleFinishedRecording(RECORDING, {
+    await handleFinishedRecording(RECORDING, {
       transcribe,
       insertText: vi.fn(),
       focusComposer: vi.fn(),
     });
-    await vi.advanceTimersByTimeAsync(10_000);
-    await flow;
+    // A rejected key fails the same way on every attempt: no retry.
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(toastWarning).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith(
       m.hardwareConsole_voice_transcribeFailed_error(),
       expect.objectContaining({ description: 'elevenlabs returned 401 Unauthorized: invalid key' }),
@@ -846,9 +848,15 @@ describe('handleFinishedRecording transcription retries', () => {
       m.hardwareConsole_voice_transcribeFailed_error(),
       expect.objectContaining({ description: 'elevenlabs request timed out' }),
     );
-    // Every toast shares one id, so each replaces the previous one.
-    const ids = [...toastWarning.mock.calls, ...toastError.mock.calls].map(([, opts]) => opts.id);
-    expect(new Set(ids).size).toBe(1);
+    // Retry toasts share one id, so each replaces the previous one; the
+    // retry toast is cleared before the final failure toast appears.
+    const retryIds = new Set(toastWarning.mock.calls.map(([, opts]) => opts.id));
+    expect(retryIds.size).toBe(1);
+    const [retryId] = retryIds;
+    expect(toastDismiss).toHaveBeenCalledWith(retryId);
+    expect(toastDismiss.mock.invocationCallOrder[0]).toBeLessThan(
+      toastError.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps the Transcribing… state until the retries finish', async () => {
@@ -909,13 +917,17 @@ describe('handleFinishedRecording transcription retries', () => {
     );
   });
 
-  it('does not retry OS engine authorization or availability failures', async () => {
+  it('does not retry OS engine failures that repeat on every attempt', async () => {
     const { OsTranscriptionError } = await import('$features/voice/os-transcription-service');
     for (const code of [
       'authorization-denied',
+      'authorization-failed',
       'helper-missing',
       'unsupported-platform',
-    ] as const) {
+      'recognizer-unavailable',
+      'audio-unreadable',
+      'bad-arguments',
+    ]) {
       const transcribe = vi.fn().mockRejectedValue(new OsTranscriptionError(code, code));
       await handleFinishedRecording(RECORDING, {
         transcribe,
@@ -938,12 +950,81 @@ describe('handleFinishedRecording transcription retries', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(toastWarning).toHaveBeenCalledTimes(1);
     expect(cancelActiveTranscription()).toBe(true);
-    await vi.advanceTimersByTimeAsync(10_000);
+    // The retry toast clears at cancel time, not when the backoff ends.
+    expect(toastDismiss).toHaveBeenCalledWith(toastWarning.mock.calls[0][1].id);
     await flow;
 
     expect(transcribe).toHaveBeenCalledTimes(1);
     expect(toastError).not.toHaveBeenCalled();
-    expect(toastDismiss).toHaveBeenCalled();
+  });
+
+  it('does not retry an attempt that failed slowly (likely a timeout)', async () => {
+    const transcribe = vi.fn(
+      () =>
+        new Promise<{ text: string }>((_, reject) =>
+          setTimeout(() => reject(transientError()), TRANSCRIBE_RETRY_MAX_ATTEMPT_MS + 1),
+        ),
+    );
+    vi.useFakeTimers();
+    const flow = handleFinishedRecording(RECORDING, {
+      transcribe,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_RETRY_MAX_ATTEMPT_MS + 10_000);
+    await flow;
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(toastWarning).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
+
+  it('a cancelled run never dismisses the next dictation\u2019s toast', async () => {
+    let rejectSecondAttempt!: (error: unknown) => void;
+    const first = vi
+      .fn()
+      .mockRejectedValueOnce(transientError())
+      .mockReturnValueOnce(
+        new Promise<{ text: string }>((_, reject) => {
+          rejectSecondAttempt = reject;
+        }),
+      );
+    vi.useFakeTimers();
+    const firstFlow = handleFinishedRecording(RECORDING, {
+      transcribe: first,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_RETRY_DELAYS_MS[0] + 100);
+    expect(first).toHaveBeenCalledTimes(2);
+    const firstRetryToastId = toastWarning.mock.calls[0][1].id;
+
+    // Cancel while the retry request is in flight: its toast clears now.
+    expect(cancelActiveTranscription()).toBe(true);
+    expect(toastDismiss).toHaveBeenCalledWith(firstRetryToastId);
+
+    // The next dictation ends with its own failure toast …
+    const second = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Internal error'), {
+        data: { code: 'voice-no-api-key', detail: 'no API key found for elevenlabs' },
+      }),
+    );
+    await handleFinishedRecording(RECORDING, {
+      transcribe: second,
+      insertText: vi.fn(),
+      focusComposer: vi.fn(),
+    });
+    const secondToastId = toastError.mock.calls[0][1].id;
+    expect(secondToastId).not.toBe(firstRetryToastId);
+    toastDismiss.mockClear();
+
+    // … which the first run's late failure must leave alone.
+    rejectSecondAttempt(transientError());
+    await vi.advanceTimersByTimeAsync(10_000);
+    await firstFlow;
+    expect(toastDismiss).not.toHaveBeenCalledWith(secondToastId);
+    expect(first).toHaveBeenCalledTimes(2);
+    expect(toastError).toHaveBeenCalledTimes(1);
   });
 });
 

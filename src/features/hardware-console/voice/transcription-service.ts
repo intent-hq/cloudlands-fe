@@ -104,8 +104,34 @@ function focusDictationComposer(agentId: string): void {
  */
 export const TRANSCRIBE_RETRY_DELAYS_MS = [500, 1_000, 2_000] as const;
 
+/**
+ * An attempt that fails after this long most likely timed out; retrying it
+ * would hold "Transcribing…" for several more timeouts. Exported for tests.
+ */
+export const TRANSCRIBE_RETRY_MAX_ATTEMPT_MS = 30_000;
+
+/** OS engine failures that repeat on every attempt with the same audio. */
+const NON_RETRYABLE_OS_CODES = new Set([
+  'authorization-denied',
+  'authorization-failed',
+  'helper-missing',
+  'unsupported-platform',
+  'recognizer-unavailable',
+  'audio-unreadable',
+  'bad-arguments',
+]);
+
+/** Provider rejections of the credentials (string `error.data` from the daemon). */
+const AUTH_REJECTED_PATTERN = /\b(401|403)\b|unauthori[sz]ed|forbidden/i;
+
 /** Shared id: transcription toasts replace one another instead of stacking. */
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
+
+/**
+ * Retry toasts get a per-run id so a cancelled run can only ever dismiss its
+ * own toast, never the shared-id toast of a later dictation.
+ */
+let retryToastSequence = 0;
 
 /** Lazily pull the toast lib so this service stays light. */
 let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
@@ -322,26 +348,22 @@ function isNoApiKeyError(error: unknown): boolean {
 }
 
 /**
- * Configuration failures (missing key, OS engine denied or unavailable) and
- * rejected params fail the same way on every attempt, so only other
- * failures are retried.
+ * Configuration failures (missing or rejected key, OS engine denied or
+ * unavailable, unreadable audio) and rejected params fail the same way on
+ * every attempt, so only other failures are retried.
  */
 function isRetryableTranscriptionError(error: unknown): boolean {
-  if (
-    error instanceof OsTranscriptionError &&
-    (error.code === 'authorization-denied' ||
-      error.code === 'helper-missing' ||
-      error.code === 'unsupported-platform')
-  ) {
-    return false;
-  }
+  if (error instanceof OsTranscriptionError) return !NON_RETRYABLE_OS_CODES.has(error.code);
   if (isNoApiKeyError(error)) return false;
   const data = (error as { data?: unknown })?.data;
-  return !(
+  if (
     typeof data === 'object' &&
     data !== null &&
     (data as { code?: unknown }).code === 'invalid-params'
-  );
+  ) {
+    return false;
+  }
+  return !AUTH_REJECTED_PATTERN.test(errorDetail(error) ?? '');
 }
 
 function errorDetail(error: unknown): string | undefined {
@@ -547,7 +569,18 @@ export async function handleFinishedRecording(
   // buttons' cancel affordance runs `settle` immediately (spinner clears,
   // a new recording can start) and abandons the session, so the checks
   // below discard the late-arriving result instead of applying it.
-  const sessionToken = beginTranscriptionSession(settle);
+  const retryToastId = `${TRANSCRIPTION_TOAST_ID}:retry:${++retryToastSequence}`;
+  let retryToastNotify: Awaited<ReturnType<typeof getToast>> | null = null;
+  const clearRetryToast = () => {
+    retryToastNotify?.dismiss(retryToastId);
+    retryToastNotify = null;
+  };
+  let wakeBackoff: (() => void) | null = null;
+  const sessionToken = beginTranscriptionSession(() => {
+    settle();
+    clearRetryToast();
+    wakeBackoff?.();
+  });
   explicitTarget?.onStarted(() => {
     if (isTranscriptionSessionCurrent(sessionToken)) cancelActiveTranscription();
   });
@@ -555,19 +588,19 @@ export async function handleFinishedRecording(
   const isAbandoned = () =>
     !isTranscriptionSessionCurrent(sessionToken) ||
     (explicitTarget !== undefined && !explicitTarget.isActive());
-  let retryToastShown = false;
-  const clearRetryToast = async () => {
-    if (!retryToastShown) return;
-    retryToastShown = false;
-    (await getToast()).dismiss(TRANSCRIPTION_TOAST_ID);
-  };
   const transcribeWithRetries = async (): Promise<{ text: string }> => {
     for (let attempt = 0; ; attempt += 1) {
+      const attemptStartedAt = Date.now();
       try {
         return await transcribe(recording.blob, recording.mimeType, context, workspaceId);
       } catch (error) {
         const retryDelay = TRANSCRIBE_RETRY_DELAYS_MS[attempt];
-        if (retryDelay === undefined || isAbandoned() || !isRetryableTranscriptionError(error)) {
+        if (
+          retryDelay === undefined ||
+          isAbandoned() ||
+          !isRetryableTranscriptionError(error) ||
+          Date.now() - attemptStartedAt > TRANSCRIBE_RETRY_MAX_ATTEMPT_MS
+        ) {
           throw error;
         }
         logger.warn('voice.transcribe failed; retrying', { error, retry: attempt + 1 });
@@ -578,10 +611,17 @@ export async function handleFinishedRecording(
             attempt: attempt + 1,
             max: TRANSCRIBE_RETRY_DELAYS_MS.length,
           }),
-          { id: TRANSCRIPTION_TOAST_ID, description: errorDetail(error) },
+          { id: retryToastId, description: errorDetail(error) },
         );
-        retryToastShown = true;
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        retryToastNotify = notify;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, retryDelay);
+          wakeBackoff = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        wakeBackoff = null;
         if (isAbandoned()) throw error;
       }
     }
@@ -589,13 +629,12 @@ export async function handleFinishedRecording(
 
   try {
     const result = await transcribeWithRetries();
+    clearRetryToast();
     if (isAbandoned()) {
       logger.info('Transcription session was cancelled; discarding the late result');
-      await clearRetryToast();
       return;
     }
     settle();
-    await clearRetryToast();
     const text = result.text;
     if (typeof text !== 'string' || text.trim().length === 0) {
       logger.info('voice.transcribe returned an empty transcript; nothing to insert');
@@ -647,9 +686,9 @@ export async function handleFinishedRecording(
       send();
     }
   } catch (error) {
+    clearRetryToast();
     if (isAbandoned()) {
       logger.info('Transcription session was cancelled; discarding the late failure', { error });
-      await clearRetryToast();
       return;
     }
     settle();
