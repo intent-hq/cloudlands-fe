@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.332.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.331.0...v2.332.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **machines:** orchestrator mode in the app ([#4497](https://github.com/intent-hq/cloudlands-fe/issues/4497)) ([ecc1ee1](https://github.com/intent-hq/cloudlands-fe/commit/ecc1ee15241ca014da505a1e62f9947c0bba2a15))
+
 ## [2.331.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.330.0...v2.331.0) (2026-11-13)
 
 
