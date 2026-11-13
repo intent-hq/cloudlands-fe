@@ -44,7 +44,8 @@ export const ENCODER_HUD_HIDE_MS = 1200;
 
 /**
  * After a press opens Home, presses this close together are the same gesture
- * (switch bounce, held-knob repeat) and keep Home open. Each one extends it.
+ * (switch bounce, held-knob repeat) and keep Home open. Each one extends it;
+ * turning the knob on Home ends it.
  */
 export const ENCODER_HOME_SETTLE_MS = 750;
 
@@ -198,7 +199,10 @@ export function installHardwareConsoleEncoder(
       const { encoderBehavior, encoderBehaviorHydrated } = appStore.state.hardwareConsole;
       if (!encoderBehaviorHydrated) return;
       const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
-      if (workspaceId === null && handleHomeRotate(direction)) return;
+      if (workspaceId === null && handleHomeRotate(direction)) {
+        homeHeldUntil = 0;
+        return;
+      }
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
       else dispatch(encoderEffortRotated(direction, workspaceId));
     });

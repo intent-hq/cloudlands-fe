@@ -163,13 +163,26 @@ describe('encoder press that opens Home', () => {
     expect(device.showWorkspace).not.toHaveBeenCalled();
   });
 
-  it('stays on Home while the knob is held and repeats', () => {
+  it('stays on Home while the knob is held and repeats, then lets a later press open', () => {
     const device = openHomeFromChat();
     for (let i = 0; i < 6; i += 1) {
       vi.advanceTimersByTime(400);
       device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
     }
     expect(device.showWorkspace).not.toHaveBeenCalled();
+    expect(device.navigate).toHaveBeenCalledTimes(7);
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 0 } });
+    vi.advanceTimersByTime(800);
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(device.showWorkspace.mock.calls).toEqual([['a']]);
+  });
+
+  it('opens a row picked by turning, even right after opening Home', () => {
+    const device = openHomeFromChat();
+    vi.advanceTimersByTime(200);
+    device.turn('clockwise');
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(device.showWorkspace.mock.calls).toEqual([['b']]);
   });
 
   it('opens the selected workspace on a later, separate press', () => {
