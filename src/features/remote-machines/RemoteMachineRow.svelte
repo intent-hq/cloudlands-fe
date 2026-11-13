@@ -29,7 +29,12 @@
   import PreferredMachineBadge from './PreferredMachineBadge.svelte';
   import MachinePlatformIcon from './MachinePlatformIcon.svelte';
   import MachineProviderIcons from './MachineProviderIcons.svelte';
-  import { machinePlatform, machineRowProviders, machineRowReport } from './machine-facts';
+  import {
+    machinePlatform,
+    machineRowNeedsNode,
+    machineRowProviders,
+    machineRowReport,
+  } from './machine-facts';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   let {
@@ -71,6 +76,13 @@
     );
   });
   const report = $derived(machineRowReport(machine));
+  const needsNode = $derived.by(() => {
+    const entries = $catalogEntries$;
+    return machineRowNeedsNode(
+      machine,
+      (id) => entries.find((entry) => entry.id === id)?.displayName,
+    );
+  });
   // Green while the backend holds a link to it, grey without one; a
   // problem shows its badge colour, and the badge names it.
   const dot = $derived.by((): { class: string; label: string | null } => {
@@ -155,7 +167,7 @@
             >{m.remoteMachines_scriptsUpdate_label()}</span
           >
         {/if}
-        <MachineProviderIcons {providers} reported={!!report} />
+        <MachineProviderIcons {providers} reported={!!report} {needsNode} />
       </span>
     {/snippet}
     {#snippet trailing()}

@@ -51,10 +51,11 @@ describe('remote machine rows while disconnected', () => {
     expect(within(garage).queryByText('No providers ready')).toBeNull();
   });
 
-  it('says so when no provider can run', () => {
+  it('says Node.js is needed when that is why no provider can run', () => {
     const cache = row(renderDisconnected(), 'Cache box');
     expect(within(cache).queryByRole('list', { name: 'Available AI providers' })).toBeNull();
-    expect(within(cache).getByText('No providers ready')).toBeTruthy();
+    expect(within(cache).getByText('Needs Node.js')).toBeTruthy();
+    expect(within(cache).queryByText('No providers ready')).toBeNull();
   });
 
   it('says so on a saved machine row too', () => {

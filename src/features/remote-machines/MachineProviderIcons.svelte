@@ -10,10 +10,13 @@
   let {
     providers,
     reported = false,
+    needsNode = [],
   }: {
     providers: MachineRowProvider[];
     /** The list comes from a report: an empty one says no provider is ready. */
     reported?: boolean;
+    /** Providers that would run once Node.js is installed (`npx` fetches them). */
+    needsNode?: string[];
   } = $props();
 </script>
 
@@ -49,6 +52,13 @@
       </span>
     {/each}
   </span>
+{:else if reported && needsNode.length > 0}
+  <Tooltip
+    content={m.remoteMachines_needsNode_tooltip({ providers: needsNode.join(', ') })}
+    class="ml-1 inline-flex border-l border-border pl-2"
+  >
+    <span data-machine-needs-node>{m.remoteMachines_needsNode_label()}</span>
+  </Tooltip>
 {:else if reported}
   <span class="ml-1 border-l border-border pl-2" data-machine-no-providers
     >{m.remoteMachines_noProviders_label()}</span

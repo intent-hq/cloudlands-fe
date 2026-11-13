@@ -70,12 +70,16 @@ const CACHE_IDLE: RemoteMachine = {
   addedAt: '2026-11-03T00:00:00Z',
 };
 
-/** A saved machine, idle, whose last report has no provider it can run. */
+/** A saved machine, idle, whose last report has no provider it can run,
+ * not even with Node.js. */
 const STUDIO_IDLE: RemoteMachine = {
   ...STUDIO,
   state: 'disconnected',
   runningAgents: 0,
-  capabilities: CACHE_IDLE.capabilities,
+  capabilities: {
+    intentdVersion: CACHE_IDLE.capabilities?.intentdVersion,
+    providers: [{ id: 'claude-code', status: 'cli-missing', models: [] }],
+  },
 };
 
 const ORDER: MachineOrderRow[] = [

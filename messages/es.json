@@ -8483,6 +8483,8 @@
   "remoteMachines_revoke_label": "Revocar",
   "remoteMachines_scriptsUpdate_label": "Necesita una actualización para ejecutar scripts",
   "remoteMachines_noProviders_label": "Ningún proveedor listo",
+  "remoteMachines_needsNode_label": "Necesita Node.js",
+  "remoteMachines_needsNode_tooltip": "Instala Node.js en esta máquina para ejecutar {providers}",
   "remoteMachines_section_description": "{backend} puede ejecutar agentes en estas máquinas. Sus propietarios pueden revocarlo en cualquier momento.",
   "remoteMachines_section_title": "Máquinas en las que {backend} puede ejecutar agentes",
   "remoteMachines_order_title": "Dónde ejecuta {backend} los agentes",

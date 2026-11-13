@@ -8483,6 +8483,8 @@
   "remoteMachines_revoke_label": "취소",
   "remoteMachines_scriptsUpdate_label": "스크립트를 실행하려면 업데이트가 필요합니다",
   "remoteMachines_noProviders_label": "준비된 공급자가 없습니다",
+  "remoteMachines_needsNode_label": "Node.js 필요",
+  "remoteMachines_needsNode_tooltip": "{providers}을(를) 실행하려면 이 머신에 Node.js를 설치하세요",
   "remoteMachines_section_description": "{backend}은(는) 이 머신에서 에이전트를 실행할 수 있습니다. 소유자는 언제든지 취소할 수 있습니다.",
   "remoteMachines_section_title": "{backend}이(가) 에이전트를 실행할 수 있는 머신",
   "remoteMachines_order_title": "{backend}이(가) 에이전트를 실행하는 곳",
