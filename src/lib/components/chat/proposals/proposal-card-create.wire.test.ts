@@ -15,8 +15,27 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 vi.mock('$lib/client', async () => {
   const { LiveWorkspacesClient } = await import('$lib/client/live/live-workspaces-client');
-  return { appClient: { workspaces: new LiveWorkspacesClient() } };
+  return {
+    appClient: {
+      workspaces: new LiveWorkspacesClient(),
+      // The Model row's default-model preview (specialist.list in a provider's context).
+      specialists: {
+        list: vi.fn(async (provider: string) =>
+          provider === 'codex' ? [{ id: 'implementor', resolvedModel: 'gpt-5.5' }] : [],
+        ),
+      },
+    },
+  };
 });
+vi.mock('$features/providers/provider-availability.client', () => ({
+  getProviderAvailability: vi.fn(async () => ({
+    hasAnyProvider: true,
+    providers: {
+      codex: { available: true, authenticated: true },
+      claudeCode: { available: true, authenticated: true },
+    },
+  })),
+}));
 vi.mock('$lib/components/patterns/notify', async () => ({
   ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
   notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
@@ -33,8 +52,12 @@ vi.mock('$lib/components/chat/SpecialistDropdown.svelte', async () => ({
 vi.mock('./ProposalStartOn.svelte', async () => ({
   default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
 }));
+vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
+  default: (await import('./__tests__/MockModelPicker.svelte')).default,
+}));
 
 import {
+  BackendError,
   installMockBackend,
   resetMockBackend,
 } from '../../../../test/mocks/backend-transport.mock';
@@ -44,6 +67,8 @@ import { workspaceOperationsSaga } from '$store/renderer/slices/workspace-operat
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import ProposalCard from './ProposalCard.svelte';
 import { applyProposal } from './proposal-action-handlers';
@@ -98,6 +123,16 @@ const stops: Array<() => void> = [];
 beforeEach(() => {
   stops.push(store.init(withLegacyPrincipal({})));
   stops.push(store.runSaga(workspaceOperationsSaga));
+  // Codex is the daemon's default provider, as New Workspace would start on it.
+  store.dispatch(
+    providerCatalogLoaded({
+      providers: [
+        { id: 'codex', displayName: 'Codex', canBeDisabled: true, visible: true },
+        { id: 'claude-code', displayName: 'Claude Code', canBeDisabled: true, visible: true },
+      ],
+    } as never),
+  );
+  store.dispatch(hydrateDefaultProvider('codex'));
   store.dispatch(
     setFileSpecialists([
       {
@@ -128,7 +163,7 @@ async function applyCard() {
 }
 
 describe('workspace suggestion card → workspace.create', () => {
-  it('omits a remembered provider, model and effort whose provider is turned off', async () => {
+  it("replaces a remembered setup whose provider is turned off with New Workspace's default", async () => {
     const backend = installMockBackend();
     backend.onRequest('workspace.create', (params) =>
       createdResult(params as Record<string, unknown>),
@@ -167,7 +202,9 @@ describe('workspace suggestion card → workspace.create', () => {
       },
     });
     const initialAgent = params.initialAgent as Record<string, unknown>;
-    expect(initialAgent).not.toHaveProperty('provider');
+    // The Model row's default: the enabled default provider, its model left to
+    // the daemon (never the turned-off remembered one).
+    expect(initialAgent.provider).toBe('codex');
     expect(initialAgent).not.toHaveProperty('model');
     expect(initialAgent).not.toHaveProperty('reasoningEffort');
     expect(typeof params.idempotencyKey).toBe('string');
@@ -215,5 +252,74 @@ describe('workspace suggestion card → workspace.create', () => {
       model: 'claude-opus-4-5',
       reasoningEffort: 'high',
     });
+  });
+
+  it("sends the Model row's provider, model and effort with the Start on placement", async () => {
+    const backend = installMockBackend();
+    backend.onRequest('workspace.create', (params) =>
+      createdResult(params as Record<string, unknown>),
+    );
+    const p = proposal();
+    render(ProposalCard, {
+      props: { proposal: p, onApply: (detail) => applyProposal(AGENT_ID, detail) },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock pick Claude model' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock pick high effort' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock start on remote machine' }));
+    await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+
+    await waitFor(() =>
+      expect(store.state.proposalLifecycle[getProposalId(p)]?.status).toBe('applied'),
+    );
+    const params = backend.requests.find((r) => r.method === 'workspace.create')?.params as Record<
+      string,
+      unknown
+    >;
+    expect(params.initialAgent).toMatchObject({
+      provider: 'claude-code',
+      model: 'claude-opus-4-5',
+      reasoningEffort: 'high',
+      placement: { target: 'remote', checkout: 'isolated', nodeId: 'd-mac' },
+    });
+  });
+
+  it("shows the alert naming the provider a 'not enabled' refusal names", async () => {
+    const backend = installMockBackend();
+    backend.onRequest('workspace.create', () => {
+      // Pre-side-effect validation refusal (PROTOCOL workspace.md): -32602
+      // with error.data.code "invalid-params".
+      throw new BackendError({
+        code: 'invalid-params',
+        rpcCode: -32602,
+        message:
+          'workspace.create: provider "codex" (Codex) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.',
+        data: { code: 'invalid-params' },
+      });
+    });
+    const p = proposal();
+    render(ProposalCard, {
+      props: { proposal: p, onApply: (detail) => applyProposal(AGENT_ID, detail) },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('mock-model-picker').dataset.provider).toBe('codex'),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+
+    await waitFor(() =>
+      expect(store.state.proposalLifecycle[getProposalId(p)]?.status).toBe('failed'),
+    );
+    expect(
+      (
+        backend.requests.find((r) => r.method === 'workspace.create')?.params as {
+          initialAgent: { provider?: string };
+        }
+      ).initialAgent.provider,
+    ).toBe('codex');
+    const alert = await screen.findByTestId('proposal-provider-alert');
+    expect(alert.textContent).toContain('Codex');
+    expect(screen.queryByText(/is not enabled/)).toBeNull();
+    // Retry stays available, and nothing was created.
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
+    expect(getItem(store.state.workspace.workspaces, WORKSPACE_ID)).toBeUndefined();
   });
 });
