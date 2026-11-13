@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.332.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.332.0...v2.332.1) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.202 ([#4564](https://github.com/intent-hq/cloudlands-fe/issues/4564)) ([aef0833](https://github.com/intent-hq/cloudlands-fe/commit/aef08331ca75d71f25f49953b0645da667a6401d))
+* **titlebar:** drop macOS traffic-light inset in web mode ([#4556](https://github.com/intent-hq/cloudlands-fe/issues/4556)) ([b1c320a](https://github.com/intent-hq/cloudlands-fe/commit/b1c320a3f3937da12474dbaa16aae6492eeb1e11))
+
 ## [2.332.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.331.0...v2.332.0) (2026-11-13)
 
 
