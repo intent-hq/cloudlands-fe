@@ -47,6 +47,7 @@ export interface MachineRowProvider {
  * report for a machine made available to it. That report counts while the
  * machine is connected or disconnected (its idle state: the backend connects
  * on demand); any other state shows nothing rather than a misleading list.
+ * Providers the machine hides (`visible: false`) are left out.
  * `catalogName` supplies the provider's display name.
  */
 export function machineRowProviders(
@@ -62,6 +63,9 @@ export function machineRowProviders(
   const report = machineRowReport(machine);
   if (!report) return [];
   return report.providers
-    .filter((provider) => !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status))
+    .filter(
+      (provider) =>
+        provider.visible !== false && !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status),
+    )
     .map((provider) => ({ id: provider.id, name: catalogName(provider.id) ?? provider.id }));
 }
