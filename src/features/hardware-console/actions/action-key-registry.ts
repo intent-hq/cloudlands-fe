@@ -342,30 +342,117 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
 const lastCycledStopByAction = new Map<ActionKeyActionId, CycleCursor>();
 
 /**
- * Where a cycle family last stepped: the stop, its walk group, and the stops
- * that followed it in the same group on the same tab at that moment — so a
- * resume after the stop drops out continues after it, not at the tab start.
+ * Where a cycle family last stepped: the stop, its walk group, the stops
+ * that followed it in the same group on the same tab at that moment (so a
+ * resume after the stop drops out continues after it, not at the tab start),
+ * and the tab the current round started from.
  */
 interface CycleCursor {
   entry: CycleStopEntry;
   rank: number;
   laterOnTab: Set<string>;
+  anchorWsId: string | null;
+}
+
+type WalkKey = readonly [rank: number, wrapped: number, tab: number];
+
+function compareWalkKeys(a: WalkKey, b: WalkKey): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+
+/**
+ * One round of a cycle walk, anchored at a tab: group by group (lowest rank
+ * first), each group from the anchor tab rightwards and then wrapping round
+ * to the tabs before it. Stops on one tab keep their collected order.
+ */
+function buildCycleWalk(
+  entries: readonly CycleStopEntry[],
+  rankOf: (entry: CycleStopEntry) => number,
+  tabIndex: ReadonlyMap<string, number>,
+  anchorWsId: string | null,
+): { ordered: CycleStopEntry[]; keyOf: (entry: CycleStopEntry) => WalkKey; anchorTab: number } {
+  const anchorTab = (anchorWsId === null ? undefined : tabIndex.get(anchorWsId)) ?? 0;
+  const keyAt = (rank: number, tab: number): WalkKey => [rank, tab >= anchorTab ? 0 : 1, tab];
+  const keyOf = (entry: CycleStopEntry) => keyAt(rankOf(entry), tabIndex.get(entry.wsId) ?? 0);
+  const ordered = entries
+    .map((entry, index) => ({ entry, index, key: keyOf(entry) }))
+    .sort((a, b) => compareWalkKeys(a.key, b.key) || a.index - b.index)
+    .map((item) => item.entry);
+  return { ordered, keyOf, anchorTab };
 }
 
 function makeCycleCursor(
-  entries: readonly CycleStopEntry[],
-  index: number,
+  ordered: readonly CycleStopEntry[],
+  entry: CycleStopEntry,
   rankOf: (entry: CycleStopEntry) => number,
+  anchorWsId: string | null,
 ): CycleCursor {
-  const entry = entries[index];
   const rank = rankOf(entry);
   const laterOnTab = new Set(
-    entries
-      .slice(index + 1)
+    ordered
+      .slice(ordered.indexOf(entry) + 1)
       .filter((e) => e.wsId === entry.wsId && rankOf(e) === rank)
       .map(cycleStopKey),
   );
-  return { entry, rank, laterOnTab };
+  return { entry, rank, laterOnTab, anchorWsId };
+}
+
+/**
+ * Pick the stop after `cursor` in the anchored walk (see `buildCycleWalk`).
+ * A first press starts a round at the current tab, skipping the stop the
+ * user is already on. A cursor that dropped out resumes right after its old
+ * position; one whose tab was closed restarts the round at the current tab,
+ * in its group. The walk wraps at the end of the round.
+ */
+function selectNextCycleStop(args: {
+  entries: readonly CycleStopEntry[];
+  rankOf: (entry: CycleStopEntry) => number;
+  tabIndex: ReadonlyMap<string, number>;
+  cursor: CycleCursor | undefined;
+  currentWsId: string | null;
+  focused: string | null;
+}): { next: CycleStopEntry; cursor: CycleCursor } {
+  const { entries, rankOf, tabIndex, cursor, currentWsId, focused } = args;
+  const currentAnchor = currentWsId !== null && tabIndex.has(currentWsId) ? currentWsId : null;
+  const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.entry.wsId);
+  const anchorWsId =
+    cursor !== undefined &&
+    cursorTab !== undefined &&
+    cursor.anchorWsId !== null &&
+    tabIndex.has(cursor.anchorWsId)
+      ? cursor.anchorWsId
+      : currentAnchor;
+  const { ordered, keyOf, anchorTab } = buildCycleWalk(entries, rankOf, tabIndex, anchorWsId);
+  const isCurrentStop = (e: CycleStopEntry) =>
+    e.wsId === currentWsId && (e.agentId === null || e.agentId === focused);
+  let start: number;
+  if (cursor === undefined) {
+    start = ordered.findIndex((e) => !isCurrentStop(e));
+  } else {
+    const cursorKey = cycleStopKey(cursor.entry);
+    let at = ordered.findIndex((e) => cycleStopKey(e) === cursorKey);
+    if (at === -1 && cursor.entry.agentId === null) {
+      // A workspace-level cursor whose workspace has since hydrated (its
+      // stop now keys by agent id) counts as that workspace's stop.
+      at = ordered.findIndex((e) => e.wsId === cursor.entry.wsId && rankOf(e) === cursor.rank);
+    }
+    if (at !== -1) {
+      start = at + 1;
+    } else if (cursorTab !== undefined) {
+      const tab = cursorTab;
+      const from: WalkKey = [cursor.rank, tab >= anchorTab ? 0 : 1, tab];
+      start = ordered.findIndex((e) => {
+        const order = compareWalkKeys(keyOf(e), from);
+        return order > 0 || (order === 0 && cursor.laterOnTab.has(cycleStopKey(e)));
+      });
+    } else {
+      // The cursor's tab was closed: restart its group at the current tab.
+      const from: WalkKey = [cursor.rank, 0, anchorTab];
+      start = ordered.findIndex((e) => !isCurrentStop(e) && compareWalkKeys(keyOf(e), from) >= 0);
+    }
+  }
+  const next = ordered[start === -1 || start >= ordered.length ? 0 : start];
+  return { next, cursor: makeCycleCursor(ordered, next, rankOf, anchorWsId) };
 }
 
 /**
@@ -424,19 +511,14 @@ interface GlobalCycleSpec {
 }
 
 /**
- * Shared shape of the global cycle actions: collect the matching agents (in
- * tab order), step to the entry after the walk anchor (the family's own
- * cursor when it is still a candidate, else the first stop after the
- * cursor's position in its group and tab order, else the focused agent,
- * else — when the cursor's tab was closed — the first stop in its group at
- * or after the current tab; on a first press, the first top-group stop at
- * or after the current tab; wrapping), switch workspace
- * when needed, and focus the agent's tab + composer. The cursor is
- * preferred because the state anchor can lag or be re-pointed between
- * presses (async navigation, workspace loaders) — anchoring on it alone is
- * what trapped the walk on one agent. When the only candidate is already
- * focused there is nothing to switch between — a toast says so instead of
- * a silent no-op.
+ * Shared shape of the global cycle actions: collect the matching stops,
+ * step to the next stop of the anchored walk (`selectNextCycleStop`), switch
+ * workspace when needed, and focus the agent's tab + composer. The family's
+ * own cursor is preferred over the focused agent because the state anchor
+ * can lag or be re-pointed between presses (async navigation, workspace
+ * loaders) — anchoring on it alone is what trapped the walk on one agent.
+ * When the only candidate is already focused there is nothing to switch
+ * between — a toast says so instead of a silent no-op.
  */
 function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
   return {
@@ -473,7 +555,11 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           ? entries[0].agentId === focused
           : entries[0].wsId === activeWorkspaceId(context));
       if (alreadyThere) {
-        lastCycledStopByAction.set(spec.id, makeCycleCursor(entries, 0, rankOf));
+        const currentWsId = activeWorkspaceId(context);
+        lastCycledStopByAction.set(
+          spec.id,
+          makeCycleCursor(entries, entries[0], rankOf, currentWsId),
+        );
         // Workspace-level stop we're already on: still (re-)request hydration
         // so the press converges the session cache even if the route-mount
         // hydration failed.
@@ -483,68 +569,24 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         context.showHint(spec.getSingleCandidateHint());
         return;
       }
+      const tabIndex = cycleTabIndex(state);
+      const cursor = lastCycledStopByAction.get(spec.id);
       let next: CycleStopEntry;
+      let nextCursor: CycleCursor;
       if (retryIndex !== -1) {
         next = entries[retryIndex];
+        const anchorWsId = cursor?.anchorWsId ?? activeWorkspaceId(context);
+        const { ordered } = buildCycleWalk(entries, rankOf, tabIndex, anchorWsId);
+        nextCursor = makeCycleCursor(ordered, next, rankOf, anchorWsId);
       } else {
-        const cursor = lastCycledStopByAction.get(spec.id);
-        const cursorKey = cursor === undefined ? undefined : cycleStopKey(cursor.entry);
-        let index =
-          cursorKey === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursorKey);
-        if (index === -1 && cursor !== undefined && cursor.entry.agentId === null) {
-          // The stored cursor was a workspace-level stop whose workspace has
-          // since hydrated (its stop now keys by agent id): resume from that
-          // workspace's stop in the same group instead of restarting the walk.
-          index = entries.findIndex(
-            (e) => e.wsId === cursor.entry.wsId && rankOf(e) === cursor.rank,
-          );
-        }
-        const tabIndex = cycleTabIndex(state);
-        const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.entry.wsId);
-        if (index === -1 && cursor !== undefined && cursorTab !== undefined) {
-          // The last stop dropped out (e.g. visiting it marked it read):
-          // resume right after it — in its group, on its tab or a later one —
-          // so the walk keeps going round instead of restarting.
-          const resume = entries.findIndex((e) => {
-            const rank = rankOf(e);
-            if (rank !== cursor.rank) return rank > cursor.rank;
-            const tab = tabIndex.get(e.wsId) ?? 0;
-            if (tab !== cursorTab) return tab > cursorTab;
-            return cursor.laterOnTab.has(cycleStopKey(e));
-          });
-          index = (resume === -1 ? entries.length : resume) - 1;
-        } else if (index === -1 && focused !== null) {
-          index = entries.findIndex((e) => e.agentId === focused);
-        }
-        const currentWsId = activeWorkspaceId(context);
-        const currentTab = currentWsId === null ? undefined : tabIndex.get(currentWsId);
-        if (
-          index === -1 &&
-          cursor !== undefined &&
-          cursorTab === undefined &&
-          currentTab !== undefined
-        ) {
-          // The last visited tab was closed: continue in the cursor's group
-          // from the current tab rightwards instead of restarting at the left.
-          const resume = entries.findIndex((e) => {
-            const rank = rankOf(e);
-            if (rank !== cursor.rank) return rank > cursor.rank;
-            return (tabIndex.get(e.wsId) ?? 0) >= currentTab;
-          });
-          index = (resume === -1 ? entries.length : resume) - 1;
-        } else if (index === -1 && cursor === undefined && currentTab !== undefined) {
-          // First press: start in the top group at the current tab, wrapping
-          // within that group so a higher-priority stop on an earlier tab
-          // still comes before lower-priority ones.
-          const topRank = Math.min(...entries.map(rankOf));
-          const atOrAfter = entries.findIndex(
-            (e) => rankOf(e) === topRank && (tabIndex.get(e.wsId) ?? 0) >= currentTab,
-          );
-          const start =
-            atOrAfter === -1 ? entries.findIndex((e) => rankOf(e) === topRank) : atOrAfter;
-          index = start - 1;
-        }
-        next = entries[(index + 1) % entries.length];
+        ({ next, cursor: nextCursor } = selectNextCycleStop({
+          entries,
+          rankOf,
+          tabIndex,
+          cursor,
+          currentWsId: activeWorkspaceId(context),
+          focused,
+        }));
       }
       const nextKey = cycleStopKey(next);
       try {
@@ -586,7 +628,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       // middleware hides it after inactivity): a throw above leaves the
       // cursor on the previous stop so the next press retries this one
       // instead of skipping it.
-      lastCycledStopByAction.set(spec.id, makeCycleCursor(entries, entries.indexOf(next), rankOf));
+      lastCycledStopByAction.set(spec.id, nextCursor);
       const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
       context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
     },
