@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "此代理的沙盒未在运行",
   "chat_modelPicker_cloudPaused_description": "你的下一条消息恢复它后，其模型会显示在这里。此后端的模型不会显示，因为此代理无法使用它们。",
   "chat_modelPicker_cloudPaused_title": "沙盒 {sandbox} 未在运行",
+  "chat_modelPicker_cloudWaiting_description": "此代理的沙盒报告模型后，它们会显示在这里。此后端的模型不会显示，因为此代理无法使用它们。",
+  "chat_modelPicker_cloudWaiting_title": "尚未报告模型",
   "chat_modelPicker_defaultModelList_title": "正在显示默认模型列表。",
   "chat_modelPicker_defaultModelPreview_label": "默认（{model}）",
   "chat_modelPicker_defaultModel_description": "让专家选择最佳模型",

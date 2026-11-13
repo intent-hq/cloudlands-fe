@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "Die Sandbox dieses Agenten läuft nicht",
   "chat_modelPicker_cloudPaused_description": "Ihre Modelle erscheinen, sobald deine nächste Nachricht sie fortsetzt. Die Modelle dieses Backends werden nicht angezeigt, weil dieser Agent sie nicht verwenden kann.",
   "chat_modelPicker_cloudPaused_title": "Sandbox {sandbox} läuft nicht",
+  "chat_modelPicker_cloudWaiting_description": "Sie erscheinen, sobald die Sandbox dieses Agenten sie meldet. Die Modelle dieses Backends werden nicht angezeigt, weil dieser Agent sie nicht verwenden kann.",
+  "chat_modelPicker_cloudWaiting_title": "Noch keine Modelle gemeldet",
   "chat_modelPicker_defaultModelList_title": "Standard-Modellliste wird angezeigt.",
   "chat_modelPicker_defaultModelPreview_label": "Standard ({model})",
   "chat_modelPicker_defaultModel_description": "Lassen Sie den Spezialisten das beste Modell wählen",

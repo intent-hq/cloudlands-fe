@@ -631,17 +631,45 @@
     !!remoteLocation &&
       $remoteMachinesPending$[machineRefreshKey(remoteLocation.nodeId)] === 'refreshing',
   );
-  // A cloud sandbox reports once it runs again; remoteMachines.refresh can't
-  // reach one. Name the agent's own sandbox, never the cloud entry.
-  const remoteCloudNotRunning = $derived(
-    !!remoteLocation?.cloud &&
-      !['running', 'starting', 'resuming'].includes(remoteLocation.cloud.state ?? ''),
-  );
+  // Why a cloud agent's picker is empty, only on a positive signal: `paused`
+  // names the agent's own sandbox (never the cloud entry), `gone` means the
+  // next message starts a new one, `waiting` covers a running sandbox and a
+  // row not loaded yet. remoteMachines.refresh can't reach a sandbox.
+  const remoteCloudEmpty = $derived.by((): 'paused' | 'gone' | 'waiting' | null => {
+    const cloud = remoteLocation?.cloud;
+    if (!remoteLocation || !cloud) return null;
+    if (!remoteLocation.nodeId) return cloud.state === 'starting' ? 'waiting' : 'gone';
+    if (cloud.state === 'paused' || cloud.state === 'pausing') return 'paused';
+    if (cloud.state === 'stopping') return 'gone';
+    return 'waiting';
+  });
   const remoteCloudSandbox = $derived(
     remoteLocation?.cloud && $remoteMachine$?.id === remoteLocation.nodeId
       ? ($remoteMachine$.cloud?.sandboxId ?? '')
       : '',
   );
+  const remoteMissingCopy = $derived.by(() => {
+    if (remoteCloudEmpty === 'paused' && remoteCloudSandbox)
+      return {
+        title: m.chat_modelPicker_cloudPaused_title({ sandbox: remoteCloudSandbox }),
+        description: m.chat_modelPicker_cloudPaused_description(),
+      };
+    if (remoteCloudEmpty === 'paused' || remoteCloudEmpty === 'gone')
+      return {
+        title: m.chat_modelPicker_cloudNoSandbox_title(),
+        description: m.chat_modelPicker_cloudNoSandbox_description(),
+      };
+    if (remoteCloudEmpty === 'waiting')
+      return {
+        title: m.chat_modelPicker_cloudWaiting_title(),
+        description: m.chat_modelPicker_cloudWaiting_description(),
+      };
+    const machine = remoteLocation?.name ?? '';
+    return {
+      title: m.chat_modelPicker_remoteMissing_title({ machine }),
+      description: m.chat_modelPicker_remoteMissing_description({ machine }),
+    };
+  });
   function refreshRemoteMachine() {
     if (remoteLocation) appStore.dispatch(remoteMachineRefreshRequested(remoteLocation.nodeId));
   }
@@ -3044,7 +3072,8 @@
             <div class="truncate text-xs text-subtle">
               {[
                 remoteLocation.platform,
-                remoteFreshness === 'missing' && remoteCloudNotRunning
+                remoteFreshness === 'missing' &&
+                (remoteCloudEmpty === 'paused' || remoteCloudEmpty === 'gone')
                   ? m.chat_modelPicker_remoteMachine_notRunning()
                   : remoteFreshness === 'missing' || !remoteReportedAgo
                     ? m.chat_modelPicker_remoteMachine_noReport()
@@ -3189,22 +3218,10 @@
         >
           <Fa icon={faCircleInfo} class="size-4! text-muted-foreground" />
           <div class="text-sm font-medium text-foreground">
-            {#if !remoteCloudNotRunning}
-              {m.chat_modelPicker_remoteMissing_title({ machine: remoteLocation.name })}
-            {:else if remoteCloudSandbox}
-              {m.chat_modelPicker_cloudPaused_title({ sandbox: remoteCloudSandbox })}
-            {:else}
-              {m.chat_modelPicker_cloudNoSandbox_title()}
-            {/if}
+            {remoteMissingCopy.title}
           </div>
           <div class="text-xs text-subtle">
-            {#if !remoteCloudNotRunning}
-              {m.chat_modelPicker_remoteMissing_description({ machine: remoteLocation.name })}
-            {:else if remoteCloudSandbox}
-              {m.chat_modelPicker_cloudPaused_description()}
-            {:else}
-              {m.chat_modelPicker_cloudNoSandbox_description()}
-            {/if}
+            {remoteMissingCopy.description}
           </div>
           {#if !remoteLocation.cloud}
             <Button

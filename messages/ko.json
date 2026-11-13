@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "이 에이전트의 샌드박스가 실행 중이 아닙니다",
   "chat_modelPicker_cloudPaused_description": "다음 메시지가 샌드박스를 재개하면 모델이 표시됩니다. 이 에이전트는 사용할 수 없으므로 이 백엔드의 모델은 표시되지 않습니다.",
   "chat_modelPicker_cloudPaused_title": "샌드박스 {sandbox}이(가) 실행 중이 아닙니다",
+  "chat_modelPicker_cloudWaiting_description": "이 에이전트의 샌드박스가 보고하면 표시됩니다. 이 에이전트는 사용할 수 없으므로 이 백엔드의 모델은 표시되지 않습니다.",
+  "chat_modelPicker_cloudWaiting_title": "아직 보고된 모델이 없습니다",
   "chat_modelPicker_defaultModelList_title": "기본 모델 목록을 표시하고 있습니다.",
   "chat_modelPicker_defaultModelPreview_label": "기본값 ({model})",
   "chat_modelPicker_defaultModel_description": "스페셜리스트가 최적의 모델을 선택하도록 허용",

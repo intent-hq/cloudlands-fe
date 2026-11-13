@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "This agent's sandbox isn't running",
   "chat_modelPicker_cloudPaused_description": "Its models appear once your next message resumes it. The models on this backend aren't shown, because this agent can't use them.",
   "chat_modelPicker_cloudPaused_title": "Sandbox {sandbox} isn't running",
+  "chat_modelPicker_cloudWaiting_description": "They appear once this agent's sandbox reports them. The models on this backend aren't shown, because this agent can't use them.",
+  "chat_modelPicker_cloudWaiting_title": "No models reported yet",
   "chat_modelPicker_defaultModelList_title": "Showing default model list.",
   "chat_modelPicker_defaultModelPreview_label": "Default ({model})",
   "chat_modelPicker_defaultModel_description": "Let the specialist choose the best model",

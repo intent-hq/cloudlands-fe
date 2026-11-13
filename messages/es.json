@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "El sandbox de este agente no está en ejecución",
   "chat_modelPicker_cloudPaused_description": "Sus modelos aparecerán cuando tu próximo mensaje lo reanude. Los modelos de este backend no se muestran porque este agente no puede usarlos.",
   "chat_modelPicker_cloudPaused_title": "El sandbox {sandbox} no está en ejecución",
+  "chat_modelPicker_cloudWaiting_description": "Aparecerán cuando el sandbox de este agente los informe. Los modelos de este backend no se muestran porque este agente no puede usarlos.",
+  "chat_modelPicker_cloudWaiting_title": "Aún no se han informado modelos",
   "chat_modelPicker_defaultModelList_title": "Mostrando la lista de modelos predeterminada.",
   "chat_modelPicker_defaultModelPreview_label": "Predeterminado ({model})",
   "chat_modelPicker_defaultModel_description": "Dejar que el especialista elija el mejor modelo",

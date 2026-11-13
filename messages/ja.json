@@ -727,6 +727,8 @@
   "chat_modelPicker_cloudNoSandbox_title": "このエージェントのサンドボックスは実行されていません",
   "chat_modelPicker_cloudPaused_description": "次のメッセージで再開されると、モデルが表示されます。このエージェントは使用できないため、このバックエンドのモデルは表示されません。",
   "chat_modelPicker_cloudPaused_title": "サンドボックス {sandbox} は実行されていません",
+  "chat_modelPicker_cloudWaiting_description": "このエージェントのサンドボックスが報告すると表示されます。このエージェントは使用できないため、このバックエンドのモデルは表示されません。",
+  "chat_modelPicker_cloudWaiting_title": "モデルはまだ報告されていません",
   "chat_modelPicker_defaultModelList_title": "デフォルトのモデルリストを表示しています。",
   "chat_modelPicker_defaultModelPreview_label": "デフォルト（{model}）",
   "chat_modelPicker_defaultModel_description": "スペシャリストに最適なモデルを選ばせる",
