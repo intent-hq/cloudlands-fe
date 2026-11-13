@@ -61,7 +61,7 @@ export interface CycleAgentEntry extends CycleStopEntry {
 }
 
 /** Key prefix marking a workspace-level stop in `cycleStopKey` values. */
-export const WORKSPACE_STOP_KEY_PREFIX = 'workspace:';
+const WORKSPACE_STOP_KEY_PREFIX = 'workspace:';
 
 /**
  * Stable cursor/dedup key for a stop. Agent stops key by agent id;
@@ -210,7 +210,7 @@ export function pickLastActivePerWorkspace(
  * The key-assignable workspaces open as top tabs, in tab strip order (the
  * chief virtual workspace and archived/deleted workspaces are skipped).
  */
-export function cycleWorkspaces(
+function cycleWorkspaces(
   state: Pick<AgentCycleState, 'workspace' | 'tabState'>,
 ): Workspace[] {
   return state.tabState.workspaceStacks.flat().flatMap((wsId) => {
