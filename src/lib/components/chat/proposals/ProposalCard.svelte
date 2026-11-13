@@ -85,6 +85,8 @@
     selectProviderModels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     getProviderAvailability,
     type ProviderAvailabilityResult,
@@ -237,6 +239,7 @@
   const effectiveDefaultProviderId = selectEffectiveDefaultProviderId();
   const configuredModels = selectProviderModels();
   const globalSelectedModel = selectSelectedModel();
+  const providerModelsCache = selectProviderModelsCacheMap();
   // Loaded on mount, like New Workspace; `null` until then.
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
   const defaultModelPreviews = new SpecialistDefaultPreviews();
@@ -344,13 +347,30 @@
     const model = getInitialAgentValue('model');
     const effort = getInitialAgentValue('reasoningEffort');
     if (provider === undefined && model === undefined && effort === undefined) return null;
-    if (provider && isProviderDisabledInSettings($enabledProviders, provider)) return null;
+    const named = typeof model === 'string' && model ? model : undefined;
+    // A model named without its provider pairs with the provider that lists
+    // it, when that is known; otherwise the row's default provider applies.
+    const owned = !provider && named ? modelOwner(named) : undefined;
+    const setupProvider = provider ?? owned?.provider;
+    const setupModel = owned?.model ?? named;
+    if (setupProvider && isProviderDisabledInSettings($enabledProviders, setupProvider))
+      return null;
     return {
-      ...(provider ? { provider } : {}),
-      ...(typeof model === 'string' && model ? { model } : {}),
+      ...(setupProvider ? { provider: setupProvider } : {}),
+      ...(setupModel ? { model: setupModel } : {}),
       ...(typeof effort === 'string' ? { reasoningEffort: effort } : {}),
     };
   });
+
+  /** The one provider a bare (or legacy `provider:model`) model id belongs to, if known. */
+  function modelOwner(model: string): { provider: string; model: string } | undefined {
+    const split = splitLegacyCompoundId(model);
+    if (split.providerId) return { provider: split.providerId, model: split.modelId };
+    const owners = Object.entries($providerModelsCache)
+      .filter(([, entry]) => entry?.models?.some((row) => row.value === model))
+      .map(([providerId]) => providerId);
+    return owners.length === 1 ? { provider: owners[0], model } : undefined;
+  }
   const providerContext = $derived<ProviderAvailabilityContext>({
     availability: providerAvailability,
     enabledProviders: $enabledProviders,
@@ -392,6 +412,8 @@
     if (!isWorkspaceCreate || !isFailed || agentChangedSinceApply) return null;
     const refused = providerNotEnabledFromError($lifecycleError);
     if (refused === undefined) return null;
+    // The row moved to another provider since: the refusal no longer applies.
+    if (refused && shownSetup.provider && refused !== shownSetup.provider) return null;
     return (
       refused ??
       shownSetup.provider ??

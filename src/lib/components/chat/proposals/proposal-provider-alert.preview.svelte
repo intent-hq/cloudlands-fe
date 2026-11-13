@@ -35,7 +35,8 @@
       // The suggested agent is pinned to Auggie, which is turned off: the Model row
       // still lands on an enabled provider's model and Apply is ready.
       'pinned-off': scene('pinned-off'),
-      // workspace.create refused Auggie although the card thought it was on.
+      // workspace.create refused the Model row's provider (Codex) although the card
+      // thought it was on.
       refused: scene('refused'),
     },
   });
@@ -106,7 +107,7 @@
       proposalFailed({
         proposalId: lifecycleId,
         error:
-          'workspace.create: provider "auggie" (Augment Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.',
+          'workspace.create: provider "codex" (Codex) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.',
         completedAt: 0,
         lastAction: 'apply',
       }),

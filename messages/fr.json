@@ -918,7 +918,7 @@
   "chat_proposalCard_usingDefault_label": "— utilisation de '{branch}' par défaut",
   "chat_proposalCard_workspaceCreated_label": "Espace de travail créé.",
   "chat_proposalCard_workspaceCreationFailed_label": "Échec de la création de l'espace de travail",
-  "chat_proposalCard_providerOff_description": "{agent} s'exécute sur {provider}, qui est désactivé. Choisissez ci-dessus un modèle d'un autre fournisseur, un autre agent, ou activez {provider} dans Paramètres > Fournisseurs.",
+  "chat_proposalCard_providerOff_description": "{provider} est désactivé, donc {agent} n'a pas pu démarrer. Choisissez ci-dessus un modèle d'un autre fournisseur, ou activez {provider} dans Paramètres > Fournisseurs.",
   "chat_proposalCard_providerOffNoAgent_description": "{provider} est désactivé. Choisissez ci-dessus un modèle d'un autre fournisseur, ou activez {provider} dans Paramètres > Fournisseurs.",
   "chat_proposalCard_providerOffSettings_label": "Ouvrir les paramètres des fournisseurs",
   "chat_proposalCard_workspaceName_label": "Nom de l’espace de travail",

@@ -918,7 +918,7 @@
   "chat_proposalCard_usingDefault_label": "— usando la predeterminada '{branch}'",
   "chat_proposalCard_workspaceCreated_label": "Espacio de trabajo creado.",
   "chat_proposalCard_workspaceCreationFailed_label": "Error al crear el espacio de trabajo",
-  "chat_proposalCard_providerOff_description": "{agent} se ejecuta en {provider}, que está desactivado. Elige arriba un modelo de otro proveedor, otro agente, o activa {provider} en Configuración > Proveedores.",
+  "chat_proposalCard_providerOff_description": "{provider} está desactivado, así que {agent} no pudo iniciarse. Elige arriba un modelo de otro proveedor, o activa {provider} en Configuración > Proveedores.",
   "chat_proposalCard_providerOffNoAgent_description": "{provider} está desactivado. Elige arriba un modelo de otro proveedor, o activa {provider} en Configuración > Proveedores.",
   "chat_proposalCard_providerOffSettings_label": "Abrir configuración de proveedores",
   "chat_proposalCard_workspaceName_label": "Nombre del espacio de trabajo",

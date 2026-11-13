@@ -71,6 +71,8 @@ const providerDefaultsState = vi.hoisted(() => {
       codex: { implementor: 'gpt-5.5', 'ui-designer': 'gpt-5.5-mini' },
       auggie: { implementor: 'auggie-fixture' },
     } as Record<string, Record<string, string>>,
+    // Loaded provider model catalogs (provider-models cache).
+    modelsCache: {} as Record<string, { models: { value: string }[] }>,
   };
 });
 
@@ -221,7 +223,7 @@ vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', ()
 vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
   selectProviderModelsCacheMap: () => ({
     subscribe: (run: (value: Record<string, unknown>) => void) => {
-      run({});
+      run(providerDefaultsState.modelsCache);
       return () => {};
     },
   }),
@@ -436,6 +438,7 @@ beforeEach(() => {
   prBranchLookupState.reset();
   providerDefaultsState.active = 'claude-code';
   providerDefaultsState.defaultProvider = 'claude-code';
+  providerDefaultsState.modelsCache = {};
   enabledProvidersState.value = {};
   enabledProvidersState.listeners.clear();
 });
@@ -2250,6 +2253,27 @@ describe('ProposalCard', () => {
       expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
     });
 
+    it("pairs a proposal's model with the provider that lists it", async () => {
+      providerDefaultsState.modelsCache = { codex: { models: [{ value: 'gpt-5.5' }] } };
+      const appliedFields = renderCard({ model: 'gpt-5.5' });
+
+      expect(picker().dataset).toMatchObject({ provider: 'codex', model: 'gpt-5.5' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
+    });
+
+    it("keeps New Workspace's provider for a proposal model no single provider lists", async () => {
+      providerDefaultsState.modelsCache = {
+        codex: { models: [{ value: 'shared-model' }] },
+        auggie: { models: [{ value: 'shared-model' }] },
+      };
+      const appliedFields = renderCard({ model: 'shared-model' });
+
+      expect((await appliedFields())?.agentPick).toEqual({
+        provider: 'claude-code',
+        model: 'shared-model',
+      });
+    });
+
     it('starts on the first available provider when the active one is turned off', async () => {
       enabledProvidersState.set({ 'claude-code': false });
       const appliedFields = renderCard();
@@ -2261,8 +2285,9 @@ describe('ProposalCard', () => {
   });
 
   describe("agent pinned to a provider that's turned off", () => {
+    // The card sends the Model row's provider, so a refusal names that one.
     const REFUSAL =
-      'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
+      'workspace.create: provider "claude-code" (Claude Code) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
 
     function renderSibling(workspaceCreate: Record<string, unknown> = {}) {
       const { container } = render(ProposalCard, {
@@ -2347,7 +2372,7 @@ describe('ProposalCard', () => {
     });
 
     it('shows the alert instead of the raw error when create refuses a turned-off provider', async () => {
-      // Settings here still say Auggie is on; the daemon disagreed.
+      // Settings here still say Claude Code is on; the daemon disagreed.
       enabledProvidersState.set({});
       lifecycleSelectorState.status = 'failed';
       lifecycleSelectorState.error = REFUSAL;
@@ -2355,7 +2380,7 @@ describe('ProposalCard', () => {
 
       const alert = screen.getByTestId('proposal-provider-alert');
       expect(alert.textContent).toContain('Implementor');
-      expect(alert.textContent).toContain('Auggie');
+      expect(alert.textContent).toContain('Claude Code');
       expect(screen.queryByText(/is not enabled/)).toBeNull();
       // Retry stays available: the provider may have been turned back on.
       expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
@@ -2376,6 +2401,18 @@ describe('ProposalCard', () => {
 
       await fireEvent.click(screen.getByTestId('proposal-provider-alert-settings'));
       expect(navigationMocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'providers' });
+    });
+
+    it('drops the refusal alert once the row moves to another provider', async () => {
+      enabledProvidersState.set({});
+      lifecycleSelectorState.status = 'failed';
+      lifecycleSelectorState.error = REFUSAL;
+      renderSibling();
+
+      expect(screen.getByTestId('proposal-provider-alert')).toBeTruthy();
+      enabledProvidersState.set({ auggie: false, 'claude-code': false });
+      await waitFor(() => expect(picker().dataset.provider).toBe('codex'));
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
     });
 
     it('drops the refusal alert once another agent is picked', async () => {

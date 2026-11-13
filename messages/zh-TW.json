@@ -918,7 +918,7 @@
   "chat_proposalCard_usingDefault_label": "——使用預設的「{branch}」",
   "chat_proposalCard_workspaceCreated_label": "工作區已建立。",
   "chat_proposalCard_workspaceCreationFailed_label": "建立工作區失敗",
-  "chat_proposalCard_providerOff_description": "{agent} 執行於已關閉的 {provider}。請在上方選擇其他提供者的模型或其他代理，或在 設定 > 提供者 中開啟 {provider}。",
+  "chat_proposalCard_providerOff_description": "{provider} 已關閉，因此 {agent} 無法啟動。請在上方選擇其他提供者的模型，或在 設定 > 提供者 中開啟 {provider}。",
   "chat_proposalCard_providerOffNoAgent_description": "{provider} 已關閉。請在上方選擇其他提供者的模型，或在 設定 > 提供者 中開啟 {provider}。",
   "chat_proposalCard_providerOffSettings_label": "開啟提供者設定",
   "chat_proposalCard_workspaceName_label": "工作區名稱",
