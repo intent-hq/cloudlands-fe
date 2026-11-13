@@ -8270,6 +8270,7 @@
   "inlineHtml_preview_incomplete_description": "This preview is unfinished. Open source to inspect it.",
   "inlineHtml_preview_empty_description": "No HTML to preview.",
   "inlineHtml_preview_runtime_error": "This preview encountered an error.",
+  "inlineHtml_preview_startup_error": "The preview could not start. Try Reload.",
   "inlineHtml_preview_frame_ariaLabel": "Interactive HTML preview",
   "inlineHtml_preview_loading_label": "Loading preview…",
   "inlineHtml_preview_scenarioName_label": "Scenario {number}",

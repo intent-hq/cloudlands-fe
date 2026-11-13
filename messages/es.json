@@ -8270,6 +8270,7 @@
   "inlineHtml_preview_incomplete_description": "Esta vista previa está incompleta. Abre el código fuente para revisarla.",
   "inlineHtml_preview_empty_description": "No hay HTML para mostrar.",
   "inlineHtml_preview_runtime_error": "Se produjo un error en esta vista previa.",
+  "inlineHtml_preview_startup_error": "No se pudo iniciar la vista previa. Prueba a recargarla.",
   "inlineHtml_preview_frame_ariaLabel": "Vista previa HTML interactiva",
   "inlineHtml_preview_loading_label": "Cargando vista previa…",
   "inlineHtml_preview_scenarioName_label": "Escenario {number}",

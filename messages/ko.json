@@ -8270,6 +8270,7 @@
   "inlineHtml_preview_incomplete_description": "이 미리보기는 미완성입니다. 소스를 열어 확인하세요.",
   "inlineHtml_preview_empty_description": "미리 볼 HTML이 없습니다.",
   "inlineHtml_preview_runtime_error": "미리보기에서 오류가 발생했습니다.",
+  "inlineHtml_preview_startup_error": "미리보기를 시작할 수 없습니다. 다시 로드해 보세요.",
   "inlineHtml_preview_frame_ariaLabel": "대화형 HTML 미리보기",
   "inlineHtml_preview_loading_label": "미리보기 로딩 중…",
   "inlineHtml_preview_scenarioName_label": "시나리오 {number}",

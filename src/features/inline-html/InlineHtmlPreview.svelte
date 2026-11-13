@@ -23,6 +23,7 @@
   } from './inline-html-document';
 
   const SOURCE_MAX_HEIGHT = 720;
+  const STARTUP_TIMEOUT_MS = 10_000;
 
   let {
     source,
@@ -209,12 +210,24 @@
     });
   });
 
+  $effect(() => {
+    if (!documentHtml || ready || runtimeError) return;
+    const timer = setTimeout(() => {
+      runtimeError = m.inlineHtml_preview_startup_error();
+    }, STARTUP_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
+
   onMount(() => {
     mounted = true;
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame?.contentWindow || event.origin !== 'null') return;
       const data = event.data;
       if (!data || typeof data !== 'object' || data.channel !== channel) return;
+      if (data.type === 'bootstrap') {
+        frame?.contentWindow?.postMessage({ channel, type: 'initialize', documentHtml }, '*');
+        return;
+      }
       if (
         data.type === 'resize' &&
         typeof data.height === 'number' &&
@@ -334,17 +347,19 @@
   {/if}
   <div class="relative min-w-0">
     {#if runnable && documentHtml}
-      <iframe
-        bind:this={frame}
-        title={m.inlineHtml_preview_frame_ariaLabel()}
-        sandbox="allow-scripts"
-        referrerpolicy="no-referrer"
-        srcdoc={documentHtml}
-        class="block w-full border-0"
-        class:preview-hidden={showSource || loading}
-        aria-hidden={showSource || loading}
-        style:height={`${height}px`}
-      ></iframe>
+      {#key channel}
+        <iframe
+          bind:this={frame}
+          title={m.inlineHtml_preview_frame_ariaLabel()}
+          sandbox="allow-scripts"
+          referrerpolicy="no-referrer"
+          src={`/inline-html-sandbox.html#${channel}`}
+          class="block w-full border-0"
+          class:preview-hidden={showSource || !ready}
+          aria-hidden={showSource || !ready}
+          style:height={`${height}px`}
+        ></iframe>
+      {/key}
     {/if}
     {#if showSource}
       <CodeBlock code={source} language="html" noBorder noMargin maxHeight={sourceHeightLimit} />

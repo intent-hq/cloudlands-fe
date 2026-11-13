@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src about:; base-uri 'none'; form-action 'none';"
+    />
+    <script>
+      (() => {
+        if (window.parent === window) return;
+        const channel = location.hash.slice(1);
+        if (!channel) return;
+        const initialize = (event) => {
+          if (
+            event.source !== window.parent ||
+            event.data?.channel !== channel ||
+            event.data?.type !== 'initialize' ||
+            typeof event.data.documentHtml !== 'string'
+          )
+            return;
+          window.removeEventListener('message', initialize);
+          document.open();
+          document.write(event.data.documentHtml);
+          document.close();
+        };
+        window.addEventListener('message', initialize);
+        window.parent.postMessage({ channel, type: 'bootstrap' }, '*');
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

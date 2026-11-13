@@ -8270,6 +8270,7 @@
   "inlineHtml_preview_incomplete_description": "此预览尚未完成。打开源码进行查看。",
   "inlineHtml_preview_empty_description": "没有可预览的 HTML。",
   "inlineHtml_preview_runtime_error": "此预览发生错误。",
+  "inlineHtml_preview_startup_error": "无法启动预览。请尝试重新加载。",
   "inlineHtml_preview_frame_ariaLabel": "交互式 HTML 预览",
   "inlineHtml_preview_loading_label": "正在加载预览…",
   "inlineHtml_preview_scenarioName_label": "方案 {number}",
