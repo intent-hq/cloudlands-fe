@@ -403,6 +403,32 @@ describe('openBackendWindow hostname labeling', () => {
       expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
     );
   });
+
+  it('sends the guest sessions list to every machine shown in a window, not only its own', async () => {
+    systemStatus.value = { prettyHostname: 'Clement’s Mac Studio' };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const win = {
+      id: 1,
+      backendId: 'local',
+      isDestroyed: () => false,
+      once: vi.fn(),
+      webContents: { send: vi.fn() },
+    };
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win as never]);
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win as never);
+    const mod = await loadModule();
+    const { bindMachineViewToBackend } = await import('../../../../main/window-backend');
+    const view = { send: vi.fn(), on: vi.fn(), once: vi.fn(), isDestroyed: () => false };
+    bindMachineViewToBackend(win as never, view as never, 'remote-1');
+
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)?.opts.onHelloResult?.({ server: {} });
+
+    await vi.waitFor(() =>
+      expect(view.send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+    );
+  });
 });
 
 describe('guest device kind', () => {

@@ -3752,15 +3752,16 @@ async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise
   // Native Window-menu entries use the same guest labels as renderer chrome.
   app.emit('guest-sessions-changed');
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      win.webContents.send(GUEST_SESSIONS.CHANGED, payload);
-    } catch (error) {
-      recordPoolError(owner, error);
-      logger.warn('Failed to broadcast guest sessions change', {
-        windowId: win.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const renderer of getRendererWebContents(win)) {
+      try {
+        renderer.send(GUEST_SESSIONS.CHANGED, payload);
+      } catch (error) {
+        recordPoolError(owner, error);
+        logger.warn('Failed to broadcast guest sessions change', {
+          windowId: win.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }
