@@ -26,6 +26,8 @@ export function sshFailureMessage(failure: SshRunFailure, host: string): string 
       return m.machineSetup_error_noStart({ host });
     case 'did-not-start':
       return m.machineSetup_error_didNotStart({ host });
+    case 'running-elsewhere':
+      return m.machineSetup_error_runningElsewhere({ host });
     case 'too-old':
       return m.machineSetup_error_tooOld({ host });
     case 'orchestrator':

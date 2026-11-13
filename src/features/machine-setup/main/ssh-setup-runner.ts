@@ -205,15 +205,22 @@ function shq(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** The user unit the installer writes, and the data dir and binary it names. */
-const DETECT_COMMAND = [
-  'UNIT="$HOME/.config/systemd/user/intentd.service"',
-  'if [ -f "$UNIT" ]; then echo unit=1; sed -n "s/^ExecStart=/exec=/p" "$UNIT" | head -n 1; ' +
-    'grep -o "INTENTD_DATA_DIR=[^\\"]*" "$UNIT" | head -n 1 | sed "s/^/env_/"; fi',
-].join('; ');
-
 /** `systemctl --user` needs the session bus, which a non-login SSH shell may not name. */
 const SYSTEMD_ENV = 'XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"';
+
+/**
+ * The `intentd` user unit and the binary and data dir it runs. systemd's own
+ * view covers every unit path (the installer's, the .deb's) and drop-ins;
+ * without a reachable user manager, read the installer's unit file instead.
+ */
+const DETECT_COMMAND = [
+  `SHOW=$(${SYSTEMD_ENV} systemctl --user show intentd -p LoadState -p ExecStart -p Environment 2>/dev/null)`,
+  'UNIT="$HOME/.config/systemd/user/intentd.service"',
+  'if printf "%s\\n" "$SHOW" | grep "^LoadState=loaded" >/dev/null; then echo unit=1; ' +
+    'printf "%s\\n" "$SHOW" | sed -n "s/^ExecStart=/execshow=/p; s/^Environment=/env=/p"; ' +
+    'elif [ -f "$UNIT" ]; then echo unit=1; sed -n "s/^ExecStart=/exec=/p" "$UNIT" | head -n 1; ' +
+    'sed -n "s/^Environment=/env=/p" "$UNIT"; fi',
+].join('; ');
 
 interface ExistingInstall {
   unit: boolean;
@@ -237,16 +244,69 @@ export function parseExecStart(value: string): string | null {
   return unescapeUnit(rest.split(/\s+/)[0]);
 }
 
-/** Read the detection output (`unit=1`, `exec=…`, `env_INTENTD_DATA_DIR=…`). @internal */
+/**
+ * The words of an `Environment=` value: space-separated, a word may be
+ * double-quoted with `\\"`, `\\\\` and `\\xNN` escapes (unit files and
+ * `systemctl show` alike). @internal
+ */
+export function environmentWords(value: string): string[] {
+  const words: string[] = [];
+  let i = 0;
+  while (i < value.length) {
+    while (value[i] === ' ' || value[i] === '\t') i++;
+    if (i >= value.length) break;
+    let word = '';
+    const quoted = value[i] === '"';
+    if (quoted) i++;
+    while (i < value.length) {
+      const c = value[i];
+      if (quoted ? c === '"' : c === ' ' || c === '\t') break;
+      if (c === '\\' && i + 1 < value.length) {
+        const next = value[i + 1];
+        if (next === 'x' && /^[0-9a-fA-F]{2}$/.test(value.slice(i + 2, i + 4))) {
+          word += String.fromCharCode(parseInt(value.slice(i + 2, i + 4), 16));
+          i += 4;
+          continue;
+        }
+        word += next;
+        i += 2;
+        continue;
+      }
+      word += c;
+      i++;
+    }
+    if (quoted) i++;
+    words.push(word.replaceAll('%%', '%'));
+  }
+  return words;
+}
+
+/**
+ * Read the detection output: `unit=1`, then `execshow=` (systemctl's
+ * `{ path=… ; argv[]=… }`) or `exec=` (the unit file's line), and `env=`
+ * lines. @internal
+ */
 export function parseExistingInstall(stdout: string): ExistingInstall {
   const found: ExistingInstall = { unit: false, execPath: null, dataDir: null };
   for (const line of stdout.split('\n')) {
     if (line === 'unit=1') found.unit = true;
-    else if (line.startsWith('exec=')) found.execPath = parseExecStart(line.slice(5));
-    else if (line.startsWith('env_INTENTD_DATA_DIR='))
-      found.dataDir = unescapeUnit(line.slice('env_INTENTD_DATA_DIR='.length)) || null;
+    else if (line.startsWith('execshow=')) {
+      const path = /\bpath=(.*?) ; argv\[\]=/.exec(line)?.[1]?.trim();
+      found.execPath = path || null;
+    } else if (line.startsWith('exec=')) found.execPath = parseExecStart(line.slice(5));
+    else if (line.startsWith('env=')) {
+      for (const word of environmentWords(line.slice(4)))
+        if (word.startsWith('INTENTD_DATA_DIR='))
+          found.dataDir = word.slice('INTENTD_DATA_DIR='.length) || null;
+    }
   }
   return found;
+}
+
+/** `intentd settings <key>` prints `<key> = <value>` first, then details. @internal */
+export function settingEnabled(stdout: string, key: string): boolean {
+  const line = stdout.split('\n').find((l) => l.startsWith(`${key} = `));
+  return line?.slice(key.length + 3).trim() === 'true';
 }
 
 /** The first runnable intentd: the unit's binary, then PATH, then the installer's dirs. */
@@ -701,6 +761,10 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
         if (found.unit) {
           await tryExec(run, `${SYSTEMD_ENV} systemctl --user start intentd`);
         } else {
+          // A daemon we could not reach (its data dir is set somewhere we
+          // cannot read) must not get a fresh, empty sibling to pair instead.
+          if ((await tryExec(run, 'pgrep -u "$(id -u)" -x intentd')).stdout.trim())
+            throw new SetupFailure('running-elsewhere');
           const lines: string[] = [];
           const started = await exec(run, intentd('start'), (line) => {
             lines.push(line);
@@ -718,8 +782,10 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
           run,
           `${intentd('settings server.wsApi.enabled')}; ${intentd('settings server.tunnel.enabled')}`,
         )
-      ).stdout.split('\n');
-      return [0, 1].map((i) => /\btrue\b/.test(out[i] ?? ''));
+      ).stdout;
+      return ['server.wsApi.enabled', 'server.tunnel.enabled'].map((key) =>
+        settingEnabled(out, key),
+      );
     };
     const before = await settings();
 

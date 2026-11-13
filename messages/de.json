@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent ist auf {host} installiert, ist aber nicht gestartet.",
   "machineSetup_error_tooOld": "Intent auf {host} ist zu alt zum Koppeln. Aktualisiere es dort und versuche es dann erneut.",
   "machineSetup_error_orchestrator": "{host} ist so eingestellt, dass es selbst keine Agenten ausführt, und kann daher kein Node sein.",
-  "machineSetup_error_pairFailed": "Intent auf {host} konnte nicht koppeln."
+  "machineSetup_error_pairFailed": "Intent auf {host} konnte nicht koppeln.",
+  "machineSetup_error_runningElsewhere": "Intent läuft bereits auf {host}, aber diese Einrichtung erreicht es nicht. Führe dort intentd pair aus und füge den ausgegebenen Link ein."
 }

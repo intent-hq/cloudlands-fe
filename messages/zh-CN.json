@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent 已安装在 {host} 上，但没有启动。",
   "machineSetup_error_tooOld": "{host} 上的 Intent 版本太旧，无法配对。请在那里更新后再试。",
   "machineSetup_error_orchestrator": "{host} 被设置为自身不运行智能体，因此不能作为节点。",
-  "machineSetup_error_pairFailed": "{host} 上的 Intent 无法配对。"
+  "machineSetup_error_pairFailed": "{host} 上的 Intent 无法配对。",
+  "machineSetup_error_runningElsewhere": "Intent 已在 {host} 上运行，但此设置无法连接到它。请在那里运行 intentd pair，然后粘贴它输出的链接。"
 }

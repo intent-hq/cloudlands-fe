@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent está instalado en {host}, pero no se inició.",
   "machineSetup_error_tooOld": "Intent en {host} es demasiado antiguo para emparejarse. Actualízalo allí y vuelve a intentarlo.",
   "machineSetup_error_orchestrator": "{host} está configurado para no ejecutar agentes, así que no puede ser un nodo.",
-  "machineSetup_error_pairFailed": "Intent en {host} no pudo emparejarse."
+  "machineSetup_error_pairFailed": "Intent en {host} no pudo emparejarse.",
+  "machineSetup_error_runningElsewhere": "Intent ya se está ejecutando en {host}, pero esta configuración no puede acceder a él. Ejecuta intentd pair allí y pega el enlace que muestra."
 }

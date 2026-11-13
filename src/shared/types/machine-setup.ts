@@ -65,6 +65,8 @@ export type SshSetupErrorCode =
   | 'no-start'
   /** Installed intentd did not come up after the start. */
   | 'did-not-start'
+  /** An intentd process runs, but not on a data dir this setup can find. */
+  | 'running-elsewhere'
   /** Installed intentd cannot pair: no `--tunnel` / `--node`, or no node invites. */
   | 'too-old'
   /** Node card on an orchestrator-mode backend (it runs no agents itself). */

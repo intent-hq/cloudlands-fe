@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent est installé sur {host}, mais n’a pas démarré.",
   "machineSetup_error_tooOld": "Intent sur {host} est trop ancien pour l’appairage. Mettez-le à jour là-bas, puis réessayez.",
   "machineSetup_error_orchestrator": "{host} est configuré pour n’exécuter aucun agent lui-même : il ne peut pas être un nœud.",
-  "machineSetup_error_pairFailed": "Intent sur {host} n’a pas pu être appairé."
+  "machineSetup_error_pairFailed": "Intent sur {host} n’a pas pu être appairé.",
+  "machineSetup_error_runningElsewhere": "Intent tourne déjà sur {host}, mais cette configuration ne peut pas l’atteindre. Exécutez intentd pair là-bas et collez le lien affiché."
 }

@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent is installed on {host} but did not start.",
   "machineSetup_error_tooOld": "Intent on {host} is too old to pair. Update it there, then try again.",
   "machineSetup_error_orchestrator": "{host} is set to run no agents itself, so it can't be a node.",
-  "machineSetup_error_pairFailed": "Intent on {host} could not pair."
+  "machineSetup_error_pairFailed": "Intent on {host} could not pair.",
+  "machineSetup_error_runningElsewhere": "Intent is already running on {host}, but this setup can't reach it. Run intentd pair there and paste the link it prints."
 }

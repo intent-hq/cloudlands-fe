@@ -9050,5 +9050,6 @@
   "machineSetup_error_didNotStart": "Intent は {host} にインストールされていますが、起動しませんでした。",
   "machineSetup_error_tooOld": "{host} の Intent は古すぎてペアリングできません。そちらで更新してから、もう一度お試しください。",
   "machineSetup_error_orchestrator": "{host} は自身でエージェントを実行しない設定のため、ノードにはなれません。",
-  "machineSetup_error_pairFailed": "{host} の Intent はペアリングできませんでした。"
+  "machineSetup_error_pairFailed": "{host} の Intent はペアリングできませんでした。",
+  "machineSetup_error_runningElsewhere": "{host} では Intent がすでに動いていますが、このセットアップからは接続できません。そちらで intentd pair を実行し、表示されたリンクを貼り付けてください。"
 }
