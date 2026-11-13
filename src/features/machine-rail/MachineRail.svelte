@@ -308,16 +308,27 @@
   }
 
   // Each machine's renderer has its own rail, and one that stops being shown
-  // never sees the pointer leave. A machine's name stays hidden after a click
-  // on it until the pointer or keyboard focus moves to another machine. Every
-  // name stays hidden while this rail is not on screen and, once it shows
-  // again, until the pointer has left the rail: after a switch the pointer is
-  // still resting on the rail of the machine that just appeared, which reports
-  // it as entering, so entering alone must not bring the names back.
+  // never sees the pointer leave: its tooltips keep their hover state and
+  // timers. A machine's name stays hidden after a click on it until the
+  // pointer or keyboard focus moves to another machine. Every name stays
+  // hidden while this rail is not on screen. When it shows again, its
+  // tooltips start afresh, and the pointer resting on it (which the view
+  // reports as entering) wakes no name until it really moves.
   let quietTooltips = $state<'all' | string | null>(null);
+  let tooltipGeneration = $state(0);
+  let wasShown = true;
   $effect(() => {
-    if (!$isShown$) quietTooltips = 'all';
+    const shown = $isShown$;
+    if (!shown) quietTooltips = 'all';
+    else if (!wasShown) tooltipGeneration += 1;
+    wasShown = shown;
   });
+
+  /** The pointer really moved over `item` on a rail that just came back: the machine under it stays quiet. */
+  function wakeOnMove(event: PointerEvent, item: MachineRailItem) {
+    if (quietTooltips !== 'all' || drag?.active) return;
+    if (event.movementX !== 0 || event.movementY !== 0) quietTooltips = item.id;
+  }
 
   function tooltipQuiet(item: MachineRailItem): boolean {
     // No names while a machine is dragged: they would trail and cover the rail.
@@ -432,7 +443,10 @@
     onpointerenter={() => wakeTooltips(item)}
     onfocusin={() => wakeTooltips(item)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
-    onpointermove={moveDrag}
+    onpointermove={(event) => {
+      moveDrag(event);
+      wakeOnMove(event, item);
+    }}
     onpointerup={() => endDrag(true)}
     onpointercancel={() => endDrag(false)}
     onlostpointercapture={() => endDrag(false)}
@@ -526,23 +540,25 @@
       class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto"
       data-rail-list
     >
-      {#each ownItems as item, index (item.id)}
-        <div animate:flip={{ duration: flipDuration() }}>
-          {@render railEntry(item, 'own', index)}
-        </div>
-      {/each}
-      {#if ownItems.length > 0 && guestItems.length > 0}
-        <div
-          class="my-0.5 h-px w-5 shrink-0 bg-border"
-          role="separator"
-          data-testid="machine-rail-guest-separator"
-        ></div>
-      {/if}
-      {#each guestItems as item, index (item.id)}
-        <div animate:flip={{ duration: flipDuration() }}>
-          {@render railEntry(item, 'guest', index)}
-        </div>
-      {/each}
+      {#key tooltipGeneration}
+        {#each ownItems as item, index (item.id)}
+          <div animate:flip={{ duration: flipDuration() }}>
+            {@render railEntry(item, 'own', index)}
+          </div>
+        {/each}
+        {#if ownItems.length > 0 && guestItems.length > 0}
+          <div
+            class="my-0.5 h-px w-5 shrink-0 bg-border"
+            role="separator"
+            data-testid="machine-rail-guest-separator"
+          ></div>
+        {/if}
+        {#each guestItems as item, index (item.id)}
+          <div animate:flip={{ duration: flipDuration() }}>
+            {@render railEntry(item, 'guest', index)}
+          </div>
+        {/each}
+      {/key}
     </div>
 
     <Menu.Root bind:open={menuOpen}>
