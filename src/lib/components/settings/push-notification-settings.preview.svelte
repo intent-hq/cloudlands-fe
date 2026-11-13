@@ -25,7 +25,7 @@
     return () => stops.forEach((stop) => stop());
   }
 
-  const state = (scenario: Scenario) => ({
+  const previewState = (scenario: Scenario) => ({
     props: { scenario },
     setup: scenario === 'page' ? setupPage : setupPushSettingsPreview,
   });
@@ -35,14 +35,14 @@
     title: 'Push notification settings',
     defaultState: 'sending',
     states: {
-      off: state('off'),
-      sending: state('sending'),
-      'not-linked': state('not-linked'),
-      paused: state('paused'),
-      error: state('error'),
-      'save-error': state('save-error'),
-      saving: state('saving'),
-      page: state('page'),
+      off: previewState('off'),
+      sending: previewState('sending'),
+      'not-linked': previewState('not-linked'),
+      paused: previewState('paused'),
+      error: previewState('error'),
+      'save-error': previewState('save-error'),
+      saving: previewState('saving'),
+      page: previewState('page'),
     },
   });
 </script>
