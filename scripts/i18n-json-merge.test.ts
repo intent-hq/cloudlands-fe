@@ -195,6 +195,23 @@ describe('i18n-json-merge resolve', () => {
     expect(resolve.stderr).toContain('a_label');
     expect(gitOk(dir, 'ls-files', '-u', CATALOG)).not.toBe('');
   });
+  it('saves the conflicted file in git before overwriting it', () => {
+    const dir = forkedRepo(BASE, OURS_APPEND, THEIRS_APPEND, { driver: false });
+    expect(git(dir, 'merge', '--no-edit', 'other').status).not.toBe(0);
+    const edited = `${readFileSync(join(dir, CATALOG), 'utf8')}// hand note\n`;
+    writeFileSync(join(dir, CATALOG), edited);
+
+    const resolve = spawnSync(process.execPath, [scriptPath, 'resolve'], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+
+    expect(resolve.status, resolve.stderr).toBe(0);
+    const blob = /git cat-file -p ([0-9a-f]{40,})/.exec(resolve.stdout)?.[1];
+    expect(blob, resolve.stdout).toBeDefined();
+    expect(gitOk(dir, 'cat-file', '-p', blob!)).toBe(edited);
+  });
+
   it('leaves a catalog without conflict markers alone so hand edits survive', () => {
     const dir = forkedRepo(BASE, OURS_APPEND, THEIRS_APPEND, { driver: false });
     expect(git(dir, 'merge', '--no-edit', 'other').status).not.toBe(0);

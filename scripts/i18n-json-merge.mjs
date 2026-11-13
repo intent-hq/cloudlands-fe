@@ -214,9 +214,13 @@ function runResolve() {
       failed += 1;
       continue;
     }
+    // Keep the pre-resolve file (markers plus any hand edits) recoverable from git.
+    const backup = git(['hash-object', '-w', '--', path], { cwd: root }).trim();
     writeFileSync(join(root, path), outcome.text);
     git(['add', '--', path], { cwd: root });
-    console.log(`i18n-json-merge: resolved ${path}`);
+    console.log(
+      `i18n-json-merge: resolved ${path} (previous file: git cat-file -p ${backup} > ${path})`,
+    );
   }
   return failed > 0 ? 1 : 0;
 }
