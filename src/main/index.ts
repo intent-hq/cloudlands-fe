@@ -313,19 +313,9 @@ setupIPCInterceptor();
 // Import new IPC setup functions
 import { registerAcceptChangesHandlers } from '../features/accept-changes/main/accept-changes.ipc';
 import { registerAgentContextHandlers } from '../features/agent/agent-context.ipc';
-import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
-import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
-import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
-import { setupPiIPC } from '../features/pi/main/pi.ipc';
-import { setupCodexIPC } from '../features/codex/main/codex.ipc';
-import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
-import { setupDroidIPC } from '../features/droid/main/droid.ipc';
-import { setupGrokIPC } from '../features/grok/main/grok.ipc';
-import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
-import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
-import { setupCursorIPC } from '../features/cursor/main/cursor.ipc';
 import { featureCodesService } from '../features/feature-codes/main/feature-codes.service';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
+import { setupProviderModelsIPC } from '../features/providers/main/provider-models.ipc';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
@@ -1656,17 +1646,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerDeepLinkHandlers(); // Needed for deep link and file operations
 
   // These handlers are called immediately on startup, so register them synchronously
-  setupAuggieIPC(); // Needed for auggie:get-models
-  setupOpencodeIPC(); // Needed for opencode:get-models
-  setupClaudeCodeIPC(); // Needed for claude-code:get-models
-  setupCodexIPC(); // Needed for codex:get-models
-  setupCortexIPC(); // Needed for cortex:get-models
-  setupPiIPC(); // Needed for pi:get-models
-  setupDroidIPC(); // Needed for droid:get-models
-  setupGrokIPC(); // Needed for grok:get-models
-  setupUnslothIPC(); // Needed for unsloth:get-models
-  setupAntigravityIPC(); // Needed for antigravity:get-models
-  setupCursorIPC(); // Needed for cursor:get-models
+  setupProviderModelsIPC(); // Needed for every <provider>:get-models
   // Feature codes gate experimental providers in provider availability. The
   // service init is async, so it is not awaited on the startup critical path.
   // (The feature-codes:* channels are answered by the renderer bridge seeder.)
@@ -1760,7 +1740,6 @@ const bootFlow = app.whenReady().then(async () => {
 
     // setupTerminalIPC(); // Already called in critical IPC setup
     setupLogIPC();
-    // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
     setupRulesIPC();
