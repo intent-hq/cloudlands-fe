@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import {
+  selectIsRailMachineOnScreen,
   selectIsRailMachineShown,
   selectMachineRailCandidates,
   selectMachineRailGuestCandidates,
@@ -176,5 +177,17 @@ describe('machine rail selectors', () => {
   it('keeps a renderer shown while the lab is off or before main answered', () => {
     expect(selectIsRailMachineShown.select(stateWith({ ...rail, enabled: false }, []))).toBe(true);
     expect(selectIsRailMachineShown.select(stateWith({}, []))).toBe(true);
+  });
+
+  it('puts a machine on screen only once main shows it, not when it is picked', () => {
+    const switching = { ...rail, shownId: 'local' };
+    expect(selectIsRailMachineOnScreen.select(stateWith(switching, [], 'b'))).toBe(false);
+    expect(selectIsRailMachineOnScreen.select(stateWith(switching, [], 'local'))).toBe(true);
+    expect(selectIsRailMachineOnScreen.select(stateWith({ ...rail, shownId: 'b' }, [], 'b'))).toBe(
+      true,
+    );
+    expect(
+      selectIsRailMachineOnScreen.select(stateWith({ ...switching, enabled: false }, [], 'b')),
+    ).toBe(true);
   });
 });

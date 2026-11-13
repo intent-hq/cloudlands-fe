@@ -27,7 +27,7 @@
    * shell backdrop with the shown machine's tint, so the tint cross-fades.
    */
   import { faPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { flip } from 'svelte/animate';
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
@@ -55,6 +55,7 @@
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
   import {
     selectIsRailHomeRenderer,
+    selectIsRailMachineOnScreen,
     selectIsRailMachineShown,
     selectMachineRailCandidates,
     selectMachineRailEnabled,
@@ -80,6 +81,7 @@
   const guestCandidates$ = selectMachineRailGuestCandidates();
   const isHomeRenderer$ = selectIsRailHomeRenderer();
   const isShown$ = selectIsRailMachineShown();
+  const onScreen$ = selectIsRailMachineOnScreen();
   const selectedRecord$ = selectRailSelectedRecord();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
 
@@ -140,6 +142,7 @@
   let pendingOrder = $state<string[] | null>(null);
   let pendingOrderTimer: ReturnType<typeof setTimeout> | undefined;
   let railList = $state<HTMLElement | null>(null);
+  let railNav = $state<HTMLElement | null>(null);
 
   const orderedItems = $derived.by(() => {
     if (!pendingOrder || pendingOrder.length !== $items$.length) return $items$;
@@ -308,27 +311,36 @@
   }
 
   // Each machine's renderer has its own rail, and one that stops being shown
-  // never sees the pointer leave: its tooltips keep their hover state and
-  // timers. A machine's name stays hidden after a click on it until the
-  // pointer or keyboard focus moves to another machine. Every name stays
-  // hidden while this rail is not on screen. When it shows again, its
-  // tooltips start afresh, and the pointer resting on it (which the view
-  // reports as entering) wakes no name until it really moves.
+  // never sees the pointer leave. A machine's name stays hidden after a click
+  // on it until the pointer or keyboard focus moves to another machine. Every
+  // name stays hidden while this rail is not on screen. Right after it shows
+  // again, the pointer resting on it reports entering the machine just picked:
+  // only that machine stays quiet, and any later visit wakes the names.
   let quietTooltips = $state<'all' | string | null>(null);
-  let tooltipGeneration = $state(0);
-  let wasShown = true;
+  let shownAt = 0;
   $effect(() => {
-    const shown = $isShown$;
-    if (!shown) quietTooltips = 'all';
-    else if (!wasShown) tooltipGeneration += 1;
-    wasShown = shown;
+    if ($isShown$) return;
+    quietTooltips = 'all';
+    untrack(forgetHiddenPointer);
+  });
+  $effect(() => {
+    if ($onScreen$) shownAt = performance.now();
   });
 
-  /** The pointer really moved over `item` on a rail that just came back: the machine under it stays quiet. */
-  function wakeOnMove(event: PointerEvent, item: MachineRailItem) {
-    if (quietTooltips !== 'all' || drag?.active) return;
-    if (event.movementX !== 0 || event.movementY !== 0) quietTooltips = item.id;
+  /**
+   * The rail went off screen: a press or drag on it can no longer finish
+   * here, and a focused machine button would bring its own name back (a
+   * focused trigger opens its tooltip when names wake).
+   */
+  function forgetHiddenPointer() {
+    drag = null;
+    settle = null;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && railNav?.contains(focused)) focused.blur();
   }
+
+  const SHOW_ENTER_MS = 500;
+  const ADD_TOOLTIP_ID = 'machine-rail:add';
 
   function tooltipQuiet(item: MachineRailItem): boolean {
     // No names while a machine is dragged: they would trail and cover the rail.
@@ -336,9 +348,11 @@
     return quietTooltips === 'all' || quietTooltips === item.id;
   }
 
-  /** The pointer or focus reached `item`: names return unless the whole rail is quiet. */
-  function wakeTooltips(item: MachineRailItem) {
-    if (quietTooltips !== null && quietTooltips !== 'all' && quietTooltips !== item.id) {
+  /** The pointer or focus reached the button `id`: names return, except on the one just picked. */
+  function wakeTooltips(id: string) {
+    if (quietTooltips === 'all') {
+      quietTooltips = performance.now() - shownAt < SHOW_ENTER_MS ? id : null;
+    } else if (quietTooltips !== null && quietTooltips !== id) {
       quietTooltips = null;
     }
   }
@@ -440,13 +454,10 @@
     data-rail-group={group}
     style:transform={entryOffset(item, group, index)}
     style:transition={entryTransition(item)}
-    onpointerenter={() => wakeTooltips(item)}
-    onfocusin={() => wakeTooltips(item)}
+    onpointerenter={() => wakeTooltips(item.id)}
+    onfocusin={() => wakeTooltips(item.id)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
-    onpointermove={(event) => {
-      moveDrag(event);
-      wakeOnMove(event, item);
-    }}
+    onpointermove={moveDrag}
     onpointerup={() => endDrag(true)}
     onpointercancel={() => endDrag(false)}
     onlostpointercapture={() => endDrag(false)}
@@ -533,6 +544,7 @@
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-2.5"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
+    bind:this={railNav}
     onpointerleave={wakeAllTooltips}
   >
     <div
@@ -540,25 +552,23 @@
       class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto"
       data-rail-list
     >
-      {#key tooltipGeneration}
-        {#each ownItems as item, index (item.id)}
-          <div animate:flip={{ duration: flipDuration() }}>
-            {@render railEntry(item, 'own', index)}
-          </div>
-        {/each}
-        {#if ownItems.length > 0 && guestItems.length > 0}
-          <div
-            class="my-0.5 h-px w-5 shrink-0 bg-border"
-            role="separator"
-            data-testid="machine-rail-guest-separator"
-          ></div>
-        {/if}
-        {#each guestItems as item, index (item.id)}
-          <div animate:flip={{ duration: flipDuration() }}>
-            {@render railEntry(item, 'guest', index)}
-          </div>
-        {/each}
-      {/key}
+      {#each ownItems as item, index (item.id)}
+        <div animate:flip={{ duration: flipDuration() }}>
+          {@render railEntry(item, 'own', index)}
+        </div>
+      {/each}
+      {#if ownItems.length > 0 && guestItems.length > 0}
+        <div
+          class="my-0.5 h-px w-5 shrink-0 bg-border"
+          role="separator"
+          data-testid="machine-rail-guest-separator"
+        ></div>
+      {/if}
+      {#each guestItems as item, index (item.id)}
+        <div animate:flip={{ duration: flipDuration() }}>
+          {@render railEntry(item, 'guest', index)}
+        </div>
+      {/each}
     </div>
 
     <Menu.Root bind:open={menuOpen}>
@@ -574,6 +584,8 @@
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
             tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDisabled={quietTooltips === 'all' || quietTooltips === ADD_TOOLTIP_ID}
+            onpointerenter={() => wakeTooltips(ADD_TOOLTIP_ID)}
             data-testid="machine-rail-add"
           >
             <Fa icon={faPlus} size="sm" />
