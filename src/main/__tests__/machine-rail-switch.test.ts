@@ -121,7 +121,11 @@ vi.mock('../window-backend', () => ({
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
 import { registerMachineRailHandlers } from '../machine-rail';
-import { getMachineRailSession, setMachineRailEnabledFlag } from '../machine-rail-state';
+import {
+  getMachineRailSession,
+  restoreMachineRailSession,
+  setMachineRailEnabledFlag,
+} from '../machine-rail-state';
 
 const RAIL = IPC_CHANNELS.MACHINE_RAIL;
 const REVEAL_TIMEOUT_MS = 250;
@@ -322,6 +326,23 @@ describe('machine rail switching', () => {
     expect(await invoke(RAIL.REORDER, home(), { machineIds: ['c', 'local', 'b'] })).toMatchObject({
       machineIds: ['local', 'c', 'b'],
     });
+  });
+
+  it('restores a window straight onto the machine it showed, never its own first', async () => {
+    home().send.mockClear();
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    // The window's own page never showed: the remembered machine is selected and on screen.
+    expect(
+      home().send.mock.calls.map(([, state]) => (state as MachineRailState).shownId),
+    ).not.toContain('local');
+    expect(await state()).toMatchObject({
+      machineIds: ['local', 'b', 'c'],
+      selectedId: 'c',
+      shownId: 'c',
+      pendingId: '',
+    });
+    expect(viewOf('c').visible).toBe(true);
   });
 
   it('forgets the wait for a machine removed while it starts', async () => {
