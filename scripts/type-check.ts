@@ -31,6 +31,11 @@ const PROJECTS: Record<string, Project> = {
         label: 'Generate main build config',
         args: ['scripts/generate-build-config.cjs', '--if-missing'],
       },
+      // tsconfig.main.json includes the gitignored src/shared/paraglide output.
+      {
+        label: 'Generate i18n messages (if stale)',
+        args: ['scripts/paraglide-inputs-hash.mjs', '--if-stale'],
+      },
     ],
   },
   preload: {
@@ -106,7 +111,19 @@ async function main() {
       return {
         name,
         tsconfig,
-        ...(await run({ label: name, args: [tsc, '-p', tsconfig, '--noEmit'] })),
+        ...(await run({
+          label: name,
+          // Own build info: the tsconfig's file under dist/ belongs to build:main/build:preload.
+          args: [
+            tsc,
+            '-p',
+            tsconfig,
+            '--noEmit',
+            '--incremental',
+            '--tsBuildInfoFile',
+            `.cache/type-check/${name}.tsbuildinfo`,
+          ],
+        })),
       };
     }),
   );
@@ -122,4 +139,11 @@ async function main() {
   return 0;
 }
 
-void main().then((code) => process.exit(code));
+// exitCode, not exit(): a piped stderr may still be flushing the diagnostics.
+main().then(
+  (code) => (process.exitCode = code),
+  (error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  },
+);

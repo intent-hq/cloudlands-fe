@@ -39,6 +39,7 @@ function fixtureRoot() {
     'scripts/generate-build-config.cjs',
     "require('fs').writeFileSync('src/main/build-config.generated.ts', 'export const BUILD_CONFIG = {};\\n');\n",
   );
+  write(root, 'scripts/paraglide-inputs-hash.mjs', '');
   write(
     root,
     'scripts/inline-ipc-channels.ts',
