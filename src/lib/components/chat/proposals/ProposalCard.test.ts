@@ -73,6 +73,11 @@ const providerDefaultsState = vi.hoisted(() => {
     } as Record<string, Record<string, string>>,
     // Loaded provider model catalogs (provider-models cache).
     modelsCache: {} as Record<string, { models: { value: string }[] }>,
+    modelsCacheListeners: new Set<(value: Record<string, unknown>) => void>(),
+    loadModels(value: Record<string, { models: { value: string }[] }>) {
+      this.modelsCache = value;
+      for (const listener of this.modelsCacheListeners) listener(value);
+    },
   };
 });
 
@@ -224,7 +229,8 @@ vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () =
   selectProviderModelsCacheMap: () => ({
     subscribe: (run: (value: Record<string, unknown>) => void) => {
       run(providerDefaultsState.modelsCache);
-      return () => {};
+      providerDefaultsState.modelsCacheListeners.add(run);
+      return () => providerDefaultsState.modelsCacheListeners.delete(run);
     },
   }),
 }));
@@ -439,6 +445,7 @@ beforeEach(() => {
   providerDefaultsState.active = 'claude-code';
   providerDefaultsState.defaultProvider = 'claude-code';
   providerDefaultsState.modelsCache = {};
+  providerDefaultsState.modelsCacheListeners.clear();
   enabledProvidersState.value = {};
   enabledProvidersState.listeners.clear();
 });
@@ -2261,10 +2268,10 @@ describe('ProposalCard', () => {
       expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
     });
 
-    it("keeps New Workspace's provider for a proposal model no single provider lists", async () => {
+    it("sends a proposal model with the default provider when it is one of the model's owners", async () => {
       providerDefaultsState.modelsCache = {
         codex: { models: [{ value: 'shared-model' }] },
-        auggie: { models: [{ value: 'shared-model' }] },
+        'claude-code': { models: [{ value: 'shared-model' }] },
       };
       const appliedFields = renderCard({ model: 'shared-model' });
 
@@ -2272,6 +2279,34 @@ describe('ProposalCard', () => {
         provider: 'claude-code',
         model: 'shared-model',
       });
+    });
+
+    it('drops a proposal model that several other providers list', async () => {
+      providerDefaultsState.modelsCache = {
+        codex: { models: [{ value: 'shared-model' }] },
+        auggie: { models: [{ value: 'shared-model' }] },
+      };
+      const appliedFields = renderCard({ model: 'shared-model', reasoningEffort: 'high' });
+
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '', effort: '' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it('never sends a proposal model before a loaded catalog lists it', async () => {
+      const appliedFields = renderCard({ model: 'gpt-5.5' });
+
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it("shows a proposal model once its provider's catalog loads", async () => {
+      const appliedFields = renderCard({ model: 'gpt-5.5' });
+
+      providerDefaultsState.loadModels({ codex: { models: [{ value: 'gpt-5.5' }] } });
+      await waitFor(() =>
+        expect(picker().dataset).toMatchObject({ provider: 'codex', model: 'gpt-5.5' }),
+      );
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
     });
 
     it('starts on the first available provider when the active one is turned off', async () => {

@@ -348,9 +348,11 @@
     const effort = getInitialAgentValue('reasoningEffort');
     if (provider === undefined && model === undefined && effort === undefined) return null;
     const named = typeof model === 'string' && model ? model : undefined;
-    // A model named without its provider pairs with the provider that lists
-    // it, when that is known; otherwise the row's default provider applies.
+    // A model named without its provider is sent only with a provider whose
+    // loaded catalog lists it; otherwise it (and its effort) is dropped and
+    // the row shows the default provider's default model until catalogs load.
     const owned = !provider && named ? modelOwner(named) : undefined;
+    if (!provider && named && !owned) return null;
     const setupProvider = provider ?? owned?.provider;
     const setupModel = owned?.model ?? named;
     if (setupProvider && isProviderDisabledInSettings($enabledProviders, setupProvider))
@@ -362,14 +364,22 @@
     };
   });
 
-  /** The one provider a bare (or legacy `provider:model`) model id belongs to, if known. */
+  /**
+   * The provider a bare (or legacy `provider:model`) model id is sent with:
+   * the only loaded catalog that lists it, else the default provider when its
+   * catalog is one of several that do; `undefined` when no loaded catalog
+   * pairs it safely.
+   */
   function modelOwner(model: string): { provider: string; model: string } | undefined {
     const split = splitLegacyCompoundId(model);
     if (split.providerId) return { provider: split.providerId, model: split.modelId };
     const owners = Object.entries($providerModelsCache)
       .filter(([, entry]) => entry?.models?.some((row) => row.value === model))
       .map(([providerId]) => providerId);
-    return owners.length === 1 ? { provider: owners[0], model } : undefined;
+    if (owners.length === 1) return { provider: owners[0], model };
+    return defaultProvider && owners.includes(defaultProvider)
+      ? { provider: defaultProvider, model }
+      : undefined;
   }
   const providerContext = $derived<ProviderAvailabilityContext>({
     availability: providerAvailability,
