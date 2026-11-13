@@ -55,7 +55,6 @@
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
   import {
     selectIsRailHomeRenderer,
-    selectIsRailMachineOnScreen,
     selectIsRailMachineShown,
     selectMachineRailCandidates,
     selectMachineRailEnabled,
@@ -81,7 +80,6 @@
   const guestCandidates$ = selectMachineRailGuestCandidates();
   const isHomeRenderer$ = selectIsRailHomeRenderer();
   const isShown$ = selectIsRailMachineShown();
-  const onScreen$ = selectIsRailMachineOnScreen();
   const selectedRecord$ = selectRailSelectedRecord();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
 
@@ -313,33 +311,40 @@
   // Each machine's renderer has its own rail, and one that stops being shown
   // never sees the pointer leave. A machine's name stays hidden after a click
   // on it until the pointer or keyboard focus moves to another machine. Every
-  // name stays hidden while this rail is not on screen. Right after it shows
-  // again, the pointer resting on it reports entering the machine just picked:
-  // only that machine stays quiet, and any later visit wakes the names.
+  // name stays hidden while this rail is not on screen. Once it shows again,
+  // the pointer is still resting on the machine just picked (this renderer's
+  // own), so only that machine's name stays hidden.
   let quietTooltips = $state<'all' | string | null>(null);
-  let shownAt = 0;
+  let wasShown = true;
   $effect(() => {
-    if ($isShown$) return;
-    quietTooltips = 'all';
-    untrack(forgetHiddenPointer);
-  });
-  $effect(() => {
-    if ($onScreen$) shownAt = performance.now();
+    const shown = $isShown$;
+    if (!shown) {
+      quietTooltips = 'all';
+      untrack(forgetHiddenPointer);
+    } else if (!wasShown) {
+      quietTooltips = untrack(() => $items$.find((item) => item.own)?.id ?? null);
+    }
+    wasShown = shown;
   });
 
   /**
    * The rail went off screen: a press or drag on it can no longer finish
-   * here, and a focused machine button would bring its own name back (a
-   * focused trigger opens its tooltip when names wake).
+   * here. A button focused by a click would get its focus back on return and
+   * wake the names; keyboard focus stays so the keyboard user keeps their place.
    */
   function forgetHiddenPointer() {
     drag = null;
     settle = null;
     const focused = document.activeElement;
-    if (focused instanceof HTMLElement && railNav?.contains(focused)) focused.blur();
+    if (
+      focused instanceof HTMLElement &&
+      railNav?.contains(focused) &&
+      !focused.matches(':focus-visible')
+    ) {
+      focused.blur();
+    }
   }
 
-  const SHOW_ENTER_MS = 500;
   const ADD_TOOLTIP_ID = 'machine-rail:add';
 
   function tooltipQuiet(item: MachineRailItem): boolean {
@@ -348,11 +353,9 @@
     return quietTooltips === 'all' || quietTooltips === item.id;
   }
 
-  /** The pointer or focus reached the button `id`: names return, except on the one just picked. */
+  /** The pointer or focus reached the button `id`: names return unless the whole rail is quiet. */
   function wakeTooltips(id: string) {
-    if (quietTooltips === 'all') {
-      quietTooltips = performance.now() - shownAt < SHOW_ENTER_MS ? id : null;
-    } else if (quietTooltips !== null && quietTooltips !== id) {
+    if (quietTooltips !== null && quietTooltips !== 'all' && quietTooltips !== id) {
       quietTooltips = null;
     }
   }

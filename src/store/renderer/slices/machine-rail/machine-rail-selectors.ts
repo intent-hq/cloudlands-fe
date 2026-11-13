@@ -111,12 +111,6 @@ export const selectIsRailMachineShown = store.createSelector((state): boolean =>
   return !enabled || selectedId === '' || selectedId === state.connections.windowBackendId;
 });
 
-/** Whether this renderer's machine is actually on screen, not only being switched to. */
-export const selectIsRailMachineOnScreen = store.createSelector((state): boolean => {
-  const { enabled, shownId } = state.machineRail;
-  return !enabled || shownId === '' || shownId === state.connections.windowBackendId;
-});
-
 /**
  * Whether this is the window's own renderer, which sits under every other
  * machine's and paints the shell background they all share.
