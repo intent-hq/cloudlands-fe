@@ -7,14 +7,7 @@
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
 
   type Scenario =
-    | 'off'
-    | 'sending'
-    | 'not-linked'
-    | 'paused'
-    | 'error'
-    | 'save-error'
-    | 'saving'
-    | 'page';
+    'off' | 'sending' | 'not-linked' | 'paused' | 'error' | 'save-error' | 'saving' | 'page';
 
   function setupPage() {
     const stops = [
@@ -73,8 +66,22 @@
     off,
     'save-error': off,
     saving: off,
-    sending: { ...off, enabled: true, daemonId: 'preview', linked: true, linkedDevices: 2, publishing: true },
-    page: { ...off, enabled: true, daemonId: 'preview', linked: true, linkedDevices: 2, publishing: true },
+    sending: {
+      ...off,
+      enabled: true,
+      daemonId: 'preview',
+      linked: true,
+      linkedDevices: 2,
+      publishing: true,
+    },
+    page: {
+      ...off,
+      enabled: true,
+      daemonId: 'preview',
+      linked: true,
+      linkedDevices: 2,
+      publishing: true,
+    },
     'not-linked': { ...off, enabled: true, daemonId: 'preview' },
     paused: { ...off, enabled: true, daemonId: 'preview', linked: true, linkedDevices: 0 },
     error: off,

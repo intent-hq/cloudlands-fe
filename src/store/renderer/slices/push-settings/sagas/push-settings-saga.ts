@@ -1,5 +1,13 @@
 import { buffers, channel as createChannel } from 'redux-saga';
-import { actionChannel, call, cancelled, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  cancelled,
+  put,
+  race,
+  take,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -46,7 +54,11 @@ function* loadStatus(request: SettingsFormRequest): SagaGenerator<void> {
   }
   if (yield* selectSettingsFormRequestCurrent.effect(request)) {
     yield* put(
-      settingsFormRequestSettled(request, { status: error ? 'failed' : 'succeeded', error, values }),
+      settingsFormRequestSettled(request, {
+        status: error ? 'failed' : 'succeeded',
+        error,
+        values,
+      }),
     );
   }
 }
@@ -64,7 +76,10 @@ function* saveEnabled(request: SettingsFormRequest, enabled: boolean): SagaGener
   } catch {
     if (yield* selectSettingsFormRequestCurrent.effect(request)) {
       yield* put(
-        settingsFormRequestSettled(request, { status: 'failed', error: m.settings_push_saveError() }),
+        settingsFormRequestSettled(request, {
+          status: 'failed',
+          error: m.settings_push_saveError(),
+        }),
       );
     }
   } finally {
