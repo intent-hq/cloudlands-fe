@@ -9,6 +9,8 @@
  *   left to right. All modes clamp at the ends;
  * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
  *   Workspaces list, otherwise opens Home like the titlebar Home button.
+ *   A press that opens Home holds it briefly, so a bounced or repeating
+ *   press report cannot carry on into Home's kept selection.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -39,6 +41,12 @@ const logger = createLogger('HardwareConsoleEncoder');
 
 /** The encoder HUD hides after this much rotation inactivity. */
 export const ENCODER_HUD_HIDE_MS = 1200;
+
+/**
+ * After a press opens Home, presses this close together are the same gesture
+ * (switch bounce, held-knob repeat) and keep Home open. Each one extends it.
+ */
+export const ENCODER_HOME_SETTLE_MS = 750;
 
 export interface EncoderDeps {
   /** Navigate the app to a non-workspace route (Home). Defaults to `navigateToRoute`. */
@@ -145,18 +153,20 @@ function selectedHomeWorkspaceId(): string | null {
 
 /**
  * Open the workspace selected on Home's list; otherwise open Home, matching
- * the titlebar Home button and its shortcut.
+ * the titlebar Home button and its shortcut. `holdHome` skips the selection.
+ * Returns whether it opened Home.
  */
-function handleEncoderClick(deps: EncoderDeps = {}): void {
+function handleEncoderClick(deps: EncoderDeps, holdHome: boolean): boolean {
   const { navigate, showWorkspace } = resolveDeps(deps);
-  const selectedId = selectedHomeWorkspaceId();
+  const selectedId = holdHome ? null : selectedHomeWorkspaceId();
   if (selectedId !== null) {
     navigateToWorkspace(selectedId, showWorkspace);
-    return;
+    return false;
   }
   void navigate('/').catch((error: unknown) => {
     logger.warn('Failed to open Home from encoder', { error });
   });
+  return true;
 }
 
 /**
@@ -169,6 +179,7 @@ export function installHardwareConsoleEncoder(
 ): () => void {
   const { dispatch, isOwner } = resolveDeps(deps);
   let detachDecoder: (() => void) | null = null;
+  let homeHeldUntil = 0;
 
   const teardownDecoder = (): void => {
     detachDecoder?.();
@@ -192,7 +203,10 @@ export function installHardwareConsoleEncoder(
       else dispatch(encoderEffortRotated(direction, workspaceId));
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
-      if (key === 'ENC_CLK' && isOwner()) handleEncoderClick(deps);
+      if (key !== 'ENC_CLK' || !isOwner()) return;
+      const now = Date.now();
+      const openedHome = handleEncoderClick(deps, now < homeHeldUntil);
+      homeHeldUntil = openedHome ? now + ENCODER_HOME_SETTLE_MS : 0;
     });
     const offRaw = manager.onRawMessage((message) => decoder.handleMessage(message));
     detachDecoder = () => {

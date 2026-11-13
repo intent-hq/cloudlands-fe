@@ -7,7 +7,7 @@ import {
   mutations,
   ready,
 } from './encoder-effort.fixture';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hydrateHardwareConsoleEncoderBehavior } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { registerHomeEncoderTarget } from '$features/home/home-encoder-target';
 
@@ -141,5 +141,42 @@ describe('encoder press on Home', () => {
     press(device);
     expect(device.showWorkspace).not.toHaveBeenCalled();
     expect(device.navigate.mock.calls).toEqual([['/']]);
+  });
+});
+
+describe('encoder press that opens Home', () => {
+  function openHomeFromChat() {
+    ready();
+    const list = homeList(['a', 'b']);
+    list.selected = 'a';
+    const device = manager();
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    window.history.replaceState(null, '', '/');
+    return device;
+  }
+
+  it('stays on Home when the press bounces', () => {
+    const device = openHomeFromChat();
+    vi.advanceTimersByTime(30);
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 0 } });
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(device.showWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('stays on Home while the knob is held and repeats', () => {
+    const device = openHomeFromChat();
+    for (let i = 0; i < 6; i += 1) {
+      vi.advanceTimersByTime(400);
+      device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    }
+    expect(device.showWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('opens the selected workspace on a later, separate press', () => {
+    const device = openHomeFromChat();
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 0 } });
+    vi.advanceTimersByTime(1000);
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(device.showWorkspace.mock.calls).toEqual([['a']]);
   });
 });
