@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.329.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.0...v2.329.1) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.199 ([#4540](https://github.com/intent-hq/cloudlands-fe/issues/4540)) ([227ae21](https://github.com/intent-hq/cloudlands-fe/commit/227ae21ce35c9d3f45d2d4fee79816d8967ef0ca))
+* **settings:** hide the "Runs agents for" pill on available machine rows ([#4528](https://github.com/intent-hq/cloudlands-fe/issues/4528)) ([7682c3f](https://github.com/intent-hq/cloudlands-fe/commit/7682c3f770bc80a3aebcc3f29499e37ecbeb27b3))
+
 ## [2.329.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.328.0...v2.329.0) (2026-11-13)
 
 
