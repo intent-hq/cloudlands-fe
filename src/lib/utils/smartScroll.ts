@@ -219,7 +219,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const scrollTop = container.scrollTop;
     const previous = lastRead ?? undefined;
     lastRead = { maximum, scrollTop };
-    return { maximum, scrollTop, previous };
+    const geometry = { maximum, scrollTop, previous };
+    gesture.observe(geometry);
+    return geometry;
   }
 
   function setExactBottom(geometry = readScrollGeometry()): ScrollGeometry {
@@ -498,22 +500,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       return true;
     }
 
-    function landDownward(geometry: ScrollGeometry): boolean {
-      // A read that finds the bottom moved up with the reader on it cannot
-      // tell arrival from a collapse that clamped the reader there: browsers
-      // merge both into one scroll event. Ending the gesture keeps a reader
-      // who stopped short unlocked; one who did arrive scrolls again or
-      // presses End.
-      const previous = geometry.previous;
-      if (
-        previous !== undefined &&
-        geometry.maximum < previous.maximum &&
-        geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
-      ) {
-        downward = null;
-        return false;
-      }
-      return relockIfReached(geometry, true);
+    function landDownward(wheel?: WheelEvent): boolean {
+      // The read can end the gesture (see `observe`), so check it after.
+      const geometry = readScrollGeometry();
+      return isLive(wheel) && relockIfReached(geometry, true);
     }
 
     function landNextFrame(wheel?: WheelEvent) {
@@ -524,7 +514,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         const wheel = landFrameWheel;
         landFrameWheel = undefined;
         if (destroyed || !enabled || !isLive(wheel)) return;
-        if (!landDownward(readScrollGeometry())) reportState();
+        if (!landDownward(wheel)) reportState();
       });
     }
 
@@ -560,7 +550,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // Re-lock as the gesture lands, before streamed growth can move the
       // bottom away ahead of the gesture's frame check.
       const movedDown = !previous || geometry.scrollTop > previous.scrollTop;
-      return movedDown && isLive() && landDownward(geometry);
+      return movedDown && isLive() && relockIfReached(geometry, true);
     }
 
     return {
@@ -603,15 +593,31 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           return;
         }
         if (source === 'scrollend') {
-          const live = isLive();
+          if (isLive()) landDownward();
           downward = null;
-          if (live) landDownward(readScrollGeometry());
           return;
         }
         if (!drag) return;
         const { movedTowardBottom } = drag;
         drag = null;
         if (!(movedTowardBottom && relockIfReached(readScrollGeometry(), false))) reportState();
+      },
+      /**
+       * Every geometry read passes through here. A read that finds the bottom
+       * moved up with the reader on it cannot tell arrival from a collapse
+       * that clamped the reader there (browsers merge both into one scroll
+       * event), so it ends a downward gesture. A reader who did arrive
+       * scrolls again or presses End.
+       */
+      observe(geometry: ScrollGeometry) {
+        const previous = geometry.previous;
+        if (
+          downward &&
+          previous !== undefined &&
+          geometry.maximum < previous.maximum &&
+          geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
+        )
+          downward = null;
       },
       cancel() {
         downward = null;
