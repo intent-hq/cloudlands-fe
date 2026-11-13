@@ -9,18 +9,16 @@
     agentName: string;
     /** Display name of the turned-off provider. */
     providerName: string;
-    /** workspace.create refused the provider, rather than the card detecting it first. */
-    failed?: boolean;
     onopensettings: () => void;
   }
 
-  let { agentName, providerName, failed = false, onopensettings }: Props = $props();
+  let { agentName, providerName, onopensettings }: Props = $props();
 
   const uid = $props.id();
   const descriptionId = `${uid}-description`;
 </script>
 
-<!-- The card's Model row above picks another provider's model; this explains why it's needed. -->
+<!-- workspace.create refused a turned-off provider; the card's Model row above picks another provider's model. -->
 <div
   class="space-y-2.5 rounded-md border border-warning/30 bg-warning/10 px-3 py-2.5"
   data-testid="proposal-provider-alert"
@@ -29,12 +27,7 @@
 >
   <div class="flex items-start gap-2">
     <Fa icon={faTriangleExclamation} class="mt-0.5 size-3.5 shrink-0 text-warning-ink" />
-    <p
-      id={descriptionId}
-      class="type-caption text-foreground"
-      role="status"
-      aria-live={failed ? 'assertive' : 'polite'}
-    >
+    <p id={descriptionId} class="type-caption text-foreground" role="status" aria-live="assertive">
       {agentName
         ? m.chat_proposalCard_providerOff_description({ agent: agentName, provider: providerName })
         : m.chat_proposalCard_providerOffNoAgent_description({ provider: providerName })}

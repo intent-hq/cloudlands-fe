@@ -69,14 +69,35 @@
     type ProposalRepoAgentDefault,
   } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
-  import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectActiveProviderId,
+    selectEnabledProviders,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { isProviderDisabledInSettings } from '$lib/components/chat/input/model-picker-utils';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import { startOnModelMachineId } from '$features/remote-machines/start-on';
-  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+    selectProviderCatalogProfiles,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderModels,
+    selectSelectedModel,
+  } from '$store/renderer/slices/model/model-selectors';
+  import {
+    getProviderAvailability,
+    type ProviderAvailabilityResult,
+  } from '$features/providers/provider-availability.client';
+  import {
+    availableInitialAgentProviders,
+    defaultInitialAgentProvider,
+    initialAgentDefaultModel,
+    type ProviderAvailabilityContext,
+  } from '$lib/components/workspace/initializer/initial-agent-defaults';
+  import { SpecialistDefaultPreviews } from '$lib/components/workspace/initializer/specialist-default-previews.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
-    disabledPinnedProvider,
     providerNotEnabledFromError,
     specialistPinnedProvider,
   } from './proposal-pinned-provider';
@@ -211,10 +232,21 @@
   let repoAgentDefault = $state<ProposalRepoAgentDefault | null>(null);
   const enabledProviders = selectEnabledProviders();
   const providerCatalogEntries = selectProviderCatalogEntries();
-  // Provider/model/effort picked in the Model row, for this workspace only and
-  // only while the card still starts the agent it was picked for (New
-  // Workspace also resets the model when the agent changes).
-  let pickedSetup = $state<{ specialist: string | null; setup: ProposalAgentSetup } | null>(null);
+  const providerProfiles = selectProviderCatalogProfiles();
+  const activeProviderId = selectActiveProviderId();
+  const effectiveDefaultProviderId = selectEffectiveDefaultProviderId();
+  const configuredModels = selectProviderModels();
+  const globalSelectedModel = selectSelectedModel();
+  // Loaded on mount, like New Workspace; `null` until then.
+  let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
+  const defaultModelPreviews = new SpecialistDefaultPreviews();
+  // Provider/model/effort picked in the Model row, for this workspace only.
+  // Cleared when the agent changes, like New Workspace.
+  let pickedSetup = $state<ProposalAgentSetup | null>(null);
+  // The user picked another agent on the card: the proposal's own
+  // provider/model/effort described the agent it named, so the row falls back
+  // to New Workspace's default for the new one.
+  let agentPickedOnCard = $state(false);
   // The agent was changed after the last Apply/Retry, so a refusal no longer
   // describes the selected one.
   let agentChangedSinceApply = $state(false);
@@ -288,57 +320,73 @@
   // the card still starts that remembered agent; `null` when there is nothing
   // to send or its provider has since been turned off. Re-derived when
   // provider enablement changes, so Apply/Retry never sends a disabled one.
-  // Applied on create without being shown on the card.
+  // Shown in the Model row when the proposal set none of its own.
   const adoptedAgentSetup = $derived.by(() => {
     if (!repoAgentDefault || proposalNamesAgent) return null;
     if (workspaceSpecialist !== repoAgentDefault.specialist) return null;
     return adoptableProposalAgentSetup(repoAgentDefault.settings, $enabledProviders);
   });
-  // The Model row's pick, while it still applies: same agent, and its
-  // provider (if any) not turned off since.
+  // The Model row's pick, while its provider (if any) is still turned on.
   const agentPick = $derived(
     pickedSetup &&
-      pickedSetup.specialist === workspaceSpecialist &&
       !(
-        pickedSetup.setup.provider &&
-        isProviderDisabledInSettings($enabledProviders, pickedSetup.setup.provider)
+        pickedSetup.provider &&
+        isProviderDisabledInSettings($enabledProviders, pickedSetup.provider)
       )
-      ? pickedSetup.setup
+      ? pickedSetup
       : null,
   );
-  // What the card sends without a pick: the proposal's own triple when it set
-  // any of it (workspace-create-proposal agentSetupOverrides), else the
-  // adopted remembered setup.
-  const unpickedSetup = $derived.by((): ProposalAgentSetup => {
+  // The proposal's own triple when it set any of it, while its provider is
+  // turned on and until another agent is picked.
+  const proposalSetup = $derived.by((): ProposalAgentSetup | null => {
+    if (agentPickedOnCard) return null;
     const provider = proposalProviderRef();
     const model = getInitialAgentValue('model');
     const effort = getInitialAgentValue('reasoningEffort');
-    if (provider !== undefined || model !== undefined || effort !== undefined) {
-      return {
-        ...(provider ? { provider } : {}),
-        ...(typeof model === 'string' && model ? { model } : {}),
-        ...(typeof effort === 'string' ? { reasoningEffort: effort } : {}),
-      };
-    }
-    return adoptedAgentSetup ?? {};
+    if (provider === undefined && model === undefined && effort === undefined) return null;
+    if (provider && isProviderDisabledInSettings($enabledProviders, provider)) return null;
+    return {
+      ...(provider ? { provider } : {}),
+      ...(typeof model === 'string' && model ? { model } : {}),
+      ...(typeof effort === 'string' ? { reasoningEffort: effort } : {}),
+    };
   });
-  // The setup the Model row shows and Apply sends.
-  const shownSetup = $derived(agentPick ?? unpickedSetup);
-  // The agent's pinned provider is turned off and nothing in the request
-  // overrides it: Apply waits for a model from another provider (or another
-  // agent).
-  const pinnedProviderOff = $derived(
-    isWorkspaceCreate && !isApplied
-      ? disabledPinnedProvider({
-          specialistId: workspaceSpecialist,
-          specialists: $specialists,
-          requestProvider: shownSetup.provider,
-          enabledProviders: $enabledProviders,
-        })
-      : null,
+  const providerContext = $derived<ProviderAvailabilityContext>({
+    availability: providerAvailability,
+    enabledProviders: $enabledProviders,
+    profiles: $providerProfiles,
+  });
+  // The provider New Workspace starts a newly picked agent on: never a
+  // turned-off one, so the agent's own pin is never resolved by the daemon.
+  const defaultProvider = $derived(
+    defaultInitialAgentProvider({
+      ...providerContext,
+      activeProviderId: $activeProviderId,
+      defaultProviderId: $effectiveDefaultProviderId,
+      availableProviders: availableInitialAgentProviders($providerCatalogEntries, providerContext),
+    }),
+  );
+  // The setup the Model row shows and Apply sends as a whole: the pick, else
+  // the proposal's, else the adopted remembered setup, else New Workspace's
+  // default, always on a concrete provider.
+  const shownSetup = $derived.by((): ProposalAgentSetup => {
+    const setup = agentPick ?? proposalSetup ?? adoptedAgentSetup ?? {};
+    return setup.provider || !defaultProvider ? setup : { ...setup, provider: defaultProvider };
+  });
+  // The model New Workspace names for this agent on the shown provider.
+  const defaultModelId = $derived(
+    initialAgentDefaultModel({
+      specialist: workspaceSpecialist,
+      provider: shownSetup.provider ?? '',
+      providerView: defaultModelPreviews.byProvider[shownSetup.provider ?? ''],
+      specialists: $specialists,
+      configuredModels: $configuredModels,
+      activeProviderId: $activeProviderId,
+      selectedModel: $globalSelectedModel,
+    }),
   );
   // workspace.create still refused a turned-off provider (settings changed
-  // elsewhere): the same alert replaces the raw error, while the agent that
+  // elsewhere): the alert replaces the raw error, while the agent that
   // failed is still selected.
   const refusedProviderOff = $derived.by(() => {
     if (!isWorkspaceCreate || !isFailed || agentChangedSinceApply) return null;
@@ -351,13 +399,6 @@
       ''
     );
   });
-  const providerOffAlert = $derived(pinnedProviderOff ?? refusedProviderOff);
-  // The Model row lists this provider's models first: the one the card sends,
-  // else the agent's pin (even turned off, so the row shows why), else the
-  // picker's own default.
-  const modelRowProvider = $derived(
-    shownSetup.provider ?? specialistPinnedProvider($specialists, workspaceSpecialist),
-  );
   // A remote Start on machine lists its own models, like New Workspace.
   const modelRowMachineId = $derived(
     startOnPlacement ? startOnModelMachineId(workspaceStartOn, [], false) : undefined,
@@ -390,9 +431,7 @@
   const actionDisabled = $derived(
     disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
-  const applyDisabled = $derived(
-    actionDisabled || (isWorkspaceCreate && (startOnUnavailable || pinnedProviderOff !== null)),
-  );
+  const applyDisabled = $derived(actionDisabled || (isWorkspaceCreate && startOnUnavailable));
   const showWorkspaceShortcutHint = $derived(
     isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,
   );
@@ -475,6 +514,24 @@
   $effect(() => {
     if (!statusMessage || isBaseRefFailure) return;
     void tick().then(() => statusElement?.focus());
+  });
+
+  // Provider availability and default-model previews for the Model row, as
+  // New Workspace loads them.
+  let providerAvailabilityRequested = false;
+  $effect(() => {
+    if (!isWorkspaceCreate || providerAvailabilityRequested) return;
+    providerAvailabilityRequested = true;
+    void getProviderAvailability()
+      .then((result) => (providerAvailability = result))
+      .catch(() => {});
+  });
+  $effect(() => {
+    void $specialists;
+    defaultModelPreviews.invalidate();
+  });
+  $effect(() => {
+    if (isWorkspaceCreate && shownSetup.provider) defaultModelPreviews.load(shownSetup.provider);
   });
 
   // On a base-ref apply failure, direct attention at the Base branch field
@@ -747,21 +804,15 @@
   // and an effort the model doesn't list would be refused.
   function handleModelPick(_model: string, pick?: { providerId: string; modelId: string }) {
     if (!pick) return;
-    pickedSetup = {
-      specialist: workspaceSpecialist,
-      setup: { provider: pick.providerId, model: pick.modelId },
-    };
+    pickedSetup = { provider: pick.providerId, model: pick.modelId };
     agentChangedSinceApply = true;
   }
 
   // An effort pick keeps the provider and model the row shows with it.
   function handleEffortPick(effort: string | null): boolean {
     const { reasoningEffort: _shown, ...shown } = shownSetup;
-    pickedSetup = {
-      specialist: workspaceSpecialist,
-      // A blank value is the wire's explicit clear, like New Workspace.
-      setup: { ...shown, reasoningEffort: effort ?? '' },
-    };
+    // A blank value is the wire's explicit clear, like New Workspace.
+    pickedSetup = { ...shown, reasoningEffort: effort ?? '' };
     agentChangedSinceApply = true;
     return true;
   }
@@ -998,8 +1049,8 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
-    if (agentPick) editedFields.agentPick = { ...agentPick };
-    else if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
+    // Exactly what the Model row shows, replacing the proposal's own triple.
+    editedFields.agentPick = { ...shownSetup };
     if (startOnPlacement !== undefined) editedFields.placement = startOnPlacement;
     return editedFields;
   }
@@ -1389,6 +1440,8 @@
                     workspaceSpecialist = id;
                     specialistIsModalDefault = false;
                     agentChangedSinceApply = true;
+                    agentPickedOnCard = true;
+                    pickedSetup = null;
                   }}
                 />
               </div>
@@ -1415,10 +1468,10 @@
                 {m.workspace_initialAgentPicker_model_label()}
               </span>
               <div class="flex min-w-0 flex-1 flex-col">
-                {#key `${workspaceSpecialist ?? ''}:${modelRowProvider ?? ''}`}
+                {#key `${workspaceSpecialist ?? ''}:${shownSetup.provider ?? ''}:${defaultModelId ?? ''}`}
                   <ModelPicker
                     selectedModel={shownSetup.model}
-                    providerId={modelRowProvider}
+                    providerId={shownSetup.provider}
                     onModelChange={handleModelPick}
                     variant="ghost-light"
                     size="sm"
@@ -1436,9 +1489,10 @@
                     onReasoningChange={handleEffortPick}
                     reasoningDisabled={actionDisabled}
                     isLocked={actionDisabled}
+                    {defaultModelId}
                     defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
                     fallbackToCatalogDefault
-                    fallbackProviderId={modelRowProvider}
+                    fallbackProviderId={shownSetup.provider}
                     machineId={modelRowMachineId}
                     showMachine={false}
                     portal={true}
@@ -1459,12 +1513,11 @@
             />
           </div>
 
-          {#if providerOffAlert !== null}
+          {#if refusedProviderOff !== null}
             <ProposalProviderAlert
               agentName={providerAlertAgentName()}
-              providerName={$providerCatalogEntries.find((entry) => entry.id === providerOffAlert)
-                ?.displayName ?? providerOffAlert}
-              failed={pinnedProviderOff === null}
+              providerName={$providerCatalogEntries.find((entry) => entry.id === refusedProviderOff)
+                ?.displayName ?? refusedProviderOff}
               onopensettings={() => void navigateToSettings({ tab: 'providers' })}
             />
           {/if}

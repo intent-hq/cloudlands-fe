@@ -165,6 +165,15 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       return () => {};
     },
   }),
+  selectActiveProviderId: () => readable(() => ''),
+}));
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
+  selectProviderModels: () => readable(() => ({})),
+  selectSelectedModel: () => readable(() => undefined),
+}));
+vi.mock('$features/providers/provider-availability.client', () => ({
+  getProviderAvailability: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
   selectProviderModelsCacheMap: () => ({
@@ -191,6 +200,8 @@ vi.mock(
         return () => {};
       },
     }),
+    selectProviderCatalogProfiles: () => readable(() => []),
+    selectEffectiveDefaultProviderId: () => readable(() => ''),
   }),
 );
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({

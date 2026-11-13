@@ -1,10 +1,21 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { setupProviderDisablePreview } from '$lib/components/settings/provider-selector.preview';
+  import { store } from '$store/renderer/store';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
 
   /** Auggie turned off (or still on, for a refusal the card did not foresee). */
   function setupProviders(auggieEnabled: boolean) {
-    return setupProviderDisablePreview('signed-out', auggieEnabled);
+    const restoreProviders = setupProviderDisablePreview('signed-out', auggieEnabled);
+    // Codex is the default provider; its models name the agent's default.
+    store.dispatch(
+      providerModelsLoaded(
+        'codex',
+        { models: [{ value: 'gpt-5.5', label: 'GPT-5.5' }] },
+        store.state.providerModels.clearEpoch,
+      ),
+    );
+    return restoreProviders;
   }
 
   type Scene = 'default' | 'pinned-off' | 'refused';
@@ -17,12 +28,12 @@
   export const preview = definePreview<Props>({
     id: 'proposal-provider-alert',
     title: 'Workspace proposal model row and turned-off provider',
-    defaultState: 'pinned-off',
+    defaultState: 'default',
     states: {
-      // Auggie is on: the Model row shows the agent's provider and Apply is ready.
+      // The Model row names New Workspace's default provider and model for the agent.
       default: scene('default'),
-      // The suggested agent is pinned to Auggie, which is turned off: Apply waits for
-      // a model from another provider in the Model row.
+      // The suggested agent is pinned to Auggie, which is turned off: the Model row
+      // still lands on an enabled provider's model and Apply is ready.
       'pinned-off': scene('pinned-off'),
       // workspace.create refused Auggie although the card thought it was on.
       refused: scene('refused'),
@@ -32,7 +43,6 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { store } from '$store/renderer/store';
   import type { WorkspaceCreateProposal } from '$shared/types/proposal';
   import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
   import {
@@ -41,7 +51,7 @@
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
   import ProposalCard from './ProposalCard.svelte';
 
-  let { state: current = 'pinned-off' }: Props = $props();
+  let { state: current = 'default' }: Props = $props();
   const s = untrack(() => current);
 
   // Restores the providers and the specialists it replaced.
@@ -54,6 +64,8 @@
         description: '',
         codingAgent: 'auggie',
         model: '',
+        // The daemon's default-model preview for the active provider (Codex).
+        resolvedModel: 'gpt-5.5',
         behaviorPrompt: '',
         filePath: '/fixture/specialists/implementor.md',
         source: 'user',

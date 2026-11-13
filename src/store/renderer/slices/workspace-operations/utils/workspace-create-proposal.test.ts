@@ -174,57 +174,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.contextLinks).toEqual(contextLinks);
   });
 
-  it("fills the initial agent's provider, model and effort from an adopted repository setup", () => {
-    const request = buildCreateWorkspaceRequestFromProposal(
-      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),
-      {
-        specialist: 'coordinator',
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
-      },
-    );
-    expect(request.initialAgent).toMatchObject({
-      specialist: 'coordinator',
-      provider: 'claude-code',
-      model: 'claude-opus-4-5',
-      reasoningEffort: 'high',
-    });
-  });
-
-  it('never overrides provider, model or effort the proposal set itself', () => {
-    const request = buildCreateWorkspaceRequestFromProposal(
-      makeProposal({
-        repositoryPath: '/repo',
-        initialAgent: {
-          prompt: 'Go',
-          provider: 'codex',
-          model: 'gpt-fixture',
-          reasoningEffort: '',
-        },
-      }),
-      {
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
-      },
-    );
-    expect(request.initialAgent).toMatchObject({
-      provider: 'codex',
-      model: 'gpt-fixture',
-      reasoningEffort: '',
-    });
-  });
-
-  it('does not mix an adopted model into a proposal that chose its own provider', () => {
-    const request = buildCreateWorkspaceRequestFromProposal(
-      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go', provider: 'codex' } }),
-      {
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
-      },
-    );
-    expect(request.initialAgent.provider).toBe('codex');
-    expect(request.initialAgent).not.toHaveProperty('model');
-    expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
-  });
-
-  it("replaces the proposal's and the remembered provider, model and effort with the picked ones", () => {
+  it("replaces the proposal's provider, model and effort with the Model row's", () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
         repositoryPath: '/repo',
@@ -238,7 +188,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       {
         specialist: 'implementor',
         agentPick: { provider: 'codex', model: 'gpt-5.5', reasoningEffort: 'high' },
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'max' },
       },
     );
     expect(request.initialAgent).toMatchObject({
@@ -262,7 +211,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       }),
       {
         agentPick: { provider: 'codex' },
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'max' },
       },
     );
     expect(request.initialAgent.provider).toBe('codex');
@@ -282,10 +230,13 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.initialAgent).toMatchObject({ provider: 'codex', model: 'gpt-5.5', placement });
   });
 
-  it('ignores a malformed adopted setup', () => {
+  it("ignores malformed Model row values without keeping the proposal's", () => {
     const request = buildCreateWorkspaceRequestFromProposal(
-      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),
-      { agentSetup: { provider: 7, model: '', reasoningEffort: null } },
+      makeProposal({
+        repositoryPath: '/repo',
+        initialAgent: { prompt: 'Go', provider: 'auggie', model: 'auggie-fixture' },
+      }),
+      { agentPick: { provider: 7, model: '', reasoningEffort: null } },
     );
     expect(request.initialAgent).not.toHaveProperty('provider');
     expect(request.initialAgent).not.toHaveProperty('model');

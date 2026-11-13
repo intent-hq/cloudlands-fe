@@ -43,7 +43,6 @@
   } from '$features/providers/provider-availability.client';
   import {
     getProviderStatusFromResult,
-    isProviderReadyInResult,
     isProviderAuthenticationReady,
   } from '$shared/types/provider-availability';
   import {
@@ -57,24 +56,26 @@
     selectProviderCatalogEntries,
     selectProviderCatalogProfiles,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    findProfileByRef,
-    isProviderProfileRef,
-    providerRefBaseId,
-  } from '$shared/provider-profiles';
+  import { isProviderProfileRef } from '$shared/provider-profiles';
   import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import {
     selectActiveProviderId,
     selectEnabledProviders,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { appClient } from '$lib/client';
-  import type { SpecialistDef } from '$lib/client/app-client';
   import { createLogger } from '$lib/utils/client-logger';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import StartOnPicker from './StartOnPicker.svelte';
+  import {
+    availableInitialAgentProviders,
+    defaultInitialAgentProvider,
+    initialAgentDefaultModel,
+    isInitialAgentProviderAvailable,
+    type ProviderAvailabilityContext,
+  } from './initial-agent-defaults';
+  import { SpecialistDefaultPreviews } from './specialist-default-previews.svelte';
   import { writable } from 'svelte/store';
   import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
   import { expandProviderIdsWithProfiles } from '$shared/provider-profiles';
@@ -358,24 +359,20 @@
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
-  // A named profile (§5.54) is available while it is saved and its base
-  // provider is ready and enabled; readiness is keyed by the base provider.
+  const providerAvailabilityContext = $derived<ProviderAvailabilityContext>({
+    availability: providerAvailability,
+    enabledProviders: $enabledProviders$,
+    profiles: $providerProfiles$,
+  });
+
   function getProviderAvailable(providerId: string): boolean {
-    if (isProviderProfileRef(providerId) && !findProfileByRef($providerProfiles$, providerId))
-      return false;
-    return (
-      isProviderReadyInResult(providerAvailability, providerRefBaseId(providerId)) &&
-      !isProviderDisabledInSettings($enabledProviders$, providerId)
-    );
+    return isInitialAgentProviderAvailable(providerId, providerAvailabilityContext);
   }
 
   // Available providers derived from availability check - dynamically from the catalog
-  const availableProviders = $derived.by(() => {
-    if (!providerAvailability) return [];
-    return $catalogEntries$
-      .filter((provider) => getProviderAvailable(provider.id))
-      .map((provider) => ({ id: provider.id }));
-  });
+  const availableProviders = $derived(
+    availableInitialAgentProviders($catalogEntries$, providerAvailabilityContext),
+  );
 
   // Auto-select first available provider if current selection is unavailable
   // BUT: Don't override if the provider matches the user's explicit choice from the active provider selector
@@ -548,22 +545,9 @@
     }
   });
 
-  // Daemon-resolved default-model previews per provider context (PROTOCOL
-  // §5.11): `specialist.list` with the form's selected provider returns
-  // additive `resolvedModel`/`resolvedProvider` fields computed by the same
-  // resolver a no-model create uses, so the picker displays exactly what the
-  // daemon would pin. Absent resolvedModel means "Provider default". The
-  // store's specialist view carries the daemon-default-provider context, so
-  // it serves as the fallback until the per-provider fetch lands.
-  type ResolvedSpecialist = Pick<
-    SpecialistDef,
-    'model' | 'modelOptions' | 'reasoningEffort' | 'resolvedModel' | 'resolvedReasoningEffort'
-  >;
-  let resolvedDefaultsByProvider = $state<Record<string, Record<string, ResolvedSpecialist>>>({});
-
-  // Bumped on every store specialist-view refresh; in-flight fetches from an
-  // older generation are dropped so they can't overwrite fresher previews.
-  let previewsGeneration = 0;
+  // Daemon-resolved default-model previews in the form's provider context.
+  const previews = new SpecialistDefaultPreviews();
+  const resolvedDefaultsByProvider = $derived(previews.byProvider);
 
   // Invalidate cached previews whenever the store's specialist view refreshes
   // (daemon `specialists:changed` → list subscription refetch), so the
@@ -571,42 +555,23 @@
   // stays mounted. The fetch effect below then refetches on demand.
   $effect(() => {
     void $specialists$;
-    previewsGeneration += 1;
-    resolvedDefaultsByProvider = {};
+    previews.invalidate();
   });
 
-  $effect(() => {
-    const provider = selectedProvider;
-    if (!provider || provider in resolvedDefaultsByProvider) return;
-    const generation = previewsGeneration;
-    void (async () => {
-      try {
-        const defs = await appClient.specialists.list(provider);
-        if (generation !== previewsGeneration || defs.length === 0) return;
-        const byId: Record<string, ResolvedSpecialist> = {};
-        for (const def of defs) byId[def.id] = def;
-        resolvedDefaultsByProvider = { ...resolvedDefaultsByProvider, [provider]: byId };
-      } catch (error) {
-        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
-      }
-    })();
-  });
+  $effect(() => previews.load(selectedProvider));
 
-  // Helper to resolve the displayed default model for a given specialist:
-  // the daemon-computed `resolvedModel` preview in the form's provider
-  // context (undefined ⇒ provider CLI default, rendered "Provider default").
-  // With no specialist (General), prefer this provider's configured model;
-  // the global selection can belong to a different active provider.
+  // The displayed default model for a given specialist (shared with the
+  // workspace suggestion card).
   function resolveEffectiveModel(specialist: string | null): string | undefined {
-    if (!specialist) {
-      return (
-        $configuredModels$[selectedProvider] ||
-        (selectedProvider === $activeProviderId$ ? $selectedModel$ : undefined)
-      );
-    }
-    const providerView = resolvedDefaultsByProvider[selectedProvider];
-    if (providerView) return providerView[specialist]?.resolvedModel;
-    return $specialists$.find((s) => s.id === specialist)?.resolvedModel;
+    return initialAgentDefaultModel({
+      specialist,
+      provider: selectedProvider,
+      providerView: resolvedDefaultsByProvider[selectedProvider],
+      specialists: $specialists$,
+      configuredModels: $configuredModels$,
+      activeProviderId: $activeProviderId$,
+      selectedModel: $selectedModel$,
+    });
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
@@ -891,12 +856,12 @@
     selectedModel = undefined;
     modelWasOverridden = false;
     // Reset provider to default when clearing model override
-    const defaultProv = $activeProviderId$ || $defaultProviderId$;
-    const fallback =
-      !isProviderDisabledInSettings($enabledProviders$, defaultProv) &&
-      (!providerAvailability || getProviderAvailable(defaultProv))
-        ? defaultProv
-        : (availableProviders[0]?.id ?? '');
+    const fallback = defaultInitialAgentProvider({
+      ...providerAvailabilityContext,
+      activeProviderId: $activeProviderId$,
+      defaultProviderId: $defaultProviderId$,
+      availableProviders,
+    });
     if (selectedProvider !== fallback) {
       selectedProvider = fallback;
       onProviderChange?.(fallback);

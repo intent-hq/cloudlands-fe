@@ -5,6 +5,7 @@
     selectedModel?: string | null;
     providerId?: string;
     reasoningEffort?: string | null;
+    defaultModelId?: string;
     isLocked?: boolean;
     onModelChange?: (model: string, pick?: { providerId: string; modelId: string }) => void;
     onReasoningChange?: (effort: string | null) => boolean | void;
@@ -13,6 +14,7 @@
     selectedModel,
     providerId,
     reasoningEffort,
+    defaultModelId,
     isLocked = false,
     onModelChange,
     onReasoningChange,
@@ -24,6 +26,7 @@
   data-provider={providerId ?? ''}
   data-model={selectedModel ?? ''}
   data-effort={reasoningEffort ?? ''}
+  data-default-model={defaultModelId ?? ''}
   data-locked={String(isLocked)}
 >
   <button

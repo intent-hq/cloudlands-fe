@@ -55,6 +55,25 @@ const enabledProvidersState = vi.hoisted(() => {
   };
 });
 
+// New Workspace's provider defaults: the active provider, the daemon's
+// default, provider readiness, and each provider's resolved default models.
+const providerDefaultsState = vi.hoisted(() => {
+  const ready = { available: true, authenticated: true };
+  return {
+    active: 'claude-code',
+    defaultProvider: 'claude-code',
+    availability: {
+      hasAnyProvider: true,
+      providers: { auggie: ready, claudeCode: ready, codex: ready },
+    } as unknown,
+    resolvedModels: {
+      'claude-code': { implementor: 'claude-sonnet-4-5', 'ui-designer': 'claude-haiku-4-5' },
+      codex: { implementor: 'gpt-5.5', 'ui-designer': 'gpt-5.5-mini' },
+      auggie: { implementor: 'auggie-fixture' },
+    } as Record<string, Record<string, string>>,
+  };
+});
+
 const workspaceInitializerHydratedState = vi.hoisted(() => {
   const listeners = new Set<(value: boolean) => void>();
   return {
@@ -228,6 +247,18 @@ vi.mock(
         return () => {};
       },
     }),
+    selectProviderCatalogProfiles: () => ({
+      subscribe: (run: (value: unknown[]) => void) => {
+        run([]);
+        return () => {};
+      },
+    }),
+    selectEffectiveDefaultProviderId: () => ({
+      subscribe: (run: (value: string) => void) => {
+        run(providerDefaultsState.defaultProvider);
+        return () => {};
+      },
+    }),
   }),
 );
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -280,6 +311,18 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (impor
 }));
 vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
+  selectProviderModels: () => ({
+    subscribe: (run: (value: Record<string, string>) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
+  selectSelectedModel: () => ({
+    subscribe: (run: (value: string | undefined) => void) => {
+      run(undefined);
+      return () => {};
+    },
+  }),
   selectModelDisplayName: {
     select: vi.fn((_state: unknown, provider: string, model: string) =>
       provider === 'claude-code' && model === 'claude-opus-4-5' ? 'Opus 4.5' : undefined,
@@ -294,6 +337,26 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       return () => enabledProvidersState.listeners.delete(run);
     },
   }),
+  selectActiveProviderId: () => ({
+    subscribe: (run: (value: string) => void) => {
+      run(providerDefaultsState.active);
+      return () => {};
+    },
+  }),
+}));
+vi.mock('$features/providers/provider-availability.client', () => ({
+  getProviderAvailability: vi.fn(async () => providerDefaultsState.availability),
+}));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    specialists: {
+      list: vi.fn(async (provider: string) =>
+        Object.entries(providerDefaultsState.resolvedModels[provider] ?? {}).map(
+          ([id, resolvedModel]) => ({ id, resolvedModel }),
+        ),
+      ),
+    },
+  },
 }));
 vi.mock('$store/renderer/store', () => ({
   store: {
@@ -371,6 +434,10 @@ beforeEach(() => {
   navigationMocks.goto.mockReset();
   electronBridgeMocks.invoke.mockReset();
   prBranchLookupState.reset();
+  providerDefaultsState.active = 'claude-code';
+  providerDefaultsState.defaultProvider = 'claude-code';
+  enabledProvidersState.value = {};
+  enabledProvidersState.listeners.clear();
 });
 
 afterEach(() => {
@@ -1155,6 +1222,7 @@ describe('ProposalCard', () => {
       initialPrompt: 'Use the findings from this workspace.',
       branch: 'mock-branch',
       specialist: 'ui-designer',
+      agentPick: { provider: 'claude-code' },
     });
   });
 
@@ -1922,7 +1990,8 @@ describe('ProposalCard', () => {
       newWorkspaceDefaultState.specialist = 'implementor';
       specialistsState.specialists = [{ id: 'coordinator' }, { id: 'implementor' }];
       specialistsState.orchestratorId = 'coordinator';
-      enabledProvidersState.set({});
+      // Distinct from the remembered provider, so the tests can tell them apart.
+      providerDefaultsState.active = 'codex';
     });
 
     it("starts on the repository's remembered orchestration setup and applies its model and effort", async () => {
@@ -1938,7 +2007,7 @@ describe('ProposalCard', () => {
       expect(squash(agentRow.textContent ?? '')).toBe(squash(rowLabel + picker));
       expect(await appliedFields()).toMatchObject({
         specialist: 'coordinator',
-        agentSetup: {
+        agentPick: {
           provider: 'claude-code',
           model: 'claude-opus-4-5',
           reasoningEffort: 'high',
@@ -1960,7 +2029,10 @@ describe('ProposalCard', () => {
       });
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
-      expect((await appliedFields()).agentSetup).toEqual({ reasoningEffort: 'low' });
+      expect((await appliedFields()).agentPick).toEqual({
+        provider: 'codex',
+        reasoningEffort: 'low',
+      });
     });
 
     it('drops the remembered model and effort once the user picks another agent', async () => {
@@ -1970,14 +2042,14 @@ describe('ProposalCard', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
       const fields = await appliedFields();
       expect(fields.specialist).toBe('ui-designer');
-      expect(fields).not.toHaveProperty('agentSetup');
+      expect(fields.agentPick).toEqual({ provider: 'codex' });
     });
 
     it("keeps an agent named by the suggestion and adds none of the repository's setup", async () => {
       newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
       const { appliedFields } = renderSibling({ specialist: 'coordinator' });
 
-      expect(await appliedFields()).not.toHaveProperty('agentSetup');
+      expect((await appliedFields()).agentPick).toEqual({ provider: 'codex' });
     });
 
     it('sends the remembered provider when no model was picked', async () => {
@@ -1991,7 +2063,7 @@ describe('ProposalCard', () => {
       };
       const { appliedFields } = renderSibling();
 
-      expect((await appliedFields()).agentSetup).toEqual({ provider: 'claude-code' });
+      expect((await appliedFields()).agentPick).toEqual({ provider: 'claude-code' });
     });
 
     it('adopts none of a remembered setup whose provider is turned off', async () => {
@@ -2002,7 +2074,7 @@ describe('ProposalCard', () => {
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
       const fields = await appliedFields();
       expect(fields.specialist).toBe('coordinator');
-      expect(fields).not.toHaveProperty('agentSetup');
+      expect(fields.agentPick).toEqual({ provider: 'codex' });
     });
 
     it('drops the remembered setup when its provider is turned off while the card is open', async () => {
@@ -2011,7 +2083,7 @@ describe('ProposalCard', () => {
 
       enabledProvidersState.set({ 'claude-code': false });
       await tick();
-      expect(await appliedFields()).not.toHaveProperty('agentSetup');
+      expect((await appliedFields()).agentPick).toEqual({ provider: 'codex' });
     });
 
     it('follows a repository change for the remembered setup after an explicit agent pick', async () => {
@@ -2050,7 +2122,7 @@ describe('ProposalCard', () => {
       await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
       const fields = (applyListener.mock.calls[0]?.[0] as CustomEvent).detail.editedFields;
       expect(fields.specialist).toBe('ui-designer');
-      expect(fields.agentSetup).toEqual({
+      expect(fields.agentPick).toEqual({
         provider: 'claude-code',
         model: 'claude-opus-4-5',
         reasoningEffort: 'low',
@@ -2064,7 +2136,7 @@ describe('ProposalCard', () => {
       const { appliedFields } = renderSibling();
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
-      expect(await appliedFields()).not.toHaveProperty('agentSetup');
+      expect((await appliedFields()).agentPick).toEqual({ provider: 'codex' });
     });
   });
 
@@ -2098,19 +2170,37 @@ describe('ProposalCard', () => {
       };
     }
 
-    it("shows the proposal's provider, model and effort and sends no pick untouched", async () => {
+    const picker = () => screen.getByTestId('mock-model-picker');
+
+    beforeEach(() => {
+      specialistsState.specialists = [{ id: 'implementor' }, { id: 'ui-designer' }];
+    });
+
+    it("names New Workspace's default provider and model for the agent and sends that provider", async () => {
+      const appliedFields = renderCard();
+
+      await waitFor(() => expect(picker().dataset.defaultModel).toBe('claude-sonnet-4-5'));
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '' });
+      // The daemon resolves the same default model for that provider.
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it("shows the proposal's provider, model and effort and sends exactly them", async () => {
       const appliedFields = renderCard({
         provider: 'claude-code',
         model: 'claude-opus-4-5',
         reasoningEffort: 'low',
       });
-      const picker = screen.getByTestId('mock-model-picker');
-      expect(picker.dataset).toMatchObject({
+      expect(picker().dataset).toMatchObject({
         provider: 'claude-code',
         model: 'claude-opus-4-5',
         effort: 'low',
       });
-      expect(await appliedFields()).not.toHaveProperty('agentPick');
+      expect((await appliedFields())?.agentPick).toEqual({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        reasoningEffort: 'low',
+      });
     });
 
     it('keeps the shown provider and model with a picked effort', async () => {
@@ -2126,28 +2216,53 @@ describe('ProposalCard', () => {
     it("starts a picked model on its own effort, not the proposal's", async () => {
       const appliedFields = renderCard({ provider: 'claude-code', reasoningEffort: 'max' });
       await fireEvent.click(screen.getByRole('button', { name: 'Mock pick Codex model' }));
-      expect(screen.getByTestId('mock-model-picker').dataset.effort).toBe('');
+      expect(picker().dataset.effort).toBe('');
       expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
     });
 
-    it('resets the picked model when another agent is picked, like New Workspace', async () => {
+    it('resets a picked model to the new agent’s default when another agent is picked', async () => {
       const appliedFields = renderCard();
       await fireEvent.click(screen.getByRole('button', { name: 'Mock pick Codex model' }));
       await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
-      expect(screen.getByTestId('mock-model-picker').dataset.provider).toBe('');
-      expect(await appliedFields()).not.toHaveProperty('agentPick');
+
+      await waitFor(() => expect(picker().dataset.defaultModel).toBe('claude-haiku-4-5'));
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it("drops the proposal's own model once another agent is picked", async () => {
+      const appliedFields = renderCard({
+        provider: 'codex',
+        model: 'gpt-5.5',
+        reasoningEffort: 'low',
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '', effort: '' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it("skips a proposal's provider that is turned off", async () => {
+      enabledProvidersState.set({ codex: false });
+      const appliedFields = renderCard({ provider: 'codex', model: 'gpt-5.5' });
+
+      expect(picker().dataset).toMatchObject({ provider: 'claude-code', model: '' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it('starts on the first available provider when the active one is turned off', async () => {
+      enabledProvidersState.set({ 'claude-code': false });
+      const appliedFields = renderCard();
+
+      await waitFor(() => expect(picker().dataset.provider).toBe('auggie'));
+      await waitFor(() => expect(picker().dataset.defaultModel).toBe('auggie-fixture'));
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'auggie' });
     });
   });
 
   describe("agent pinned to a provider that's turned off", () => {
-    const TEAM_OPUS_HIGH = {
-      isTeamMode: false,
-      selectedSpecialist: 'implementor',
-      selectedProvider: 'claude-code',
-      selectedModel: 'claude-opus-4-5',
-      modelWasOverridden: true,
-      selectedReasoningEffort: 'high',
-    };
+    const REFUSAL =
+      'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
 
     function renderSibling(workspaceCreate: Record<string, unknown> = {}) {
       const { container } = render(ProposalCard, {
@@ -2189,111 +2304,57 @@ describe('ProposalCard', () => {
       enabledProvidersState.set({ auggie: false });
     });
 
-    it('shows the alert and blocks Apply until a model from another provider is picked', async () => {
+    it("lands on an enabled provider's model with Apply ready and no alert", async () => {
       const { applyButton, appliedFields } = renderSibling();
 
-      const alert = screen.getByTestId('proposal-provider-alert');
-      expect(alert.textContent).toContain('Implementor');
-      expect(alert.textContent).toContain('Auggie');
-      // The alert has no picker of its own: the Model row shows the pin.
-      expect(alert.querySelector('[role="combobox"]')).toBeNull();
-      expect(picker().dataset.provider).toBe('auggie');
-      expect((applyButton() as HTMLButtonElement).disabled).toBe(true);
-      expect(await appliedFields()).toBeUndefined();
+      await waitFor(() => expect(picker().dataset.defaultModel).toBe('claude-sonnet-4-5'));
+      expect(picker().dataset.provider).toBe('claude-code');
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'claude-code' });
+    });
+
+    it('never lands on the pin when it is also the active provider', async () => {
+      providerDefaultsState.active = 'auggie';
+      const { appliedFields } = renderSibling();
+
+      await waitFor(() => expect(picker().dataset.provider).toBe('codex'));
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex' });
     });
 
     it("sends the Model row's provider, model and effort for this workspace only", async () => {
-      const { applyButton, appliedFields } = renderSibling();
+      const { appliedFields } = renderSibling();
 
       await pick('Mock pick Codex model');
-      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
-      expect(picker().dataset.provider).toBe('codex');
-      expect(picker().dataset.model).toBe('gpt-5.5');
+      expect(picker().dataset).toMatchObject({ provider: 'codex', model: 'gpt-5.5' });
       await pick('Mock pick high effort');
-      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
-      const fields = await appliedFields();
-      expect(fields).toMatchObject({
+      expect(await appliedFields()).toMatchObject({
         specialist: 'implementor',
         agentPick: { provider: 'codex', model: 'gpt-5.5', reasoningEffort: 'high' },
       });
-      expect(fields).not.toHaveProperty('agentSetup');
     });
 
-    it('never mixes the picked model with a remembered setup', async () => {
-      // The remembered setup's provider is off too, so the pin decides.
-      enabledProvidersState.set({ auggie: false, 'claude-code': false });
-      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
-      const { appliedFields } = renderSibling({ specialist: undefined });
-
-      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
-      await pick('Mock pick Codex model');
-      const fields = await appliedFields();
-      expect(fields?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
-      expect(fields).not.toHaveProperty('agentSetup');
-    });
-
-    it('drops a picked model when its provider is turned off', async () => {
-      enabledProvidersState.set({ auggie: false });
-      const { applyButton } = renderSibling();
-
-      await pick('Mock pick Claude model');
-      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
-      enabledProvidersState.set({ auggie: false, 'claude-code': false });
-      await tick();
-      expect(screen.getByTestId('proposal-provider-alert')).toBeTruthy();
-      expect((applyButton() as HTMLButtonElement).disabled).toBe(true);
-    });
-
-    it('shows no alert when an enabled remembered provider overrides the pin', async () => {
-      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
-      const { appliedFields } = renderSibling({ specialist: undefined });
-
-      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
-      expect((await appliedFields())?.agentSetup).toMatchObject({ provider: 'claude-code' });
-    });
-
-    it('clears the alert when another agent is picked', async () => {
+    it('falls back to the default when a picked provider is turned off', async () => {
       const { applyButton, appliedFields } = renderSibling();
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      await pick('Mock pick Claude model');
+      enabledProvidersState.set({ auggie: false, 'claude-code': false });
+      await waitFor(() => expect(picker().dataset.provider).toBe('codex'));
       expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
       expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
-      const fields = await appliedFields();
-      expect(fields?.specialist).toBe('ui-designer');
-      expect(fields).not.toHaveProperty('agentPick');
-    });
-
-    it('clears the alert when the pinned provider is turned back on', async () => {
-      const { applyButton } = renderSibling();
-
-      enabledProvidersState.set({ auggie: true });
-      await tick();
-      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
-      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
-    });
-
-    it('shows no alert for an agent pinned to an enabled provider', () => {
-      enabledProvidersState.set({});
-      renderSibling();
-      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
-    });
-
-    it('opens Settings > Providers from the alert', async () => {
-      renderSibling();
-
-      await fireEvent.click(screen.getByTestId('proposal-provider-alert-settings'));
-      expect(navigationMocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'providers' });
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex' });
     });
 
     it('shows the alert instead of the raw error when create refuses a turned-off provider', async () => {
       // Settings here still say Auggie is on; the daemon disagreed.
       enabledProvidersState.set({});
       lifecycleSelectorState.status = 'failed';
-      lifecycleSelectorState.error =
-        'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
+      lifecycleSelectorState.error = REFUSAL;
       const { applyButton, appliedFields } = renderSibling();
 
       const alert = screen.getByTestId('proposal-provider-alert');
+      expect(alert.textContent).toContain('Implementor');
       expect(alert.textContent).toContain('Auggie');
       expect(screen.queryByText(/is not enabled/)).toBeNull();
       // Retry stays available: the provider may have been turned back on.
@@ -2307,11 +2368,20 @@ describe('ProposalCard', () => {
       });
     });
 
+    it('opens Settings > Providers from the refusal alert', async () => {
+      enabledProvidersState.set({});
+      lifecycleSelectorState.status = 'failed';
+      lifecycleSelectorState.error = REFUSAL;
+      renderSibling();
+
+      await fireEvent.click(screen.getByTestId('proposal-provider-alert-settings'));
+      expect(navigationMocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'providers' });
+    });
+
     it('drops the refusal alert once another agent is picked', async () => {
       enabledProvidersState.set({});
       lifecycleSelectorState.status = 'failed';
-      lifecycleSelectorState.error =
-        'workspace.create: provider "auggie" (Auggie) is not enabled — enable it in Settings > Providers, or choose an enabled provider or model.';
+      lifecycleSelectorState.error = REFUSAL;
       renderSibling();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
