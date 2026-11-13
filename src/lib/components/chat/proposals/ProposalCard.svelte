@@ -391,8 +391,7 @@
     disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
   const applyDisabled = $derived(
-    actionDisabled ||
-      (isWorkspaceCreate && (startOnUnavailable || pinnedProviderOff !== null)),
+    actionDisabled || (isWorkspaceCreate && (startOnUnavailable || pinnedProviderOff !== null)),
   );
   const showWorkspaceShortcutHint = $derived(
     isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,

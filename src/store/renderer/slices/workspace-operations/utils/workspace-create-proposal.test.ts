@@ -253,7 +253,12 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
         repositoryPath: '/repo',
-        initialAgent: { prompt: 'Go', provider: 'auggie', model: 'auggie-fixture', reasoningEffort: 'low' },
+        initialAgent: {
+          prompt: 'Go',
+          provider: 'auggie',
+          model: 'auggie-fixture',
+          reasoningEffort: 'low',
+        },
       }),
       {
         agentPick: { provider: 'codex' },
