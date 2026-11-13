@@ -91,7 +91,12 @@ export function machineReportedModels(
 }
 
 /** Placement treats these as not installed. */
-export const MACHINE_PROVIDER_NOT_INSTALLED = new Set(['cli-missing', 'prerequisite-missing']);
+const MACHINE_PROVIDER_NOT_INSTALLED = new Set(['cli-missing', 'prerequisite-missing']);
+
+/** The machine offers the provider: installed and not hidden (`visible: false`). */
+export function isMachineProviderOffered(provider: { status: string; visible?: false }): boolean {
+  return provider.visible !== false && !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status);
+}
 const SIGNED_OUT = new Set(['signed-out', 'auth-failed']);
 
 /** The machine reports the provider as signed out (or its sign-in failed). */

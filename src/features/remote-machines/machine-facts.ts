@@ -1,6 +1,6 @@
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { RemoteMachine } from '$shared/types/remote-machines';
-import { MACHINE_PROVIDER_NOT_INSTALLED } from './remote-model-picker';
+import { isMachineProviderOffered } from './remote-model-picker';
 
 /** The platform families Settings → Machines shows an icon for. */
 export type MachinePlatform = 'macos' | 'windows' | 'linux';
@@ -63,9 +63,6 @@ export function machineRowProviders(
   const report = machineRowReport(machine);
   if (!report) return [];
   return report.providers
-    .filter(
-      (provider) =>
-        provider.visible !== false && !MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status),
-    )
+    .filter(isMachineProviderOffered)
     .map((provider) => ({ id: provider.id, name: catalogName(provider.id) ?? provider.id }));
 }
