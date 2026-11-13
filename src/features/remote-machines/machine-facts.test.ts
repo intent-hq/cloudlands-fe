@@ -112,6 +112,14 @@ describe('machineRowProviders', () => {
     ]);
   });
 
+  it('uses the last report of a disconnected machine (its idle state)', () => {
+    expect(
+      machineRowProviders(device, machine({ state: 'disconnected' }), noNames).map(
+        (provider) => provider.id,
+      ),
+    ).toEqual(['claude-code', 'codex', 'unsloth']);
+  });
+
   it('shows nothing for an unreachable machine or one without a report', () => {
     expect(machineRowProviders(device, machine({ state: 'unreachable' }), noNames)).toEqual([]);
     expect(machineRowProviders(device, machine({ capabilities: undefined }), noNames)).toEqual([]);

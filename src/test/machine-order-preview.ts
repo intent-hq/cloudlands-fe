@@ -9,7 +9,13 @@ import {
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
-export type MachineOrderPreviewState = 'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions';
+export type MachineOrderPreviewState =
+  | 'owner'
+  | 'member'
+  | 'saving'
+  | 'unsupported'
+  | 'exceptions'
+  | 'disconnected';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
@@ -36,6 +42,38 @@ const GARAGE: RemoteMachine = {
   addedAt: '2026-11-02T00:00:00Z',
 };
 
+/** Idle between launches (connected on demand), with its last report kept. */
+const GARAGE_IDLE: RemoteMachine = {
+  ...GARAGE,
+  state: 'disconnected',
+  capabilities: {
+    intentdVersion: '0.11.197',
+    providers: [
+      { id: 'claude-code', status: 'signed-in', models: ['opus'] },
+      { id: 'unsloth', status: 'unknown', models: [] },
+      { id: 'grok', status: 'cli-missing', models: [] },
+    ],
+  },
+};
+
+/** Idle, and its last report has no provider it can run. */
+const CACHE_IDLE: RemoteMachine = {
+  ...GARAGE,
+  id: 'd-cache',
+  name: 'Cache box',
+  hosts: ['192.0.2.30'],
+  fingerprint: '33:44',
+  state: 'disconnected',
+  capabilities: {
+    intentdVersion: '0.11.197',
+    providers: [
+      { id: 'claude-code', status: 'cli-missing', models: [] },
+      { id: 'pi', status: 'prerequisite-missing', models: [] },
+    ],
+  },
+  addedAt: '2026-11-03T00:00:00Z',
+};
+
 const ORDER: MachineOrderRow[] = [
   { kind: 'machine', nodeId: GARAGE.id, name: GARAGE.name },
   { kind: 'local', name: 'build-box' },
@@ -50,19 +88,26 @@ const ORDER: MachineOrderRow[] = [
  */
 export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   const exceptions = state === 'exceptions';
+  const disconnected = state === 'disconnected';
   const restoreCloud = setupCloudMachinesFixture(exceptions ? 'entries-key-rejected' : 'entries');
   const ordered = state !== 'unsupported';
   store.dispatch(
     remoteMachinesLoaded({
       supported: true,
       machineOrder: ordered,
-      order: ordered ? ORDER : null,
+      order: !ordered
+        ? null
+        : disconnected
+          ? [...ORDER, { kind: 'machine', nodeId: CACHE_IDLE.id, name: CACHE_IDLE.name }]
+          : ORDER,
       machines: exceptions
         ? [
             { ...STUDIO, state: 'update-required' },
             { ...GARAGE, state: 'unreachable' },
           ]
-        : [STUDIO, GARAGE],
+        : disconnected
+          ? [STUDIO, GARAGE_IDLE, CACHE_IDLE]
+          : [STUDIO, GARAGE],
       localFingerprint: 'EE:FF',
       executorBackends: [],
     }),
