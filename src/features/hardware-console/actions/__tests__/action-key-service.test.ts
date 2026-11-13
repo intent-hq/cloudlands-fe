@@ -12,13 +12,13 @@ import { resetActionKeyCycleCursors, type ActionKeyState } from '../action-key-r
 import { normalizeCycleScopeByFamily } from '../cycle-scope';
 
 const mockState: {
-  tabState: { currentTabId: string | null };
+  tabState: { currentTabId: string | null; workspaceStacks: string[][] };
   hardwareConsole: {
     actionMappingByModel: Record<string, string[]>;
     isConsoleOwner: boolean;
   } & ActionKeyState['hardwareConsole'];
 } & ActionKeyState = {
-  tabState: { currentTabId: 'ws-1' },
+  tabState: { currentTabId: 'ws-1', workspaceStacks: [['ws-1']] },
   hardwareConsole: {
     actionMappingByModel: normalizeActionMappingsByModel(undefined),
     cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
