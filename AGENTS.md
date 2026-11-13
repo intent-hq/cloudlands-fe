@@ -436,17 +436,11 @@ fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,
 worktree; never stop a lock owner — two runs in one worktree share its port, so pick a free
 `CT_PORT` to run CT concurrently there (intent-hq/intent#4964).
 
-After any structural change (moving files, changing imports, extracting modules):
-
-```bash
-pnpm vitest run <targeted-test-files>
-pnpm run check                              # Svelte + TypeScript consumers
-pnpm tsc -p tsconfig.json --noEmit          # renderer
-pnpm tsc -p tsconfig.main.json --noEmit     # main process
-pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit  # preload
-```
-
-`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once; the preload typecheck requires `pnpm run generate:ipc-channels` first, since the untracked `src/preload/index.ts` is the preload `tsconfig`'s only input and is absent after a fresh install.
+Before every push, and after any structural change, run `pnpm run verify:static` (a few
+minutes; same paths and `--base` as `verify:changed`). It runs Prettier and ESLint on the
+changed files, then knip, `pnpm run check` and the renderer, main and preload `tsc` checks
+repo-wide, with no tests: the static failures CI's Type Check & Lint reports most often
+(cloudlands-fe#4491). Update onto `origin/main` first; ESLint `max-lines` counts the merged file.
 
 ## Frontend philosophy & testing
 

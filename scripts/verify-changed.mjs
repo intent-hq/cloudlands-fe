@@ -182,6 +182,7 @@ export function parseArgs(argv) {
     keepGoing: false,
     paths: [],
     resume: false,
+    static: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -190,6 +191,7 @@ export function parseArgs(argv) {
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
     else if (arg === '--resume') result.resume = true;
     else if (arg === '--keep-going') result.keepGoing = true;
+    else if (arg === '--static') result.static = true;
     else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
       const value =
         arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
@@ -206,6 +208,8 @@ export function parseArgs(argv) {
   }
   if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
     throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
+  if (result.static && (result.resolvedPlan || result.maxUnitFiles !== undefined))
+    throw new Error('--static selects no unit tests; drop --resolved-plan and --max-unit-files');
   if (result.dryRun && result.resume)
     throw new Error('Use --resolved-plan --resume instead of --dry-run to preview a continuation');
   return result;
@@ -537,14 +541,98 @@ function playwrightCommand(id, label, args, lockKind = null) {
   return { ...command(id, label, args, lockKind), env: { ...PLAYWRIGHT_CHECK_ENV } };
 }
 
+function typeChecks(boundaries, svelteCheck) {
+  const checks = [];
+  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
+  if (boundaries.has('renderer')) {
+    checks.push(
+      command('tsc-renderer', 'TypeScript (renderer)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.json',
+        '--noEmit',
+      ]),
+    );
+  }
+  if (boundaries.has('main')) {
+    checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
+      command('tsc-main', 'TypeScript (main)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.main.json',
+        '--noEmit',
+      ]),
+    );
+  }
+  if (boundaries.has('preload')) {
+    checks.push(
+      command('generate-ipc-channels', 'Generate preload IPC channels', [
+        'run',
+        'generate:ipc-channels',
+      ]),
+      command('tsc-preload', 'TypeScript (preload)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.preload.json',
+        '--noEmit',
+      ]),
+    );
+  }
+  return checks;
+}
+
+function formatAndLintChecks(existing) {
+  const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
+  const lintFiles = existing.filter(isLintable);
+  const checks = [];
+  if (formatFiles.length)
+    checks.push(
+      command('prettier', 'Prettier (changed files)', [
+        'exec',
+        'prettier',
+        '--check',
+        ...formatFiles,
+      ]),
+    );
+  if (lintFiles.length)
+    checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  return checks;
+}
+
+// Static-only lane: what CI's Type Check & Lint fails on most often, in minutes.
+// Prettier and ESLint follow the change set; knip and every type check are
+// repo-wide, since an edit in one process can break a consumer in another.
+function createStaticVerificationPlan(files, root) {
+  const existing = files.filter((file) => isExisting(file, root));
+  return {
+    files,
+    prerequisites: [],
+    checks: [
+      ...formatAndLintChecks(existing),
+      command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']),
+      ...typeChecks(new Set(['renderer', 'main', 'preload']), true),
+    ],
+    fallbackReasons: [],
+    triggerViolations: [],
+  };
+}
+
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
+  if (options.static) return createStaticVerificationPlan(files, root);
   const declared = options.declaredSuites
     ? { suites: options.declaredSuites, violations: [] }
     : listDeclaredSuites(root);
   const existing = files.filter((file) => isExisting(file, root));
-  const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
-  const lintFiles = existing.filter(isLintable);
   const snapshots = new Map(
     files
       .filter((file) => extname(file) === '.snap')
@@ -622,18 +710,7 @@ export function createVerificationPlan(files, options = {}) {
     }
   }
 
-  const checks = [];
-  if (formatFiles.length)
-    checks.push(
-      command('prettier', 'Prettier (changed files)', [
-        'exec',
-        'prettier',
-        '--check',
-        ...formatFiles,
-      ]),
-    );
-  if (lintFiles.length)
-    checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  const checks = formatAndLintChecks(existing);
   // actionlint can hang on a loaded host (rhysd/actionlint#702; cloudlands-fe#4332),
   // so the architecture lane skips it and it runs only for its own inputs.
   if (architecture)
@@ -693,50 +770,7 @@ export function createVerificationPlan(files, options = {}) {
   // Static type checks run before every test lane. A run stops at its first
   // failure, so a load-sensitive test timeout would otherwise hide a real type
   // error until it passed (cloudlands-fe#4115 needed three runs to see one).
-  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
-  if (boundaries.has('renderer')) {
-    checks.push(
-      command('tsc-renderer', 'TypeScript (renderer)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.json',
-        '--noEmit',
-      ]),
-    );
-  }
-  if (boundaries.has('main')) {
-    checks.push(
-      command('generate-build-config', 'Generate main build config (if missing)', [
-        'run',
-        'generate:build-config',
-        '--',
-        '--if-missing',
-      ]),
-      command('tsc-main', 'TypeScript (main)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.main.json',
-        '--noEmit',
-      ]),
-    );
-  }
-  if (boundaries.has('preload')) {
-    checks.push(
-      command('generate-ipc-channels', 'Generate preload IPC channels', [
-        'run',
-        'generate:ipc-channels',
-      ]),
-      command('tsc-preload', 'TypeScript (preload)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.preload.json',
-        '--noEmit',
-      ]),
-    );
-  }
+  checks.push(...typeChecks(boundaries, svelteCheck));
   if (fullUnit)
     checks.push(
       command(
@@ -1513,7 +1547,10 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log(
-      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
+      'Usage: pnpm run verify:changed -- [--static] [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
+    log(
+      '  --static: only Prettier and ESLint on the changed files, then knip, svelte-check and the renderer, main and preload type checks repo-wide; no tests. Runs even with nothing changed.',
     );
     log(
       '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',
@@ -1549,7 +1586,10 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const files = args.paths.length
     ? expandInputPaths(args.paths, root)
     : [...new Set([...uncommitted, ...(base ? committedFiles(base, root) : [])])].sort();
-  if (!args.paths.length && files.length === 0) {
+  const prefix = args.static ? 'static checks; ' : '';
+  if (args.static && !args.paths.length && files.length === 0) {
+    mode = 'nothing changed, running the repo-wide checks only';
+  } else if (!args.paths.length && files.length === 0) {
     const hint = base
       ? ` and no files changed relative to the merge-base with ${base}`
       : ahead === 'not-ahead'
@@ -1558,11 +1598,11 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
-  if (!args.base && base && uncommitted.length === 0) {
+  if (!args.base && base && uncommitted.length === 0 && files.length) {
     mode = `worktree clean; verifying commits since merge-base with ${base}`;
   }
-  log(`verify:changed: ${mode}`);
-  const plan = createVerificationPlan(files, { root });
+  log(`verify:changed: ${prefix}${mode}`);
+  const plan = createVerificationPlan(files, { root, static: args.static });
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
 

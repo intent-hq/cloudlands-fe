@@ -177,6 +177,7 @@ describe('verify-changed arguments and paths', () => {
       keepGoing: false,
       paths: ['src/a.ts'],
       resume: false,
+      static: false,
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
   });
@@ -3356,4 +3357,121 @@ describe.each(['missing', 'obsolete'])('generated build input plan prerequisite 
       expect(existsSync(join(root, 'observed.json'))).toBe(false);
     },
   );
+});
+
+describe('static-only lane (--static)', () => {
+  const REPO_WIDE = [
+    'knip',
+    'svelte-check',
+    'tsc-renderer',
+    'generate-build-config',
+    'tsc-main',
+    'generate-ipc-channels',
+    'tsc-preload',
+  ];
+  const gates = {
+    checkNode: () => ({ ok: true, reason: null }),
+    checkDeps: () => ({ ok: true, reason: null }),
+    ensureI18n: async () => ({ ok: true, reason: null }),
+  };
+
+  it('parses --static and rejects the unit-selection options with it', () => {
+    expect(parseArgs(['--static', '--base', 'main', 'src/a.ts'])).toMatchObject({
+      static: true,
+      base: 'main',
+      paths: ['src/a.ts'],
+    });
+    expect(parseArgs(['--static', '--dry-run'])).toMatchObject({ static: true, dryRun: true });
+    expect(parseArgs(['--static', '--keep-going', '--resume'])).toMatchObject({
+      static: true,
+      keepGoing: true,
+      resume: true,
+    });
+    expect(() => parseArgs(['--static', '--resolved-plan'])).toThrow(/--static/);
+    expect(() => parseArgs(['--static', '--max-unit-files', '3'])).toThrow(/--static/);
+  });
+
+  it('scopes Prettier and ESLint to changed files and never plans a test or architecture lane', () => {
+    const root = fixtureRoot({
+      'src/lib/Widget.svelte': '<button />',
+      'src/lib/Widget.test.ts': '',
+      'src/lib/Widget.ct.spec.ts': "import Widget from './Widget.svelte';",
+      'docs/guide.md': '# Guide',
+    });
+    const files = [
+      'docs/guide.md',
+      'src/lib/Widget.ct.spec.ts',
+      'src/lib/Widget.svelte',
+      'src/lib/Widget.test.ts',
+      'src/lib/deleted.ts',
+    ];
+    const plan = createVerificationPlan(files, {
+      root,
+      ctTests: ['src/lib/Widget.ct.spec.ts'],
+      static: true,
+    });
+    expect(plan.checks.map((check) => check.id)).toEqual(['prettier', 'eslint', ...REPO_WIDE]);
+    expect(plan.checks[0].args).toEqual(['exec', 'prettier', '--check', ...files.slice(0, 4)]);
+    expect(plan.checks[1].args).toEqual(['exec', 'eslint', ...files.slice(1, 4)]);
+    expect(plan.prerequisites).toEqual([]);
+  });
+
+  // Each of these failed CI after a scoped local run skipped it (cloudlands-fe#4491).
+  it.each([
+    ['a main-process change', 'src/main/index.ts'],
+    ['a docs-only change', 'docs/guide.md'],
+    ['an unknown high-risk change', 'native/tool.bin'],
+  ])('runs every repo-wide type check and knip for %s', (_name, file) => {
+    const root = fixtureRoot({ [file]: 'x' });
+    const ids = createVerificationPlan([file], { root, ctTests: [], static: true }).checks.map(
+      (check) => check.id,
+    );
+    expect(ids).toEqual(expect.arrayContaining(REPO_WIDE));
+    expect(ids.filter((id) => !REPO_WIDE.includes(id))).toEqual(
+      ids.filter((id) => id === 'prettier' || id === 'eslint'),
+    );
+  });
+
+  it('runs the repo-wide checks on a clean worktree instead of exiting 2', async () => {
+    const root = gitRepository();
+    trackOriginMain(root);
+    const lines: string[] = [];
+    const planned: string[][] = [];
+    const runPlan = async (plan: { checks: Array<{ id: string }> }) => {
+      planned.push(plan.checks.map((check) => check.id));
+    };
+    expect(
+      await runCli(['--static'], root, { log: (line) => lines.push(line), ...gates, runPlan }),
+    ).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: static checks; nothing changed, running the repo-wide checks only',
+    );
+    expect(planned).toEqual([REPO_WIDE]);
+  });
+
+  it('still runs the repo-wide checks when the given paths match no existing file', async () => {
+    const root = gitRepository();
+    const planned: string[][] = [];
+    const runPlan = async (plan: { checks: Array<{ id: string }> }) => {
+      planned.push(plan.checks.map((check) => check.id));
+    };
+    expect(
+      await runCli(['--static', 'src/missing.ts'], root, { log: () => {}, ...gates, runPlan }),
+    ).toBe(0);
+    expect(planned).toEqual([REPO_WIDE]);
+  });
+
+  it('names the static mode on the first line of a run with changes', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    const lines: string[] = [];
+    expect(await runCli(['--static', '--dry-run'], root, { log: (line) => lines.push(line) })).toBe(
+      0,
+    );
+    expect(lines[0]).toBe(
+      'verify:changed: static checks; worktree clean; verifying commits since merge-base with origin/main',
+    );
+    expect(lines).toContain(`  - ${committed}`);
+  });
 });
