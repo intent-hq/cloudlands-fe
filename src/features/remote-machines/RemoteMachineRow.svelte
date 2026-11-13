@@ -71,18 +71,21 @@
     );
   });
   const report = $derived(machineRowReport(machine));
-  // Online when the backend holds a link to it, offline when it has none;
-  // a problem (unreachable, revoked, update needed) shows its badge colour.
-  const dot = $derived.by((): { class: string; label: string } => {
+  // Green while the backend holds a link to it, grey without one; a
+  // problem shows its badge colour, and the badge names it.
+  const dot = $derived.by((): { class: string; label: string | null } => {
     if (machine.state === 'connected')
-      return { class: 'bg-success', label: m.settings_devices_statusConnected_label() };
+      return {
+        class: 'bg-success',
+        label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
+      };
     if (machine.state === 'disconnected')
       return {
         class: 'bg-muted-foreground/50',
         label: m.settings_devices_statusDisconnected_label(),
       };
     const badge = remoteMachineBadge(machine, $backendLabel$);
-    return { class: badge.color === 'red' ? 'bg-danger' : 'bg-warning', label: badge.label };
+    return { class: badge.color === 'red' ? 'bg-danger' : 'bg-warning', label: null };
   });
   const actions = $derived<ActionDefinition[]>(
     withOrderActions(
@@ -124,8 +127,11 @@
             'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
             dot.class,
           )}
-          role="status"
-          aria-label={m.settings_devices_status_ariaLabel({ status: dot.label })}
+          role={dot.label ? 'status' : undefined}
+          aria-label={dot.label
+            ? m.settings_devices_status_ariaLabel({ status: dot.label })
+            : undefined}
+          aria-hidden={dot.label ? undefined : 'true'}
           data-remote-machine-dot={machine.state}
         ></span>
         <DeviceIcon record={{ os: machine.platform?.os }} size={20} class="text-foreground" />

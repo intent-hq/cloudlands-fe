@@ -105,7 +105,7 @@
   let renameError = $state<string | null>(null);
 
   // Sandboxes run Linux; a running one's own report wins.
-  const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os ?? 'linux'));
+  const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os || 'linux'));
 
   const status = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
     if (!entry) return null;
@@ -222,12 +222,12 @@
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if status}
+          {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
           {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}
           {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
           {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
               >{entry.northflank.region}</span
             >{/if}
-          {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}

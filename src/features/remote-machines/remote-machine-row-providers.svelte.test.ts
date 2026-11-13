@@ -75,3 +75,33 @@ describe('remote machine rows while disconnected', () => {
     expect(within(cloud).queryByText('No providers ready')).toBeNull();
   });
 });
+
+describe('status dots and platforms in the ordered list', () => {
+  function renderState(state: Parameters<typeof setupMachineOrderFixture>[0]) {
+    store.init();
+    restore = setupMachineOrderFixture(state);
+    const view = render(DevicesSettings);
+    return view.container.querySelector('[data-machine-order-section]') as HTMLElement;
+  }
+  const dot = (element: HTMLElement) =>
+    element.querySelector('[data-remote-machine-dot]') as HTMLElement;
+
+  it('greys a machine without a live link and names the state', () => {
+    const garage = row(renderState('disconnected'), 'Garage node');
+    expect(dot(garage).className).toContain('bg-muted-foreground');
+    expect(dot(garage).getAttribute('aria-label')).toMatch(/disconnected/i);
+  });
+
+  it('colours a problem and leaves its name to the badge', () => {
+    const garage = row(renderState('exceptions'), 'Garage node');
+    expect(dot(garage).className).toContain('bg-warning');
+    expect(dot(garage).getAttribute('aria-hidden')).toBe('true');
+    expect(within(garage).getByText('Unreachable')).toBeTruthy();
+  });
+
+  it('shows the Linux platform on a cloud entry', () => {
+    const team = row(renderState('owner'), 'Team project');
+    expect(within(team).getByRole('img', { name: 'Linux' })).toBeTruthy();
+    expect(within(team).queryByText(/vCPU/)).toBeNull();
+  });
+});
