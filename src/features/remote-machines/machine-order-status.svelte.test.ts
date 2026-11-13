@@ -35,6 +35,10 @@ const row = (section: HTMLElement, name: string) =>
 describe('machine status pills in the ordered list', () => {
   it('shows no "Runs agents for" pill on rows that can run agents', () => {
     const section = renderOrdered('owner');
+    // One row of each kind: a saved connection, a node, a cloud entry.
+    expect(row(section, 'Studio Mac').hasAttribute('data-device-row')).toBe(true);
+    expect(row(section, 'Garage node').hasAttribute('data-remote-machine-row')).toBe(true);
+    expect(row(section, 'Team project').hasAttribute('data-cloud-machine-row')).toBe(true);
     expect(within(section).queryAllByText(/^Runs agents for/)).toHaveLength(0);
     expect(within(row(section, 'Studio Mac')).queryByText(/Runs agents for/)).toBeNull();
     expect(within(row(section, 'Team project')).queryByText(/Runs agents for/)).toBeNull();
