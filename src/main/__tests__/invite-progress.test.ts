@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, WebContents } from 'electron';
 
 import type {
   InviteProgressDismissPayload,
@@ -98,6 +98,26 @@ afterEach(() => {
 });
 
 describe('showInviteProgress — renderer round-trip', () => {
+  it('keeps the prompt on the original visible machine renderer', async () => {
+    const home = makeWindow();
+    const renderer = makeWindow();
+    const prompt = showInviteProgress(PAYLOAD, {
+      getParentWindow: () => home.window,
+      getRendererWebContents: () => renderer.window.webContents as WebContents,
+    });
+    expect(home.send).not.toHaveBeenCalled();
+    expect(renderer.send).toHaveBeenCalledWith('invite-progress:show', PAYLOAD);
+    const handlers = await getHandlers();
+    await handlers.ack({ sender: renderer.window.webContents }, { requestId: PAYLOAD.requestId });
+    await handlers.response(
+      { sender: renderer.window.webContents },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
+    await prompt.cancelled;
+    prompt.dismiss();
+    expect(home.send).not.toHaveBeenCalled();
+  });
+
   it('sends the show payload and stays live after the ack', async () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });

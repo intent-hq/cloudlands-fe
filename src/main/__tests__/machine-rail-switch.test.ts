@@ -46,6 +46,10 @@ const fakes = vi.hoisted(() => {
     getContentSize: () => [800, 600],
     isDestroyed: () => false,
     isFocused: () => false,
+    isMinimized: () => false,
+    restore: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
     on: (event: string, listener: () => void) => {
       (windowListeners[event] ??= []).push(listener);
     },
@@ -106,6 +110,7 @@ vi.mock('../local-prefs', () => ({
 }));
 
 vi.mock('../window-backend', () => ({
+  getWindowForWebContents: () => fakes.window,
   getBackendIdForWindow: () => 'local',
   getBackendIdForWebContents: (sender: unknown) => fakes.bindings.get(sender) ?? 'local',
   bindMachineViewToBackend: (_window: unknown, sender: unknown, id: string) =>
@@ -123,7 +128,7 @@ vi.mock('../window-backend', () => ({
 
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
-import { registerMachineRailHandlers } from '../machine-rail';
+import { openInvitedMachineInWindow, registerMachineRailHandlers } from '../machine-rail';
 import {
   getMachineRailSession,
   restoreMachineRailSession,
@@ -150,6 +155,26 @@ const state = () => invoke(RAIL.GET_STATE, home());
 const topView = () => fakes.children[fakes.children.length - 1];
 
 describe('machine rail switching', () => {
+  it('queues the invited workspace for the new view without replacing home', async () => {
+    expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
+    const view = viewOf('b');
+    expect(fakes.window.webContents.send).not.toHaveBeenCalledWith('deep-link', expect.anything());
+    const { consumePendingDeepLinks } =
+      await import('../../features/deeplink/main/pending-deep-links');
+    expect(consumePendingDeepLinks(view.webContents.id as never).actions).toEqual([
+      { type: 'open', params: { id: 'shared-ws' } },
+    ]);
+  });
+
+  it('does not add a machine after cancellation or while the rail is disabled', async () => {
+    expect(
+      await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws', () => false),
+    ).toBe(false);
+    setMachineRailEnabledFlag(false);
+    expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(false);
+    expect(fakes.views).toHaveLength(0);
+  });
+
   const connection = {
     connected: new Set<string>(['local', 'b', 'c']),
     retry: vi.fn<(id: string) => Promise<boolean>>(),

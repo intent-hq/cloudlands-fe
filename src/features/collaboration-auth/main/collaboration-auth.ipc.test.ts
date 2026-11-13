@@ -54,7 +54,12 @@ beforeEach(() => {
     isDestroyed: () => false,
     send: vi.fn(),
   });
-  state.parent = { webContents: contents, isDestroyed: () => false, backendId: 'remote-A' };
+  state.parent = {
+    webContents: contents,
+    isDestroyed: () => false,
+    backendId: 'remote-A',
+    once: vi.fn(),
+  };
   state.localRequest.mockReset().mockImplementation(async (method: string) => {
     if (method === 'identity.authStatus')
       return {
@@ -80,6 +85,36 @@ afterEach(() => {
 });
 
 describe('collaboration main IPC local routing', () => {
+  it('routes standalone sign-in to the exact sending machine view', async () => {
+    const contents = Object.assign(new EventEmitter(), {
+      id: 74,
+      isDestroyed: () => false,
+      send: vi.fn(),
+    });
+    const { bindMachineViewToBackend } = await import('../../../main/window-backend');
+    bindMachineViewToBackend(state.parent, contents as never, 'view-machine');
+    await state.handlers.get(COLLABORATION_AUTH.OPEN)!({ sender: contents });
+    expect(contents.send).toHaveBeenCalledWith(COLLABORATION_AUTH.SHOW, expect.anything());
+    expect(state.parent.webContents.send).not.toHaveBeenCalled();
+    contents.emit('destroyed');
+  });
+
+  it('keeps invitation sign-in in its original machine view', async () => {
+    const contents = Object.assign(new EventEmitter(), {
+      id: 73,
+      isDestroyed: () => false,
+      send: vi.fn(),
+    });
+    const outcome = prepareCollaborationIdentity(
+      { scope: 'settings' },
+      { parent: state.parent, contents: contents as never },
+    );
+    expect(contents.send).toHaveBeenCalledWith(COLLABORATION_AUTH.SHOW, expect.anything());
+    expect(state.parent.webContents.send).not.toHaveBeenCalled();
+    contents.emit('destroyed');
+    expect(await outcome).toMatchObject({ kind: 'cancelled' });
+  });
+
   it('requires fresh policy after in-page navigation while old captured opens remain cancelled', async () => {
     await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     const originalOpen = captureCollaborationPolicy(41);

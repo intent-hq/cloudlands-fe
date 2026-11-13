@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow } from 'electron';
+import { getShownRendererWebContents } from '../../../main/window-backend';
 import { getMainWindow } from '../../../main/state';
 import {
   captureCollaborationPolicy,
@@ -14,6 +15,7 @@ import type {
 export interface InviteAttempt extends CollaborationAttempt {
   local: LocalIdentityLease;
   parent: BrowserWindow | null;
+  contents: Electron.WebContents | null;
   allowed(): boolean;
   /** Original window/attempt still exists, even before its policy is admitted. */
   alive(): boolean;
@@ -25,7 +27,7 @@ export interface InviteAttempt extends CollaborationAttempt {
 
 export function captureInviteAttempt(): InviteAttempt {
   const parent = BrowserWindow.getFocusedWindow() ?? getMainWindow();
-  const contents = parent?.webContents;
+  const contents = parent && !parent.isDestroyed() ? getShownRendererWebContents(parent) : null;
   let policy = captureCollaborationPolicy(contents?.id ?? null);
   let admitted = policy();
   let enabledObserved = admitted;
@@ -63,6 +65,7 @@ export function captureInviteAttempt(): InviteAttempt {
     metadataRevision: 0,
     local: captureLocalIdentityConnection(),
     parent,
+    contents,
     alive,
     admit: () => {
       if (!alive()) return false;

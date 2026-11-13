@@ -36,6 +36,7 @@ import { Logger } from '../shared/logger';
 import { InviteProgressAckSchema, InviteProgressResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
 import { getMainWindow } from './state';
+import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteProgress');
 
@@ -68,6 +69,8 @@ export interface InviteProgressHandle {
 export interface InviteProgressDeps {
   /** Window to show the dialog in (focused window, else main window). */
   getParentWindow(): BrowserWindow | null;
+  /** Original renderer for the attempt, retained across machine or focus changes. */
+  getRendererWebContents?(): WebContents | null;
   /** Explicit recovery action; only admission requests may receive it. */
   onRetry?(): void;
 }
@@ -167,14 +170,18 @@ export function showInviteProgress(
 ): InviteProgressHandle {
   const deps: InviteProgressDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
   const parent = deps.getParentWindow();
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed()) {
+  const contents = deps.getRendererWebContents
+    ? deps.getRendererWebContents()
+    : parent && !parent.isDestroyed()
+      ? getShownRendererWebContents(parent)
+      : null;
+  if (!parent || parent.isDestroyed() || !contents || contents.isDestroyed()) {
     logger.info('No window for the invite progress dialog; proceeding without it', {
       requestId: payload.requestId,
     });
     return UNAVAILABLE_HANDLE;
   }
   registerRendererHandlers();
-  const contents = parent.webContents;
   const { requestId } = payload;
 
   let ackReceived!: () => void;

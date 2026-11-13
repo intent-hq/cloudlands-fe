@@ -46,6 +46,7 @@ import { Logger } from '../shared/logger';
 import { InviteConsentAckSchema, InviteConsentResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
 import { getMainWindow } from './state';
+import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteConsent');
 
@@ -82,6 +83,8 @@ export interface InviteConsentPrompt {
 export interface InviteConsentDeps {
   /** Window to show the modal in (focused window, else main window). */
   getParentWindow(): BrowserWindow | null;
+  /** Original renderer for the attempt, retained across machine or focus changes. */
+  getRendererWebContents?(): WebContents | null;
 }
 
 function defaultGetParentWindow(): BrowserWindow | null {
@@ -95,6 +98,7 @@ function defaultGetParentWindow(): BrowserWindow | null {
 /** The renderer request main is currently waiting on. */
 interface PendingRendererRequest {
   requestId: string;
+  contentsId: number;
   ack: () => void;
   respond: (action: InviteConsentAction) => void;
 }
@@ -118,8 +122,11 @@ function registerRendererHandlers(): void {
     INVITE_CONSENT_CHANNELS.ACK,
     createValidatedHandler(
       InviteConsentAckSchema,
-      async (_event, payload: InviteConsentAckPayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteConsentAckPayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           pendingRendererRequest.ack();
         }
         return { success: true };
@@ -131,8 +138,11 @@ function registerRendererHandlers(): void {
     INVITE_CONSENT_CHANNELS.RESPONSE,
     createValidatedHandler(
       InviteConsentResponseSchema,
-      async (_event, payload: InviteConsentResponsePayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteConsentResponsePayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           // A valid response proves the modal mounted — treat it as an
           // implicit ack so a lost ack invoke cannot let the timeout fire and
           // show the native dialog over an answered modal.
@@ -182,14 +192,18 @@ export function showInviteConsent(
 ): InviteConsentPrompt {
   const deps: InviteConsentDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
   const parent = deps.getParentWindow();
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed()) {
+  const contents = deps.getRendererWebContents
+    ? deps.getRendererWebContents()
+    : parent && !parent.isDestroyed()
+      ? getShownRendererWebContents(parent)
+      : null;
+  if (!parent || parent.isDestroyed() || !contents || contents.isDestroyed()) {
     logger.info('No window for the invite consent modal; using native dialog', {
       requestId: payload.requestId,
     });
     return UNAVAILABLE_PROMPT;
   }
   registerRendererHandlers();
-  const contents = parent.webContents;
 
   let ackReceived!: () => void;
   const acked = new Promise<void>((resolve) => {
@@ -206,6 +220,7 @@ export function showInviteConsent(
   });
   const request: PendingRendererRequest = {
     requestId: payload.requestId,
+    contentsId: contents.id,
     ack: ackReceived,
     respond: (action) => {
       if (!decided) {
