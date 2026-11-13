@@ -1,9 +1,13 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
 import { createServer, type ViteDevServer } from 'vite';
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { hardenProductionScriptCsp } from '../scripts/fix-production-html-utils.mjs';
+import { createBrowserAccessServer } from '../src/features/browser-access/main/browser-access-server';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
 import {
@@ -29,7 +33,7 @@ let baseUrl = process.env.UI_PREVIEW_BASE_URL ?? '';
 const artifactDirectory = resolve('../../.intent/artifacts/inline-html');
 const polishDirectory = resolve(artifactDirectory, 'polish');
 const controlsDirectory = resolve(artifactDirectory, 'controls');
-const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
+const appPolicy = hardenProductionScriptCsp(readFileSync(resolve('src/app.html'), 'utf8')).match(
   /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
 )![1];
 
@@ -340,8 +344,8 @@ test('keeps scroll input private and preserves modified wheel gestures', async (
       return 'stolenScrollPort' in local;
     });
   await page.evaluate(() => {
-    const source = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!.srcdoc;
-    const channel = source.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)![0];
+    const source = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!.src;
+    const channel = new URL(source).hash.slice(1);
     window.postMessage({ channel, type: 'wheel', deltaY: 120 }, '*');
   });
   await settleWheel(page);
@@ -713,6 +717,133 @@ test('holds a stable frame when authored viewport sizing follows the frame heigh
     .toBeLessThan(200);
 });
 
+for (const appearance of ['light', 'dark'] as const) {
+  test(`starts a packaged sandbox under production CSP in ${appearance} mode`, async ({
+    page,
+  }, testInfo) => {
+    const output = await mkdtemp(join(tmpdir(), 'intent-inline-html-production-'));
+    const developmentUrl = baseUrl;
+    const accessKey = 'inline-html-production-fixture-key';
+    const web = createBrowserAccessServer({
+      webRoot: output,
+      getAccessKey: () => accessKey,
+      listConnections: async () => [],
+      openUpstream: async () => {
+        throw new Error('Unexpected daemon request');
+      },
+      loginText: () => ({
+        lang: 'en',
+        title: 'Sign in',
+        prompt: 'Access key',
+        keyLabel: 'Access key',
+        submit: 'Sign in',
+        invalidKey: 'Invalid key',
+        codeUsed: 'Expired code',
+        codeReady: 'Ready',
+        tooManyAttempts: 'Try again',
+      }),
+      handleAuthenticatedRequest: async (request, response) => {
+        const pathname = new URL(request.url!, developmentUrl).pathname;
+        if (['/', '/index.html', '/inline-html-sandbox.html'].includes(pathname)) return false;
+        const upstream = await fetch(new URL(request.url!, developmentUrl), {
+          headers: { accept: request.headers.accept ?? '*/*' },
+        });
+        response.statusCode = upstream.status;
+        response.setHeader('Content-Type', upstream.headers.get('Content-Type') ?? 'text/plain');
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+        return true;
+      },
+      log: { info() {}, warn() {} },
+    });
+    try {
+      await copyFile(resolve('src/app.html'), join(output, 'index.html'));
+      await copyFile(
+        resolve('static/inline-html-sandbox.html'),
+        join(output, 'inline-html-sandbox.html'),
+      );
+      execFileSync(process.execPath, ['scripts/inject-production-i18n.mjs', output]);
+      baseUrl = `http://127.0.0.1:${await web.listen(0)}`;
+      const signedOut = await page.request.get(`${baseUrl}/inline-html-sandbox.html`, {
+        headers: { accept: 'text/html' },
+      });
+      expect(signedOut.status()).toBe(401);
+      expect(signedOut.headers()['x-frame-options']).toBe('DENY');
+      const login = await page.request.get(`${baseUrl}/?key=${accessKey}`, { maxRedirects: 0 });
+      expect(login.status()).toBe(303);
+      const app = await page.request.get(`${baseUrl}/index.html`);
+      expect(app.headers()['x-frame-options']).toBe('DENY');
+      expect(app.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+      const sandbox = await page.request.get(`${baseUrl}/inline-html-sandbox.html`);
+      expect(sandbox.headers()['x-frame-options']).toBe('SAMEORIGIN');
+      expect(sandbox.headers()['content-security-policy']).toBe("frame-ancestors 'self'");
+      await openChat(page, {}, appearance, appearance === 'dark' ? 390 : 1024);
+      await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
+      await frame(page).getByRole('slider').focus();
+      await page.keyboard.press('End');
+      await expect(frame(page).locator('#fit')).toHaveText('Opening too small');
+      await expect(frame(page).locator('#clearance')).toHaveText('20 mm over');
+      await page.evaluate(() => {
+        const shell = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!;
+        const channel = new URL(shell.src).hash.slice(1);
+        shell.contentWindow!.postMessage(
+          { channel, type: 'initialize', documentHtml: '<p>Replacement</p>' },
+          '*',
+        );
+        window.postMessage({ channel, type: 'bootstrap' }, '*');
+      });
+      await expect(frame(page).locator('#clearance')).toHaveText('20 mm over');
+      await capture(page, testInfo, `production-${appearance}`);
+      await testInfo.attach('production-csp.json', {
+        body: JSON.stringify(
+          { appPolicy, app: app.headers(), sandbox: sandbox.headers() },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+      await rm(join(output, 'inline-html-sandbox.html'));
+      const fallback = await page.request.get(`${baseUrl}/inline-html-sandbox.html`, {
+        headers: { accept: 'text/html' },
+      });
+      expect(fallback.headers()['x-frame-options']).toBe('DENY');
+      expect(fallback.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+    } finally {
+      baseUrl = developmentUrl;
+      await web.close();
+      await rm(output, { recursive: true, force: true });
+    }
+  });
+}
+
+test('reports a missing sandbox and reloads successfully after it recovers', async ({
+  page,
+}, testInfo) => {
+  await page.clock.install();
+  await page.route('**/inline-html-sandbox.html*', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><html><body>App fallback</body></html>',
+    }),
+  );
+  await openChat(page);
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'loading');
+  await capture(page, testInfo, 'sandbox-loading');
+  await page.clock.fastForward(15_000);
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'error');
+  await expect(preview(page)).toHaveAttribute('aria-busy', 'false');
+  await expect(preview(page)).toContainText('The preview could not start. Try Reload.');
+  await expect(preview(page).locator('iframe')).not.toBeVisible();
+  await preview(page).getByRole('button', { name: 'Source', exact: true }).click();
+  await expect(preview(page).locator('pre')).toContainText('updateFit');
+  await preview(page).getByRole('button', { name: 'Preview', exact: true }).click();
+  await capture(page, testInfo, 'sandbox-startup-error');
+  await page.unroute('**/inline-html-sandbox.html*');
+  await preview(page).getByRole('button', { name: 'Reload', exact: true }).click();
+  await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
+  await expect(frame(page).getByRole('slider')).toBeVisible();
+  await capture(page, testInfo, 'sandbox-recovered');
+});
+
 test('contains runtime failures and retains readable source', async ({ page }, testInfo) => {
   await openChat(page, {
     message: inlineHtmlMessage(
@@ -779,8 +910,8 @@ test('blocks app access, network requests, frames, forms, popups, and top naviga
   expect(await preview(page).locator('iframe').getAttribute('sandbox')).toBe('allow-scripts');
   const originalHeight = (await preview(page).locator('iframe').boundingBox())!.height;
   await page.evaluate(() => {
-    const source = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!.srcdoc;
-    const channel = source.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/)![0];
+    const source = document.querySelector<HTMLIFrameElement>('[data-inline-html] iframe')!.src;
+    const channel = new URL(source).hash.slice(1);
     window.postMessage({ type: 'resize', height: 999999, channel }, '*');
   });
   expect((await preview(page).locator('iframe').boundingBox())!.height).toBe(originalHeight);

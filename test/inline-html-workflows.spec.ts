@@ -4,6 +4,7 @@ import { createServer, type ViteDevServer } from 'vite';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { hardenProductionScriptCsp } from '../scripts/fix-production-html-utils.mjs';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
 import {
@@ -16,7 +17,7 @@ let server: ViteDevServer | undefined;
 let baseUrl = process.env.UI_PREVIEW_BASE_URL ?? '';
 const artifacts = resolve('../../.intent/artifacts/inline-html/workflows');
 const seasonsArtifacts = resolve('../../.intent/artifacts/inline-html/seasons-benchmark');
-const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
+const appPolicy = hardenProductionScriptCsp(readFileSync(resolve('src/app.html'), 'utf8')).match(
   /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
 )![1];
 test.describe.configure({ timeout: 120_000 });

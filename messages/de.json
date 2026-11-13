@@ -8271,6 +8271,7 @@
   "inlineHtml_preview_incomplete_description": "Diese Vorschau ist unvollständig. Öffne den Quelltext, um sie zu prüfen.",
   "inlineHtml_preview_empty_description": "Kein HTML für die Vorschau.",
   "inlineHtml_preview_runtime_error": "In dieser Vorschau ist ein Fehler aufgetreten.",
+  "inlineHtml_preview_startup_error": "Die Vorschau konnte nicht gestartet werden. Versuche es mit „Neu laden“.",
   "inlineHtml_preview_frame_ariaLabel": "Interaktive HTML-Vorschau",
   "inlineHtml_preview_loading_label": "Vorschau wird geladen…",
   "inlineHtml_preview_scenarioName_label": "Szenario {number}",

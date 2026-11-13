@@ -24,6 +24,8 @@ const htmlFiles = findHtmlFiles(outputRoot);
 if (htmlFiles.length === 0) throw new Error(`No HTML output found in ${outputRoot}`);
 
 for (const file of htmlFiles) {
+  // Opaque visual frames need their own script policy, without app scripts.
+  if (file === path.join(outputRoot, 'inline-html-sandbox.html')) continue;
   const html = readFileSync(file, 'utf8');
   writeFileSync(file, hardenProductionScriptCsp(injectParaglideBundle(html)));
 }

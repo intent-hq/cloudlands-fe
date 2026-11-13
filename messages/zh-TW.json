@@ -8271,6 +8271,7 @@
   "inlineHtml_preview_incomplete_description": "此預覽尚未完成。開啟原始碼進行查看。",
   "inlineHtml_preview_empty_description": "沒有可預覽的 HTML。",
   "inlineHtml_preview_runtime_error": "此預覽發生錯誤。",
+  "inlineHtml_preview_startup_error": "無法啟動預覽。請嘗試重新載入。",
   "inlineHtml_preview_frame_ariaLabel": "互動式 HTML 預覽",
   "inlineHtml_preview_loading_label": "正在載入預覽…",
   "inlineHtml_preview_scenarioName_label": "方案 {number}",

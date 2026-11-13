@@ -8271,6 +8271,7 @@
   "inlineHtml_preview_incomplete_description": "このプレビューは未完成です。ソースを開いて確認してください。",
   "inlineHtml_preview_empty_description": "プレビューする HTML がありません。",
   "inlineHtml_preview_runtime_error": "プレビューでエラーが発生しました。",
+  "inlineHtml_preview_startup_error": "プレビューを開始できませんでした。「再読み込み」をお試しください。",
   "inlineHtml_preview_frame_ariaLabel": "インタラクティブな HTML プレビュー",
   "inlineHtml_preview_loading_label": "プレビューを読み込み中…",
   "inlineHtml_preview_scenarioName_label": "シナリオ {number}",

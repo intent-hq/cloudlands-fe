@@ -374,6 +374,10 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       return;
     }
     const ext = path.extname(file).toLowerCase();
+    if (file === path.join(webRoot, 'inline-html-sandbox.html')) {
+      response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      response.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+    }
     response.setHeader('Content-Type', MIME_TYPES[ext] ?? 'application/octet-stream');
     response.setHeader('Cache-Control', cacheControl);
     const head = request.method === 'HEAD';
