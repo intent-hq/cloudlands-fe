@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.3...v2.334.4) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* **inline-html:** restore widget startup in production ([#4584](https://github.com/intent-hq/cloudlands-fe/issues/4584)) ([f1e4721](https://github.com/intent-hq/cloudlands-fe/commit/f1e4721a86949cf5a2523c7cc6ee0493aee29d61))
+* **media:** require supported preview URLs ([#4587](https://github.com/intent-hq/cloudlands-fe/issues/4587)) ([b26e2a0](https://github.com/intent-hq/cloudlands-fe/commit/b26e2a03d483465b6105a97e160acd9204ad9c87))
+
 ## [2.334.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.2...v2.334.3) (2026-11-13)
 
 
