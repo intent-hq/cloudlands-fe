@@ -18,6 +18,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -106,9 +107,10 @@
   // are suspended (intent-hq/intent#4622).
   const windowGuestSession$ = directSelectorReadable(selectWindowGuestSession);
 
-  // Detect platform for conditional styling and shortcuts
-  const isMac = $derived.by(() => {
-    if (typeof navigator === 'undefined') return false;
+  // Reserve traffic-light clearance only in the macOS Electron window; a browser
+  // tab on a Mac has no native window controls in the page.
+  const hasTrafficLights = $derived.by(() => {
+    if (typeof navigator === 'undefined' || !hasCapability('windowChrome')) return false;
     return (
       // @ts-expect-error - userAgentData is not in all browsers
       navigator.userAgentData?.platform === 'macOS' ||
@@ -204,7 +206,7 @@
   <div
     class={cn(
       'window-title-bar app-drag-region',
-      isMac ? 'window-title-bar-mac' : 'window-title-bar-windows',
+      hasTrafficLights ? 'window-title-bar-mac' : 'window-title-bar-windows',
     )}
     style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
     style:transform="scale({$counterScale})"
