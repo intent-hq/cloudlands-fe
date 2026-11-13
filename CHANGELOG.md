@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.328.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.5...v2.328.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **shortcuts:** use number keys for device selection ([#4530](https://github.com/intent-hq/cloudlands-fe/issues/4530)) ([080e894](https://github.com/intent-hq/cloudlands-fe/commit/080e894db537ea7e5f1b11fd2e4586d2a8f7dbb4))
+* **workspace:** import sessions from the codebase selector and onboarding ([#4532](https://github.com/intent-hq/cloudlands-fe/issues/4532)) ([1ffdf10](https://github.com/intent-hq/cloudlands-fe/commit/1ffdf10d8869bd8c9780045a70588a5580a4a389))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.198 ([#4536](https://github.com/intent-hq/cloudlands-fe/issues/4536)) ([67bf120](https://github.com/intent-hq/cloudlands-fe/commit/67bf12073921020a789111ae816ceec3909c375d))
+
 ## [2.327.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.4...v2.327.5) (2026-11-13)
 
 
