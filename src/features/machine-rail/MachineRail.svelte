@@ -27,7 +27,7 @@
    * shell backdrop with the shown machine's tint, so the tint cross-fades.
    */
   import { faPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { flip } from 'svelte/animate';
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
@@ -94,10 +94,8 @@
     return { destroy: () => node.remove() };
   }
 
-  // Names are a fallback, not something to read on every pass of the pointer:
-  // the first shows only after the pointer rests on a button. Once one is up,
-  // moving to the next machine shows its name at once (the app's usual behaviour).
-  const RAIL_TOOLTIP_DELAY_MS = 900;
+  // The first name shows after a short rest on a button; see `namesWarm` for the rest.
+  const RAIL_TOOLTIP_DELAY_MS = 300;
 
   // Rail buttons show keyboard focus as the hover background, not the app-wide
   // focus outline (the Button paints its states on its surface element).
@@ -140,6 +138,7 @@
   let pendingOrder = $state<string[] | null>(null);
   let pendingOrderTimer: ReturnType<typeof setTimeout> | undefined;
   let railList = $state<HTMLElement | null>(null);
+  let railNav = $state<HTMLElement | null>(null);
 
   const orderedItems = $derived.by(() => {
     if (!pendingOrder || pendingOrder.length !== $items$.length) return $items$;
@@ -310,14 +309,42 @@
   // Each machine's renderer has its own rail, and one that stops being shown
   // never sees the pointer leave. A machine's name stays hidden after a click
   // on it until the pointer or keyboard focus moves to another machine. Every
-  // name stays hidden while this rail is not on screen and, once it shows
-  // again, until the pointer has left the rail: after a switch the pointer is
-  // still resting on the rail of the machine that just appeared, which reports
-  // it as entering, so entering alone must not bring the names back.
+  // name stays hidden while this rail is not on screen. Once it shows again,
+  // the pointer is still resting on the machine just picked (this renderer's
+  // own), so only that machine's name stays hidden.
   let quietTooltips = $state<'all' | string | null>(null);
+  let wasShown = true;
   $effect(() => {
-    if (!$isShown$) quietTooltips = 'all';
+    const shown = $isShown$;
+    if (!shown) {
+      quietTooltips = 'all';
+      untrack(forgetHiddenPointer);
+    } else if (!wasShown) {
+      quietTooltips = untrack(() => $items$.find((item) => item.own)?.id ?? null);
+    }
+    wasShown = shown;
   });
+
+  /**
+   * The rail went off screen: a press or drag on it can no longer finish
+   * here. A button focused by a click would get its focus back on return and
+   * wake the names; keyboard focus stays so the keyboard user keeps their place.
+   */
+  function forgetHiddenPointer() {
+    drag = null;
+    settle = null;
+    namesWarm = false;
+    const focused = document.activeElement;
+    if (
+      focused instanceof HTMLElement &&
+      railNav?.contains(focused) &&
+      !focused.matches(':focus-visible')
+    ) {
+      focused.blur();
+    }
+  }
+
+  const ADD_TOOLTIP_ID = 'machine-rail:add';
 
   function tooltipQuiet(item: MachineRailItem): boolean {
     // No names while a machine is dragged: they would trail and cover the rail.
@@ -325,16 +352,28 @@
     return quietTooltips === 'all' || quietTooltips === item.id;
   }
 
-  /** The pointer or focus reached `item`: names return unless the whole rail is quiet. */
-  function wakeTooltips(item: MachineRailItem) {
-    if (quietTooltips !== null && quietTooltips !== 'all' && quietTooltips !== item.id) {
+  /** The pointer or focus reached the button `id`: names return unless the whole rail is quiet. */
+  function wakeTooltips(id: string) {
+    if (quietTooltips !== null && quietTooltips !== 'all' && quietTooltips !== id) {
       quietTooltips = null;
     }
   }
 
+  // Once a name has shown, the others show at once while the pointer slides
+  // along the rail, until it leaves the rail. Each tooltip has its own
+  // provider, so their own skip-delay never carries between buttons. The
+  // delay only drops once a name is open: changing it cancels a pending open.
+  let namesWarm = $state(false);
+  const tooltipDelay = $derived(namesWarm ? 0 : RAIL_TOOLTIP_DELAY_MS);
+
+  function nameOpened(open: boolean) {
+    if (open) namesWarm = true;
+  }
+
   /** The pointer left the rail: the next visit is a deliberate one. */
-  function wakeAllTooltips() {
+  function leaveRail() {
     quietTooltips = null;
+    namesWarm = false;
   }
 
   function selectMachine(id: string) {
@@ -429,8 +468,8 @@
     data-rail-group={group}
     style:transform={entryOffset(item, group, index)}
     style:transition={entryTransition(item)}
-    onpointerenter={() => wakeTooltips(item)}
-    onfocusin={() => wakeTooltips(item)}
+    onpointerenter={() => wakeTooltips(item.id)}
+    onfocusin={() => wakeTooltips(item.id)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
     onpointermove={moveDrag}
     onpointerup={() => endDrag(true)}
@@ -464,7 +503,8 @@
       aria-label={itemLabel(item)}
       tooltip={itemLabel(item)}
       tooltipSide="right"
-      tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+      tooltipDelayDuration={tooltipDelay}
+      tooltipOnOpenChange={nameOpened}
       tooltipDisabled={tooltipQuiet(item)}
       aria-current={item.selected ? 'true' : undefined}
       aria-busy={item.pending || undefined}
@@ -519,7 +559,8 @@
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-2.5"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
-    onpointerleave={wakeAllTooltips}
+    bind:this={railNav}
+    onpointerleave={leaveRail}
   >
     <div
       bind:this={railList}
@@ -557,7 +598,10 @@
             aria-label={m.machineRail_add_label()}
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
-            tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDelayDuration={tooltipDelay}
+            tooltipOnOpenChange={nameOpened}
+            tooltipDisabled={quietTooltips === 'all'}
+            onpointerenter={() => wakeTooltips(ADD_TOOLTIP_ID)}
             data-testid="machine-rail-add"
           >
             <Fa icon={faPlus} size="sm" />

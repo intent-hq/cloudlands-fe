@@ -35,6 +35,7 @@
     tooltipSide = 'top',
     tooltipAlign = 'center',
     tooltipDelayDuration = 200,
+    tooltipOnOpenChange = undefined,
     tooltipClass = undefined,
     tooltipContentClass = undefined,
     'aria-label': ariaLabel,
@@ -213,6 +214,7 @@
     align={tooltipAlign}
     delayDuration={tooltipDelayDuration}
     disabled={tooltipDisabled}
+    onOpenChange={tooltipOnOpenChange}
     class={tooltipClass}
     contentClass={tooltipContentClass}
   >
