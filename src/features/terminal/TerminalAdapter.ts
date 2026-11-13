@@ -26,7 +26,6 @@ import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { store as appStore } from '$store/renderer/store';
 import { isTerminalPassthroughChord } from './terminal-app-chords';
-import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
 import {
   closeActiveTerminalRequested,
   toggleTerminalOverlay,
@@ -584,7 +583,7 @@ export class TerminalAdapter {
           event,
           appStore.state.userPreferences?.shortcutOverrides ?? {},
           isMac,
-          selectMachineRailEnabled.select(appStore.state),
+          appStore.state.machineRail?.enabled ?? false,
         )
       ) {
         return false;
