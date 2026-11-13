@@ -104,8 +104,9 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
     return;
   }
   const request = ++generation;
-  const observed = await readDockForegroundObservation(binding.backendId, true);
+  const observed = await readDockForegroundObservation(binding.backendId, true).catch(() => null);
   if (
+    !observed ||
     !enabled ||
     generation !== request ||
     getDockWindow() !== window ||

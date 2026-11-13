@@ -48,24 +48,32 @@ describe('native Figma document identity', () => {
     ).toContain('/design/AbC123');
   });
   it('discards an observation whose app changed during the read', async () => {
-    const result = await sampleDockForeground({
-      foregroundApp: async () => ({ pid: 1, appId: app }),
-      foregroundContext: async () => ({ pid: 2, url: 'https://www.figma.com/design/AbC123/File' }),
-    });
-    expect(result.snapshot.url).toBeUndefined();
+    await expect(
+      sampleDockForeground({
+        foregroundApp: async () => ({ pid: 1, appId: app }),
+        foregroundContext: async () => ({
+          pid: 2,
+          url: 'https://www.figma.com/design/AbC123/File',
+        }),
+      }),
+    ).rejects.toThrow('Foreground observation invalidated');
   });
 });
 
 // Exercise the actual main observation consumer with controlled Electron/native edges.
-vi.mock('electron', () => ({ webContents: { getFocusedWebContents: () => null } }));
-vi.mock('./dock-window', () => ({ getDockWindow: () => null }));
+const focus = vi.hoisted(() => {
+  const dock = { id: 45, isDestroyed: () => false, getTitle: () => 'Dock' };
+  return { dock, current: null as typeof dock | null };
+});
+vi.mock('electron', () => ({ webContents: { getFocusedWebContents: () => focus.current } }));
+vi.mock('./dock-window', () => ({ getDockWindow: () => ({ webContents: focus.dock }) }));
 const native = vi.hoisted(() => ({ foregroundApp: vi.fn(), foregroundContext: vi.fn() }));
 vi.mock('../features/desktop/main/desktop-native', () => ({
   getDesktopNativeAdapter: () => native,
 }));
 vi.mock('../features/browser/main/browser.ipc', () => ({ dockServiceAddress: () => null }));
 vi.mock('../features/browser/main/embedded-browser-cdp-service', () => ({
-  embeddedBrowserCdp: { liveUrlOwners: () => [] },
+  embeddedBrowserCdp: { liveUrlOwners: () => [], focusedTabOwner: () => null },
 }));
 import { readDockForegroundObservation } from './dock-foreground-observation';
 
@@ -169,5 +177,91 @@ it('notch self-focus preserves the verified file link while a newer Chrome scope
     expect(dockContextLinkKey(chrome!, 'tab')).not.toBe(link);
   } finally {
     feed.stop();
+  }
+});
+
+it('retains a verified Figma link when a click focuses the notch during an empty native detail reply', async () => {
+  native.foregroundApp.mockResolvedValue({ pid: 123, appId: 'com.figma.Desktop' });
+  native.foregroundContext.mockResolvedValue({
+    pid: 123,
+    title: 'File',
+    url: 'https://www.figma.com/design/AbC123/File',
+  });
+  const scope = {};
+  const changed = vi.fn();
+  const feed = createDockContextFeed({
+    scope: () => scope,
+    visible: () => true,
+    read: () => readDockForegroundObservation('local'),
+    changed,
+    version: () => 'version',
+  });
+  feed.start();
+  try {
+    const ready = await feed.read();
+    expect(ready?.url).toBe('https://www.figma.com/design/AbC123');
+    const link = dockContextLinkKey(ready!, 'tab');
+    const calls = native.foregroundContext.mock.calls.length;
+    let finish!: (value: object) => void;
+    native.foregroundContext.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const duringClick = feed.read();
+    await vi.waitFor(() => expect(native.foregroundContext).toHaveBeenCalledTimes(calls + 1));
+    // Direct window focus does not call feed.admit: native invalidates its old read with {}.
+    focus.current = focus.dock;
+    native.foregroundApp.mockResolvedValue({ pid: process.pid, appId: 'intent' });
+    native.foregroundContext.mockResolvedValue({ pid: process.pid, appId: 'intent' });
+    finish({});
+    expect(await duringClick).toBe(ready);
+    expect(await feed.read()).toBe(ready);
+    expect(dockContextLinkKey((await feed.read())!, 'tab')).toBe(link);
+    focus.current = null;
+    native.foregroundApp.mockResolvedValue({ pid: 456, appId: 'com.google.Chrome' });
+    native.foregroundContext.mockResolvedValue({ pid: 456, url: 'https://example.test/new' });
+    const chrome = await feed.read();
+    expect(chrome?.url).toBe('https://example.test/new');
+    expect(changed.mock.calls.at(-1)?.[0]).toBe(chrome);
+    expect(dockContextLinkKey(chrome!, 'tab')).not.toBe(link);
+  } finally {
+    focus.current = null;
+    feed.stop();
+  }
+});
+
+it('retains app fallback for unavailable permission, transport rejection and timeout', async () => {
+  const app = { pid: 123, appId: 'com.figma.Desktop' };
+  const foregroundApp = async () => app;
+  expect(
+    (
+      await sampleDockForeground({
+        foregroundApp,
+        foregroundContext: async () => ({ ...app, urlStatus: 'permission-required' as const }),
+      })
+    ).snapshot,
+  ).toEqual({ ...app, urlStatus: 'permission-required' });
+  expect(
+    (
+      await sampleDockForeground({
+        foregroundApp,
+        foregroundContext: async () => {
+          throw new Error('unavailable');
+        },
+      })
+    ).snapshot,
+  ).toEqual(app);
+  vi.useFakeTimers();
+  try {
+    const pending = sampleDockForeground({
+      foregroundApp,
+      foregroundContext: () => new Promise(() => {}),
+    });
+    await vi.advanceTimersByTimeAsync(650);
+    expect(await pending).toMatchObject({ snapshot: app, urlOutcome: 'timeout' });
+  } finally {
+    vi.useRealTimers();
   }
 });

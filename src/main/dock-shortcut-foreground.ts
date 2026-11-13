@@ -40,6 +40,10 @@ export async function sampleDockForeground(reader: {
       elapsedMs: Date.now() - start,
     };
   const detail = await bounded(() => reader.foregroundContext(), 650);
+  // A successful empty/different-owner reply is native focus invalidation, not
+  // missing enrichment. Refuse it so the feed keeps its last verified context.
+  if (detail.outcome === 'ok' && detail.value?.pid !== app.value.pid)
+    throw new Error('Foreground observation invalidated');
   // A delayed or failed URL read cannot erase the app captured before focus.
   const snapshot =
     detail.value?.pid === app.value.pid ? { ...app.value, ...detail.value } : app.value;
