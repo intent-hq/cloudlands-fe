@@ -16,25 +16,17 @@
     row,
     order,
     localBackend = false,
-    backendLabel,
   }: {
     row: MachineOrderRow;
     order: MachineOrderControls;
     /** The current backend is this app's own daemon. */
     localBackend?: boolean;
-    backendLabel: string;
   } = $props();
 
   const label = $derived(
     row.kind === 'local' && localBackend ? m.remoteMachines_order_local_label() : row.name,
   );
-  const detail = $derived(
-    row.kind !== 'local'
-      ? null
-      : localBackend
-        ? row.name
-        : m.remoteMachines_order_backendHost_label({ backend: backendLabel }),
-  );
+  const detail = $derived(row.kind === 'local' && localBackend ? row.name : null);
 </script>
 
 <article aria-label={label} data-machine-order-plain-row={row.kind}>

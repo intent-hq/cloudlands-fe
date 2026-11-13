@@ -8487,7 +8487,6 @@
   "remoteMachines_order_moveDown_label": "Nach unten",
   "remoteMachines_order_announcement": "{name} an Position {position} verschoben",
   "remoteMachines_order_local_label": "Dieser Computer",
-  "remoteMachines_order_backendHost_label": "Der Computer, auf dem {backend} läuft",
   "remoteMachines_order_saveFailed_error": "Die Reihenfolge der Rechner konnte nicht gespeichert werden. Versuche es erneut.",
   "remoteMachines_order_stale_info": "Die Reihenfolge der Rechner wurde anderswo geändert. Die Liste zeigt jetzt die aktuelle Reihenfolge.",
   "remoteMachines_state_available_label": "Führt Agenten für {backend} aus",

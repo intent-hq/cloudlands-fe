@@ -486,7 +486,6 @@
       row={entry}
       {order}
       localBackend={$currentConnectionId$ === LOCAL_CONNECTION_ID}
-      backendLabel={$backendLabel$}
     />
   {/if}
 {/snippet}

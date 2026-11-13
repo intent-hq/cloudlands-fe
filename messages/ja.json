@@ -8487,7 +8487,6 @@
   "remoteMachines_order_moveDown_label": "下へ移動",
   "remoteMachines_order_announcement": "{name} を {position} 番目に移動しました",
   "remoteMachines_order_local_label": "このコンピューター",
-  "remoteMachines_order_backendHost_label": "{backend} が動作しているコンピューター",
   "remoteMachines_order_saveFailed_error": "マシンの順序を保存できませんでした。もう一度お試しください。",
   "remoteMachines_order_stale_info": "マシンの順序が別の場所で変更されたため、最新の順序を表示しています。",
   "remoteMachines_state_available_label": "{backend} のエージェントを実行",
