@@ -43,6 +43,7 @@ describe('remote machine rows while disconnected', () => {
     expect(names.some((name) => /claude/i.test(name!))).toBe(true);
     expect(names.some((name) => /unsloth/i.test(name!))).toBe(true);
     expect(names.some((name) => /grok/i.test(name!))).toBe(false);
+    expect(names.some((name) => /cortex/i.test(name!))).toBe(false);
     expect(within(garage).getByText('0.11.197')).toBeTruthy();
     expect(within(garage).queryByText('No providers ready')).toBeNull();
   });

@@ -47,6 +47,7 @@ const GARAGE_IDLE: RemoteMachine = {
       { id: 'claude-code', status: 'signed-in', models: ['opus'] },
       { id: 'unsloth', status: 'unknown', models: [] },
       { id: 'grok', status: 'cli-missing', models: [] },
+      { id: 'cortex', visible: false, status: 'signed-in', models: [] },
     ],
   },
 };
