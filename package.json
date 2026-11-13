@@ -123,6 +123,7 @@
     "test:agent-operability:stress": "vitest run src/features/agent/testing/reliability-stress-runner.test.ts",
     "test:agent-operability:stress:matrix": "tsx scripts/run-agent-reliability-stress-matrix.ts",
     "verify:changed": "node scripts/check-deps-fresh.mjs --installed-only && node scripts/verify-changed.mjs",
+    "verify:static": "node scripts/check-deps-fresh.mjs --installed-only && node scripts/verify-changed.mjs --static",
     "verify:main-runtime-imports": "node scripts/verify-main-runtime-imports.mjs",
     "verify:agent-operability": "node scripts/pnpm-run.mjs test:agent-operability && node scripts/pnpm-run.mjs lint:agent-architecture && node scripts/pnpm-run.mjs check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit && node scripts/pnpm-run.mjs generate:ipc-channels && tsc -p tsconfig.preload.json --noEmit && git diff --check",
     "observe:memory": "node scripts/observe-memory.js",
