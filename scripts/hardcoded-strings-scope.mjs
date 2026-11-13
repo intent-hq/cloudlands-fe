@@ -84,6 +84,7 @@ export const ENFORCED_DIRS = [
   'src/features/pi',
   'src/features/providers',
   'src/features/antigravity',
+  'src/features/cursor',
   // remaining feature dirs (final flip). agent/testing,
   // acp-official main/server + parsers/plans, and cortex/cortex-acp emit
   // agent-facing prompt/wire content — intentionally not enforced.

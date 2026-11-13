@@ -63,6 +63,7 @@ const PARITY_SUITES: ReadonlyMap<string, string> = new Map([
   ['claude-code:get-models', PROVIDER_MODELS_PARITY],
   ['codex:get-models', PROVIDER_MODELS_PARITY],
   ['cortex:get-models', PROVIDER_MODELS_PARITY],
+  ['cursor:get-models', PROVIDER_MODELS_PARITY],
   ['droid:get-models', PROVIDER_MODELS_PARITY],
   ['grok:get-models', PROVIDER_MODELS_PARITY],
   ['opencode:get-models', PROVIDER_MODELS_PARITY],

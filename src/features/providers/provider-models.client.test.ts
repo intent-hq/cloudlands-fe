@@ -27,6 +27,7 @@ vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', ()
 }));
 
 import { getProviderModels } from './provider-models.client';
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 import { setupAntigravityIPC } from '../antigravity/main/antigravity.ipc';
 import { setupCodexIPC } from '../codex/main/codex.ipc';
 
@@ -206,3 +207,23 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
     });
   },
 );
+
+// intent-hq/intent#9253: a provider the app knows about but that has no
+// `<provider>:get-models` channel is rejected as "Unsupported model provider"
+// before the daemon is asked. Every known provider must reach models.list.
+describe('every known provider reaches the daemon model catalog', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('window', windowFor('web'));
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter((id) => id !== 'mock');
+
+  it.each(providerIds)('%s', async (providerId) => {
+    mocks.request.mockResolvedValue({ providerId, models: [] });
+    await expect(getProviderModels(providerId)).resolves.toEqual({ models: [] });
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', { providerId });
+  });
+});

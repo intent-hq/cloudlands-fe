@@ -323,6 +323,7 @@ import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupGrokIPC } from '../features/grok/main/grok.ipc';
 import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
+import { setupCursorIPC } from '../features/cursor/main/cursor.ipc';
 import { featureCodesService } from '../features/feature-codes/main/feature-codes.service';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
@@ -1665,6 +1666,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
   setupAntigravityIPC(); // Needed for antigravity:get-models
+  setupCursorIPC(); // Needed for cursor:get-models
   // Feature codes gate experimental providers in provider availability. The
   // service init is async, so it is not awaited on the startup critical path.
   // (The feature-codes:* channels are answered by the renderer bridge seeder.)

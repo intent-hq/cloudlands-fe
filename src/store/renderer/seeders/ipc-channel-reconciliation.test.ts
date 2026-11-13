@@ -462,6 +462,7 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
   ],
   ['codex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['cortex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['cursor:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['droid:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['grok:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['opencode:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
