@@ -3796,6 +3796,20 @@ describe('keychain-sync settings IPC (T4)', () => {
     keychainSync.initOptions?.onStatusChanged?.(status);
     expect(send).toHaveBeenCalledWith('connections:sync-status-changed', status);
   });
+
+  it('sends the keychain sync status to every machine shown in a window', async () => {
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const [win] = BrowserWindow.getAllWindows();
+    const { bindMachineViewToBackend } = await import('../../../../main/window-backend');
+    const view = { send: vi.fn(), on: vi.fn(), once: vi.fn(), isDestroyed: () => false };
+    bindMachineViewToBackend(Object.assign(win, { once: vi.fn() }), view as never, 'remote-1');
+
+    const status = { state: 'unavailable', reason: 'unavailable', message: 'locked' };
+    keychainSync.initOptions?.onStatusChanged?.(status);
+    expect(view.send).toHaveBeenCalledWith('connections:sync-status-changed', status);
+  });
 });
 
 // ---------------------------------------------------------------------------

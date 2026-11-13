@@ -5007,19 +5007,7 @@ export function registerBackendHandlers(): void {
       poolAuxiliary('keychain-engine');
       return broadcastGuestSessionsChanged();
     },
-    onStatusChanged: (status) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (win.isDestroyed()) continue;
-        try {
-          win.webContents.send(CONNECTIONS.SYNC_STATUS_CHANGED, status);
-        } catch (error) {
-          logger.warn('Failed to broadcast keychain sync status', {
-            windowId: win.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    },
+    onStatusChanged: (status) => sendToWindows(CONNECTIONS.SYNC_STATUS_CHANGED, status),
   });
 
   logger.info('Backend bridge IPC handlers registered');

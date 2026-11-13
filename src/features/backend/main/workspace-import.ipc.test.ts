@@ -8,7 +8,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ipcMain, webContents } from 'electron';
+import { BrowserWindow, ipcMain, webContents } from 'electron';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const start = vi.fn();
@@ -105,5 +105,24 @@ describe('workspace-import IPC — per-window affinity wiring', () => {
 
     (webContents.fromId as any).mockReturnValue({ isDestroyed: () => false });
     expect(deps.isOwnerGone(5)).toBe(false);
+  });
+
+  it('sends import progress to every machine shown in a window', async () => {
+    const handler = await getHandler(TRANSFER.IMPORT_CANCEL);
+    await handler(event(1)); // force lazy relay creation
+    const deps = (createWorkspaceImportRelay.mock.calls as unknown[][]).at(-1)![0] as {
+      broadcastProgress(progress: unknown): void;
+    };
+    const { bindMachineViewToBackend } = await import('../../../main/window-backend');
+    const win = { id: 1, isDestroyed: () => false, once: vi.fn(), webContents: { send: vi.fn() } };
+    const view = { send: vi.fn(), on: vi.fn(), once: vi.fn(), isDestroyed: () => false };
+    bindMachineViewToBackend(win as never, view as never, 'machine-b');
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win as never]);
+
+    const progress = { phase: 'uploading' };
+    deps.broadcastProgress(progress);
+
+    expect(win.webContents.send).toHaveBeenCalledWith(TRANSFER.IMPORT_PROGRESS, progress);
+    expect(view.send).toHaveBeenCalledWith(TRANSFER.IMPORT_PROGRESS, progress);
   });
 });
