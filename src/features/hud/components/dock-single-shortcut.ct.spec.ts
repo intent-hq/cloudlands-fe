@@ -213,8 +213,8 @@ test('single dock shortcut: linked conversation, else the selected one, else the
   await row('choice-1').locator('[data-workspace-id]').click();
   await expect.poll(open).toBe('choice-1');
   const headerLink = page.locator('[data-dock-header-link]');
-  const thisTab = page.getByRole('menuitemcheckbox', { name: 'Active tab' });
-  const thisApp = page.getByRole('menuitemcheckbox', { name: 'Active app' });
+  const thisTab = page.getByRole('menuitemcheckbox', { name: 'Link to active tab' });
+  const thisApp = page.getByRole('menuitemcheckbox', { name: 'Link to active app' });
   await expect(headerLink).not.toHaveAttribute('data-linked', /.*/);
   await expect(headerLink).toHaveAttribute(
     'aria-label',
@@ -392,7 +392,7 @@ test('single dock shortcut: linked conversation, else the selected one, else the
   await press({ version: 'v3', url: C });
   await expect.poll(open).toBe('choice-2');
   const link = page.locator('[data-dock-header-link]');
-  const tabChoice = page.getByRole('menuitemcheckbox', { name: 'Active tab' });
+  const tabChoice = page.getByRole('menuitemcheckbox', { name: 'Link to active tab' });
   await expect(link).not.toHaveAttribute('data-linked', /.*/);
   await link.click();
   await expect(tabChoice).toHaveAttribute('aria-checked', 'false');

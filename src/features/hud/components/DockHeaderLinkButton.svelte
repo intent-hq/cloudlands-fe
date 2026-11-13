@@ -16,7 +16,7 @@
 
   /**
    * Link the current tab or app to the open workspace, from its conversation header. The
-   * icon is always there; it opens a menu with Active tab and Active app, each with its real
+   * icon is always there; it opens a menu with Link to active tab/app, each with its real
    * tab title or app name muted on the same row, each checked when that scope's saved link
    * sends it here, under a line on what the configured open-dock shortcut does with a link. A choice the current context cannot save
    * (unknown, the dock itself, no exact tab or app) is shown disabled. Choosing links that
