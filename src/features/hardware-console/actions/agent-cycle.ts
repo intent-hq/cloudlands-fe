@@ -210,9 +210,7 @@ export function pickLastActivePerWorkspace(
  * The key-assignable workspaces open as top tabs, in tab strip order (the
  * chief virtual workspace and archived/deleted workspaces are skipped).
  */
-function cycleWorkspaces(
-  state: Pick<AgentCycleState, 'workspace' | 'tabState'>,
-): Workspace[] {
+function cycleWorkspaces(state: Pick<AgentCycleState, 'workspace' | 'tabState'>): Workspace[] {
   return state.tabState.workspaceStacks.flat().flatMap((wsId) => {
     const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
     return workspace !== undefined && isKeyAssignableWorkspace(workspace) ? [workspace] : [];
