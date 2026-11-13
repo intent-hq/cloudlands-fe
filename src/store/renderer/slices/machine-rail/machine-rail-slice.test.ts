@@ -82,7 +82,7 @@ describe('machineRailReducer', () => {
 describe('machine rail selectors', () => {
   const rail = { enabled: true, homeId: 'local', machineIds: ['local', 'b', 'c'], selectedId: 'b' };
 
-  it('lists machines in rail order with selection, home and offline state', () => {
+  it('lists machines in rail order with selection, home and offline state; still connecting is offline', () => {
     const items = selectMachineRailItems.select(
       stateWith(rail, [
         record('local'),
@@ -95,7 +95,7 @@ describe('machine rail selectors', () => {
     ).toEqual([
       { id: 'local', selected: false, home: true, offline: false },
       { id: 'b', selected: true, home: false, offline: true },
-      { id: 'c', selected: false, home: false, offline: false },
+      { id: 'c', selected: false, home: false, offline: true },
     ]);
   });
 
