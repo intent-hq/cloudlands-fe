@@ -35,8 +35,6 @@ export type ImportableSessionsState = {
   /** Per-provider status from the last request across every provider. */
   providers: Collection<ImportableSessionProvider, 'id'>;
   error: string | null;
-  /** The last unfiltered page had at least one session. */
-  hasAny: boolean;
 };
 
 const initialState: ImportableSessionsState = {
@@ -46,7 +44,6 @@ const initialState: ImportableSessionsState = {
   provider: '',
   providers: createCollection<ImportableSessionProvider, 'id'>('id'),
   error: null,
-  hasAny: false,
 };
 
 /** Trigger: load the first page (empty query) or search (typed query), optionally for one provider. */
@@ -109,10 +106,6 @@ importableSessionsReducer.with(
     status: 'ready',
     query,
     error: null,
-    hasAny:
-      query === '' && !provider
-        ? sessions.length > 0 || providers.some((entry) => entry.status === 'error')
-        : state.hasAny,
   }),
 );
 
