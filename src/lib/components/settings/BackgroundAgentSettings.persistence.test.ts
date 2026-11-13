@@ -140,7 +140,7 @@ it('does not offer foreign-provider picks in quick-action settings', async () =>
   expect(writes).toEqual([]);
 });
 
-it.each([0, 1, 2].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, choice }))))(
+it.each([0, 1].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, choice }))))(
   'saves bare model IDs after switching providers, preserving effort (row $row, $choice)',
   async ({ row, choice }) => {
     store.dispatch(setActiveProvider('claude-code'));
@@ -166,20 +166,19 @@ it.each([0, 1, 2].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, 
       await screen.findByRole('option', { name: new RegExp(`claude-code ${choice}`) }),
     );
     const model = choice === 'legacy' ? 'legacy-model' : 'shared-model';
-    const overrides = {
-      ...emptyOverrides,
-      ...(row ? { [['commit', 'pr'][row - 1]]: model } : {}),
-    };
+    const overrides = { ...emptyOverrides, [['commit', 'pr'][row]]: model };
+    // The first edit retires the shared default effort into each action.
+    const efforts = { commit: 'high', pr: 'low', review: 'low' };
     await waitFor(() => {
       expect(writes).toHaveLength(1);
       expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
     });
     expect(writes[0]).toEqual([
       { path: 'model.defaultProvider', value: 'claude-code' },
-      { path: 'quickActions.defaultModel', value: row ? '' : model },
+      { path: 'quickActions.defaultModel', value: '' },
       { path: 'quickActions.typeOverrides', value: overrides },
-      { path: 'quickActions.defaultReasoningEffort', value: 'low' },
-      { path: 'quickActions.typeReasoningEffortOverrides', value: { commit: 'high' } },
+      { path: 'quickActions.defaultReasoningEffort', value: '' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: efforts },
       {
         path: 'quickActions.providerSettings',
         value: {
@@ -208,20 +207,20 @@ it.each([0, 1, 2].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, 
     applySettingsChanges(Object.entries(saved).map(([path, value]) => ({ path, value })));
     expect(store.state.backgroundAgentSettings).toMatchObject({
       providerId: 'claude-code',
-      defaultModel: row ? '' : model,
+      defaultModel: '',
       typeOverrides: overrides,
-      defaultReasoningEffort: 'low',
-      typeReasoningEffortOverrides: { commit: 'high' },
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: efforts,
     });
   },
 );
 
-it('keeps a saved foreign legacy model readable without rewriting it', async () => {
+it('keeps a saved foreign legacy default readable on each action without rewriting it', async () => {
   applySettingsChanges([{ path: 'quickActions.defaultModel', value: 'claude-code:shared-model' }]);
   render(BackgroundAgentSettings);
   await tick();
-  const trigger = screen.getAllByRole('button', { expanded: false })[0];
-  expect(trigger.textContent).toContain('claude-code shared');
+  for (const trigger of screen.getAllByRole('button', { expanded: false }).slice(0, 2))
+    expect(trigger.textContent).toContain('claude-code shared');
   expect(store.state.backgroundAgentSettings.defaultModel).toBe('claude-code:shared-model');
   expect(writes).toEqual([]);
 });

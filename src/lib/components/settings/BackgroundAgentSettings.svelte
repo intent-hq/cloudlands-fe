@@ -2,17 +2,13 @@
   /**
    * Quick Actions Settings Component
    *
-   * Allows users to configure default models for quick actions
-   * (commit message, PR description) with a general default
-   * and per-type overrides.
+   * One model picker per quick action (commit message, PR description),
+   * scoped to the active provider. "Provider default" is the CLI default.
    */
 
   import {
     BACKGROUND_AGENT_TYPE_INFO,
-    setDefaultModel,
-    setDefaultReasoningEffort,
-    setTypeReasoningEffortOverride,
-    setTypeOverride,
+    editQuickAction,
     type BackgroundAgentType,
   } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
   import {
@@ -20,7 +16,6 @@
     selectBgDefaultReasoningEffort,
     selectBgTypeReasoningEffortOverrides,
     selectBgTypeOverrides,
-    selectHasOverride,
   } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import {
     selectEffectiveDefaultProviderId,
@@ -41,10 +36,8 @@
 
   const defaultEffort$ = selectBgDefaultReasoningEffort();
   const effortOverrides$ = selectBgTypeReasoningEffortOverrides();
-  const defaultModel = selectBgDefaultModel();
+  const defaultModel$ = selectBgDefaultModel();
   const typeOverrides$ = selectBgTypeOverrides();
-  const hasCommitOverride$ = selectHasOverride('commit');
-  const hasPrOverride$ = selectHasOverride('pr');
   const effectiveProviderId$ = selectEffectiveDefaultProviderId();
   const catalogLoaded$ = selectProviderCatalogLoaded();
   const providerAvailable$ = selectIsActiveProviderAvailable();
@@ -55,6 +48,11 @@
     ['codex', 'claude-code', 'pi'].includes(providerRefBaseId($effectiveProviderId$)),
   );
 
+  // A legacy shared default still applies until the first edit retires it.
+  const modelFor = (type: BackgroundAgentType) => $typeOverrides$[type] || $defaultModel$;
+  const effortFor = (type: BackgroundAgentType) =>
+    $effortOverrides$[type] || $defaultEffort$ || null;
+
   function usesActiveProvider(model: string) {
     const providerId = splitLegacyCompoundId(model).providerId;
     return !providerId || providerId === $effectiveProviderId$;
@@ -64,23 +62,18 @@
     return usesActiveProvider(model) && supportsQuickActionEffort && $providerAvailable$;
   }
 
-  function changeDefaultEffort(effort: string | null) {
-    if (!effortAvailable($defaultModel)) return false;
-    appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-  }
-
-  function changeActionEffort(type: BackgroundAgentType, effort: string | null) {
-    if (!effortAvailable($typeOverrides$[type] || $defaultModel)) return false;
-    appStore.dispatch(setTypeReasoningEffortOverride({ type, effort: effort ?? '' }));
+  function changeEffort(type: BackgroundAgentType, effort: string | null) {
+    if (!effortAvailable(modelFor(type))) return false;
+    appStore.dispatch(editQuickAction({ type, effort: effort ?? '' }));
   }
 
   // These settings belong to the active provider's snapshot. Never reinterpret
   // a foreign pick under that provider or persist a legacy compound row value.
-  // ModelPicker reports "use default" as '' without a structured pick.
+  // ModelPicker reports "provider default" as '' without a structured pick.
   function changeModel(
+    type: BackgroundAgentType,
     model: string,
     pick?: { providerId: string; modelId: string },
-    type?: BackgroundAgentType,
   ) {
     if (
       model !== '' &&
@@ -90,89 +83,41 @@
         pick.modelId.includes(':'))
     )
       return;
-    const bareModel = model === '' ? '' : pick!.modelId;
-    appStore.dispatch(
-      type ? setTypeOverride({ type, model: bareModel }) : setDefaultModel(bareModel),
-    );
+    appStore.dispatch(editQuickAction({ type, model: model === '' ? '' : pick!.modelId }));
   }
 
-  const defaultSchema = $derived.by(() =>
-    defineSettings({
-      sections: [
-        {
-          id: 'background-agent-default',
-          title: m.settings_backgroundAgent_defaultModel_label(),
-          entries: [
-            {
-              kind: 'custom',
-              id: 'background-agent-default',
-              label: m.settings_backgroundAgent_defaultModel_label(),
-            },
-          ],
-        },
-      ],
-    }),
-  );
+  const actions = ['commit', 'pr'] as const;
 
-  const overridesSchema = $derived.by(() =>
+  const schema = $derived.by(() =>
     defineSettings({
       sections: [
         {
-          id: 'background-agent-overrides',
-          title: m.settings_backgroundAgent_overrides_title(),
-          entries: [
-            {
-              kind: 'custom',
-              id: 'background-agent-commit',
-              label: BACKGROUND_AGENT_TYPE_INFO.commit.label,
-              description: BACKGROUND_AGENT_TYPE_INFO.commit.description,
-              status: () =>
-                $hasCommitOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
-              statusTone: 'subtle',
-            },
-            {
-              kind: 'custom',
-              id: 'background-agent-pr',
-              label: BACKGROUND_AGENT_TYPE_INFO.pr.label,
-              description: BACKGROUND_AGENT_TYPE_INFO.pr.description,
-              status: () =>
-                $hasPrOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
-              statusTone: 'subtle',
-            },
-          ],
+          id: 'quick-actions',
+          title: m.settings_section_quickActions(),
+          entries: actions.map((type) => ({
+            kind: 'custom' as const,
+            id: `background-agent-${type}`,
+            label: BACKGROUND_AGENT_TYPE_INFO[type].label,
+            description: BACKGROUND_AGENT_TYPE_INFO[type].description,
+          })),
         },
       ],
     }),
   );
 </script>
 
-{#snippet effortNotice(model: string)}
-  {#if $catalogLoaded$ && !usesActiveProvider(model)}
-    <p
-      class="mt-2 type-caption text-muted-foreground"
-      data-testid="quick-action-effort-provider-note"
-    >
-      {m.settings_backgroundAgent_effortProviderNote()}
-    </p>
-  {:else if $catalogLoaded$ && $effectiveProviderId$ && !supportsQuickActionEffort}
-    <p class="mt-2 type-caption text-muted-foreground" data-testid="quick-action-effort-route-note">
-      {m.settings_backgroundAgent_effortRouteNote()}
-    </p>
-  {/if}
-{/snippet}
-
-{#snippet defaultControl()}
+{#snippet actionControl(type: BackgroundAgentType)}
+  {@const model = modelFor(type)}
   <div class="flex w-full min-w-0 flex-col items-end">
-    <!-- Empty defaultModel means "provider default": the daemon/CLI default is
-         used because background requests omit `model` on the wire. -->
+    <!-- Empty means "provider default": requests omit `model` on the wire. -->
     <ModelPicker
       allowProviderSwitch={false}
-      showReasoning={effortAvailable($defaultModel)}
+      showReasoning={effortAvailable(model)}
       fallbackToCatalogDefault
-      reasoningEffort={effortAvailable($defaultModel) ? $defaultEffort$ || null : null}
-      onReasoningChange={changeDefaultEffort}
-      selectedModel={$defaultModel || undefined}
-      onModelChange={(model, pick) => changeModel(model, pick)}
+      reasoningEffort={effortAvailable(model) ? effortFor(type) : null}
+      onReasoningChange={(effort) => changeEffort(type, effort)}
+      selectedModel={model || undefined}
+      onModelChange={(next, pick) => changeModel(type, next ?? '', pick)}
       showManageLink={false}
       showDefaultOption={true}
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
@@ -180,87 +125,38 @@
       defaultOptionDescription={m.settings_backgroundAgent_providerDefault_description()}
       variant="outline"
     />
-    {@render effortNotice($defaultModel)}
+    {#if $catalogLoaded$ && !usesActiveProvider(model)}
+      <p
+        class="mt-2 type-caption text-muted-foreground"
+        data-testid="quick-action-effort-provider-note"
+      >
+        {m.settings_backgroundAgent_effortProviderNote()}
+      </p>
+    {:else if $catalogLoaded$ && $effectiveProviderId$ && !supportsQuickActionEffort}
+      <p
+        class="mt-2 type-caption text-muted-foreground"
+        data-testid="quick-action-effort-route-note"
+      >
+        {m.settings_backgroundAgent_effortRouteNote()}
+      </p>
+    {/if}
   </div>
 {/snippet}
 
 {#snippet commitControl()}
-  <div class="flex w-full min-w-0 flex-col items-end">
-    <ModelPicker
-      allowProviderSwitch={false}
-      showReasoning={effortAvailable($typeOverrides$.commit || $defaultModel)}
-      fallbackToCatalogDefault
-      defaultModelId={$defaultModel || undefined}
-      defaultReasoningEffort={effortAvailable($typeOverrides$.commit || $defaultModel)
-        ? $defaultEffort$ || null
-        : null}
-      reasoningEffort={effortAvailable($typeOverrides$.commit || $defaultModel)
-        ? $effortOverrides$.commit || null
-        : null}
-      onReasoningChange={(effort) => changeActionEffort('commit', effort)}
-      selectedModel={$typeOverrides$.commit || undefined}
-      onModelChange={(model, pick) => changeModel(model, pick, 'commit')}
-      showManageLink={false}
-      showDefaultOption={true}
-      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="outline"
-    />
-    {@render effortNotice($typeOverrides$.commit || $defaultModel)}
-  </div>
+  {@render actionControl('commit')}
 {/snippet}
 
 {#snippet prControl()}
-  <div class="flex w-full min-w-0 flex-col items-end">
-    <ModelPicker
-      allowProviderSwitch={false}
-      showReasoning={effortAvailable($typeOverrides$.pr || $defaultModel)}
-      fallbackToCatalogDefault
-      defaultModelId={$defaultModel || undefined}
-      defaultReasoningEffort={effortAvailable($typeOverrides$.pr || $defaultModel)
-        ? $defaultEffort$ || null
-        : null}
-      reasoningEffort={effortAvailable($typeOverrides$.pr || $defaultModel)
-        ? $effortOverrides$.pr || null
-        : null}
-      onReasoningChange={(effort) => changeActionEffort('pr', effort)}
-      selectedModel={$typeOverrides$.pr || undefined}
-      onModelChange={(model, pick) => changeModel(model, pick, 'pr')}
-      showManageLink={false}
-      showDefaultOption={true}
-      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="outline"
-    />
-    {@render effortNotice($typeOverrides$.pr || $defaultModel)}
-  </div>
+  {@render actionControl('pr')}
 {/snippet}
 
 <SettingsForm
-  schema={defaultSchema}
+  {schema}
   embedded
   compact={false}
-  custom={defineSettingsCustomControls({ 'background-agent-default': defaultControl })}
+  custom={defineSettingsCustomControls({
+    'background-agent-commit': commitControl,
+    'background-agent-pr': prControl,
+  })}
 />
-
-<!-- Per-type Overrides -->
-<section
-  class="mt-4 border-t border-border pt-6"
-  data-testid="model-action-overrides"
-  aria-labelledby="background-agent-overrides-title"
->
-  <h4 id="background-agent-overrides-title" class="type-title mb-4 text-foreground">
-    {m.settings_backgroundAgent_overrides_title()}
-  </h4>
-  <SettingsForm
-    schema={overridesSchema}
-    embedded
-    compact={false}
-    custom={defineSettingsCustomControls({
-      'background-agent-commit': commitControl,
-      'background-agent-pr': prControl,
-    })}
-  />
-</section>

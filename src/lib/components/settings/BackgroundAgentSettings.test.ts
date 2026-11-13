@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * Covers the quick-action settings pane (#1627): the default picker AND the
- * per-action override rows all render ModelPicker scoped to the active provider, override picks dispatch
- * setTypeOverride ('' for "use default").
+ * Covers the quick-action settings pane (#1627): one ModelPicker per action,
+ * scoped to the active provider. Edits dispatch editQuickAction, which also
+ * retires a legacy shared default ('' picks the provider default).
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -41,10 +41,6 @@ vi.mock(
     selectBgDefaultReasoningEffort: () => mocks.readable('medium'),
     selectBgTypeReasoningEffortOverrides: () => mocks.readable({}),
     selectBgTypeOverrides: () => mocks.readable(mocks.typeOverrides.value),
-    selectHasOverride: (type: string) =>
-      mocks.readable(
-        Boolean(mocks.typeOverrides.value[type as keyof typeof mocks.typeOverrides.value]),
-      ),
   }),
 );
 
@@ -75,6 +71,11 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.defaultModel.value = '';
   });
 
+  const edit = (payload: Record<string, string>) => ({
+    type: 'backgroundAgentSettings/editQuickAction',
+    payload: [payload],
+  });
+
   it.each(['auggie', 'droid', 'opencode', ''])(
     'never presents saved effort as applied for unsupported quick-action route %s',
     async (provider) => {
@@ -86,7 +87,6 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
       expect(screen.getAllByTestId('picker-reasoning').map((el) => el.textContent)).toEqual([
         '',
         '',
-        '',
       ]);
       expect(mocks.dispatched).toEqual([]);
     },
@@ -96,7 +96,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     (provider) => {
       mocks.effectiveProviderId.value = provider;
       render(BackgroundAgentSettings);
-      expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(3);
+      expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(2);
     },
   );
   it('does not offer effort when the active provider is unavailable', () => {
@@ -106,11 +106,11 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     expect(mocks.dispatched).toEqual([]);
   });
 
-  it('blocks effort editing for a foreign inherited default without changing saved values', () => {
+  it('blocks effort editing for a foreign legacy default without changing saved values', () => {
     mocks.defaultModel.value = 'claude-code:other';
     render(BackgroundAgentSettings);
     expect(screen.queryAllByTestId('pick-reasoning')).toHaveLength(0);
-    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(3);
+    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(2);
     expect(mocks.dispatched).toEqual([]);
   });
 
@@ -118,37 +118,29 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.typeOverrides.value = { commit: 'claude-code:other', pr: '', review: '', fast: '' };
     render(BackgroundAgentSettings);
     expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(1);
-    expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(2);
-    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[1]);
-    expect(mocks.dispatched).toEqual([
-      {
-        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
-        payload: [{ type: 'pr', effort: 'high' }],
-      },
+    expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(1);
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[0]);
+    expect(mocks.dispatched).toEqual([edit({ type: 'pr', effort: 'high' })]);
+  });
+
+  it('shows each action on its effective model and effort, including a legacy default', () => {
+    mocks.defaultModel.value = 'legacy-default';
+    mocks.typeOverrides.value = { commit: 'gpt-5.3-codex', pr: '', review: '', fast: '' };
+    render(BackgroundAgentSettings);
+    expect(screen.getAllByTestId('picker-selected').map((el) => el.textContent)).toEqual([
+      'gpt-5.3-codex',
+      'legacy-default',
+    ]);
+    expect(screen.getAllByTestId('picker-reasoning').map((el) => el.textContent)).toEqual([
+      'medium',
+      'medium',
     ]);
   });
 
-  it('shows the stored override model in its row picker', () => {
-    mocks.typeOverrides.value = {
-      commit: 'codex:gpt-5.3-codex',
-      pr: '',
-      review: '',
-      fast: '',
-    };
+  it('saves a picked model for its action', async () => {
     render(BackgroundAgentSettings);
-    const values = screen.getAllByTestId('picker-selected').map((el) => el.textContent);
-    expect(values).toEqual(['', 'codex:gpt-5.3-codex', '']);
-  });
-
-  it('dispatches setTypeOverride with the picked model for an override row', async () => {
-    render(BackgroundAgentSettings);
-    // Index 0 is the default picker; 1..2 are commit/pr overrides.
-    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[1]);
-    expect(mocks.dispatched).toHaveLength(1);
-    expect(mocks.dispatched).toContainEqual({
-      type: 'backgroundAgentSettings/setTypeOverride',
-      payload: [{ type: 'commit', model: 'bare-picked-model' }],
-    });
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
+    expect(mocks.dispatched).toEqual([edit({ type: 'commit', model: 'bare-picked-model' })]);
   });
 
   it('rejects model callbacks without provider ownership, including compound IDs', async () => {
@@ -175,53 +167,27 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     await fireEvent.click(screen.getAllByTestId('pick-profile-model')[0]);
     // Another configuration of the same provider is a different account.
     await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
-    expect(mocks.dispatched).toEqual([
-      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['gpt-5-work'] },
-    ]);
+    expect(mocks.dispatched).toEqual([edit({ type: 'commit', model: 'gpt-5-work' })]);
   });
 
-  it('sets and clears the quick-action default without changing action overrides', async () => {
-    mocks.typeOverrides.value = { commit: 'pinned-commit', pr: '', review: '', fast: '' };
-    render(BackgroundAgentSettings);
-    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
-    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
-    expect(mocks.dispatched).toEqual([
-      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['bare-picked-model'] },
-      { type: 'backgroundAgentSettings/setDefaultModel', payload: [''] },
-    ]);
-  });
-
-  it("dispatches setTypeOverride with '' when an override row picks the default option", async () => {
+  it("saves '' when an action picks the provider default", async () => {
     mocks.typeOverrides.value = { commit: '', pr: 'some-model', review: '', fast: '' };
     render(BackgroundAgentSettings);
-    await fireEvent.click(screen.getAllByTestId('pick-default')[2]);
-    expect(mocks.dispatched).toHaveLength(1);
-    expect(mocks.dispatched).toContainEqual({
-      type: 'backgroundAgentSettings/setTypeOverride',
-      payload: [{ type: 'pr', model: '' }],
-    });
+    await fireEvent.click(screen.getAllByTestId('pick-default')[1]);
+    expect(mocks.dispatched).toEqual([edit({ type: 'pr', model: '' })]);
   });
-});
 
-it('each quick-action row saves and clears effort without pinning its inherited model', async () => {
-  render(BackgroundAgentSettings);
-  for (let index = 0; index < 3; index++) {
-    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[index]);
-    await fireEvent.click(screen.getAllByTestId('clear-reasoning')[index]);
-  }
-  expect(mocks.dispatched).toEqual([
-    { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: ['high'] },
-    { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: [''] },
-    ...['commit', 'pr'].flatMap((type) => [
-      {
-        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
-        payload: [{ type, effort: 'high' }],
-      },
-      {
-        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
-        payload: [{ type, effort: '' }],
-      },
-    ]),
-  ]);
-  cleanup();
+  it('saves and clears effort per action without pinning its model', async () => {
+    render(BackgroundAgentSettings);
+    for (let index = 0; index < 2; index++) {
+      await fireEvent.click(screen.getAllByTestId('pick-reasoning')[index]);
+      await fireEvent.click(screen.getAllByTestId('clear-reasoning')[index]);
+    }
+    expect(mocks.dispatched).toEqual(
+      ['commit', 'pr'].flatMap((type) => [
+        edit({ type, effort: 'high' }),
+        edit({ type, effort: '' }),
+      ]),
+    );
+  });
 });

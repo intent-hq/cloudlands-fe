@@ -155,6 +155,11 @@ export const resetTypeOverride = createAction<[type: BackgroundAgentType]>(
 
 export const resetSettings = createAction('backgroundAgentSettings/resetSettings');
 
+/** Edit one action's model or effort ('' = provider default) from the settings pane. */
+export const editQuickAction = createAction<
+  [payload: { type: BackgroundAgentType; model?: string; effort?: string }]
+>('backgroundAgentSettings/editQuickAction');
+
 /** Hydrate active settings from the daemon snapshot or a reconciled settings delta */
 export const hydrateSettings = createAction<
   [
@@ -345,6 +350,42 @@ backgroundAgentSettingsReducer.with(resetTypeOverride, (state, { payload: [type]
     typeReasoningEffortOverrides: overrides,
   };
 });
+
+// The pane no longer shows a shared default. The first edit copies a saved one
+// into each action that inherits it, so no action changes model silently.
+const SHARED_DEFAULT_TYPES = ['commit', 'pr', 'review'] as const;
+backgroundAgentSettingsReducer.with(
+  editQuickAction,
+  (state, { payload: [{ type, model, effort }] }) => {
+    const typeOverrides = { ...state.typeOverrides };
+    const efforts = { ...state.typeReasoningEffortOverrides };
+    const fields: LocalField[] = [];
+    if (state.defaultModel) {
+      for (const key of SHARED_DEFAULT_TYPES) typeOverrides[key] ||= state.defaultModel;
+      fields.push('defaultModel', 'typeOverrides');
+    }
+    if (state.defaultReasoningEffort) {
+      for (const key of SHARED_DEFAULT_TYPES) efforts[key] ||= state.defaultReasoningEffort;
+      fields.push('defaultReasoningEffort', 'typeReasoningEffortOverrides');
+    }
+    if (model !== undefined) {
+      typeOverrides[type] = model;
+      fields.push(`typeOverrides.${type}`);
+    }
+    if (effort !== undefined) {
+      if (effort.trim()) efforts[type] = effort.trim();
+      else delete efforts[type];
+      fields.push(`typeReasoningEffortOverrides.${type}`);
+    }
+    return {
+      ...pending(state, fields),
+      defaultModel: '',
+      defaultReasoningEffort: '',
+      typeOverrides,
+      typeReasoningEffortOverrides: efforts,
+    };
+  },
+);
 
 backgroundAgentSettingsReducer.with(
   setTypeReasoningEffortOverrides,

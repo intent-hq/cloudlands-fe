@@ -20,6 +20,7 @@ import {
   DEFAULT_BACKGROUND_MODEL,
   backgroundSettingsSaveSettled,
   backgroundSettingsMigrationRequested,
+  editQuickAction,
   type BackgroundAgentSettingsState,
 } from './background-agent-settings-slice';
 
@@ -326,4 +327,53 @@ it('does not mutate provider snapshots or effort for unaccepted switch requests'
       setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }),
     ),
   ).toBe(initialState);
+});
+
+describe('editQuickAction', () => {
+  const legacy = backgroundAgentSettingsReducer(
+    initialState,
+    hydrateSettings({
+      defaultModel: 'shared',
+      typeOverrides: { commit: '', pr: 'pr-pinned', review: '', fast: '' },
+      defaultReasoningEffort: 'low',
+      typeReasoningEffortOverrides: { pr: 'high' },
+    }),
+  );
+
+  it('keeps every action on its effective model when the shared default is retired', () => {
+    const state = backgroundAgentSettingsReducer(
+      legacy,
+      editQuickAction({ type: 'pr', model: 'pr-new' }),
+    );
+    expect(state).toMatchObject({
+      defaultModel: '',
+      defaultReasoningEffort: '',
+      typeOverrides: { commit: 'shared', pr: 'pr-new', review: 'shared', fast: '' },
+      typeReasoningEffortOverrides: { commit: 'low', pr: 'high', review: 'low' },
+      persistencePending: true,
+    });
+  });
+
+  it('sends an action to the provider default instead of the retired shared default', () => {
+    let state = backgroundAgentSettingsReducer(
+      legacy,
+      editQuickAction({ type: 'commit', model: '' }),
+    );
+    state = backgroundAgentSettingsReducer(state, editQuickAction({ type: 'commit', effort: '' }));
+    expect(state.typeOverrides.commit).toBe('');
+    expect(state.typeReasoningEffortOverrides.commit).toBeUndefined();
+    expect(state.typeOverrides.pr).toBe('pr-pinned');
+  });
+
+  it('changes only the edited field when no shared default is saved', () => {
+    const state = backgroundAgentSettingsReducer(
+      initialState,
+      editQuickAction({ type: 'commit', effort: ' high ' }),
+    );
+    expect(state).toMatchObject({
+      typeOverrides: initialState.typeOverrides,
+      typeReasoningEffortOverrides: { commit: 'high' },
+      pendingFields: { 'typeReasoningEffortOverrides.commit': 1 },
+    });
+  });
 });
