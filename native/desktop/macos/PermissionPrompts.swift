@@ -103,12 +103,16 @@ final class FigmaAccessibilityReadiness<Owner: Equatable> {
         if !enabled { lease = nil; return }
         if write(held.owner, false), read(held.owner) == false { lease = nil }
     }
+    private func expired(_ held: Lease, now: UInt64) -> Bool {
+        // Calls capture time before taking the lock and can arrive out of order.
+        now >= held.lastSample && now - held.lastSample >= 3000
+    }
     func observe(_ owner: Owner, now: UInt64) {
         lock.lock(); defer { lock.unlock() }
-        if let held = lease, held.owner != owner || current() != owner || now - held.lastSample >= 3000 { restore() }
+        if let held = lease, held.owner != owner || current() != owner || expired(held, now: now) { restore() }
         guard current() == owner else { return }
         if let held = lease {
-            if held.owner == owner { lease?.lastSample = now }
+            if held.owner == owner { lease?.lastSample = max(held.lastSample, now) }
             return
         }
         guard let original = read(owner) else { return }
@@ -121,7 +125,7 @@ final class FigmaAccessibilityReadiness<Owner: Equatable> {
     }
     func validate(now: UInt64) {
         lock.lock(); defer { lock.unlock() }
-        if let held = lease, current() != held.owner || now - held.lastSample >= 3000 { restore() }
+        if let held = lease, current() != held.owner || expired(held, now: now) { restore() }
     }
     func retire() { lock.lock(); defer { lock.unlock() }; restore() }
 }

@@ -125,3 +125,17 @@ precondition(restoreWrites == [true], "Unreadable restoration must fence the suc
 readable = true; unreadable.retire()
 precondition(restoreWrites == [true, false] && !restoreFlag, "Restoration retries once the setting is readable")
 print("PASS: unreadable restoration never writes, retains ownership and fences successors")
+
+// A validator or observer can capture time first but acquire the lock last.
+focused = 1
+figma.observe(1, now: 20000)
+figma.observe(1, now: 20100)
+let orderedWrites = writes.count
+figma.validate(now: 19000)
+figma.observe(1, now: 18900)
+precondition(flags[1] == true && writes.count == orderedWrites, "Older calls must not underflow or retire the current lease")
+figma.validate(now: 23099)
+precondition(flags[1] == true && writes.count == orderedWrites, "An older observation must not move the expiry backwards")
+figma.validate(now: 23100)
+precondition(flags[1] == false && writes.count == orderedWrites + 1, "Expiry remains relative to the latest observation")
+print("PASS: out-of-order validator and observer timestamps preserve monotonic expiry without unsigned underflow")
