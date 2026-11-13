@@ -82,7 +82,11 @@
   } from '$features/remote-machines/remote-machines-utils';
   import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
   import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
-  import { machineRowPlatform, machineRowProviders } from '$features/remote-machines/machine-facts';
+  import {
+    machineRowPlatform,
+    machineRowProviders,
+    machineRowReport,
+  } from '$features/remote-machines/machine-facts';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   export type DevicePanelMode = 'edit' | null;
@@ -679,7 +683,10 @@
             <span>{device.intentdVersion}</span>
           {/if}
         {/if}
-        <MachineProviderIcons {providers} />
+        <MachineProviderIcons
+          {providers}
+          reported={!device.providers && !!machineRowReport(exposedMachine)}
+        />
       </span>
     {/snippet}
     {#snippet trailing()}
