@@ -788,23 +788,23 @@
       {#snippet repoButton(repo: (typeof repositoryGroups)[number], hidden = false)}
         {@const unassigned = repo.key === m.workspace_grouping_unknownRepository_label()}
         <Button
-            variant={hidden ? 'ghost-light' : 'ghost'}
-            active={repoKey === repo.key && destination === 'workspaces'}
-            class="w-full justify-start px-2"
-            aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
-            onclick={() => chooseRepo(repo.key)}
-            oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
-            onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+          variant={hidden ? 'ghost-light' : 'ghost'}
+          active={repoKey === repo.key && destination === 'workspaces'}
+          class="w-full justify-start px-2"
+          aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
+          onclick={() => chooseRepo(repo.key)}
+          oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+          onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+        >
+          <span class="flex-1 truncate text-left font-normal"
+            >{unassigned
+              ? m.fileTracking_startNew_noRepository_label()
+              : hidden
+                ? repo.label
+                : repo.name || repo.label}</span
           >
-            <span class="flex-1 truncate text-left font-normal"
-              >{unassigned
-                ? m.fileTracking_startNew_noRepository_label()
-                : hidden
-                  ? repo.label
-                  : repo.name || repo.label}</span
-            >
-            {@render sidebarCounts(repo.workspaces)}
-          </Button>
+          {@render sidebarCounts(repo.workspaces)}
+        </Button>
       {/snippet}
       <Tabs.Root
         value={destination}

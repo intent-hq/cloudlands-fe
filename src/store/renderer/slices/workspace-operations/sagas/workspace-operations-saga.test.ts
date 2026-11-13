@@ -1210,7 +1210,9 @@ describe('workspaceOperationsSaga', () => {
       { repository: '/repo/one' },
     ]);
     const reloads = () =>
-      run.dispatch.mock.calls.flat().filter((action) => action?.type === 'knownRepos/loadKnownRepos');
+      run.dispatch.mock.calls
+        .flat()
+        .filter((action) => action?.type === 'knownRepos/loadKnownRepos');
     expect(reloads()).toHaveLength(0);
     run.send(removeRecentRepository('/repo/two'));
     await settle();
