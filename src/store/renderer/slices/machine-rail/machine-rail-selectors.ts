@@ -18,7 +18,7 @@ export interface MachineRailItem {
   /** The machine this renderer serves; its status menu opens from this item. */
   own: boolean;
   status: MachineRailItemStatus;
-  /** Not connected right now: shown greyed out. */
+  /** Not connected (yet) right now: shown greyed out. */
   offline: boolean;
   /** Connected, but its daemon reports degraded health: marked with a warning dot. */
   degraded: boolean;
@@ -60,7 +60,9 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
       home: id === homeId,
       own: id === state.connections.windowBackendId,
       status,
-      offline: status === 'disconnected',
+      // Dimmed until connected: a machine that cannot be reached can stay
+      // "connecting" for a long time (startup connects every rail machine).
+      offline: record !== null || guest !== null ? status !== 'connected' : false,
       degraded: status === 'connected' && degradedIds.includes(id),
       pending: id === pendingId,
     };
