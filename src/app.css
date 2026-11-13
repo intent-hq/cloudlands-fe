@@ -917,3 +917,12 @@ body.panel-resizing webview {
   opacity: 0;
   pointer-events: none;
 }
+
+/* Native drag regions ignore opacity and pointer-events, even beneath another
+   machine's view. Only the selected renderer may contribute them. */
+:root[data-machine-hidden],
+:root[data-machine-hidden] *,
+:root[data-machine-hidden] *::before,
+:root[data-machine-hidden] *::after {
+  -webkit-app-region: initial !important;
+}
