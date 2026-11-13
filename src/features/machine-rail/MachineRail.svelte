@@ -94,10 +94,8 @@
     return { destroy: () => node.remove() };
   }
 
-  // Names are a fallback, not something to read on every pass of the pointer:
-  // the first shows only after the pointer rests on a button. Once one is up,
-  // moving to the next machine shows its name at once (the app's usual behaviour).
-  const RAIL_TOOLTIP_DELAY_MS = 900;
+  // The first name shows after a short rest on a button; see `namesWarm` for the rest.
+  const RAIL_TOOLTIP_DELAY_MS = 300;
 
   // Rail buttons show keyboard focus as the hover background, not the app-wide
   // focus outline (the Button paints its states on its surface element).
@@ -335,6 +333,7 @@
   function forgetHiddenPointer() {
     drag = null;
     settle = null;
+    coolNames();
     const focused = document.activeElement;
     if (
       focused instanceof HTMLElement &&
@@ -360,9 +359,26 @@
     }
   }
 
+  // Once the pointer has rested on the rail for one delay, names show at
+  // once while it slides along, until it leaves the rail.
+  let namesWarm = $state(false);
+  let warmTimer: ReturnType<typeof setTimeout> | undefined;
+  const tooltipDelay = $derived(namesWarm ? 0 : RAIL_TOOLTIP_DELAY_MS);
+
+  function warmNames() {
+    clearTimeout(warmTimer);
+    warmTimer = setTimeout(() => (namesWarm = true), RAIL_TOOLTIP_DELAY_MS);
+  }
+
+  function coolNames() {
+    clearTimeout(warmTimer);
+    namesWarm = false;
+  }
+
   /** The pointer left the rail: the next visit is a deliberate one. */
-  function wakeAllTooltips() {
+  function leaveRail() {
     quietTooltips = null;
+    coolNames();
   }
 
   function selectMachine(id: string) {
@@ -492,7 +508,7 @@
       aria-label={itemLabel(item)}
       tooltip={itemLabel(item)}
       tooltipSide="right"
-      tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+      tooltipDelayDuration={tooltipDelay}
       tooltipDisabled={tooltipQuiet(item)}
       aria-current={item.selected ? 'true' : undefined}
       aria-busy={item.pending || undefined}
@@ -548,7 +564,8 @@
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
     bind:this={railNav}
-    onpointerleave={wakeAllTooltips}
+    onpointerenter={warmNames}
+    onpointerleave={leaveRail}
   >
     <div
       bind:this={railList}
@@ -586,7 +603,7 @@
             aria-label={m.machineRail_add_label()}
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
-            tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDelayDuration={tooltipDelay}
             tooltipDisabled={quietTooltips === 'all' || quietTooltips === ADD_TOOLTIP_ID}
             onpointerenter={() => wakeTooltips(ADD_TOOLTIP_ID)}
             data-testid="machine-rail-add"
