@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.329.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.328.0...v2.329.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **machine-setup:** pair computers that already run intentd; no node prompt from Install ([#4527](https://github.com/intent-hq/cloudlands-fe/issues/4527)) ([90307a3](https://github.com/intent-hq/cloudlands-fe/commit/90307a3795861c9e72ac699df5f69cf84d5e24dc))
+* **settings:** remove prose from the provider menu and run login in a terminal ([#4525](https://github.com/intent-hq/cloudlands-fe/issues/4525)) ([5a3be0a](https://github.com/intent-hq/cloudlands-fe/commit/5a3be0af8f50c93d121b0f871890faa45bfa1463))
+
+
+### 🐛 Bug Fixes
+
+* **machine-setup:** drop the Recommended tag from the SSH install card ([#4535](https://github.com/intent-hq/cloudlands-fe/issues/4535)) ([8e8f424](https://github.com/intent-hq/cloudlands-fe/commit/8e8f4248742072f4f54b1b6812da3b1c7f2962e0))
+* **machines:** drop the backend-host line from This computer ([#4537](https://github.com/intent-hq/cloudlands-fe/issues/4537)) ([4704490](https://github.com/intent-hq/cloudlands-fe/commit/4704490ba00183d345957ebc0fc611c133a95b3c))
+
 ## [2.328.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.5...v2.328.0) (2026-11-13)
 
 
