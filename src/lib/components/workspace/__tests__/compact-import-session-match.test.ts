@@ -2,10 +2,11 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
- * New Workspace → Import a session: picking a session matches its folder to a
- * repository and its last branch asynchronously. Create waits for that match,
- * and a late match never overrides a repository the user picked meanwhile
- * (cloudlands-fe#4465 review).
+ * New Workspace → codebase picker → Sessions: picking a session selects its
+ * codebase (the daemon's `repoRoot`, else a folder match for older daemons) and
+ * its last branch asynchronously. Create waits for that match, a late match
+ * never overrides a repository the user picked meanwhile (cloudlands-fe#4465
+ * review), and picking another codebase drops the import.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -249,10 +250,6 @@ vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', asyn
   default: (await import('./mocks/MockRepoAndBranchPicker.svelte')).default,
 }));
 
-vi.mock('$features/session-import/ImportSessionPicker.svelte', async () => ({
-  default: (await import('./mocks/MockImportSessionPicker.svelte')).default,
-}));
-
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
   default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
@@ -283,8 +280,6 @@ function seedRepositoryPrefill() {
 warmImport(() => import('./mocks/MockRichTextarea.svelte'));
 warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 
-warmImport(() => import('./mocks/MockImportSessionPicker.svelte'));
-
 const created = {
   ok: true,
   data: {
@@ -302,6 +297,7 @@ const created = {
 type Picker = {
   onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
   onBranchChange?: (event: { detail: { branch: string } }) => void;
+  onSessionSelect?: (session: Record<string, unknown>) => void;
 };
 
 const session = {
@@ -322,12 +318,8 @@ function deferred<T>() {
 
 const repoPicker = () =>
   (window as unknown as { __mockRepoAndBranchPicker: Picker }).__mockRepoAndBranchPicker;
-const pickSession = () =>
-  (
-    window as unknown as {
-      __mockImportSessionPicker: { onSelect: (pick: typeof session) => void };
-    }
-  ).__mockImportSessionPicker.onSelect(session);
+const pickSession = (pick: Record<string, unknown> = session) =>
+  repoPicker().onSessionSelect?.(pick);
 const createButton = () =>
   screen.getByRole('button', { name: /create workspace/i }) as HTMLButtonElement;
 const sessionFolderIsInsideEmber = {
@@ -428,5 +420,35 @@ describe('CompactWorkspaceInitializer import-session repository match', () => {
     expect((mocks.create.mock.calls[0][0] as Record<string, unknown>).repositoryPath).toBe(
       '/tmp/manual-repo',
     );
+  });
+
+  it('uses the session repoRoot directly, without a folder lookup', async () => {
+    await renderWithRepository();
+
+    pickSession({ ...session, repoRoot: '/work/ember' });
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('/work/ember'),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-branch').textContent).toBe('openid-sign-in'),
+    );
+    expect(mocks.directoryStatus).not.toHaveBeenCalled();
+    expect(screen.getByTestId('picker-session').textContent).toBe(session.sessionId);
+    expect(screen.getByTestId('import-session-note')).toBeTruthy();
+  });
+
+  it('drops the import when the user picks another codebase', async () => {
+    await renderWithRepository();
+
+    pickSession({ ...session, repoRoot: '/work/ember' });
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-session').textContent).toBe(session.sessionId),
+    );
+    await waitFor(() => expect(createButton().disabled).toBe(false));
+    repoPicker().onRepoChange?.({
+      detail: { path: '/tmp/manual-repo', type: 'local', isValidPath: true },
+    });
+    await waitFor(() => expect(screen.getByTestId('picker-session').textContent).toBe(''));
+    expect(screen.queryByTestId('import-session-note')).toBeNull();
   });
 });

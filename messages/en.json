@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Try again",
   "sessionImport_list_search_placeholder": "Search sessions",
   "sessionImport_list_untitled_label": "Untitled session",
-  "sessionImport_picker_clear_ariaLabel": "Do not import a session",
-  "sessionImport_picker_label": "Session",
   "sessionImport_picker_none_label": "Import a session",
   "sessionImport_picker_note_description": "The session becomes the first agent, with its history. Uncommitted changes in its folder are not copied.",
   "settings_browserAccess_accessKey_description": "A browser asks for this key once. Resetting it signs out every browser.",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "The installer failed on {host}.",
   "machineSetup_error_noLink": "The installer did not print a link in time.",
   "machineSetup_error_seeLog_hint": "The log below shows what happened.",
-  "machineSetup_error_failed": "Something went wrong. Try again."
+  "machineSetup_error_failed": "Something went wrong. Try again.",
+  "sessionImport_tab_label": "Sessions",
+  "sessionImport_list_noRepository_reason": "No git repository found",
+  "sessionImport_list_refresh_label": "Refresh"
 }

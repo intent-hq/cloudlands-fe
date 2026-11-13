@@ -544,6 +544,10 @@ export function* prepareOnboardingWorkspaceInitialization(
   });
   const isGithubPick = project.type === 'github' && !!project.githubUrl;
   const hasStagedFiles = hasStagedFileItems(fileItems as ContextItem[]) || imageBlocks.length > 0;
+  // Import a session (Sessions tab): no initial agent; the saga imports the
+  // session once the workspace exists, then sends the prompt to it.
+  const importSession = project.type === 'local' ? (s.importSession ?? null) : null;
+  const importTitle = importSession?.title.trim() ?? '';
   // A plain folder (Labs) never comes from the GitHub tab and never carries git options.
   const plainFolder = project.type !== 'github' ? (s.plainFolder ?? null) : null;
   if (plainFolder) {
@@ -595,7 +599,7 @@ export function* prepareOnboardingWorkspaceInitialization(
           contextLinks: buildContextLinks(s.contextMentions),
           linearIssue: extractLinearIssue(contextReferences),
           sentryIssue: extractSentryIssue(contextReferences),
-          initialAgent,
+          ...(importSession ? {} : { initialAgent }),
         })
       : ({
           title: '',
@@ -613,14 +617,28 @@ export function* prepareOnboardingWorkspaceInitialization(
           contextLinks: buildContextLinks(s.contextMentions),
           linearIssue: extractLinearIssue(contextReferences),
           sentryIssue: extractSentryIssue(contextReferences),
-          initialAgent,
+          ...(importSession ? {} : { initialAgent }),
         } as WorkspaceInitializationRequest['createRequest']),
-    agentTitle: agentName,
-    coordinator: specialistId !== null,
+    agentTitle: importTitle || agentName,
+    coordinator: !importSession && specialistId !== null,
     stagedItems: s.stagedItems,
-    heldMessage: hasStagedFiles
-      ? { content: prompt, imageBlocks, contextReferences: contextReferences as unknown as Json[] }
-      : undefined,
+    heldMessage:
+      hasStagedFiles || (importSession && (prompt || contextReferences.length > 0))
+        ? {
+            content: prompt,
+            imageBlocks,
+            contextReferences: contextReferences as unknown as Json[],
+          }
+        : undefined,
+    ...(importSession
+      ? {
+          importSession: {
+            provider: importSession.provider,
+            sessionId: importSession.sessionId,
+            ...(importTitle ? { name: importTitle } : {}),
+          },
+        }
+      : {}),
     lastSubmittedAgent: {
       selectedSpecialist: specialistId,
       isTeamMode: false,

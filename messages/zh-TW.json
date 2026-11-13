@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "重試",
   "sessionImport_list_search_placeholder": "搜尋工作階段",
   "sessionImport_list_untitled_label": "未命名工作階段",
-  "sessionImport_picker_clear_ariaLabel": "不匯入工作階段",
-  "sessionImport_picker_label": "工作階段",
   "sessionImport_picker_none_label": "匯入工作階段",
   "sessionImport_picker_note_description": "該工作階段會連同其歷史記錄成為第一個代理。其資料夾中未提交的變更不會被複製。",
   "settings_browserAccess_accessKey_description": "瀏覽器只會詢問一次此金鑰。重設後所有瀏覽器都會登出。",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "安裝程式在 {host} 上失敗。",
   "machineSetup_error_noLink": "安裝程式未能及時輸出連結。",
   "machineSetup_error_seeLog_hint": "下方記錄顯示了發生的情況。",
-  "machineSetup_error_failed": "發生了問題。請重試。"
+  "machineSetup_error_failed": "發生了問題。請重試。",
+  "sessionImport_tab_label": "工作階段",
+  "sessionImport_list_noRepository_reason": "找不到 git 儲存庫",
+  "sessionImport_list_refresh_label": "重新整理"
 }

@@ -23,11 +23,11 @@ import { store as appStore } from '$store/renderer/store';
 import {
   importableSessionsLoaded,
   importableSessionsRequested,
+  importableSessionsReset,
 } from '../importable-sessions-slice';
 import {
   selectImportableSessionProviders,
   selectImportableSessions,
-  selectImportableSessionsAvailable,
   selectImportableSessionsStatus,
 } from '../importable-sessions-selectors';
 import {
@@ -47,7 +47,6 @@ const session = (sessionId: string, title = sessionId) => ({
 const flush = () => vi.advanceTimersByTimeAsync(0);
 const state = () => ({
   status: selectImportableSessionsStatus.select(appStore.state),
-  available: selectImportableSessionsAvailable.select(appStore.state),
   ids: selectImportableSessions.select(appStore.state).map((row) => row.sessionId),
 });
 
@@ -73,16 +72,16 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
     vi.clearAllMocks();
   });
 
-  it('loads the first page at once and offers the option when it has sessions', async () => {
+  it('loads the first page at once', async () => {
     list.mockResolvedValueOnce({ ok: true, sessions: [session('a'), session('b')] });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 
     expect(list).toHaveBeenCalledWith({ limit: IMPORTABLE_SESSIONS_PAGE_SIZE });
-    expect(state()).toEqual({ status: 'ready', available: true, ids: ['a', 'b'] });
+    expect(state()).toEqual({ status: 'ready', ids: ['a', 'b'] });
   });
 
-  it('offers the option when every session is undated', async () => {
+  it('keeps undated sessions in the daemon order', async () => {
     list.mockResolvedValueOnce({
       ok: true,
       sessions: [
@@ -94,18 +93,18 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 
-    expect(state()).toEqual({ status: 'ready', available: true, ids: ['a', 'b'] });
+    expect(state()).toEqual({ status: 'ready', ids: ['a', 'b'] });
   });
 
-  it('hides the option when the daemon has no sessions', async () => {
+  it('loads an empty list when the daemon has no sessions', async () => {
     list.mockResolvedValueOnce({ ok: true, sessions: [] });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 
-    expect(state()).toEqual({ status: 'ready', available: false, ids: [] });
+    expect(state()).toEqual({ status: 'ready', ids: [] });
   });
 
-  it('keeps the option and the provider status when one provider fails with no sessions', async () => {
+  it('keeps the provider status when one provider fails with no sessions', async () => {
     list.mockResolvedValueOnce({
       ok: true,
       sessions: [],
@@ -114,7 +113,7 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 
-    expect(state()).toEqual({ status: 'ready', available: true, ids: [] });
+    expect(state()).toEqual({ status: 'ready', ids: [] });
     expect(selectImportableSessionProviders.select(appStore.state)).toEqual([
       { id: 'codex', label: 'Codex', status: 'error', error: 'timed out' },
     ]);
@@ -147,40 +146,28 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
       'claude-code',
       'codex',
     ]);
-    expect(state().available).toBe(true);
   });
 
   it.each([{}, { sessionImport: 0 }, { sessionImport: true }, { sessionImport: 2 }])(
-    'never lists and hides the option without sessionImport: 1 (%j)',
+    'never lists without sessionImport: 1 (%j)',
     async (bag) => {
       capabilities.value = bag;
       appStore.dispatch(importableSessionsRequested(''));
       await flush();
 
       expect(list).not.toHaveBeenCalled();
-      expect(state().available).toBe(false);
     },
   );
 
-  it('hides the option when the capability goes away after sessions loaded', async () => {
-    list.mockResolvedValueOnce({ ok: true, sessions: [session('a')], providers: [] });
-    appStore.dispatch(importableSessionsRequested(''));
-    await flush();
-    expect(state().available).toBe(true);
-
-    capabilities.value = {};
-    expect(state().available).toBe(false);
-  });
-
-  it('keeps the option for a retry when the first page fails', async () => {
+  it('reports a failed first page for a retry', async () => {
     list.mockResolvedValueOnce({ ok: false, error: 'boom' });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 
-    expect(state()).toMatchObject({ status: 'error', available: true });
+    expect(state()).toMatchObject({ status: 'error' });
   });
 
-  it('debounces typed queries and keeps the option while a search finds nothing', async () => {
+  it('debounces typed queries', async () => {
     list.mockResolvedValueOnce({ ok: true, sessions: [session('a')] });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
@@ -194,6 +181,18 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
 
     expect(list).toHaveBeenCalledTimes(2);
     expect(list).toHaveBeenLastCalledWith({ query: 'clou', limit: IMPORTABLE_SESSIONS_PAGE_SIZE });
-    expect(state()).toEqual({ status: 'ready', available: true, ids: [] });
+    expect(state()).toEqual({ status: 'ready', ids: [] });
+  });
+
+  it('drops the rows on reset and ignores a request still in flight', async () => {
+    let resolve!: (value: { ok: true; sessions: ReturnType<typeof session>[] }) => void;
+    list.mockReturnValueOnce(new Promise((done) => (resolve = done)));
+    appStore.dispatch(importableSessionsRequested(''));
+    await flush();
+    appStore.dispatch(importableSessionsReset());
+    resolve({ ok: true, sessions: [session('late')] });
+    await flush();
+
+    expect(state()).toEqual({ status: 'idle', ids: [] });
   });
 });

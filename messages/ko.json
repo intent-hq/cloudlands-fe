@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "다시 시도",
   "sessionImport_list_search_placeholder": "세션 검색",
   "sessionImport_list_untitled_label": "제목 없는 세션",
-  "sessionImport_picker_clear_ariaLabel": "세션 가져오지 않기",
-  "sessionImport_picker_label": "세션",
   "sessionImport_picker_none_label": "세션 가져오기",
   "sessionImport_picker_note_description": "세션이 기록과 함께 첫 번째 에이전트가 됩니다. 폴더의 커밋되지 않은 변경 사항은 복사되지 않습니다.",
   "settings_browserAccess_accessKey_description": "브라우저는 이 키를 한 번만 요청합니다. 키를 재설정하면 모든 브라우저가 로그아웃됩니다.",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "{host}에서 설치 프로그램이 실패했습니다.",
   "machineSetup_error_noLink": "설치 프로그램이 제시간에 링크를 출력하지 않았습니다.",
   "machineSetup_error_seeLog_hint": "아래 로그에서 무슨 일이 있었는지 확인할 수 있습니다.",
-  "machineSetup_error_failed": "문제가 발생했습니다. 다시 시도하세요."
+  "machineSetup_error_failed": "문제가 발생했습니다. 다시 시도하세요.",
+  "sessionImport_tab_label": "세션",
+  "sessionImport_list_noRepository_reason": "git 저장소를 찾을 수 없습니다",
+  "sessionImport_list_refresh_label": "새로 고침"
 }

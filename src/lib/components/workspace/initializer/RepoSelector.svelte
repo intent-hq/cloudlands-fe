@@ -52,6 +52,7 @@
     faFolder,
     faXmark,
     faPlus,
+    faHistory,
     faChevronDown,
     faArrowLeft,
     faArrowUpRightFromSquare,
@@ -109,6 +110,16 @@
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { workspacePickerStyles } from './workspace-picker-styles';
   import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
+  import ImportSessionTab from '$features/session-import/ImportSessionTab.svelte';
+  import {
+    importableSessionKey,
+    type SessionImportSelection,
+  } from '$features/session-import/importable-session';
+  import AgentProviderIcon, {
+    hasProviderIcon,
+  } from '$features/agent/components/AgentProviderIcon.svelte';
+  import { selectSessionImportSupported } from '$store/renderer/slices/importable-sessions/importable-sessions-selectors';
+  import { importableSessionsReset } from '$store/renderer/slices/importable-sessions/importable-sessions-slice';
 
   const logger = createLogger('RepoSelector');
   const dialogPortalTarget = useDialogPortalTarget();
@@ -170,6 +181,12 @@
     onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
   }
 
+  /** The Sessions tab (form picker): a picked session also picks its codebase. */
+  export interface RepoSelectorSessions {
+    selected: SessionImportSelection | null;
+    onSelect: (session: SessionImportSelection) => void;
+  }
+
   export interface RepoChangeDetail {
     path: string;
     type: 'local' | 'github' | 'remote';
@@ -218,6 +235,11 @@
      * tabs and never on Clone. `onCheckedChange` names the tab it was flipped in.
      */
     gitChoice?: RepoSelectorGitChoice;
+    /**
+     * Offer the Sessions tab (hosts with `sessionImport: 1`). The list loads
+     * only when the tab opens; a picked session shows as the codebase.
+     */
+    sessions?: RepoSelectorSessions;
   }
 
   let {
@@ -243,6 +265,7 @@
     plainFolderMode = false,
     plainFolderSelected = false,
     gitChoice,
+    sessions,
   }: Props = $props();
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
@@ -275,6 +298,14 @@
     isOpen = true;
   }
 
+  /** Open the form picker on its Sessions tab (when the host offers it). */
+  export function openOnSessionsTab() {
+    if (!sessionsTabVisible) return;
+    openOnTab = 'sessions';
+    formStep = 'add';
+    isOpen = true;
+  }
+
   // State
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the selection
   let selectedValue = $state(value);
@@ -286,7 +317,7 @@
    *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
-  let openOnTab: 'local' | 'new' | null = null; // One-shot tab for the next open
+  let openOnTab: 'local' | 'new' | 'sessions' | null = null; // One-shot tab for the next open
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
     !$recentRepoRefresh$ ||
@@ -355,8 +386,29 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // TABBED INTERFACE STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  type TabId = 'local' | 'github' | 'gitlab' | 'new' | 'remote';
+  type TabId = 'local' | 'github' | 'gitlab' | 'new' | 'remote' | 'sessions';
   let activeTab = $state<TabId>('github');
+  const sessionImportSupported$ = selectSessionImportSupported();
+  const sessionsTabVisible = $derived(!!sessions && !!rowLabel && $sessionImportSupported$);
+  const selectedSession = $derived(sessions?.selected ?? null);
+  const knownSessionRepos = $derived(
+    recentRepos
+      .filter((repo) => repo.type === 'local')
+      .map((repo) => ({ path: repo.path, type: 'local' as const })),
+  );
+  $effect(() => {
+    if (activeTab === 'sessions' && !sessionsTabVisible) activeTab = 'local';
+  });
+
+  function openSessionsStep() {
+    activeTab = 'sessions';
+    formStep = 'add';
+  }
+
+  function handleSelectSession(session: SessionImportSelection) {
+    sessions?.onSelect(session);
+    isOpen = false;
+  }
   let preferredForge = $state<'github' | 'gitlab'>('github');
   const authenticatedForges = $derived([
     ...($isGithubAuthenticated$
@@ -1125,6 +1177,8 @@
   });
 
   onDestroy(() => {
+    // The listed sessions live as long as this picker; the next one lists fresh.
+    if (sessions) mountedDispatch(importableSessionsReset());
     if (recentRepoRequestId) {
       mountedDispatch(
         workspaceInitializerRecentReposRefreshReleased(recentRepoRefreshId, recentRepoRequestId),
@@ -2039,12 +2093,31 @@
         {:else}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25" />
         {/if} -->
-            {#if triggerIcon}
+            {#if selectedSession && !triggerIcon}
+              {#if hasProviderIcon(selectedSession.provider)}
+                <AgentProviderIcon
+                  providerId={selectedSession.provider}
+                  size={rowLabel ? 20 : 16}
+                  class="shrink-0"
+                />
+              {:else}
+                <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
+              {/if}
+              <span
+                class="min-w-0 flex-1 text-left truncate"
+                id={rowLabel ? `${pickerId}-field-value` : undefined}
+                data-testid="repo-selector-session-value"
+              >
+                <span class={triggerValueClass}
+                  >{selectedSession.title.trim() || m.sessionImport_list_untitled_label()}</span
+                >
+              </span>
+            {:else if triggerIcon}
               <Fa icon={triggerIcon} size="xs" />
             {:else if showEmptyIcon && !hasTriggerValue}
               <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
             {/if}
-            {#if !triggerIcon && hasTriggerValue}
+            {#if !selectedSession && !triggerIcon && hasTriggerValue}
               <RepositoryPickerIcon
                 owner={triggerRepositoryIdentity?.projectPath.split('/').slice(0, -1).join('/') ||
                   triggerAvatarOwner ||
@@ -2057,10 +2130,10 @@
                   (!gitlabSelected && selectedRepoType !== 'github')}
                 size={rowLabel ? 20 : 16}
               />
-            {:else if !triggerIcon && rowLabel && !showEmptyIcon}
+            {:else if !selectedSession && !triggerIcon && rowLabel && !showEmptyIcon}
               <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
-            {#if !triggerIcon && (hasTriggerValue || triggerEmptyLabel)}
+            {#if !selectedSession && !triggerIcon && (hasTriggerValue || triggerEmptyLabel)}
               <span
                 class="min-w-0 flex-1 text-left truncate"
                 id={rowLabel ? `${pickerId}-field-value` : undefined}
@@ -2091,7 +2164,7 @@
       role="dialog"
       aria-label={formRowLabel ?? m.workspace_repoSelector_whichRepo_label()}
       class={rowLabel
-        ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
+        ? `${formStep === 'add' && activeTab === 'sessions' ? 'w-110' : 'w-[360px]'} max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
       side={rowLabel ? (isMobile.current || formMenuBelow ? 'bottom' : 'left') : undefined}
       sideOffset={rowLabel ? (isMobile.current || formMenuBelow ? 4 : 24) : undefined}
@@ -2164,6 +2237,19 @@
             <Fa icon={faPlus} class="size-4 shrink-0" />
             <span>{formAddLabel}</span>
           </Button>
+          {#if sessionsTabVisible}
+            <Button
+              variant="ghost"
+              type="button"
+              wrapContent={false}
+              data-testid="repo-form-import-session"
+              class="{workspacePickerStyles.row} w-full"
+              onclick={openSessionsStep}
+            >
+              <Fa icon={faHistory} class="size-4 shrink-0" />
+              <span>{m.sessionImport_picker_none_label()}</span>
+            </Button>
+          {/if}
         </div>
       {:else}
         {#if rowLabel}
@@ -2216,7 +2302,7 @@
                 {m.workspace_repoSelector_clone_tab()}
               </Tabs.Trigger>
             {/if}
-            {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+            {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...(sessionsTabVisible ? [{ id: 'sessions' as TabId, label: m.sessionImport_tab_label() }] : []), ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
               <Tabs.Trigger
                 value={tab.id}
                 class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
@@ -2243,8 +2329,17 @@
             value={repositoryTabActive ? 'repository' : activeTab}
             class="mt-0 min-h-0 flex flex-col"
           >
+            {#if activeTab === 'sessions' && sessionsTabVisible}
+              <ImportSessionTab
+                class="h-80 max-h-[min(320px,calc(100dvh-14rem))]"
+                knownRepos={knownSessionRepos}
+                selectedKey={selectedSession ? importableSessionKey(selectedSession) : ''}
+                onselect={handleSelectSession}
+                onclose={() => (isOpen = false)}
+              />
+            {/if}
             <!-- Input section - changes based on tab -->
-            <div class="shrink-0 px-3 mb-3">
+            <div class="shrink-0 px-3 mb-3" class:hidden={activeTab === 'sessions'}>
               {#if gitChoice && (activeTab === 'local' || activeTab === 'new')}
                 {@const tab = activeTab}
                 {@const folder =
@@ -2551,7 +2646,7 @@
             </div>
 
             <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
-            {#if activeTab !== 'gitlab' && showNonGitFolderPrompt && nonGitFolderPath}
+            {#if activeTab !== 'gitlab' && activeTab !== 'sessions' && showNonGitFolderPrompt && nonGitFolderPath}
               <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
                 <div class="flex items-start gap-3">
                   <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />

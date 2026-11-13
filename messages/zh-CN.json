@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "重试",
   "sessionImport_list_search_placeholder": "搜索会话",
   "sessionImport_list_untitled_label": "未命名会话",
-  "sessionImport_picker_clear_ariaLabel": "不导入会话",
-  "sessionImport_picker_label": "会话",
   "sessionImport_picker_none_label": "导入会话",
   "sessionImport_picker_note_description": "该会话将连同其历史记录成为第一个代理。其文件夹中未提交的更改不会被复制。",
   "settings_browserAccess_accessKey_description": "浏览器只会询问一次此密钥。重置后所有浏览器都会退出登录。",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "安装程序在 {host} 上失败。",
   "machineSetup_error_noLink": "安装程序未能及时输出链接。",
   "machineSetup_error_seeLog_hint": "下方日志显示了发生的情况。",
-  "machineSetup_error_failed": "出了点问题。请重试。"
+  "machineSetup_error_failed": "出了点问题。请重试。",
+  "sessionImport_tab_label": "会话",
+  "sessionImport_list_noRepository_reason": "未找到 git 仓库",
+  "sessionImport_list_refresh_label": "刷新"
 }
