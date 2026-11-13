@@ -39,7 +39,10 @@ vi.mock('../../../../shared/paraglide/messages.js', async (importOriginal) =>
 // ---------------------------------------------------------------------------
 
 /** Global lifecycle log so tests can assert construct/start/dispose ordering. */
-const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: number }> }));
+const lifecycle = vi.hoisted(() => ({
+  events: [] as Array<{ type: string; seq: number }>,
+  seq: 0,
+}));
 
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
@@ -61,9 +64,8 @@ const rpc = vi.hoisted(() => ({
 }));
 
 vi.mock('../json-rpc-client', () => {
-  let seq = 0;
   class FakeJsonRpcClient {
-    private readonly id = ++seq;
+    private readonly id = ++lifecycle.seq;
     private readonly config: unknown;
     private readonly onHelloResult?: (result: unknown) => void;
     private status = 'disconnected';
@@ -434,6 +436,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
+  lifecycle.seq = 0;
   importedPrincipal.inspect.mockResolvedValue({
     principal: {
       id: 'owner',
