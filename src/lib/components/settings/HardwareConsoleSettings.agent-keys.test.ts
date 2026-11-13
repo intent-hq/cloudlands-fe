@@ -76,6 +76,7 @@ function buildState() {
       ] as never[]),
     },
     workspaceAgents: { byWorkspaceId: {} },
+    tabState: { workspaceStacks: [] },
   };
 }
 

@@ -69,6 +69,7 @@ function makeState(
       ),
     },
     agentSessions: { byAgentId: sessions },
+    tabState: { workspaceStacks: Object.keys(agentsByWorkspace).map((id) => [id]) },
   };
 }
 

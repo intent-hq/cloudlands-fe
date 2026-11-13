@@ -61,7 +61,7 @@ vi.mock('$features/layout/preset-executor', () => ({
   applyContentPreset: vi.fn(async () => true),
 }));
 
-import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import {
@@ -166,6 +166,7 @@ function makeCycleState(
     workspace: { workspaces },
     workspaceAgents: { byWorkspaceId },
     agentSessions: { byAgentId },
+    tabState: { workspaceStacks: getItems(workspaces).map((workspace) => [workspace.id]) },
     hardwareConsole: { cycleScopeByFamily: { ...DEFAULT_CYCLE_SCOPES } },
     sidebarNav: {
       multiSelectTabOrder: [],
