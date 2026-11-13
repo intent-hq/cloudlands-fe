@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "Couldn't load all archived workspaces.",
   "machineRail_nav_ariaLabel": "Machines in this window",
   "machineRail_item_offline_label": "{name} (disconnected)",
+  "machineRail_item_unknown_label": "Unknown machine",
   "machineRail_add_label": "Add a machine to this window",
   "machineRail_add_header": "Add to this window",
   "machineRail_remove_header": "Remove from this window",

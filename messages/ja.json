@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "アーカイブ済みのワークスペースをすべて読み込めませんでした。",
   "machineRail_nav_ariaLabel": "このウィンドウのマシン",
   "machineRail_item_offline_label": "{name}(未接続)",
+  "machineRail_item_unknown_label": "不明なマシン",
   "machineRail_add_label": "このウィンドウにマシンを追加",
   "machineRail_add_header": "このウィンドウに追加",
   "machineRail_remove_header": "このウィンドウから削除",

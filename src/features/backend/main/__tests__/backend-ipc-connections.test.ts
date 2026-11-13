@@ -4506,6 +4506,138 @@ describe('connections:list hides the self entry on the owning machine', () => {
     });
   });
 
+  it('keeps a persisted self record while an open window uses its ID, then hides it on release', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    installWindow(SELF_ENTRY.id);
+    const window = BrowserWindow.getAllWindows()[0];
+    const { mod, openOrFocus, closeForBackend } = await loadModule();
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+
+    await expect(list({ sender: window.webContents }, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, REMOTE, SELF_ENTRY],
+      windowBackendId: SELF_ENTRY.id,
+    });
+    expect((window as unknown as { backendId: string }).backendId).toBe(SELF_ENTRY.id);
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(closeForBackend).not.toHaveBeenCalled();
+
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL, REMOTE] });
+  });
+
+  it('keeps a self record referenced by a non-home rail item and hides unrelated self records', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    const otherSelf = { ...SELF_ENTRY, id: 'unreferenced-self' };
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY, otherSelf]);
+    installWindow();
+    const { mod } = await loadModule();
+    const { writeWindowRail } = await import('../../../../main/machine-rail-state');
+    writeWindowRail(BrowserWindow.getAllWindows()[0], {
+      machineIds: ['local', SELF_ENTRY.id],
+      selectedId: SELF_ENTRY.id,
+    });
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, SELF_ENTRY],
+      windowBackendId: 'local',
+    });
+  });
+
+  it('keeps the home record when the live self probe later refreshes the list', async () => {
+    const send = installWindow(SELF_ENTRY.id);
+    store.list.mockResolvedValue([LOCAL, SELF_ENTRY]);
+    let finishProbe!: (value: unknown) => void;
+    const pairingInfo = new Promise<unknown>((resolve) => {
+      finishProbe = resolve;
+    });
+    rpc.handler = async (method) => (method === 'server.pairingInfo' ? pairingInfo : {});
+    const { mod, openOrFocus, closeForBackend } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, SELF_ENTRY],
+    });
+    finishProbe(LIVE_PAIRING_INFO);
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      expect(changed.at(-1)?.[1]).toMatchObject({
+        connections: [LOCAL, SELF_ENTRY],
+        windowBackendId: SELF_ENTRY.id,
+      });
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('retains a resolved live record after duplicate consolidation without authorizing its removed ID', async () => {
+    installWindow(REMOTE.id);
+    const { mod, openOrFocus, closeForBackend } = await loadModule();
+    // A live backend resolves its saved record before its renderer opens.
+    await expect(mod.resolveBackendRecord(REMOTE.id)).resolves.toMatchObject({ id: REMOTE.id });
+    mod.registerBackendHandlers();
+    const survivor = { ...REMOTE, id: 'surviving-duplicate', label: 'Surviving device' };
+    store.list.mockResolvedValue([LOCAL, survivor]);
+    const list = findHandler('connections:list')!;
+
+    await expect(list({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, survivor, REMOTE],
+    });
+    // Presentation snapshots cannot supply credentials or resurrect a removed backend.
+    await expect(mod.resolveBackendRecord(REMOTE.id)).resolves.toBeNull();
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(closeForBackend).not.toHaveBeenCalled();
+    expect(lifecycle.events.filter(({ type }) => type === 'dispose')).toEqual([]);
+
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL, survivor] });
+    // Reusing an absent ID after its last window closed must not recover old metadata.
+    installWindow(REMOTE.id);
+    await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL, survivor] });
+  });
+
+  it('offers only current saved non-self devices as rail candidates, never presentation snapshots', async () => {
+    localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    installWindow(REMOTE.id);
+    const { mod } = await loadModule();
+    const { writeWindowRail } = await import('../../../../main/machine-rail-state');
+    writeWindowRail(BrowserWindow.getAllWindows()[0], {
+      machineIds: [REMOTE.id, SELF_ENTRY.id],
+      selectedId: REMOTE.id,
+    });
+    await mod.resolveBackendRecord(REMOTE.id);
+    const survivor = { ...REMOTE, id: 'surviving-duplicate' };
+    store.list.mockResolvedValue([LOCAL, survivor, SELF_ENTRY]);
+    guestStore.list.mockResolvedValue([GUEST]);
+    mod.registerBackendHandlers();
+
+    await expect(findHandler('connections:list')!({}, undefined)).resolves.toMatchObject({
+      connections: [LOCAL, survivor, SELF_ENTRY, REMOTE],
+    });
+    await expect(mod.listMachineRailCandidateIds()).resolves.toEqual([
+      'local',
+      survivor.id,
+      GUEST.id,
+    ]);
+  });
+
+  it('clears retained display records on pool teardown', async () => {
+    installWindow(REMOTE.id);
+    const { mod } = await loadModule();
+    await mod.resolveBackendRecord(REMOTE.id);
+    store.list.mockResolvedValue([LOCAL]);
+    mod.registerBackendHandlers();
+    const list = findHandler('connections:list')!;
+    await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL, REMOTE] });
+
+    mod.disposeAllBackendClients();
+
+    await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL] });
+  });
+
   it('matches the fingerprint case-insensitively (store dedupe normalization)', async () => {
     localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
     store.list.mockResolvedValue([

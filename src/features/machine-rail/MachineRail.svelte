@@ -414,13 +414,13 @@
     disconnected: () => m.settings_devices_statusDisconnected_label(),
   };
 
-  function machineName(record: ConnectionRecord | null, id: string): string {
-    if (!record) return id;
+  function machineName(record: ConnectionRecord | null): string {
+    if (!record) return m.machineRail_item_unknown_label();
     return record.isLocal ? formatLocalMachineLabel(record) : formatConnectionLabel(record);
   }
 
   function itemName(item: MachineRailItem): string {
-    return item.guest ? formatGuestSessionLabel(item.guest) : machineName(item.record, item.id);
+    return item.guest ? formatGuestSessionLabel(item.guest) : machineName(item.record);
   }
 
   function itemLabel(item: MachineRailItem): string {
@@ -521,9 +521,9 @@
         <IntentMarkLoader size={18} class="text-foreground" />
       {:else if item.guest}
         {@render guestIcon(item.guest, 18, cn('text-foreground', item.offline && 'opacity-40'))}
-      {:else if item.record}
+      {:else}
         <DeviceIcon
-          record={item.record}
+          record={item.record ?? {}}
           size={18}
           class={cn('text-foreground', item.offline && 'opacity-40')}
         />
@@ -620,7 +620,7 @@
               {#snippet leading()}
                 <DeviceIcon record={candidate} size={16} class="text-foreground" />
               {/snippet}
-              <span class="min-w-0 flex-1 truncate">{machineName(candidate, candidate.id)}</span>
+              <span class="min-w-0 flex-1 truncate">{machineName(candidate)}</span>
             </Menu.Item>
           {/each}
           <Menu.Separator />
@@ -664,8 +664,8 @@
               {#snippet leading()}
                 {#if item.guest}
                   {@render guestIcon(item.guest, 16, 'text-foreground')}
-                {:else if item.record}
-                  <DeviceIcon record={item.record} size={16} class="text-foreground" />
+                {:else}
+                  <DeviceIcon record={item.record ?? {}} size={16} class="text-foreground" />
                 {/if}
               {/snippet}
               <span class="min-w-0 flex-1 truncate">{itemName(item)}</span>

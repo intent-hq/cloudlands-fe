@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "无法加载所有已归档的工作区。",
   "machineRail_nav_ariaLabel": "此窗口中的计算机",
   "machineRail_item_offline_label": "{name}(已断开)",
+  "machineRail_item_unknown_label": "未知设备",
   "machineRail_add_label": "将计算机添加到此窗口",
   "machineRail_add_header": "添加到此窗口",
   "machineRail_remove_header": "从此窗口移除",

@@ -15,6 +15,7 @@ export const textareaMetadata = parseUiComponentMetadata({
     'src/features/discussions/components/DiscussionThread.svelte',
     'src/features/hud/components/dock-composer-media.preview.svelte',
     'src/features/hud/media-editor/screenshot/ScreenshotCanvas.svelte',
+    'src/features/machine-rail/machine-rail.preview.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',

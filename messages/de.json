@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "Nicht alle archivierten Arbeitsbereiche konnten geladen werden.",
   "machineRail_nav_ariaLabel": "Rechner in diesem Fenster",
   "machineRail_item_offline_label": "{name} (getrennt)",
+  "machineRail_item_unknown_label": "Unbekannte Maschine",
   "machineRail_add_label": "Rechner zu diesem Fenster hinzufügen",
   "machineRail_add_header": "Zu diesem Fenster hinzufügen",
   "machineRail_remove_header": "Aus diesem Fenster entfernen",

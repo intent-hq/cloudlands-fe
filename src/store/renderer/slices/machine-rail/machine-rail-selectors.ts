@@ -78,7 +78,8 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
 export const selectMachineRailCandidates = store.createSelector((state): ConnectionRecord[] => {
   const inRail = new Set(state.machineRail.machineIds);
   return getItems(state.connections.connections).filter(
-    (connection) => connection.daemonMode !== 'node' && !inRail.has(connection.id),
+    (connection) =>
+      !connection.displayOnly && connection.daemonMode !== 'node' && !inRail.has(connection.id),
   );
 });
 

@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "Impossible de charger tous les espaces de travail archivés.",
   "machineRail_nav_ariaLabel": "Ordinateurs de cette fenêtre",
   "machineRail_item_offline_label": "{name} (déconnecté)",
+  "machineRail_item_unknown_label": "Machine inconnue",
   "machineRail_add_label": "Ajouter un ordinateur à cette fenêtre",
   "machineRail_add_header": "Ajouter à cette fenêtre",
   "machineRail_remove_header": "Retirer de cette fenêtre",

@@ -223,6 +223,7 @@ import {
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
 import { getRendererWebContents } from '../../../main/window-backend';
+import { readWindowRail } from '../../../main/machine-rail-state';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -3566,12 +3567,48 @@ function isSelfConnectionRecord(
 }
 
 /**
+ * Token-free presentation snapshots only. A store upsert may consolidate an ID
+ * that still owns a live renderer; keep its label/icon until its last window
+ * releases it. Never use these records to resolve transport or credentials.
+ */
+const liveConnectionRecords = new Map<string, ConnectionRecord>();
+
+function projectLiveConnectionRecords(connections: ConnectionRecord[]): {
+  records: ConnectionRecord[];
+  referencedIds: Set<string>;
+} {
+  const referencedIds = new Set<string>();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    for (const id of readWindowRail(window).machineIds) referencedIds.add(id);
+  }
+  for (const id of liveConnectionRecords.keys()) {
+    if (!referencedIds.has(id)) liveConnectionRecords.delete(id);
+  }
+  for (const connection of connections) {
+    if (referencedIds.has(connection.id)) {
+      liveConnectionRecords.set(connection.id, { ...connection });
+    }
+  }
+  const storedIds = new Set(connections.map(({ id }) => id));
+  return {
+    records: [
+      ...connections,
+      ...[...liveConnectionRecords.values()].filter(({ id }) => !storedIds.has(id)),
+    ],
+    referencedIds,
+  };
+}
+
+/**
  * The connections list + persisted and window-scoped selections surfaced to
  * the renderer. The machine's own published self entry is hidden here —
  * connecting to yourself over WSS is meaningless when the same daemon is
  * already reachable as `local` — while the record stays in the store so the
  * keychain reconcile keeps pushing it to the user's OTHER devices (where it
- * must appear). Presentation-only: `getSelfPublishedState` still reports it
+ * must appear). Open windows retain their referenced records so their live
+ * renderer IDs remain valid; hidden self entries disappear after release.
+ * Presentation-only: `getSelfPublishedState` still reports it
  * as published. Detection matches the persisted self fingerprint AND the live
  * local daemon's cert fingerprint, so the entry hides even when this machine
  * never published it (e.g. it synced in from another device). The live probe
@@ -3612,6 +3649,8 @@ async function listConnectionsOriginal(
   // Kick off (or reuse) the live probe without awaiting it (see above).
   void getLiveSelfFingerprintOwned(undefined, owner);
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
+  const { records, referencedIds } = projectLiveConnectionRecords(connections);
+  const storedIds = new Set(connections.map(({ id }) => id));
   // Replay any sticky protocol mismatch / auth rejection for THIS WINDOW'S
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
   // created after the remote handshake already fired, a boot into
@@ -3626,8 +3665,8 @@ async function listConnectionsOriginal(
     getConnectionMode() === 'external' ? getLocalUpdateSupported() : null;
   const localMachineName = getLocalMachineName();
   return {
-    connections: connections
-      .filter((c) => !isSelfConnectionRecord(c, selfKeys))
+    connections: records
+      .filter((c) => referencedIds.has(c.id) || !isSelfConnectionRecord(c, selfKeys))
       .map((connection) => {
         const status = backendClients.get(connection.id)?.getStatus() ?? 'not-open';
         // `connectedDaemonVersions` only holds remote captures (the local id
@@ -3646,6 +3685,9 @@ async function listConnectionsOriginal(
           status === 'connected' ? connectedProviders.get(connection.id) : undefined;
         return {
           ...connection,
+          ...(!storedIds.has(connection.id) || isSelfConnectionRecord(connection, selfKeys)
+            ? { displayOnly: true as const }
+            : {}),
           ...(connection.id === LOCAL_CONNECTION_ID
             ? {
                 ...(localVersionInfo?.daemonVersion
@@ -4087,6 +4129,9 @@ export async function resolveBackendRecord(id: string): Promise<{
   if (id === LOCAL_CONNECTION_ID) return null;
   const owner = (await connectionsStore.list()).find((c) => c.id === id && !c.isLocal);
   if (owner && owner.host != null && owner.port != null && owner.fingerprint != null) {
+    // Capture before opening the renderer: dedup can remove this exact ID
+    // before its first connections:list. This copy never participates in dialing.
+    liveConnectionRecords.set(id, { ...owner });
     return {
       kind: 'owner',
       id,
@@ -4641,13 +4686,21 @@ export async function retryBackendConnection(id: string): Promise<boolean> {
  * as a guest.
  */
 export async function listMachineRailCandidateIds(): Promise<string[]> {
-  const [{ connections }, guests] = await Promise.all([
-    listConnections(),
+  // Eligibility must use the actual store, never the presentation snapshots
+  // retained for live renderers. Self records remain unavailable for new rails.
+  const [connections, guests, storedFingerprint] = await Promise.all([
+    connectionsStore.list(),
     guestSessionsStore.list(),
+    getStoredSelfFingerprint().catch(() => null),
   ]);
+  void getLiveSelfFingerprintOwned();
+  const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
   return [
     ...connections
-      .filter((connection) => connection.daemonMode !== 'node')
+      .filter(
+        (connection) =>
+          connection.daemonMode !== 'node' && !isSelfConnectionRecord(connection, selfKeys),
+      )
       .map((connection) => connection.id),
     ...guests.map((session) => session.id),
   ];
@@ -5852,6 +5905,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
+  liveConnectionRecords.clear();
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
   prMonitorRoutes?.dispose();
