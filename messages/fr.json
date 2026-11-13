@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Réessayer",
   "sessionImport_list_search_placeholder": "Rechercher des sessions",
   "sessionImport_list_untitled_label": "Session sans titre",
-  "sessionImport_picker_clear_ariaLabel": "Ne pas importer de session",
-  "sessionImport_picker_label": "Session",
   "sessionImport_picker_none_label": "Importer une session",
   "sessionImport_picker_note_description": "La session devient le premier agent, avec son historique. Les modifications non validées de son dossier ne sont pas copiées.",
   "settings_browserAccess_accessKey_description": "Un navigateur demande cette clé une seule fois. La réinitialiser déconnecte tous les navigateurs.",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "Le programme d’installation a échoué sur {host}.",
   "machineSetup_error_noLink": "Le programme d’installation n’a pas affiché de lien à temps.",
   "machineSetup_error_seeLog_hint": "Le journal ci-dessous montre ce qui s’est passé.",
-  "machineSetup_error_failed": "Un problème est survenu. Réessayez."
+  "machineSetup_error_failed": "Un problème est survenu. Réessayez.",
+  "sessionImport_tab_label": "Sessions",
+  "sessionImport_list_noRepository_reason": "Aucun dépôt git trouvé",
+  "sessionImport_list_refresh_label": "Actualiser"
 }

@@ -436,6 +436,12 @@ export interface OnboardingWorkspaceInitializationSubmission extends WorkspaceIn
   };
   treatAsNewRepo: boolean;
   effectiveBranch: string;
+  /** Onboarding → Sessions: the picked session becomes the first agent. */
+  importSession?: {
+    provider: string;
+    sessionId: string;
+    title: string;
+  };
   selectedModel?: string;
   selectedProvider?: string;
   modelWasOverridden: boolean;

@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Erneut versuchen",
   "sessionImport_list_search_placeholder": "Sitzungen durchsuchen",
   "sessionImport_list_untitled_label": "Unbenannte Sitzung",
-  "sessionImport_picker_clear_ariaLabel": "Keine Sitzung importieren",
-  "sessionImport_picker_label": "Sitzung",
   "sessionImport_picker_none_label": "Sitzung importieren",
   "sessionImport_picker_note_description": "Die Sitzung wird mit ihrem Verlauf zum ersten Agenten. Nicht committete Änderungen in ihrem Ordner werden nicht kopiert.",
   "settings_browserAccess_accessKey_description": "Ein Browser fragt einmal nach diesem Schlüssel. Wenn du ihn zurücksetzt, werden alle Browser abgemeldet.",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "Das Installationsprogramm ist auf {host} fehlgeschlagen.",
   "machineSetup_error_noLink": "Das Installationsprogramm hat nicht rechtzeitig einen Link ausgegeben.",
   "machineSetup_error_seeLog_hint": "Das Protokoll unten zeigt, was passiert ist.",
-  "machineSetup_error_failed": "Etwas ist schiefgelaufen. Versuche es erneut."
+  "machineSetup_error_failed": "Etwas ist schiefgelaufen. Versuche es erneut.",
+  "sessionImport_tab_label": "Sitzungen",
+  "sessionImport_list_noRepository_reason": "Kein Git-Repository gefunden",
+  "sessionImport_list_refresh_label": "Aktualisieren"
 }

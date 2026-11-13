@@ -3,15 +3,17 @@
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
-   * Tabbed picker: Clone | Existing folder | New (the New Workspace dialog's
-   * order). Clone is hidden once forge status is known and neither GitHub nor
-   * GitLab is connected; the step opens on Clone, or Existing folder when hidden.
+   * Tabbed picker: Clone | Existing folder | New | Sessions (the New Workspace
+   * dialog's order). Clone is hidden once forge status is known and neither
+   * GitHub nor GitLab is connected; the step opens on Clone, or Existing folder
+   * when hidden. Sessions shows on hosts with `sessionImport: 1`; it lists only
+   * once opened, and a picked session picks its codebase and base branch.
    * Pre-fills from Redux persistence. On valid selection:
    *   - emits project config
    *   - triggers sidebar slide-in
    *   - reveals Message 3
    */
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -34,6 +36,16 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
+  import ImportSessionTab from '$features/session-import/ImportSessionTab.svelte';
+  import {
+    importableSessionKey,
+    type SessionImportSelection,
+  } from '$features/session-import/importable-session';
+  import { resolveSessionBaseBranch } from '$features/session-import/session-base-branch';
+  import { selectSessionImportSupported } from '$store/renderer/slices/importable-sessions/importable-sessions-selectors';
+  import { importableSessionsReset } from '$store/renderer/slices/importable-sessions/importable-sessions-slice';
+  import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ProjectPickerMessage');
 
@@ -56,7 +68,7 @@
     return newProjectDefaultParent($defaultParentPath$, plainFolderMode);
   }
 
-  type TabId = 'local' | 'github' | 'new';
+  type TabId = 'local' | 'github' | 'new' | 'sessions';
 
   // Clone (the GitHub tab) is hidden once forge status is known and nothing is
   // connected; the onboarding forge step is where a forge gets connected.
@@ -77,6 +89,8 @@
      * `'new'` creates the folder without git. Never set with `initGit`.
      */
     plainFolder?: 'existing' | 'new';
+    /** Sessions tab: import this session as the first agent (type is `'local'`). */
+    importSession?: SessionImportSelection;
   }
 
   interface Props {
@@ -105,6 +119,38 @@
   // Tab state: Clone first, like New Workspace; the effect below moves to
   // Existing folder once Clone is hidden.
   let activeTab = $state<TabId>('github');
+
+  // Sessions tab state: the picked session, its codebase, and its base branch
+  // (null until the branch check settles; the selection is not valid meanwhile).
+  const sessionImportSupported$ = selectSessionImportSupported();
+  const knownRepos$ = selectKnownRepos();
+  const knownSessionRepos = $derived(
+    $knownRepos$
+      .filter((repo) => repo.path && !repo.githubUrl)
+      .map((repo) => ({ path: repo.path, type: 'local' as const })),
+  );
+  let sessionPick = $state<SessionImportSelection | null>(null);
+  let sessionBranch = $state('');
+  let sessionResolving = $state(false);
+  let sessionRevision = 0;
+
+  async function pickSession(session: SessionImportSelection) {
+    const revision = ++sessionRevision;
+    sessionPick = session;
+    sessionBranch = '';
+    sessionResolving = true;
+    notifyParent();
+    const base = session.repoRoot
+      ? await resolveSessionBaseBranch(session.repoRoot, session.gitBranch)
+      : null;
+    if (revision !== sessionRevision) return;
+    sessionBranch = base ?? '';
+    sessionResolving = false;
+    notifyParent();
+  }
+
+  // The listed sessions live as long as this step; the next open lists fresh.
+  onDestroy(() => appStore.dispatch(importableSessionsReset()));
 
   // Local repo state
   let localRepoPath = $state('');
@@ -291,6 +337,18 @@
   // Build the current selection from component state — called directly from event handlers
   // to avoid $effect → callback → state change → $effect infinite loops.
   function buildSelection(): ProjectSelection {
+    if (activeTab === 'sessions') {
+      const root = sessionPick?.repoRoot ?? '';
+      return {
+        type: 'local',
+        repoPath: root,
+        // Empty until the check settles; the prompt step's branch picker fills a default.
+        branch: sessionBranch,
+        projectName: sessionPick?.title.trim() || undefined,
+        isValid: !!sessionPick && !!root && !sessionResolving,
+        ...(sessionPick ? { importSession: $state.snapshot(sessionPick) } : {}),
+      };
+    }
     if (activeTab === 'local') {
       // A non-git folder outside any repository is git-initialized, or used as
       // a plain folder when "Initialize as git repository" is off.
@@ -438,9 +496,25 @@
       },
     },
   ];
-  const tabs = $derived(
-    $cloneSourceVisible$ ? allTabs : allTabs.filter((tab) => tab.id !== 'github'),
-  );
+  const sessionsTab: { id: TabId; label: string } = {
+    id: 'sessions',
+    get label() {
+      return m.sessionImport_tab_label();
+    },
+  };
+  const tabs = $derived([
+    ...($cloneSourceVisible$ ? allTabs : allTabs.filter((tab) => tab.id !== 'github')),
+    ...($sessionImportSupported$ ? [sessionsTab] : []),
+  ]);
+
+  // A host without session import must not leave the user on a hidden tab.
+  $effect(() => {
+    if (!$sessionImportSupported$ && activeTab === 'sessions')
+      untrack(() => {
+        activeTab = 'local';
+        notifyParent();
+      });
+  });
 </script>
 
 <!-- Message content — flies in from bottom -->
@@ -471,7 +545,7 @@
       {/each}
     </Tabs.List>
 
-    {#if initializeGitChoice.visible && activeTab !== 'github'}
+    {#if initializeGitChoice.visible && activeTab !== 'github' && activeTab !== 'sessions'}
       <InitializeGitToggle
         class="mt-4"
         folder={gitSwitchFolder}
@@ -525,6 +599,25 @@
                 if (typeof advance === 'function') advance();
               }}
             />
+          {:else if activeTab === 'sessions'}
+            <div
+              class="mt-4 flex h-90 flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground"
+            >
+              <ImportSessionTab
+                class="min-h-0 flex-1"
+                knownRepos={knownSessionRepos}
+                selectedKey={sessionPick ? importableSessionKey(sessionPick) : ''}
+                onselect={(session) => void pickSession(session)}
+              />
+            </div>
+            {#if sessionPick}
+              <p
+                class="type-caption mt-2 text-muted-foreground"
+                data-testid="onboarding-import-session-note"
+              >
+                {m.sessionImport_picker_note_description()}
+              </p>
+            {/if}
           {:else if activeTab === 'new'}
             <NewProjectTab
               {parentPath}

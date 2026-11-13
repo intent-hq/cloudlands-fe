@@ -35,6 +35,7 @@ export function admitLegacyPrincipal(
     workspaceLabels?: 1;
     workspaceAutoArchiveOptOut?: 1;
     gitlabCheckout?: boolean;
+    sessionImport?: 1;
   } = {},
 ): void {
   const { connections: current } = store.state;

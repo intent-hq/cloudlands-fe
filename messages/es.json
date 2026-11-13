@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "Reintentar",
   "sessionImport_list_search_placeholder": "Buscar sesiones",
   "sessionImport_list_untitled_label": "Sesión sin título",
-  "sessionImport_picker_clear_ariaLabel": "No importar una sesión",
-  "sessionImport_picker_label": "Sesión",
   "sessionImport_picker_none_label": "Importar una sesión",
   "sessionImport_picker_note_description": "La sesión pasa a ser el primer agente, con su historial. Los cambios sin confirmar de su carpeta no se copian.",
   "settings_browserAccess_accessKey_description": "Un navegador pide esta clave una vez. Al restablecerla se cierra la sesión en todos los navegadores.",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "El instalador falló en {host}.",
   "machineSetup_error_noLink": "El instalador no mostró un enlace a tiempo.",
   "machineSetup_error_seeLog_hint": "El registro de abajo muestra lo que pasó.",
-  "machineSetup_error_failed": "Algo salió mal. Inténtalo de nuevo."
+  "machineSetup_error_failed": "Algo salió mal. Inténtalo de nuevo.",
+  "sessionImport_tab_label": "Sesiones",
+  "sessionImport_list_noRepository_reason": "No se encontró ningún repositorio git",
+  "sessionImport_list_refresh_label": "Actualizar"
 }

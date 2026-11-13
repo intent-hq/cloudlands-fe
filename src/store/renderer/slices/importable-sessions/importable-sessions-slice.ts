@@ -2,8 +2,8 @@
  * importable-sessions slice — the sessions New Workspace → "Import a session"
  * offers (`agent.importableSessions.list`, spec "Wire contract (phase 1)").
  *
- * Components dispatch `importableSessionsRequested(query)` when the picker
- * mounts and as the user types; the saga debounces typed queries, calls the
+ * Components dispatch `importableSessionsRequested(query)` when the Sessions
+ * tab first opens and as the user types; the saga debounces typed queries, calls the
  * daemon and stores the newest-first page. The saga lists only on a host that
  * advertises `sessionImport: 1`.
  */
@@ -13,9 +13,10 @@ import {
   createCollection,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type {
-  ImportableSession,
-  ImportableSessionProvider,
+import {
+  importableSessionKey,
+  type ImportableSession,
+  type ImportableSessionProvider,
 } from '$features/session-import/importable-session';
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 
@@ -48,10 +49,6 @@ const initialState: ImportableSessionsState = {
   hasAny: false,
 };
 
-function importableSessionKey(session: Pick<ImportableSession, 'provider' | 'sessionId'>) {
-  return `${session.provider}:${session.sessionId}`;
-}
-
 /** Trigger: load the first page (empty query) or search (typed query), optionally for one provider. */
 export const importableSessionsRequested = createAction<[query: string, provider?: string]>(
   'importableSessions/requested',
@@ -76,6 +73,12 @@ export const importableSessionsLoaded = createAction<
 export const importableSessionsFailed = createAction<
   [query: string, error: string, provider?: string]
 >('importableSessions/failed');
+
+/**
+ * The picker that owned the list closed (dialog or onboarding step gone): drop
+ * the rows so the next open lists fresh sessions.
+ */
+export const importableSessionsReset = createAction('importableSessions/reset');
 
 export const importableSessionsReducer = createReducer<ImportableSessionsState>(initialState);
 
@@ -125,3 +128,4 @@ importableSessionsReducer.with(
 );
 
 importableSessionsReducer.with(hostExecutionConnectionChanged, () => initialState);
+importableSessionsReducer.with(importableSessionsReset, () => initialState);

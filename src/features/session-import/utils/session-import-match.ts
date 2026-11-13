@@ -97,3 +97,16 @@ export function cwdBasename(cwd: string): string {
   const index = normalized.lastIndexOf('/');
   return index >= 0 && index < normalized.length - 1 ? normalized.slice(index + 1) : normalized;
 }
+
+/**
+ * The codebase a session imports into: the daemon's `repoRoot`, else (older
+ * daemons omit it) the known local repository holding its cwd. Null when
+ * neither applies: the row is shown disabled.
+ */
+export function sessionCodebaseRoot(
+  session: { cwd: string; repoRoot?: string },
+  candidates: readonly SessionRepoCandidate[],
+): string | null {
+  if (session.repoRoot) return session.repoRoot;
+  return matchSessionRepository(session.cwd, candidates)?.path ?? null;
+}

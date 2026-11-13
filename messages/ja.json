@@ -2734,8 +2734,6 @@
   "sessionImport_list_retry_label": "再試行",
   "sessionImport_list_search_placeholder": "セッションを検索",
   "sessionImport_list_untitled_label": "無題のセッション",
-  "sessionImport_picker_clear_ariaLabel": "セッションをインポートしない",
-  "sessionImport_picker_label": "セッション",
   "sessionImport_picker_none_label": "セッションをインポート",
   "sessionImport_picker_note_description": "セッションは履歴付きで最初のエージェントになります。フォルダー内のコミットされていない変更はコピーされません。",
   "settings_browserAccess_accessKey_description": "ブラウザはこのキーを最初に 1 回だけ求めます。リセットするとすべてのブラウザがサインアウトします。",
@@ -9043,5 +9041,8 @@
   "machineSetup_error_installFailed": "{host} でインストーラが失敗しました。",
   "machineSetup_error_noLink": "インストーラが時間内にリンクを表示しませんでした。",
   "machineSetup_error_seeLog_hint": "何が起きたかは下のログで確認できます。",
-  "machineSetup_error_failed": "問題が発生しました。もう一度お試しください。"
+  "machineSetup_error_failed": "問題が発生しました。もう一度お試しください。",
+  "sessionImport_tab_label": "セッション",
+  "sessionImport_list_noRepository_reason": "git リポジトリが見つかりません",
+  "sessionImport_list_refresh_label": "更新"
 }
