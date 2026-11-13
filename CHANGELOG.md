@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.335.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.6...v2.335.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* model picker and turned-off provider alert on workspace suggestion cards ([#4582](https://github.com/intent-hq/cloudlands-fe/issues/4582)) ([bd8b8b6](https://github.com/intent-hq/cloudlands-fe/commit/bd8b8b60cef43a3ea354efc402557a1d5f43fbf2))
+
+
+### 🐛 Bug Fixes
+
+* don't adopt a disabled provider on workspace suggestion cards ([#4581](https://github.com/intent-hq/cloudlands-fe/issues/4581)) ([0b63009](https://github.com/intent-hq/cloudlands-fe/commit/0b63009af68b6f9ea4d3bebc80fd534173189852))
+
 ## [2.334.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.5...v2.334.6) (2026-11-13)
 
 
