@@ -50,6 +50,52 @@ test('subframe failures and cancelled navigations do not cover the page', async 
   }
 });
 
+test('main-frame same-document navigation clears the error without replacing the guest', async ({
+  mount,
+}) => {
+  const component = await mount(EmbeddedPreview, { props: { error: 'connection' } });
+  const error = component.locator('[data-browser-load-error]');
+  await expect(error).toBeVisible();
+  const guest = component.locator('webview');
+  await guest.evaluate((element) => {
+    element.dataset.retainedGuest = 'true';
+    element.dispatchEvent(
+      Object.assign(new Event('did-navigate-in-page'), {
+        isMainFrame: false,
+        url: 'https://iframe.invalid/#recovered',
+      }),
+    );
+  });
+  await expect(error).toBeVisible();
+  await guest.evaluate((element) => {
+    element.dispatchEvent(
+      Object.assign(new Event('did-navigate-in-page'), {
+        isMainFrame: true,
+        url: 'http://localhost:5173/#recovered',
+      }),
+    );
+  });
+  await expect(error).toHaveCount(0);
+  await expect(guest).toHaveAttribute('data-retained-guest', 'true');
+});
+
+test('a pending retry keeps keyboard focus outside the covered guest', async ({ mount }) => {
+  const component = await mount(EmbeddedPreview, { props: { error: 'connection' } });
+  const error = component.locator('[data-browser-load-error]');
+  await expect(error).toBeVisible();
+  const guest = component.locator('webview');
+  await guest.evaluate((element) => {
+    element.tabIndex = 0;
+    Object.assign(element, { reload: () => {} });
+  });
+  await error.getByRole('button', { name: 'Retry', exact: true }).click();
+  const refresh = component.getByRole('button', { name: 'Refresh page' });
+  await expect(refresh).toBeFocused();
+  await guest.focus();
+  await expect(refresh).toBeFocused();
+  await expect(error).toBeVisible();
+});
+
 for (const theme of ['light', 'dark'] as const) {
   test(`long preview errors keep keyboard recovery reachable in a narrow ${theme} panel`, async ({
     mount,

@@ -686,6 +686,7 @@
     addWebviewListener('did-navigate-in-page', (e: { url: string; isMainFrame: boolean }) => {
       // Iframe history changes must not replace the tab URL or webview src (intent#4767).
       if (!e.isMainFrame) return;
+      errorMessage = '';
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
@@ -951,8 +952,7 @@
     try {
       beginNavigation();
       webviewRef.reload?.();
-      // Re-focus the webview after reload to maintain focus state
-      webviewRef.focus?.();
+      if (!errorMessage) webviewRef.focus?.();
     } catch {
       // WebView not yet attached to DOM
     }
@@ -1228,6 +1228,7 @@
   <webview
     bind:this={webviewRef}
     class="w-full h-full border-none"
+    inert={!!errorMessage}
     src={untrack(() => currentWebviewUrl)}
     partition={BROWSER_PANEL_PARTITION}
     allowpopups
