@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.0...v2.334.1) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep follow off when a collapse clamps a short scroll ([#4576](https://github.com/intent-hq/cloudlands-fe/issues/4576)) ([1d84e4e](https://github.com/intent-hq/cloudlands-fe/commit/1d84e4e8e56839bc963505402f31ba8a2e110592))
+
 ## [2.334.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.333.0...v2.334.0) (2026-11-13)
 
 
