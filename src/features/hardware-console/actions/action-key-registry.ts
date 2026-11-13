@@ -415,11 +415,12 @@ function selectNextCycleStop(args: {
   const { entries, rankOf, tabIndex, cursor, currentWsId, focused } = args;
   const currentAnchor = currentWsId !== null && tabIndex.has(currentWsId) ? currentWsId : null;
   const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.entry.wsId);
+  // A null anchor is the strip's left edge (a round started off the strip),
+  // so it stays valid; only a new round or a closed tab re-anchors.
   const anchorWsId =
     cursor !== undefined &&
     cursorTab !== undefined &&
-    cursor.anchorWsId !== null &&
-    tabIndex.has(cursor.anchorWsId)
+    (cursor.anchorWsId === null || tabIndex.has(cursor.anchorWsId))
       ? cursor.anchorWsId
       : currentAnchor;
   const { ordered, keyOf, anchorTab } = buildCycleWalk(entries, rankOf, tabIndex, anchorWsId);
@@ -575,7 +576,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       let nextCursor: CycleCursor;
       if (retryIndex !== -1) {
         next = entries[retryIndex];
-        const anchorWsId = cursor?.anchorWsId ?? activeWorkspaceId(context);
+        const anchorWsId = cursor !== undefined ? cursor.anchorWsId : activeWorkspaceId(context);
         const { ordered } = buildCycleWalk(entries, rankOf, tabIndex, anchorWsId);
         nextCursor = makeCycleCursor(ordered, next, rankOf, anchorWsId);
       } else {

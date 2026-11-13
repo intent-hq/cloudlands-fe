@@ -1686,6 +1686,33 @@ describe('cycling follows the top workspace tabs', () => {
     ]);
   });
 
+  it('a round started off the strip keeps its left-edge order after navigating', () => {
+    const options = {
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['u-1'] },
+        'ws-2': { ids: ['x-2'] },
+        'ws-3': { ids: ['b-3'] },
+        'ws-4': { ids: ['u-4'] },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-4'],
+      sessionOverrides: { 'b-3': { attentionRequestKind: 'blocker' } },
+    };
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const fromHome = makeContext(makeState({ ...options, currentWorkspaceId: null }));
+    definition.execute(fromHome.context);
+    expect(activeAgentDispatches(fromHome.dispatch)).toEqual([['ws-3', 'b-3']]);
+
+    // Navigation landed on ws-3: the round keeps walking from the left edge.
+    const onTab = makeContext(makeState({ ...options, currentWorkspaceId: 'ws-3' }));
+    definition.execute(onTab.context);
+    definition.execute(onTab.context);
+    expect(activeAgentDispatches(onTab.dispatch)).toEqual([
+      ['ws-1', 'u-1'],
+      ['ws-4', 'u-4'],
+    ]);
+  });
+
   it('the first press skips the workspace-level stop of the current tab', () => {
     const state = makeState({
       currentWorkspaceId: 'ws-2',
