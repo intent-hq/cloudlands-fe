@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.334.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.1...v2.334.2) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.204 ([#4579](https://github.com/intent-hq/cloudlands-fe/issues/4579)) ([099c53d](https://github.com/intent-hq/cloudlands-fe/commit/099c53d0f7ddf71685e06b0b96bcdd2a90b571cf))
+* **machine-rail:** keep inactive titlebars from blocking tab clicks ([#4578](https://github.com/intent-hq/cloudlands-fe/issues/4578)) ([6190b7b](https://github.com/intent-hq/cloudlands-fe/commit/6190b7b3b07b83303a9a9604a3bf53ceaf98c208))
+
 ## [2.334.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.0...v2.334.1) (2026-11-13)
 
 
