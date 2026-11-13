@@ -428,7 +428,9 @@ interface GlobalCycleSpec {
  * tab order), step to the entry after the walk anchor (the family's own
  * cursor when it is still a candidate, else the first stop after the
  * cursor's position in its group and tab order, else the focused agent,
- * wrapping), switch workspace
+ * else — when the cursor's tab was closed — the first stop in its group at
+ * or after the current tab; on a first press, the first top-group stop at
+ * or after the current tab; wrapping), switch workspace
  * when needed, and focus the agent's tab + composer. The cursor is
  * preferred because the state anchor can lag or be re-pointed between
  * presses (async navigation, workspace loaders) — anchoring on it alone is
@@ -513,6 +515,34 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           index = (resume === -1 ? entries.length : resume) - 1;
         } else if (index === -1 && focused !== null) {
           index = entries.findIndex((e) => e.agentId === focused);
+        }
+        const currentWsId = activeWorkspaceId(context);
+        const currentTab = currentWsId === null ? undefined : tabIndex.get(currentWsId);
+        if (
+          index === -1 &&
+          cursor !== undefined &&
+          cursorTab === undefined &&
+          currentTab !== undefined
+        ) {
+          // The last visited tab was closed: continue in the cursor's group
+          // from the current tab rightwards instead of restarting at the left.
+          const resume = entries.findIndex((e) => {
+            const rank = rankOf(e);
+            if (rank !== cursor.rank) return rank > cursor.rank;
+            return (tabIndex.get(e.wsId) ?? 0) >= currentTab;
+          });
+          index = (resume === -1 ? entries.length : resume) - 1;
+        } else if (index === -1 && cursor === undefined && currentTab !== undefined) {
+          // First press: start in the top group at the current tab, wrapping
+          // within that group so a higher-priority stop on an earlier tab
+          // still comes before lower-priority ones.
+          const topRank = Math.min(...entries.map(rankOf));
+          const atOrAfter = entries.findIndex(
+            (e) => rankOf(e) === topRank && (tabIndex.get(e.wsId) ?? 0) >= currentTab,
+          );
+          const start =
+            atOrAfter === -1 ? entries.findIndex((e) => rankOf(e) === topRank) : atOrAfter;
+          index = start - 1;
         }
         next = entries[(index + 1) % entries.length];
       }
