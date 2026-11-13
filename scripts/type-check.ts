@@ -21,7 +21,11 @@ try {
 
   if (!quiet) console.log('✅ Type check passed');
   process.exit(0);
-} catch {
-  if (!quiet) console.error('❌ Type check failed');
+} catch (error) {
+  // Quiet hides progress, never the diagnostics (manual signed build run 43173439392).
+  if (quiet) {
+    const { stdout, stderr } = error as { stdout?: string; stderr?: string };
+    process.stderr.write(`${stdout ?? ''}${stderr ?? ''}`);
+  } else console.error('❌ Type check failed');
   process.exit(1);
 }
