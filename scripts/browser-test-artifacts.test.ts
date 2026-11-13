@@ -165,6 +165,42 @@ describe('browser artifact producer contract', () => {
     },
   );
 
+  it('records Build Smoke inside its uploaded report folder, also when the build failed first', () => {
+    const dir = directory();
+    const failed = run(dir, ['record', 'build-smoke', '1'], { BROWSER_JOB_STATUS: 'failure' });
+    expect(failed.status, failed.stderr).toBe(0);
+    expect(
+      JSON.parse(readFileSync(join(dir, 'e2e-reports/build-smoke-outcome.json'), 'utf8')),
+    ).toMatchObject({
+      suite: 'build-smoke',
+      artifactName: 'build-smoke-reports',
+      testOutcome: 'skipped',
+      jobStatus: 'failure',
+      reportPresent: false,
+    });
+    mkdirSync(join(dir, 'e2e-reports/packaged-run/default-suite'), { recursive: true });
+    writeFileSync(
+      join(dir, 'e2e-reports/packaged-run/default-suite/results.json'),
+      JSON.stringify({ suites: [{ specs: [{ tests: [testRecord()] }] }] }),
+    );
+    const passed = run(dir, ['record', 'build-smoke', '1'], {
+      BROWSER_TEST_OUTCOME: 'success',
+      BROWSER_JOB_STATUS: 'success',
+    });
+    expect(passed.status, passed.stderr).toBe(0);
+    expect(
+      JSON.parse(readFileSync(join(dir, 'e2e-reports/build-smoke-outcome.json'), 'utf8')),
+    ).toMatchObject({ testOutcome: 'success', reportPresent: true, testCount: 1, testFilter: '' });
+    run(dir, ['record', 'build-smoke', '1'], {
+      BROWSER_TEST_OUTCOME: 'success',
+      BROWSER_JOB_STATUS: 'success',
+      BROWSER_TEST_FILTER: 'multi-agent',
+    });
+    expect(
+      JSON.parse(readFileSync(join(dir, 'e2e-reports/build-smoke-outcome.json'), 'utf8')),
+    ).toMatchObject({ testFilter: 'multi-agent' });
+  });
+
   it('marks a never-started step as skipped, without inventing a Playwright report', () => {
     const dir = directory();
     expect(run(dir, ['record', 'electron', '1'], { BROWSER_JOB_STATUS: 'cancelled' }).status).toBe(

@@ -134,8 +134,9 @@ jobs:
       # interpolation: a regex such as (a|b) or a|b interpolated into the
       # command line is parsed by bash (syntax error / command not found).
       - name: Build smoke tests
+        id: smoke
         # 780s test + 20s termination + 120s capture + 60s receipts < 18min.
-        # All steps total 57min, retaining 3min of the 60min job for postlude.
+        # All steps total 58min, retaining 2min of the 60min job for postlude.
         timeout-minutes: 18
         env:
           PACKAGED_APP_PATH: ${{ steps.app.outputs.path }}
@@ -151,6 +152,19 @@ jobs:
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
             pnpm run test:build-smoke "${args[@]}"
 
+      # Evidence for nightly-browser-report.yml, which files tracker issues for
+      # scheduled and manual main runs (cancelled runs are skipped). Runs after a
+      # failed build too, so a broken package is reported as missing evidence.
+      - name: Record build smoke outcome
+        if: ${{ !cancelled() }}
+        timeout-minutes: 1
+        env:
+          BROWSER_TEST_OUTCOME: ${{ steps.smoke.outcome }}
+          BROWSER_JOB_STATUS: ${{ job.status }}
+          # A --grep subset is not nightly evidence; the reporter files nothing for it.
+          BROWSER_TEST_FILTER: ${{ inputs.grep }}
+        run: node scripts/browser-test-artifacts.mjs record build-smoke 1
+
       # e2e-reports/build-smoke/: Electron main/renderer logs + spec screenshots
       # (written relative to the repo root). e2e/e2e-reports/: Playwright's
       # outputDir/HTML report (resolved from e2e/build-smoke.config.ts) with
@@ -161,6 +175,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-smoke-reports
+          # Keep both paths: their common root keeps the e2e-reports/ prefix that
+          # BUILD_SMOKE_ARTIFACTS (scripts/browser-test-artifacts.mjs) reads.
           path: |
             e2e-reports/
             e2e/e2e-reports/
