@@ -51,6 +51,23 @@ function agentSetupOverrides(
   return overrides;
 }
 
+/**
+ * The card's Model row pick (`editedFields.agentPick`), or `undefined` when
+ * the user picked nothing. A blank effort is the wire's explicit clear.
+ */
+function agentPickOverrides(
+  value: unknown,
+): Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> | undefined {
+  const pick = recordValue(value);
+  if (!pick) return undefined;
+  const overrides: Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> =
+    {};
+  if (typeof pick.provider === 'string' && pick.provider) overrides.provider = pick.provider;
+  if (typeof pick.model === 'string' && pick.model) overrides.model = pick.model;
+  if (typeof pick.reasoningEffort === 'string') overrides.reasoningEffort = pick.reasoningEffort;
+  return overrides;
+}
+
 function withoutSpecialist(metadata: Record<string, unknown>): Record<string, unknown> {
   const next = { ...metadata };
   delete next.specialist;
@@ -107,17 +124,15 @@ export function buildCreateWorkspaceRequestFromProposal(
   if (placementEdit === null) delete initialAgentFields.placement;
   else if (recordValue(placementEdit))
     initialAgentFields.placement = placementEdit as InitialAgentRequest['placement'];
-  // A provider the user picked on the card because the agent's own one is
-  // turned off replaces the proposal's and any remembered provider, model and
-  // effort as a whole, so the daemon starts that provider's default model.
-  const providerOverride =
-    typeof editedFields?.providerOverride === 'string' && editedFields.providerOverride
-      ? editedFields.providerOverride
-      : undefined;
-  if (providerOverride) {
-    initialAgentFields.provider = providerOverride;
+  // The card's Model row pick (provider, model, effort) replaces the
+  // proposal's and any remembered setup as a whole: only what the picker
+  // showed is sent, never mixed with values it didn't show.
+  const agentPick = agentPickOverrides(editedFields?.agentPick);
+  if (agentPick) {
+    delete initialAgentFields.provider;
     delete initialAgentFields.model;
     delete initialAgentFields.reasoningEffort;
+    Object.assign(initialAgentFields, agentPick);
   }
 
   const githubUrl = stringOverride(
@@ -159,7 +174,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     ...(options.origin ? { origin: options.origin } : {}),
     initialAgent: {
       ...initialAgentFields,
-      ...(providerOverride ? {} : agentSetupOverrides(editedFields?.agentSetup, initialAgent)),
+      ...(agentPick ? {} : agentSetupOverrides(editedFields?.agentSetup, initialAgent)),
       name: payloadName ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,

@@ -91,6 +91,10 @@ const electronBridgeMocks = vi.hoisted(() => ({
 vi.mock('./ProposalStartOn.svelte', async () => ({
   default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
 }));
+// The Model row reuses New Workspace's ModelPicker, covered by its own tests.
+vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
+  default: (await import('./__tests__/MockModelPicker.svelte')).default,
+}));
 vi.mock('$lib/electron-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
   invoke: electronBridgeMocks.invoke,
@@ -283,16 +287,6 @@ vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) =
   },
 }));
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
-  // Enabled providers the alert offers (the turned-off one never is).
-  selectAvailableEnabledProviderIds: () => ({
-    subscribe: (run: (value: string[]) => void) => {
-      const emit = (enabled: Record<string, boolean>) =>
-        run(['codex', 'claude-code'].filter((id) => enabled[id] !== false));
-      emit(enabledProvidersState.value);
-      enabledProvidersState.listeners.add(emit);
-      return () => enabledProvidersState.listeners.delete(emit);
-    },
-  }),
   selectEnabledProviders: () => ({
     subscribe: (run: (value: Record<string, boolean>) => void) => {
       run(enabledProvidersState.value);
@@ -433,6 +427,7 @@ function makeWorkspaceProposal(
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'));
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSpecialistDropdown.svelte'));
+warmImport(() => import('./__tests__/MockModelPicker.svelte'));
 
 describe('ProposalCard', () => {
   it('renders lifecycle progress, disabled controls, and aria-live status', () => {
@@ -669,10 +664,10 @@ describe('ProposalCard', () => {
 
     const rows = Array.from(container.querySelectorAll('[data-row="metadata"]'));
 
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(
       rows.map((row) => row.querySelector('[data-metadata-label]')?.textContent?.trim()),
-    ).toEqual(['Project', 'Initial agent']);
+    ).toEqual(['Project', 'Initial agent', 'Model']);
     for (const row of rows) {
       expect(row.querySelector('[data-metadata-label]')?.className).toContain(
         'text-muted-foreground',
@@ -687,6 +682,7 @@ describe('ProposalCard', () => {
       rows[0],
     );
     expect(screen.getByTestId('proposal-specialist-dropdown')).toBe(rows[1]);
+    expect(screen.getByTestId('proposal-model-row')).toBe(rows[2]);
     const pickerMocks = screen.getAllByTestId('mock-repo-and-branch-picker');
     expect(pickerMocks.map((picker) => picker.getAttribute('data-field'))).toEqual([
       'repo',
@@ -2072,6 +2068,77 @@ describe('ProposalCard', () => {
     });
   });
 
+  describe('Model row', () => {
+    const sibling = {
+      mode: 'sibling' as const,
+      title: 'Investigate follow-up',
+      initialPrompt: 'Inspect the separate issue.',
+      repoPath: '/repo/current',
+      branch: 'main',
+      specialist: 'implementor',
+    };
+
+    function renderCard(initialAgent: Record<string, unknown> = {}) {
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal(
+            { workspaceCreate: sibling },
+            { initialAgent: { prompt: 'Inspect the separate issue.', ...initialAgent } },
+          ),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      return async () => {
+        await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+        const call = applyListener.mock.calls.at(-1)?.[0] as CustomEvent | undefined;
+        return call?.detail.editedFields as Record<string, unknown> | undefined;
+      };
+    }
+
+    it("shows the proposal's provider, model and effort and sends no pick untouched", async () => {
+      const appliedFields = renderCard({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        reasoningEffort: 'low',
+      });
+      const picker = screen.getByTestId('mock-model-picker');
+      expect(picker.dataset).toMatchObject({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        effort: 'low',
+      });
+      expect(await appliedFields()).not.toHaveProperty('agentPick');
+    });
+
+    it('keeps the shown provider and model with a picked effort', async () => {
+      const appliedFields = renderCard({ provider: 'claude-code', model: 'claude-opus-4-5' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock pick high effort' }));
+      expect((await appliedFields())?.agentPick).toEqual({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        reasoningEffort: 'high',
+      });
+    });
+
+    it("starts a picked model on its own effort, not the proposal's", async () => {
+      const appliedFields = renderCard({ provider: 'claude-code', reasoningEffort: 'max' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock pick Codex model' }));
+      expect(screen.getByTestId('mock-model-picker').dataset.effort).toBe('');
+      expect((await appliedFields())?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
+    });
+
+    it('resets the picked model when another agent is picked, like New Workspace', async () => {
+      const appliedFields = renderCard();
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock pick Codex model' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      expect(screen.getByTestId('mock-model-picker').dataset.provider).toBe('');
+      expect(await appliedFields()).not.toHaveProperty('agentPick');
+    });
+  });
+
   describe("agent pinned to a provider that's turned off", () => {
     const TEAM_OPUS_HIGH = {
       isTeamMode: false,
@@ -2111,18 +2178,8 @@ describe('ProposalCard', () => {
       return { applyButton, appliedFields };
     }
 
-    async function pickProvider(name: string) {
-      const trigger = screen.getByRole('combobox');
-      trigger.focus();
-      await fireEvent.keyDown(trigger, { key: 'Enter' });
-      const option = await screen.findByRole('option', { name });
-      // Keyboard selection: arrow to the option, then Enter.
-      for (let step = 0; step < 5 && option.getAttribute('data-highlighted') === null; step++) {
-        await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-      }
-      await fireEvent.keyDown(trigger, { key: 'Enter' });
-      await waitFor(() => expect(trigger.textContent).toContain(name));
-    }
+    const picker = () => screen.getByTestId('mock-model-picker');
+    const pick = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 
     beforeEach(() => {
       specialistsState.specialists = [
@@ -2132,45 +2189,59 @@ describe('ProposalCard', () => {
       enabledProvidersState.set({ auggie: false });
     });
 
-    it('shows the alert and blocks Apply until a provider is picked', async () => {
+    it('shows the alert and blocks Apply until a model from another provider is picked', async () => {
       const { applyButton, appliedFields } = renderSibling();
 
       const alert = screen.getByTestId('proposal-provider-alert');
       expect(alert.textContent).toContain('Implementor');
       expect(alert.textContent).toContain('Auggie');
+      // The alert has no picker of its own: the Model row shows the pin.
+      expect(alert.querySelector('[role="combobox"]')).toBeNull();
+      expect(picker().dataset.provider).toBe('auggie');
       expect((applyButton() as HTMLButtonElement).disabled).toBe(true);
       expect(await appliedFields()).toBeUndefined();
-
-      // Only enabled providers are offered.
-      const trigger = screen.getByRole('combobox');
-      trigger.focus();
-      await fireEvent.keyDown(trigger, { key: 'Enter' });
-      const options = (await screen.findAllByRole('option')).map((o) => o.textContent?.trim());
-      expect(options).toEqual(['Codex', 'Claude Code']);
-      await fireEvent.keyDown(trigger, { key: 'Escape' });
     });
 
-    it('sends the picked provider for this workspace only', async () => {
+    it("sends the Model row's provider, model and effort for this workspace only", async () => {
       const { applyButton, appliedFields } = renderSibling();
 
-      await pickProvider('Codex');
+      await pick('Mock pick Codex model');
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect(picker().dataset.provider).toBe('codex');
+      expect(picker().dataset.model).toBe('gpt-5.5');
+      await pick('Mock pick high effort');
       expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
       const fields = await appliedFields();
-      expect(fields).toMatchObject({ specialist: 'implementor', providerOverride: 'codex' });
+      expect(fields).toMatchObject({
+        specialist: 'implementor',
+        agentPick: { provider: 'codex', model: 'gpt-5.5', reasoningEffort: 'high' },
+      });
       expect(fields).not.toHaveProperty('agentSetup');
     });
 
-    it('never mixes the picked provider with a remembered setup', async () => {
+    it('never mixes the picked model with a remembered setup', async () => {
       // The remembered setup's provider is off too, so the pin decides.
       enabledProvidersState.set({ auggie: false, 'claude-code': false });
       newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
       const { appliedFields } = renderSibling({ specialist: undefined });
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
-      await pickProvider('Codex');
+      await pick('Mock pick Codex model');
       const fields = await appliedFields();
-      expect(fields?.providerOverride).toBe('codex');
+      expect(fields?.agentPick).toEqual({ provider: 'codex', model: 'gpt-5.5' });
       expect(fields).not.toHaveProperty('agentSetup');
+    });
+
+    it('drops a picked model when its provider is turned off', async () => {
+      enabledProvidersState.set({ auggie: false });
+      const { applyButton } = renderSibling();
+
+      await pick('Mock pick Claude model');
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
+      enabledProvidersState.set({ auggie: false, 'claude-code': false });
+      await tick();
+      expect(screen.getByTestId('proposal-provider-alert')).toBeTruthy();
+      expect((applyButton() as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('shows no alert when an enabled remembered provider overrides the pin', async () => {
@@ -2189,7 +2260,7 @@ describe('ProposalCard', () => {
       expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
       const fields = await appliedFields();
       expect(fields?.specialist).toBe('ui-designer');
-      expect(fields).not.toHaveProperty('providerOverride');
+      expect(fields).not.toHaveProperty('agentPick');
     });
 
     it('clears the alert when the pinned provider is turned back on', async () => {
@@ -2228,8 +2299,12 @@ describe('ProposalCard', () => {
       // Retry stays available: the provider may have been turned back on.
       expect((applyButton() as HTMLButtonElement).disabled).toBe(false);
 
-      await pickProvider('Claude Code');
-      expect((await appliedFields())?.providerOverride).toBe('claude-code');
+      await pick('Mock pick Claude model');
+      expect(screen.queryByTestId('proposal-provider-alert')).toBeNull();
+      expect((await appliedFields())?.agentPick).toEqual({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+      });
     });
 
     it('drops the refusal alert once another agent is picked', async () => {

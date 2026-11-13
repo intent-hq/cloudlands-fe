@@ -7,7 +7,7 @@
     return setupProviderDisablePreview('signed-out', auggieEnabled);
   }
 
-  type Scene = 'pinned-off' | 'refused';
+  type Scene = 'default' | 'pinned-off' | 'refused';
 
   interface Props {
     state?: Scene;
@@ -16,10 +16,13 @@
   const scene = (state: Scene) => ({ props: { state } });
   export const preview = definePreview<Props>({
     id: 'proposal-provider-alert',
-    title: 'Workspace proposal turned-off provider',
+    title: 'Workspace proposal model row and turned-off provider',
     defaultState: 'pinned-off',
     states: {
-      // The suggested agent is pinned to Auggie, which is turned off: Apply waits for a pick.
+      // Auggie is on: the Model row shows the agent's provider and Apply is ready.
+      default: scene('default'),
+      // The suggested agent is pinned to Auggie, which is turned off: Apply waits for
+      // a model from another provider in the Model row.
       'pinned-off': scene('pinned-off'),
       // workspace.create refused Auggie although the card thought it was on.
       refused: scene('refused'),
@@ -42,7 +45,7 @@
   const s = untrack(() => current);
 
   // Restores the providers and the specialists it replaced.
-  onDestroy(setupProviders(s === 'refused'));
+  onDestroy(setupProviders(s !== 'pinned-off'));
   store.dispatch(
     setFileSpecialists([
       {

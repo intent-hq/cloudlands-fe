@@ -224,19 +224,43 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
   });
 
-  it("replaces the proposal's and the remembered provider, model and effort with a picked provider", () => {
+  it("replaces the proposal's and the remembered provider, model and effort with the picked ones", () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
         repositoryPath: '/repo',
-        initialAgent: { prompt: 'Go', provider: 'auggie', model: 'auggie-fixture' },
+        initialAgent: {
+          prompt: 'Go',
+          provider: 'auggie',
+          model: 'auggie-fixture',
+          reasoningEffort: 'low',
+        },
       }),
       {
         specialist: 'implementor',
-        providerOverride: 'codex',
-        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+        agentPick: { provider: 'codex', model: 'gpt-5.5', reasoningEffort: 'high' },
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'max' },
       },
     );
-    expect(request.initialAgent).toMatchObject({ specialist: 'implementor', provider: 'codex' });
+    expect(request.initialAgent).toMatchObject({
+      specialist: 'implementor',
+      provider: 'codex',
+      model: 'gpt-5.5',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it("never keeps a proposal model or effort the pick didn't include", () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: '/repo',
+        initialAgent: { prompt: 'Go', provider: 'auggie', model: 'auggie-fixture', reasoningEffort: 'low' },
+      }),
+      {
+        agentPick: { provider: 'codex' },
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'max' },
+      },
+    );
+    expect(request.initialAgent.provider).toBe('codex');
     expect(request.initialAgent).not.toHaveProperty('model');
     expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
   });
@@ -248,9 +272,9 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         repositoryPath: '/repo',
         initialAgent: { prompt: 'Go', placement: { target: 'local', checkout: 'worktree' } },
       }),
-      { providerOverride: 'codex', placement },
+      { agentPick: { provider: 'codex', model: 'gpt-5.5' }, placement },
     );
-    expect(request.initialAgent).toMatchObject({ provider: 'codex', placement });
+    expect(request.initialAgent).toMatchObject({ provider: 'codex', model: 'gpt-5.5', placement });
   });
 
   it('ignores a malformed adopted setup', () => {

@@ -64,6 +64,9 @@ function notifySubscribers(): void {
 vi.mock('./ProposalStartOn.svelte', async () => ({
   default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
 }));
+vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
+  default: (await import('./__tests__/MockModelPicker.svelte')).default,
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: vi.fn(() =>
     readable(() => ({
@@ -159,12 +162,6 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectEnabledProviders: () => ({
     subscribe: (run: (value: Record<string, boolean>) => void) => {
       run({});
-      return () => {};
-    },
-  }),
-  selectAvailableEnabledProviderIds: () => ({
-    subscribe: (run: (value: string[]) => void) => {
-      run([]);
       return () => {};
     },
   }),
