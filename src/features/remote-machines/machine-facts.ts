@@ -70,7 +70,8 @@ export function machineRowProviders(
 /**
  * The providers a machine could run once Node.js is installed: those its
  * last report marks `prerequisite-missing` (they run through `npx`, which
- * fetches the CLI itself). Empty when the report is not usable.
+ * fetches their pinned adapter). Others may still lack their own CLI.
+ * Empty when the report is not usable.
  */
 export function machineRowNeedsNode(
   machine: RemoteMachine | null,

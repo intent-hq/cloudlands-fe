@@ -5,6 +5,7 @@
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
+  import { getActiveLocale } from '$lib/i18n/locale';
   import type { MachineRowProvider } from './machine-facts';
 
   let {
@@ -15,7 +16,7 @@
     providers: MachineRowProvider[];
     /** The list comes from a report: an empty one says no provider is ready. */
     reported?: boolean;
-    /** Providers that would run once Node.js is installed (`npx` fetches them). */
+    /** Providers that would run once Node.js is installed (`npx` fetches their adapter). */
     needsNode?: string[];
   } = $props();
 </script>
@@ -54,7 +55,12 @@
   </span>
 {:else if reported && needsNode.length > 0}
   <Tooltip
-    content={m.remoteMachines_needsNode_tooltip({ providers: needsNode.join(', ') })}
+    content={m.remoteMachines_needsNode_tooltip({
+      providers: new Intl.ListFormat(getActiveLocale(), {
+        style: 'long',
+        type: 'conjunction',
+      }).format(needsNode),
+    })}
     class="ml-1 inline-flex border-l border-border pl-2"
   >
     <span data-machine-needs-node>{m.remoteMachines_needsNode_label()}</span>
