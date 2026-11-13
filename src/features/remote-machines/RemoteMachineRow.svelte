@@ -91,7 +91,7 @@
     {#snippet title()}{machine.name}{/snippet}
     {#snippet meta()}
       {#if order?.preferred}<PreferredMachineBadge />{/if}
-      <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
+      <RemoteMachineBadge {machine} backendLabel={$backendLabel$} exceptionsOnly={!!order} />
       {#if platform}<span>{platform}</span>{/if}
       {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
       {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}

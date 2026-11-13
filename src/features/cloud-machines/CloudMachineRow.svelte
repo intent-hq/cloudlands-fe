@@ -140,6 +140,9 @@
     }
   });
 
+  // The ordered list's title already says the entry runs agents; the dot carries it instead.
+  const pillHidden = $derived(!!order && entry?.state === 'ready');
+
   const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
 
   function ownActions(): ActionDefinition[] {
@@ -194,7 +197,9 @@
             'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
             status?.dot ?? 'bg-transparent',
           )}
-          aria-hidden="true"
+          role={pillHidden ? 'img' : undefined}
+          aria-label={pillHidden ? status?.label : undefined}
+          aria-hidden={pillHidden ? undefined : 'true'}
         ></span>
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
@@ -220,7 +225,7 @@
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if status}
-          <Badge variant="dot" color={status.color}>{status.label}</Badge>
+          {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}
           {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
           {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
               >{entry.northflank.region}</span

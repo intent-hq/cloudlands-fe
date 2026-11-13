@@ -14,6 +14,7 @@
       member: state('member'),
       saving: state('saving'),
       unsupported: state('unsupported'),
+      exceptions: state('exceptions'),
     },
     captureReadiness: { selector: '[data-machine-order-section], [data-nodes-section]' },
   });

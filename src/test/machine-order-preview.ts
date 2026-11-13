@@ -9,7 +9,7 @@ import {
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
-export type MachineOrderPreviewState = 'owner' | 'member' | 'saving' | 'unsupported';
+export type MachineOrderPreviewState = 'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
@@ -49,14 +49,20 @@ const ORDER: MachineOrderRow[] = [
  * a node, the backend itself, cloud entries and an exposed full daemon.
  */
 export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
-  const restoreCloud = setupCloudMachinesFixture('entries');
+  const exceptions = state === 'exceptions';
+  const restoreCloud = setupCloudMachinesFixture(exceptions ? 'entries-key-rejected' : 'entries');
   const ordered = state !== 'unsupported';
   store.dispatch(
     remoteMachinesLoaded({
       supported: true,
       machineOrder: ordered,
       order: ordered ? ORDER : null,
-      machines: [STUDIO, GARAGE],
+      machines: exceptions
+        ? [
+            { ...STUDIO, state: 'update-required' },
+            { ...GARAGE, state: 'unreachable' },
+          ]
+        : [STUDIO, GARAGE],
       localFingerprint: 'EE:FF',
       executorBackends: [],
     }),
