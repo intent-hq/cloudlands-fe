@@ -288,8 +288,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       const wheel = userStateWheel;
       userStateWheel = undefined;
       if (destroyed || !enabled) return;
-      if (wheel && !hasDownwardIntent(wheel)) return;
-      if (hasReachedBottom(readScrollGeometry(), hasDownwardIntent())) follower.followAndScroll();
+      if (!hasDownwardIntent(wheel)) return;
+      if (hasReachedBottom(readScrollGeometry(), true)) follower.followAndScroll();
       else reportState();
     });
   }
@@ -592,10 +592,20 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // Re-lock as the downward gesture lands, before streamed growth can
       // move the bottom away ahead of the gesture's frame check. A scroll
       // that moved up (a collapse clamp) is layout, not the gesture landing.
-      const movedDown = !geometry.previous || geometry.scrollTop > geometry.previous.scrollTop;
-      if (!isFollowing && movedDown && hasDownwardIntent() && hasReachedBottom(geometry, true)) {
-        follower.followAndScroll();
-        return;
+      if (!isFollowing && pendingDownward) {
+        const previous = geometry.previous;
+        if (previous && geometry.scrollTop < previous.scrollTop) {
+          // A downward gesture never moves up: this is a layout clamp, and
+          // the gesture's later checks must not treat it as landing.
+          pendingDownward = null;
+        } else if (
+          (!previous || geometry.scrollTop > previous.scrollTop) &&
+          hasDownwardIntent() &&
+          hasReachedBottom(geometry, true)
+        ) {
+          follower.followAndScroll();
+          return;
+        }
       }
       if (isFollowing) geometry = setExactBottom(geometry);
       reportState(geometry);

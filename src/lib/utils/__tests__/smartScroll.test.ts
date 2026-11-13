@@ -1697,6 +1697,30 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it.each(['scrollend', 'frame check'])(
+    'does not re-lock from the %s after a collapse clamps the reader to the bottom',
+    (completion) => {
+      const action = followBottom(container, { follow: false });
+      scrollTop = 300;
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 260 }));
+      scrollTop = 560;
+      container.dispatchEvent(new Event('scroll'));
+      if (completion === 'scrollend') runFrame();
+      scrollHeight = 760;
+      scrollTop = 460;
+      container.dispatchEvent(new Event('scroll'));
+      if (completion === 'scrollend') container.dispatchEvent(new Event('scrollend'));
+      else runFrame();
+      scrollHeight += 80;
+      fireResize();
+      runSettleTail();
+
+      expect(isFollowingBottom(container)).toBe(false);
+      expect(scrollTop).toBe(460);
+      action.destroy();
+    },
+  );
+
   it('re-locks on End without waiting for the scroll to land', () => {
     const followChanges: boolean[] = [];
     const action = followBottom(container, {
