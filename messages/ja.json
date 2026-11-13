@@ -8982,7 +8982,6 @@
   "machineSetup_method_ariaLabel": "インストール方法",
   "machineSetup_method_ssh_label": "SSH でセットアップしてもらう",
   "machineSetup_method_ssh_description": "Linux コンピュータのみ。サインインすると、Intent がインストール、起動、追加を行います。",
-  "machineSetup_method_recommended_label": "おすすめ",
   "machineSetup_method_manual_label": "自分で実行する",
   "machineSetup_method_manual_description": "もう一方のコンピュータで実行するコマンドをコピーします。",
   "machineSetup_manual_description": "このコマンドをもう一方のコンピュータで実行し、表示されたリンクを貼り付けます。",

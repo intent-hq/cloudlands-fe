@@ -13,8 +13,6 @@
     icon: IconDefinition;
     title: string;
     description: string;
-    /** A short tag after the title (Recommended). */
-    tag?: string;
   }
 
   interface Props {
@@ -41,12 +39,7 @@
         <Fa icon={card.icon} class="size-4 text-foreground" />
       </span>
       <span class="flex min-w-0 flex-col gap-1">
-        <span class="flex items-center gap-2">
-          <span class="type-body font-medium! text-foreground">{card.title}</span>
-          {#if card.tag}
-            <span class="type-caption text-muted-foreground">{card.tag}</span>
-          {/if}
-        </span>
+        <span class="type-body font-medium! text-foreground">{card.title}</span>
         <span class="type-caption text-muted-foreground">{card.description}</span>
       </span>
     </Button>
