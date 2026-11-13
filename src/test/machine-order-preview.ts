@@ -10,7 +10,7 @@ import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machin
 import { setupCloudMachinesFixture, TEAM_ENTRY } from './cloud-machines-preview';
 
 export type MachineOrderPreviewState =
-  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'orchestrator';
+  'owner' | 'member' | 'saving' | 'unsupported' | 'exceptions' | 'disconnected' | 'orchestrator';
 
 const STUDIO: RemoteMachine = {
   id: 'd-studio-mac',
@@ -37,6 +37,47 @@ const GARAGE: RemoteMachine = {
   addedAt: '2026-11-02T00:00:00Z',
 };
 
+/** Idle between launches (connected on demand), with its last report kept. */
+const GARAGE_IDLE: RemoteMachine = {
+  ...GARAGE,
+  state: 'disconnected',
+  capabilities: {
+    intentdVersion: '0.11.197',
+    providers: [
+      { id: 'claude-code', status: 'signed-in', models: ['opus'] },
+      { id: 'unsloth', status: 'unknown', models: [] },
+      { id: 'grok', status: 'cli-missing', models: [] },
+      { id: 'cortex', visible: false, status: 'signed-in', models: [] },
+    ],
+  },
+};
+
+/** Idle, and its last report has no provider it can run. */
+const CACHE_IDLE: RemoteMachine = {
+  ...GARAGE,
+  id: 'd-cache',
+  name: 'Cache box',
+  hosts: ['192.0.2.30'],
+  fingerprint: '33:44',
+  state: 'disconnected',
+  capabilities: {
+    intentdVersion: '0.11.197',
+    providers: [
+      { id: 'claude-code', status: 'cli-missing', models: [] },
+      { id: 'pi', status: 'prerequisite-missing', models: [] },
+    ],
+  },
+  addedAt: '2026-11-03T00:00:00Z',
+};
+
+/** A saved machine, idle, whose last report has no provider it can run. */
+const STUDIO_IDLE: RemoteMachine = {
+  ...STUDIO,
+  state: 'disconnected',
+  runningAgents: 0,
+  capabilities: CACHE_IDLE.capabilities,
+};
+
 const ORDER: MachineOrderRow[] = [
   { kind: 'machine', nodeId: GARAGE.id, name: GARAGE.name },
   { kind: 'local', name: 'build-box' },
@@ -51,6 +92,7 @@ const ORDER: MachineOrderRow[] = [
  */
 export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   const exceptions = state === 'exceptions';
+  const disconnected = state === 'disconnected';
   const restoreCloud = setupCloudMachinesFixture(exceptions ? 'entries-key-rejected' : 'entries');
   const ordered = state !== 'unsupported';
   // An orchestrator's list has no "This computer" row: it never runs agents.
@@ -59,13 +101,19 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
     remoteMachinesLoaded({
       supported: true,
       machineOrder: ordered,
-      order: ordered ? order : null,
+      order: !ordered
+        ? null
+        : disconnected
+          ? [...order, { kind: 'machine', nodeId: CACHE_IDLE.id, name: CACHE_IDLE.name }]
+          : order,
       machines: exceptions
         ? [
             { ...STUDIO, state: 'update-required' },
             { ...GARAGE, state: 'unreachable' },
           ]
-        : [STUDIO, GARAGE],
+        : disconnected
+          ? [STUDIO_IDLE, GARAGE_IDLE, CACHE_IDLE]
+          : [STUDIO, GARAGE],
       localFingerprint: 'EE:FF',
       executorBackends: [],
     }),

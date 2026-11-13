@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.330.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.2...v2.330.0) (2026-11-13)
+
+
+### 🚀 Features
+
+* **hardware-console:** cycle keys walk only open workspace tabs, in tab order ([#4548](https://github.com/intent-hq/cloudlands-fe/issues/4548)) ([685fa7d](https://github.com/intent-hq/cloudlands-fe/commit/685fa7d9e8b21c6595b58803e8d54bd6034403f2))
+* **i18n:** key-level git merge driver for messages/*.json ([#4544](https://github.com/intent-hq/cloudlands-fe/issues/4544)) ([f81daee](https://github.com/intent-hq/cloudlands-fe/commit/f81daee6033568001efc4e95d2a23a71de642fd9))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** stop snapping to the end when scrolling near the bottom ([#4543](https://github.com/intent-hq/cloudlands-fe/issues/4543)) ([836faa1](https://github.com/intent-hq/cloudlands-fe/commit/836faa15c7c4b3d5caa23516dfc2f1b1b837c2be))
+* **machine-rail:** draw each machine's rail as it looks when shown ([#4547](https://github.com/intent-hq/cloudlands-fe/issues/4547)) ([f0f45d7](https://github.com/intent-hq/cloudlands-fe/commit/f0f45d74dbe093d9ba0ef65362133c70bc302188))
+
+## [2.329.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.1...v2.329.2) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** dim a machine until it is connected ([#4542](https://github.com/intent-hq/cloudlands-fe/issues/4542)) ([8d3e177](https://github.com/intent-hq/cloudlands-fe/commit/8d3e177c7cbef906aab3c1abc7590fe48226f902))
+* **machine-rail:** restore a window straight onto the machine it showed ([#4545](https://github.com/intent-hq/cloudlands-fe/issues/4545)) ([17b7d9d](https://github.com/intent-hq/cloudlands-fe/commit/17b7d9d2115b9a44fd0eb1185e10302389ede63e))
+
+## [2.329.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.329.0...v2.329.1) (2026-11-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.199 ([#4540](https://github.com/intent-hq/cloudlands-fe/issues/4540)) ([227ae21](https://github.com/intent-hq/cloudlands-fe/commit/227ae21ce35c9d3f45d2d4fee79816d8967ef0ca))
+* **settings:** hide the "Runs agents for" pill on available machine rows ([#4528](https://github.com/intent-hq/cloudlands-fe/issues/4528)) ([7682c3f](https://github.com/intent-hq/cloudlands-fe/commit/7682c3f770bc80a3aebcc3f29499e37ecbeb27b3))
+
 ## [2.329.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.328.0...v2.329.0) (2026-11-13)
 
 

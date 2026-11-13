@@ -227,6 +227,12 @@ function observeWindow(window: BrowserWindowType): void {
   window.on('resize', relayout);
   window.on('enter-full-screen', relayout);
   window.on('leave-full-screen', relayout);
+  // A window that becomes active again focuses its own page; hand keyboard
+  // focus to the machine on screen, so its shortcuts work without a click.
+  window.on('focus', () => {
+    const shown = getShownRendererWebContents(window);
+    if (shown !== window.webContents && !shown.isDestroyed()) shown.focus();
+  });
   window.once('closed', () => {
     const rail = readWindowRail(window);
     clearTransition(window);
@@ -457,17 +463,22 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   const rail = normalizeRailSession(homeId, session, (id) => id !== homeId && saved.includes(id));
   if (rail.machineIds.length < 2) return;
   observeWindow(window);
-  // The window's own machine shows until the one that was shown has started.
-  writeWindowRail(window, { machineIds: rail.machineIds, selectedId: homeId });
-  const selected = rail.selectedId;
-  if (selected !== homeId) awaitMachine(window, selected);
+  // The window opens straight on the machine it showed: that machine's
+  // renderer starts like the app does (its own startup screen), and the
+  // window's own page stays hidden, so it never shows in between.
+  clearTransition(window);
+  writeWindowRail(window, rail);
   broadcastState(window);
   // Every machine reconnects now; only the one that was shown gets a renderer.
+  const selected = rail.selectedId;
   await Promise.all(
     rail.machineIds.slice(1).map(async (id) => {
       await connectQuietly(id);
       if (id !== selected || window.isDestroyed()) return;
-      if (transitions.get(window)?.pendingId === id) selectMachine(window, id);
+      if (readWindowRail(window).selectedId === id) {
+        applySelection(window);
+        broadcastState(window);
+      }
     }),
   );
 }

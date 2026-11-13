@@ -30,6 +30,8 @@ interface RemoteMachinePlatform {
 /** One provider in the machine's last capabilities report (node-link.md). */
 interface RemoteMachineProvider {
   id: string;
+  /** Present only when false: the machine's provider gate hides it (env var / feature code). */
+  visible?: false;
   status: string;
   models: string[];
 }
@@ -156,6 +158,7 @@ function parseCapabilities(value: unknown): RemoteMachineCapabilities | undefine
           ? [
               {
                 id: provider.id,
+                ...(provider.visible === false ? { visible: false as const } : {}),
                 status: typeof provider.status === 'string' ? provider.status : 'unknown',
                 models: Array.isArray(provider.models)
                   ? provider.models.filter((model): model is string => text(model))

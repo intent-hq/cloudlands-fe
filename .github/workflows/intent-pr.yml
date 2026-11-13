@@ -775,8 +775,10 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
+      # `type-check` also covers main, but "Build main process" below compiles
+      # tsconfig.main.json anyway; checking it here would add ~100 s for nothing.
       - name: Type check (renderer)
-        run: pnpm run type-check
+        run: pnpm run type-check:renderer
       - name: Type check (preload)
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
       - name: Accessibility lint
@@ -787,8 +789,11 @@ jobs:
         # lint:workflows may fetch the pinned actionlint through the REST API
         # when the release download fails; the token lifts the anonymous
         # 60-requests-per-hour limit that shared runner IPs exhaust.
+        # TYPE_CHECK_SKIP_RENDERER: "Type check (renderer)" above already ran
+        # the renderer tsc that validate:architecture chains (~40 s).
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TYPE_CHECK_SKIP_RENDERER: '1'
         run: pnpm run validate:architecture
       - name: Build main process
         run: pnpm run build:main
