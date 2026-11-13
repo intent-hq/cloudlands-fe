@@ -17,6 +17,7 @@
     actionLabel,
     onAction,
     actionFocusTarget,
+    descriptionId,
   }: {
     label: string;
     description: string;
@@ -25,11 +26,12 @@
     actionLabel?: string;
     onAction?: () => void;
     actionFocusTarget?: HTMLElement | null;
+    descriptionId?: string;
   } = $props();
 
   let open = $state(false);
   let actionSelected = false;
-  const descriptionId = $props.id();
+  const fallbackDescriptionId = $props.id();
 
   async function runAction() {
     actionSelected = true;
@@ -41,9 +43,11 @@
 </script>
 
 <span class="inline-flex shrink-0" data-browser-status={tone}>
-  <span id={descriptionId} class="sr-only" role={tone === 'error' ? 'alert' : 'status'}>
-    {description}
-  </span>
+  {#if !descriptionId}
+    <span id={fallbackDescriptionId} class="sr-only" role={tone === 'error' ? 'alert' : 'status'}>
+      {description}
+    </span>
+  {/if}
   <Popover.Root bind:open>
     <Popover.Trigger>
       {#snippet child({ props })}
@@ -58,7 +62,7 @@
               ? 'text-warning-ink'
               : 'text-muted-foreground'}
           aria-label={ariaLabel}
-          aria-describedby={descriptionId}
+          aria-describedby={descriptionId ?? fallbackDescriptionId}
           tooltip={description}
           tooltipDisabled={open}
           tooltipSide="bottom"
