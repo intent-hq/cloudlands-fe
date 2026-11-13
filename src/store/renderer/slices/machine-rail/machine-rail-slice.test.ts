@@ -84,11 +84,15 @@ describe('machine rail selectors', () => {
 
   it('lists machines in rail order with selection, home and offline state; still connecting is offline', () => {
     const items = selectMachineRailItems.select(
-      stateWith(rail, [
-        record('local'),
-        record('b', { status: 'disconnected' }),
-        record('c', { status: 'connecting' }),
-      ]),
+      stateWith(
+        rail,
+        [
+          record('local'),
+          record('b', { status: 'disconnected' }),
+          record('c', { status: 'connecting' }),
+        ],
+        'b',
+      ),
     );
     expect(
       items.map(({ id, selected, home, offline }) => ({ id, selected, home, offline })),
@@ -96,6 +100,25 @@ describe('machine rail selectors', () => {
       { id: 'local', selected: false, home: true, offline: false },
       { id: 'b', selected: true, home: false, offline: true },
       { id: 'c', selected: false, home: false, offline: true },
+    ]);
+  });
+
+  it("draws a hidden machine's rail as it will look once shown: its own machine selected, not spinning", () => {
+    // `c` is still starting while `b` is shown: `c`'s own renderer is hidden.
+    const state = { ...rail, pendingId: 'c' };
+    const records = [record('local'), record('b'), record('c')];
+    const own = selectMachineRailItems.select(stateWith(state, records, 'c'));
+    expect(own.map(({ id, selected, pending }) => ({ id, selected, pending }))).toEqual([
+      { id: 'local', selected: false, pending: false },
+      { id: 'b', selected: false, pending: false },
+      { id: 'c', selected: true, pending: false },
+    ]);
+    // The rail on screen (b's) shows b selected and c spinning.
+    const shown = selectMachineRailItems.select(stateWith(state, records, 'b'));
+    expect(shown.map(({ id, selected, pending }) => ({ id, selected, pending }))).toEqual([
+      { id: 'local', selected: false, pending: false },
+      { id: 'b', selected: true, pending: false },
+      { id: 'c', selected: false, pending: true },
     ]);
   });
 
