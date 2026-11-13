@@ -12,6 +12,8 @@
  * programmatic scroll events report geometry but never detach or re-lock it.
  */
 
+import { isFocusInEditableElement } from './keyboardShortcuts';
+
 export interface FollowBottomOptions {
   /** Detach all listeners and observers while the owning surface is inactive. */
   enabled?: boolean;
@@ -62,6 +64,8 @@ interface MutationLease {
 interface ScrollGeometry {
   maximum: number;
   scrollTop: number;
+  /** The read before this one, when this geometry came from a fresh read. */
+  previous?: { maximum: number; scrollTop: number };
 }
 
 export interface FollowBottomMutation {
@@ -89,8 +93,10 @@ const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
 const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
 const FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS = 2000;
 // Absorbs fractional scrollTop under zoom; anything farther is a reader's chosen position.
-const RESUME_FOLLOW_TOLERANCE_PX = 1;
+const RESUME_FOLLOW_TOLERANCE_PX = 2;
 const DOWNWARD_INTENT_WINDOW_MS = 1000;
+// Touch momentum keeps scrolling after the finger lifts; scrollend still ends it early.
+const DOWNWARD_TOUCH_INTENT_WINDOW_MS = 3000;
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
@@ -114,6 +120,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   // A downward user gesture (wheel, keys, touch) whose scroll may still land on the bottom.
   let pendingDownward: { wheel?: WheelEvent; expiresAt: number } | null = null;
   let touchMovedDown = false;
+  let lastRead: { maximum: number; scrollTop: number } | null = null;
   let lastReportedState: FollowBottomState | null = null;
 
   let mutationObserver: MutationObserver | null = null;
@@ -216,20 +223,35 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function readScrollGeometry(): ScrollGeometry {
-    return { maximum: maximumScrollTop(), scrollTop: container.scrollTop };
+    const maximum = maximumScrollTop();
+    const scrollTop = container.scrollTop;
+    const previous = lastRead ?? undefined;
+    lastRead = { maximum, scrollTop };
+    return { maximum, scrollTop, previous };
   }
 
   function setExactBottom(geometry = readScrollGeometry()): ScrollGeometry {
     if (geometry.scrollTop !== geometry.maximum) container.scrollTop = geometry.maximum;
+    lastRead = { maximum: geometry.maximum, scrollTop: geometry.maximum };
     return { maximum: geometry.maximum, scrollTop: geometry.maximum };
   }
 
-  function hasReachedBottom(geometry = readScrollGeometry()): boolean {
-    return geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX;
+  function hasReachedBottom(geometry = readScrollGeometry(), landingDownward = false): boolean {
+    if (geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX) return true;
+    // A downward gesture clamps at the bottom it scrolled against. Streamed
+    // output can grow the transcript before this read, so the bottom from the
+    // previous read also counts — but only for a gesture that is landing.
+    const previous = geometry.previous;
+    return (
+      landingDownward &&
+      previous !== undefined &&
+      previous.maximum < geometry.maximum &&
+      previous.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
+    );
   }
 
-  function startDownwardIntent(wheel?: WheelEvent) {
-    pendingDownward = { wheel, expiresAt: performance.now() + DOWNWARD_INTENT_WINDOW_MS };
+  function startDownwardIntent(wheel?: WheelEvent, windowMs = DOWNWARD_INTENT_WINDOW_MS) {
+    pendingDownward = { wheel, expiresAt: performance.now() + windowMs };
   }
 
   function hasDownwardIntent(wheel?: WheelEvent): boolean {
@@ -267,7 +289,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       userStateWheel = undefined;
       if (destroyed || !enabled) return;
       if (wheel && !hasDownwardIntent(wheel)) return;
-      if (hasReachedBottom()) follower.followAndScroll();
+      if (hasReachedBottom(readScrollGeometry(), hasDownwardIntent())) follower.followAndScroll();
       else reportState();
     });
   }
@@ -502,7 +524,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     pendingDownward = null;
     // The native scroll can land after its animation-frame check. Consume
     // this gesture at completion, even when it stopped above the bottom.
-    if (event.target === container && downward && hasReachedBottom()) follower.followAndScroll();
+    if (event.target === container && downward && hasReachedBottom(readScrollGeometry(), true))
+      follower.followAndScroll();
   }
 
   // Handle touch events - user is scrolling on touch device
@@ -525,7 +548,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleTouchEnd() {
     // Momentum can carry a downward swipe to the bottom after the finger lifts.
-    if (touchMovedDown) startDownwardIntent();
+    if (touchMovedDown) startDownwardIntent(undefined, DOWNWARD_TOUCH_INTENT_WINDOW_MS);
     scheduleUserStateCheck();
   }
 
@@ -535,6 +558,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
+      // These keys move the caret inside a field, not the transcript.
+      if (e.target instanceof Element && isFocusInEditableElement(e.target)) return;
+      if (e.key === 'End') {
+        follower.followAndScroll();
+        return;
+      }
       // Smooth keyboard scrolling lands over several frames.
       startDownwardIntent();
       scheduleUserStateCheck();
@@ -561,8 +590,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       if (isFollowing && settleFrame !== null) return;
       let geometry = readScrollGeometry();
       // Re-lock as the downward gesture lands, before streamed growth can
-      // move the bottom away ahead of the gesture's frame check.
-      if (!isFollowing && hasDownwardIntent() && hasReachedBottom(geometry)) {
+      // move the bottom away ahead of the gesture's frame check. A scroll
+      // that moved up (a collapse clamp) is layout, not the gesture landing.
+      const movedDown = !geometry.previous || geometry.scrollTop > geometry.previous.scrollTop;
+      if (!isFollowing && movedDown && hasDownwardIntent() && hasReachedBottom(geometry, true)) {
         follower.followAndScroll();
         return;
       }
@@ -700,6 +731,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function detachLifecycle() {
     pendingDownward = null;
     touchMovedDown = false;
+    lastRead = null;
     userStateWheel = undefined;
     activeLeases.clear();
     mutationElements.clear();
