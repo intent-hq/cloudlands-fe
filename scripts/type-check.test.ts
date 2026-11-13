@@ -151,7 +151,9 @@ describe('type-check', { timeout: 60_000 }, () => {
   });
 });
 
-type Step = { name?: string; run?: string; env?: Record<string, unknown> };
+type Env = Record<string, unknown>;
+type Step = { name?: string; run?: string; env?: Env; if?: unknown; 'continue-on-error'?: unknown };
+type Job = { name?: string; env?: Env; steps: Step[] };
 
 /** Every command a workflow `run:` reaches through the package.json scripts graph. */
 function expandCommands(
@@ -159,9 +161,13 @@ function expandCommands(
   command: string,
   seen = new Set<string>(),
 ) {
-  const commands = command.split(/&&|\|\||;|\n/).map((part) => part.trim());
+  const commands = command
+    .split(/&&|\|\||;|\n/)
+    .map((part) => part.trim().replace(/^(?:\w+=\S*\s+)+/, ''));
   for (const part of [...commands]) {
-    const target = /^(?:pnpm run|pnpm|node scripts\/pnpm-run\.mjs) ([\w:.-]+)/.exec(part)?.[1];
+    const target = /^(?:pnpm(?:\s+run)?|node scripts\/pnpm-run\.mjs)(?:\s+-\S+)*\s+([\w:.-]+)/.exec(
+      part,
+    )?.[1];
     if (!target || !(target in scripts) || seen.has(target)) continue;
     seen.add(target);
     commands.push(...expandCommands(scripts, scripts[target], seen));
@@ -169,10 +175,14 @@ function expandCommands(
   return commands;
 }
 
-function rendererTypeChecks(scripts: Record<string, string>, step: Step) {
-  const skipped = String(step.env?.[SKIP_RENDERER] ?? '') === '1';
-  return expandCommands(scripts, step.run ?? '').filter((command) => {
-    if (/\btsc\b.*-p\s+tsconfig\.json\b/.test(command)) return true;
+/** Commands that type-check the renderer program; `env` is the step's effective env. */
+function rendererTypeChecks(scripts: Record<string, string>, run: string, env: Env = {}) {
+  const skipped = String(env[SKIP_RENDERER] ?? '') === '1';
+  return expandCommands(scripts, run).filter((command) => {
+    if (/(?:^|[\s/])tsc\b/.test(command)) {
+      const project = /(?:-p|--project)[=\s]+(\S+)/.exec(command)?.[1];
+      return !project || /^(?:\.\/)?tsconfig\.json$/.test(project);
+    }
     if (!/scripts\/type-check\.ts\b/.test(command) || skipped) return false;
     const projects = [...command.matchAll(/--project[= ](\w+)/g)].map(([, name]) => name);
     return projects.length === 0 || projects.includes('renderer');
@@ -182,30 +192,38 @@ function rendererTypeChecks(scripts: Record<string, string>, step: Step) {
 describe('PR workflow "Type Check & Lint" job', () => {
   const scripts: Record<string, string> = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
   const workflow = load(readFileSync('.github/workflows/intent-pr.yml', 'utf8')) as {
-    jobs: Record<string, { name?: string; steps: Step[] }>;
+    env?: Env;
+    jobs: Record<string, Job>;
   };
+  const job = Object.values(workflow.jobs).find(({ name }) => name === 'Type Check & Lint')!;
 
-  it('finds the renderer tsc behind the package scripts', () => {
-    expect(rendererTypeChecks(scripts, { run: 'pnpm run validate:architecture' })).toHaveLength(1);
-    expect(
-      rendererTypeChecks(scripts, {
-        run: 'pnpm run validate:architecture',
-        env: { [SKIP_RENDERER]: '1' },
-      }),
-    ).toEqual([]);
-    expect(
-      rendererTypeChecks(scripts, { run: 'pnpm exec tsc --noEmit -p tsconfig.preload.json' }),
-    ).toEqual([]);
-    expect(
-      rendererTypeChecks(scripts, { run: 'pnpm exec tsc --noEmit -p tsconfig.json' }),
-    ).toHaveLength(1);
+  it.each([
+    ['pnpm run validate:architecture', {}, 1],
+    ['pnpm run validate:architecture', { [SKIP_RENDERER]: '1' }, 0],
+    ['FOO=1 pnpm run --silent validate:architecture', {}, 1],
+    ['pnpm -s type-check', {}, 1],
+    ['pnpm exec tsc --noEmit -p tsconfig.preload.json', {}, 0],
+    ['pnpm exec tsc --noEmit -p tsconfig.json', { [SKIP_RENDERER]: '1' }, 1],
+    ['pnpm exec tsc --noEmit --project ./tsconfig.json', {}, 1],
+    ['npx tsc --noEmit', {}, 1],
+  ])('counts %s with env %o as %i renderer check(s)', (run, env, count) => {
+    expect(rendererTypeChecks(scripts, run, env)).toHaveLength(count);
   });
 
   it('type-checks the renderer exactly once, in its own step', () => {
-    const job = Object.values(workflow.jobs).find(({ name }) => name === 'Type Check & Lint');
-    const runs = (job?.steps ?? []).flatMap((step) =>
-      rendererTypeChecks(scripts, step).map(() => step.name),
+    const runs = job.steps.flatMap((step) =>
+      rendererTypeChecks(scripts, step.run ?? '', {
+        ...workflow.env,
+        ...job.env,
+        ...step.env,
+      }).map(() => step.name),
     );
     expect(runs).toEqual(['Type check (renderer)']);
+  });
+
+  it('lets a renderer type error fail the job before the step that skips it', () => {
+    const step = job.steps.find(({ name }) => name === 'Type check (renderer)')!;
+    expect(step.if).toBeUndefined();
+    expect(step['continue-on-error']).toBeUndefined();
   });
 });
