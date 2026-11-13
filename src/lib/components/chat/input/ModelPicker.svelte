@@ -631,6 +631,45 @@
     !!remoteLocation &&
       $remoteMachinesPending$[machineRefreshKey(remoteLocation.nodeId)] === 'refreshing',
   );
+  // Why a cloud agent's picker is empty, only on a positive signal: `paused`
+  // names the agent's own sandbox (never the cloud entry), `gone` means the
+  // next message starts a new one, `waiting` covers a running sandbox and a
+  // row not loaded yet. remoteMachines.refresh can't reach a sandbox.
+  const remoteCloudEmpty = $derived.by((): 'paused' | 'gone' | 'waiting' | null => {
+    const cloud = remoteLocation?.cloud;
+    if (!remoteLocation || !cloud) return null;
+    if (!remoteLocation.nodeId) return cloud.state === 'starting' ? 'waiting' : 'gone';
+    if (cloud.state === 'paused' || cloud.state === 'pausing') return 'paused';
+    if (cloud.state === 'stopping') return 'gone';
+    return 'waiting';
+  });
+  const remoteCloudSandbox = $derived(
+    remoteLocation?.cloud && $remoteMachine$?.id === remoteLocation.nodeId
+      ? ($remoteMachine$.cloud?.sandboxId ?? '')
+      : '',
+  );
+  const remoteMissingCopy = $derived.by(() => {
+    if (remoteCloudEmpty === 'paused' && remoteCloudSandbox)
+      return {
+        title: m.chat_modelPicker_cloudPaused_title({ sandbox: remoteCloudSandbox }),
+        description: m.chat_modelPicker_cloudPaused_description(),
+      };
+    if (remoteCloudEmpty === 'paused' || remoteCloudEmpty === 'gone')
+      return {
+        title: m.chat_modelPicker_cloudNoSandbox_title(),
+        description: m.chat_modelPicker_cloudNoSandbox_description(),
+      };
+    if (remoteCloudEmpty === 'waiting')
+      return {
+        title: m.chat_modelPicker_cloudWaiting_title(),
+        description: m.chat_modelPicker_cloudWaiting_description(),
+      };
+    const machine = remoteLocation?.name ?? '';
+    return {
+      title: m.chat_modelPicker_remoteMissing_title({ machine }),
+      description: m.chat_modelPicker_remoteMissing_description({ machine }),
+    };
+  });
   function refreshRemoteMachine() {
     if (remoteLocation) appStore.dispatch(remoteMachineRefreshRequested(remoteLocation.nodeId));
   }
@@ -2866,7 +2905,7 @@
                 aria-hidden="true"
                 data-remote-model-machine
               >
-                <Fa icon={faDesktop} class="size-3!" />
+                <Fa icon={remoteLocation.cloud ? faCloud : faDesktop} class="size-3!" />
                 <span class="truncate">{remoteLocation.name}</span>
               </span>
             {/if}
@@ -3022,7 +3061,10 @@
           class="flex items-center gap-2 border-y border-border px-(--model-picker-gutter) py-2"
           data-testid="model-picker-remote-header"
         >
-          <Fa icon={faDesktop} class="size-3.5! shrink-0 text-muted-foreground" />
+          <Fa
+            icon={remoteLocation.cloud ? faCloud : faDesktop}
+            class="size-3.5! shrink-0 text-muted-foreground"
+          />
           <div class="min-w-0 flex-1">
             <div class="truncate text-xs font-medium text-foreground">
               {m.chat_modelPicker_remoteMachine_title({ machine: remoteLocation.name })}
@@ -3030,34 +3072,41 @@
             <div class="truncate text-xs text-subtle">
               {[
                 remoteLocation.platform,
-                remoteFreshness === 'missing' || !remoteReportedAgo
-                  ? m.chat_modelPicker_remoteMachine_noReport()
-                  : m.chat_modelPicker_remoteMachine_reported({ time: remoteReportedAgo }),
+                remoteFreshness === 'missing' &&
+                (remoteCloudEmpty === 'paused' || remoteCloudEmpty === 'gone')
+                  ? m.chat_modelPicker_remoteMachine_notRunning()
+                  : remoteFreshness === 'missing' || !remoteReportedAgo
+                    ? m.chat_modelPicker_remoteMachine_noReport()
+                    : m.chat_modelPicker_remoteMachine_reported({ time: remoteReportedAgo }),
               ]
                 .filter(Boolean)
                 .join(' · ')}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            iconOnly={true}
-            title={m.chat_modelPicker_remoteMachine_refresh_label({ machine: remoteLocation.name })}
-            aria-label={m.chat_modelPicker_remoteMachine_refresh_label({
-              machine: remoteLocation.name,
-            })}
-            class={cn('text-subtle hover:bg-muted/40', remoteRefreshing && 'opacity-50!')}
-            data-testid="model-picker-remote-refresh"
-            aria-busy={remoteRefreshing}
-            disabled={remoteRefreshing}
-            onclick={refreshRemoteMachine}
-          >
-            {#if remoteRefreshing}
-              <IntentMarkLoader size={12} />
-            {:else}
-              <Fa icon={faArrowsRotate} size={10} class="text-subtle" />
-            {/if}
-          </Button>
+          {#if !remoteLocation.cloud}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              iconOnly={true}
+              title={m.chat_modelPicker_remoteMachine_refresh_label({
+                machine: remoteLocation.name,
+              })}
+              aria-label={m.chat_modelPicker_remoteMachine_refresh_label({
+                machine: remoteLocation.name,
+              })}
+              class={cn('text-subtle hover:bg-muted/40', remoteRefreshing && 'opacity-50!')}
+              data-testid="model-picker-remote-refresh"
+              aria-busy={remoteRefreshing}
+              disabled={remoteRefreshing}
+              onclick={refreshRemoteMachine}
+            >
+              {#if remoteRefreshing}
+                <IntentMarkLoader size={12} />
+              {:else}
+                <Fa icon={faArrowsRotate} size={10} class="text-subtle" />
+              {/if}
+            </Button>
+          {/if}
         </div>
         {#if remoteFreshness === 'stale'}
           <div
@@ -3169,22 +3218,24 @@
         >
           <Fa icon={faCircleInfo} class="size-4! text-muted-foreground" />
           <div class="text-sm font-medium text-foreground">
-            {m.chat_modelPicker_remoteMissing_title({ machine: remoteLocation.name })}
+            {remoteMissingCopy.title}
           </div>
           <div class="text-xs text-subtle">
-            {m.chat_modelPicker_remoteMissing_description({ machine: remoteLocation.name })}
+            {remoteMissingCopy.description}
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            class="mt-1"
-            disabled={remoteRefreshing}
-            aria-busy={remoteRefreshing}
-            onclick={refreshRemoteMachine}
-          >
-            {#if remoteRefreshing}<IntentMarkLoader size={12} />{/if}
-            {m.remoteAgent_notice_checkAgain_label()}
-          </Button>
+          {#if !remoteLocation.cloud}
+            <Button
+              variant="secondary"
+              size="sm"
+              class="mt-1"
+              disabled={remoteRefreshing}
+              aria-busy={remoteRefreshing}
+              onclick={refreshRemoteMachine}
+            >
+              {#if remoteRefreshing}<IntentMarkLoader size={12} />{/if}
+              {m.remoteAgent_notice_checkAgain_label()}
+            </Button>
+          {/if}
         </div>
       {:else}
         <ModelPickerEmptyState

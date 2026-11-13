@@ -23,6 +23,8 @@
     | 'e2b-starting'
     | 'e2b-running'
     | 'e2b-paused'
+    | 'e2b-picker-paused'
+    | 'e2b-picker-no-sandbox'
     | 'e2b-quota'
     | 'e2b-profile-required'
     | 'e2b-unavailable'
@@ -69,6 +71,9 @@
       'e2b-starting': sceneState('e2b-starting'),
       'e2b-running': sceneState('e2b-running'),
       'e2b-paused': sceneState('e2b-paused'),
+      // The model picker, open, for a cloud agent whose sandbox is paused or was deleted.
+      'e2b-picker-paused': sceneState('e2b-picker-paused'),
+      'e2b-picker-no-sandbox': sceneState('e2b-picker-no-sandbox'),
       'e2b-quota': sceneState('e2b-quota'),
       'e2b-profile-required': sceneState('e2b-profile-required'),
       'e2b-unavailable': sceneState('e2b-unavailable'),
@@ -158,7 +163,12 @@
   });
 
   // Model picker scenes: what Mac mini reported, and this backend's profiles.
-  const isPickerScene = (s: Scene) => s.startsWith('picker');
+  const isPickerScene = (s: Scene) => s.startsWith('picker') || s.startsWith('e2b-picker');
+  const OPEN_PICKER_SCENES: Scene[] = [
+    'picker-missing',
+    'e2b-picker-paused',
+    'e2b-picker-no-sandbox',
+  ];
   const MAC_REPORT = {
     intentdVersion: '0.240.0',
     providers: [
@@ -365,10 +375,14 @@
       placement: { target: 'e2b', checkout: 'isolated' },
       ...(s === 'e2b-running' ||
       s === 'e2b-paused' ||
+      s === 'e2b-picker-paused' ||
       s === 'e2b-started-turn' ||
       s === 'e2b-waking-turn'
         ? { nodeId: E2B_NODE, leaseId: 'lease-e2b', effectiveIsolation: 'isolated' as const }
-        : { effectiveIsolation: 'pending' as const }),
+        : {
+            effectiveIsolation:
+              s === 'e2b-picker-no-sandbox' ? ('isolated' as const) : ('pending' as const),
+          }),
       ...(s === 'e2b-starting' || s === 'e2b-starting-turn'
         ? { cloudStart: { step: 'starting-daemon' } }
         : {}),
@@ -392,7 +406,12 @@
       provider: 'e2b',
       cloudMachineId: 'e2b',
       sandboxId: 'isx1k2v9',
-      state: s === 'e2b-paused' ? 'paused' : s === 'e2b-waking-turn' ? 'resuming' : 'running',
+      state:
+        s === 'e2b-paused' || s === 'e2b-picker-paused'
+          ? 'paused'
+          : s === 'e2b-waking-turn'
+            ? 'resuming'
+            : 'running',
       template: 'intent/intent-node-4x8:0.240.0',
       size: '4x8',
       startedBy: { principalId: 'p-sam', displayName: 'Sam' },
@@ -479,6 +498,22 @@
   });
 
   let ready = $state(false);
+  let pickerOpened = $state(false);
+
+  // Open the composer's model picker so its empty state shows in the capture.
+  $effect(() => {
+    if (!ready || !OPEN_PICKER_SCENES.includes(scene)) return;
+    const timer = setInterval(() => {
+      const trigger = document
+        .querySelector('#ral-composer [data-remote-model-machine]')
+        ?.closest('button');
+      if (!trigger || trigger.disabled || trigger.hasAttribute('data-remote-model-lock')) return;
+      clearInterval(timer);
+      trigger.click();
+      pickerOpened = true;
+    }, 100);
+    return () => clearInterval(timer);
+  });
   let draft = $state('');
 
   onMount(() => {
@@ -585,7 +620,10 @@
         supported: true,
         providers: [],
         machines:
-          s === 'e2b-running' || s === 'e2b-paused' || s === 'e2b-waking-turn'
+          s === 'e2b-running' ||
+          s === 'e2b-paused' ||
+          s === 'e2b-picker-paused' ||
+          s === 'e2b-waking-turn'
             ? [e2bSandbox(s)]
             : [],
         readAt: 0,
@@ -602,7 +640,7 @@
 <div
   class="flex h-[720px] w-full min-w-0 bg-background text-foreground"
   data-remote-agent-location-scene={scene}
-  data-ready={ready ? '' : undefined}
+  data-ready={ready && (pickerOpened || !OPEN_PICKER_SCENES.includes(scene)) ? '' : undefined}
 >
   <aside class="flex w-[300px] shrink-0 flex-col border-r border-border bg-sidebar">
     <h6 class="px-4 pb-1 pt-4 text-ui font-semibold text-foreground">Agents</h6>
