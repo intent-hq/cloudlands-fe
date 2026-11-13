@@ -111,14 +111,6 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let onFollowChange = options.onFollowChange;
   let onScrollStateChange = options.onScrollStateChange;
   let threshold = options.threshold ?? 100;
-  let pointerScrolling = false;
-  let pointerMaximum = 0;
-  let pointerDistanceFromBottom = 0;
-  let pointerMovedTowardBottom = false;
-  let userStateFrame: number | null = null;
-  let userStateWheel: WheelEvent | undefined;
-  // A downward user gesture (wheel, keys, touch) whose scroll may still land on the bottom.
-  let pendingDownward: { wheel?: WheelEvent; expiresAt: number } | null = null;
   let touchMovedDown = false;
   let lastRead: { maximum: number; scrollTop: number } | null = null;
   let lastReportedState: FollowBottomState | null = null;
@@ -236,32 +228,6 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     return { maximum: geometry.maximum, scrollTop: geometry.maximum };
   }
 
-  function hasReachedBottom(geometry = readScrollGeometry(), landingDownward = false): boolean {
-    if (geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX) return true;
-    // A downward gesture clamps at the bottom it scrolled against. Streamed
-    // output can grow the transcript before this read, so the bottom from the
-    // previous read also counts — but only for a gesture that is landing.
-    const previous = geometry.previous;
-    return (
-      landingDownward &&
-      previous !== undefined &&
-      previous.maximum < geometry.maximum &&
-      previous.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
-    );
-  }
-
-  function startDownwardIntent(wheel?: WheelEvent, windowMs = DOWNWARD_INTENT_WINDOW_MS) {
-    pendingDownward = { wheel, expiresAt: performance.now() + windowMs };
-  }
-
-  function hasDownwardIntent(wheel?: WheelEvent): boolean {
-    if (!pendingDownward) return false;
-    if (wheel && pendingDownward.wheel !== wheel) return false;
-    return (
-      !pendingDownward.wheel?.defaultPrevented && performance.now() < pendingDownward.expiresAt
-    );
-  }
-
   function reportState(geometry = readScrollGeometry()) {
     const distance = Math.max(0, geometry.maximum - geometry.scrollTop);
     const isAtBottom = distance <= threshold;
@@ -280,22 +246,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
   }
 
-  function scheduleUserStateCheck(wheel?: WheelEvent) {
-    userStateWheel = wheel;
-    if (userStateFrame !== null) return;
-    userStateFrame = requestAnimationFrame(() => {
-      userStateFrame = null;
-      const wheel = userStateWheel;
-      userStateWheel = undefined;
-      if (destroyed || !enabled) return;
-      if (!hasDownwardIntent(wheel)) return;
-      if (hasReachedBottom(readScrollGeometry(), true)) follower.followAndScroll();
-      else reportState();
-    });
-  }
-
   function setFollowing(value: boolean, notify = true) {
-    pendingDownward = null;
+    gesture.cancel();
     if (!enabled) {
       isFollowing = value;
       return;
@@ -505,33 +457,183 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       };
     },
   };
+
+  /**
+   * The single owner of user-driven re-lock. Input handlers start, move, land
+   * or cancel a gesture, and every re-lock goes through `relockIfReached`, so
+   * the scroll event, the frame check, scrollend and a scrollbar release all
+   * apply one rule. Layout and programmatic scrolls never start a gesture.
+   */
+  function createGestureTracker() {
+    // A downward wheel, key or touch whose scroll may still land on the bottom.
+    let downward: { wheel?: WheelEvent; expiresAt: number } | null = null;
+    // A held scrollbar thumb, measured against an unchanged bottom.
+    let drag: { maximum: number; distance: number; movedTowardBottom: boolean } | null = null;
+    let landFrame: number | null = null;
+    let landFrameWheel: WheelEvent | undefined;
+
+    function isLive(wheel?: WheelEvent): boolean {
+      if (!downward) return false;
+      if (wheel && downward.wheel !== wheel) return false;
+      return !downward.wheel?.defaultPrevented && performance.now() < downward.expiresAt;
+    }
+
+    function hasReachedBottom(geometry: ScrollGeometry, landingDownward: boolean): boolean {
+      if (geometry.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX) return true;
+      // A downward gesture clamps at the bottom it scrolled against. Streamed
+      // output can grow the transcript before this read, so the bottom from
+      // the previous read also counts — but only for a gesture that is landing.
+      const previous = geometry.previous;
+      return (
+        landingDownward &&
+        previous !== undefined &&
+        previous.maximum < geometry.maximum &&
+        previous.maximum - geometry.scrollTop <= RESUME_FOLLOW_TOLERANCE_PX
+      );
+    }
+
+    function relockIfReached(geometry: ScrollGeometry, landingDownward: boolean): boolean {
+      if (!hasReachedBottom(geometry, landingDownward)) return false;
+      follower.followAndScroll();
+      return true;
+    }
+
+    function landNextFrame(wheel?: WheelEvent) {
+      landFrameWheel = wheel;
+      if (landFrame !== null) return;
+      landFrame = requestAnimationFrame(() => {
+        landFrame = null;
+        const wheel = landFrameWheel;
+        landFrameWheel = undefined;
+        if (destroyed || !enabled || !isLive(wheel)) return;
+        if (!relockIfReached(readScrollGeometry(), true)) reportState();
+      });
+    }
+
+    function moveDrag(current: NonNullable<typeof drag>, geometry: ScrollGeometry): boolean {
+      const distance = Math.max(0, geometry.maximum - geometry.scrollTop);
+      if (geometry.maximum !== current.maximum) {
+        current.maximum = geometry.maximum;
+        current.distance = distance;
+        current.movedTowardBottom = false;
+        return false;
+      }
+      const distanceDelta = distance - current.distance;
+      current.distance = distance;
+      if (distanceDelta > 0) {
+        current.movedTowardBottom = false;
+        setFollowing(false);
+        return true;
+      }
+      if (distanceDelta === 0) return false;
+      current.movedTowardBottom = true;
+      return relockIfReached(geometry, false);
+    }
+
+    function moveDownward(geometry: ScrollGeometry): boolean {
+      if (isFollowing || !downward) return false;
+      const previous = geometry.previous;
+      if (previous && geometry.scrollTop < previous.scrollTop) {
+        // A downward gesture never moves up: this is a layout clamp, and the
+        // gesture's later landing checks must not treat it as arriving.
+        downward = null;
+        return false;
+      }
+      // Re-lock as the gesture lands, before streamed growth can move the
+      // bottom away ahead of the gesture's frame check.
+      const movedDown = !previous || geometry.scrollTop > previous.scrollTop;
+      return movedDown && isLive() && relockIfReached(geometry, true);
+    }
+
+    return {
+      isDragging: () => drag !== null,
+      /**
+       * Bounds the gesture so an abandoned one (a descendant consuming the
+       * wheel without moving) cannot lend its intent to a later unrelated
+       * scroll. Repeated input refreshes the window for an ongoing gesture.
+       */
+      start(input: 'wheel' | 'keyboard' | 'touch', wheel?: WheelEvent) {
+        const windowMs =
+          input === 'touch' ? DOWNWARD_TOUCH_INTENT_WINDOW_MS : DOWNWARD_INTENT_WINDOW_MS;
+        downward = { wheel, expiresAt: performance.now() + windowMs };
+      },
+      grab(onScrollbar: boolean) {
+        downward = null;
+        if (!onScrollbar) {
+          drag = null;
+          return;
+        }
+        const maximum = maximumScrollTop();
+        drag = {
+          maximum,
+          distance: Math.max(0, maximum - container.scrollTop),
+          movedTowardBottom: false,
+        };
+      },
+      /** Applies a scroll event; true when it changed the follow state (already reported). */
+      move(geometry: ScrollGeometry): boolean {
+        return drag ? moveDrag(drag, geometry) : moveDownward(geometry);
+      },
+      /**
+       * `frame` checks on the next animation frame, since the native scroll
+       * lands after its input event. `scrollend` consumes the gesture even
+       * when it stopped above the bottom. `release` ends a scrollbar drag.
+       */
+      land(source: 'frame' | 'scrollend' | 'release', wheel?: WheelEvent) {
+        if (source === 'frame') {
+          landNextFrame(wheel);
+          return;
+        }
+        if (source === 'scrollend') {
+          const live = isLive();
+          downward = null;
+          if (live) relockIfReached(readScrollGeometry(), true);
+          return;
+        }
+        if (!drag) return;
+        const { movedTowardBottom } = drag;
+        drag = null;
+        if (!(movedTowardBottom && relockIfReached(readScrollGeometry(), false))) reportState();
+      },
+      cancel() {
+        downward = null;
+      },
+      /** An explicit request for the bottom (End) re-locks without a landing check. */
+      requestBottom() {
+        follower.followAndScroll();
+      },
+      reset() {
+        downward = null;
+        drag = null;
+        landFrameWheel = undefined;
+        if (landFrame !== null) cancelAnimationFrame(landFrame);
+        landFrame = null;
+      },
+    };
+  }
+
+  const gesture = createGestureTracker();
+
   // Handle wheel events - user is scrolling with mouse/trackpad
   function handleWheel(e: WheelEvent) {
     if (e.deltaY < 0) {
       setFollowing(false);
     } else if (e.deltaY > 0) {
-      // Scroll completion normally arrives in the next frame. Bound abandoned
-      // gestures (for example, a descendant consuming the wheel without moving)
-      // so a later unrelated scroll cannot reuse this intent. Repeated wheel
-      // events refresh the window for an ongoing gesture.
-      startDownwardIntent(e);
-      scheduleUserStateCheck(e);
+      gesture.start('wheel', e);
+      gesture.land('frame', e);
     }
   }
 
   function handleScrollEnd(event: Event) {
-    const downward = hasDownwardIntent();
-    pendingDownward = null;
-    // The native scroll can land after its animation-frame check. Consume
-    // this gesture at completion, even when it stopped above the bottom.
-    if (event.target === container && downward && hasReachedBottom(readScrollGeometry(), true))
-      follower.followAndScroll();
+    // A descendant's scroll ending still ends the gesture, but cannot re-lock.
+    if (event.target === container) gesture.land('scrollend');
+    else gesture.cancel();
   }
 
   // Handle touch events - user is scrolling on touch device
   let touchStartY = 0;
   function handleTouchStart(e: TouchEvent) {
-    pendingDownward = null;
+    gesture.cancel();
     touchMovedDown = false;
     touchStartY = e.touches[0]?.clientY ?? 0;
   }
@@ -548,25 +650,25 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleTouchEnd() {
     // Momentum can carry a downward swipe to the bottom after the finger lifts.
-    if (touchMovedDown) startDownwardIntent(undefined, DOWNWARD_TOUCH_INTENT_WINDOW_MS);
-    scheduleUserStateCheck();
+    if (touchMovedDown) gesture.start('touch');
+    gesture.land('frame');
   }
 
   // Handle keyboard events for scroll keys
   function handleKeyDown(e: KeyboardEvent) {
-    pendingDownward = null;
+    gesture.cancel();
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
       // These keys move the caret inside a field, not the transcript.
       if (e.target instanceof Element && isFocusInEditableElement(e.target)) return;
       if (e.key === 'End') {
-        follower.followAndScroll();
+        gesture.requestBottom();
         return;
       }
       // Smooth keyboard scrolling lands over several frames.
-      startDownwardIntent();
-      scheduleUserStateCheck();
+      gesture.start('keyboard');
+      gesture.land('frame');
     }
   }
 
@@ -583,70 +685,23 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function handleScroll() {
-    if (!pointerScrolling) {
-      // While the settle loop is armed it (or resize delivery) already owns
-      // this frame's single geometry read and pin; a scroll event here is
-      // the echo of that pin, and re-reading would double the layout work.
-      if (isFollowing && settleFrame !== null) return;
-      let geometry = readScrollGeometry();
-      // Re-lock as the downward gesture lands, before streamed growth can
-      // move the bottom away ahead of the gesture's frame check. A scroll
-      // that moved up (a collapse clamp) is layout, not the gesture landing.
-      if (!isFollowing && pendingDownward) {
-        const previous = geometry.previous;
-        if (previous && geometry.scrollTop < previous.scrollTop) {
-          // A downward gesture never moves up: this is a layout clamp, and
-          // the gesture's later checks must not treat it as landing.
-          pendingDownward = null;
-        } else if (
-          (!previous || geometry.scrollTop > previous.scrollTop) &&
-          hasDownwardIntent() &&
-          hasReachedBottom(geometry, true)
-        ) {
-          follower.followAndScroll();
-          return;
-        }
-      }
-      if (isFollowing) geometry = setExactBottom(geometry);
-      reportState(geometry);
-      return;
-    }
-
-    const nextMaximum = maximumScrollTop();
-    const nextDistance = Math.max(0, nextMaximum - container.scrollTop);
-    if (nextMaximum !== pointerMaximum) {
-      pointerMaximum = nextMaximum;
-      pointerDistanceFromBottom = nextDistance;
-      pointerMovedTowardBottom = false;
-      reportState();
-      return;
-    }
-
-    const distanceDelta = nextDistance - pointerDistanceFromBottom;
-    pointerDistanceFromBottom = nextDistance;
-    if (distanceDelta > 0) {
-      pointerMovedTowardBottom = false;
-      setFollowing(false);
-    } else if (distanceDelta < 0) {
-      pointerMovedTowardBottom = true;
-      if (hasReachedBottom()) follower.followAndScroll();
-      else reportState();
-    } else reportState();
+    const dragging = gesture.isDragging();
+    // While the settle loop is armed it (or resize delivery) already owns
+    // this frame's single geometry read and pin; a scroll event here is the
+    // echo of that pin, and re-reading would double the layout work.
+    if (!dragging && isFollowing && settleFrame !== null) return;
+    let geometry = readScrollGeometry();
+    if (gesture.move(geometry)) return;
+    if (isFollowing && !dragging) geometry = setExactBottom(geometry);
+    reportState(geometry);
   }
 
   function handlePointerDown(e: PointerEvent) {
-    pendingDownward = null;
-    pointerScrolling = isVerticalScrollbarPointer(e);
-    pointerMaximum = maximumScrollTop();
-    pointerDistanceFromBottom = Math.max(0, pointerMaximum - container.scrollTop);
-    pointerMovedTowardBottom = false;
+    gesture.grab(isVerticalScrollbarPointer(e));
   }
 
   function handlePointerUp() {
-    if (!pointerScrolling) return;
-    pointerScrolling = false;
-    if (pointerMovedTowardBottom && hasReachedBottom()) follower.followAndScroll();
-    else reportState();
+    gesture.land('release');
   }
 
   function setupObservers() {
@@ -739,16 +794,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function detachLifecycle() {
-    pendingDownward = null;
+    gesture.reset();
     touchMovedDown = false;
     lastRead = null;
-    userStateWheel = undefined;
     activeLeases.clear();
     mutationElements.clear();
-    pointerScrolling = false;
     cancelSettle();
-    if (userStateFrame !== null) cancelAnimationFrame(userStateFrame);
-    userStateFrame = null;
     if (reactivationFrame !== null) cancelAnimationFrame(reactivationFrame);
     reactivationFrame = null;
     if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
