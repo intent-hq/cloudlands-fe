@@ -338,7 +338,7 @@ describe('DevicesSettings', () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('shows only the raw version beside the name when connected', () => {
+  it('shows no hostname or version beside the name when connected', () => {
     mocks.connections = [
       local,
       { ...remote, hostname: 'studio-host', status: 'connected', intentdVersion: '6.8.0' },
@@ -346,7 +346,7 @@ describe('DevicesSettings', () => {
     render(DevicesSettings);
 
     expect(screen.queryByText('studio-host')).toBeNull();
-    expect(screen.getByText('6.8.0')).toBeTruthy();
+    expect(screen.queryByText('6.8.0')).toBeNull();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
     for (const status of screen.getAllByRole('status')) {
       expect(status.getAttribute('aria-label')).toBeTruthy();
@@ -521,7 +521,7 @@ describe('DevicesSettings', () => {
       },
     );
 
-    it('leaves a current displayed version without a warning trigger', () => {
+    it('hides a current version', () => {
       mocks.pinnedVersion = '0.9.1';
       mocks.connections = [
         local,
@@ -529,8 +529,7 @@ describe('DevicesSettings', () => {
       ];
       render(DevicesSettings);
 
-      expect(screen.getByText('6.8.0')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: '6.8.0' })).toBeNull();
+      expect(screen.queryByText('6.8.0')).toBeNull();
     });
 
     it('shows no indicator for up-to-date or unknown versions', () => {
@@ -1452,7 +1451,7 @@ describe('DevicesSettings', () => {
       expect(within(providers).getByRole('img', { name: 'claude-code' })).toBeTruthy();
     });
 
-    it('keeps the version beside the badge for a connected machine made available to the backend', () => {
+    it('shows the platform and providers but no version for a connected machine made available to the backend', () => {
       store.dispatch(setLabsRemoteAgentsEnabled(true));
       store.dispatch(
         remoteMachinesLoaded({
@@ -1489,7 +1488,7 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
 
       const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
-      expect(row.getByText('0.11.120')).toBeTruthy();
+      expect(row.queryByText('0.11.120')).toBeNull();
       expect(row.getByRole('img', { name: 'macOS' })).toBeTruthy();
       const providers = row.getByRole('list', { name: m.settings_devices_providers_ariaLabel() });
       expect(within(providers).getByRole('img', { name: 'Codex' })).toBeTruthy();

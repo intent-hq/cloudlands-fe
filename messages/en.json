@@ -8643,7 +8643,6 @@
   "cloudMachines_remove_confirmWithSandboxes_description": "Every E2B sandbox is deleted after its agents stop and push their work, and the key is deleted from this backend. Work they did not push is lost.",
   "cloudMachines_remove_stopAgents_label": "Stop agents and remove",
   "cloudMachines_row_notSaved": "Cloud machine · not saved",
-  "cloudMachines_row_template": "intent-node {version}",
   "cloudMachines_sandbox_running": "Running",
   "cloudMachines_sandbox_paused": "Paused",
   "cloudMachines_sandbox_pausing": "Pausing",

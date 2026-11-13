@@ -34,7 +34,7 @@ const providerNames = (element: HTMLElement) =>
     .filter((label) => label && !['macOS', 'Linux', 'Windows'].includes(label));
 
 describe('remote machine rows while disconnected', () => {
-  it('shows the runnable providers and version of the last report', () => {
+  it('shows the runnable providers of the last report, without its version', () => {
     const garage = row(renderDisconnected(), 'Garage node');
     expect(garage.hasAttribute('data-remote-machine-row')).toBe(true);
     const providers = within(garage).getByRole('list', { name: 'Available AI providers' });
@@ -44,7 +44,10 @@ describe('remote machine rows while disconnected', () => {
     expect(names.some((name) => /unsloth/i.test(name!))).toBe(true);
     expect(names.some((name) => /grok/i.test(name!))).toBe(false);
     expect(names.some((name) => /cortex/i.test(name!))).toBe(false);
-    expect(within(garage).getByText('0.11.197')).toBeTruthy();
+    expect(within(garage).queryByText('0.11.197')).toBeNull();
+    expect(
+      garage.querySelector('[data-remote-machine-dot="disconnected"]')?.getAttribute('aria-label'),
+    ).toBeTruthy();
     expect(within(garage).queryByText('No providers ready')).toBeNull();
   });
 

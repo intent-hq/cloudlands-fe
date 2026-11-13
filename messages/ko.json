@@ -8643,7 +8643,6 @@
   "cloudMachines_remove_confirmWithSandboxes_description": "모든 E2B 샌드박스는 에이전트가 중지되고 작업을 푸시한 뒤 삭제되며, 키도 이 백엔드에서 삭제됩니다. 푸시하지 않은 작업은 사라집니다.",
   "cloudMachines_remove_stopAgents_label": "에이전트 중지 후 제거",
   "cloudMachines_row_notSaved": "클라우드 머신 · 저장 안 됨",
-  "cloudMachines_row_template": "intent-node {version}",
   "cloudMachines_sandbox_running": "실행 중",
   "cloudMachines_sandbox_paused": "일시 중지됨",
   "cloudMachines_sandbox_pausing": "일시 중지 중",

@@ -8643,7 +8643,6 @@
   "cloudMachines_remove_confirmWithSandboxes_description": "各 E2B サンドボックスは、エージェントが停止して作業をプッシュした後に削除され、キーもこのバックエンドから削除されます。プッシュされていない作業は失われます。",
   "cloudMachines_remove_stopAgents_label": "エージェントを停止して削除",
   "cloudMachines_row_notSaved": "クラウドマシン · 未保存",
-  "cloudMachines_row_template": "intent-node {version}",
   "cloudMachines_sandbox_running": "実行中",
   "cloudMachines_sandbox_paused": "一時停止中",
   "cloudMachines_sandbox_pausing": "一時停止しています",

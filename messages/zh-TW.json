@@ -8643,7 +8643,6 @@
   "cloudMachines_remove_confirmWithSandboxes_description": "每個 E2B 沙盒會在其代理停止並推送工作後刪除，金鑰也會從此後端刪除。未推送的工作會遺失。",
   "cloudMachines_remove_stopAgents_label": "停止代理並移除",
   "cloudMachines_row_notSaved": "雲端機器 · 未儲存",
-  "cloudMachines_row_template": "intent-node {version}",
   "cloudMachines_sandbox_running": "執行中",
   "cloudMachines_sandbox_paused": "已暫停",
   "cloudMachines_sandbox_pausing": "正在暫停",

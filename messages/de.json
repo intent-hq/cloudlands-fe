@@ -8643,7 +8643,6 @@
   "cloudMachines_remove_confirmWithSandboxes_description": "Jede E2B-Sandbox wird gelöscht, nachdem ihre Agenten gestoppt und ihre Arbeit gepusht haben, und der Schlüssel wird von diesem Backend gelöscht. Nicht gepushte Arbeit geht verloren.",
   "cloudMachines_remove_stopAgents_label": "Agenten stoppen und entfernen",
   "cloudMachines_row_notSaved": "Cloud-Maschine · nicht gespeichert",
-  "cloudMachines_row_template": "intent-node {version}",
   "cloudMachines_sandbox_running": "Läuft",
   "cloudMachines_sandbox_paused": "Pausiert",
   "cloudMachines_sandbox_pausing": "Wird pausiert",
