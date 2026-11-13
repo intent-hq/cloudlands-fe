@@ -7,11 +7,13 @@
  * every listed agent including delegated sub-agents (see cycle-scope.ts).
  *
  * The attention/failed predicates mirror the LED engine (led/snapshot.ts)
- * definitions so key behavior and lighting agree. Workspaces not open as
- * top tabs are never cycled into, and tabs are filtered through
+ * definitions so keys and lighting classify agents alike; the LEDs still
+ * summarize every workspace, while the keys only walk open tabs. Workspaces
+ * not open as top tabs are never cycled into, and tabs are filtered through
  * `isKeyAssignableWorkspace` (assignment/key-assignment.ts), so the chief
- * virtual workspace and archived/deleted workspaces are skipped too. Dependency-light per src/store/renderer/AGENTS.md middleware
- * conventions: no selector imports — narrow structural state only.
+ * virtual workspace and archived/deleted workspaces are skipped too.
+ * Dependency-light per src/store/renderer/AGENTS.md middleware conventions:
+ * no selector imports — narrow structural state only.
  */
 
 import { AgentStatus, type Workspace } from '$shared/types';

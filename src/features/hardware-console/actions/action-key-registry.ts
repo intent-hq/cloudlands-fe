@@ -339,10 +339,34 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
  * the walk at the same position press after press. Transient UI-only state
  * (like `layoutPresetCursor` below).
  */
-const lastCycledStopByAction = new Map<
-  ActionKeyActionId,
-  { entry: CycleStopEntry; rank: number }
->();
+const lastCycledStopByAction = new Map<ActionKeyActionId, CycleCursor>();
+
+/**
+ * Where a cycle family last stepped: the stop, its walk group, and the stops
+ * that followed it in the same group on the same tab at that moment — so a
+ * resume after the stop drops out continues after it, not at the tab start.
+ */
+interface CycleCursor {
+  entry: CycleStopEntry;
+  rank: number;
+  laterOnTab: Set<string>;
+}
+
+function makeCycleCursor(
+  entries: readonly CycleStopEntry[],
+  index: number,
+  rankOf: (entry: CycleStopEntry) => number,
+): CycleCursor {
+  const entry = entries[index];
+  const rank = rankOf(entry);
+  const laterOnTab = new Set(
+    entries
+      .slice(index + 1)
+      .filter((e) => e.wsId === entry.wsId && rankOf(e) === rank)
+      .map(cycleStopKey),
+  );
+  return { entry, rank, laterOnTab };
+}
 
 /**
  * Per-family stop whose side effects failed on the last press — either threw
@@ -402,8 +426,9 @@ interface GlobalCycleSpec {
 /**
  * Shared shape of the global cycle actions: collect the matching agents (in
  * tab order), step to the entry after the walk anchor (the family's own
- * cursor when it is still a candidate, else the focused agent, else the
- * first stop at or after the cursor's group and tab, wrapping), switch workspace
+ * cursor when it is still a candidate, else the first stop after the
+ * cursor's position in its group and tab order, else the focused agent,
+ * wrapping), switch workspace
  * when needed, and focus the agent's tab + composer. The cursor is
  * preferred because the state anchor can lag or be re-pointed between
  * presses (async navigation, workspace loaders) — anchoring on it alone is
@@ -446,7 +471,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           ? entries[0].agentId === focused
           : entries[0].wsId === activeWorkspaceId(context));
       if (alreadyThere) {
-        lastCycledStopByAction.set(spec.id, { entry: entries[0], rank: rankOf(entries[0]) });
+        lastCycledStopByAction.set(spec.id, makeCycleCursor(entries, 0, rankOf));
         // Workspace-level stop we're already on: still (re-)request hydration
         // so the press converges the session cache even if the route-mount
         // hydration failed.
@@ -460,32 +485,34 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       if (retryIndex !== -1) {
         next = entries[retryIndex];
       } else {
-        const cursorStop = lastCycledStopByAction.get(spec.id);
-        const cursor = cursorStop?.entry;
-        const cursorKey = cursor === undefined ? undefined : cycleStopKey(cursor);
+        const cursor = lastCycledStopByAction.get(spec.id);
+        const cursorKey = cursor === undefined ? undefined : cycleStopKey(cursor.entry);
         let index =
           cursorKey === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursorKey);
-        if (index === -1 && cursor !== undefined && cursor.agentId === null) {
+        if (index === -1 && cursor !== undefined && cursor.entry.agentId === null) {
           // The stored cursor was a workspace-level stop whose workspace has
           // since hydrated (its stop now keys by agent id): resume from that
-          // workspace's stop instead of restarting the walk.
-          index = entries.findIndex((e) => e.wsId === cursor.wsId);
-        }
-        if (index === -1 && focused !== null) {
-          index = entries.findIndex((e) => e.agentId === focused);
+          // workspace's stop in the same group instead of restarting the walk.
+          index = entries.findIndex(
+            (e) => e.wsId === cursor.entry.wsId && rankOf(e) === cursor.rank,
+          );
         }
         const tabIndex = cycleTabIndex(state);
-        const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.wsId);
-        if (index === -1 && cursorStop !== undefined && cursorTab !== undefined) {
+        const cursorTab = cursor === undefined ? undefined : tabIndex.get(cursor.entry.wsId);
+        if (index === -1 && cursor !== undefined && cursorTab !== undefined) {
           // The last stop dropped out (e.g. visiting it marked it read):
-          // resume at the first stop in its group on its tab or a later one,
+          // resume right after it — in its group, on its tab or a later one —
           // so the walk keeps going round instead of restarting.
           const resume = entries.findIndex((e) => {
             const rank = rankOf(e);
-            if (rank !== cursorStop.rank) return rank > cursorStop.rank;
-            return (tabIndex.get(e.wsId) ?? 0) >= cursorTab;
+            if (rank !== cursor.rank) return rank > cursor.rank;
+            const tab = tabIndex.get(e.wsId) ?? 0;
+            if (tab !== cursorTab) return tab > cursorTab;
+            return cursor.laterOnTab.has(cycleStopKey(e));
           });
           index = (resume === -1 ? entries.length : resume) - 1;
+        } else if (index === -1 && focused !== null) {
+          index = entries.findIndex((e) => e.agentId === focused);
         }
         next = entries[(index + 1) % entries.length];
       }
@@ -529,7 +556,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       // middleware hides it after inactivity): a throw above leaves the
       // cursor on the previous stop so the next press retries this one
       // instead of skipping it.
-      lastCycledStopByAction.set(spec.id, { entry: next, rank: rankOf(next) });
+      lastCycledStopByAction.set(spec.id, makeCycleCursor(entries, entries.indexOf(next), rankOf));
       const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
       context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
     },
