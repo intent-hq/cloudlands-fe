@@ -729,10 +729,7 @@ export function createVerificationPlan(files, options = {}) {
     });
   if (typeCheckWrapper)
     checks.push(
-      command('type-check-validate', 'Type check (validate wrapper)', [
-        'run',
-        'type-check:validate',
-      ]),
+      command('type-check-wrapper', 'Type check (wrapper, all programs)', ['run', 'type-check']),
     );
   // Selected test coverage is only equivalent if the real-repository test can run.
   const suiteCovered = (requiredSuite) =>
