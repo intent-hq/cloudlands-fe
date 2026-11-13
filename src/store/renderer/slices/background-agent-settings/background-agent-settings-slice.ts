@@ -385,13 +385,12 @@ backgroundAgentSettingsReducer.with(
       fields.push(`typeReasoningEffortOverrides.${type}`);
     }
     // Effort is a candidate list: the daemon tries an action's own effort, then
-    // the shared one. Keep the shared effort as that hidden fallback unless the
-    // user asks for the provider default, which only its removal can express.
+    // the shared one. Retire the shared effort only when no action needs it as
+    // a fallback; otherwise it stays, and an action without its own inherits it.
     let sharedEffort = state.defaultReasoningEffort;
-    const clearsEffort = effort !== undefined && !effort.trim();
-    if (sharedEffort && (clearsEffort || SHARED_DEFAULT_TYPES.every((key) => !efforts[key]))) {
-      for (const key of SHARED_DEFAULT_TYPES) efforts[key] ||= sharedEffort;
-      if (clearsEffort) delete efforts[type];
+    if (sharedEffort && SHARED_DEFAULT_TYPES.every((key) => !efforts[key])) {
+      for (const key of SHARED_DEFAULT_TYPES) efforts[key] = sharedEffort;
+      if (effort !== undefined && !effort.trim()) delete efforts[type];
       sharedEffort = '';
       fields.push('defaultReasoningEffort', 'typeReasoningEffortOverrides');
     }

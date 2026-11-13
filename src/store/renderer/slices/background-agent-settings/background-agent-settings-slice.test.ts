@@ -430,7 +430,7 @@ describe('editQuickAction', () => {
     },
   );
 
-  it('sends an action to the provider default instead of the retired shared default', () => {
+  it('keeps the shared effort as a fallback when an action clears its effort', () => {
     let state = backgroundAgentSettingsReducer(
       legacy,
       editQuickAction({ type: 'commit', model: '' }),
@@ -438,14 +438,10 @@ describe('editQuickAction', () => {
     state = backgroundAgentSettingsReducer(state, editQuickAction({ type: 'commit', effort: '' }));
     expect(state.typeOverrides.commit).toBe('');
     expect(state.typeOverrides.pr).toBe('pr-pinned');
-    // The daemon falls back to a saved shared effort, so an explicit provider
-    // default must retire it. Actions that inherited it keep it as their own.
-    expect(state.defaultReasoningEffort).toBe('');
-    expect(state.typeReasoningEffortOverrides).toEqual({
-      pr: 'high',
-      review: 'low',
-      walkthrough: 'low',
-    });
+    // PR's own effort still falls back to the shared one, so the shared
+    // effort stays and commit inherits it instead of the provider default.
+    expect(state.defaultReasoningEffort).toBe('low');
+    expect(state.typeReasoningEffortOverrides).toEqual({ pr: 'high' });
   });
 
   it('changes only the edited field when no shared default is saved', () => {
