@@ -745,7 +745,9 @@ for (const appearance of ['light', 'dark'] as const) {
       handleAuthenticatedRequest: async (request, response) => {
         const pathname = new URL(request.url!, developmentUrl).pathname;
         if (['/', '/index.html', '/inline-html-sandbox.html'].includes(pathname)) return false;
-        const upstream = await fetch(new URL(request.url!, developmentUrl));
+        const upstream = await fetch(new URL(request.url!, developmentUrl), {
+          headers: { accept: request.headers.accept ?? '*/*' },
+        });
         response.statusCode = upstream.status;
         response.setHeader('Content-Type', upstream.headers.get('Content-Type') ?? 'text/plain');
         response.end(Buffer.from(await upstream.arrayBuffer()));
@@ -767,7 +769,7 @@ for (const appearance of ['light', 'dark'] as const) {
       expect(signedOut.status()).toBe(401);
       expect(signedOut.headers()['x-frame-options']).toBe('DENY');
       const login = await page.request.get(`${baseUrl}/?key=${accessKey}`, { maxRedirects: 0 });
-      expect(login.status()).toBe(302);
+      expect(login.status()).toBe(303);
       const app = await page.request.get(`${baseUrl}/index.html`);
       expect(app.headers()['x-frame-options']).toBe('DENY');
       expect(app.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
