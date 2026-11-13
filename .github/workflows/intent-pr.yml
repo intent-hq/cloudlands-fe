@@ -775,8 +775,10 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
+      # `type-check` also covers main, but "Build main process" below compiles
+      # tsconfig.main.json anyway; checking it here would add ~100 s for nothing.
       - name: Type check (renderer)
-        run: pnpm run type-check
+        run: pnpm run type-check:renderer
       - name: Type check (preload)
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
       - name: Accessibility lint

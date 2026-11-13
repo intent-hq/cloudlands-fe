@@ -1437,7 +1437,7 @@ describe('verification planning', () => {
     ]);
   });
 
-  it('runs the type-check:validate wrapper only when scripts/type-check.ts changes', () => {
+  it('runs the type-check wrapper only when scripts/type-check.ts changes', () => {
     const root = fixtureRoot({
       'scripts/type-check.ts': '',
       'src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts': '',
@@ -1445,10 +1445,10 @@ describe('verification planning', () => {
     const wrapper = createVerificationPlan(['scripts/type-check.ts'], { root, ctTests: [] });
     const ids = wrapper.checks.map((check) => check.id);
     expect(ids).toContain('architecture');
-    expect(ids).toContain('type-check-validate');
-    expect(ids.indexOf('type-check-validate')).toBe(ids.indexOf('architecture') + 1);
-    const validate = wrapper.checks.find((check) => check.id === 'type-check-validate');
-    expect(validate?.args).toEqual(['run', 'type-check:validate']);
+    expect(ids).toContain('type-check-wrapper');
+    expect(ids.indexOf('type-check-wrapper')).toBe(ids.indexOf('architecture') + 1);
+    const validate = wrapper.checks.find((check) => check.id === 'type-check-wrapper');
+    expect(validate?.args).toEqual(['run', 'type-check']);
     expect(validate?.lockKind).toBeNull();
 
     const saga = createVerificationPlan(
@@ -1456,7 +1456,7 @@ describe('verification planning', () => {
       { root, ctTests: [] },
     );
     expect(saga.checks.map((check) => check.id)).toContain('architecture');
-    expect(saga.checks.map((check) => check.id)).not.toContain('type-check-validate');
+    expect(saga.checks.map((check) => check.id)).not.toContain('type-check-wrapper');
   });
 
   it('runs the architecture gates when an AGENTS.md instruction file changes', () => {
