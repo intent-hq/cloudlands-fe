@@ -198,6 +198,7 @@ function destroyView(window: BrowserWindowType, id: string): void {
   } catch {
     /* The window is already tearing its views down. */
   }
+  settleReadyWaiters(view.webContents);
   // A view's web contents outlives its window unless it is closed here.
   if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
   forgetHealthWithoutRenderer(id);
@@ -362,14 +363,18 @@ function markReady(window: BrowserWindowType, sender: Electron.WebContents): voi
   const entry = [...viewsOf(window)].find(([, view]) => view.webContents === sender);
   if (!entry) return;
   readyViews.add(sender);
-  for (const resolve of readyWaiters.get(sender) ?? []) resolve();
-  readyWaiters.delete(sender);
+  settleReadyWaiters(sender);
   if (isMachineRailEnabled() && transitions.get(window)?.pendingId === entry[0]) {
     showMachine(window, entry[0]);
   }
 }
 
-/** Settles once `contents` reports ready, or after the longest a start may take. */
+function settleReadyWaiters(contents: Electron.WebContents): void {
+  for (const resolve of readyWaiters.get(contents) ?? []) resolve();
+  readyWaiters.delete(contents);
+}
+
+/** Settles once `contents` reports ready or is dropped, or after the longest a start may take. */
 function whenReady(contents: Electron.WebContents): Promise<void> {
   if (contents.isDestroyed() || readyViews.has(contents)) return Promise.resolve();
   return new Promise((resolve) => {
@@ -384,17 +389,14 @@ function whenReady(contents: Electron.WebContents): Promise<void> {
 }
 
 /**
- * Start each connected machine's renderer in the background, one at a time
- * and hidden, so picking it later shows it at once. A machine that is offline
- * now starts when picked, as before.
+ * Start a connected machine's renderer in the background, hidden, so picking
+ * it later shows it at once. A machine that is offline now starts when picked.
  */
-async function preloadMachines(window: BrowserWindowType, ids: string[]): Promise<void> {
-  for (const id of ids) {
-    if (window.isDestroyed() || !isMachineRailEnabled()) return;
-    if (!readWindowRail(window).machineIds.includes(id)) continue;
-    if (!(deps?.isConnected(id) ?? false)) continue;
-    await whenReady(ensureView(window, id).webContents);
-  }
+async function preloadMachine(window: BrowserWindowType, id: string): Promise<void> {
+  if (window.isDestroyed() || !isMachineRailEnabled()) return;
+  if (!readWindowRail(window).machineIds.includes(id)) return;
+  if (!(deps?.isConnected(id) ?? false)) return;
+  await whenReady(ensureView(window, id).webContents);
 }
 
 /** A started machine that is offline: try it once more, then show it either way. */
@@ -548,25 +550,29 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   writeWindowRail(window, rail);
   broadcastState(window);
   // Every machine reconnects now. The one that was shown starts first; the
-  // others start in the background once it is ready.
+  // others start in the background once it is ready, in the order they connect.
   const selected = rail.selectedId;
-  await Promise.all(
-    rail.machineIds.slice(1).map(async (id) => {
-      await connectQuietly(id);
-      if (id !== selected || window.isDestroyed()) return;
-      if (readWindowRail(window).selectedId === id) {
-        applySelection(window);
-        broadcastState(window);
-      }
-    }),
-  );
-  if (window.isDestroyed()) return;
-  const shown = viewsOf(window).get(selected);
-  if (shown) await whenReady(shown.webContents);
-  await preloadMachines(
-    window,
-    rail.machineIds.slice(1).filter((id) => id !== selected),
-  );
+  const connects = rail.machineIds.slice(1).map((id) => ({
+    id,
+    settled: connectQuietly(id).then(() => id),
+  }));
+  const shownConnect = connects.find((connect) => connect.id === selected);
+  if (shownConnect) {
+    await shownConnect.settled;
+    if (window.isDestroyed()) return;
+    if (readWindowRail(window).selectedId === selected) {
+      applySelection(window);
+      broadcastState(window);
+    }
+    const shown = viewsOf(window).get(selected);
+    if (shown) await whenReady(shown.webContents);
+  }
+  let waiting = connects.filter((connect) => connect !== shownConnect);
+  while (waiting.length > 0) {
+    const id = await Promise.race(waiting.map((connect) => connect.settled));
+    waiting = waiting.filter((connect) => connect.id !== id);
+    await preloadMachine(window, id);
+  }
 }
 
 function resetWindow(window: BrowserWindowType): void {
