@@ -154,6 +154,8 @@ export function isDeviceIconChoice(value: unknown): value is DeviceIconChoice {
 export interface ConnectionRecord {
   id: string;
   label: string;
+  /** Details retained for existing windows/rails, never a saved connection to add or open. */
+  displayOnly?: true;
   /** Palette-backed remote identity accent; missing is legacy, `null` is explicitly blank. */
   accent?: ConnectionAccent;
   /** Daemon-detected kind; `null` when the daemon omits or predates the field. */

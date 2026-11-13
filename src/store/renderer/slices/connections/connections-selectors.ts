@@ -32,9 +32,9 @@ export const selectConnectionRecoveryTarget = store.createSelector((state, id: s
   connection: getItem(state.connections.connections, id),
 }));
 
-/** Full ordered connections list (local first, then remotes). */
+/** Full ordered saved connections list (local first, then remotes). */
 export const selectConnections = store.createSelector((state) =>
-  getItems(state.connections.connections),
+  getItems(state.connections.connections).filter((connection) => !connection.displayOnly),
 );
 
 /**
@@ -42,12 +42,16 @@ export const selectConnections = store.createSelector((state) =>
  * which only run agents for other backends and never open a window.
  */
 export const selectBackendConnections = store.createSelector((state) =>
-  getItems(state.connections.connections).filter((connection) => connection.daemonMode !== 'node'),
+  getItems(state.connections.connections).filter(
+    (connection) => !connection.displayOnly && connection.daemonMode !== 'node',
+  ),
 );
 
 /** Saved remote machines only (the synthetic local record is excluded). */
 export const selectRemoteConnections = store.createSelector((state) =>
-  getItems(state.connections.connections).filter((connection) => !connection.isLocal),
+  getItems(state.connections.connections).filter(
+    (connection) => !connection.displayOnly && !connection.isLocal,
+  ),
 );
 
 /** Whether the authoritative connection list has completed its first hydration. */

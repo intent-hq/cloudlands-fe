@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "No se pudieron cargar todos los espacios de trabajo archivados.",
   "machineRail_nav_ariaLabel": "Equipos en esta ventana",
   "machineRail_item_offline_label": "{name} (desconectado)",
+  "machineRail_item_unknown_label": "Máquina desconocida",
   "machineRail_add_label": "Añadir un equipo a esta ventana",
   "machineRail_add_header": "Añadir a esta ventana",
   "machineRail_remove_header": "Quitar de esta ventana",

@@ -2667,6 +2667,7 @@
   "home_archived_loadFailed_error": "無法載入所有已封存的工作區。",
   "machineRail_nav_ariaLabel": "此視窗中的電腦",
   "machineRail_item_offline_label": "{name}(已中斷連線)",
+  "machineRail_item_unknown_label": "未知裝置",
   "machineRail_add_label": "將電腦新增至此視窗",
   "machineRail_add_header": "新增至此視窗",
   "machineRail_remove_header": "從此視窗移除",
