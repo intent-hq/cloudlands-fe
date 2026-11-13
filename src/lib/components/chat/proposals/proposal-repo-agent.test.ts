@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The disabled check normalizes provider ids via the providerCatalog slice.
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => ({}) });
+});
 
 import {
-  hasAgentSetupFields,
-  proposalAgentSetup,
+  adoptableProposalAgentSetup,
   proposalRepoKeys,
   resolveProposalRepoAgentDefault,
 } from './proposal-repo-agent';
@@ -78,42 +84,80 @@ describe('resolveProposalRepoAgentDefault', () => {
   });
 });
 
-describe('proposalAgentSetup', () => {
+describe('adoptableProposalAgentSetup', () => {
+  const OPUS_HIGH = {
+    selectedProvider: 'claude-code',
+    selectedModel: 'claude-opus-4-5',
+    modelWasOverridden: true,
+    selectedReasoningEffort: 'high',
+  };
+
+  it('adopts the remembered setup while its provider is enabled', () => {
+    expect(adoptableProposalAgentSetup(OPUS_HIGH, { 'claude-code': true })).toEqual({
+      provider: 'claude-code',
+      model: 'claude-opus-4-5',
+      reasoningEffort: 'high',
+    });
+    expect(adoptableProposalAgentSetup(OPUS_HIGH, {})).toEqual({
+      provider: 'claude-code',
+      model: 'claude-opus-4-5',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('adopts none of provider, model or effort once the provider is turned off', () => {
+    expect(adoptableProposalAgentSetup(OPUS_HIGH, { 'claude-code': false })).toBeNull();
+    expect(
+      adoptableProposalAgentSetup(
+        { selectedProvider: 'auggie', modelWasOverridden: false },
+        { auggie: false, codex: true },
+      ),
+    ).toBeNull();
+  });
+
+  it('treats a profile as disabled when its base provider is', () => {
+    const profile = { selectedProvider: 'codex@pwork00000001', selectedReasoningEffort: 'low' };
+    expect(adoptableProposalAgentSetup(profile, { codex: false })).toBeNull();
+    expect(adoptableProposalAgentSetup(profile, { codex: true })).toEqual({
+      provider: 'codex@pwork00000001',
+      reasoningEffort: 'low',
+    });
+  });
+
+  it('keeps an effort-only setup, which names no provider', () => {
+    expect(
+      adoptableProposalAgentSetup({ selectedReasoningEffort: 'low' }, { auggie: false }),
+    ).toEqual({ reasoningEffort: 'low' });
+  });
+
   it('sends the model only when it was an explicit pick, like New Workspace', () => {
     expect(
-      proposalAgentSetup({
-        selectedProvider: 'claude-code',
-        selectedModel: 'claude-opus-4-5',
-        modelWasOverridden: true,
-        selectedReasoningEffort: 'high',
-      }),
-    ).toEqual({ provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' });
-    expect(
-      proposalAgentSetup({
-        selectedProvider: 'claude-code',
-        selectedModel: 'claude-opus-4-5',
-        modelWasOverridden: false,
-      }),
+      adoptableProposalAgentSetup(
+        {
+          selectedProvider: 'claude-code',
+          selectedModel: 'claude-opus-4-5',
+          modelWasOverridden: false,
+        },
+        {},
+      ),
     ).toEqual({ provider: 'claude-code' });
   });
 
   it('splits a legacy compound model id and keeps an explicitly cleared effort', () => {
     expect(
-      proposalAgentSetup({
-        selectedModel: 'codex:gpt-fixture',
-        modelWasOverridden: true,
-        selectedReasoningEffort: '',
-      }),
+      adoptableProposalAgentSetup(
+        {
+          selectedModel: 'codex:gpt-fixture',
+          modelWasOverridden: true,
+          selectedReasoningEffort: '',
+        },
+        {},
+      ),
     ).toEqual({ provider: 'codex', model: 'gpt-fixture', reasoningEffort: '' });
   });
-});
 
-describe('hasAgentSetupFields', () => {
-  it('needs a provider, a model, or a non-empty effort', () => {
-    expect(hasAgentSetupFields({ provider: 'claude-code' })).toBe(true);
-    expect(hasAgentSetupFields({ model: 'claude-opus-4-5' })).toBe(true);
-    expect(hasAgentSetupFields({ reasoningEffort: 'low' })).toBe(true);
-    expect(hasAgentSetupFields({})).toBe(false);
-    expect(hasAgentSetupFields({ reasoningEffort: '' })).toBe(false);
+  it('returns null when the setup names no provider, model or non-empty effort', () => {
+    expect(adoptableProposalAgentSetup({}, {})).toBeNull();
+    expect(adoptableProposalAgentSetup({ selectedReasoningEffort: '' }, {})).toBeNull();
   });
 });

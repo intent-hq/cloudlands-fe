@@ -155,6 +155,14 @@ vi.mock('$lib/components/chat/SpecialistDropdown.svelte', async () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: vi.fn(() => readable(() => ({}))),
 }));
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
+  selectEnabledProviders: () => ({
+    subscribe: (run: (value: Record<string, boolean>) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
+}));
 vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
   selectProviderModelsCacheMap: () => ({
     subscribe: (run: (value: Record<string, unknown>) => void) => {

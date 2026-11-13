@@ -62,13 +62,13 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
-    hasAgentSetupFields,
-    proposalAgentSetup,
+    adoptableProposalAgentSetup,
     proposalRepoKeys,
     resolveProposalRepoAgentDefault,
     type ProposalRepoAgentDefault,
   } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
+  import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -196,6 +196,7 @@
   // The setup New Workspace last used to create a workspace in the card's
   // repository (read, not subscribed, like the modal default above).
   let repoAgentDefault = $state<ProposalRepoAgentDefault | null>(null);
+  const enabledProviders = selectEnabledProviders();
 
   function readRepoAgentDefault(): ProposalRepoAgentDefault | null {
     const state = appStore.state;
@@ -264,12 +265,13 @@
   );
   // Provider/model/effort adopted from the repository's remembered setup while
   // the card still starts that remembered agent; `null` when there is nothing
-  // to send. Applied on create without being shown on the card.
+  // to send or its provider has since been turned off. Re-derived when
+  // provider enablement changes, so Apply/Retry never sends a disabled one.
+  // Applied on create without being shown on the card.
   const adoptedAgentSetup = $derived.by(() => {
     if (!repoAgentDefault || proposalNamesAgent) return null;
     if (workspaceSpecialist !== repoAgentDefault.specialist) return null;
-    const setup = proposalAgentSetup(repoAgentDefault.settings);
-    return hasAgentSetupFields(setup) ? setup : null;
+    return adoptableProposalAgentSetup(repoAgentDefault.settings, $enabledProviders);
   });
   const statusMessage = $derived(getStatusMessage());
   const prBranchLookup = $derived(
