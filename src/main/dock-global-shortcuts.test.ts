@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   binding: null as null | { backendId: string },
   observe: vi.fn(),
   focus: vi.fn(),
+  admit: vi.fn(),
   keys: new Map<string, () => void>(),
 }));
 vi.mock('electron', () => ({
@@ -33,6 +34,7 @@ vi.mock('./dock-shortcut-settings-ipc', () => ({
 vi.mock('./dock-foreground-observation', () => ({
   readDockForegroundObservation: fixture.observe,
 }));
+vi.mock('./dock-context-ipc', () => ({ admitDockForegroundSample: fixture.admit }));
 vi.mock('./dock-window', () => ({
   getDockWindow: () => fixture.window,
   focusDockWindow: fixture.focus,
@@ -60,6 +62,7 @@ beforeEach(async () => {
   syncDockGlobalShortcuts(false);
   fixture.observe.mockReset().mockResolvedValue({ appId: 'test.foreground' });
   fixture.focus.mockReset();
+  fixture.admit.mockReset().mockReturnValue(null);
   fixture.window = { webContents: {}, isFocused: () => false };
   fixture.binding = { backendId: 'test-backend' };
   await initializeDockShortcutSettings();
@@ -137,4 +140,11 @@ describe('dock shortcut async admission', () => {
       expect(admitted).toBe(change === 'newer request' ? 1 : 0);
     },
   );
+});
+
+it('cancels invalidated foreground reads without focus, admission or rejected shortcut promise', async () => {
+  fixture.observe.mockRejectedValueOnce(new Error('Foreground observation invalidated'));
+  await expect(requestDockShortcut('focus')).resolves.toBeUndefined();
+  expect(fixture.admit).not.toHaveBeenCalled();
+  expect(fixture.focus).not.toHaveBeenCalled();
 });

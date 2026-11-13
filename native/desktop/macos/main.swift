@@ -22,6 +22,44 @@ let targetDetail = "The target window is not ready for input. Call ws.desktop.fo
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePointer<CGWindowID>) -> AXError
 
+// Electron documents AXManualAccessibility for third-party accessibility readers.
+// Restricted to the observed Figma application/window, never a permission prompt.
+private struct FigmaForegroundOwner: Equatable {
+    let app: NSRunningApplication
+    let element: AXUIElement
+    let window: AXUIElement
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.app.processIdentifier == rhs.app.processIdentifier && CFEqual(lhs.window, rhs.window)
+    }
+}
+private func figmaAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+    var value: CFTypeRef?
+    return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+}
+private func currentFigmaOwner() -> FigmaForegroundOwner? {
+    guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication,
+          app.bundleIdentifier == "com.figma.Desktop", !app.isTerminated else { return nil }
+    let element = AXUIElementCreateApplication(app.processIdentifier)
+    AXUIElementSetMessagingTimeout(element, 0.04)
+    guard let value = figmaAttribute(element, kAXFocusedWindowAttribute),
+          CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+    return FigmaForegroundOwner(app: app, element: element, window: unsafeBitCast(value, to: AXUIElement.self))
+}
+private let figmaAccessibility = FigmaAccessibilityReadiness<FigmaForegroundOwner>(
+    current: currentFigmaOwner, alive: { !$0.app.isTerminated },
+    read: { owner in
+        guard let value = figmaAttribute(owner.element, "AXManualAccessibility"),
+              CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
+        return value as? Bool
+    },
+    settable: { owner in
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(owner.element, "AXManualAccessibility" as CFString, &settable) == .success && settable.boolValue
+    },
+    write: { owner, enabled in
+        AXUIElementSetAttributeValue(owner.element, "AXManualAccessibility" as CFString, enabled ? kCFBooleanTrue : kCFBooleanFalse) == .success
+    })
+
 // Runs on one actor. Pipe EOF releases held input and the flock; each input
 // request is a single OS step, so main can cancel between any down/up pair.
 @available(macOS 14.0, *)
@@ -61,6 +99,7 @@ actor Desktop {
         lastStep = milliseconds()
     }
     func watchdog() {
+        figmaAccessibility.validate(now: UInt64(ProcessInfo.processInfo.systemUptime * 1000))
         if permissionReadiness.expire(now: milliseconds()) {
             permissionProbe?.cancel()
         }
@@ -228,6 +267,7 @@ actor Desktop {
         keys.removeAll(); buttons.removeAll(); flags = []
     }
     func release() {
+        figmaAccessibility.retire()
         releaseInput()
         if lockFD >= 0 { flock(lockFD, LOCK_UN); close(lockFD); lockFD = -1 }
     }
@@ -285,6 +325,7 @@ actor Desktop {
                 result["appId"] = application.bundleIdentifier
                 result["appName"] = application.localizedName
                 if op == "foregroundApp" { return result }
+                figmaAccessibility.validate(now: UInt64(ProcessInfo.processInfo.systemUptime * 1000))
                 // Optional enrichment never asks macOS for a grant or acquires desktop control.
                 guard AXIsProcessTrusted() else { result["urlStatus"] = "permission-required"; return result }
                 let deadline = Date().addingTimeInterval(0.45)
@@ -308,6 +349,10 @@ actor Desktop {
                 }
                 guard let windowValue = attribute(element, kAXFocusedWindowAttribute) else { result["urlStatus"] = "unavailable"; return result }
                 let focusedWindow = unsafeBitCast(windowValue, to: AXUIElement.self)
+                if application.bundleIdentifier == "com.figma.Desktop" {
+                    let owner = FigmaForegroundOwner(app: application, element: element, window: focusedWindow)
+                    figmaAccessibility.observe(owner, now: UInt64(ProcessInfo.processInfo.systemUptime * 1000))
+                }
                 result["title"] = attribute(focusedWindow, kAXTitleAttribute) as? String
                 if let document = urlValue(attribute(focusedWindow, kAXDocumentAttribute)) { result["url"] = document }
                 // The nearest focused web area is a document identity, not a focused link's URL.
@@ -344,6 +389,11 @@ actor Desktop {
                 }
                 // A focus change during the bounded AX read invalidates this observation.
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier else { return [String: Any]() }
+                if application.bundleIdentifier == "com.figma.Desktop" {
+                    guard let current = currentFigmaOwner(), CFEqual(current.window, focusedWindow) else {
+                        figmaAccessibility.retire(); return [String: Any]()
+                    }
+                }
                 result["urlStatus"] = result["url"] == nil ? "unavailable" : "available"
                 return result
             }
