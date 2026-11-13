@@ -8488,6 +8488,8 @@
   "remoteMachines_revoke_label": "撤销",
   "remoteMachines_scriptsUpdate_label": "需要更新才能运行脚本",
   "remoteMachines_noProviders_label": "没有可用的提供方",
+  "remoteMachines_needsNode_label": "需要 Node.js",
+  "remoteMachines_needsNode_tooltip": "在此机器上安装 Node.js 以运行 {providers}",
   "remoteMachines_section_description": "{backend} 可以在这些机器上运行智能体。机器所有者可以随时撤销。",
   "remoteMachines_section_title": "{backend} 可运行智能体的机器",
   "remoteMachines_order_title": "{backend} 运行智能体的位置",

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { setupMachineOrderFixture } from '../../test/machine-order-preview';
+import { machineRowNeedsNode } from './machine-facts';
 
 let restore: (() => void) | null = null;
 afterEach(() => {
@@ -51,10 +52,11 @@ describe('remote machine rows while disconnected', () => {
     expect(within(garage).queryByText('No providers ready')).toBeNull();
   });
 
-  it('says so when no provider can run', () => {
+  it('says Node.js is needed when some providers would run once it is installed', () => {
     const cache = row(renderDisconnected(), 'Cache box');
     expect(within(cache).queryByRole('list', { name: 'Available AI providers' })).toBeNull();
-    expect(within(cache).getByText('No providers ready')).toBeTruthy();
+    expect(within(cache).getByText('Needs Node.js')).toBeTruthy();
+    expect(within(cache).queryByText('No providers ready')).toBeNull();
   });
 
   it('says so on a saved machine row too', () => {
@@ -103,5 +105,42 @@ describe('status dots and platforms in the ordered list', () => {
     const team = row(renderState('owner'), 'Team project');
     expect(within(team).getByRole('img', { name: 'Linux' })).toBeTruthy();
     expect(within(team).queryByText(/vCPU/)).toBeNull();
+  });
+});
+
+describe('machineRowNeedsNode', () => {
+  const machine = (state: string, providers: { id: string; status: string; visible?: false }[]) =>
+    ({
+      id: 'm',
+      name: 'm',
+      hosts: [],
+      port: 1,
+      fingerprint: 'f',
+      state,
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+      capabilities: { providers: providers.map((p) => ({ ...p, models: [] })) },
+    }) as unknown as Parameters<typeof machineRowNeedsNode>[0];
+  const name = (id: string) => ({ pi: 'Pi', codex: 'Codex' })[id];
+
+  it('names the visible providers that only lack Node.js', () => {
+    expect(
+      machineRowNeedsNode(
+        machine('disconnected', [
+          { id: 'pi', status: 'prerequisite-missing' },
+          { id: 'codex', status: 'prerequisite-missing', visible: false },
+          { id: 'grok', status: 'cli-missing' },
+          { id: 'claude', status: 'signed-in' },
+        ]),
+        name,
+      ),
+    ).toEqual(['Pi']);
+  });
+
+  it('is empty without a usable report', () => {
+    expect(machineRowNeedsNode(null, name)).toEqual([]);
+    expect(
+      machineRowNeedsNode(machine('revoked', [{ id: 'pi', status: 'prerequisite-missing' }]), name),
+    ).toEqual([]);
   });
 });

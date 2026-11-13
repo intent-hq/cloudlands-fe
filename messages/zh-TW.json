@@ -8488,6 +8488,8 @@
   "remoteMachines_revoke_label": "撤銷",
   "remoteMachines_scriptsUpdate_label": "需要更新才能執行指令碼",
   "remoteMachines_noProviders_label": "沒有可用的提供者",
+  "remoteMachines_needsNode_label": "需要 Node.js",
+  "remoteMachines_needsNode_tooltip": "在此機器上安裝 Node.js 以執行 {providers}",
   "remoteMachines_section_description": "{backend} 可以在這些機器上執行代理程式。機器擁有者可以隨時撤銷。",
   "remoteMachines_section_title": "{backend} 可執行代理程式的機器",
   "remoteMachines_order_title": "{backend} 執行代理程式的位置",

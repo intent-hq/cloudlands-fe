@@ -66,3 +66,20 @@ export function machineRowProviders(
     .filter(isMachineProviderOffered)
     .map((provider) => ({ id: provider.id, name: catalogName(provider.id) ?? provider.id }));
 }
+
+/**
+ * The providers a machine could run once Node.js is installed: those its
+ * last report marks `prerequisite-missing` (they run through `npx`, which
+ * fetches their pinned adapter). Others may still lack their own CLI.
+ * Empty when the report is not usable.
+ */
+export function machineRowNeedsNode(
+  machine: RemoteMachine | null,
+  catalogName: (providerId: string) => string | undefined,
+): string[] {
+  const report = machineRowReport(machine);
+  if (!report) return [];
+  return report.providers
+    .filter((provider) => provider.visible !== false && provider.status === 'prerequisite-missing')
+    .map((provider) => catalogName(provider.id) ?? provider.id);
+}

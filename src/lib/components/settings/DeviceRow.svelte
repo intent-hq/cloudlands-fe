@@ -83,6 +83,7 @@
   import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
   import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
   import {
+    machineRowNeedsNode,
     machineRowPlatform,
     machineRowProviders,
     machineRowReport,
@@ -319,6 +320,14 @@
     const entries = $catalogEntries$;
     return machineRowProviders(
       device,
+      exposedMachine,
+      (id) => entries.find((entry) => entry.id === id)?.displayName,
+    );
+  });
+  const needsNode = $derived.by(() => {
+    if (device.providers) return [];
+    const entries = $catalogEntries$;
+    return machineRowNeedsNode(
       exposedMachine,
       (id) => entries.find((entry) => entry.id === id)?.displayName,
     );
@@ -689,6 +698,7 @@
         <MachineProviderIcons
           {providers}
           reported={!device.providers && !!machineRowReport(exposedMachine)}
+          {needsNode}
         />
       </span>
     {/snippet}
