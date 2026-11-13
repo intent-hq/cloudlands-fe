@@ -2,6 +2,7 @@
 import { goto } from '$app/navigation';
 import { faFile } from '@fortawesome/free-solid-svg-icons';
 import { openDevConsole } from '$features/dev-console/dev-console-client';
+import { groupTabsByProjectAction } from '$lib/components/layout/workspace-tab-group-controller';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -57,6 +58,9 @@ export function runPaletteCommand(commandId: string, context: PaletteCommandCont
       if (selectWorkspaceCreationVisible.select(appStore.state)) {
         appStore.dispatch(setShowCreateModal(true));
       }
+      return true;
+    case 'group-tabs-by-project':
+      groupTabsByProjectAction().run?.();
       return true;
     case 'settings':
       appStore.dispatch(setShowCreateModal(false));

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
 import {
   buildWorkspaceTabStripItems,
+  getReleasedWorkspaceTabGroupMove,
   layoutWorkspaceTabStrip,
-  proposeGroupedWorkspaceTabOrder,
+  proposeWorkspaceStripDragOrder,
   resolveWorkspaceTabGroupToggle,
 } from './workspace-tab-group-items';
 
@@ -67,7 +68,7 @@ describe('layoutWorkspaceTabStrip drag items', () => {
   });
 });
 
-describe('proposeGroupedWorkspaceTabOrder', () => {
+describe('proposeWorkspaceStripDragOrder for a tab', () => {
   const propose = (
     fullOrder: string[],
     tabGroups: WorkspaceTabGroup[],
@@ -76,7 +77,13 @@ describe('proposeGroupedWorkspaceTabOrder', () => {
     openGroupId: string | null = null,
   ) => {
     const { dragItems } = layoutWorkspaceTabStrip(fullOrder, tabGroups, openGroupId, null);
-    return proposeGroupedWorkspaceTabOrder(dragItems, fullOrder, draggedId, insertionIndex);
+    return proposeWorkspaceStripDragOrder(
+      dragItems,
+      fullOrder,
+      tabGroups,
+      draggedId,
+      insertionIndex,
+    );
   };
 
   it.each([
@@ -141,13 +148,13 @@ describe('proposeGroupedWorkspaceTabOrder', () => {
     const fullOrder = ['a', 'b', 'c', 'd'];
     const { dragItems } = layoutWorkspaceTabStrip(fullOrder, [groups[0]], null, null);
 
-    expect(proposeGroupedWorkspaceTabOrder(dragItems, fullOrder, 'd', 1)).toEqual([
+    expect(proposeWorkspaceStripDragOrder(dragItems, fullOrder, [groups[0]], 'd', 1)).toEqual([
       'a',
       'd',
       'b',
       'c',
     ]);
-    expect(proposeGroupedWorkspaceTabOrder(dragItems, fullOrder, 'd', 2)).toEqual([
+    expect(proposeWorkspaceStripDragOrder(dragItems, fullOrder, [groups[0]], 'd', 2)).toEqual([
       'a',
       'b',
       'c',
@@ -179,5 +186,37 @@ describe('resolveWorkspaceTabGroupToggle', () => {
   it('cannot collapse a group that holds every tab', () => {
     const all: WorkspaceTabGroup[] = [{ id: 'g', name: '', color: 'blue', workspaceIds: ['a'] }];
     expect(resolveWorkspaceTabGroupToggle(['a'], all, 'g', 'a', 'g')).toBeNull();
+  });
+});
+
+describe('dragging a collapsed group', () => {
+  const { dragItems } = layoutWorkspaceTabStrip(order, groups, null, null);
+
+  it('moves the whole group to the drop slot', () => {
+    const keys = dragItems.map((item) => item.key);
+    expect(keys).toEqual(['a', 'tab-group:g', 'd', 'tab-group:h']);
+    const proposed = proposeWorkspaceStripDragOrder(dragItems, order, groups, 'tab-group:g', 3);
+    expect(proposed).toEqual(['a', 'd', 'e', 'b', 'c']);
+    expect(getReleasedWorkspaceTabGroupMove(order, proposed, groups, 'g')).toEqual(['e', 'after']);
+  });
+
+  it('keeps the order when the group is dropped where it started', () => {
+    const proposed = proposeWorkspaceStripDragOrder(dragItems, order, groups, 'tab-group:g', 1);
+    expect(proposed).toEqual(order);
+    expect(getReleasedWorkspaceTabGroupMove(order, proposed, groups, 'g')).toBeNull();
+  });
+
+  it('does not split the open group', () => {
+    const open = layoutWorkspaceTabStrip(['b', 'c', 'e', 'a'], groups, 'g', null);
+    expect(open.dragItems.map((item) => item.key)).toEqual(['b', 'c', 'tab-group:h', 'a']);
+    expect(
+      proposeWorkspaceStripDragOrder(
+        open.dragItems,
+        ['b', 'c', 'e', 'a'],
+        groups,
+        'tab-group:h',
+        1,
+      ),
+    ).toEqual(['e', 'b', 'c', 'a']);
   });
 });

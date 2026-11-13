@@ -1,5 +1,6 @@
 import {
   faFolderPlus,
+  faFolderTree,
   faLayerGroup,
   faPalette,
   faPen,
@@ -19,12 +20,18 @@ import {
   workspaceTabGroupDisplayName,
 } from './workspace-tab-group-labels';
 
+/** Group by project; without `run` the entry shows disabled because nothing would change. */
+export interface WorkspaceTabGroupByProject {
+  run?: () => void;
+}
+
 export interface WorkspaceTabGroupEntriesOptions {
   groups: readonly WorkspaceTabGroup[];
   workspaceId: string;
   onCreateGroup: () => void;
   onAddToGroup: (groupId: string) => void;
   onRemoveFromGroup: () => void;
+  groupByProject?: WorkspaceTabGroupByProject;
 }
 
 /** Tab context-menu entries that put a tab into, or take it out of, a group. */
@@ -34,6 +41,7 @@ export function buildWorkspaceTabGroupEntries({
   onCreateGroup,
   onAddToGroup,
   onRemoveFromGroup,
+  groupByProject,
 }: WorkspaceTabGroupEntriesOptions): SidebarMenuEntry[] {
   const currentGroup = findWorkspaceTabGroup(groups, workspaceId);
   const otherGroups = groups.filter((group) => group !== currentGroup);
@@ -65,7 +73,18 @@ export function buildWorkspaceTabGroupEntries({
       onClick: onRemoveFromGroup,
     });
   }
+  if (groupByProject) entries.push(groupByProjectEntry(groupByProject));
   return entries;
+}
+
+function groupByProjectEntry({ run }: WorkspaceTabGroupByProject): SidebarMenuEntry {
+  return {
+    id: 'tab-group-by-project',
+    label: m.layout_workspaceTabGroup_groupByProject_label(),
+    icon: faFolderTree,
+    onClick: run ?? (() => {}),
+    disabled: !run,
+  };
 }
 
 export interface WorkspaceTabGroupMenuOptions {
@@ -74,6 +93,7 @@ export interface WorkspaceTabGroupMenuOptions {
   onSetColor: (color: WorkspaceTabGroupColor) => void;
   onUngroup: () => void;
   onCloseGroup: () => void;
+  groupByProject?: WorkspaceTabGroupByProject;
 }
 
 /** Context menu for a group chip. */
@@ -83,6 +103,7 @@ export function buildWorkspaceTabGroupMenu({
   onSetColor,
   onUngroup,
   onCloseGroup,
+  groupByProject,
 }: WorkspaceTabGroupMenuOptions): SidebarMenuEntry[] {
   return [
     {
@@ -106,6 +127,7 @@ export function buildWorkspaceTabGroupMenu({
       })),
     },
     { type: 'separator' },
+    ...(groupByProject ? [groupByProjectEntry(groupByProject)] : []),
     {
       id: 'tab-group-ungroup',
       label: m.layout_workspaceTabGroup_ungroup_label(),

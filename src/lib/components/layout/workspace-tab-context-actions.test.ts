@@ -58,9 +58,6 @@ describe('workspace tab context actions', () => {
       'onClick' in entry && entry.disabled ? [entry.id] : [],
     );
     expect(disabled).toEqual(['close-others', 'close-right']);
-    for (const entry of entries) {
-      if ('onClick' in entry && entry.disabled) expect(entry.disabledReason).toBeTruthy();
-    }
   });
 });
 

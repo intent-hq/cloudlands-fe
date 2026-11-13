@@ -31,7 +31,10 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectLabsMultiplayerEnabled,
+    selectLabsTabGroupsEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentCreationActions,
@@ -144,6 +147,7 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const labsTabGroups$ = selectLabsTabGroupsEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -166,7 +170,8 @@
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !(!$canCreate$ && command.id === 'new-workspace'),
+        !(!$canCreate$ && command.id === 'new-workspace') &&
+        !(!$labsTabGroups$ && command.id === 'group-tabs-by-project'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);

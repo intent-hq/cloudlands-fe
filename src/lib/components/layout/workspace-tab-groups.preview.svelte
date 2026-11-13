@@ -33,6 +33,18 @@
     { id: 'tg-bug-5', title: 'Login loop' },
   ];
 
+  const repo = (name: string) => ({ repositoryOwner: 'intent-hq', repositoryName: name });
+  const projectWorkspaces = [
+    { id: 'pj-fe-1', title: 'Tab groups', ...repo('cloudlands-fe') },
+    { id: 'pj-d-1', title: 'Hook retries', ...repo('intentd') },
+    { id: 'pj-fe-2', title: 'Settings search', ...repo('cloudlands-fe') },
+    { id: 'pj-ios-1', title: 'Widget refresh', ...repo('ios') },
+    { id: 'pj-d-2', title: 'Store migration', ...repo('intentd') },
+    { id: 'pj-fe-3', title: 'Menu polish', ...repo('cloudlands-fe') },
+    { id: 'pj-site-1', title: 'Pricing page', ...repo('intentapp.dev') },
+    { id: 'pj-d-3', title: 'PR monitor', ...repo('intentd') },
+  ];
+
   const group = (
     id: string,
     name: string,
@@ -99,6 +111,20 @@
           ],
         },
       },
+      'mixed-projects': {
+        props: {
+          openWorkspaceIds: projectWorkspaces.map((workspace) => workspace.id),
+          activeWorkspaceId: 'pj-fe-2',
+          tabGroups: [],
+        },
+      },
+      'mixed-projects-manual-group': {
+        props: {
+          openWorkspaceIds: projectWorkspaces.map((workspace) => workspace.id),
+          activeWorkspaceId: 'pj-fe-2',
+          tabGroups: [group('launch', 'Launch', 'orange', ['pj-fe-3', 'pj-site-1'])],
+        },
+      },
       'open-unnamed': {
         props: {
           openWorkspaceIds: ['tg-site', 'tg-trace', 'tg-trace-api', 'tg-trace-docs', 'tg-app'],
@@ -121,7 +147,7 @@
 </script>
 
 <WorkspaceTabStripGeometryPreview
-  extraWorkspaces={workspaces}
+  extraWorkspaces={[...workspaces, ...projectWorkspaces]}
   initialOpenWorkspaceIds={openWorkspaceIds}
   {activeWorkspaceId}
   {tabGroups}

@@ -28,6 +28,7 @@
     closeWorkspaceTab,
     endDrag,
     moveWorkspace,
+    moveWorkspaceTabGroup,
     openWorkspaceTab,
     startDrag,
   } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -70,12 +71,15 @@
     type WorkspaceTabMenuTarget,
   } from './workspace-tab-group-controller';
   import {
+    getReleasedWorkspaceTabGroupMove,
     layoutWorkspaceTabStrip,
-    proposeGroupedWorkspaceTabOrder,
+    proposeWorkspaceStripDragOrder,
+    workspaceTabGroupItemKey,
     workspaceTabGroupSlotAttributes,
     type WorkspaceTabStripItem,
   } from './workspace-tab-group-items';
   import { prepareTabOutros, workspaceTabStripItemMotion } from './workspace-tab-strip-item-motion';
+  import { resolveWorkspaceTabKeyAction } from './workspace-tab-strip-keys';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
     WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
@@ -137,7 +141,9 @@
     startScrollLeft: number;
   }
   interface WorkspaceTabPointerGrab {
+    /** The grabbed strip item: a workspace id, or a group chip's item key. */
     workspaceId: string;
+    groupId: string | null;
     pointerId: number;
     startClientX: number;
     startClientY: number;
@@ -146,6 +152,12 @@
     captureTarget: HTMLElement | null;
   }
   let draggedWorkspaceId = $state<string | null>(null);
+  let draggedGroupId = $state<string | null>(null);
+  /** Strip item key of the dragged tab or group chip. */
+  const draggedKey = $derived(
+    draggedGroupId ? workspaceTabGroupItemKey(draggedGroupId) : draggedWorkspaceId,
+  );
+  const dragging = $derived(draggedKey !== null);
   let dragSession = $state<WorkspaceTabDragSession | null>(null);
   let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
@@ -375,7 +387,7 @@
     };
   });
   $effect(() => {
-    dragTracking = draggedWorkspaceId !== null;
+    dragTracking = dragging;
     reportActiveTabTracking({ sync: false });
     return () => {
       dragTracking = false;
@@ -383,7 +395,7 @@
     };
   });
   $effect(() => {
-    if (!draggedWorkspaceId) return;
+    if (!dragging) return;
     void dragClientX;
     const frame = requestAnimationFrame(() => {
       activeTabBoundsPollers.forEach((poll) => poll());
@@ -433,14 +445,7 @@
       const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
-      if (
-        allowClamp &&
-        shouldClamp &&
-        strip &&
-        stripRect &&
-        !draggedWorkspaceId &&
-        !layoutTracking
-      ) {
+      if (allowClamp && shouldClamp && strip && stripRect && !dragging && !layoutTracking) {
         if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
           scrollDelta = tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
         } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
@@ -633,27 +638,17 @@
     openTabContextMenu(event, { kind: 'tab', workspaceId });
   }
 
-  function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
-    const currentIndex = visibleTabIds.indexOf(workspaceId);
-    const targetIndex = currentIndex + direction;
-    const targetId = visibleTabIds[targetIndex];
-    if (currentIndex < 0 || !targetId) return;
-
-    appStore.dispatch(moveWorkspace(workspaceId, targetId, direction === -1 ? 'before' : 'after'));
+  function announceReorder(workspaceId: string, position: number) {
     reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
       name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
-      position: targetIndex + 1,
+      position,
     });
-    requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function handleGlobalWorkspaceTabMoved(event: CustomEvent<WorkspaceTabMovedEventDetail>) {
     const { workspaceId, position } = event.detail;
     if (!visibleTabIds.includes(workspaceId) || position < 1) return;
-    reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
-      name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
-      position,
-    });
+    announceReorder(workspaceId, position);
     requestAnimationFrame(() => {
       const tab = tabButtons[workspaceId];
       if (!tab) return;
@@ -665,34 +660,18 @@
   function handleTabKeydown(event: KeyboardEvent, workspaceId: string) {
     handleWorkspaceTabContextMenu(event, workspaceId);
     if (event.defaultPrevented) return;
-    if (
-      event.altKey &&
-      event.shiftKey &&
-      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-    ) {
-      event.preventDefault();
-      moveWorkspaceTab(workspaceId, event.key === 'ArrowLeft' ? -1 : 1);
-      return;
-    }
-
-    if (event.key === 'Delete' || (event.key === 'Backspace' && (event.metaKey || event.ctrlKey))) {
-      event.preventDefault();
-      closeWorkspace(workspaceId, event);
-      return;
-    }
-
-    const currentIndex = visibleTabIds.indexOf(workspaceId);
-    let targetId: string | undefined;
-    if (event.key === 'ArrowLeft')
-      targetId = visibleTabIds[currentIndex - 1] ?? visibleTabIds.at(-1);
-    if (event.key === 'ArrowRight') targetId = visibleTabIds[currentIndex + 1] ?? visibleTabIds[0];
-    if (event.key === 'Home') targetId = visibleTabIds[0];
-    if (event.key === 'End') targetId = visibleTabIds.at(-1);
-    if (!targetId) return;
-
+    const action = resolveWorkspaceTabKeyAction(event, visibleTabIds, workspaceId);
+    if (!action) return;
     event.preventDefault();
-    tabButtons[targetId]?.focus();
-    void openWorkspace(targetId, true);
+    if (action.kind === 'close') return closeWorkspace(workspaceId, event);
+    if (action.kind === 'select') {
+      tabButtons[action.targetId]?.focus();
+      return void openWorkspace(action.targetId, true);
+    }
+    if (!action.targetId) return;
+    appStore.dispatch(moveWorkspace(workspaceId, action.targetId, action.placement));
+    announceReorder(workspaceId, action.position);
+    requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function ordersMatch(first: string[], second: string[]) {
@@ -706,7 +685,7 @@
   }
 
   function updateProposedTabOrder(clientX: number) {
-    if (!draggedWorkspaceId || !dragSession) return;
+    if (!dragging || !dragSession) return;
     const scrollDelta =
       (stripElement?.scrollLeft ?? dragSession.startScrollLeft) - dragSession.startScrollLeft;
     const slots = dragSession.slots.map((slot) => ({
@@ -719,10 +698,11 @@
       dragSession.origin.width,
       slots,
     );
-    const nextOrder = proposeGroupedWorkspaceTabOrder(
+    const nextOrder = proposeWorkspaceStripDragOrder(
       dragSession.originalItems,
       dragSession.fullOrder,
-      draggedWorkspaceId,
+      $groups$,
+      draggedKey ?? '',
       insertionIndex,
     );
     if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder)) {
@@ -732,7 +712,7 @@
 
   function runDragAutoScroll() {
     autoScrollFrame = null;
-    if (!draggedWorkspaceId || !dragSession || !stripElement) return;
+    if (!dragging || !dragSession || !stripElement) return;
     const stripRect = stripElement.getBoundingClientRect();
     const delta = getWorkspaceTabAutoScrollDelta(dragClientX, stripRect.left, stripRect.right);
     const maxScrollLeft = Math.max(0, stripElement.scrollWidth - stripElement.clientWidth);
@@ -751,26 +731,25 @@
   }
 
   $effect(() => {
-    if (
-      !draggedWorkspaceId &&
-      proposedTabOrder &&
-      ordersMatch(proposedTabOrder, $workspaceTabOrder$)
-    ) {
+    if (!dragging && proposedTabOrder && ordersMatch(proposedTabOrder, $workspaceTabOrder$)) {
       proposedTabOrder = null;
     }
   });
 
-  function handleDragPointerDown(event: PointerEvent, workspaceId: string) {
-    if (event.button !== 0 || !event.isPrimary || draggedWorkspaceId) return;
+  function handleDragPointerDown(event: PointerEvent, workspaceId: string, groupId?: string) {
+    if (event.button !== 0 || !event.isPrimary || dragging) return;
     const target = event.target as HTMLElement;
-    const tabTarget = target.closest<HTMLElement>('[role="tab"]');
-    if (!tabTarget || target.closest('[data-workspace-tab-close]')) return;
+    const grabTarget = groupId
+      ? target.closest<HTMLElement>('[data-workspace-tab-group-trigger]')
+      : target.closest<HTMLElement>('[role="tab"]');
+    if (!grabTarget || target.closest('[data-workspace-tab-close]')) return;
     suppressClickWorkspaceId = null;
     const surface = event.currentTarget as HTMLElement;
     const captureTarget = stripElement ?? surface;
     const rect = surface.getBoundingClientRect();
     pendingDragPointer = {
       workspaceId,
+      groupId: groupId ?? null,
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -785,7 +764,10 @@
     const rect = pointerGrab.surface.getBoundingClientRect();
     const originalItems = [...stripLayout.dragItems];
     const fullOrder = [...visibleTabIds];
-    flushSync(() => (draggedWorkspaceId = pointerGrab.workspaceId));
+    flushSync(() => {
+      if (pointerGrab.groupId) draggedGroupId = pointerGrab.groupId;
+      else draggedWorkspaceId = pointerGrab.workspaceId;
+    });
     dragClientX = clientX;
     proposedTabOrder = fullOrder;
     dragSession = {
@@ -806,7 +788,7 @@
   function handleDragPointerMove(event: PointerEvent) {
     const pointerGrab = pendingDragPointer;
     if (!pointerGrab || event.pointerId !== pointerGrab.pointerId) return;
-    if (!draggedWorkspaceId) {
+    if (!dragging) {
       const distance = Math.hypot(
         event.clientX - pointerGrab.startClientX,
         event.clientY - pointerGrab.startClientY,
@@ -829,16 +811,24 @@
   }
 
   function finishDrag(keepProposedOrder = false) {
-    if (!draggedWorkspaceId) return;
+    if (!dragging) return;
     stopDragAutoScroll();
     pendingDragPointer = null;
     draggedWorkspaceId = null;
+    draggedGroupId = null;
     dragSession = null;
     if (!keepProposedOrder) proposedTabOrder = null;
     appStore.dispatch(endDrag());
   }
 
   function releaseDraggedWorkspace() {
+    if (draggedGroupId && dragSession) {
+      const { fullOrder } = dragSession;
+      const proposed = proposedTabOrder ?? fullOrder;
+      const move = getReleasedWorkspaceTabGroupMove(fullOrder, proposed, $groups$, draggedGroupId);
+      if (move) appStore.dispatch(moveWorkspaceTabGroup(draggedGroupId, ...move));
+      return finishDrag(Boolean(move));
+    }
     if (!draggedWorkspaceId || !dragSession) return;
     const releasedOrder = proposedTabOrder ?? dragSession.fullOrder;
     const releasedIndex = releasedOrder.indexOf(draggedWorkspaceId);
@@ -849,18 +839,13 @@
     );
     if (move) {
       appStore.dispatch(moveWorkspace(draggedWorkspaceId, move.targetId, move.placement));
-      reorderAnnouncement = m.layout_workspaceTabStrip_reorderAnnouncement({
-        name:
-          workspaceById.get(draggedWorkspaceId)?.title ||
-          m.layout_workspaceTabStrip_untitled_label(),
-        position: releasedIndex + 1,
-      });
+      announceReorder(draggedWorkspaceId, releasedIndex + 1);
     }
     finishDrag(Boolean(move));
   }
 
   function cancelPointerDrag(suppressFollowingClick = false) {
-    const cancelledWorkspaceId = pendingDragPointer?.workspaceId ?? draggedWorkspaceId;
+    const cancelledWorkspaceId = pendingDragPointer?.workspaceId ?? draggedKey;
     clearPointerGrab();
     finishDrag();
     if (suppressFollowingClick && cancelledWorkspaceId) {
@@ -871,7 +856,7 @@
   function handleDragPointerUp(event: PointerEvent) {
     const pointerGrab = pendingDragPointer;
     if (!pointerGrab || event.pointerId !== pointerGrab.pointerId) return;
-    const didDrag = draggedWorkspaceId === pointerGrab.workspaceId && dragSession !== null;
+    const didDrag = draggedKey === pointerGrab.workspaceId && dragSession !== null;
     if (didDrag) {
       event.preventDefault();
       dragClientX = event.clientX;
@@ -883,6 +868,7 @@
     });
     clearPointerGrab();
     if (didDrag) releaseDraggedWorkspace();
+    else if (pointerGrab.groupId) tabGroups.toggle(pointerGrab.groupId);
     else void openWorkspace(pointerGrab.workspaceId);
   }
 
@@ -897,19 +883,23 @@
   }
 
   function handleDragKeydown(event: KeyboardEvent) {
-    if (event.key !== 'Escape' || (!pendingDragPointer && !draggedWorkspaceId)) return;
+    if (event.key !== 'Escape' || (!pendingDragPointer && !dragging)) return;
     event.preventDefault();
     cancelPointerDrag(true);
   }
 
+  /** Swallows the click that follows a pointer grab of `key`, which was already handled. */
+  function consumeSuppressedClick(event: MouseEvent, key: string) {
+    if (suppressClickWorkspaceId !== key || event.detail === 0) return false;
+    suppressClickWorkspaceId = null;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }
+
   function handleTabClick(event: MouseEvent, workspaceId: string) {
-    if (suppressClickWorkspaceId === workspaceId && event.detail !== 0) {
-      suppressClickWorkspaceId = null;
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    void openWorkspace(workspaceId, event.detail === 0);
+    if (!consumeSuppressedClick(event, workspaceId))
+      void openWorkspace(workspaceId, event.detail === 0);
   }
 
   function handleTabIntroEnd(workspaceId: string) {
@@ -946,7 +936,7 @@
     class={cn(
       'flex w-fit min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
-      draggedWorkspaceId && 'cursor-grabbing',
+      dragging && 'cursor-grabbing',
     )}
     role="presentation"
     tabindex="-1"
@@ -973,6 +963,7 @@
       {@const workspace = item.kind === 'tab' ? workspaceById.get(workspaceId) : undefined}
       {@const isDragged = item.kind === 'tab' && draggedWorkspaceId === workspaceId}
       {@const isCurrent = item.kind === 'tab' && workspaceId === visualActiveWorkspaceId}
+      {@const isDraggedGroup = item.kind === 'group' && draggedGroupId === item.group.id}
       <div
         class={cn(
           'relative min-w-0 shrink-0',
@@ -986,7 +977,7 @@
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
-          duration: isDragged ? 0 : workspaceTabMotionDuration,
+          duration: isDragged || isDraggedGroup ? 0 : workspaceTabMotionDuration,
           easing: workspaceTabMotionEasing,
         }}
         in:workspaceTabStripItemMotion={{
@@ -1009,7 +1000,13 @@
             group={item.group}
             open={item.open}
             editing={editingGroupId === item.group.id}
-            onToggle={() => tabGroups.toggle(item.group.id)}
+            drag={isDraggedGroup && dragSession
+              ? { ...dragSession.origin, left: dragClientX - dragSession.pointerOffsetX }
+              : null}
+            onToggle={(event) => {
+              if (!consumeSuppressedClick(event, item.key)) tabGroups.toggle(item.group.id);
+            }}
+            onPointerDown={(event) => handleDragPointerDown(event, item.key, item.group.id)}
             onContextMenu={(event) =>
               openTabContextMenu(event, { kind: 'group', groupId: item.group.id })}
             onRenameEnd={(name) => tabGroups.finishRename(item.group.id, name)}
@@ -1077,7 +1074,7 @@
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disabled={isCurrent || draggedWorkspaceId !== null}
+                disabled={isCurrent || dragging}
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"

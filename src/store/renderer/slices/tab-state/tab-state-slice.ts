@@ -9,11 +9,15 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
   findWorkspaceTabGroup,
+  isWorkspaceTabProjectGroup,
+  layoutWorkspaceTabsByProject,
+  moveWorkspaceTabGroupInStacks,
   normalizeWorkspaceTabGroups,
   parsePersistedWorkspaceTabGroups,
   resolveMovedWorkspaceTabGroups,
   type WorkspaceTabGroup,
   type WorkspaceTabGroupColor,
+  type WorkspaceTabProject,
 } from './tab-groups';
 
 type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
@@ -369,6 +373,14 @@ export const setOpenWorkspaceTabGroup = createAction<[groupId: string | null]>(
 export const ungroupWorkspaceTabGroup = createAction<[groupId: string]>(
   'tabState/ungroupWorkspaceTabGroup',
 );
+/** Moves a whole group before or after `targetId`. */
+export const moveWorkspaceTabGroup = createAction<
+  [groupId: string, targetId: string, placement: 'before' | 'after']
+>('tabState/moveWorkspaceTabGroup');
+/** Sorts tabs by project and replaces all groups with one group per project. */
+export const groupWorkspaceTabsByProject = createAction<
+  [projects: Record<string, WorkspaceTabProject>]
+>('tabState/groupWorkspaceTabsByProject');
 export const switchToNextWorkspaceTab = createAction('tabState/switchToNextWorkspaceTab');
 export const switchToPreviousWorkspaceTab = createAction('tabState/switchToPreviousWorkspaceTab');
 export const switchToWorkspaceTabByIndex = createAction<[index: number]>(
@@ -732,6 +744,40 @@ tabStateReducer.with(ungroupWorkspaceTabGroup, (state, { payload: [groupId] }) =
       getWorkspaceTabGroupList(state).filter((group) => group.id !== groupId),
     ),
   });
+});
+tabStateReducer.with(
+  moveWorkspaceTabGroup,
+  (state, { payload: [groupId, targetId, placement] }) => {
+    const workspaceStacks = moveWorkspaceTabGroupInStacks(
+      state.workspaceStacks,
+      getWorkspaceTabGroupList(state),
+      groupId,
+      targetId,
+      placement,
+    );
+    if (!workspaceStacks) return state;
+    return withNextVersion(state, {
+      workspaceStacks,
+      ...updateGroups(state, (groups) =>
+        normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), groups),
+      ),
+    });
+  },
+);
+tabStateReducer.with(groupWorkspaceTabsByProject, (state, { payload: [projects] }) => {
+  const layout = layoutWorkspaceTabsByProject(
+    state.workspaceStacks,
+    getWorkspaceTabGroupList(state),
+    projects,
+  );
+  if (!layout.groups.some(isWorkspaceTabProjectGroup)) return state;
+  return withSelectedTabGroup(
+    withNextVersion(state, {
+      workspaceStacks: layout.workspaceStacks,
+      tabGroups: toGroupCollection(layout.groups),
+      openTabGroupId: null,
+    }),
+  );
 });
 tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
   const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);

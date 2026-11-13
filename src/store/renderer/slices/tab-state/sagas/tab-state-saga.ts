@@ -14,9 +14,11 @@ import {
   addWorkspaceTabToGroup,
   closeWorkspaceTab,
   createWorkspaceTabGroup,
+  groupWorkspaceTabsByProject,
   loadScrollPositions,
   loadWorkspaceTabsState,
   moveWorkspace,
+  moveWorkspaceTabGroup,
   openWorkspaceTab,
   type PersistedWorkspaceTabsState,
   removeWorkspaceTabFromGroup,
@@ -40,6 +42,7 @@ const TAB_PERSIST_ACTIONS = [
   reopenLastClosedWorkspaceTab,
   restoreWorkspaceTab,
   moveWorkspace,
+  moveWorkspaceTabGroup,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
@@ -48,6 +51,7 @@ const TAB_PERSIST_ACTIONS = [
   removeWorkspaceTabFromGroup,
   updateWorkspaceTabGroup,
   ungroupWorkspaceTabGroup,
+  groupWorkspaceTabsByProject,
   setOpenWorkspaceTabGroup,
 ];
 
