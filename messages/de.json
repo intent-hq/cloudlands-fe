@@ -8477,6 +8477,7 @@
   "remoteMachines_revoke_confirm_description": "{backend} kann dann keine Agenten mehr auf diesem Rechner ausführen. Seine hier laufenden Agenten werden beendet.",
   "remoteMachines_revoke_label": "Widerrufen",
   "remoteMachines_scriptsUpdate_label": "Benötigt ein Update, um Skripte auszuführen",
+  "remoteMachines_noProviders_label": "Keine Anbieter bereit",
   "remoteMachines_section_description": "{backend} kann Agenten auf diesen Rechnern ausführen. Deren Besitzer können dies jederzeit widerrufen.",
   "remoteMachines_section_title": "Rechner, auf denen {backend} Agenten ausführen kann",
   "remoteMachines_order_title": "Wo {backend} Agenten ausführt",

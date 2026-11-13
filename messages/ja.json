@@ -8477,6 +8477,7 @@
   "remoteMachines_revoke_confirm_description": "{backend} はこのマシンでエージェントを実行できなくなります。ここで実行中のエージェントは停止されます。",
   "remoteMachines_revoke_label": "取り消す",
   "remoteMachines_scriptsUpdate_label": "スクリプトを実行するには更新が必要です",
+  "remoteMachines_noProviders_label": "利用できるプロバイダーがありません",
   "remoteMachines_section_description": "{backend} はこれらのマシンでエージェントを実行できます。所有者はいつでも取り消せます。",
   "remoteMachines_section_title": "{backend} がエージェントを実行できるマシン",
   "remoteMachines_order_title": "{backend} がエージェントを実行する場所",

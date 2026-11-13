@@ -8477,6 +8477,7 @@
   "remoteMachines_revoke_confirm_description": "{backend} ne pourra plus exécuter d'agents sur cette machine. Ses agents en cours ici sont arrêtés.",
   "remoteMachines_revoke_label": "Révoquer",
   "remoteMachines_scriptsUpdate_label": "Mise à jour requise pour exécuter des scripts",
+  "remoteMachines_noProviders_label": "Aucun fournisseur prêt",
   "remoteMachines_section_description": "{backend} peut exécuter des agents sur ces machines. Leurs propriétaires peuvent révoquer cet accès à tout moment.",
   "remoteMachines_section_title": "Machines sur lesquelles {backend} peut exécuter des agents",
   "remoteMachines_order_title": "Où {backend} exécute les agents",
