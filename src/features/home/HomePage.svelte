@@ -45,7 +45,6 @@
     HOME_HIDDEN_REPOS_GROUP,
     hiddenHomeRepositories,
     isHomeRepositoryHidden,
-    newestHomeRepositoryWorkspace,
     revivedHomeRepositories,
   } from './home-hidden-repos';
   import { createHomeRepositoryMenu } from './home-repository-menu';
@@ -59,10 +58,7 @@
     selectKnownRepos,
     selectKnownReposLoaded,
   } from '$store/renderer/slices/known-repos/known-repos-selectors';
-  import {
-    loadKnownRepos,
-    removeRecentRepository,
-  } from '$store/renderer/slices/known-repos/known-repos-slice';
+  import { loadKnownRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
     openPanel,
     closePanel,
@@ -118,11 +114,7 @@
   } from './home-set-aside';
   import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
   import { homeListOrder, registerHomeEncoderTarget } from './home-encoder-target';
-  import {
-    homeRepositoriesUnhidden,
-    homeRepositoryHidden,
-    updateHomeWorkspaceView,
-  } from './home-workspaces-slice';
+  import { homeRepositoriesUnhidden, updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
@@ -206,41 +198,22 @@
     const position = getSidebarContextPosition(event);
     if (position) contextMenu = { ...position, repo };
   }
-  // Leaving the selected repository, or an org with nothing else, shows All repos.
-  function leaveRepository(repo: RepositoryGroup) {
-    if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
-      updateView({ repoKey: null, selectedId: null });
-  }
   function repositoryMenu(repo: RepositoryGroup): SidebarMenuEntry[] {
-    const then = (action: () => void) => () => {
-      contextMenu = null;
-      action();
-    };
     return createHomeRepositoryMenu({
+      repo,
       canCreate: !$collaborator$,
       hidden: isHomeRepositoryHidden(hiddenRepos, repo),
       loaded: $hasLoaded$,
-      onNewWorkspace: then(() => {
+      onNewWorkspace: () => {
         chooseRepo(repo.key);
         createWorkspace();
-      }),
-      local: !repo.owner,
-      onHide: then(() => {
-        leaveRepository(repo);
-        store.dispatch(
-          homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
-        );
-      }),
-      onDelete: then(() => {
-        leaveRepository(repo);
-        if (repo.repoPath) store.dispatch(removeRecentRepository(repo.repoPath));
-        // Existing workspaces would keep the folder listed, so it is also hidden.
-        if (repo.workspaces.length)
-          store.dispatch(
-            homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
-          );
-      }),
-      onUnhide: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
+      },
+      onClose: () => (contextMenu = null),
+      // Leaving the selected repository, or an org with nothing else, shows All repos.
+      onLeave: () => {
+        if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
+          updateView({ repoKey: null, selectedId: null });
+      },
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
