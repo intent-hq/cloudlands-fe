@@ -39,6 +39,7 @@ import { LiveStatsClient } from './live-stats-client';
 import { LiveVoiceClient } from './live-voice-client';
 import { LiveSystemClient } from './live-system-client';
 import { LiveServerClient } from './live-server-client';
+import { LivePushClient } from './live-push-client';
 import { LiveTasksClient } from './live-tasks-client';
 import { LiveTerminalsClient } from './live-terminals-client';
 import { LiveWorkspacesClient } from './live-workspaces-client';
@@ -69,6 +70,7 @@ export class LiveAppClient implements AppClient {
   readonly browser = new LiveBrowserClient();
   readonly system = new LiveSystemClient();
   readonly server = new LiveServerClient();
+  readonly push = new LivePushClient();
   readonly drafts = new LiveDraftsClient();
   readonly clients = new LiveClientsClient();
 }

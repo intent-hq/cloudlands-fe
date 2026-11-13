@@ -48,6 +48,7 @@ export type SettingsFormKind =
   | 'git-workspace'
   | 'websocket-api'
   | 'rtk'
+  | 'push'
   | 'agent-rules';
 
 export interface SettingsForm extends SettingsFormIdentity {

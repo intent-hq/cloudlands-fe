@@ -2714,6 +2714,22 @@ export interface ServerClient {
   rotateToken(): Promise<{ token: string }>;
 }
 
+/** `push.status` (PROTOCOL §5.58): this machine's push relay state for the caller. */
+export interface PushStatus {
+  enabled: boolean;
+  relayUrl: string;
+  daemonId: string | null;
+  linked: boolean;
+  /** Phones linked to this machine as last reported by the relay; null until it reports. */
+  linkedDevices: number | null;
+  publishing: boolean;
+}
+
+export interface PushClient {
+  /** `push.status`; null when the daemon predates the method (-32601). */
+  status(): Promise<PushStatus | null>;
+}
+
 /** Filter options for `event.query` (PROTOCOL §5.10); all optional. */
 export interface EventQueryOptions {
   eventType?: string;
@@ -2826,6 +2842,7 @@ export interface AppClient {
   integrations: IntegrationsClient;
   system: SystemClient;
   server: ServerClient;
+  push: PushClient;
   events: EventsClient;
   drafts: DraftsClient;
   clients: ClientsClient;
