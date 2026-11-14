@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.339.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.338.1...v2.339.0) (2026-11-14)
+
+
+### 🚀 Features
+
+* **home:** drop hover tooltips on sidebar organization names ([#4606](https://github.com/intent-hq/cloudlands-fe/issues/4606)) ([8979d32](https://github.com/intent-hq/cloudlands-fe/commit/8979d324f47baebbe6a638ccfc3f8361e7f4e7f0))
+* **machine-rail:** mark machines whose daemon can be updated ([#4608](https://github.com/intent-hq/cloudlands-fe/issues/4608)) ([da3edc8](https://github.com/intent-hq/cloudlands-fe/commit/da3edc8d5b80505e4279c6d188f6a3e77fca3216))
+
 ## [2.338.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.338.0...v2.338.1) (2026-11-14)
 
 
