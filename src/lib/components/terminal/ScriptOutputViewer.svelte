@@ -47,9 +47,11 @@
     scriptId: string;
     workspaceId: string;
     class?: string;
+    /** Running is unavailable (the workspace home is detached or moving); output stays readable. */
+    runDisabled?: boolean;
   }
 
-  let { scriptId, workspaceId, class: className = '' }: Props = $props();
+  let { scriptId, workspaceId, class: className = '', runDisabled = false }: Props = $props();
 
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
@@ -273,6 +275,7 @@
   // ---- Start ----
 
   function handleStart(): void {
+    if (runDisabled) return;
     appStore.dispatch(startScriptRequested(workspaceId, scriptId));
   }
 
@@ -392,6 +395,7 @@
         <Button
           variant="ghost"
           size="xs"
+          disabled={runDisabled}
           onclick={handleStart}
           class="text-muted-foreground hover:text-foreground"
         >

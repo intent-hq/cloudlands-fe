@@ -181,8 +181,19 @@ const HOME_BACKED_TAB_TYPES = new Set([
   'activity-changes',
 ]);
 
-export function isHomeBackedTabType(type: string): boolean {
+function isHomeBackedTabType(type: string): boolean {
   return HOME_BACKED_TAB_TYPES.has(type);
+}
+
+/**
+ * Whether a panel tab is covered while the home is away. A saved script's
+ * output tab (a terminal tab with `scriptId`) stays readable: its output log
+ * is kept on the orchestrator and is what diagnoses the failure; only its
+ * Run control is disabled (see `TerminalTabType`).
+ */
+export function isHomeBackedTab(tab: { type: string; scriptId?: string }): boolean {
+  if (tab.type === 'terminal' && tab.scriptId) return false;
+  return isHomeBackedTabType(tab.type);
 }
 
 /**

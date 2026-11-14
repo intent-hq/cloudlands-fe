@@ -4,7 +4,7 @@ import { AgentStatus, WorkspaceStatusEnum, type AgentSession } from '$shared/typ
 import type { StartOnOption } from '$features/remote-machines/start-on';
 import {
   homeMoveTargetKey,
-  isHomeBackedTabType,
+  isHomeBackedTab,
   moveHomeMenuVisible,
   moveHomeTargets,
   parseMoveHomeTargetKey,
@@ -182,7 +182,7 @@ describe('setHomeErrorCode', () => {
   });
 });
 
-describe('isHomeBackedTabType', () => {
+describe('isHomeBackedTab by tab type', () => {
   it('gates the panels that read the home checkout or run on the home', () => {
     for (const type of [
       'file',
@@ -194,7 +194,7 @@ describe('isHomeBackedTabType', () => {
       'chat-changes',
       'activity-changes',
     ]) {
-      expect(isHomeBackedTabType(type)).toBe(true);
+      expect(isHomeBackedTab({ type })).toBe(true);
     }
     // Served by the orchestrator itself: chats, notes, discussions, hook code,
     // settings and overviews keep working while the home is away.
@@ -209,7 +209,7 @@ describe('isHomeBackedTabType', () => {
       'overview',
       'hook-script',
     ]) {
-      expect(isHomeBackedTabType(type)).toBe(false);
+      expect(isHomeBackedTab({ type })).toBe(false);
     }
   });
 });
@@ -231,5 +231,14 @@ describe('moveHomeMenuVisible', () => {
     );
     // A Retired workspace shows no Move home dialog, so the item must not open one.
     expect(moveHomeMenuVisible({ ...base, status: WorkspaceStatusEnum.Retired }, true)).toBe(false);
+  });
+});
+
+describe('isHomeBackedTab', () => {
+  it('keeps saved-script output readable: its logs stay on the orchestrator', () => {
+    expect(isHomeBackedTab({ type: 'terminal', terminalId: 't-1' })).toBe(true);
+    expect(isHomeBackedTab({ type: 'terminal', scriptId: 'build' })).toBe(false);
+    expect(isHomeBackedTab({ type: 'file' })).toBe(true);
+    expect(isHomeBackedTab({ type: 'note' })).toBe(false);
   });
 });

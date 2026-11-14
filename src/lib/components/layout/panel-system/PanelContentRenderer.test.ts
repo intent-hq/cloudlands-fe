@@ -6,6 +6,9 @@ import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-
 import { tabTypeRegistry, type TabTypeComponentLoader } from '$features/layout/tab-types/registry';
 import AsyncPanelContent from './__tests__/mocks/AsyncPanelContent.svelte';
 import PanelContentRenderer from './PanelContentRenderer.svelte';
+import { store } from '$store/renderer/store';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { labelWorkspace } from '../../../../test/fixtures/workspace-labels-state';
 
 function tab(type: string, title = type): PanelTab {
   return { id: `${type}-tab`, type, title, closable: true } as PanelTab;
@@ -136,5 +139,40 @@ describe('PanelContentRenderer async boundary', () => {
     expect(loadComponent).not.toHaveBeenCalled();
     expect(loader).toHaveBeenCalledOnce();
     loadComponent.mockRestore();
+  });
+});
+
+describe('PanelContentRenderer with a detached workspace home', () => {
+  it('keeps saved-script output tabs readable and covers shell terminals', async () => {
+    store.init();
+    store.dispatch(
+      setWorkspaceEntity(
+        labelWorkspace('ws-detached', {
+          home: {
+            homeId: 'h-1',
+            nodeId: 'd-mac-studio',
+            name: 'Mac Studio',
+            state: 'detached',
+            since: '2026-11-12T09:42:00Z',
+          },
+        }),
+      ),
+    );
+    register('terminal', async () => ({ default: AsyncPanelContent }));
+    const base = { workspaceId: 'ws-detached', layoutId: 'ws-detached', isActive: true };
+
+    const script = render(PanelContentRenderer, {
+      props: { ...base, tab: { ...tab('terminal'), scriptId: 'build' } as PanelTab },
+    });
+    expect(await script.findByTestId('async-panel-content')).toBeTruthy();
+    expect(script.container.querySelector('[data-workspace-home-panel-notice]')).toBeNull();
+    script.unmount();
+
+    const shell = render(PanelContentRenderer, {
+      props: { ...base, tab: { ...tab('terminal'), terminalId: 't-1' } as PanelTab },
+    });
+    await waitFor(() =>
+      expect(shell.container.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
+    );
   });
 });
