@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.340.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.339.0...v2.340.0) (2026-11-14)
+
+
+### 🚀 Features
+
+* **machine-rail:** update a machine's daemon from its rail menu ([#4617](https://github.com/intent-hq/cloudlands-fe/issues/4617)) ([e563ef0](https://github.com/intent-hq/cloudlands-fe/commit/e563ef0623ff8d58d4e5701a9f050dc98c22f856))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.209 ([#4621](https://github.com/intent-hq/cloudlands-fe/issues/4621)) ([587b673](https://github.com/intent-hq/cloudlands-fe/commit/587b67348abe560215014e909b91ea9debc23f29))
+* **machine-rail:** add a machine from a pair link to the current window's rail ([#4619](https://github.com/intent-hq/cloudlands-fe/issues/4619)) ([4ce0577](https://github.com/intent-hq/cloudlands-fe/commit/4ce057730f946fc7c924cecbbe4695c5371fe97c))
+
 ## [2.339.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.338.1...v2.339.0) (2026-11-14)
 
 
