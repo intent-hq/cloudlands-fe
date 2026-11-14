@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.340.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.0...v2.340.1) (2026-11-14)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.210 ([#4625](https://github.com/intent-hq/cloudlands-fe/issues/4625)) ([eb5ab68](https://github.com/intent-hq/cloudlands-fe/commit/eb5ab6891d0e6d77bfb4e2eda505ed63e4667041))
+* **machine-rail:** count the boot hold only while the page is on screen ([#4622](https://github.com/intent-hq/cloudlands-fe/issues/4622)) ([15fe099](https://github.com/intent-hq/cloudlands-fe/commit/15fe099406d33a6405c32ca1f092ba8ac5980838))
+
 ## [2.340.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.339.0...v2.340.0) (2026-11-14)
 
 
