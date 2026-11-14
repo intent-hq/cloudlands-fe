@@ -172,6 +172,22 @@ class CallerTests(unittest.TestCase):
         self.assertTrue(runtime['complete'], runtime)
         self.assertEqual(self.api.mutations, [])
 
+    def test_stacked_queue_entry_passes_probe(self):
+        # Run 43521802444: PR 4582 was queued into main with base = PR 4581's branch.
+        self.api.heads = [T.H, T.S]
+        page = self.api.queue_body(self.api.heads)
+        page['data']['repository']['mergeQueue']['entries']['nodes'][1]['pullRequest']['baseRefName'] = \
+            'fix/proposal-card-disabled-remembered-provider'
+        self.api.queue_pages = [page]
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        result = C.probe(self.api, 10)
+        self.assertTrue(result['checks']['activity']['ok'], result)
+        self.assertEqual(result['checks']['activity']['evidence']['queue_entries'], 2)
+        self.assertTrue(result['complete'], result)
+        runtime = self.sweep(apply=True)
+        self.assertTrue(runtime['complete'], runtime)
+        self.assertEqual(self.api.mutations, [])
+
     def test_diagnostic_drains_later_queue_pages_after_unknown_head(self):
         self.api.queue_pages = [self.built_null_head_page(True, '1'), self.api.queue_body([T.H])]
         self.api.queue_pages[1]['data']['repository']['mergeQueue']['entries']['nodes'][0]['id'] = 'MQE_later'
