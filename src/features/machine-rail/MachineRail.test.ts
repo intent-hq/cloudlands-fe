@@ -145,6 +145,37 @@ it('marks a connected machine whose daemon is degraded', () => {
   ).toEqual(['local']);
 });
 
+it('marks a machine whose daemon can be updated, except while it starts', () => {
+  const connections = mocks.state.connections as Record<string, unknown>;
+  const behind = { daemonVersion: '0.9.0', updateSupported: true };
+  mocks.state = {
+    ...mocks.state,
+    connections: {
+      ...connections,
+      pinnedVersion: '0.10.0',
+      connectedIds: ['local', 'b'],
+      connections: createCollection<ConnectionRecord, 'id'>('id', [
+        { ...record('local'), ...behind },
+        { ...record('b'), ...behind },
+      ]),
+    },
+  };
+  render(MachineRail);
+  expect(
+    screen.getAllByTestId('machine-rail-update-dot').map((dot) => dot.dataset.machineId),
+  ).toEqual(['local', 'b']);
+  cleanup();
+
+  mocks.state = {
+    ...mocks.state,
+    machineRail: { ...(mocks.state.machineRail as object), pendingId: 'b' },
+  };
+  render(MachineRail);
+  expect(
+    screen.getAllByTestId('machine-rail-update-dot').map((dot) => dot.dataset.machineId),
+  ).toEqual(['local']);
+});
+
 it("moves a machine with Alt+arrow keys, keeping the window's own machine first", async () => {
   setState({ machineIds: ['local', 'b', 'c', 'g1'] });
   mocks.state = {

@@ -122,6 +122,28 @@ describe('machine rail selectors', () => {
     ]);
   });
 
+  it('marks the machines whose daemon can be updated from here', () => {
+    const behind = { daemonVersion: '0.9.0', updateSupported: true };
+    const state = stateWith({ ...rail, machineIds: ['local', 'b', 'c', 'd'] }, [
+      record('local', { daemonVersion: '0.10.0', updateSupported: true }),
+      record('b', behind),
+      // Behind, but it cannot update itself.
+      record('c', { daemonVersion: '0.9.0', updateSupported: false }),
+      // Behind and able, but not connected right now.
+      record('d', behind),
+    ]);
+    state.connections.pinnedVersion = '0.10.0';
+    state.connections.connectedIds = ['local', 'b', 'c'];
+    expect(
+      selectMachineRailItems.select(state).map(({ id, updatable }) => [id, updatable]),
+    ).toEqual([
+      ['local', false],
+      ['b', true],
+      ['c', false],
+      ['d', false],
+    ]);
+  });
+
   it('treats a machine whose connection was never opened as offline', () => {
     const [, b] = selectMachineRailItems.select(
       stateWith(rail, [record('local'), record('b', { status: 'not-open' })]),

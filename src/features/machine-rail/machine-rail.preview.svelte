@@ -2,7 +2,12 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   type Scenario =
-    'missing-home' | 'restored-home' | 'retained-home' | 'missing-secondary' | 'pending-home';
+    | 'missing-home'
+    | 'restored-home'
+    | 'retained-home'
+    | 'missing-secondary'
+    | 'pending-home'
+    | 'status-marks';
 
   export const preview = definePreview({
     id: 'machine-rail',
@@ -14,6 +19,7 @@
       'retained-home': { props: { scenario: 'retained-home' as Scenario } },
       'missing-secondary': { props: { scenario: 'missing-secondary' as Scenario } },
       'pending-home': { props: { scenario: 'pending-home' as Scenario } },
+      'status-marks': { props: { scenario: 'status-marks' as Scenario } },
     },
     captureReadiness: { selector: '[data-testid="machine-rail-item"]', count: 4 },
   });

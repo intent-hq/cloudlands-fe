@@ -12,7 +12,12 @@ import {
 import { store as appStore } from '$store/renderer/store';
 
 type Scenario =
-  'missing-home' | 'restored-home' | 'retained-home' | 'missing-secondary' | 'pending-home';
+  | 'missing-home'
+  | 'restored-home'
+  | 'retained-home'
+  | 'missing-secondary'
+  | 'pending-home'
+  | 'status-marks';
 
 function connection(id: string, label: string): ConnectionRecord {
   return {
@@ -73,6 +78,15 @@ export function createMachineRailPreview(onSelect: (id: string) => void) {
             ...(scenario === 'restored-home' || scenario === 'missing-secondary'
               ? [connection('home-machine', 'Home workstation')]
               : []),
+            ...(scenario === 'status-marks'
+              ? [
+                  {
+                    ...connection('home-machine', 'Home workstation'),
+                    daemonVersion: '0.9.0',
+                    updateSupported: true,
+                  },
+                ]
+              : []),
             ...(scenario === 'retained-home'
               ? [
                   { ...connection('home-machine', 'Home workstation'), displayOnly: true as const },
@@ -86,6 +100,8 @@ export function createMachineRailPreview(onSelect: (id: string) => void) {
           ],
           activeId: 'cloud-machine',
           windowBackendId: 'cloud-machine',
+          pinnedVersion: '0.10.0',
+          connectedIds: ['cloud-machine', 'home-machine'],
         }),
       );
       appStore.dispatch(
@@ -108,7 +124,7 @@ export function createMachineRailPreview(onSelect: (id: string) => void) {
           selectedId: 'cloud-machine',
           shownId: 'cloud-machine',
           pendingId: scenario === 'pending-home' ? 'home-machine' : '',
-          degradedIds: [],
+          degradedIds: scenario === 'status-marks' ? ['cloud-machine'] : [],
         }),
       );
     },

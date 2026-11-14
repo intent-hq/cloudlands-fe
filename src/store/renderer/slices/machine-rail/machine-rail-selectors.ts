@@ -3,6 +3,7 @@ import { store } from '../../store';
 import type { ConnectionRecord } from '../connections/connections-types';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import { nextRailMachine } from '$shared/types/machine-rail';
+import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
 
 export type MachineRailItemStatus = 'connected' | 'connecting' | 'disconnected';
 
@@ -22,6 +23,8 @@ export interface MachineRailItem {
   offline: boolean;
   /** Connected, but its daemon reports degraded health: marked with a warning dot. */
   degraded: boolean;
+  /** Its daemon is behind this app and can be updated from here: marked with a badge. */
+  updatable: boolean;
   /** Asked for and still starting: its item spins until it is shown. */
   pending: boolean;
 }
@@ -68,6 +71,13 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
       // "connecting" for a long time (startup connects every rail machine).
       offline: record !== null || guest !== null ? status !== 'connected' : false,
       degraded: status === 'connected' && degradedIds.includes(id),
+      updatable:
+        record !== null &&
+        canRequestDeviceUpdate(
+          record,
+          state.connections.connectedIds,
+          state.connections.pinnedVersion,
+        ),
       pending: id === pendingId && id !== own,
     };
   });
