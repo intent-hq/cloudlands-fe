@@ -123,21 +123,23 @@
 </script>
 
 {#if dialog && view}
-  <MoveHomeDialog
-    open
-    static
-    {view}
-    options={OPTIONS}
-    currentKey={homeMoveTargetKey({ kind: 'machine', nodeId: 'd-mac-studio' })}
-    initialKey={scenario === 'dialogRefused'
-      ? homeMoveTargetKey({ kind: 'machine', nodeId: 'd-garage' })
-      : ''}
-    failureText={scenario === 'dialogRefused'
-      ? moveHomeFailureText({ code: 'home-target-unavailable', message: '' })
-      : null}
-    onSubmit={() => {}}
-    onCancel={() => {}}
-  />
+  <div class="relative min-h-[820px] w-full">
+    <MoveHomeDialog
+      open
+      static
+      {view}
+      options={OPTIONS}
+      currentKey={homeMoveTargetKey({ kind: 'machine', nodeId: 'd-mac-studio' })}
+      initialKey={scenario === 'dialogRefused'
+        ? homeMoveTargetKey({ kind: 'machine', nodeId: 'd-garage' })
+        : ''}
+      failureText={scenario === 'dialogRefused'
+        ? moveHomeFailureText({ code: 'home-target-unavailable', message: '' })
+        : null}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+    />
+  </div>
 {:else if view}
   <div class="flex w-full min-w-0 flex-col gap-4 bg-background p-4 text-foreground">
     <div

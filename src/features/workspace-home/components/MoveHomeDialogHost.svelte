@@ -7,16 +7,20 @@
   import { homeMoveTargetKey } from '../workspace-home';
   import { moveHomeFailureText } from '../workspace-home-copy';
   import {
-    selectMoveHomeDialog,
+    selectMoveHomeDialogWorkspaceId,
+    selectMoveHomeFailure,
     selectMoveHomeOptions,
+    selectMoveHomeSubmitting,
     selectWorkspaceHomeView,
   } from '../workspace-home-selectors';
   import { moveHomeDialogClosed, moveHomeRequested } from '../workspace-home-slice';
 
-  const dialog$ = selectMoveHomeDialog();
+  const dialogWorkspaceId$ = selectMoveHomeDialogWorkspaceId();
+  const submitting$ = selectMoveHomeSubmitting();
+  const failure$ = selectMoveHomeFailure();
   const workspaceId$ = writable('');
   $effect(() => {
-    workspaceId$.set($dialog$.workspaceId ?? '');
+    workspaceId$.set($dialogWorkspaceId$ ?? '');
   });
   const view$ = selectWorkspaceHomeView(workspaceId$);
   const options$ = selectMoveHomeOptions(workspaceId$);
@@ -31,16 +35,16 @@
   });
 </script>
 
-{#if $dialog$.workspaceId && view}
+{#if $dialogWorkspaceId$ && view}
   <MoveHomeDialog
     open
     {view}
     options={$options$}
     {currentKey}
-    submitting={$dialog$.submitting}
-    failureText={$dialog$.moveFailure ? moveHomeFailureText($dialog$.moveFailure) : null}
+    submitting={$submitting$}
+    failureText={$failure$ ? moveHomeFailureText($failure$) : null}
     onSubmit={(to) => {
-      const workspaceId = $dialog$.workspaceId;
+      const workspaceId = $dialogWorkspaceId$;
       if (workspaceId) appStore.dispatch(moveHomeRequested(workspaceId, to));
     }}
     onCancel={() => appStore.dispatch(moveHomeDialogClosed())}

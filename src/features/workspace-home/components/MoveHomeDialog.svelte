@@ -101,7 +101,7 @@
   description={m.workspaceHome_moveDialog_description()}
   submitLabel={m.workspaceHome_moveDialog_submit()}
   canSubmit={target !== null && !submitting}
-  submitBusy={submitting}
+  busy={submitting}
   onSubmit={submit}
   {onCancel}
 >

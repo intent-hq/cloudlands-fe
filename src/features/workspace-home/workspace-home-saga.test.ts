@@ -25,7 +25,12 @@ import {
   moveHomeDialogOpened,
   moveHomeRequested,
 } from './workspace-home-slice';
-import { selectHomeWaiting, selectMoveHomeDialog } from './workspace-home-selectors';
+import {
+  selectHomeWaiting,
+  selectMoveHomeDialogWorkspaceId,
+  selectMoveHomeFailure,
+  selectMoveHomeSubmitting,
+} from './workspace-home-selectors';
 
 const WS = 'ws-home-saga';
 const DETACHED: WorkspaceHome = {
@@ -46,7 +51,11 @@ const MOVING: WorkspaceHome = {
 };
 
 const home = () => selectWorkspaceById.select(appStore.state, WS)?.home;
-const dialog = () => selectMoveHomeDialog.select(appStore.state);
+const dialog = () => ({
+  workspaceId: selectMoveHomeDialogWorkspaceId.select(appStore.state),
+  submitting: selectMoveHomeSubmitting.select(appStore.state),
+  moveFailure: selectMoveHomeFailure.select(appStore.state),
+});
 const calls = (method: string) => mocks.request.mock.calls.filter(([name]) => name === method);
 
 let stops: Array<() => void>;

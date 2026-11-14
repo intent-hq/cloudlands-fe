@@ -4,6 +4,7 @@ import { AgentStatus, type AgentSession } from '$shared/types';
 import type { StartOnOption } from '$features/remote-machines/start-on';
 import {
   homeMoveTargetKey,
+  isHomeBackedTabType,
   moveHomeTargets,
   parseMoveHomeTargetKey,
   setHomeErrorCode,
@@ -179,5 +180,16 @@ describe('setHomeErrorCode', () => {
     expect(setHomeErrorCode(rpc(-32003))).toBe('forbidden');
     expect(setHomeErrorCode(rpc(-32603, 'something-else'))).toBeNull();
     expect(setHomeErrorCode('boom')).toBeNull();
+  });
+});
+
+describe('isHomeBackedTabType', () => {
+  it('gates the panels that read the home checkout or run on the home', () => {
+    for (const type of ['file', 'diff', 'terminal', 'changes', 'local-changes']) {
+      expect(isHomeBackedTabType(type)).toBe(true);
+    }
+    for (const type of ['agent', 'note', 'discussion', 'browser', 'settings', 'workspace']) {
+      expect(isHomeBackedTabType(type)).toBe(false);
+    }
   });
 });
