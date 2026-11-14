@@ -188,6 +188,17 @@ describe('root spec stub export check', () => {
     ]);
   });
 
+  it('counts a Svelte store import used only through $store auto-subscription', () => {
+    const root = tree({
+      'src/lib/state.ts': 'export const status = 1;',
+      'src/lib/Strip.svelte': strip(["  import { status } from '$lib/state';"], '<p>{$status}</p>'),
+      'test/strip.spec.ts': spec({ '$lib/state': 'export const other = 1;' }),
+    });
+    expect(messages(root)).toEqual([
+      "stub '$lib/state' does not export status, which src/lib/Strip.svelte:2 imports",
+    ]);
+  });
+
   it('reads a script tag whose attributes contain >', () => {
     const root = tree({
       'src/store/tabs/tab-slice.ts': 'export const openTab = () => {};',
