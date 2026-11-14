@@ -103,13 +103,15 @@ function isTurnNotice(message: AgentMessage): boolean {
 
 // Automatic provider switch rows (quota failover, return home) stay in the
 // ordered body stream: each marks the point between an attempt (possibly with
-// partial output) and the output that follows it.
+// partial output) and the output that follows it. The auto-unarchive row lands
+// just before the user message that unarchived the workspace.
 function isInlineSystemNotice(message: AgentMessage): boolean {
   const type = message.metadata?.type;
   return (
     type === 'provider_failover' ||
     type === 'provider_returned' ||
     type === 'provider_auto_selected' ||
+    type === 'auto_unarchived' ||
     (message.role === 'system' &&
       (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
         getAttentionNotice(message) !== null))
