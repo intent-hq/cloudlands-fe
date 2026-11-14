@@ -31,7 +31,17 @@ for (const isMac of [true, false]) {
           SHORTCUT_DEFAULTS['navigation.go-to-tab'].replace('1-9', String(digit)),
           isMac,
         );
+      // The rail re-renders after the store settles; press only once it shows the expected order.
+      const expectRail = (ids: string[]) =>
+        expect
+          .poll(() =>
+            component
+              .getByTestId('machine-rail-item')
+              .evaluateAll((items) => items.map((item) => item.getAttribute('data-machine-id'))),
+          )
+          .toEqual(ids);
       const draft = component.getByRole('textbox', { name: 'Draft' });
+      await expectRail(['local', 'build', 'guest']);
       await draft.press(deviceChord(2).press);
       await expect(result).toHaveAttribute('data-requests', '["build"]');
       await expect(result).toHaveAttribute('data-path', '/workspace/beta');
@@ -51,6 +61,7 @@ for (const isMac of [true, false]) {
       await expect(result).toHaveAttribute('data-path', '/workspace/gamma');
 
       await component.getByRole('button', { name: 'Reorder devices' }).click();
+      await expectRail(['local', 'second', 'build', 'guest']);
       await draft.press(deviceChord(2).press);
       await expect(result).toHaveAttribute('data-requests', '["build","guest","second"]');
 
@@ -62,12 +73,14 @@ for (const isMac of [true, false]) {
       await expect(result).toHaveAttribute('data-terminal-input', '""');
 
       await component.getByRole('button', { name: 'Toggle rail' }).click();
+      await expectRail([]);
       await draft.press(deviceChord(2).press);
       await expect(result).toHaveAttribute('data-path', '/workspace/alpha');
       await expect(result).toHaveAttribute('data-requests', '["build","guest","second","local"]');
       await draft.press(tabChord(9).press);
       await expect(result).toHaveAttribute('data-path', '/workspace/gamma');
       await component.getByRole('button', { name: 'Toggle rail' }).click();
+      await expectRail(['local', 'second', 'build', 'guest']);
       await draft.press(deviceChord(2).press);
       await expect(result).toHaveAttribute(
         'data-requests',
