@@ -92,6 +92,35 @@ export interface BootRouteDecisionInput {
  */
 export const BOOT_ROUTE_HOLD_TIMEOUT_MS = 15_000;
 
+/**
+ * Call `onTimeout` once the page has been on screen for `ms`. Time while the
+ * page is hidden does not count, and each return to the screen restarts the
+ * budget: a renderer started off screen (a machine rail view loading in the
+ * background) gets no animation frames, so its store readables stay frozen at
+ * their mount values and the hold would otherwise run out on that stale view
+ * and fall back to onboarding. Fires at most once. Returns a disposer.
+ */
+export function startVisibleHoldTimer(onTimeout: () => void, ms: number): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => {
+    clearTimeout(timer);
+    document.removeEventListener('visibilitychange', arm);
+  };
+  function arm() {
+    clearTimeout(timer);
+    timer =
+      document.visibilityState === 'hidden'
+        ? undefined
+        : setTimeout(() => {
+            stop();
+            onTimeout();
+          }, ms);
+  }
+  arm();
+  document.addEventListener('visibilitychange', arm);
+  return stop;
+}
+
 export type BootRouteDecision =
   /** Not a boot-route load, or already decided — nothing to do. */
   | { kind: 'inapplicable' }

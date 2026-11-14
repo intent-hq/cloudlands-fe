@@ -126,6 +126,7 @@
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
     getBootRoutePathname,
+    startVisibleHoldTimer,
   } from '$lib/utils/boot-route-gate';
   import {
     loadWorkspacesRequested,
@@ -295,7 +296,7 @@
   // load, so deliberate in-app navigation to `/` or /workspace/new is
   // unaffected. While it holds, WorkspaceSurface suppresses onboarding so the
   // wizard never flashes before a redirect. The hold is bounded: if nothing
-  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS (e.g. provider probes failing
+  // settles within BOOT_ROUTE_HOLD_TIMEOUT_MS on screen (e.g. provider probes failing
   // forever, so neither a check settlement nor an evaluation ever arrives),
   // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
   // of holding a blank surface indefinitely.
@@ -315,10 +316,9 @@
   });
   $effect(() => {
     if ($bootGateResolved) return;
-    const timer = setTimeout(() => {
+    return startVisibleHoldTimer(() => {
       bootHoldTimedOut = true;
     }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
-    return () => clearTimeout(timer);
   });
   // Once this backend lists any workspace, permanently skip the full-page
   // onboarding for it: later boots and empty windows fall back to Home.

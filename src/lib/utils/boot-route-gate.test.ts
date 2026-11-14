@@ -3,12 +3,13 @@
  * setup gate: connecting to a backend that already has workspaces must land
  * on a workspace, not onboarding).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   decideBootRoute,
   getBootRoutePathname,
   isBootRouteLoad,
   setBootRoutePathnameForTesting,
+  startVisibleHoldTimer,
   type BootRouteDecisionInput,
 } from './boot-route-gate';
 
@@ -367,5 +368,74 @@ describe('decideBootRoute', () => {
         decideBootRoute(returning({ setupGate: 'redirect', workspaceHasLoaded: true })),
       ).toEqual({ kind: 'resolve', target: '/', openTabWorkspaceId: null });
     });
+  });
+});
+
+describe('startVisibleHoldTimer', () => {
+  let visibility: DocumentVisibilityState = 'visible';
+  const setVisibility = (next: DocumentVisibilityState) => {
+    visibility = next;
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    visibility = 'visible';
+  });
+
+  function start() {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const onTimeout = vi.fn();
+    const stop = startVisibleHoldTimer(onTimeout, 1_000);
+    return { onTimeout, stop };
+  }
+
+  it('runs out after the budget while the page is on screen', () => {
+    const { onTimeout } = start();
+    vi.advanceTimersByTime(999);
+    expect(onTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  // A machine renderer started off screen gets no frames, so its store
+  // readables stay frozen: the hold must not run out on that stale view.
+  it('does not count time while the page is hidden, and restarts the budget once shown', () => {
+    visibility = 'hidden';
+    const { onTimeout } = start();
+    vi.advanceTimersByTime(60_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    vi.advanceTimersByTime(600);
+    setVisibility('hidden');
+    vi.advanceTimersByTime(60_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    vi.advanceTimersByTime(999);
+    expect(onTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs out at most once', () => {
+    const { onTimeout } = start();
+    vi.advanceTimersByTime(1_000);
+    setVisibility('hidden');
+    setVisibility('visible');
+    vi.advanceTimersByTime(5_000);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops for good once disposed', () => {
+    const { onTimeout, stop } = start();
+    stop();
+    setVisibility('hidden');
+    setVisibility('visible');
+    vi.advanceTimersByTime(5_000);
+    expect(onTimeout).not.toHaveBeenCalled();
   });
 });
