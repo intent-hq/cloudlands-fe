@@ -166,6 +166,14 @@ describe('machine rail switching', () => {
     ]);
   });
 
+  it('leaves a machine that cannot join a rail to its own window, instead of failing', async () => {
+    // Not a rail candidate (e.g. this app's own daemon, or a node).
+    await expect(openInvitedMachineInWindow(fakes.window as never, 'self-daemon')).resolves.toBe(
+      false,
+    );
+    expect(fakes.views).toHaveLength(0);
+  });
+
   it('does not add a machine after cancellation or while the rail is disabled', async () => {
     expect(
       await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws', () => false),
