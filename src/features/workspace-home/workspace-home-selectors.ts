@@ -20,13 +20,13 @@ const viewsByHome = new WeakMap<WorkspaceHome, WorkspaceHomeView>();
 /** The workspace's home as the UI shows it; null when it has none (homes are gated). */
 export const selectWorkspaceHomeView = store.createSelector(
   (state, workspaceId: string): WorkspaceHomeView | null => {
-    const home = selectWorkspaceById.select(state, workspaceId)?.home;
+    const workspace = selectWorkspaceById.select(state, workspaceId);
+    const home = workspace?.home;
     if (!home) return null;
-    let view = viewsByHome.get(home);
-    if (!view) {
-      view = workspaceHomeView({ home })!;
-      viewsByHome.set(home, view);
-    }
+    const cached = viewsByHome.get(home);
+    if (cached) return cached;
+    const view = workspaceHomeView(workspace);
+    if (view) viewsByHome.set(home, view);
     return view;
   },
 );

@@ -26,7 +26,12 @@ describe('WorkspaceHomeBanner', () => {
   it('a detached home offers Wait and, for owners and managers, Move home', async () => {
     const onWait = vi.fn();
     const onMove = vi.fn();
-    render(WorkspaceHomeBanner, { view: view({ state: 'detached' }), canMove: true, onWait, onMove });
+    render(WorkspaceHomeBanner, {
+      view: view({ state: 'detached' }),
+      canMove: true,
+      onWait,
+      onMove,
+    });
     expect(screen.getByRole('status').textContent).toContain('Mac Studio');
 
     await fireEvent.click(screen.getByRole('button', { name: m.workspaceHome_wait_label() }));
@@ -120,8 +125,6 @@ describe('MoveHomeDialog', () => {
     attached.unmount();
 
     render(MoveHomeDialog, { ...props, view: view({ state: 'detached' }) });
-    expect(document.querySelector('[data-move-home-warning]')?.textContent).toContain(
-      'Mac Studio',
-    );
+    expect(document.querySelector('[data-move-home-warning]')?.textContent).toContain('Mac Studio');
   });
 });

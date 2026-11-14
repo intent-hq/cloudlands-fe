@@ -47,11 +47,7 @@ function errorMessage(error: unknown): string {
 function* moveHome(action: ReturnType<typeof moveHomeRequested>): SagaGenerator<void> {
   const [workspaceId, to] = action.payload;
   try {
-    const home = yield* call(
-      [appClient.workspaces, appClient.workspaces.setHome],
-      workspaceId,
-      to,
-    );
+    const home = yield* call([appClient.workspaces, appClient.workspaces.setHome], workspaceId, to);
     yield* put(applyHome(workspaceId, home));
     yield* put(moveHomeSettled(workspaceId, null));
   } catch (error) {

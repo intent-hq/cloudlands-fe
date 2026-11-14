@@ -88,9 +88,7 @@ describe('workspaceHomeView', () => {
 
   it('only the move-old-home warning applies when the old home is not attached', () => {
     expect(workspaceHomeView({ home: ATTACHED })?.moveWarning).toBe(false);
-    expect(workspaceHomeView({ home: { ...ATTACHED, state: 'detached' } })?.moveWarning).toBe(
-      true,
-    );
+    expect(workspaceHomeView({ home: { ...ATTACHED, state: 'detached' } })?.moveWarning).toBe(true);
   });
 });
 

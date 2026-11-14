@@ -38,15 +38,18 @@
     {homeUnavailableText(view)}
   {/snippet}
   {#snippet actions()}
-    {#if view.canWait}
-      <Button variant="outline" size="sm" disabled={waiting} onclick={() => onWait?.()}>
-        {m.workspaceHome_wait_label()}
-      </Button>
-    {/if}
-    {#if canMove}
-      <Button variant="outline" size="sm" onclick={() => onMove?.()}>
-        {m.workspaceHome_move_label()}
-      </Button>
-    {/if}
+    <!-- Narrow panels: the actions wrap instead of overflowing. -->
+    <div class="flex flex-wrap justify-center gap-2">
+      {#if view.canWait}
+        <Button variant="outline" size="sm" disabled={waiting} onclick={() => onWait?.()}>
+          {m.workspaceHome_wait_label()}
+        </Button>
+      {/if}
+      {#if canMove}
+        <Button variant="outline" size="sm" onclick={() => onMove?.()}>
+          {m.workspaceHome_move_label()}
+        </Button>
+      {/if}
+    </div>
   {/snippet}
 </EmptyState>

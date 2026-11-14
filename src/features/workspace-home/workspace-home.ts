@@ -111,16 +111,14 @@ export function moveHomeTargets({
   agents: readonly AgentSession[];
   machineRows: readonly StartOnOption[];
 }): MoveHomeOption[] {
-  const agentOptions = agents.filter(hasLiveMachine).map(
-    (agent): MoveHomeOption => ({
-      key: homeMoveTargetKey({ agentId: String(agent.id) }),
-      kind: 'agent',
-      label: agent.name,
-      machineName: agent.nodeName?.trim() || undefined,
-      platform: null,
-      disabled: false,
-    }),
-  );
+  const agentOptions = agents.filter(hasLiveMachine).map((agent): MoveHomeOption => ({
+    key: homeMoveTargetKey({ agentId: String(agent.id) }),
+    kind: 'agent',
+    label: agent.name,
+    machineName: agent.nodeName?.trim() || undefined,
+    platform: null,
+    disabled: false,
+  }));
   const machineOptions = machineRows
     .filter((row) => row.id !== START_ON_BACKEND)
     .map((row): MoveHomeOption => {

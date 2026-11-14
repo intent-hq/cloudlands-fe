@@ -12,7 +12,6 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { faKeyboard, faRightLeft } from '@fortawesome/free-solid-svg-icons';
-  import { faHardDrive } from '$lib/icons/phosphor-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -30,12 +29,6 @@
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
-  import WorkspaceHomeLine from '$features/workspace-home/components/WorkspaceHomeLine.svelte';
-  import {
-    selectCanMoveWorkspaceHome,
-    selectWorkspaceHomeView,
-  } from '$features/workspace-home/workspace-home-selectors';
-  import { moveHomeDialogOpened } from '$features/workspace-home/workspace-home-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -440,28 +433,10 @@
       : null,
   );
 
-  // Workspace homes (orchestrator only): owners and managers move the home.
-  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
-  const canMoveHome$ = selectCanMoveWorkspaceHome(workspaceIdStore);
-  const moveHomeAction: MenuAction | null = $derived(
-    $canMoveHome$
-      ? {
-          id: 'move-workspace-home',
-          label: m.workspaceHome_move_label(),
-          icon: faHardDrive,
-          onClick: () => {
-            const targetWorkspaceId = workspaceId || workspace?.id;
-            if (targetWorkspaceId) appStore.dispatch(moveHomeDialogOpened(targetWorkspaceId));
-          },
-        }
-      : null,
-  );
-
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     ...(microKeyAction ? [microKeyAction] : []),
     ...(transferAction ? [transferAction] : []),
-    ...(moveHomeAction ? [moveHomeAction] : []),
     sidebarSideAction,
   ]);
 
@@ -678,7 +653,6 @@
         </div>
       {/if}
     </div>
-    <WorkspaceHomeLine view={$homeView$} />
   </div>
 
   <div class="flex shrink-0 items-start gap-1" data-sidebar-header-controls>

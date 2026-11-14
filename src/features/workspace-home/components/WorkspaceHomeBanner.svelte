@@ -53,7 +53,9 @@
   >
     <Fa
       {icon}
-      class="mt-0.5 size-4 shrink-0 {banner === 'moving' ? 'text-muted-foreground' : 'text-warning'}"
+      class="mt-0.5 size-4 shrink-0 {banner === 'moving'
+        ? 'text-muted-foreground'
+        : 'text-warning'}"
     />
     <p class="type-body min-w-48 flex-1 text-foreground">{homeBannerText(view)}</p>
     {#if banner === 'moving'}

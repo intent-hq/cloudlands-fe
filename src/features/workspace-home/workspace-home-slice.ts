@@ -47,9 +47,7 @@ export const moveHomeSettled = createAction<[workspaceId: string, failure: MoveH
 export const homeWaitRequested = createAction<[workspaceId: string]>('workspaceHome/waitRequested');
 export const homeWaitSettled = createAction<[workspaceId: string]>('workspaceHome/waitSettled');
 
-export const workspaceHomeReducer = createReducer<WorkspaceHomeUiState>(
-  initialWorkspaceHomeState,
-);
+export const workspaceHomeReducer = createReducer<WorkspaceHomeUiState>(initialWorkspaceHomeState);
 workspaceHomeReducer.with(moveHomeDialogOpened, (state, { payload: [workspaceId] }) => ({
   ...state,
   dialogWorkspaceId: workspaceId,
