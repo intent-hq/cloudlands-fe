@@ -244,6 +244,22 @@ describe('root spec stub export check', () => {
     expect(messages(fixed)).toEqual([]);
   });
 
+  it('skips, without crashing, a barrel chain whose stub exports cannot be read', () => {
+    const root = tree({
+      'src/lib/x.ts': 'export const a = 1;',
+      'src/lib/s1.ts': 'export const a = 1;',
+      'src/lib/s2.ts': 'export const b = 2;',
+      'src/lib/inner.ts': "export * from '$lib/s1';",
+      'src/lib/outer.ts': ["export * from './inner';", "export * from '$lib/s2';"],
+      'src/lib/Strip.svelte': strip(["  import { a, b } from './outer';", '  a; b;']),
+      'test/strip.spec.ts': spec({
+        '$lib/s1': "export * from '/src/lib/x.ts';",
+        '$lib/s2': 'export const b = 2;',
+      }),
+    });
+    expect(messages(root)).toEqual([]);
+  });
+
   it('follows resolveId redirects and flags the stubs they shadow', () => {
     const root = tree({
       'src/lib/Card.svelte': strip(["  import { gone } from '$lib/gone';", '  gone();']),

@@ -425,7 +425,9 @@ function starShortfalls(stubs, edges, cache) {
     const names = new Set(readModule(file, cache).exports);
     for (const edge of edges) {
       if (edge.importer !== file || !edge.star) continue;
-      for (const name of exportedOf(edge.target, visiting)) if (name !== 'default') names.add(name);
+      const forwarded = exportedOf(edge.target, visiting);
+      if (!forwarded) return null;
+      for (const name of forwarded) if (name !== 'default') names.add(name);
     }
     for (const stub of stubs) {
       if (!stub.stars.some((star) => star.importer === file)) continue;
