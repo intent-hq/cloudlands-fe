@@ -22,7 +22,7 @@ export interface HomeRepositoryMenuOptions {
 
 /**
  * Right-click menu for a repository or local folder in the Home sidebar. Local folders
- * are deleted from the recent list; GitHub repositories are hidden.
+ * owners delete from the recent list; GitHub repositories, and collaborators, hide.
  */
 export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): SidebarMenuEntry[] {
   const { repo } = options;
@@ -50,7 +50,8 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
           icon: faEye,
           onClick: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
         }
-      : !repo.owner
+      : // Collaborators must not edit the host's recent list.
+        !repo.owner && options.canCreate
         ? {
             id: 'delete',
             label: m.menu_delete(),
