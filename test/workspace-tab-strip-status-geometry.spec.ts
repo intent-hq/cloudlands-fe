@@ -26,15 +26,11 @@ const virtualModules: Record<string, string> = {
       startPolling() {}, subscribe() { return () => {}; },
       getStreamingAgentIdsForWorkspace() { return []; },
     };`,
-  '$features/workspace/utils/empty-window-destination': `
-    export const resolveEmptyWindowDestination = () => '/';`,
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
     export const TooltipRich = Tooltip;
     export const TooltipShortcut = Tooltip;
     export { Tooltip };`,
-  '$lib/components/workspace/WorkspaceHoverCard.svelte': `
-    export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -101,15 +97,6 @@ const virtualModules: Record<string, string> = {
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
     );`,
-  '$store/renderer/slices/presence/presence-selectors': `
-    const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
-    export const selectPresenceRosters = () => readable(() => ({}));
-    export const selectPresenceMembers = () => readable(() => ({}));
-    export const selectPresenceOwnPrincipalId = () => readable(() => null);
-    export const selectWorkspacePresencePeople = Object.assign(
-      () => readable(() => []),
-      { select: () => [] },
-    );`,
   '$store/renderer/slices/hud/hud-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceTabStatuses = () =>
@@ -120,20 +107,6 @@ const virtualModules: Record<string, string> = {
       get state() { return {}; },
       getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
-  '@fortawesome/free-solid-svg-icons': `
-    export const faArrowRight = { iconName: 'arrow-right' };
-    export const faCheck = { iconName: 'check' };
-    export const faChevronRight = { iconName: 'chevron-right' };
-    export const faCircleCheck = { iconName: 'circle-check' };
-    export const faCircleQuestion = { iconName: 'circle-question' };
-    export const faClock = { iconName: 'clock' };
-    export const faCodeMerge = { iconName: 'code-merge' };
-    export const faCodePullRequest = { iconName: 'code-pull-request' };
-    export const faEllipsis = { iconName: 'ellipsis' };
-    export const faHourglassHalf = { iconName: 'hourglass-half' };
-    export const faLayerGroup = { iconName: 'layer-group' };
-    export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
-    export const faXmark = { iconName: 'xmark' };`,
 };
 
 function geometryStubs(): Plugin {
