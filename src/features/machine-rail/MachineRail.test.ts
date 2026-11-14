@@ -112,6 +112,70 @@ it('opens a machine menu on a context click without switching to that machine', 
   expect(mocks.dispatch).toHaveBeenCalledTimes(1);
 });
 
+function withUpdatableB(workflows: unknown[] = []) {
+  const connections = mocks.state.connections as Record<string, unknown>;
+  mocks.state = {
+    ...mocks.state,
+    connections: {
+      ...connections,
+      pinnedVersion: '0.10.0',
+      connectedIds: ['local', 'b'],
+      connections: createCollection<ConnectionRecord, 'id'>('id', [
+        record('local'),
+        { ...record('b'), daemonVersion: '0.9.0', updateSupported: true },
+      ]),
+      workflows: createCollection('id', workflows as never[]),
+    },
+  };
+}
+
+it('offers to update a machine whose daemon can be updated, from its menu', async () => {
+  withUpdatableB();
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[1]);
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  await fireEvent.click(within(menu).getByTestId('machine-rail-menu-update'));
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'connections/workflowRequested',
+      payload: expect.objectContaining({
+        consumerId: 'machine-rail:update:b',
+        intent: { kind: 'updateBackend', id: 'b' },
+      }),
+    }),
+  );
+  cleanup();
+
+  // A guest host is never offered an update.
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[2]);
+  const guestMenu = await screen.findByTestId('machine-rail-item-menu');
+  expect(within(guestMenu).queryByTestId('machine-rail-menu-update')).toBeNull();
+});
+
+it('does not start a second update while one runs', async () => {
+  withUpdatableB([
+    {
+      id: 'machine-rail:update:b',
+      requestId: 'r1',
+      targetId: 'b',
+      kind: 'updateBackend',
+      phase: 'running',
+      secretReplaced: false,
+      outcome: null,
+    },
+  ]);
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[1]);
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  const update = within(menu).getByTestId('machine-rail-menu-update');
+  expect(update.getAttribute('aria-disabled')).toBe('true');
+  await fireEvent.click(update);
+  expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'connections/workflowRequested' }),
+  );
+});
+
 it("sends a guest host's manage action to the guest session settings", async () => {
   render(MachineRail);
   await fireEvent.contextMenu(railItems()[2]);

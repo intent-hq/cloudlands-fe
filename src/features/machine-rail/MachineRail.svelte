@@ -21,7 +21,8 @@
    * its group (the others move aside to make room), or moved with Alt+Up/Down.
    *
    * A context click opens the machine's menu where it is, without switching:
-   * its status, removal from the rail and machine settings. The shown
+   * its status, an update when its daemon can be updated, removal from the
+   * rail and machine settings. The shown
    * machine's status comes from its own renderer, with full health details.
    *
    * The window's own renderer, under every other machine's, also paints the
@@ -51,6 +52,7 @@
     formatLocalMachineLabel,
   } from '$lib/utils/connection-label';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { connectionWorkflowRequested } from '$store/renderer/slices/connections/connections-slice';
   import { m } from '$shared/paraglide/messages.js';
   import type { ConnectionRecord } from '$shared/types/connections';
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
@@ -60,6 +62,7 @@
     selectMachineRailCandidates,
     selectMachineRailEnabled,
     selectMachineRailGuestCandidates,
+    railUpdateConsumerId,
     selectMachineRailItems,
     selectRailSelectedRecord,
     type MachineRailItem,
@@ -403,6 +406,14 @@
     appStore.dispatch(removeRailMachineRequested(id));
   }
 
+  /** Update a machine's daemon, once: the item is disabled while that update runs. */
+  function requestUpdate(id: string) {
+    if ($items$.find((item) => item.id === id)?.updating) return;
+    appStore.dispatch(
+      connectionWorkflowRequested(railUpdateConsumerId(id), { kind: 'updateBackend', id }),
+    );
+  }
+
   function manageMachines(guest: boolean) {
     statusMenuOpen = false;
     itemMenuOpen = false;
@@ -432,6 +443,16 @@
 
 <!-- A machine's menu actions, shared by the shown machine's status menu and the others' menu. -->
 {#snippet railMenuActions(item: MachineRailItem)}
+  {#if item.updatable}
+    <Menu.Item
+      class="w-full cursor-pointer text-xs px-2 py-1.5"
+      data-testid="machine-rail-menu-update"
+      disabled={item.updating}
+      onSelect={() => requestUpdate(item.id)}
+    >
+      {item.updating ? m.settings_devices_updating_label() : m.layout_daemonStatus_update_action()}
+    </Menu.Item>
+  {/if}
   {#if !item.home}
     <Menu.Item
       class="w-full cursor-pointer text-xs px-2 py-1.5"

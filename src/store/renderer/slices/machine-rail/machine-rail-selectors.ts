@@ -1,6 +1,7 @@
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
-import type { ConnectionRecord } from '../connections/connections-types';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ConnectionRecord, ConnectionWorkflow } from '../connections/connections-types';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import { nextRailMachine } from '$shared/types/machine-rail';
 import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
@@ -25,8 +26,23 @@ export interface MachineRailItem {
   degraded: boolean;
   /** Its daemon is behind this app and can be updated from here: marked with a badge. */
   updatable: boolean;
+  /** An update the rail started for it is still running. */
+  updating: boolean;
   /** Asked for and still starting: its item spins until it is shown. */
   pending: boolean;
+}
+
+/** The connection workflow that tracks an update the rail started for `id`. */
+export function railUpdateConsumerId(id: string): string {
+  return `machine-rail:update:${id}`;
+}
+
+function isRailUpdateRunning(
+  workflows: Collection<ConnectionWorkflow, 'id'> | undefined,
+  id: string,
+) {
+  const workflow = workflows ? getItem(workflows, railUpdateConsumerId(id)) : undefined;
+  return !!workflow && workflow.phase !== 'settled';
 }
 
 /** Whether the Labs setting is on (the rail shows, even with one machine). */
@@ -78,6 +94,7 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
           state.connections.connectedIds,
           state.connections.pinnedVersion,
         ),
+      updating: isRailUpdateRunning(state.connections.workflows, id),
       pending: id === pendingId && id !== own,
     };
   });
