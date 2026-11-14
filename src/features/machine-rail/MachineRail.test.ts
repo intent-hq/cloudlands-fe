@@ -176,6 +176,45 @@ it('does not start a second update while one runs', async () => {
   );
 });
 
+it("closes another machine's menu when the shown machine's own menu opens", async () => {
+  render(MachineRail);
+  const [local, build] = railItems();
+  await fireEvent.contextMenu(build);
+  await screen.findByTestId('machine-rail-item-menu');
+
+  // The shown machine's own status menu opens instead, alone.
+  await fireEvent.contextMenu(local);
+  await waitFor(() => expect(screen.queryByTestId('machine-rail-item-menu')).toBeNull());
+});
+
+it('moves an open machine menu on a Ctrl+click, the macOS right click', async () => {
+  render(MachineRail);
+  const [, build, guestHost] = railItems();
+  await fireEvent.contextMenu(build);
+  await screen.findByTestId('machine-rail-item-menu');
+
+  await fireEvent.pointerDown(guestHost, { button: 0, ctrlKey: true });
+  await fireEvent.contextMenu(guestHost, { button: 0, ctrlKey: true });
+  // Past the menu's debounced outside-click dismissal.
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  await fireEvent.click(within(menu).getByTestId('machine-rail-menu-manage'));
+  await waitFor(() =>
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'collaboration' }),
+  );
+});
+
+it('closes the add menu when a machine menu opens', async () => {
+  render(MachineRail);
+  await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
+  await fireEvent.click(screen.getByTestId('machine-rail-add'));
+  await screen.findByTestId('machine-rail-add-new');
+  await fireEvent.contextMenu(railItems()[1]);
+  await screen.findByTestId('machine-rail-item-menu');
+  await waitFor(() => expect(screen.queryByTestId('machine-rail-add-new')).toBeNull());
+});
+
 it("sends a guest host's manage action to the guest session settings", async () => {
   render(MachineRail);
   await fireEvent.contextMenu(railItems()[2]);
