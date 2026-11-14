@@ -31,8 +31,6 @@ const virtualModules: Record<string, string> = {
     export const TooltipRich = Tooltip;
     export const TooltipShortcut = Tooltip;
     export { Tooltip };`,
-  '$lib/components/workspace/WorkspaceHoverCard.svelte': `
-    export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
