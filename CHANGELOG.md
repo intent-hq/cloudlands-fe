@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.338.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.337.0...v2.338.0) (2026-11-14)
+
+
+### 🚀 Features
+
+* **home:** delete local folders from the sidebar and drop repo tooltips ([#4602](https://github.com/intent-hq/cloudlands-fe/issues/4602)) ([af6fcec](https://github.com/intent-hq/cloudlands-fe/commit/af6fcec1bf9897e290d0aa09a35e62bd19cd61a7))
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** keep a machine's update notice on that machine ([#4605](https://github.com/intent-hq/cloudlands-fe/issues/4605)) ([548de93](https://github.com/intent-hq/cloudlands-fe/commit/548de93ed4e03a30fc6053f1b2be47db72ae655e))
+
 ## [2.337.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.336.0...v2.337.0) (2026-11-14)
 
 
