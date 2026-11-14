@@ -75,6 +75,8 @@ export interface MachineRailDeps {
   connect(id: string): Promise<unknown>;
   /** Whether the machine's pooled client is connected right now. */
   isConnected(id: string): boolean;
+  /** Call `listener` each time a machine's pooled client connects; returns a disposer. */
+  onConnected(listener: (id: string) => void): () => void;
   /** Dial the machine now; `true` once connected, `false` once that attempt fails. */
   retry(id: string): Promise<boolean>;
   /** Drop the pooled client of a machine no window or rail uses any more. */
@@ -111,6 +113,8 @@ interface Transition {
 const transitions = new WeakMap<BrowserWindowType, Transition>();
 /** Machine views whose renderer has finished starting up. */
 const readyViews = new WeakSet<Electron.WebContents>();
+/** Callers waiting for a renderer to report ready. */
+const readyWaiters = new WeakMap<Electron.WebContents, Array<() => void>>();
 
 function transitionOf(window: BrowserWindowType): Transition {
   let transition = transitions.get(window);
@@ -196,6 +200,7 @@ function destroyView(window: BrowserWindowType, id: string): void {
   } catch {
     /* The window is already tearing its views down. */
   }
+  settleReadyWaiters(view.webContents);
   // A view's web contents outlives its window unless it is closed here.
   if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
   forgetHealthWithoutRenderer(id);
@@ -360,8 +365,76 @@ function markReady(window: BrowserWindowType, sender: Electron.WebContents): voi
   const entry = [...viewsOf(window)].find(([, view]) => view.webContents === sender);
   if (!entry) return;
   readyViews.add(sender);
+  settleReadyWaiters(sender);
   if (isMachineRailEnabled() && transitions.get(window)?.pendingId === entry[0]) {
     showMachine(window, entry[0]);
+  }
+}
+
+function settleReadyWaiters(contents: Electron.WebContents): void {
+  for (const resolve of readyWaiters.get(contents) ?? []) resolve();
+  readyWaiters.delete(contents);
+}
+
+/** Settles once `contents` reports ready or is dropped, or after the longest a start may take. */
+function whenReady(contents: Electron.WebContents): Promise<void> {
+  if (contents.isDestroyed() || readyViews.has(contents)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, READY_TIMEOUT_MS);
+    const waiters = readyWaiters.get(contents) ?? [];
+    waiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+    readyWaiters.set(contents, waiters);
+  });
+}
+
+/** Longest the background start waits for a machine that is still connecting. */
+const PRELOAD_CONNECT_WAIT_MS = 60_000;
+
+/** Background starts waiting for one of their machines to connect. */
+const connectionWaits = new Set<{ ids: string[]; finish: (id: string | null) => void }>();
+let connectedFeed: (() => void) | null = null;
+
+/** Settles with the first of `ids` to connect, or `null` once the wait runs out. */
+function nextConnection(ids: string[]): Promise<string | null> {
+  if (!deps) return Promise.resolve(null);
+  connectedFeed ??= deps.onConnected((id) => {
+    for (const wait of [...connectionWaits]) if (wait.ids.includes(id)) wait.finish(id);
+  });
+  return new Promise((resolve) => {
+    const wait = {
+      ids,
+      finish: (id: string | null) => {
+        clearTimeout(timer);
+        connectionWaits.delete(wait);
+        resolve(id);
+      },
+    };
+    const timer = setTimeout(() => wait.finish(null), PRELOAD_CONNECT_WAIT_MS);
+    connectionWaits.add(wait);
+  });
+}
+
+/**
+ * Start each machine's renderer in the background, hidden and one at a time,
+ * as it connects, so picking it later shows it at once. One that is still
+ * offline once the wait runs out starts when picked, as before.
+ */
+async function preloadMachines(window: BrowserWindowType, ids: string[]): Promise<void> {
+  const remaining = new Set(ids);
+  while (remaining.size > 0) {
+    if (window.isDestroyed() || !isMachineRailEnabled()) return;
+    const inRail = readWindowRail(window).machineIds;
+    for (const id of remaining) if (!inRail.includes(id)) remaining.delete(id);
+    const next = [...remaining].find((id) => deps?.isConnected(id) ?? false);
+    if (next === undefined) {
+      if (remaining.size === 0 || (await nextConnection([...remaining])) === null) return;
+      continue;
+    }
+    remaining.delete(next);
+    await whenReady(ensureView(window, next).webContents);
   }
 }
 
@@ -515,18 +588,22 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   clearTransition(window);
   writeWindowRail(window, rail);
   broadcastState(window);
-  // Every machine reconnects now; only the one that was shown gets a renderer.
+  // Every machine reconnects now. The one that was shown starts first; the
+  // others start in the background once it is ready, as each one connects.
   const selected = rail.selectedId;
-  await Promise.all(
-    rail.machineIds.slice(1).map(async (id) => {
-      await connectQuietly(id);
-      if (id !== selected || window.isDestroyed()) return;
-      if (readWindowRail(window).selectedId === id) {
-        applySelection(window);
-        broadcastState(window);
-      }
-    }),
-  );
+  const others = rail.machineIds.slice(1).filter((id) => id !== selected);
+  for (const id of others) void connectQuietly(id);
+  if (selected !== rail.machineIds[0]) {
+    await connectQuietly(selected);
+    if (window.isDestroyed()) return;
+    if (readWindowRail(window).selectedId === selected) {
+      applySelection(window);
+      broadcastState(window);
+    }
+    const shown = viewsOf(window).get(selected);
+    if (shown) await whenReady(shown.webContents);
+  }
+  await preloadMachines(window, others);
 }
 
 function resetWindow(window: BrowserWindowType): void {
@@ -571,6 +648,9 @@ function assertEnabled(): void {
 }
 
 export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
+  connectedFeed?.();
+  connectedFeed = null;
+  for (const wait of [...connectionWaits]) wait.finish(null);
   deps = railDeps;
   setMachineRailRestoreHandler((window, session) => {
     void restoreRail(window, session).catch((error: unknown) =>

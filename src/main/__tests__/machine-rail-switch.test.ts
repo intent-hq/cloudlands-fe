@@ -178,6 +178,16 @@ describe('machine rail switching', () => {
   const connection = {
     connected: new Set<string>(['local', 'b', 'c']),
     retry: vi.fn<(id: string) => Promise<boolean>>(),
+    listeners: new Set<(id: string) => void>(),
+    /** A machine's client finished connecting. */
+    connect(id: string) {
+      this.connected.add(id);
+      for (const listener of this.listeners) listener(id);
+    },
+    onConnected(listener: (id: string) => void) {
+      connection.listeners.add(listener);
+      return () => connection.listeners.delete(listener);
+    },
   };
 
   beforeEach(() => {
@@ -185,10 +195,12 @@ describe('machine rail switching', () => {
     setMachineRailEnabledFlag(true);
     connection.connected = new Set(['local', 'b', 'c']);
     connection.retry.mockReset();
+    connection.listeners.clear();
     registerMachineRailHandlers({
       listMachineIds: async () => ['local', 'b', 'c'],
       connect: async () => undefined,
       isConnected: (id) => connection.connected.has(id),
+      onConnected: (listener) => connection.onConnected(listener),
       retry: connection.retry,
       disconnect: () => {},
     });
@@ -371,6 +383,96 @@ describe('machine rail switching', () => {
       pendingId: '',
     });
     expect(viewOf('c').visible).toBe(true);
+  });
+
+  it('loads the other connected machines in the background once the shown one is ready, one at a time', async () => {
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    // Nothing else loads while the machine on screen is still starting.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
+
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('b').visible).toBe(false);
+    await invoke(RAIL.READY, viewOf('b').webContents);
+
+    // A machine loaded in the background shows at once when picked.
+    expect(await invoke(RAIL.SELECT, home(), { id: 'b' })).toMatchObject({
+      selectedId: 'b',
+      pendingId: '',
+    });
+  });
+
+  it('starts loading at once when the window shows its own machine, waiting for each before the next', async () => {
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(viewOf('b').visible).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('c').visible).toBe(false);
+  });
+
+  it('moves on to the next machine at once when the one loading is removed', async () => {
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    await invoke(RAIL.REMOVE, home(), { id: 'b' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('c').visible).toBe(false);
+  });
+
+  it('does not let a machine that is slow to connect hold up the others', async () => {
+    let failB: () => void = () => {};
+    registerMachineRailHandlers({
+      listMachineIds: async () => ['local', 'b', 'c'],
+      connect: (id) =>
+        id === 'b'
+          ? new Promise<undefined>((_, reject) => (failB = () => reject(new Error('offline'))))
+          : Promise.resolve(undefined),
+      isConnected: (id) => connection.connected.has(id),
+      onConnected: (listener) => connection.onConnected(listener),
+      retry: connection.retry,
+      disconnect: () => {},
+    });
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(fakes.bindings.get(fakes.views[0].webContents)).toBe('c');
+    failB();
+  });
+
+  it('loads a machine that is still connecting at startup once it connects', async () => {
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b', 'c'],
+      selectedId: 'local',
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(fakes.bindings.get(fakes.views[0].webContents)).toBe('c');
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    connection.connect('b');
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('b').visible).toBe(false);
+  });
+
+  it('leaves a machine that is offline at startup to load when picked', async () => {
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fakes.views.length).toBe(1);
   });
 
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
