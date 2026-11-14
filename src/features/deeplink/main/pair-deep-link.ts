@@ -119,6 +119,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       if (attempt.current())
         await openBackendWindow(record.id, {
           mayOpen: () => attempt.current() && attempt.allowed(),
+          parentWindow: attempt.parent,
         });
       return;
     }
@@ -153,7 +154,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       logger.info('Pairing link matches a known backend; opening its window', {
         id: existing.id,
       });
-      await openBackendWindow(existing.id);
+      await openBackendWindow(existing.id, { parentWindow: attempt.parent });
       return;
     }
 
@@ -172,7 +173,8 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     });
     if (!existing) addedId = record.id;
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
-    await openBackendWindow(record.id);
+    // With the machine rail on, the machine joins the rail of the window the link was opened from.
+    await openBackendWindow(record.id, { parentWindow: attempt.parent });
   } catch (error) {
     if (error instanceof NodeWindowRefusedError) {
       // Detected as a node only when its window was about to open. A record
