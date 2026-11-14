@@ -4573,7 +4573,7 @@
   "onboarding_testPrompt_busy_error": "守护进程正忙于运行其他智能体——请稍等片刻后重试。",
   "onboarding_testPrompt_claudeDesktopNote_label": "登录 Claude 桌面应用不会同步到 CLI——请运行 CLI 登录命令。",
   "onboarding_testPrompt_generic_error": "测试提示词失败:{message}",
-  "onboarding_testPrompt_notInstalled_error": "{name} 未安装:{message}",
+  "onboarding_testPrompt_notInstalled_error": "{name} 无法启动:{message}",
   "onboarding_testPrompt_runToLogIn_label": "在终端中运行以登录:",
   "onboarding_testPrompt_running_label": "正在发送测试提示词…",
   "onboarding_testPrompt_timeout_error": "{name} 未能及时应答。它可能仍在下载或启动中——请稍后再试。",

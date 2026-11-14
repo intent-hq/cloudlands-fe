@@ -4573,7 +4573,7 @@
   "onboarding_testPrompt_busy_error": "Der Daemon ist gerade mit anderen Agents beschäftigt — warte einen Moment und versuche es erneut.",
   "onboarding_testPrompt_claudeDesktopNote_label": "Die Anmeldung in der Claude-Desktop-App gilt nicht für die CLI — führe den CLI-Login aus.",
   "onboarding_testPrompt_generic_error": "Der Test-Prompt ist fehlgeschlagen: {message}",
-  "onboarding_testPrompt_notInstalled_error": "{name} ist nicht installiert: {message}",
+  "onboarding_testPrompt_notInstalled_error": "{name} konnte nicht gestartet werden: {message}",
   "onboarding_testPrompt_runToLogIn_label": "Zum Anmelden im Terminal ausführen:",
   "onboarding_testPrompt_running_label": "Test-Prompt wird gesendet…",
   "onboarding_testPrompt_timeout_error": "{name} hat nicht rechtzeitig geantwortet. Es lädt möglicherweise noch herunter oder startet gerade — versuche es gleich noch einmal.",
