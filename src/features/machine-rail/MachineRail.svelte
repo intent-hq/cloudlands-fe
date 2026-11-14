@@ -51,6 +51,7 @@
     formatGuestSessionLabel,
     formatLocalMachineLabel,
   } from '$lib/utils/connection-label';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { connectionWorkflowRequested } from '$store/renderer/slices/connections/connections-slice';
   import { m } from '$shared/paraglide/messages.js';
@@ -391,29 +392,30 @@
   const itemMenuItem = $derived($items$.find((item) => item.id === itemMenu?.id) ?? null);
 
   // A right click does not dismiss an open menu, so opening one menu closes
-  // the others: the rail's menus never stack. A menu already open is closed
-  // and opened again rather than moved: a macOS Ctrl+click is also an outside
-  // click to it, and the open menu would dismiss itself a moment later.
-  async function openItemMenu(event: MouseEvent, item: MachineRailItem) {
+  // the others: the rail's menus never stack. Another machine's open menu
+  // moves to the machine clicked.
+  function openItemMenu(event: MouseEvent, item: MachineRailItem) {
     event.preventDefault();
-    const anchor = event.currentTarget as HTMLElement;
     menuOpen = false;
     if (item.own) {
       itemMenuOpen = false;
-      if (statusMenuOpen) {
-        statusMenuOpen = false;
-        await tick();
-      }
       statusMenuOpen = true;
       return;
     }
     statusMenuOpen = false;
-    if (itemMenuOpen) {
-      itemMenuOpen = false;
-      await tick();
-    }
-    itemMenu = { id: item.id, anchor };
+    itemMenu = { id: item.id, anchor: event.currentTarget as HTMLElement };
     itemMenuOpen = true;
+  }
+
+  /**
+   * A macOS Ctrl+click is a right click to the rail but an outside click to
+   * the open menu: keep the menu, which moves to the machine clicked.
+   */
+  function keepMenuForMacRightClick(event: PointerEvent) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (isMacPlatform() && event.ctrlKey && target?.closest('[data-testid="machine-rail-item"]')) {
+      event.preventDefault();
+    }
   }
 
   function removeFromRail(id: string) {
@@ -726,6 +728,7 @@
         side="right"
         align="start"
         customAnchor={itemMenu?.anchor ?? null}
+        onInteractOutside={keepMenuForMacRightClick}
         aria-label={itemMenuItem ? itemName(itemMenuItem) : undefined}
         data-testid="machine-rail-item-menu"
       >
