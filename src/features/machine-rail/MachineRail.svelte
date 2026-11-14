@@ -10,7 +10,8 @@
    *
    * Items are the plain ghost icon button; the selected machine uses its
    * active state and a bar in the machine's accent colour; a machine that is
-   * not connected is dimmed, and one whose daemon is degraded has a warning dot. A machine that is still starting after a click
+   * not connected is dimmed, one whose daemon is degraded has a warning dot,
+   * and one whose daemon can be updated from here has a dot at its top corner. A machine that is still starting after a click
    * spins in place until it is shown: once connected, or once its connection
    * fails, so its usual cannot-connect dialog shows. The add
    * button follows the last machine. Hosts joined as a guest come after the
@@ -534,6 +535,14 @@
         class="pointer-events-none absolute right-0.5 bottom-0.5 size-2 rounded-full bg-warning ring-2 ring-background"
         aria-hidden="true"
         data-testid="machine-rail-degraded-dot"
+        data-machine-id={item.id}
+      ></span>
+    {/if}
+    {#if item.updatable && !item.pending}
+      <span
+        class="pointer-events-none absolute top-0.5 right-0.5 size-2 rounded-full bg-info ring-2 ring-background"
+        aria-hidden="true"
+        data-testid="machine-rail-update-dot"
         data-machine-id={item.id}
       ></span>
     {/if}
