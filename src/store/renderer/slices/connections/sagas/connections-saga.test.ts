@@ -1247,6 +1247,8 @@ describe('connectionsSaga', () => {
       // Sticky: never auto-dismisses — dismissal is programmatic.
       expect(options.duration).toBe(Number.POSITIVE_INFINITY);
       expect(options.action.label).toEqual(expect.any(String));
+      // Machine rail: it waits on its own machine, not on the one on screen.
+      expect(options.stayOnMachine).toBe(true);
 
       // Same connected pool re-broadcast: no second toast, and the sticky
       // toast still applies — no dismissal either.
