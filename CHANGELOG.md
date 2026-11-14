@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.337.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.336.0...v2.337.0) (2026-11-14)
+
+
+### 🚀 Features
+
+* **machine-rail:** load rail machines in the background at startup ([#4599](https://github.com/intent-hq/cloudlands-fe/issues/4599)) ([b649ec7](https://github.com/intent-hq/cloudlands-fe/commit/b649ec70e4de224c3c34d6f506d76ef007d4c74b))
+
 ## [2.336.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.335.0...v2.336.0) (2026-11-14)
 
 
