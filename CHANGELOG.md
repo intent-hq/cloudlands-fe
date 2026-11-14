@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.340.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.2...v2.340.3) (2026-11-14)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.212 ([#4631](https://github.com/intent-hq/cloudlands-fe/issues/4631)) ([24e27e0](https://github.com/intent-hq/cloudlands-fe/commit/24e27e02366db5e408211e23432d484691cadb9a))
+* **machine-rail:** keep only one machine menu open on right-click ([#4628](https://github.com/intent-hq/cloudlands-fe/issues/4628)) ([a4be82a](https://github.com/intent-hq/cloudlands-fe/commit/a4be82a4e138b84f445d0589e6dd70e02ffcb07c))
+* **onboarding:** say a provider couldn't start instead of "isn't installed" ([#4623](https://github.com/intent-hq/cloudlands-fe/issues/4623)) ([cb53b1c](https://github.com/intent-hq/cloudlands-fe/commit/cb53b1ce5e50811ae93a0ff658f2ef2fdd7fce5d))
+
 ## [2.340.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.1...v2.340.2) (2026-11-14)
 
 
