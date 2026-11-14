@@ -408,6 +408,14 @@
   import LazyTurn from './LazyTurn.svelte';
   import { fillChatViewport } from './chat-viewport-fill';
   import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
+  import AutomatedActivityHint from './AutomatedActivityHint.svelte';
+  import {
+    EMPTY_AUTOMATED_ACTIVITY_PLAN,
+    automatedActivitySourceLabel,
+    planAutomatedActivityRuns,
+    type AutomatedActivityRun,
+  } from './automated-activity-runs';
+  import { trackPinnedAutomatedRun } from './pinned-automated-run';
   import {
     attachPinnedPromptMessage,
     trackPinnedPrompt,
@@ -445,6 +453,7 @@
     selectChatAuroraEnabled,
     selectCollapseToolRuns,
     selectIsAgentMonospace,
+    selectLabsHideAutomatedActivityEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     markAgentAsViewed,
@@ -526,6 +535,7 @@
 
   const chatAuroraEnabled$ = selectChatAuroraEnabled();
   const collapseToolRuns$ = selectCollapseToolRuns();
+  const hideAutomatedActivity$ = selectLabsHideAutomatedActivityEnabled();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -4752,6 +4762,86 @@
   // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
 
+  // Labs "Hide automated activity": runs of automated turns fold into a hint row.
+  const automatedActivityPlan = $derived.by(() => {
+    if (!$hideAutomatedActivity$) return EMPTY_AUTOMATED_ACTIVITY_PLAN;
+    const entries = conversationTurnIndex.groups.flatMap(({ group, turns }, groupIndex) =>
+      turns.map((turn, turnIndex) => ({
+        key: turn.userMessage?.id ?? `group-${group.groupKey ?? groupIndex}-turn-${turnIndex}`,
+        turn,
+      })),
+    );
+    return planAutomatedActivityRuns(entries, {
+      sourceLabel: (message) => automatedActivitySourceLabel(message, workspace),
+    });
+  });
+  let expandedAutomatedRunIds = $state.raw<ReadonlySet<string>>(new Set());
+  let pinnedAutomatedRunId = $state<string | null>(null);
+  const lastAutomatedRun = $derived.by(() => {
+    if (transcriptDetached) return null;
+    const run = automatedActivityPlan.runs.at(-1);
+    return run && globalTurnIndexMap.get(run.lastTurnKey) === globalTurnIndexMap.size - 1
+      ? run
+      : null;
+  });
+  const liveAutomatedRunId = $derived(
+    lastAutomatedRun && ($agentSessionIsStreaming$ || $agentIsResponding$)
+      ? lastAutomatedRun.id
+      : null,
+  );
+  // Navigation targets and failures that need the turn's own controls open the run.
+  const revealedAutomatedRunIds = $derived.by(() => {
+    const ids = new Set<string>();
+    const reveal = (turnKey: string | null | undefined) => {
+      const run = turnKey ? automatedActivityPlan.runByTurnKey.get(turnKey) : undefined;
+      if (run) ids.add(run.id);
+    };
+    reveal(deepOpenTurnKey);
+    if (showSearch) reveal(allSearchMatches[currentSearchIndex]?.turnKey);
+    if (lastAutomatedRun && (turnFailureError || $chatModelUnavailable$)) {
+      ids.add(lastAutomatedRun.id);
+    }
+    return ids;
+  });
+  function isAutomatedRunOpen(run: AutomatedActivityRun): boolean {
+    return expandedAutomatedRunIds.has(run.id) || revealedAutomatedRunIds.has(run.id);
+  }
+  const pinnedAutomatedRun = $derived(
+    pinnedAutomatedRunId
+      ? (automatedActivityPlan.runs.find((run) => run.id === pinnedAutomatedRunId) ?? null)
+      : null,
+  );
+  function setAutomatedRunExpanded(runId: string, expanded: boolean) {
+    const next = new Set(expandedAutomatedRunIds);
+    if (expanded) next.add(runId);
+    else next.delete(runId);
+    expandedAutomatedRunIds = next;
+  }
+  function automatedRunHintToggle(runId: string): HTMLElement | null {
+    return (
+      scrollContainer?.querySelector<HTMLElement>(
+        `[data-automated-run-hint="${CSS.escape(runId)}"] button`,
+      ) ?? null
+    );
+  }
+  // From the pinned copy: inside the run, land on its hint; below it, native
+  // scroll anchoring keeps the reader's view still.
+  async function collapsePinnedAutomatedRun(run: AutomatedActivityRun) {
+    const container = scrollContainer;
+    if (!container) return;
+    const lastTurn = container.querySelector<HTMLElement>(
+      `[data-automated-run-turn="${CSS.escape(run.lastTurnKey)}"]`,
+    );
+    const insideRun =
+      !!lastTurn && lastTurn.getBoundingClientRect().bottom > container.getBoundingClientRect().top;
+    setAutomatedRunExpanded(run.id, false);
+    await tick();
+    const toggle = automatedRunHintToggle(run.id);
+    if (!toggle) return;
+    if (insideRun) smoothScrollTo(toggle, 'start');
+    toggle.focus({ preventScroll: true });
+  }
+
   let offscreenPendingProposalMessageId = $state<string | null>(null);
 
   // The card a ref points at, by key: the pending wrapper InlineProposal tags
@@ -7169,7 +7259,25 @@
            retained state from the pre-switch transcript (trackPinnedPrompt only
            clears it on a later animation frame after the turns unmount), so it
            would otherwise paint stale message content above the skeleton. -->
-      {#if pinnedPrompt && !deferTranscriptReveal}
+      {#if pinnedAutomatedRun && !deferTranscriptReveal}
+        {@const run = pinnedAutomatedRun}
+        <ChatContentLane
+          operational
+          data-testid="pinned-automated-run-lane"
+          chief={isChiefWorkspace}
+        >
+          <div class="pt-2">
+            <AutomatedActivityHint
+              {run}
+              expanded
+              pinned
+              live={run.id === liveAutomatedRunId}
+              onToggle={() => collapsePinnedAutomatedRun(run)}
+            />
+          </div>
+        </ChatContentLane>
+      {/if}
+      {#if pinnedPrompt && !deferTranscriptReveal && !(pinnedAutomatedRun && pinnedPrompt.surface === 'subscription')}
         <!-- Share the transcript inset so the pinned bubble aligns with its source. -->
         <ChatContentLane
           operational
@@ -7201,6 +7309,11 @@
         revision: `${agentId}:${$transcriptSnapshotMeta$?.seq}:${$agentHistoryMessages$.length}:${$agentMessages$.length}`,
         hydrate: (id) => messageHydrationPolicy.setForced(id, true),
         requestOlder: requestViewportFill,
+      }}
+      use:trackPinnedAutomatedRun={{
+        enabled: isActive && $hideAutomatedActivity$ && expandedAutomatedRunIds.size > 0,
+        revision: [...expandedAutomatedRunIds].join(','),
+        onChange: (runId) => (pinnedAutomatedRunId = runId),
       }}
       use:trackPinnedPrompt={{
         enabled: isActive && containerHeight >= 400,
@@ -7738,6 +7851,9 @@
                   {@const turnKey =
                     turn.userMessage?.id ??
                     `group-${indexedGroup.group.groupKey ?? groupIndex}-turn-${turnIndex}`}
+                  {@const automatedRun = automatedActivityPlan.runByTurnKey.get(turnKey)}
+                  {@const automatedRunCollapsed =
+                    !!automatedRun && !isAutomatedRunOpen(automatedRun)}
                   <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
                        turns groupIntoTurns produced), not the last raw date group — a
                        trailing group holding only unrecognized system/error rows
@@ -7835,302 +7951,324 @@
                     turnLastRenderedMessageId,
                     !isLastTurnInConversation,
                   )}
-                  <div class="conversation-turn" data-conversation-turn>
-                    <!-- Event wakeup banner - shown when agent is woken by a subscription -->
-                    <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
-                    {#if turn.userMessage && isEventNotification}
-                      {@const message = turn.userMessage}
-                      {@const globalIndex = getMessageIndex(message.id)}
-                      {@const messageText = extractAllContent(message)}
-                      <!-- Source wake-up row remains owned by this transcript turn. -->
-                      <div
-                        data-message-id={message.id}
-                        data-pinnable-user-prompt
-                        data-pinned-prompt-id={message.id}
-                        data-message-index={globalIndex}
-                        class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
-                          message,
-                          hasTurnBody,
-                        )}"
-                        use:attachPinnedPromptMessage={message}
-                        transition:safeDisclosureTransition={{ tier: 'moderate' }}
-                      >
-                        <EventWakeupBanner
-                          metadata={message.metadata as {
-                            type: 'event_notification';
-                            eventCount: number;
-                            eventTypes: string[];
-                            events?: Array<{
-                              type: string;
-                              data: Record<string, unknown>;
-                              timestamp: string;
-                            }>;
-                          }}
-                          {messageText}
-                          asDivider={true}
-                          compact={isCompactMode}
-                          suppressTopGap={batchedSeamBefore || cardSpacingOwnedBefore}
-                          showAgentCards={!isDelegatedBackgroundTaskAgent}
-                          {workspace}
-                        />
-                      </div>
-                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                    {/if}
-                    <!-- User message source row; the independent overlay never moves this node. -->
-                    <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
-                    {#if turn.userMessage && !isEventNotification}
-                      {@const message = turn.userMessage}
-                      {@const globalIndex = getMessageIndex(message.id)}
-                      <!-- Outer div stays always mounted: it carries the nav/
+                  {#if automatedRun && automatedRun.firstTurnKey === turnKey}
+                    {@const run = automatedRun}
+                    <div class="relative z-20" class:mb-5={!automatedRunCollapsed}>
+                      <AutomatedActivityHint
+                        {run}
+                        expanded={!automatedRunCollapsed}
+                        live={run.id === liveAutomatedRunId}
+                        onToggle={() => setAutomatedRunExpanded(run.id, automatedRunCollapsed)}
+                      />
+                    </div>
+                  {/if}
+                  {#if !automatedRunCollapsed}
+                    <div
+                      class="conversation-turn"
+                      data-conversation-turn
+                      data-automated-run-turn={automatedRun ? turnKey : undefined}
+                    >
+                      <!-- Event wakeup banner - shown when agent is woken by a subscription -->
+                      <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
+                      {#if turn.userMessage && isEventNotification}
+                        {@const message = turn.userMessage}
+                        {@const globalIndex = getMessageIndex(message.id)}
+                        {@const messageText = extractAllContent(message)}
+                        <!-- Source wake-up row remains owned by this transcript turn. -->
+                        <div
+                          data-message-id={message.id}
+                          data-pinnable-user-prompt
+                          data-pinned-prompt-id={message.id}
+                          data-message-index={globalIndex}
+                          class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
+                            message,
+                            hasTurnBody,
+                          )}"
+                          use:attachPinnedPromptMessage={message}
+                          transition:safeDisclosureTransition={{ tier: 'moderate' }}
+                        >
+                          <EventWakeupBanner
+                            metadata={message.metadata as {
+                              type: 'event_notification';
+                              eventCount: number;
+                              eventTypes: string[];
+                              events?: Array<{
+                                type: string;
+                                data: Record<string, unknown>;
+                                timestamp: string;
+                              }>;
+                            }}
+                            {messageText}
+                            asDivider={true}
+                            compact={isCompactMode}
+                            suppressTopGap={batchedSeamBefore || cardSpacingOwnedBefore}
+                            showAgentCards={!isDelegatedBackgroundTaskAgent}
+                            {workspace}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
+                      {/if}
+                      <!-- User message source row; the independent overlay never moves this node. -->
+                      <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
+                      {#if turn.userMessage && !isEventNotification}
+                        {@const message = turn.userMessage}
+                        {@const globalIndex = getMessageIndex(message.id)}
+                        <!-- Outer div stays always mounted: it carries the nav/
                            pinned-prompt/send-transition anchors (data attributes
                            and geometry) that scroll restoration and the pinned
                            prompt overlay query even while the row's content is a
                            virtualized placeholder. Only the inner ChatMessage
                            goes through LazyTurn. -->
-                      <div
-                        data-message-id={message.id}
-                        data-message-role="user"
-                        data-pinned-prompt-id={message.id}
-                        data-send-app-message-id={message.appMessageId}
-                        data-message-index={globalIndex}
-                        class="message-nav-target relative z-20"
-                        class:mb-0={batchedDeliveryTurnSeam || (currentIsChatCard && !hasTurnBody)}
-                        class:mb-6={!batchedDeliveryTurnSeam && currentIsChatCard && hasTurnBody}
-                        class:mb-5={!batchedDeliveryTurnSeam &&
-                          !currentIsChatCard &&
-                          isAutomatedMessage(message)}
-                        class:mb-7={!batchedDeliveryTurnSeam &&
-                          !currentIsChatCard &&
-                          !isAutomatedMessage(message)}
-                        class:invisible={pendingSendMessageIds.has(
-                          String(message.appMessageId ?? ''),
-                        )}
-                        use:attachPinnedPromptMessage={message}
-                      >
-                        <LazyTurn
-                          turnKey={message.id}
-                          {isActive}
-                          scrollRoot={scrollContainer}
-                          heightCache={lazyTurnHeightCache}
-                          hydrationController={messageHydrationPolicy}
-                          hydrated={hydratedMessageIds.has(message.id)}
-                          forceVisible={isMessageForceVisible(message.id)}
-                          estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
+                        <div
+                          data-message-id={message.id}
+                          data-message-role="user"
+                          data-pinned-prompt-id={message.id}
+                          data-send-app-message-id={message.appMessageId}
+                          data-message-index={globalIndex}
+                          class="message-nav-target relative z-20"
+                          class:mb-0={batchedDeliveryTurnSeam ||
+                            (currentIsChatCard && !hasTurnBody)}
+                          class:mb-6={!batchedDeliveryTurnSeam && currentIsChatCard && hasTurnBody}
+                          class:mb-5={!batchedDeliveryTurnSeam &&
+                            !currentIsChatCard &&
+                            isAutomatedMessage(message)}
+                          class:mb-7={!batchedDeliveryTurnSeam &&
+                            !currentIsChatCard &&
+                            !isAutomatedMessage(message)}
+                          class:invisible={pendingSendMessageIds.has(
+                            String(message.appMessageId ?? ''),
+                          )}
+                          use:attachPinnedPromptMessage={message}
                         >
-                          {#snippet children()}
-                            <ChatMessage
-                              {agentId}
-                              messageId={message.id}
-                              ownsMessageIdentity={false}
-                              {workspace}
-                              ownPrincipalId={$presenceOwnPrincipalId$}
-                              onEditSubmit={isRetiredSession
-                                ? undefined
-                                : (newText, model, blocks) =>
-                                    handleEditMessage(message.id, newText, model, blocks)}
-                              onEditStateChange={(isEditing) =>
-                                handleTurnEditStateChange(turnKey, isEditing)}
-                              editModel={turn.assistantMessages[0]?.metadata?.model ??
-                                hydratedInputModel}
-                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                              previousMessageLoading={previousMessageLoadingId === message.id}
-                              backendSessionId={auggieSessionId}
-                              suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
-                                cardSpacingOwnedBefore}
-                            />
-                          {/snippet}
-                        </LazyTurn>
-                      </div>
-                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                    {/if}
-
-                    <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
-                    {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
-                      <ChatTurnNotice message={noticeMessage} workspaceId={workspace?.id} />
-                      {#if isRenderedTurnNotice(noticeMessage)}
-                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                          <LazyTurn
+                            turnKey={message.id}
+                            {isActive}
+                            scrollRoot={scrollContainer}
+                            heightCache={lazyTurnHeightCache}
+                            hydrationController={messageHydrationPolicy}
+                            hydrated={hydratedMessageIds.has(message.id)}
+                            forceVisible={isMessageForceVisible(message.id)}
+                            estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
+                          >
+                            {#snippet children()}
+                              <ChatMessage
+                                {agentId}
+                                messageId={message.id}
+                                ownsMessageIdentity={false}
+                                {workspace}
+                                ownPrincipalId={$presenceOwnPrincipalId$}
+                                onEditSubmit={isRetiredSession
+                                  ? undefined
+                                  : (newText, model, blocks) =>
+                                      handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
+                                editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                  hydratedInputModel}
+                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                previousMessageLoading={previousMessageLoadingId === message.id}
+                                backendSessionId={auggieSessionId}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                  cardSpacingOwnedBefore}
+                              />
+                            {/snippet}
+                          </LazyTurn>
+                        </div>
+                        {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                       {/if}
-                    {/each}
 
-                    <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if showPendingAssistantStatus && !recoveryAtEnd}
-                      <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
-                        <StreamingStatus
-                          isStreaming={$agentSessionIsStreaming$}
-                          isProcessing={$agentIsResponding$}
-                          processQueueHint={$agentSession$?.processQueueHint}
-                          lastChunkTime={$chatLastChunkTime$}
-                          receivedFirstChunk={$chatReceivedFirstChunk$}
-                          streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={turnFailureError}
-                          recoveryState={failureTranscript.current.state}
-                          authGuidance={chatAuthGuidance}
-                          sessionCorrupted={effectiveSessionCorrupted}
-                          failedAt={effectiveFailedAt}
-                          modelUnavailable={$chatModelUnavailable$}
-                          {quotaExceeded}
-                          {quotaRetryProviders}
-                          {hasPendingPermission}
-                          startLine={cloudPhaseLine ? cloudStartLine : null}
-                          onRetry={gatedRetry}
-                          onRetryWithModel={gatedRetryWithModel}
-                          onRetryWithProvider={gatedRetryWithProvider}
-                          onStop={handleStop}
-                          onStalledRetry={gatedStalledRetry}
-                          statusEvents={$chatStatusEvents$}
-                          streamingStartTime={$chatStreamingStartTime$}
-                        />
-                      </div>
-                    {/if}
+                      <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
+                      {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
+                        <ChatTurnNotice message={noticeMessage} workspaceId={workspace?.id} />
+                        {#if isRenderedTurnNotice(noticeMessage)}
+                          {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                        {/if}
+                      {/each}
 
-                    <!-- Assistant output and historical notices in transcript order -->
-                    <!-- PERF: Key by message.id for efficient updates during streaming -->
-                    {#each turn.bodyMessages as message, bodyIndex (message.id)}
-                      {@const isLastTurn =
-                        !transcriptDetached &&
-                        groupIndex === groupedMessages.length - 1 &&
-                        turnIndex === turns.length - 1}
-                      {@const isLastAssistant =
-                        message.role === 'assistant' &&
-                        message.id ===
-                          turn.assistantMessages[turn.assistantMessages.length - 1]?.id}
-                      {@const isLastMessage = isLastTurn && isLastAssistant}
-                      {@const isCurrentlyStreaming =
-                        isLastMessage && $agentSessionIsStreaming$ && !pendingStatusMessageId}
-                      {@const compactPreviousMessageBoundary =
-                        hasOperationalAssistantMessageBoundary(
-                          turn.bodyMessages[bodyIndex - 1],
+                      <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
+                      {#if showPendingAssistantStatus && !recoveryAtEnd}
+                        <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
+                          <StreamingStatus
+                            isStreaming={$agentSessionIsStreaming$}
+                            isProcessing={$agentIsResponding$}
+                            processQueueHint={$agentSession$?.processQueueHint}
+                            lastChunkTime={$chatLastChunkTime$}
+                            receivedFirstChunk={$chatReceivedFirstChunk$}
+                            streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                            error={turnFailureError}
+                            recoveryState={failureTranscript.current.state}
+                            authGuidance={chatAuthGuidance}
+                            sessionCorrupted={effectiveSessionCorrupted}
+                            failedAt={effectiveFailedAt}
+                            modelUnavailable={$chatModelUnavailable$}
+                            {quotaExceeded}
+                            {quotaRetryProviders}
+                            {hasPendingPermission}
+                            startLine={cloudPhaseLine ? cloudStartLine : null}
+                            onRetry={gatedRetry}
+                            onRetryWithModel={gatedRetryWithModel}
+                            onRetryWithProvider={gatedRetryWithProvider}
+                            onStop={handleStop}
+                            onStalledRetry={gatedStalledRetry}
+                            statusEvents={$chatStatusEvents$}
+                            streamingStartTime={$chatStreamingStartTime$}
+                          />
+                        </div>
+                      {/if}
+
+                      <!-- Assistant output and historical notices in transcript order -->
+                      <!-- PERF: Key by message.id for efficient updates during streaming -->
+                      {#each turn.bodyMessages as message, bodyIndex (message.id)}
+                        {@const isLastTurn =
+                          !transcriptDetached &&
+                          groupIndex === groupedMessages.length - 1 &&
+                          turnIndex === turns.length - 1}
+                        {@const isLastAssistant =
+                          message.role === 'assistant' &&
+                          message.id ===
+                            turn.assistantMessages[turn.assistantMessages.length - 1]?.id}
+                        {@const isLastMessage = isLastTurn && isLastAssistant}
+                        {@const isCurrentlyStreaming =
+                          isLastMessage && $agentSessionIsStreaming$ && !pendingStatusMessageId}
+                        {@const compactPreviousMessageBoundary =
+                          hasOperationalAssistantMessageBoundary(
+                            turn.bodyMessages[bodyIndex - 1],
+                            message,
+                            reasoningAsText,
+                          )}
+                        {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                           message,
+                          turn.bodyMessages[bodyIndex + 1],
                           reasoningAsText,
                         )}
-                      {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
-                        message,
-                        turn.bodyMessages[bodyIndex + 1],
-                        reasoningAsText,
-                      )}
-                      {@const turnNumber = getMessageTurnNumber(message.id)}
-                      {@const globalIndex = getMessageIndex(message.id)}
-                      {#if !failureTranscript.collapsedMessageIds.has(message.id)}
-                        <LazyTurn
-                          turnKey={message.id}
-                          {isActive}
-                          scrollRoot={scrollContainer}
-                          heightCache={lazyTurnHeightCache}
-                          hydrationController={messageHydrationPolicy}
-                          hydrated={hydratedMessageIds.has(message.id)}
-                          forceVisible={isMessageForceVisible(message.id)}
-                        >
-                          {#snippet children()}
-                            <div
-                              data-message-id={message.id}
-                              data-message-role={message.role}
-                              data-message-index={globalIndex}
-                              data-turn-number={turnNumber}
-                              class="message-nav-target"
-                              data-operational-message-seam={compactPreviousMessageBoundary
-                                ? 'true'
-                                : undefined}
-                            >
-                              {#if failureTranscript.runsByAnchor.has(message.id)}
-                                <TurnFailureNotice
-                                  records={failureTranscript.runsByAnchor.get(message.id)?.records}
-                                />
-                              {:else}
-                                <ChatMessage
-                                  {agentId}
-                                  messageId={message.id}
-                                  ownsMessageIdentity={false}
-                                  {workspace}
-                                  ownPrincipalId={$presenceOwnPrincipalId$}
-                                  isStreaming={isCurrentlyStreaming}
-                                  isLastConversationMessage={isLastMessage}
-                                  onEditSubmit={isRetiredSession || message.role !== 'assistant'
-                                    ? undefined
-                                    : (newText, model, blocks) =>
-                                        handleEditMessage(message.id, newText, model, blocks)}
-                                  onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                                  previousMessageLoading={previousMessageLoadingId === message.id}
-                                  onRegenerate={isRetiredSession || message.role !== 'assistant'
-                                    ? undefined
-                                    : () => handleRegenerateFromMessage(message.id)}
-                                  backendSessionId={auggieSessionId}
-                                  suppressCoordinationStoppedIndicator={turn.userMessage
-                                    ? isAutomatedMessage(turn.userMessage)
-                                    : false}
-                                />
-                              {/if}
-                            </div>
-                            <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
-                              <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
-                                <StreamingStatus
-                                  isStreaming={$agentSessionIsStreaming$}
-                                  isProcessing={$agentIsResponding$}
-                                  processQueueHint={$agentSession$?.processQueueHint}
-                                  lastChunkTime={$chatLastChunkTime$}
-                                  receivedFirstChunk={$chatReceivedFirstChunk$}
-                                  streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                                  error={turnFailureError}
-                                  recoveryState={failureTranscript.current.state}
-                                  authGuidance={chatAuthGuidance}
-                                  sessionCorrupted={effectiveSessionCorrupted}
-                                  failedAt={effectiveFailedAt}
-                                  modelUnavailable={$chatModelUnavailable$}
-                                  {quotaExceeded}
-                                  {quotaRetryProviders}
-                                  {hasPendingPermission}
-                                  startLine={cloudPhaseLine ? cloudStartLine : null}
-                                  onRetry={gatedRetry}
-                                  onRetryWithModel={gatedRetryWithModel}
-                                  onRetryWithProvider={gatedRetryWithProvider}
-                                  onStop={handleStop}
-                                  onStalledRetry={gatedStalledRetry}
-                                  statusEvents={$chatStatusEvents$}
-                                  streamingStartTime={$chatStreamingStartTime$}
-                                />
-                              </div>
-                            {/if}
-                            <!-- Show file changes after each assistant turn -->
-                            {#if message.role === 'assistant'}
+                        {@const turnNumber = getMessageTurnNumber(message.id)}
+                        {@const globalIndex = getMessageIndex(message.id)}
+                        {#if !failureTranscript.collapsedMessageIds.has(message.id)}
+                          <LazyTurn
+                            turnKey={message.id}
+                            {isActive}
+                            scrollRoot={scrollContainer}
+                            heightCache={lazyTurnHeightCache}
+                            hydrationController={messageHydrationPolicy}
+                            hydrated={hydratedMessageIds.has(message.id)}
+                            forceVisible={isMessageForceVisible(message.id)}
+                          >
+                            {#snippet children()}
                               <div
-                                class="w-full"
-                                class:mb-1={!compactNextMessageBoundary &&
-                                  !(isLastAssistant && compactOperationalTurnBoundary) &&
-                                  !(
-                                    isLastAssistant &&
-                                    (nextTurnHasUserMessage ||
-                                      nextIsChatCard ||
-                                      (isLastTurn && pendingConversationMessages.length > 0))
-                                  )}
-                                data-after-assistant-message={message.id}
+                                data-message-id={message.id}
+                                data-message-role={message.role}
+                                data-message-index={globalIndex}
+                                data-turn-number={turnNumber}
+                                class="message-nav-target"
+                                data-operational-message-seam={compactPreviousMessageBoundary
+                                  ? 'true'
+                                  : undefined}
                               >
-                                <ChatFileChangesSummary
-                                  workspaceId={workspace.id}
-                                  {message}
-                                  isStreaming={isCurrentlyStreaming}
-                                  {agentId}
-                                  {turnNumber}
-                                />
+                                {#if failureTranscript.runsByAnchor.has(message.id)}
+                                  <TurnFailureNotice
+                                    records={failureTranscript.runsByAnchor.get(message.id)
+                                      ?.records}
+                                  />
+                                {:else}
+                                  <ChatMessage
+                                    {agentId}
+                                    messageId={message.id}
+                                    ownsMessageIdentity={false}
+                                    {workspace}
+                                    ownPrincipalId={$presenceOwnPrincipalId$}
+                                    isStreaming={isCurrentlyStreaming}
+                                    isLastConversationMessage={isLastMessage}
+                                    onEditSubmit={isRetiredSession || message.role !== 'assistant'
+                                      ? undefined
+                                      : (newText, model, blocks) =>
+                                          handleEditMessage(message.id, newText, model, blocks)}
+                                    onScrollToPrevious={() =>
+                                      scrollToPreviousUserMessage(message.id)}
+                                    previousMessageLoading={previousMessageLoadingId === message.id}
+                                    onRegenerate={isRetiredSession || message.role !== 'assistant'
+                                      ? undefined
+                                      : () => handleRegenerateFromMessage(message.id)}
+                                    backendSessionId={auggieSessionId}
+                                    suppressCoordinationStoppedIndicator={turn.userMessage
+                                      ? isAutomatedMessage(turn.userMessage)
+                                      : false}
+                                  />
+                                {/if}
                               </div>
-                              <!-- Show auto-commit status after the last assistant message of each turn -->
-                              {#if isLastAssistant}
-                                <AutoCommitStatus
-                                  status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
-                                  workspaceId={workspace.id}
-                                />
+                              <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
+                              {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
+                                <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
+                                  <StreamingStatus
+                                    isStreaming={$agentSessionIsStreaming$}
+                                    isProcessing={$agentIsResponding$}
+                                    processQueueHint={$agentSession$?.processQueueHint}
+                                    lastChunkTime={$chatLastChunkTime$}
+                                    receivedFirstChunk={$chatReceivedFirstChunk$}
+                                    streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                                    error={turnFailureError}
+                                    recoveryState={failureTranscript.current.state}
+                                    authGuidance={chatAuthGuidance}
+                                    sessionCorrupted={effectiveSessionCorrupted}
+                                    failedAt={effectiveFailedAt}
+                                    modelUnavailable={$chatModelUnavailable$}
+                                    {quotaExceeded}
+                                    {quotaRetryProviders}
+                                    {hasPendingPermission}
+                                    startLine={cloudPhaseLine ? cloudStartLine : null}
+                                    onRetry={gatedRetry}
+                                    onRetryWithModel={gatedRetryWithModel}
+                                    onRetryWithProvider={gatedRetryWithProvider}
+                                    onStop={handleStop}
+                                    onStalledRetry={gatedStalledRetry}
+                                    statusEvents={$chatStatusEvents$}
+                                    streamingStartTime={$chatStreamingStartTime$}
+                                  />
+                                </div>
                               {/if}
-                            {/if}
-                          {/snippet}
-                        </LazyTurn>
-                      {/if}
-                      {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
-                    {/each}
-                  </div>
+                              <!-- Show file changes after each assistant turn -->
+                              {#if message.role === 'assistant'}
+                                <div
+                                  class="w-full"
+                                  class:mb-1={!compactNextMessageBoundary &&
+                                    !(isLastAssistant && compactOperationalTurnBoundary) &&
+                                    !(
+                                      isLastAssistant &&
+                                      (nextTurnHasUserMessage ||
+                                        nextIsChatCard ||
+                                        (isLastTurn && pendingConversationMessages.length > 0))
+                                    )}
+                                  data-after-assistant-message={message.id}
+                                >
+                                  <ChatFileChangesSummary
+                                    workspaceId={workspace.id}
+                                    {message}
+                                    isStreaming={isCurrentlyStreaming}
+                                    {agentId}
+                                    {turnNumber}
+                                  />
+                                </div>
+                                <!-- Show auto-commit status after the last assistant message of each turn -->
+                                {#if isLastAssistant}
+                                  <AutoCommitStatus
+                                    status={autoCommitStatuses[
+                                      globalTurnIndexMap.get(turnKey) ?? 0
+                                    ]}
+                                    workspaceId={workspace.id}
+                                  />
+                                {/if}
+                              {/if}
+                            {/snippet}
+                          </LazyTurn>
+                        {/if}
+                        {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
+                      {/each}
+                    </div>
+                  {/if}
                   <!-- Editorial rhythm between turns (not after the last one).
                        Must stay the negation of dividerDefersToTurnBoundary's
                        hasFollowingTurn input so a deferred divider always follows
                        a spacer. -->
-                  {#if !isLastTurnInConversation}
+                  {#if !isLastTurnInConversation && (!automatedRunCollapsed || automatedRun?.lastTurnKey === turnKey)}
                     <ConversationTurnGap
                       currentIsEventNotification={isEventNotification}
                       currentHasAssistantMessages={turn.assistantMessages.length > 0}
@@ -8146,7 +8284,7 @@
                   <!-- Turn-boundary divider placement: the anchor is this turn's
                        last rendered message and another turn follows, so the
                        divider sits after the spacer, directly above the next turn. -->
-                  {#if dividerAtTurnBoundary}
+                  {#if dividerAtTurnBoundary && !automatedRunCollapsed}
                     <NewMessagesDivider />
                   {/if}
                 {/each}

@@ -47,6 +47,7 @@ import {
   selectLabsTabGroupsEnabled,
   selectLabsCloudMachinesEnabled,
   selectLabsSshMachineSetupEnabled,
+  selectLabsHideAutomatedActivityEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -107,6 +108,7 @@ import {
   setLabsTabGroupsEnabled,
   setLabsCloudMachinesEnabled,
   setLabsSshMachineSetupEnabled,
+  setLabsHideAutomatedActivityEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -337,6 +339,8 @@ async function readCurrentSettingValue(
       return selectLabsCloudMachinesEnabled.select(state);
     case 'labs.sshMachineSetup':
       return selectLabsSshMachineSetupEnabled.select(state);
+    case 'labs.hideAutomatedActivity':
+      return selectLabsHideAutomatedActivityEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -469,6 +473,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'labs.sshMachineSetup':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setLabsSshMachineSetupEnabled(value));
+      return true;
+    case 'labs.hideAutomatedActivity':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsHideAutomatedActivityEnabled(value));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

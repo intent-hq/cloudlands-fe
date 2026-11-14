@@ -295,6 +295,18 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsSshMachineSetupEnabled' },
   },
   {
+    path: 'labs.hideAutomatedActivity',
+    label: 'Hide automated activity (Labs)',
+    description:
+      'In every chat, fold automated messages (hook, monitor, event and agent-to-agent wakes) and the agent replies to them into a collapsible row. Questions, permission requests and suggested prompts stay visible.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:hideAutomatedActivityEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsHideAutomatedActivityEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

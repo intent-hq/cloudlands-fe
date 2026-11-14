@@ -12,6 +12,7 @@
     setLabsRemoteAgentsEnabled,
     setLabsSshMachineSetupEnabled,
     setLabsTabGroupsEnabled,
+    setLabsHideAutomatedActivityEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectLabsBrowserAccessEnabled,
@@ -19,6 +20,7 @@
     selectLabsRemoteAgentsEnabled,
     selectLabsSshMachineSetupEnabled,
     selectLabsTabGroupsEnabled,
+    selectLabsHideAutomatedActivityEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   const remoteAgents$ = selectLabsRemoteAgentsEnabled();
@@ -27,6 +29,7 @@
   const tabGroups$ = selectLabsTabGroupsEnabled();
   const browserAccess$ = selectLabsBrowserAccessEnabled();
   const machineRail$ = selectMachineRailEnabled();
+  const hideAutomatedActivity$ = selectLabsHideAutomatedActivityEnabled();
   const desktop = isElectronPlatform();
 
   function setBrowserAccess(enabled: boolean) {
@@ -107,6 +110,17 @@
               get: () => $machineRail$,
               set: (enabled) => {
                 appStore.dispatch(setMachineRailEnabledRequested(enabled));
+              },
+            },
+            {
+              kind: 'switch',
+              id: 'labs-hide-automated-activity',
+              size: 'sm',
+              label: m.settings_labs_hideAutomatedActivity_label(),
+              description: m.settings_labs_hideAutomatedActivity_description(),
+              get: () => $hideAutomatedActivity$,
+              set: (enabled) => {
+                appStore.dispatch(setLabsHideAutomatedActivityEnabled(enabled));
               },
             },
           ],

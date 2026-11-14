@@ -137,6 +137,11 @@ export const selectLabsSshMachineSetupEnabled = store.createSelector((state) => 
   return state.userPreferences?.labsSshMachineSetupEnabled === true;
 });
 
+/** Labs: hide automated turns behind a collapsible hint in every chat. */
+export const selectLabsHideAutomatedActivityEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsHideAutomatedActivityEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

@@ -91,6 +91,8 @@ export type UserPreferencesState = {
   labsCloudMachinesEnabled: boolean;
   /** Labs: Set up a new machine over SSH (desktop app only). */
   labsSshMachineSetupEnabled: boolean;
+  /** Labs: fold automated turns and their replies into collapsible hint rows in every chat. */
+  labsHideAutomatedActivityEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -178,6 +180,7 @@ export const initialState: UserPreferencesStoreState = {
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
   labsSshMachineSetupEnabled: false,
+  labsHideAutomatedActivityEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -530,6 +533,17 @@ export const setLabsSshMachineSetupEnabled = labsSshMachineSetupPreference.setAc
 
 export const toggleLabsSshMachineSetup = labsSshMachineSetupPreference.toggleAction;
 
+const labsHideAutomatedActivityPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsHideAutomatedActivityEnabled',
+  setActionName: 'setLabsHideAutomatedActivityEnabled',
+  toggleActionName: 'toggleLabsHideAutomatedActivity',
+});
+
+export const setLabsHideAutomatedActivityEnabled = labsHideAutomatedActivityPreference.setAction;
+
+export const toggleLabsHideAutomatedActivity = labsHideAutomatedActivityPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -667,6 +681,7 @@ labsBrowserAccessPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
 labsCloudMachinesPreference.register(userPreferencesReducer);
 labsSshMachineSetupPreference.register(userPreferencesReducer);
+labsHideAutomatedActivityPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
