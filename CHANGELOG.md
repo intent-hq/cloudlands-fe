@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.338.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.338.0...v2.338.1) (2026-11-14)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.208 ([#4616](https://github.com/intent-hq/cloudlands-fe/issues/4616)) ([e4122ca](https://github.com/intent-hq/cloudlands-fe/commit/e4122ca345e36f1a978d55307cd141661bcd964f))
+* **ci:** accept stacked PRs in the main merge queue during retirement ([#4611](https://github.com/intent-hq/cloudlands-fe/issues/4611)) ([69b6159](https://github.com/intent-hq/cloudlands-fe/commit/69b61590a0aa79b5ce5d289d33449c8ad4289b91))
+* **ci:** re-read a self-inconsistent merge-run inventory snapshot ([#4613](https://github.com/intent-hq/cloudlands-fe/issues/4613)) ([9f2b95a](https://github.com/intent-hq/cloudlands-fe/commit/9f2b95a2a3c5146987622151f8f3a33a6553e8ec))
+* **ci:** use a pinned macOS icon so release builds skip the hanging actool ([#4609](https://github.com/intent-hq/cloudlands-fe/issues/4609)) ([96922d2](https://github.com/intent-hq/cloudlands-fe/commit/96922d21a77b7e73908f9700c3456e7a1d35e8ae))
+
 ## [2.338.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.337.0...v2.338.0) (2026-11-14)
 
 
