@@ -52,10 +52,12 @@ const virtualModules: Record<string, string> = {
     export const closeWorkspaceTab = (...payload) => ({ type: 'close', payload });
     export const endDrag = () => ({ type: 'endDrag' });
     export const moveWorkspace = (...payload) => ({ type: 'move', payload });
+    export const moveWorkspaceTabGroup = (...payload) => ({ type: 'moveGroup', payload });
     export const openWorkspaceTab = (...payload) => ({ type: 'open', payload });
     export const startDrag = () => ({ type: 'startDrag' });
     export const addWorkspaceTabToGroup = (...payload) => ({ type: 'addToGroup', payload });
     export const createWorkspaceTabGroup = (...payload) => ({ type: 'createGroup', payload });
+    export const groupWorkspaceTabsByProject = (...payload) => ({ type: 'groupByProject', payload });
     export const removeWorkspaceTabFromGroup = (...payload) => ({ type: 'removeFromGroup', payload });
     export const setOpenWorkspaceTabGroup = (...payload) => ({ type: 'setOpenGroup', payload });
     export const ungroupWorkspaceTabGroup = (...payload) => ({ type: 'ungroup', payload });
