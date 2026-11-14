@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { execBounded, retryTimeouts } from './bounded-exec.mjs';
 import native from './macos-native.cjs';
-import { formatProcessTree } from './process-tree.mjs';
+import { descendantsOf, formatProcessTree, redactCommand } from './process-tree.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ICON_NAME = 'Intent';
@@ -34,6 +34,7 @@ const REQUIRED_XCODE_MAJOR = 26;
 // that 30-min deadline with room for signing to start.
 export const ACTOOL_TIMEOUT_MS = 3 * 60_000;
 export const ACTOOL_ATTEMPTS = 3;
+const XCRUN_TIMEOUT_MS = 60_000;
 // Processes actool depends on, logged when an attempt hangs.
 const XCODE_HELPERS = /ibtoold|actool|AssetCatalog|CoreSimulator|simdisk|IBAgent|ictool/;
 
@@ -153,10 +154,15 @@ async function usePinnedIcon({ pinDirectory, sourcePath, outputDirectory }) {
 
 function logHungActool(pid, processes) {
   const tree = formatProcessTree(pid, processes);
-  const inTree = new Set(tree.map((line) => line.trim().split(' ')[0]));
+  const inTree = new Set(descendantsOf(pid, processes).map((proc) => proc.pid));
   const helpers = processes
-    .filter((proc) => XCODE_HELPERS.test(proc.command) && !inTree.has(String(proc.pid)))
-    .map((proc) => `${proc.pid} (ppid ${proc.ppid}, ${proc.etime}, ${proc.stat}) ${proc.command}`);
+    .filter(
+      (proc) => XCODE_HELPERS.test(proc.command) && !inTree.has(proc.pid) && proc.pgid !== pid,
+    )
+    .map(
+      (proc) =>
+        `${proc.pid} (ppid ${proc.ppid}, ${proc.etime}, ${proc.stat}) ${redactCommand(proc.command)}`,
+    );
   console.log(
     [
       'Hung xcrun actool process tree:',
@@ -178,7 +184,7 @@ export async function compileModernMacOSIcon({
   usePin = true,
 } = {}) {
   try {
-    execute('xcrun', ['--find', 'actool'], { stdio: 'pipe' });
+    execute('xcrun', ['--find', 'actool'], { stdio: 'pipe', timeout: XCRUN_TIMEOUT_MS });
   } catch {
     throw new Error(
       'Modern macOS icon packaging requires Xcode 26 or newer with actool. Install full Xcode and select it with xcode-select before packaging macOS.',
@@ -188,7 +194,11 @@ export async function compileModernMacOSIcon({
   let xcodeVersion;
   try {
     xcodeVersion = String(
-      execute('xcrun', ['xcodebuild', '-version'], { encoding: 'utf8', stdio: 'pipe' }),
+      execute('xcrun', ['xcodebuild', '-version'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: XCRUN_TIMEOUT_MS,
+      }),
     );
   } catch {
     throw new Error(
@@ -208,6 +218,8 @@ export async function compileModernMacOSIcon({
     );
   }
 
+  // The pin is reused whatever the selected Xcode is: the catalog targets macOS 26.0,
+  // so a newer Xcode needs a re-pin only to pick up its own icon rendering.
   if (usePin) {
     const pinned = await usePinnedIcon({ pinDirectory, sourcePath, outputDirectory });
     if (pinned) return pinned;
@@ -301,15 +313,20 @@ export async function pinCompiledIcon({
     usePin: false,
   });
   const version = String(
-    execute('xcrun', ['xcodebuild', '-version'], { encoding: 'utf8', stdio: 'pipe' }),
+    execute('xcrun', ['xcodebuild', '-version'], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: XCRUN_TIMEOUT_MS,
+    }),
   );
   const [, name = version.trim(), build] =
     version.match(/^(Xcode\s+\S+)\s*\nBuild version\s+(\S+)/m) ?? [];
   const car = fs.readFileSync(resourcePath);
+  const inputsSha256 = await iconInputsDigest(sourcePath);
   fs.mkdirSync(pinDirectory, { recursive: true });
   fs.writeFileSync(path.join(pinDirectory, 'Assets.car'), car);
   const pin = {
-    inputsSha256: await iconInputsDigest(sourcePath),
+    inputsSha256,
     assetsSha256: sha256(car),
     xcode: build ? `${name} (${build})` : name,
   };
