@@ -40,11 +40,27 @@ function tree(files: Record<string, string | string[]>) {
 
 const messages = (root: string) => checkRootSpecStubs(root).map((finding) => finding.message);
 
-/** A root spec that mounts `entry` in the page with `stubs` as its virtual modules. */
-const spec = (stubs: Record<string, string>, entry = 'src/lib/Strip.svelte') => [
+/**
+ * A root spec that mounts `entry` in the page, replacing modules with `stubs` through a
+ * Vite plugin whose `resolveId` runs `redirects` first.
+ */
+const spec = (
+  stubs: Record<string, string>,
+  entry = 'src/lib/Strip.svelte',
+  redirects: string[] = [],
+) => [
   "import { test } from '@playwright/test';",
   'const virtualModules: Record<string, string> = {',
   ...Object.entries(stubs).map(([id, code]) => `  ${JSON.stringify(id)}: \`${code}\`,`),
+  '};',
+  'const plugin = {',
+  '  resolveId(source: string) {',
+  ...redirects.map((line) => `    ${line}`),
+  "    return source in virtualModules ? '\\0' + source : null;",
+  '  },',
+  '  load(id: string) {',
+  '    return virtualModules[id.slice(1)] ?? null;',
+  '  },',
   '};',
   "test('mounts', async ({ page }) => {",
   `  await page.evaluate(() => import('/${entry}'));`,
@@ -138,18 +154,111 @@ describe('root spec stub export check', () => {
     expect(messages(fixed)).toEqual([]);
   });
 
-  it('ignores type-only imports and value imports used only as types', () => {
+  it('ignores type-only imports, and value imports used only as types in TypeScript', () => {
     const root = tree({
       'src/store/tabs/tab-slice.ts': 'export const openTab = () => {}; export type Tab = {};',
+      'src/lib/tabs.ts': [
+        `import { openTab, TabState } from '${SLICE}';`,
+        'export const open = (state: TabState) => openTab();',
+      ],
       'src/lib/Strip.svelte': strip([
         `  import type { Tab } from '${SLICE}';`,
-        `  import { openTab, type TabGroup, TabState } from '${SLICE}';`,
-        '  let tab: Tab | TabGroup | TabState;',
-        '  openTab();',
+        `  import { type TabGroup } from '${SLICE}';`,
+        "  import { open } from './tabs';",
+        '  let tab: Tab | TabGroup;',
+        '  open();',
       ]),
       'test/strip.spec.ts': spec({ [SLICE]: 'export const openTab = () => {};' }),
     });
     expect(messages(root)).toEqual([]);
+  });
+
+  it('counts every value-spelled import of a Svelte component, used or not', () => {
+    const root = tree({
+      'src/store/tabs/tab-slice.ts': 'export const openTab = () => {};',
+      'src/lib/Strip.svelte': strip([
+        `  import { openTab, TabState, MAX_TABS } from '${SLICE}';`,
+        '  let tab: TabState;',
+        '  openTab();',
+      ]),
+      'test/strip.spec.ts': spec({ [SLICE]: 'export const openTab = () => {};' }),
+    });
+    expect(messages(root)).toEqual([
+      `stub '${SLICE}' does not export TabState, MAX_TABS, which src/lib/Strip.svelte:2 imports`,
+    ]);
+  });
+
+  it('reads a script tag whose attributes contain >', () => {
+    const root = tree({
+      'src/store/tabs/tab-slice.ts': 'export const openTab = () => {};',
+      'src/lib/Strip.svelte': [
+        '<script lang="ts" generics="T extends Record<string, Array<number>>">',
+        `  import { openTab, closeTab } from '${SLICE}';`,
+        '  openTab(); closeTab();',
+        '</script>',
+      ],
+      'test/strip.spec.ts': spec({ [SLICE]: 'export const openTab = () => {};' }),
+    });
+    expect(messages(root)).toEqual([
+      `stub '${SLICE}' does not export closeTab, which src/lib/Strip.svelte:2 imports`,
+    ]);
+  });
+
+  it('checks names requested through an export-star barrel of a stub', () => {
+    const files = {
+      'src/lib/mod.ts': 'export const real = 1; export const extra = 2;',
+      'src/lib/other.ts': 'export const fromOther = 3;',
+      'src/lib/barrel/index.ts': [
+        "export * from '$lib/mod';",
+        "export * from '../other';",
+        'export const own = 4;',
+      ],
+      'src/lib/outer.ts': "export * from './barrel';",
+      'src/lib/Strip.svelte': strip([
+        "  import { real, extra, own, fromOther } from './outer';",
+        '  real; extra; own; fromOther;',
+      ]),
+    };
+    const stale = tree({
+      ...files,
+      'test/strip.spec.ts': spec({ '$lib/mod': 'export const real = 1;' }),
+    });
+    expect(messages(stale)).toEqual([
+      "stub '$lib/mod' does not export extra, which src/lib/barrel/index.ts:1 re-exports with export *",
+    ]);
+    const fixed = tree({
+      ...files,
+      'test/strip.spec.ts': spec({ '$lib/mod': 'export const real = 1; export const extra = 2;' }),
+    });
+    expect(messages(fixed)).toEqual([]);
+  });
+
+  it('follows resolveId redirects and flags the stubs they shadow', () => {
+    const root = tree({
+      'src/lib/Card.svelte': strip(["  import { gone } from '$lib/gone';", '  gone();']),
+      'src/lib/gone.ts': 'export const gone = 1;',
+      'src/lib/mocks/MockCard.svelte': strip([
+        "  import { toast } from '$lib/toast';",
+        '  toast();',
+      ]),
+      'src/lib/toast.ts': 'export const toast = 1;',
+      'src/lib/Strip.svelte': strip(["  import Card from '$lib/Card.svelte';"], '<Card />'),
+      'test/strip.spec.ts': spec(
+        {
+          '$lib/Card.svelte': "export { default } from '/src/lib/mocks/MockCard.svelte';",
+          '$lib/toast': 'export const unrelated = 1;',
+        },
+        'src/lib/Strip.svelte',
+        [
+          "if (source === '$lib/Card.svelte' || source === resolve(process.cwd(), 'src/lib/Card.svelte'))",
+          "  return resolve(process.cwd(), 'src/lib/mocks/MockCard.svelte');",
+        ],
+      ),
+    });
+    expect(messages(root)).toEqual([
+      "stub '$lib/Card.svelte' replaces no import reachable from src/lib/Strip.svelte",
+      "stub '$lib/toast' does not export toast, which src/lib/mocks/MockCard.svelte:2 imports",
+    ]);
   });
 
   it('flags a stub that replaces nothing the spec mounts', () => {
@@ -271,6 +380,7 @@ describe('root spec stub export check', () => {
         'const virtualModules: Record<string, string> = {',
         "  '$lib/a': 'export const a = 1;',",
         '};',
+        'export const plugin = { load: (id: string) => virtualModules[id] };',
       ],
     });
     expect(checkRootSpecStubs(root)).toEqual([
@@ -283,6 +393,8 @@ describe('root spec stub export check', () => {
       'src/lib/Strip.svelte': '<div></div>',
       'test/plain.spec.ts': [
         "const labels: Record<string, string> = { '$lib/a': 'Exported label', b: 'x' };",
+        "const files: Record<string, string> = { 'src/lib/a.ts': 'export const a = 1;' };",
+        'const plugin = { load: (id: string) => labels[id] };',
         "test('x', async ({ page }) => page.evaluate(() => import('/src/lib/Strip.svelte')));",
       ],
     });
@@ -306,5 +418,7 @@ describe('root spec stub export check', () => {
     expect(isRootSpecStubInput('test/plain.spec.ts', root)).toBe(false);
     expect(isRootSpecStubInput('test/deleted.spec.ts', root)).toBe(false);
     expect(isRootSpecStubInput('src/lib/Strip.svelte', root)).toBe(false);
+    expect(isRootSpecStubInput('tsconfig.json', root)).toBe(true);
+    expect(isRootSpecStubInput('playwright/root-spec-pattern.mjs', root)).toBe(true);
   });
 });

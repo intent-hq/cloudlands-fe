@@ -159,9 +159,10 @@ function valueIdentifiers(sourceFile) {
 }
 
 /**
- * Imports of one module: `{ specifier, names, line }`, where `names` is the set of value
- * exports the import needs from the target, or null when it cannot be known statically.
- * `alsoUsed` names identifiers used outside the source file (a Svelte component's markup).
+ * Imports of one module: `{ specifier, names, line, star? }`, where `names` is the set of
+ * value exports the import needs from the target, or null when it cannot be known
+ * statically (`star` marks `export * from`). `alsoUsed` names identifiers the source file
+ * keeps used regardless of how they are spelled (a Svelte component keeps every import).
  */
 export function collectImports(sourceFile, alsoUsed = []) {
   const imports = [];
@@ -201,8 +202,11 @@ export function collectImports(sourceFile, alsoUsed = []) {
           for (const element of node.exportClause.elements) {
             if (!element.isTypeOnly) names.add((element.propertyName ?? element.name).text);
           }
-        } else if (node.exportClause) names = null;
-        imports.push({ specifier: node.moduleSpecifier.text, names, line: lineOf(node) });
+        } else names = null;
+        const entry = { specifier: node.moduleSpecifier.text, names, line: lineOf(node) };
+        // `export * from` forwards whatever the module's own importers ask for.
+        if (!node.exportClause) entry.star = true;
+        imports.push(entry);
       }
     } else if (
       ts.isCallExpression(node) &&

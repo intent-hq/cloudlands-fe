@@ -1355,7 +1355,10 @@ describe('verification planning', () => {
 
   it('runs the architecture gates when a root spec with virtual-module stubs changes', () => {
     const root = fixtureRoot({
-      'test/tab-strip.spec.ts': "const stubs = { '$lib/a': 'export const a = 1;' };",
+      'test/tab-strip.spec.ts': [
+        "const stubs: Record<string, string> = { '$lib/a': 'export const a = 1;' };",
+        'export const plugin = { load: (id: string) => stubs[id] };',
+      ].join('\n'),
       'test/catalog-shell.spec.ts': "const labels = { '$lib/a': 'plain text' };",
     });
     const plan = (file: string) =>
