@@ -1388,7 +1388,7 @@ ${source}`;
     if (flowchart)
       svg.dataset.flowchartDirection =
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
-    // Keep native ranks, ports, routes, and label reservations together.
+    // Keep native ranks and routes together; source-order stacking separates branches from joins.
     if (flowchart) {
       const bounds = svg.getBBox();
       const padding = 16;
@@ -1651,19 +1651,11 @@ ${source}`;
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
       const usesEntityDiagram = /^\s*erDiagram\b/m.test(renderCode);
-      config.layout = usesHtmlLabels || usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
+      config.layout = usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
       if (usesHtmlLabels) {
-        config.elk = {
-          ...config.elk,
-          // Model-order cycle breaking fails on nested cyclic subgraphs in ELK.
-          preset: /\bsubgraph\b/.test(renderCode) ? 'depthFirst' : 'modelOrder',
-          mergeEdges: false,
-          forceNodeModelOrder: false,
-          considerModelOrder: 'NODES_AND_EDGES',
-          straightenEdges: true,
-        };
         config.flowchart = {
           ...config.flowchart,
+          curve: 'basis',
           nodeSpacing: 48,
           rankSpacing: 64,
         };

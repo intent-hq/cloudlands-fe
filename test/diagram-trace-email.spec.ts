@@ -267,6 +267,10 @@ for (const width of [960, 320]) {
         await viewport.screenshot({ path: testInfo.outputPath(`trace-email-${side}.png`) });
       }
       expect(geometry.routes.map((route) => route.edge).sort()).toEqual([...expectedEdges].sort());
+      expect(
+        geometry.routes.some((route) => route.d?.includes('C')),
+        'keeps curved connectors',
+      ).toBe(true);
       expect(geometry.nodes.map((node) => node.id).sort()).toEqual(
         Object.keys(expectedNodes).sort(),
       );
