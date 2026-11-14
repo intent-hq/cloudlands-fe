@@ -38,7 +38,12 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
 import { showWorkspaceSaga } from '$lib/utils/show-workspace';
-import { removeRepo } from '../../known-repos/known-repos-slice';
+import {
+  loadKnownRepos,
+  recentRepositoryRemovalFailed,
+  removeRecentRepository,
+  removeRepo,
+} from '../../known-repos/known-repos-slice';
 import { restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
@@ -891,6 +896,23 @@ function* removeRepoFromRegistry(): SagaGenerator<void> {
   const repoPath = yield* selectPendingRemoveRepoPath.effect();
   yield* put(closeRemoveRepoConfirm());
   if (!repoPath) return;
+  if (yield* call(removeRecentRepositoryOnDaemon, repoPath)) yield* put(removeRepo(repoPath));
+}
+
+function* removeRecentRepositoryNow({
+  payload: [repoPath, hiddenKey],
+}: ReturnType<typeof removeRecentRepository>): SagaGenerator<void> {
+  // The reducer already dropped the row; a refusal restores it from the daemon.
+  if (yield* call(removeRecentRepositoryOnDaemon, repoPath)) return;
+  yield* put(
+    hiddenKey
+      ? recentRepositoryRemovalFailed(repoPath, hiddenKey)
+      : recentRepositoryRemovalFailed(repoPath),
+  );
+  yield* put(loadKnownRepos());
+}
+
+function* removeRecentRepositoryOnDaemon(repoPath: string): SagaGenerator<boolean> {
   try {
     const result = yield* call(
       invoke<RemoveRepoResponse>,
@@ -900,10 +922,11 @@ function* removeRepoFromRegistry(): SagaGenerator<void> {
       },
     );
     if (!result?.success) throw new Error(result?.error || m.workspace_ops_removeFailed_error());
-    yield* put(removeRepo(repoPath));
+    return true;
   } catch (error) {
     logger.error('Failed to remove repository from registry', error);
     (yield* call(getToast)).error(m.workspace_ops_removeRepoFailed_error());
+    return false;
   }
 }
 
@@ -1129,6 +1152,7 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeLeading(confirmBulkDelete, bulkDelete),
     takeLeading(confirmBulkRetire, bulkRetire),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),
+    takeEvery(removeRecentRepository, removeRecentRepositoryNow),
     takeEvery(applyWorkspaceProposal, applyProposal),
   ]);
 }

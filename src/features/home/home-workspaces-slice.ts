@@ -1,6 +1,7 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { recentRepositoryRemovalFailed } from '$store/renderer/slices/known-repos/known-repos-slice';
 import {
   defaultHomeConfiguration,
   HOME_SET_ASIDE_CAPACITY,
@@ -173,6 +174,13 @@ homeWorkspacesReducer.with(homeRepositoriesUnhidden, (state, { payload: { keys }
   if (!keys.some((key) => key in state.hiddenRepos)) return state;
   const hiddenRepos = { ...state.hiddenRepos };
   for (const key of keys) delete hiddenRepos[key];
+  return { ...state, hiddenRepos };
+});
+// A refused Delete brings back the folder it hid.
+homeWorkspacesReducer.with(recentRepositoryRemovalFailed, (state, { payload: [, hiddenKey] }) => {
+  if (!hiddenKey || !(hiddenKey in state.hiddenRepos)) return state;
+  const hiddenRepos = { ...state.hiddenRepos };
+  delete hiddenRepos[hiddenKey];
   return { ...state, hiddenRepos };
 });
 /** Another app window saved newer hidden repositories for this scope. */

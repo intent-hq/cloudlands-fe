@@ -61,6 +61,7 @@ import { initialState as proposalLifecycleInitialState } from '../../proposal-li
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import { initialState as workspaceInitializerInitialState } from '../../workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { removeRecentRepository } from '../../known-repos/known-repos-slice';
 import {
   initialState as workspaceInitialState,
   removeWorkspaceEntity,
@@ -1191,6 +1192,35 @@ describe('workspaceOperationsSaga', () => {
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'knownRepos/removeRepo',
       payload: ['/repo/one'],
+    });
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('deletes a recent repository and reloads the list when the daemon refuses', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce({ success: true, data: { removed: true } })
+      .mockResolvedValueOnce({ success: false, error: 'denied' });
+    const run = harness([]);
+    run.send(removeRecentRepository('/repo/one'));
+    await settle();
+    expect(mocks.invoke.mock.calls[0]).toEqual([
+      'workspace:remove-recent-repository',
+      { repository: '/repo/one' },
+    ]);
+    const reloads = () =>
+      run.dispatch.mock.calls
+        .flat()
+        .filter((action) => action?.type === 'knownRepos/loadKnownRepos');
+    expect(reloads()).toHaveLength(0);
+    run.send(removeRecentRepository('/repo/two', '/repo/two'));
+    await settle();
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(reloads()).toHaveLength(1);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'knownRepos/recentRepositoryRemovalFailed',
+      payload: ['/repo/two', '/repo/two'],
     });
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();

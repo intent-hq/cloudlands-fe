@@ -45,7 +45,6 @@
     HOME_HIDDEN_REPOS_GROUP,
     hiddenHomeRepositories,
     isHomeRepositoryHidden,
-    newestHomeRepositoryWorkspace,
     revivedHomeRepositories,
   } from './home-hidden-repos';
   import { createHomeRepositoryMenu } from './home-repository-menu';
@@ -115,11 +114,7 @@
   } from './home-set-aside';
   import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
   import { homeListOrder, registerHomeEncoderTarget } from './home-encoder-target';
-  import {
-    homeRepositoriesUnhidden,
-    homeRepositoryHidden,
-    updateHomeWorkspaceView,
-  } from './home-workspaces-slice';
+  import { homeRepositoriesUnhidden, updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
@@ -204,27 +199,21 @@
     if (position) contextMenu = { ...position, repo };
   }
   function repositoryMenu(repo: RepositoryGroup): SidebarMenuEntry[] {
-    const then = (action: () => void) => () => {
-      contextMenu = null;
-      action();
-    };
     return createHomeRepositoryMenu({
+      repo,
       canCreate: !$collaborator$,
       hidden: isHomeRepositoryHidden(hiddenRepos, repo),
       loaded: $hasLoaded$,
-      onNewWorkspace: then(() => {
+      onNewWorkspace: () => {
         chooseRepo(repo.key);
         createWorkspace();
-      }),
-      onHide: then(() => {
-        // Leaving the selected repository, or an org with nothing else, shows All repos.
+      },
+      onClose: () => (contextMenu = null),
+      // Leaving the selected repository, or an org with nothing else, shows All repos.
+      onLeave: () => {
         if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
           updateView({ repoKey: null, selectedId: null });
-        store.dispatch(
-          homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
-        );
-      }),
-      onUnhide: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
+      },
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
@@ -771,26 +760,24 @@
       {/snippet}
       {#snippet repoButton(repo: (typeof repositoryGroups)[number], hidden = false)}
         {@const unassigned = repo.key === m.workspace_grouping_unknownRepository_label()}
-        <Tooltip.Tooltip content={repo.label} class="flex w-full">
-          <Button
-            variant={hidden ? 'ghost-light' : 'ghost'}
-            active={repoKey === repo.key && destination === 'workspaces'}
-            class="w-full justify-start px-2"
-            aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
-            onclick={() => chooseRepo(repo.key)}
-            oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
-            onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+        <Button
+          variant={hidden ? 'ghost-light' : 'ghost'}
+          active={repoKey === repo.key && destination === 'workspaces'}
+          class="w-full justify-start px-2"
+          aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
+          onclick={() => chooseRepo(repo.key)}
+          oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+          onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+        >
+          <span class="flex-1 truncate text-left font-normal"
+            >{unassigned
+              ? m.fileTracking_startNew_noRepository_label()
+              : hidden
+                ? repo.label
+                : repo.name || repo.label}</span
           >
-            <span class="flex-1 truncate text-left font-normal"
-              >{unassigned
-                ? m.fileTracking_startNew_noRepository_label()
-                : hidden
-                  ? repo.label
-                  : repo.name || repo.label}</span
-            >
-            {@render sidebarCounts(repo.workspaces)}
-          </Button>
-        </Tooltip.Tooltip>
+          {@render sidebarCounts(repo.workspaces)}
+        </Button>
       {/snippet}
       <Tabs.Root
         value={destination}

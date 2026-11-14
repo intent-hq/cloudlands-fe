@@ -762,3 +762,23 @@ test('Home workspace menus pin without duplication and support right click and k
       .getByRole('option', { name: /Polish settings accessibility/ }),
   ).toBeVisible();
 });
+
+test('Home sidebar deletes local folders and hides GitHub repositories', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const sidebar = component.locator('.home-sidebar-content');
+  const local = sidebar.getByRole('button', { name: 'local-tools', exact: true });
+  await local.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+  await expect(local).toHaveCount(0);
+  await expect(sidebar.getByRole('button', { name: /^Hidden/ })).toHaveCount(0);
+
+  await sidebar.getByRole('button', { name: 'acme/platform', exact: true }).click({
+    button: 'right',
+  });
+  await expect(page.getByRole('menuitem', { name: 'Delete', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
+});
