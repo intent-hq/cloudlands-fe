@@ -43,6 +43,9 @@ export function execBounded(
     abandonMs = 5_000,
     // Test seam: sends a signal to one pid.
     sendSignal = signal,
+    // Called with the command's pid and a host process snapshot when the deadline
+    // passes, before anything is signalled, so the stuck state can be logged.
+    onTimeout = () => {},
   },
 ) {
   return new Promise((resolve, reject) => {
@@ -65,7 +68,13 @@ export function execBounded(
       timedOut = true;
       // Snapshot before signalling so grandchildren are still attributed to the
       // tree (they are reparented once their parent dies).
-      doomed = descendantsOf(child.pid, snapshot())
+      const processes = snapshot();
+      try {
+        onTimeout(child.pid, processes);
+      } catch {
+        // Diagnostics must never stop the kill.
+      }
+      doomed = descendantsOf(child.pid, processes)
         .map((proc) => proc.pid)
         .reverse();
       if (!doomed.includes(child.pid)) doomed.push(child.pid);
