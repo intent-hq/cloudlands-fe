@@ -391,17 +391,28 @@
   const itemMenuItem = $derived($items$.find((item) => item.id === itemMenu?.id) ?? null);
 
   // A right click does not dismiss an open menu, so opening one menu closes
-  // the other: the shown machine's status menu and another machine's menu
-  // never stack. Another machine's open menu moves to the machine clicked.
-  function openItemMenu(event: MouseEvent, item: MachineRailItem) {
+  // the others: the rail's menus never stack. A menu already open is closed
+  // and opened again rather than moved: a macOS Ctrl+click is also an outside
+  // click to it, and the open menu would dismiss itself a moment later.
+  async function openItemMenu(event: MouseEvent, item: MachineRailItem) {
     event.preventDefault();
+    const anchor = event.currentTarget as HTMLElement;
+    menuOpen = false;
     if (item.own) {
       itemMenuOpen = false;
+      if (statusMenuOpen) {
+        statusMenuOpen = false;
+        await tick();
+      }
       statusMenuOpen = true;
       return;
     }
     statusMenuOpen = false;
-    itemMenu = { id: item.id, anchor: event.currentTarget as HTMLElement };
+    if (itemMenuOpen) {
+      itemMenuOpen = false;
+      await tick();
+    }
+    itemMenu = { id: item.id, anchor };
     itemMenuOpen = true;
   }
 
