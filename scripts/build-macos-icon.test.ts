@@ -375,9 +375,15 @@ describe('pinned macOS icon resource', () => {
   // hangs on some WarpBuild runners.
   it('ships a pin that matches the current icon inputs', async () => {
     const pin = JSON.parse(readFileSync(join(PIN_DIRECTORY, 'pin.json'), 'utf8'));
-    expect(pin.inputsSha256).toBe(await iconInputsDigest());
+    const repin =
+      'on a Mac with Xcode 26 run `node scripts/build-macos-icon.js --pin`, then commit build/macos-icon-pin/';
+    expect(pin.inputsSha256, `Icon inputs changed since the pin: ${repin}`).toBe(
+      await iconInputsDigest(),
+    );
     const car = readFileSync(join(PIN_DIRECTORY, 'Assets.car'));
-    expect(sha256(car)).toBe(pin.assetsSha256);
+    expect(sha256(car), `Pinned Assets.car does not match pin.json: ${repin}`).toBe(
+      pin.assetsSha256,
+    );
     expect(car.subarray(0, 8).toString('latin1')).toBe('BOMStore');
     expect(car.includes('Intent.iconstack')).toBe(true);
   });
