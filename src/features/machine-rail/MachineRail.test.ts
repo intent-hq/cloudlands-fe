@@ -176,6 +176,17 @@ it('does not start a second update while one runs', async () => {
   );
 });
 
+it("closes another machine's menu when the shown machine's own menu opens", async () => {
+  render(MachineRail);
+  const [local, build] = railItems();
+  await fireEvent.contextMenu(build);
+  await screen.findByTestId('machine-rail-item-menu');
+
+  // The shown machine's own status menu opens instead, alone.
+  await fireEvent.contextMenu(local);
+  await waitFor(() => expect(screen.queryByTestId('machine-rail-item-menu')).toBeNull());
+});
+
 it("sends a guest host's manage action to the guest session settings", async () => {
   render(MachineRail);
   await fireEvent.contextMenu(railItems()[2]);

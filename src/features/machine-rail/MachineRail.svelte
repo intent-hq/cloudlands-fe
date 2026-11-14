@@ -390,12 +390,17 @@
   }
   const itemMenuItem = $derived($items$.find((item) => item.id === itemMenu?.id) ?? null);
 
+  // A right click does not dismiss an open menu, so opening one menu closes
+  // the other: the shown machine's status menu and another machine's menu
+  // never stack. Another machine's open menu moves to the machine clicked.
   function openItemMenu(event: MouseEvent, item: MachineRailItem) {
     event.preventDefault();
     if (item.own) {
+      itemMenuOpen = false;
       statusMenuOpen = true;
       return;
     }
+    statusMenuOpen = false;
     itemMenu = { id: item.id, anchor: event.currentTarget as HTMLElement };
     itemMenuOpen = true;
   }
