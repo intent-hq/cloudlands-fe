@@ -12,6 +12,8 @@ const sonner = vi.hoisted(() => ({
 }));
 
 vi.mock('svelte-sonner', () => ({ toast: sonner }));
+const forwardToastWhenHidden = vi.hoisted(() => vi.fn());
+vi.mock('$lib/utils/machine-toast-forward', () => ({ forwardToastWhenHidden }));
 
 import NotifyErrorToast from './NotifyErrorToast.svelte';
 import { NOTIFY_DURATION, notify } from './notify';
@@ -49,6 +51,18 @@ describe('notify', () => {
       'Saved',
       expect.objectContaining({ id: 'save:note-1', duration: NOTIFY_DURATION.success }),
     );
+  });
+
+  it("keeps a notice about this renderer's own machine off the machine on screen", () => {
+    notify.warning('Update this machine', { id: 'behind', stayOnMachine: true });
+    expect(forwardToastWhenHidden).not.toHaveBeenCalled();
+    expect(sonner.warning).toHaveBeenCalledWith(
+      'Update this machine',
+      expect.not.objectContaining({ stayOnMachine: true }),
+    );
+
+    notify.warning('Something else');
+    expect(forwardToastWhenHidden).toHaveBeenCalledWith('warning', 'Something else');
   });
 
   it('renders structured error details with disclosure and copy affordance', async () => {

@@ -456,6 +456,8 @@ async function showDaemonBehindPinToast(
     // programmatically once the backend stops qualifying.
     duration: Number.POSITIVE_INFINITY,
     action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
+    // It waits on this machine, shown when the user switches to it.
+    stayOnMachine: true,
   });
 }
 

@@ -18,6 +18,12 @@ export type NotifyId = string | number;
 export type NotifyError = Error | { message: string; details?: string };
 export type NotifyOptions<T extends AnyComponent = AnyComponent> = ExternalToast<T> & {
   key?: string;
+  /**
+   * Machine rail: the notice is about this renderer's own machine, so it
+   * waits here until the user switches to it instead of also showing on the
+   * machine on screen.
+   */
+  stayOnMachine?: boolean;
 };
 export type AgentFailureNotifyProps = ComponentProps<AgentFailureToastComponent>;
 export type AppErrorNotifyProps = ComponentProps<ErrorToastComponent>;
@@ -56,7 +62,7 @@ function withPolicy<T extends AnyComponent>(
   kind: NotifyKind,
   options: NotifyOptions<T> = {},
 ): ExternalToast<T> {
-  const { key, ...sonnerOptions } = options;
+  const { key, stayOnMachine: _stayOnMachine, ...sonnerOptions } = options;
   return {
     duration: NOTIFY_DURATION[kind],
     ...sonnerOptions,
@@ -187,11 +193,11 @@ export const notify = {
     return toast.success(message, withPolicy('success', options));
   },
   info: (message: string, options?: NotifyOptions) => {
-    forwardToastWhenHidden('info', message);
+    if (!options?.stayOnMachine) forwardToastWhenHidden('info', message);
     return toast.info(message, withPolicy('info', options));
   },
   warning: (message: string, options?: NotifyOptions) => {
-    forwardToastWhenHidden('warning', message);
+    if (!options?.stayOnMachine) forwardToastWhenHidden('warning', message);
     return toast.warning(message, withPolicy('warning', options));
   },
   error: showError,
