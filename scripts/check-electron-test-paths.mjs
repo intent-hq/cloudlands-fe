@@ -161,10 +161,12 @@ function valueIdentifiers(sourceFile) {
 /**
  * Imports of one module: `{ specifier, names, line }`, where `names` is the set of value
  * exports the import needs from the target, or null when it cannot be known statically.
+ * `alsoUsed` names identifiers used outside the source file (a Svelte component's markup).
  */
-export function collectImports(sourceFile) {
+export function collectImports(sourceFile, alsoUsed = []) {
   const imports = [];
   const used = valueIdentifiers(sourceFile);
+  for (const name of alsoUsed) used.add(name);
   const visit = (node) => {
     if (ts.isImportDeclaration(node) && isStringLike(node.moduleSpecifier)) {
       const clause = node.importClause;

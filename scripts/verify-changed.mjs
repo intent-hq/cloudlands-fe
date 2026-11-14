@@ -19,6 +19,7 @@ import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pa
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isElectronTestPathInput } from './check-electron-test-paths.mjs';
+import { isRootSpecStubInput } from './check-root-spec-stubs.mjs';
 import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
@@ -481,13 +482,15 @@ function isWorkflowLintInput(file) {
   );
 }
 
-function isArchitectureSource(file) {
+function isArchitectureSource(file, root) {
   return (
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
     // Electron helpers run only in the merge queue; lint:electron-test-paths checks them.
     isElectronTestPathInput(file) ||
+    // Root specs run only nightly; lint:root-spec-stubs checks their virtual-module stubs.
+    isRootSpecStubInput(file, root) ||
     basename(file) === 'AGENTS.md'
   );
 }
@@ -661,7 +664,7 @@ export function createVerificationPlan(files, options = {}) {
   const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
     (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
-  let architecture = files.some(isArchitectureSource);
+  let architecture = files.some((file) => isArchitectureSource(file, root));
   const workflowLint = files.some(isWorkflowLintInput);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
   const deadCode = files.some(

@@ -1353,6 +1353,17 @@ describe('verification planning', () => {
     expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates when a root spec with virtual-module stubs changes', () => {
+    const root = fixtureRoot({
+      'test/tab-strip.spec.ts': "const stubs = { '$lib/a': 'export const a = 1;' };",
+      'test/catalog-shell.spec.ts': "const labels = { '$lib/a': 'plain text' };",
+    });
+    const plan = (file: string) =>
+      createVerificationPlan([file], { root, ctTests: [] }).checks.map((check) => check.id);
+    expect(plan('test/tab-strip.spec.ts')).toContain('architecture');
+    expect(plan('test/catalog-shell.spec.ts')).not.toContain('architecture');
+  });
+
   // actionlint can hang on a loaded host (rhysd/actionlint#702) and failed the
   // architecture lane of a change with no workflow edits (cloudlands-fe#4332).
   const dryRun = (files: string[], root: string) => {
