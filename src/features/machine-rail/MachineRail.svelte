@@ -52,7 +52,7 @@
     formatLocalMachineLabel,
   } from '$lib/utils/connection-label';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { updateBackendRequested } from '$store/renderer/slices/connections/connections-slice';
+  import { connectionWorkflowRequested } from '$store/renderer/slices/connections/connections-slice';
   import { m } from '$shared/paraglide/messages.js';
   import type { ConnectionRecord } from '$shared/types/connections';
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
@@ -62,6 +62,7 @@
     selectMachineRailCandidates,
     selectMachineRailEnabled,
     selectMachineRailGuestCandidates,
+    railUpdateConsumerId,
     selectMachineRailItems,
     selectRailSelectedRecord,
     type MachineRailItem,
@@ -405,6 +406,14 @@
     appStore.dispatch(removeRailMachineRequested(id));
   }
 
+  /** Update a machine's daemon, once: the item is disabled while that update runs. */
+  function requestUpdate(id: string) {
+    if ($items$.find((item) => item.id === id)?.updating) return;
+    appStore.dispatch(
+      connectionWorkflowRequested(railUpdateConsumerId(id), { kind: 'updateBackend', id }),
+    );
+  }
+
   function manageMachines(guest: boolean) {
     statusMenuOpen = false;
     itemMenuOpen = false;
@@ -438,9 +447,10 @@
     <Menu.Item
       class="w-full cursor-pointer text-xs px-2 py-1.5"
       data-testid="machine-rail-menu-update"
-      onSelect={() => appStore.dispatch(updateBackendRequested(item.id))}
+      disabled={item.updating}
+      onSelect={() => requestUpdate(item.id)}
     >
-      {m.layout_daemonStatus_update_action()}
+      {item.updating ? m.settings_devices_updating_label() : m.layout_daemonStatus_update_action()}
     </Menu.Item>
   {/if}
   {#if !item.home}
