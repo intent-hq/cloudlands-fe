@@ -1214,10 +1214,14 @@ describe('workspaceOperationsSaga', () => {
         .flat()
         .filter((action) => action?.type === 'knownRepos/loadKnownRepos');
     expect(reloads()).toHaveLength(0);
-    run.send(removeRecentRepository('/repo/two'));
+    run.send(removeRecentRepository('/repo/two', '/repo/two'));
     await settle();
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
     expect(reloads()).toHaveLength(1);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'knownRepos/recentRepositoryRemovalFailed',
+      payload: ['/repo/two', '/repo/two'],
+    });
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();

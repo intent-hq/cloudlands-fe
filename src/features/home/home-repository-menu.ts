@@ -60,9 +60,15 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
             disabled: !options.loaded,
             onClick: then(() => {
               options.onLeave();
-              if (repo.repoPath) store.dispatch(removeRecentRepository(repo.repoPath));
               // Existing workspaces would keep the folder listed, so it is also hidden.
-              if (repo.workspaces.length) hide();
+              const hidden = repo.workspaces.length > 0;
+              if (hidden) hide();
+              if (repo.repoPath)
+                store.dispatch(
+                  hidden
+                    ? removeRecentRepository(repo.repoPath, repo.key)
+                    : removeRecentRepository(repo.repoPath),
+                );
             }),
           }
         : {

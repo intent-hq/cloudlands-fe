@@ -40,6 +40,7 @@ import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-view
 import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import {
   loadKnownRepos,
+  recentRepositoryRemovalFailed,
   removeRecentRepository,
   removeRepo,
 } from '../../known-repos/known-repos-slice';
@@ -899,10 +900,16 @@ function* removeRepoFromRegistry(): SagaGenerator<void> {
 }
 
 function* removeRecentRepositoryNow({
-  payload: [repoPath],
+  payload: [repoPath, hiddenKey],
 }: ReturnType<typeof removeRecentRepository>): SagaGenerator<void> {
   // The reducer already dropped the row; a refusal restores it from the daemon.
-  if (!(yield* call(removeRecentRepositoryOnDaemon, repoPath))) yield* put(loadKnownRepos());
+  if (yield* call(removeRecentRepositoryOnDaemon, repoPath)) return;
+  yield* put(
+    hiddenKey
+      ? recentRepositoryRemovalFailed(repoPath, hiddenKey)
+      : recentRepositoryRemovalFailed(repoPath),
+  );
+  yield* put(loadKnownRepos());
 }
 
 function* removeRecentRepositoryOnDaemon(repoPath: string): SagaGenerator<boolean> {

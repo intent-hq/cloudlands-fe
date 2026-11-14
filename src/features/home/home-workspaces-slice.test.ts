@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
+import { recentRepositoryRemovalFailed } from '$store/renderer/slices/known-repos/known-repos-slice';
 import {
+  homeRepositoryHidden,
   homeWorkspacesReducer,
   resetHomeWorkspaceView,
   setHomePreviewAgent,
@@ -49,5 +51,19 @@ describe('home workspaces preview agent picks', () => {
 
     expect(selectHomePreviewAgentId.select(state, 'ws-1')).toBe('agent-a');
     expect(selectHomePreviewAgentId.select(state, 'ws-2')).toBeNull();
+  });
+});
+
+describe('home workspaces hidden repositories', () => {
+  it('unhides a deleted folder when the daemon refuses the removal', () => {
+    const hidden = reduce(initial(), homeRepositoryHidden('/repos/tools', 5));
+    expect(hidden.hiddenRepos).toEqual({ '/repos/tools': 5 });
+    const restored = reduce(hidden, recentRepositoryRemovalFailed('/repos/tools', '/repos/tools'));
+    expect(restored.hiddenRepos).toEqual({});
+  });
+
+  it('keeps hidden repositories when a refused removal hid nothing', () => {
+    const hidden = reduce(initial(), homeRepositoryHidden('/repos/tools', 5));
+    expect(reduce(hidden, recentRepositoryRemovalFailed('/repos/tools'))).toBe(hidden);
   });
 });

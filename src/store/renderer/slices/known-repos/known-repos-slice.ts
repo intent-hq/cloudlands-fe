@@ -24,9 +24,16 @@ export const setRepos = createAction<[repos: KnownRepo[]]>('knownRepos/setRepos'
 
 export const removeRepo = createAction<[repoPath: string]>('knownRepos/removeRepo');
 
-/** Removes a folder from the daemon's recent list; the row leaves at once. */
-export const removeRecentRepository = createAction<[repoPath: string]>(
+/**
+ * Removes a folder from the daemon's recent list; the row leaves at once. `hiddenKey`
+ * names the Home sidebar entry hidden with it, restored if the daemon refuses.
+ */
+export const removeRecentRepository = createAction<[repoPath: string, hiddenKey?: string]>(
   'knownRepos/removeRecentRepository',
+);
+
+export const recentRepositoryRemovalFailed = createAction<[repoPath: string, hiddenKey?: string]>(
+  'knownRepos/recentRepositoryRemovalFailed',
 );
 
 export const knownReposReducer = createReducer<KnownReposState>(initialState);

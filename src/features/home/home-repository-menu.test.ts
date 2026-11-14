@@ -66,9 +66,10 @@ describe('createHomeRepositoryMenu', () => {
     const { entries } = menu({ ...local, workspaces: [workspace] });
     const actions = dispatched(() => item(entries, 'delete').onClick?.());
     expect(actions.map((action) => action.type)).toEqual([
-      'knownRepos/removeRecentRepository',
       'homeWorkspaces/repositoryHidden',
+      'knownRepos/removeRecentRepository',
     ]);
+    expect(actions[1]!.payload).toEqual(['/repos/tools', '/repos/tools']);
   });
 
   it('hides GitHub repositories', () => {
