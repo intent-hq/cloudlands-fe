@@ -112,6 +112,36 @@ it('opens a machine menu on a context click without switching to that machine', 
   expect(mocks.dispatch).toHaveBeenCalledTimes(1);
 });
 
+it('offers to update a machine whose daemon can be updated, from its menu', async () => {
+  const connections = mocks.state.connections as Record<string, unknown>;
+  mocks.state = {
+    ...mocks.state,
+    connections: {
+      ...connections,
+      pinnedVersion: '0.10.0',
+      connectedIds: ['local', 'b'],
+      connections: createCollection<ConnectionRecord, 'id'>('id', [
+        record('local'),
+        { ...record('b'), daemonVersion: '0.9.0', updateSupported: true },
+      ]),
+    },
+  };
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[1]);
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  await fireEvent.click(within(menu).getByTestId('machine-rail-menu-update'));
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'connections/updateBackendRequested', payload: ['b'] }),
+  );
+  cleanup();
+
+  // A guest host is never offered an update.
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[2]);
+  const guestMenu = await screen.findByTestId('machine-rail-item-menu');
+  expect(within(guestMenu).queryByTestId('machine-rail-menu-update')).toBeNull();
+});
+
 it("sends a guest host's manage action to the guest session settings", async () => {
   render(MachineRail);
   await fireEvent.contextMenu(railItems()[2]);
