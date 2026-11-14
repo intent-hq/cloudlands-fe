@@ -826,17 +826,7 @@
                     class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
                     onclick={() => chooseRepo(expansionKey)}
                   >
-                    <Tooltip.Provider
-                      ><Tooltip.Root
-                        ><Tooltip.Trigger
-                          >{#snippet child({ props: homeTooltipProps })}<span
-                              {...homeTooltipProps}
-                              class="min-w-0 flex-1 truncate text-left font-medium"
-                              >{group.label}</span
-                            >{/snippet}</Tooltip.Trigger
-                        ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
-                      ></Tooltip.Provider
-                    >
+                    <span class="min-w-0 flex-1 truncate text-left font-medium">{group.label}</span>
                     {#if !expanded}{@render sidebarCounts(
                         group.items.flatMap((repo) => repo.workspaces),
                       )}{/if}
