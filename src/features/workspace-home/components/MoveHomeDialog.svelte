@@ -25,6 +25,7 @@
     view,
     options,
     currentKey = null,
+    currentNodeId = null,
     submitting = false,
     failureText = null,
     initialKey = '',
@@ -38,6 +39,8 @@
     options: readonly MoveHomeOption[];
     /** The option that names the current home's machine, if listed. */
     currentKey?: string | null;
+    /** The current home's machine: agents running there are marked too. */
+    currentNodeId?: string | null;
     submitting?: boolean;
     failureText?: string | null;
     /** Previews only: the option chosen when the dialog opens. */
@@ -60,20 +63,24 @@
     return option && !option.disabled ? parseMoveHomeTargetKey(option.key) : null;
   });
   const warning = $derived(homeMoveWarningText(view));
+  // A move started meanwhile (here or by another client): a second one is refused.
+  const moving = $derived(view.state === 'moving');
 
   function description(option: MoveHomeOption): string | undefined {
     const parts = [
       option.kind === 'agent'
         ? m.workspaceHome_moveDialog_agentDescription({ agent: option.label })
         : null,
-      option.key === currentKey ? m.workspaceHome_moveDialog_currentHome() : null,
+      option.key === currentKey || (currentNodeId !== null && option.nodeId === currentNodeId)
+        ? m.workspaceHome_moveDialog_currentHome()
+        : null,
       option.disabled ? (option.reason ?? null) : option.platform,
     ].filter((part): part is string => !!part);
     return parts.length ? parts.join(' · ') : undefined;
   }
 
   function submit() {
-    if (target) onSubmit(target);
+    if (target && !moving) onSubmit(target);
   }
 </script>
 
@@ -100,7 +107,7 @@
   title={m.workspaceHome_moveDialog_title()}
   description={m.workspaceHome_moveDialog_description()}
   submitLabel={m.workspaceHome_moveDialog_submit()}
-  canSubmit={target !== null && !submitting}
+  canSubmit={target !== null && !submitting && !moving}
   busy={submitting}
   onSubmit={submit}
   {onCancel}
@@ -127,7 +134,9 @@
     {:else}
       <p class="type-body text-muted-foreground">{m.workspaceHome_moveDialog_empty()}</p>
     {/if}
-    {#if failureText}
+    {#if moving}
+      <InputMessage tone="helper">{m.workspaceHome_moveError_homeMoving()}</InputMessage>
+    {:else if failureText}
       <InputMessage tone="error">{failureText}</InputMessage>
     {/if}
   </div>

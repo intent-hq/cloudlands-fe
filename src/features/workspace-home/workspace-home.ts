@@ -9,7 +9,7 @@
  * backend decides: `state`, `lastBackupAt` and `backupWarning` render as
  * served.
  */
-import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
+import { AgentStatus, WorkspaceStatusEnum, type AgentSession, type Workspace } from '$shared/types';
 import type { MoveHomeTarget, WorkspaceHomeState } from '$shared/types/workspace-home';
 import {
   START_ON_BACKEND,
@@ -86,6 +86,8 @@ export interface MoveHomeOption {
   label: string;
   /** Agents: the machine or sandbox the agent runs on. */
   machineName?: string;
+  /** Agents: that machine's id, to mark the current home's machine. */
+  nodeId?: string;
   platform: string | null;
   disabled: boolean;
   reason?: string;
@@ -168,8 +170,33 @@ export function setHomeErrorCode(error: unknown): SetHomeErrorCode | null {
  * changes) or runs on the home (terminals). While the home is detached or
  * moving they show the reason instead.
  */
-const HOME_BACKED_TAB_TYPES = new Set(['file', 'diff', 'terminal', 'changes', 'local-changes']);
+const HOME_BACKED_TAB_TYPES = new Set([
+  'file',
+  'diff',
+  'terminal',
+  'changes',
+  'local-changes',
+  'code-review',
+  'chat-changes',
+  'activity-changes',
+]);
 
 export function isHomeBackedTabType(type: string): boolean {
   return HOME_BACKED_TAB_TYPES.has(type);
+}
+
+/**
+ * The workspace menu offers Move home: a home that can move now, a viewer who
+ * can manage the workspace, and not a purged (Retired) workspace, whose
+ * surface shows no Move home dialog.
+ */
+export function moveHomeMenuVisible(
+  workspace: Pick<Workspace, 'home' | 'status'> | null | undefined,
+  canManage: boolean,
+): boolean {
+  return (
+    canManage &&
+    workspace?.status !== WorkspaceStatusEnum.Retired &&
+    workspaceHomeView(workspace)?.canMove === true
+  );
 }

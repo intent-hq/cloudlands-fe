@@ -147,6 +147,7 @@ vi.mock(
   '$features/workspace-home/components/WorkspaceHomeBannerHost.svelte',
   mockPart('home-banner'),
 );
+vi.mock('$features/workspace-home/components/MoveHomeDialogHost.svelte', mockPart('move-home'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));

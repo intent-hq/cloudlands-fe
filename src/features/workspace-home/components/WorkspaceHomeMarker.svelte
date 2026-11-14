@@ -25,7 +25,9 @@
             variant="dot"
             color={marker === 'detached' ? 'amber' : 'blue'}
             size="compact"
-            data-workspace-home-marker={marker}>{homeMarkerLabel(marker)}</Badge
+            data-workspace-home-marker={marker}
+            >{homeMarkerLabel(marker)}<span class="sr-only">{homeUnavailableText(view)}</span
+            ></Badge
           >{/snippet}</Tooltip.Trigger
       ><Tooltip.Content>{homeUnavailableText(view)}</Tooltip.Content></Tooltip.Root
     ></Tooltip.Provider

@@ -1,12 +1,8 @@
 <script lang="ts">
-  /**
-   * Store host for {@link WorkspaceHomeBanner} and this workspace's Move home
-   * dialog; renders nothing without a home.
-   */
+  /** Store host for {@link WorkspaceHomeBanner}; renders nothing without a home. */
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceHomeBanner from './WorkspaceHomeBanner.svelte';
-  import MoveHomeDialogHost from './MoveHomeDialogHost.svelte';
   import {
     selectCanMoveWorkspaceHome,
     selectHomeWaiting,
@@ -32,4 +28,3 @@
   onWait={() => appStore.dispatch(homeWaitRequested(workspaceId))}
   onMove={() => appStore.dispatch(moveHomeDialogOpened(workspaceId))}
 />
-<MoveHomeDialogHost {workspaceId} />

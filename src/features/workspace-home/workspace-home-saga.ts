@@ -19,6 +19,8 @@ import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { parseRemoteMachine } from '$shared/types/remote-machines';
+import { remoteMachineChanged } from '$features/remote-machines/remote-machines-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   bulkUpdateWorkspaceEntities,
@@ -36,8 +38,15 @@ import {
 
 const logger = createLogger('WorkspaceHomeSaga');
 
-function applyHome(workspaceId: string, home: WorkspaceHome | undefined) {
-  return bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { home })]);
+/**
+ * Keep a served home unless the stored one is newer: a reply can land after
+ * the `workspace:updated` event of a later change (a fast move finishing
+ * before its `setHome` reply is handled), and must not roll it back.
+ */
+function* applyHome(workspaceId: string, home: WorkspaceHome | undefined): SagaGenerator<void> {
+  const current = (yield* selectWorkspaceById.effect(workspaceId))?.home;
+  if (current && home && Date.parse(current.since) > Date.parse(home.since)) return;
+  yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { home })]));
 }
 
 function errorMessage(error: unknown): string {
@@ -48,7 +57,7 @@ function* moveHome(action: ReturnType<typeof moveHomeRequested>): SagaGenerator<
   const [workspaceId, to] = action.payload;
   try {
     const home = yield* call([appClient.workspaces, appClient.workspaces.setHome], workspaceId, to);
-    yield* put(applyHome(workspaceId, home));
+    yield* call(applyHome, workspaceId, home);
     yield* put(moveHomeSettled(workspaceId, null));
   } catch (error) {
     const code = setHomeErrorCode(error);
@@ -63,7 +72,8 @@ function* moveHome(action: ReturnType<typeof moveHomeRequested>): SagaGenerator<
 function* rereadHome(workspaceId: string): SagaGenerator<Workspace | null> {
   try {
     const served = yield* call([appClient.workspaces, appClient.workspaces.get], workspaceId);
-    if (served) yield* put(applyHome(workspaceId, served.home));
+    // An authoritative read: a workspace served without `home` has none.
+    if (served) yield* call(applyHome, workspaceId, served.home);
     return served;
   } catch (error) {
     logger.warn('workspace.get after a home change failed', {
@@ -74,9 +84,15 @@ function* rereadHome(workspaceId: string): SagaGenerator<Workspace | null> {
   }
 }
 
-const waitsInFlight = new Set<string>();
-
-function* waitForHome(action: ReturnType<typeof homeWaitRequested>): SagaGenerator<void> {
+/**
+ * Wait. The reducer marks the workspace waiting before this saga sees the
+ * action, so the guard against a second concurrent retry is this saga's own
+ * in-flight set, created per saga run.
+ */
+function* waitForHome(
+  waitsInFlight: Set<string>,
+  action: ReturnType<typeof homeWaitRequested>,
+): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   if (waitsInFlight.has(workspaceId)) return;
   waitsInFlight.add(workspaceId);
@@ -84,16 +100,25 @@ function* waitForHome(action: ReturnType<typeof homeWaitRequested>): SagaGenerat
     const nodeId = (yield* selectWorkspaceById.effect(workspaceId))?.home?.nodeId;
     if (nodeId) {
       try {
-        // Connects on demand; a failure only means the machine is still away.
-        yield* call(backendRequest, 'remoteMachines.refresh', { machineId: nodeId });
+        // Connects on demand; keep the refreshed row for the machine list.
+        const result = yield* call(
+          backendRequest<{ machine?: unknown }>,
+          'remoteMachines.refresh',
+          {
+            machineId: nodeId,
+          },
+        );
+        const machine = parseRemoteMachine(result?.machine);
+        if (machine) yield* put(remoteMachineChanged(machine));
       } catch (error) {
+        // A failure only means the machine is still away.
         logger.info('Home machine still unreachable', { workspaceId, error: errorMessage(error) });
       }
     }
     const served = yield* call(rereadHome, workspaceId);
     const home = served?.home;
     if (home && home.state === 'detached') {
-      notify.info(m.workspaceHome_wait_stillUnavailable({ name: home.name }));
+      yield* call(notify.info, m.workspaceHome_wait_stillUnavailable({ name: home.name }));
     }
   } finally {
     waitsInFlight.delete(workspaceId);
@@ -102,5 +127,9 @@ function* waitForHome(action: ReturnType<typeof homeWaitRequested>): SagaGenerat
 }
 
 export function* workspaceHomeSaga(): SagaGenerator<void> {
-  yield* all([takeLeading(moveHomeRequested, moveHome), takeEvery(homeWaitRequested, waitForHome)]);
+  const waitsInFlight = new Set<string>();
+  yield* all([
+    takeLeading(moveHomeRequested, moveHome),
+    takeEvery(homeWaitRequested, waitForHome, waitsInFlight),
+  ]);
 }

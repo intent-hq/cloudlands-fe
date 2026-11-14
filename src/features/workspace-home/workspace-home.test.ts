@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { AgentStatus, type AgentSession } from '$shared/types';
+import { AgentStatus, WorkspaceStatusEnum, type AgentSession } from '$shared/types';
 import type { StartOnOption } from '$features/remote-machines/start-on';
 import {
   homeMoveTargetKey,
   isHomeBackedTabType,
+  moveHomeMenuVisible,
   moveHomeTargets,
   parseMoveHomeTargetKey,
   setHomeErrorCode,
@@ -183,11 +184,52 @@ describe('setHomeErrorCode', () => {
 
 describe('isHomeBackedTabType', () => {
   it('gates the panels that read the home checkout or run on the home', () => {
-    for (const type of ['file', 'diff', 'terminal', 'changes', 'local-changes']) {
+    for (const type of [
+      'file',
+      'diff',
+      'terminal',
+      'changes',
+      'local-changes',
+      'code-review',
+      'chat-changes',
+      'activity-changes',
+    ]) {
       expect(isHomeBackedTabType(type)).toBe(true);
     }
-    for (const type of ['agent', 'note', 'discussion', 'browser', 'settings', 'workspace']) {
+    // Served by the orchestrator itself: chats, notes, discussions, hook code,
+    // settings and overviews keep working while the home is away.
+    for (const type of [
+      'agent',
+      'agent-overview',
+      'note',
+      'discussion',
+      'browser',
+      'settings',
+      'workspace',
+      'overview',
+      'hook-script',
+    ]) {
       expect(isHomeBackedTabType(type)).toBe(false);
     }
+  });
+});
+
+describe('moveHomeMenuVisible', () => {
+  const base = { status: WorkspaceStatusEnum.Active, home: ATTACHED };
+  it('offers Move home to owners and managers of a workspace with a movable home', () => {
+    expect(moveHomeMenuVisible(base, true)).toBe(true);
+    expect(moveHomeMenuVisible({ ...base, home: { ...ATTACHED, state: 'detached' } }, true)).toBe(
+      true,
+    );
+  });
+
+  it('hides it without a home, for collaborators, while moving and on a purged workspace', () => {
+    expect(moveHomeMenuVisible({ status: WorkspaceStatusEnum.Active }, true)).toBe(false);
+    expect(moveHomeMenuVisible(base, false)).toBe(false);
+    expect(moveHomeMenuVisible({ ...base, home: { ...ATTACHED, state: 'moving' } }, true)).toBe(
+      false,
+    );
+    // A Retired workspace shows no Move home dialog, so the item must not open one.
+    expect(moveHomeMenuVisible({ ...base, status: WorkspaceStatusEnum.Retired }, true)).toBe(false);
   });
 });

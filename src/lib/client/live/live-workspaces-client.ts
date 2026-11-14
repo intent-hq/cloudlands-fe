@@ -63,6 +63,7 @@ import type {
 import { BackendError } from './backend-transport-types';
 import { collectListPages } from '$shared/paged-list';
 import { backendRequest } from './backend-transport';
+import { createLogger } from '$lib/utils/client-logger';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   extractConflict,
@@ -70,6 +71,8 @@ import {
   newIdempotencyKey,
   runMutation,
 } from './live-support';
+
+const logger = createLogger('LiveWorkspacesClient');
 
 /**
  * Transport timeout for `workspace.delete` (PROTOCOL §5.1). Longer than the
@@ -113,8 +116,12 @@ function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
   const { defaultAgentPlacement, home, ...fields } = raw;
-  // Workspace homes (PROTOCOL nodes.md): a value outside the contract is dropped.
+  // Workspace homes (PROTOCOL nodes.md): a value outside the contract is
+  // dropped and logged as a wire mismatch.
   const parsedHome = parseWorkspaceHome(home);
+  if (home !== undefined && !parsedHome) {
+    logger.warn('workspace row carried a home outside the contract', { workspaceId: id });
+  }
   return {
     ...(fields as Partial<Workspace>),
     ...(defaultAgentPlacement === undefined

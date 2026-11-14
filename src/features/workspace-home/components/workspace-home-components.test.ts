@@ -6,6 +6,16 @@ import type { WorkspaceHome } from '$shared/types/workspace-home';
 import { homeMoveTargetKey, workspaceHomeView, type MoveHomeOption } from '../workspace-home';
 import WorkspaceHomeBanner from './WorkspaceHomeBanner.svelte';
 import MoveHomeDialog from './MoveHomeDialog.svelte';
+import MoveHomeDialogHost from './MoveHomeDialogHost.svelte';
+import Harness from './WorkspaceHomePanelGateHarness.svelte';
+import { store } from '$store/renderer/store';
+import {
+  bulkUpdateWorkspaceEntities,
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { moveHomeDialogClosed, moveHomeDialogOpened } from '../workspace-home-slice';
+import { labelWorkspace } from '../../../test/fixtures/workspace-labels-state';
 
 const HOME: WorkspaceHome = {
   homeId: 'h-1',
@@ -126,5 +136,87 @@ describe('MoveHomeDialog', () => {
 
     render(MoveHomeDialog, { ...props, view: view({ state: 'detached' }) });
     expect(document.querySelector('[data-move-home-warning]')?.textContent).toContain('Mac Studio');
+  });
+});
+
+describe('MoveHomeDialog while the home moves', () => {
+  it('cannot submit once another move has started', async () => {
+    const onSubmit = vi.fn();
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({ state: 'moving' }),
+      options: OPTIONS,
+      initialKey: GARAGE,
+      onSubmit,
+      onCancel: vi.fn(),
+    });
+    expect(submitButton().disabled).toBe(true);
+    await fireEvent.click(submitButton());
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('marks an agent on the current home machine as the current home', () => {
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: [
+        { ...OPTIONS[0], key: homeMoveTargetKey({ agentId: 'agent-2' }), nodeId: 'd-mac-studio' },
+      ],
+      currentNodeId: 'd-mac-studio',
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    expect(screen.getByRole('radio').textContent).toContain(
+      m.workspaceHome_moveDialog_currentHome(),
+    );
+  });
+});
+
+describe('MoveHomeDialogHost', () => {
+  it('opens only in the surface of the workspace the dialog is for', async () => {
+    store.init();
+    for (const id of ['ws-a', 'ws-b']) {
+      store.dispatch(setWorkspaceEntity(labelWorkspace(id, { home: { ...HOME, homeId: id } })));
+    }
+    render(MoveHomeDialogHost, { workspaceId: 'ws-a' });
+    render(MoveHomeDialogHost, { workspaceId: 'ws-b' });
+
+    store.dispatch(moveHomeDialogOpened('ws-b'));
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[data-move-home-dialog]')).toHaveLength(1),
+    );
+    store.dispatch(moveHomeDialogClosed());
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[data-move-home-dialog]')).toHaveLength(0),
+    );
+  });
+});
+
+describe('WorkspaceHomePanelGate', () => {
+  it('keeps the panel mounted under the notice, so unsaved work survives a detach', async () => {
+    store.init();
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-gate', { home: HOME })));
+    render(Harness, { workspaceId: 'ws-gate' });
+    const child = await vi.waitFor(() => {
+      const el = document.querySelector('[data-gated-child]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const setHome = (home: WorkspaceHome) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-gate', { home })]));
+
+    setHome({ ...HOME, state: 'detached', since: '2026-11-12T09:42:00Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
+    );
+    expect(document.querySelector('[data-gated-child]')).toBe(child);
+
+    setHome({ ...HOME, since: '2026-11-12T09:50:00Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-gated-child]')).toBe(child);
   });
 });

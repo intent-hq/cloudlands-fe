@@ -88,7 +88,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import WorkspaceHomeLine from '$features/workspace-home/components/WorkspaceHomeLine.svelte';
-  import { workspaceHomeView } from '$features/workspace-home/workspace-home';
+  import { moveHomeMenuVisible, workspaceHomeView } from '$features/workspace-home/workspace-home';
   import { moveHomeMenuAction } from '$features/workspace-home/workspace-home-menu';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
@@ -623,7 +623,7 @@
     ...(shareAction ? [shareAction] : []),
     ...(leaveAction ? [leaveAction] : []),
     ...(transferAction ? [transferAction] : []),
-    ...(homeView?.canMove && !$hidesOwnerActions$ && workspaceId
+    ...(workspaceId && moveHomeMenuVisible($workspace, !$hidesOwnerActions$)
       ? [moveHomeMenuAction(workspaceId)]
       : []),
   ]);

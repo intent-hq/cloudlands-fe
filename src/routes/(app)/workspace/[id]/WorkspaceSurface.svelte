@@ -96,6 +96,7 @@
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import RetiredWorkspaceBanner from '$lib/components/workspace/RetiredWorkspaceBanner.svelte';
   import WorkspaceHomeBannerHost from '$features/workspace-home/components/WorkspaceHomeBannerHost.svelte';
+  import MoveHomeDialogHost from '$features/workspace-home/components/MoveHomeDialogHost.svelte';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -894,6 +895,7 @@
 {#snippet modalsContent()}
   {#if active}
     <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
+    <MoveHomeDialogHost workspaceId={$workspace?.id || workspaceId} />
     <InputDialog
       bind:open={createFileDialogOpen}
       title={m.workspace_page_createFile_title()}

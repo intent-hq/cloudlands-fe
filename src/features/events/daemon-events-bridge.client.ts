@@ -2896,10 +2896,12 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     changes.autoArchiveDisabled = raw.autoArchiveDisabled || undefined;
   }
   // Workspace homes (PROTOCOL nodes.md): `home` arrives whole on every
-  // change; a value outside the contract is dropped, never patched.
+  // change. A value outside the contract is not applied (the stored home
+  // stays) and is logged as a wire mismatch, never patched.
   if ('home' in raw) {
     const home = parseWorkspaceHome(raw.home);
     if (home) changes.home = home;
+    else logger.warn('workspace:updated carried a home outside the contract', { workspaceId });
   }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;

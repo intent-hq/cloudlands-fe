@@ -14,7 +14,11 @@ vi.mock('$lib/components/patterns/notify', () => ({
 
 import { store as appStore } from '$store/renderer/store';
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  bulkUpdateWorkspaceEntities,
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
 import { labelWorkspace } from '../../test/fixtures/workspace-labels-state';
@@ -139,6 +143,23 @@ describe('Move home', () => {
   });
 });
 
+describe('Move home races', () => {
+  it('keeps a newer home from workspace:updated over a late setHome reply', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.request.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    appStore.dispatch(moveHomeDialogOpened(WS));
+    appStore.dispatch(moveHomeRequested(WS, { kind: 'machine', nodeId: 'd-garage' }));
+
+    // The move finishes and its event lands before the RPC reply is handled.
+    const attached: WorkspaceHome = { ...MOVING, state: 'attached', since: '2026-11-12T10:02:00Z' };
+    appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: attached })]));
+    resolve({ home: MOVING });
+
+    await vi.waitFor(() => expect(dialog().workspaceId).toBeNull());
+    expect(home()).toEqual(attached);
+  });
+});
+
 describe('Wait', () => {
   it('asks the backend to reconnect the home, then shows the re-read home', async () => {
     const attached = { ...DETACHED, state: 'attached', since: '2026-11-12T10:05:00Z' };
@@ -193,5 +214,31 @@ describe('Wait', () => {
 
     await vi.waitFor(() => expect(selectHomeWaiting.select(appStore.state, WS)).toBe(false));
     expect(calls('remoteMachines.refresh')).toHaveLength(1);
+  });
+});
+
+describe('Wait and the machine list', () => {
+  it('keeps the refreshed machine row the backend returns', async () => {
+    const machine = {
+      id: 'd-mac-studio',
+      name: 'Mac Studio',
+      hosts: ['192.0.2.4'],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'connected',
+      runningAgents: 0,
+      addedAt: '2026-10-30T00:00:00Z',
+    };
+    mocks.request.mockImplementation(async (method: string) =>
+      method === 'remoteMachines.refresh'
+        ? { machine }
+        : { workspace: { id: WS, title: WS, branch: 'main', status: 'Active', home: DETACHED } },
+    );
+    appStore.dispatch(homeWaitRequested(WS));
+
+    await vi.waitFor(() => expect(selectHomeWaiting.select(appStore.state, WS)).toBe(false));
+    expect(appStore.state.remoteMachines.machines['d-mac-studio']).toMatchObject({
+      state: 'connected',
+    });
   });
 });

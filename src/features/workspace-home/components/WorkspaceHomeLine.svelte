@@ -25,6 +25,8 @@
   >
     <Fa icon={faHardDrive} class="size-3.5 shrink-0" />
     <span class="min-w-0 truncate">{m.workspaceHome_header_label({ name: home.name })}</span>
+    <!-- The last backup is a hover tooltip; screen readers get it inline. -->
+    {#if lastBackup}<span class="sr-only">{lastBackup}</span>{/if}
     {#if home.marker}
       <Badge
         variant="dot"

@@ -1,8 +1,10 @@
 <script lang="ts">
   /**
-   * Shows the home's reason instead of `children` while the workspace's home
-   * is detached or moving: file, diff and terminal views would only fail with
-   * `home-unavailable`. Renders `children` unchanged without a home.
+   * Covers `children` with the home's reason while the workspace's home is
+   * detached or moving: file, diff and terminal views would only fail with
+   * `home-unavailable`. The panel stays mounted (inert, under the notice), so
+   * an unsaved edit or a terminal buffer survives until the home is back.
+   * Renders `children` unchanged without a home.
    */
   import type { Snippet } from 'svelte';
   import { writable } from 'svelte/store';
@@ -27,14 +29,20 @@
   const view = $derived($view$);
 </script>
 
-{#if view?.unavailable}
-  <WorkspaceHomePanelNotice
-    {view}
-    canMove={$canMove$}
-    waiting={$waiting$}
-    onWait={() => appStore.dispatch(homeWaitRequested(workspaceId))}
-    onMove={() => appStore.dispatch(moveHomeDialogOpened(workspaceId))}
-  />
-{:else}
-  {@render children()}
-{/if}
+<!-- Both wrappers keep the flex column the panel content renderer gives its tab. -->
+<div class="relative flex h-full min-h-0 w-full flex-col" data-workspace-home-panel-gate>
+  <div class="flex min-h-0 w-full flex-1 flex-col" inert={view?.unavailable ? true : undefined}>
+    {@render children()}
+  </div>
+  {#if view?.unavailable}
+    <div class="absolute inset-0 z-10 bg-background">
+      <WorkspaceHomePanelNotice
+        {view}
+        canMove={$canMove$}
+        waiting={$waiting$}
+        onWait={() => appStore.dispatch(homeWaitRequested(workspaceId))}
+        onMove={() => appStore.dispatch(moveHomeDialogOpened(workspaceId))}
+      />
+    </div>
+  {/if}
+</div>
