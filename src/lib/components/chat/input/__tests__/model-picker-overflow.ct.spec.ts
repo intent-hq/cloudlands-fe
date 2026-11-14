@@ -199,7 +199,9 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   await page.getByTestId('model-provider-refresh-button').press('Enter');
   await expect(outer).toBeVisible();
   await expect(page.getByTestId('refresh-requests')).toHaveText(
-    JSON.stringify([{ channel: 'codex:get-models', params: { forceRefresh: true } }]),
+    JSON.stringify([
+      { channel: 'providers:get-models', params: { providerId: 'codex', forceRefresh: true } },
+    ]),
   );
   await search.fill('Model 20');
   await search.press('Escape');

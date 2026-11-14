@@ -316,6 +316,7 @@ import { registerAgentContextHandlers } from '../features/agent/agent-context.ip
 import { featureCodesService } from '../features/feature-codes/main/feature-codes.service';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupProviderModelsIPC } from '../features/providers/main/provider-models.ipc';
+import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
@@ -1646,7 +1647,8 @@ const bootFlow = app.whenReady().then(async () => {
   registerDeepLinkHandlers(); // Needed for deep link and file operations
 
   // These handlers are called immediately on startup, so register them synchronously
-  setupProviderModelsIPC(); // Needed for every <provider>:get-models
+  setupProviderModelsIPC(); // Needed for providers:get-models
+  setupAuggieIPC(); // Needed for auggie:* session, user and MCP handlers
   // Feature codes gate experimental providers in provider availability. The
   // service init is async, so it is not awaited on the startup critical path.
   // (The feature-codes:* channels are answered by the renderer bridge seeder.)

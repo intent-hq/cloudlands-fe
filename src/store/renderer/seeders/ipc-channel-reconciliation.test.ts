@@ -78,7 +78,7 @@ const WRAPPER_ARROW_DECL_RE =
  * prefer `window.electronAPI.invoke(channel)`). The wrapper body's own invoke
  * is dynamic (a bare parameter), so the concrete channels only exist at the
  * wrapper's call sites — treating the wrapper name as an invoke head is what
- * lets the audit see them (the 9 `*:get-models` channels escaped this way).
+ * lets the audit see them (the per-provider model channels once escaped this way).
  */
 function collectPassthroughWrapperNames(source: string): string[] {
   const names: string[] = [];
@@ -255,10 +255,10 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // drops such call sites entirely — settings:getAll escaped to a runtime
     // UnbridgedMockIpcChannelError that way. Guards the depth-aware parser.
     expect(invoked.has('auto-update:get-state')).toBe(true);
-    // The 9 `*:get-models` channels are dispatched through a runtime
-    // provider → channel map (provider-models.client.ts), so they are
-    // dynamic call sites — recorded in DYNAMIC_INVOKE_CALL_SITES below.
-    expect(DYNAMIC_INVOKE_CALL_SITES.has('droid:get-models')).toBe(true);
+    // Passthrough wrapper call site (`invokeModelChannel(PROVIDERS_CHANNELS.GET_MODELS, …)`,
+    // provider-models.client.ts). The per-provider model channels escaped the
+    // scan before the wrapper resolver, and later lived in a runtime map.
+    expect(invoked.has('providers:get-models')).toBe(true);
     // Group-alias local (`const BACKEND = IPC_CHANNELS.BACKEND` →
     // `api.invoke(BACKEND.REQUEST, …)`, backend-transport.ts). Guards the
     // per-file alias resolver.
@@ -441,34 +441,13 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
 
 /**
  * Scanner limitation — dynamically invoked channels. These channels are only
- * ever passed to `invoke` through a runtime variable (e.g. a provider →
- * channel map), so the static argument resolver above cannot see them. Each
+ * ever passed to `invoke` through a runtime variable (e.g. a lookup table),
+ * so the static argument resolver above cannot see them. Each
  * entry records the call site that dispatches it. They count as invoked for
  * the coverage and dead-entry checks; remove an entry when its call site is
  * retired or rewritten as a statically-resolvable invoke.
  */
-const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
-  // provider-models.client.ts dispatches the uniform `<provider>:get-models`
-  // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
-  // selected at runtime by providerId, so the scanner cannot see them.
-  [
-    'antigravity:get-models',
-    'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)',
-  ],
-  ['auggie:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  [
-    'claude-code:get-models',
-    'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)',
-  ],
-  ['codex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['cortex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['cursor:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['droid:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['grok:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['opencode:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['pi:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-  ['unsloth:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
-]);
+const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map<string, string>();
 
 /**
  * Live daemon transport — the renderer↔intentd JSON-RPC bridge

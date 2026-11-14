@@ -106,7 +106,7 @@ const KNOWN_BRIDGE_WRAPPERS: ReadonlyMap<string, KnownBridgeWrapper> = new Map([
   [
     'src/features/providers/provider-models.client.ts',
     {
-      reason: '`invokeModelChannel` sends each provider `*:get-models` channel to main.',
+      reason: '`invokeModelChannel` sends `providers:get-models` to main.',
       channelFiles: ['src/features/providers/provider-models.client.ts'],
     },
   ],

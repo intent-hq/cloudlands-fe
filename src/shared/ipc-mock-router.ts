@@ -251,6 +251,23 @@ export function overrideMockIpcHandler(
   };
 }
 
+/**
+ * `overrideMockIpcHandler` for the invokes `matches` accepts only; any other
+ * invoke reaches the handler this override replaced (or `handler` when there
+ * was none). Lets several scopes share one parameterised channel.
+ * @internal Test and preview seam.
+ */
+export function overrideMockIpcHandlerWhen(
+  channel: string,
+  matches: (...args: unknown[]) => boolean,
+  handler: MockIpcInvokeHandler,
+): MockIpcUnsubscribe {
+  const previous = invokeHandlers.get(channel);
+  return overrideMockIpcHandler(channel, (...args) =>
+    previous && !matches(...args) ? previous(...args) : handler(...args),
+  );
+}
+
 /** Remove a previously registered invoke handler. */
 export function unregisterMockIpcHandler(channel: string): void {
   invokeHandlers.delete(channel);

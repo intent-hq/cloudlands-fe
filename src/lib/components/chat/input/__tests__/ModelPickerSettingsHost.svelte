@@ -21,6 +21,7 @@
   } from '$store/renderer/slices/model/model-slice';
   import { selectDefaultReasoningEffort } from '$store/renderer/slices/model/model-selectors';
   import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
+  import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { wireModelsToProviderModels } from '$shared/models/wire-model-info';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import { appClient } from '$lib/client';
@@ -46,18 +47,18 @@
   admitLegacyPrincipal();
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
   store.dispatch(hydrateDefaultProvider(consumer === 'specialist' ? 'claude-code' : 'codex'));
+  const otherModels = [{ value: 'other', label: 'Other provider model' }];
+  registerMockIpcHandler(PROVIDERS_CHANNELS.GET_MODELS, (params) => ({
+    success: true,
+    data: (params as { providerId: string }).providerId === 'codex' ? models : otherModels,
+  }));
   for (const providerId of ['codex', 'claude-code']) {
     store.dispatch(setProviderEnabled({ providerId, enabled: true }));
     store.dispatch(
       checkSingleProviderSuccess(providerId, { available: true, authenticated: true }),
     );
-    const providerModels =
-      providerId === 'codex' ? models : [{ value: 'other', label: 'Other provider model' }];
+    const providerModels = providerId === 'codex' ? models : otherModels;
     store.dispatch(providerModelsLoaded(providerId, { models: providerModels }, 0));
-    registerMockIpcHandler(`${providerId}:get-models`, () => ({
-      success: true,
-      data: providerModels,
-    }));
   }
   store.dispatch(checkAllProvidersComplete());
   store.dispatch(setAvailableModels(models, 'codex'));
@@ -103,9 +104,7 @@
     appClient.settings.update = originalUpdate;
     appClient.settings.updateSnapshot = originalUpdateSnapshot;
     appClient.settings.listSnapshot = originalListSnapshot;
-    for (const providerId of ['codex', 'claude-code']) {
-      unregisterMockIpcHandler(`${providerId}:get-models`);
-    }
+    unregisterMockIpcHandler(PROVIDERS_CHANNELS.GET_MODELS);
     disposeStore();
   });
 </script>

@@ -25,7 +25,8 @@ import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { emitMockIpcEvent, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { emitMockIpcEvent } from '$shared/ipc-mock-router';
+import { overrideProviderModelsHandler } from '../../../test/catalog-preview-ipc';
 import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
@@ -181,8 +182,8 @@ export function setupConversationWire(
   let nextId = 0;
   let releaseSend: ((result: unknown) => void) | undefined;
   let releaseEnhancement: (() => void) | undefined;
-  const restoreModels = overrideMockIpcHandler('auggie:get-models', (params) => {
-    record({ method: 'auggie:get-models', params: (params ?? {}) as Record<string, unknown> });
+  const restoreModels = overrideProviderModelsHandler('auggie', (params) => {
+    record({ method: 'providers:get-models', params: (params ?? {}) as Record<string, unknown> });
     const effortLevels = options.providerChoice ? { effortLevels: ['low', 'medium', 'high'] } : {};
     return {
       success: true,
@@ -198,9 +199,9 @@ export function setupConversationWire(
     };
   });
   const restoreClaudeModels = options.providerChoice
-    ? overrideMockIpcHandler('claude-code:get-models', (params) => {
+    ? overrideProviderModelsHandler('claude-code', (params) => {
         record({
-          method: 'claude-code:get-models',
+          method: 'providers:get-models',
           params: (params ?? {}) as Record<string, unknown>,
         });
         return {
@@ -669,8 +670,8 @@ export function setupConversationWire(
         if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
       }
       subscriptions.clear();
-      restoreModels();
       restoreClaudeModels();
+      restoreModels();
       restoreBridge();
     },
   };

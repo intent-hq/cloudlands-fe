@@ -75,16 +75,12 @@ export const ENFORCED_DIRS = [
   'src/features/acp-official/types',
   'src/features/acp-official/utils',
   'src/features/auggie',
-  'src/features/claude-code',
   'src/features/codex',
   'src/features/cortex/main',
   'src/features/droid',
-  'src/features/grok',
   'src/features/opencode',
   'src/features/pi',
   'src/features/providers',
-  'src/features/antigravity',
-  'src/features/cursor',
   // remaining feature dirs (final flip). agent/testing,
   // acp-official main/server + parsers/plans, and cortex/cortex-acp emit
   // agent-facing prompt/wire content — intentionally not enforced.

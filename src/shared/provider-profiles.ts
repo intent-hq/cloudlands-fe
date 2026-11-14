@@ -382,7 +382,7 @@ export function providerRefLabelParts(
 }
 
 /**
- * `models.list` `providerId` for a `<base>:get-models` channel (§5.54): the
+ * `models.list` `providerId` for a `providers:get-models` request (§5.54): the
  * requested profile reference when it names a profile of that same base
  * provider, otherwise the base itself. A profile's catalog is served under its
  * own reference, so caches never cross configurations.

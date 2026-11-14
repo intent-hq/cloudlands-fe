@@ -4,6 +4,7 @@
     setAvailableModels,
   } from '$store/renderer/slices/model/model-slice';
   import { onDestroy, untrack } from 'svelte';
+  import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import ModelPicker from '../ModelPicker.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
   import { store } from '$store/renderer/store';
@@ -79,26 +80,27 @@
       0,
     ),
   );
-  registerMockIpcHandler('codex:get-models', (params) => {
-    if (params) refreshRequests = [...refreshRequests, { channel: 'codex:get-models', params }];
+  const otherModels = [{ value: 'other-model', label: 'Other provider model' }];
+  registerMockIpcHandler(PROVIDERS_CHANNELS.GET_MODELS, (params) => {
+    const { providerId, ...options } = params as { providerId: string };
+    if (providerId !== 'codex') return { success: true, data: otherModels };
+    if (Object.keys(options).length > 0)
+      refreshRequests = [...refreshRequests, { channel: PROVIDERS_CHANNELS.GET_MODELS, params }];
     return { success: true, data: models };
   });
   if (multipleProviders) {
-    const otherModels = [{ value: 'other-model', label: 'Other provider model' }];
     store.dispatch(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
     store.dispatch(
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }),
     );
     store.dispatch(providerModelsLoaded('claude-code', { models: otherModels }, 0));
-    registerMockIpcHandler('claude-code:get-models', () => ({ success: true, data: otherModels }));
   }
   if (defaultProviderDisabled) {
     store.dispatch(setAvailableModels(models, 'codex'));
     store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: false }));
   }
   onDestroy(() => {
-    unregisterMockIpcHandler('codex:get-models');
-    if (multipleProviders) unregisterMockIpcHandler('claude-code:get-models');
+    unregisterMockIpcHandler(PROVIDERS_CHANNELS.GET_MODELS);
     disposeStore();
   });
 </script>

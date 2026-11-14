@@ -1,10 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IpcMainInvokeEvent } from 'electron';
 
-type ModelHandler = (
-  event: IpcMainInvokeEvent,
-  params?: { forceRefresh?: boolean; workspaceId?: string },
-) => unknown;
+type ModelHandler = (event: IpcMainInvokeEvent, params?: unknown) => unknown;
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn<(channel: string, handler: ModelHandler) => void>(),
@@ -28,8 +25,7 @@ vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', ()
 
 import { getProviderModels } from './provider-models.client';
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
-import { setupAntigravityIPC } from '../antigravity/main/antigravity.ipc';
-import { setupCodexIPC } from '../codex/main/codex.ipc';
+import { setupProviderModelsIPC } from './main/provider-models.ipc';
 
 const event = { sender: { id: 730 } } as IpcMainInvokeEvent;
 const wireModel = {
@@ -49,7 +45,7 @@ beforeAll(async () => {
  * handler), bridge-less web (mock router → daemon bridge seeder), and the dev
  * web build with `$lib/browser-mock` installed — a fake `window.electronAPI`
  * carrying the mock's sentinel electron version whose `invoke` answers every
- * `*:get-models` channel with an empty catalog (intent-hq/intent#5297).
+ * `providers:get-models` with an empty catalog (intent-hq/intent#5297).
  */
 type Transport = 'Electron' | 'web' | 'web with browser mock';
 
@@ -66,10 +62,7 @@ function windowFor(transport: Transport): object {
   }
   return {
     electronAPI: {
-      invoke: async (
-        channel: string,
-        params?: { forceRefresh?: boolean; workspaceId?: string },
-      ) => {
+      invoke: async (channel: string, params?: unknown) => {
         const registration = mocks.handle.mock.calls.find(([name]) => name === channel);
         if (!registration) throw new Error(`No Electron handler: ${channel}`);
         return registration[1](event, params);
@@ -85,7 +78,7 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
     beforeEach(() => {
       vi.resetAllMocks();
       mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
-      setupAntigravityIPC();
+      setupProviderModelsIPC();
       vi.stubGlobal('window', windowFor(transport));
     });
 
@@ -148,10 +141,8 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
       );
     });
 
-    it('rejects unknown providers without invoking a transport', async () => {
-      await expect(getProviderModels('not-a-provider')).rejects.toThrow(
-        'not-a-provider: Unsupported model provider: not-a-provider',
-      );
+    it('rejects an empty provider id without asking the daemon', async () => {
+      await expect(getProviderModels('')).rejects.toThrow('Unsupported model provider');
       expect(mocks.request).not.toHaveBeenCalled();
     });
 
@@ -170,15 +161,15 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
   },
 );
 
-// §5.54: a named profile's catalog is listed under its own reference through
-// its base provider's channel, on every transport.
+// §5.54: a named profile's catalog is listed under its own reference, on
+// every transport.
 describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
   'named profile model catalog via %s',
   (transport) => {
     beforeEach(() => {
       vi.resetAllMocks();
       mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
-      setupCodexIPC();
+      setupProviderModelsIPC();
       vi.stubGlobal('window', windowFor(transport));
     });
 
@@ -208,22 +199,31 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
   },
 );
 
-// intent-hq/intent#9253: a provider the app knows about but that has no
-// `<provider>:get-models` channel is rejected as "Unsupported model provider"
-// before the daemon is asked. Every known provider must reach models.list.
-describe('every known provider reaches the daemon model catalog', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-    vi.stubGlobal('window', windowFor('web'));
-  });
+// intent-hq/intent#9253: Cursor shipped without a model route, so the picker
+// said "Unsupported model provider" and listed nothing. Every provider id —
+// including one added after this test was written — must reach models.list
+// on both the desktop and web paths.
+describe.each<Transport>(['Electron', 'web'])(
+  'every provider reaches the daemon model catalog via %s',
+  (transport) => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+      mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
+      setupProviderModelsIPC();
+      vi.stubGlobal('window', windowFor(transport));
+    });
 
-  afterEach(() => vi.unstubAllGlobals());
+    afterEach(() => vi.unstubAllGlobals());
 
-  const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter((id) => id !== 'mock');
+    const providerIds = [
+      ...Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter((id) => id !== 'mock'),
+      'provider-added-later',
+    ];
 
-  it.each(providerIds)('%s', async (providerId) => {
-    mocks.request.mockResolvedValue({ providerId, models: [] });
-    await expect(getProviderModels(providerId)).resolves.toEqual({ models: [] });
-    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', { providerId });
-  });
-});
+    it.each(providerIds)('%s', async (providerId) => {
+      mocks.request.mockResolvedValue({ providerId, models: [wireModel] });
+      await expect(getProviderModels(providerId)).resolves.toEqual({ models: [model] });
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', { providerId });
+    });
+  },
+);

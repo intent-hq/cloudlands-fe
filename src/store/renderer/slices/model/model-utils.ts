@@ -22,7 +22,7 @@ export type ProviderModel = ProviderModelEntry;
 
 /**
  * Fetch raw models for a specific provider through the uniform daemon-backed
- * `<provider>:get-models` channel (`models.list { providerId }`, PROTOCOL
+ * `providers:get-models` channel (`models.list { providerId }`, PROTOCOL
  * §6.7). Normalizes aliases (e.g. 'acp' → 'auggie') via getProviderConfig().
  */
 async function fetchProviderModelsWithWarning(

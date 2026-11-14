@@ -6,7 +6,6 @@ import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggiePathAsync } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
-import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { m } from '../../../shared/paraglide/messages.js';
@@ -36,13 +35,6 @@ export function setupAuggieIPC() {
       };
     }
   });
-
-  // Get available models for auggie — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(
-    AUGGIE_CHANNELS.GET_MODELS,
-    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
-      getProviderModelsEnvelope('auggie', params, event),
-  );
 
   // Get the latest session file
   ipcMain.handle(AUGGIE_CHANNELS.GET_LATEST_SESSION, async () => {

@@ -61,7 +61,9 @@ for (const placement of ['settings', 'modal'] as const) {
     await expect(details).toHaveCount(0);
     await expect(page.getByRole('option', { name: /Reasoning model/ })).toBeVisible();
     await expect(page.getByTestId('refresh-requests')).toHaveText(
-      JSON.stringify([{ channel: 'codex:get-models', params: { forceRefresh: true } }]),
+      JSON.stringify([
+        { channel: 'providers:get-models', params: { providerId: 'codex', forceRefresh: true } },
+      ]),
     );
   });
 }

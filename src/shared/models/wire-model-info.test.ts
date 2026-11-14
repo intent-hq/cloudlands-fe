@@ -1,5 +1,5 @@
 /**
- * Unit tests for the shared `<provider>:get-models` reply builder. Both build
+ * Unit tests for the shared `providers:get-models` reply builder. Both build
  * paths (Electron main and the daemon/web bridge seeder) return this builder's
  * output, so these cases pin the envelope semantics for both at once.
  */
