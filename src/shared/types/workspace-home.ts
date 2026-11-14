@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 
-export const WORKSPACE_HOME_STATES = ['attached', 'detached', 'moving'] as const;
+const WORKSPACE_HOME_STATES = ['attached', 'detached', 'moving'] as const;
 export type WorkspaceHomeState = (typeof WORKSPACE_HOME_STATES)[number];
 
 const WorkspaceHomeSchema = z.object({

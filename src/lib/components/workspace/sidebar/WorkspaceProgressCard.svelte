@@ -88,7 +88,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import WorkspaceHomeLine from '$features/workspace-home/components/WorkspaceHomeLine.svelte';
-  import * as homeSel from '$features/workspace-home/workspace-home-selectors';
+  import { workspaceHomeView } from '$features/workspace-home/workspace-home';
   import { moveHomeMenuAction } from '$features/workspace-home/workspace-home-menu';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
@@ -496,8 +496,7 @@
   );
 
   // Workspace homes (orchestrator only): owners and managers move the home.
-  const homeView$ = homeSel.selectWorkspaceHomeView(workspaceIdStore);
-  const canMoveHome$ = homeSel.selectCanMoveWorkspaceHome(workspaceIdStore);
+  const homeView = $derived(workspaceHomeView($workspace));
   const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
   const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
@@ -624,7 +623,9 @@
     ...(shareAction ? [shareAction] : []),
     ...(leaveAction ? [leaveAction] : []),
     ...(transferAction ? [transferAction] : []),
-    ...($canMoveHome$ && workspaceId ? [moveHomeMenuAction(workspaceId)] : []),
+    ...(homeView?.canMove && !$hidesOwnerActions$ && workspaceId
+      ? [moveHomeMenuAction(workspaceId)]
+      : []),
   ]);
 
   function handleClickOutside(e: MouseEvent) {
@@ -1044,7 +1045,7 @@
           </TooltipRich>
         {/if}
       </div>
-      <WorkspaceHomeLine view={$homeView$} />
+      <WorkspaceHomeLine view={homeView} />
     </div>
   </div>
 

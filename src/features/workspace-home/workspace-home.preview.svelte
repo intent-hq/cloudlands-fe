@@ -123,7 +123,7 @@
 </script>
 
 {#if dialog && view}
-  <div class="relative min-h-[820px] w-full">
+  <div class="relative min-h-205 w-full">
     <MoveHomeDialog
       open
       static
@@ -143,7 +143,7 @@
 {:else if view}
   <div class="flex w-full min-w-0 flex-col gap-4 bg-background p-4 text-foreground">
     <div
-      class="flex h-[460px] w-full min-w-0 flex-col overflow-hidden rounded-(--radius-large) border border-border"
+      class="flex h-115 w-full min-w-0 flex-col overflow-hidden rounded-(--radius-large) border border-border"
       data-workspace-home-preview
     >
       <div class="flex flex-col gap-1 border-b border-border px-4 py-3">
@@ -154,7 +154,7 @@
       <div class="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-2">
         <div class="flex flex-col gap-3 border-border p-4 sm:border-r">
           <p class="type-caption text-muted-foreground">Coordinator</p>
-          <div class="max-w-[85%] self-end rounded-(--radius-medium) bg-muted px-3 py-2 type-body">
+          <div class="max-w-4/5 self-end rounded-(--radius-medium) bg-muted px-3 py-2 type-body">
             Chats keep working while the home is away.
           </div>
         </div>

@@ -23,7 +23,7 @@ export interface WorkspaceHomeUiState {
   waiting: Record<string, true>;
 }
 
-export const initialWorkspaceHomeState: WorkspaceHomeUiState = {
+const initialWorkspaceHomeState: WorkspaceHomeUiState = {
   dialogWorkspaceId: null,
   moveStatus: 'idle',
   moveFailure: null,

@@ -51,7 +51,6 @@
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
-  import MoveHomeDialogHost from '$features/workspace-home/components/MoveHomeDialogHost.svelte';
   import BulkTransferModalHost from '$lib/components/modals/BulkTransferModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
   import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
@@ -1131,7 +1130,6 @@
 
   <!-- Redux-owned Transfer/Download wizard host (global for all workspace entrypoints) -->
   <TransferWorkspaceModalHost />
-  <MoveHomeDialogHost />
   <BulkTransferModalHost />
 
   <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->

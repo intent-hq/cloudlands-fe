@@ -1,8 +1,7 @@
 import { store } from '$store/renderer/store';
-import {
-  selectCanManageWorkspace,
-  selectWorkspaceById,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import type { Workspace } from '$shared/types';
+import { selectCanManageWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import { selectStartOnRows } from '$features/remote-machines/remote-machines-selectors';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
@@ -20,7 +19,7 @@ const viewsByHome = new WeakMap<WorkspaceHome, WorkspaceHomeView>();
 /** The workspace's home as the UI shows it; null when it has none (homes are gated). */
 export const selectWorkspaceHomeView = store.createSelector(
   (state, workspaceId: string): WorkspaceHomeView | null => {
-    const workspace = selectWorkspaceById.select(state, workspaceId);
+    const workspace = getItem(state.workspace.workspaces, workspaceId as Workspace['id']);
     const home = workspace?.home;
     if (!home) return null;
     const cached = viewsByHome.get(home);

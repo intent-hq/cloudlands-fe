@@ -143,6 +143,10 @@ vi.mock('$lib/components/workspace/SidebarSkeleton.svelte', mockPart('sidebar-sk
 vi.mock('$lib/components/workspace/ContentSkeleton.svelte', mockPart('content-skeleton'));
 vi.mock('$lib/components/workspace/MultiSelectTabbedSidebar.svelte', mockPart('valid-sidebar'));
 vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
+vi.mock(
+  '$features/workspace-home/components/WorkspaceHomeBannerHost.svelte',
+  mockPart('home-banner'),
+);
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));

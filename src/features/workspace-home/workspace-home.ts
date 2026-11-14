@@ -18,7 +18,7 @@ import {
 } from '$features/remote-machines/start-on';
 
 /** Which banner the workspace shows; detached wins over a backup warning. */
-export type WorkspaceHomeBanner = 'detached' | 'moving' | 'backupWarning';
+type WorkspaceHomeBanner = 'detached' | 'moving' | 'backupWarning';
 
 export interface WorkspaceHomeView {
   name: string;

@@ -1538,23 +1538,26 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
     ['an agent', { agentId: 'agent-1' }],
     ['a machine', { kind: 'machine', nodeId: 'd-garage' }],
     ['a cloud entry', { kind: 'cloud', cloudMachineId: 'e2b-team' }],
-  ] as const)('setHome sends the documented `to` for %s and returns the moving home', async (_, to) => {
-    const home = {
-      homeId: 'h-2',
-      name: 'Garage node',
-      state: 'moving',
-      since: '2026-11-12T10:00:00Z',
-      lastBackupAt: '2026-11-12T09:41:00Z',
-    };
-    mockedRequest.mockResolvedValueOnce({ home });
-    const client = new LiveWorkspacesClient();
+  ] as const)(
+    'setHome sends the documented `to` for %s and returns the moving home',
+    async (_, to) => {
+      const home = {
+        homeId: 'h-2',
+        name: 'Garage node',
+        state: 'moving',
+        since: '2026-11-12T10:00:00Z',
+        lastBackupAt: '2026-11-12T09:41:00Z',
+      };
+      mockedRequest.mockResolvedValueOnce({ home });
+      const client = new LiveWorkspacesClient();
 
-    expect(await client.setHome('ws-abc', to)).toEqual(home);
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.setHome', {
-      workspaceId: 'ws-abc',
-      to,
-    });
-  });
+      expect(await client.setHome('ws-abc', to)).toEqual(home);
+      expect(mockedRequest).toHaveBeenCalledWith('workspace.setHome', {
+        workspaceId: 'ws-abc',
+        to,
+      });
+    },
+  );
 
   it('setHome propagates a documented refusal with its data.code', async () => {
     mockedRequest.mockRejectedValueOnce(

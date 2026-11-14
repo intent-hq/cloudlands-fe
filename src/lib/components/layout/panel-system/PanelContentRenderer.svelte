@@ -121,7 +121,14 @@
     {#if RenderedTabComponent && isHomeBackedTabType(tab.type)}
       <!-- Files, diffs and terminals run on the workspace's home (orchestrator). -->
       <WorkspaceHomePanelGate {workspaceId}>
-        <RenderedTabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
+        <RenderedTabComponent
+          {tab}
+          {workspaceId}
+          {layoutId}
+          {isActive}
+          {isPanelFocused}
+          {onFocus}
+        />
       </WorkspaceHomePanelGate>
     {:else if RenderedTabComponent}
       <RenderedTabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
