@@ -488,12 +488,12 @@ describe('no-component-async-data-fetch ESLint rule', () => {
 
         const { detachAll } = createMockBridgeListeners();
         installMockElectronBridge({ 'agent.get': () => ({ id: 'a' }) });
-        registerMockIpcHandler('codex:get-models', () => ({ success: true, data: [] }));
+        registerMockIpcHandler('providers:get-models', () => ({ success: true, data: [] }));
         const restore = overrideMockIpcHandler('shell:openExternal', () => undefined);
         const push = () => emitMockIpcEvent('backend:notification', { method: 'x' });
 
         onDestroy(() => {
-          unregisterMockIpcHandler('codex:get-models');
+          unregisterMockIpcHandler('providers:get-models');
           restore();
           detachAll();
         });

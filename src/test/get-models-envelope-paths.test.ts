@@ -1,6 +1,6 @@
 /**
- * Both `<provider>:get-models` build paths — the Electron main-process
- * handlers (`daemon-model-catalog.ts`) and the daemon/web-build bridge
+ * Both `providers:get-models` build paths — the Electron main-process
+ * handler (`daemon-model-catalog.ts`) and the daemon/web-build bridge
  * (`model-catalog-bridge-seeder.ts`) — must return the shared
  * `toGetModelsEnvelope` output untouched, so a field added to that builder
  * reaches the desktop and web builds alike.
@@ -41,6 +41,8 @@ import { getProviderModelsEnvelope } from '../main/utils/daemon-model-catalog';
 import { getProviderModels } from '$features/providers/provider-models.client';
 import type { WireModelsListResult } from '$shared/models/wire-model-info';
 
+const CODEX = { providerId: 'codex' };
+
 const WIRE_RESULT: WireModelsListResult & { nextField: string } = {
   providerId: 'codex',
   models: [{ id: 'gpt-a', name: 'GPT A', isDefault: true }],
@@ -75,8 +77,8 @@ describe('get-models envelope parity across build paths', () => {
     mocks.clientRequest.mockResolvedValue(WIRE_RESULT);
     mocks.backendRequest.mockResolvedValue(WIRE_RESULT);
 
-    const desktop = await getProviderModelsEnvelope('codex');
-    const web = await mockInvoke<unknown>('codex:get-models');
+    const desktop = await getProviderModelsEnvelope(CODEX);
+    const web = await mockInvoke<unknown>('providers:get-models', CODEX);
 
     expect(mocks.clientRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
     expect(mocks.backendRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
@@ -88,8 +90,8 @@ describe('get-models envelope parity across build paths', () => {
     mocks.clientRequest.mockRejectedValue(new Error('daemon unreachable'));
     mocks.backendRequest.mockRejectedValue(new Error('daemon unreachable'));
 
-    const desktop = await getProviderModelsEnvelope('codex');
-    const web = await mockInvoke<unknown>('codex:get-models');
+    const desktop = await getProviderModelsEnvelope(CODEX);
+    const web = await mockInvoke<unknown>('providers:get-models', CODEX);
 
     expect(desktop).toEqual({ success: false, error: 'daemon unreachable' });
     expect(web).toEqual(desktop);
@@ -102,8 +104,7 @@ describe('get-models envelope parity across build paths', () => {
       'Electron',
       {
         electronAPI: {
-          invoke: (_channel: string, params?: { forceRefresh?: boolean }) =>
-            getProviderModelsEnvelope('codex', params),
+          invoke: (_channel: string, params?: unknown) => getProviderModelsEnvelope(params),
           versions: { node: '20.0.0', chrome: '120.0.0', electron: '30.0.0' },
         },
       },

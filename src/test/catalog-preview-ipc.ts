@@ -1,6 +1,10 @@
 // IPC fixtures used only by catalog previews. Production bridge registrations stay
 // in the renderer seeders; each preview owns and tears down these temporary handlers.
-import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import {
+  overrideMockIpcHandler,
+  overrideMockIpcHandlerWhen,
+  type MockIpcInvokeHandler,
+} from '$shared/ipc-mock-router';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 import type { GetModelsEnvelope, ProviderModelInfo } from '$shared/models/wire-model-info';
@@ -10,8 +14,20 @@ type ModelCatalogResponse = Pick<GetModelsEnvelope, 'warning' | 'warningKind'> &
 };
 
 /**
- * Serves `<provider>:get-models`. `first`, when given, answers only the first
- * call — e.g. a degraded catalog that Retry then replaces with `rows`.
+ * Answer `providers:get-models` for one base provider (its profiles included);
+ * requests for other providers reach the handler underneath.
+ */
+export function overrideProviderModelsHandler(providerId: string, handler: MockIpcInvokeHandler) {
+  return overrideMockIpcHandlerWhen(
+    PROVIDERS_CHANNELS.GET_MODELS,
+    (data) => (data as { providerId?: unknown } | undefined)?.providerId === providerId,
+    handler,
+  );
+}
+
+/**
+ * Serves `providers:get-models` for `providerId`. `first`, when given, answers
+ * only the first call — e.g. a degraded catalog that Retry then replaces with `rows`.
  */
 export function setupModelPickerPreviewHandler(
   providerId: string,
@@ -19,9 +35,8 @@ export function setupModelPickerPreviewHandler(
   warning?: string,
   first?: ModelCatalogResponse,
 ) {
-  const channel = `${providerId}:get-models`;
   let pending = first;
-  return overrideMockIpcHandler(channel, (): GetModelsEnvelope => {
+  return overrideProviderModelsHandler(providerId, (): GetModelsEnvelope => {
     const served: ModelCatalogResponse = pending ?? { data: rows, warning };
     pending = undefined;
     return {

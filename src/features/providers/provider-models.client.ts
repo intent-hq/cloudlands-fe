@@ -1,11 +1,12 @@
 /**
  * Provider Models Client
  *
- * Single renderer-side client for every provider's `<provider>:get-models`
- * IPC channel. The main-process handlers (and the daemon-build mock-router
- * bridge in `model-catalog-bridge-seeder.ts`) are uniform thin calls to the
- * daemon's per-provider catalog (`models.list { providerId, forceRefresh }`,
- * PROTOCOL §6.7), so one client covers all supported providers.
+ * Single renderer-side client for the shared `providers:get-models` IPC
+ * channel. The main-process handler (and the daemon-build mock-router bridge
+ * in `model-catalog-bridge-seeder.ts`) is a thin call to the daemon's
+ * per-provider catalog (`models.list { providerId, forceRefresh }`, PROTOCOL
+ * §6.7) that takes the provider id, so a new provider needs no wiring here
+ * (intent-hq/intent#9253).
  *
  * `forceRefresh: true` makes the daemon skip its cache read and await a fresh
  * probe — the returned promise resolves only when the probe completes, so
@@ -25,8 +26,13 @@ import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
-import type { GetModelsEnvelope, ProviderModelInfo } from '$shared/models/wire-model-info';
+import type {
+  GetModelsEnvelope,
+  GetModelsParams,
+  ProviderModelInfo,
+} from '$shared/models/wire-model-info';
 
 const logger = createLogger('ProviderModelsClient');
 
@@ -43,25 +49,6 @@ export type ProviderModelsResult = Omit<GetModelsEnvelope, 'success' | 'data' | 
   models: ProviderModelEntry[];
 };
 
-/**
- * The uniform `<provider>:get-models` channels. Recorded in
- * `DYNAMIC_INVOKE_CALL_SITES` (ipc-channel-reconciliation.test.ts) because the
- * concrete channel is selected at runtime.
- */
-const PROVIDER_MODEL_CHANNELS: Record<string, string> = {
-  antigravity: 'antigravity:get-models',
-  auggie: 'auggie:get-models',
-  'claude-code': 'claude-code:get-models',
-  codex: 'codex:get-models',
-  cortex: 'cortex:get-models',
-  cursor: 'cursor:get-models',
-  droid: 'droid:get-models',
-  grok: 'grok:get-models',
-  opencode: 'opencode:get-models',
-  pi: 'pi:get-models',
-  unsloth: 'unsloth:get-models',
-};
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error) return error;
@@ -69,25 +56,20 @@ function toErrorMessage(error: unknown): string {
 }
 
 function toProviderError(providerId: string, message: string): Error {
-  // Only prefix with the display name for known providers — the catalog
-  // lookup falls back to the default provider for unknown IDs, which would
-  // mislabel the error with a different provider's name.
-  const providerName =
-    providerRefBaseId(providerId) in PROVIDER_MODEL_CHANNELS
-      ? selectProviderDisplayName.select(appStore.state, providerId) || providerId
-      : providerId;
+  // An id the catalog does not know reads as itself.
+  const providerName = selectProviderDisplayName.select(appStore.state, providerId) || providerId;
   return new Error(
     message.startsWith(`${providerName}:`) ? message : `${providerName}: ${message}`,
   );
 }
 
 /**
- * Invoke a provider model IPC channel, preferring the real Electron bridge
+ * Invoke the model IPC channel, preferring the real Electron bridge
  * (`window.electronAPI`) so the request reaches the live main-process handler.
  * Falls back to the mock-routed invoke when no real bridge is present
  * (daemon/web builds, unit tests) — there the channel is served by
  * `model-catalog-bridge-seeder.ts`. The dev browser mock also installs a
- * `window.electronAPI` (answering `*:get-models` with an empty catalog), so
+ * `window.electronAPI` (answering `providers:get-models` with an empty catalog), so
  * the platform detector — not bridge presence — decides the transport.
  */
 async function invokeModelChannel<T>(channel: string, data?: unknown): Promise<T> {
@@ -110,16 +92,11 @@ export async function getProviderModels(
     return { models: [] };
   }
 
-  // A named profile (§5.54) is served by its base provider's channel with the
-  // reference passed through, so models.list answers for that profile.
-  const channel = PROVIDER_MODEL_CHANNELS[providerRefBaseId(providerId)];
-  const providerRef = isProviderProfileRef(providerId) ? providerId : undefined;
-  if (!channel) {
-    throw toProviderError(
-      providerId,
-      m.providers_modelsClient_unsupportedProvider_error({ id: providerId }),
-    );
-  }
+  // A named profile (§5.54) is listed under its own reference.
+  const params: GetModelsParams = { providerId: providerRefBaseId(providerId) };
+  if (isProviderProfileRef(providerId)) params.providerRef = providerId;
+  if (options.forceRefresh === true) params.forceRefresh = true;
+  if (options.workspaceId) params.workspaceId = options.workspaceId;
 
   try {
     logger.debug('Getting models for provider', {
@@ -127,14 +104,8 @@ export async function getProviderModels(
       forceRefresh: options.forceRefresh === true,
     });
     const result = await invokeModelChannel<GetModelsEnvelope>(
-      channel,
-      options.forceRefresh === true || options.workspaceId || providerRef
-        ? {
-            ...(options.forceRefresh === true ? { forceRefresh: true } : {}),
-            ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-            ...(providerRef ? { providerRef } : {}),
-          }
-        : undefined,
+      PROVIDERS_CHANNELS.GET_MODELS,
+      params,
     );
 
     if (!result?.success) {

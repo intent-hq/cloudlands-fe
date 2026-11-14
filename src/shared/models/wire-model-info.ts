@@ -10,6 +10,9 @@
  * historical names elsewhere.
  */
 
+import { m } from '../paraglide/messages.js';
+import { modelsListProviderId } from '../provider-profiles';
+
 interface WireModelBadge {
   color: string;
   label: string;
@@ -84,8 +87,51 @@ function readWarningKind(
 }
 
 /**
- * Reply envelope of every provider's `<provider>:get-models` channel — the
- * single declaration shared by the Electron main-process handlers
+ * Params of the shared `providers:get-models` channel. `providerId` is any
+ * provider id; `providerRef` names one of its profiles (§5.54).
+ */
+export interface GetModelsParams {
+  providerId: string;
+  providerRef?: string;
+  forceRefresh?: boolean;
+  workspaceId?: string;
+}
+
+/** `models.list` request params (PROTOCOL §6.7). */
+export interface ModelsListParams {
+  providerId: string;
+  workspaceId?: string;
+  forceRefresh?: boolean;
+}
+
+/**
+ * The `models.list` params for one `providers:get-models` request, built the
+ * same way on both build paths. A named profile is listed under its own
+ * reference. `undefined` when `providerId` is missing or empty.
+ */
+export function toModelsListParams(params: unknown): ModelsListParams | undefined {
+  const { providerId, providerRef, forceRefresh, workspaceId } = (params ?? {}) as Partial<
+    Record<keyof GetModelsParams, unknown>
+  >;
+  if (typeof providerId !== 'string' || !providerId) return undefined;
+  const request: ModelsListParams = { providerId: modelsListProviderId(providerId, providerRef) };
+  if (typeof workspaceId === 'string' && workspaceId) request.workspaceId = workspaceId;
+  if (forceRefresh === true) request.forceRefresh = true;
+  return request;
+}
+
+/** The refusal for a `providers:get-models` request without a provider id. */
+export function missingProviderEnvelope(params: unknown): GetModelsEnvelope {
+  const providerId = (params as { providerId?: unknown } | null | undefined)?.providerId;
+  return {
+    success: false,
+    error: m.providers_modelsClient_unsupportedProvider_error({ id: String(providerId ?? '') }),
+  };
+}
+
+/**
+ * Reply envelope of the shared `providers:get-models` channel — the
+ * single declaration shared by the Electron main-process handler
  * (`daemon-model-catalog.ts`), the daemon/web-build bridge
  * (`model-catalog-bridge-seeder.ts`), and the renderer client
  * (`provider-models.client.ts`). Build success replies only with

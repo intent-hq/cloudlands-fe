@@ -1,12 +1,14 @@
 /**
- * Main/renderer path parity for the per-provider `<provider>:get-models`
- * channels (cloudlands-fe#3918 bug class). Both paths are live: the Electron
- * renderer reaches the main-process handlers (`provider-models.client.ts`
- * calls `window.electronAPI.invoke` directly), while web/daemon builds reach
+ * Main/renderer path parity for the shared `providers:get-models` channel
+ * (cloudlands-fe#3918 bug class). Both paths are live: the Electron renderer
+ * reaches the main-process handler (`provider-models.client.ts` calls
+ * `window.electronAPI.invoke` directly), while web/daemon builds reach
  * `model-catalog-bridge-seeder.ts` through the mock IPC router. The same params
- * must produce the same daemon `models.list` request and the same envelope.
+ * must produce the same daemon `models.list` request and the same envelope for
+ * every provider, including one the app has never heard of
+ * (intent-hq/intent#9253: Cursor shipped with no route on one path).
  */
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
@@ -56,18 +58,11 @@ import {
   expectSameDaemonRequests,
   type DaemonCall,
 } from '../../test/ipc-path-parity';
-import { setupAntigravityIPC } from '../antigravity/main/antigravity.ipc';
-import { setupAuggieIPC } from '../auggie/main/auggie.ipc';
-import { setupClaudeCodeIPC } from '../claude-code/main/claude-code.ipc';
-import { setupCodexIPC } from '../codex/main/codex.ipc';
-import { setupCortexIPC } from '../cortex/main/cortex.ipc';
-import { setupCursorIPC } from '../cursor/main/cursor.ipc';
-import { setupDroidIPC } from '../droid/main/droid.ipc';
-import { setupGrokIPC } from '../grok/main/grok.ipc';
-import { setupOpencodeIPC } from '../opencode/main/opencode.ipc';
-import { setupPiIPC } from '../pi/main/pi.ipc';
-import { setupUnslothIPC } from '../unsloth/main/unsloth.ipc';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
+import { setupProviderModelsIPC } from './main/provider-models.ipc';
 
+const CHANNEL = PROVIDERS_CHANNELS.GET_MODELS;
 const CONTRACT_METHODS = ['models.list'] as const;
 
 const MODELS_LIST_RESULT = {
@@ -84,18 +79,24 @@ async function daemon(method: string): Promise<unknown> {
 }
 
 /**
- * The renderer `getProviderModels` call shapes: no params, each field alone,
- * and all together. `providerRef` names a profile of the channel's provider.
+ * The renderer `getProviderModels` call shapes: no options, each field alone,
+ * and all together. `providerRef` names a profile of the requested provider.
  */
-function scenarios(providerId: string): Record<string, Record<string, unknown> | undefined> {
+function scenarios(providerId: string): Record<string, Record<string, unknown>> {
   const providerRef = `${providerId}@work`;
   return {
-    'no params': undefined,
-    'a forced refresh': { forceRefresh: true },
-    'a workspace-scoped list': { workspaceId: 'amber-forest' },
-    'a named provider profile': { providerRef },
-    'every field together': { forceRefresh: true, workspaceId: 'amber-forest', providerRef },
-    'forceRefresh: false': { forceRefresh: false },
+    'no options': { providerId },
+    'a forced refresh': { providerId, forceRefresh: true },
+    'a workspace-scoped list': { providerId, workspaceId: 'amber-forest' },
+    'a named provider profile': { providerId, providerRef },
+    'every field together': {
+      providerId,
+      forceRefresh: true,
+      workspaceId: 'amber-forest',
+      providerRef,
+    },
+    'forceRefresh: false': { providerId, forceRefresh: false },
+    "another provider's profile": { providerId, providerRef: 'other-provider@work' },
   };
 }
 
@@ -104,16 +105,12 @@ interface Outcome {
   result: unknown;
 }
 
-async function runMain(
-  channel: string,
-  setup: () => void,
-  params: Record<string, unknown> | undefined,
-): Promise<Outcome> {
+async function runMain(params: unknown): Promise<Outcome> {
   mocks.handle.mockClear();
   mocks.mainRequest.mockClear();
-  setup();
-  const call = mocks.handle.mock.calls.find(([registered]) => registered === channel);
-  if (!call) throw new Error(`main registered no ${channel} handler`);
+  setupProviderModelsIPC();
+  const call = mocks.handle.mock.calls.find(([registered]) => registered === CHANNEL);
+  if (!call) throw new Error(`main registered no ${CHANNEL} handler`);
   const result = await (call[1] as (...args: unknown[]) => Promise<unknown>)(
     { sender: { id: 1 } },
     params,
@@ -121,12 +118,9 @@ async function runMain(
   return { calls: contractCalls(mocks.mainRequest.mock.calls, CONTRACT_METHODS), result };
 }
 
-async function runRenderer(
-  channel: string,
-  params: Record<string, unknown> | undefined,
-): Promise<Outcome> {
+async function runRenderer(params: unknown): Promise<Outcome> {
   vi.mocked(backendRequest).mockClear();
-  const result = await invoke(channel, params);
+  const result = await invoke(CHANNEL, params);
   return {
     calls: contractCalls(vi.mocked(backendRequest).mock.calls, CONTRACT_METHODS),
     result,
@@ -140,47 +134,46 @@ beforeEach(() => {
   vi.mocked(backendRequest).mockImplementation(daemon as typeof backendRequest);
 });
 
-function modelsParity(providerId: string, channel: string, setup: () => void): void {
-  it.each(Object.entries(scenarios(providerId)))('%s', async (_name, params) => {
-    const main = await runMain(channel, setup, params);
-    const renderer = await runRenderer(channel, params);
-    expectSameDaemonRequests(channel, main.calls, renderer.calls);
-    expect(renderer.result, `${channel}: the two paths built different envelopes`).toEqual(
-      main.result,
-    );
+const PROVIDER_IDS = [
+  ...Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter((id) => id !== 'mock'),
+  'provider-added-later',
+];
+
+describeParity(PROVIDERS_CHANNELS.GET_MODELS, () => {
+  describe.each(PROVIDER_IDS)('%s', (providerId) => {
+    it.each(Object.entries(scenarios(providerId)))('%s', async (_name, params) => {
+      const main = await runMain(params);
+      const renderer = await runRenderer(params);
+      expectSameDaemonRequests(CHANNEL, main.calls, renderer.calls);
+      expect(main.calls[0]?.[1]).toMatchObject({
+        providerId: params.providerRef === `${providerId}@work` ? `${providerId}@work` : providerId,
+      });
+      expect(renderer.result, `${CHANNEL}: the two paths built different envelopes`).toEqual(
+        main.result,
+      );
+    });
   });
 
   it('a daemon failure fails closed with the same envelope on both paths', async () => {
     daemonFails = true;
-    const main = await runMain(channel, setup, { forceRefresh: true });
-    const renderer = await runRenderer(channel, { forceRefresh: true });
+    const params = { providerId: 'codex', forceRefresh: true };
+    const main = await runMain(params);
+    const renderer = await runRenderer(params);
     expect(main.result).toEqual({ success: false, error: 'daemon unreachable' });
     expect(renderer.result).toEqual(main.result);
   });
-}
 
-describeParity('antigravity:get-models', () =>
-  modelsParity('antigravity', 'antigravity:get-models', setupAntigravityIPC),
-);
-describeParity('auggie:get-models', () =>
-  modelsParity('auggie', 'auggie:get-models', setupAuggieIPC),
-);
-describeParity('claude-code:get-models', () =>
-  modelsParity('claude-code', 'claude-code:get-models', setupClaudeCodeIPC),
-);
-describeParity('codex:get-models', () => modelsParity('codex', 'codex:get-models', setupCodexIPC));
-describeParity('cortex:get-models', () =>
-  modelsParity('cortex', 'cortex:get-models', setupCortexIPC),
-);
-describeParity('cursor:get-models', () =>
-  modelsParity('cursor', 'cursor:get-models', setupCursorIPC),
-);
-describeParity('droid:get-models', () => modelsParity('droid', 'droid:get-models', setupDroidIPC));
-describeParity('grok:get-models', () => modelsParity('grok', 'grok:get-models', setupGrokIPC));
-describeParity('opencode:get-models', () =>
-  modelsParity('opencode', 'opencode:get-models', setupOpencodeIPC),
-);
-describeParity('pi:get-models', () => modelsParity('pi', 'pi:get-models', setupPiIPC));
-describeParity('unsloth:get-models', () =>
-  modelsParity('unsloth', 'unsloth:get-models', setupUnslothIPC),
-);
+  it.each([
+    ['no params', undefined],
+    ['no provider id', { forceRefresh: true }],
+    ['an empty provider id', { providerId: '' }],
+    ['a non-string provider id', { providerId: 42 }],
+  ])('rejects %s on both paths without calling the daemon', async (_name, params) => {
+    const main = await runMain(params);
+    const renderer = await runRenderer(params);
+    expect(main.calls).toEqual([]);
+    expect(renderer.calls).toEqual([]);
+    expect(main.result).toMatchObject({ success: false });
+    expect(renderer.result).toEqual(main.result);
+  });
+});

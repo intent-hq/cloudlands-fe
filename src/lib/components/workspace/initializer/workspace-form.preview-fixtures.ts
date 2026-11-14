@@ -21,7 +21,7 @@ import {
   selectWorkspaceInitializerLastSelectedRepo,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 
-import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { PROVIDERS_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 
 type WorkspaceFormScenario =
@@ -290,7 +290,7 @@ export function setupWorkspaceFormPreview(
   const previousInvoke = bridge?.invoke;
   if (bridge && previousInvoke) {
     bridge.invoke = (channel, ...args) =>
-      channel === 'codex:get-models' || channel === 'claude-code:get-models'
+      channel === PROVIDERS_CHANNELS.GET_MODELS
         ? mockInvoke(channel, ...args)
         : previousInvoke.call(bridge, channel, ...args);
     restores.push(() => {

@@ -51,24 +51,12 @@ import {
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-const PROVIDER_MODELS_PARITY = 'features/providers/provider-models-ipc-path-parity.test.ts';
-
 /** Shared channel → parity suite (path relative to `src/`) that calls `describeParity(channel, …)`. */
 const PARITY_SUITES: ReadonlyMap<string, string> = new Map([
   ['terminal:createWithCommand', 'features/terminal/terminal-ipc-path-parity.test.ts'],
   ['terminal:professional:write', 'features/terminal/terminal-ipc-path-parity.test.ts'],
   ['system:execute-command', 'features/system/system-ipc-path-parity.test.ts'],
-  ['antigravity:get-models', PROVIDER_MODELS_PARITY],
-  ['auggie:get-models', PROVIDER_MODELS_PARITY],
-  ['claude-code:get-models', PROVIDER_MODELS_PARITY],
-  ['codex:get-models', PROVIDER_MODELS_PARITY],
-  ['cortex:get-models', PROVIDER_MODELS_PARITY],
-  ['cursor:get-models', PROVIDER_MODELS_PARITY],
-  ['droid:get-models', PROVIDER_MODELS_PARITY],
-  ['grok:get-models', PROVIDER_MODELS_PARITY],
-  ['opencode:get-models', PROVIDER_MODELS_PARITY],
-  ['pi:get-models', PROVIDER_MODELS_PARITY],
-  ['unsloth:get-models', PROVIDER_MODELS_PARITY],
+  ['providers:get-models', 'features/providers/provider-models-ipc-path-parity.test.ts'],
 ]);
 
 /** Shared channels whose paths differ on purpose; each reason says why that is safe. */

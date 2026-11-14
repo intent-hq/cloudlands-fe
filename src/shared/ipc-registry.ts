@@ -188,7 +188,6 @@ export const IPC_CHANNELS = {
   AUGGIE: {
     INSTALL: 'auggie:install',
     AUTHENTICATE: 'auggie:authenticate',
-    GET_MODELS: 'auggie:get-models',
     GET_CONFIG: 'auggie:get-config',
     UPDATE_CONFIG: 'auggie:update-config',
     GET_LATEST_SESSION: 'auggie:get-latest-session',
@@ -202,58 +201,10 @@ export const IPC_CHANNELS = {
     UNINSTALL_MCP_PI: 'auggie:uninstall-mcp-pi',
     UNINSTALL_MCP_DROID: 'auggie:uninstall-mcp-droid',
   },
-  // OpenCode Integration
-  OPENCODE: {
-    GET_MODELS: 'opencode:get-models',
-  },
-
-  // Claude Code Integration
-  CLAUDE_CODE: {
-    GET_MODELS: 'claude-code:get-models',
-  },
-
-  // Codex Integration
-  CODEX: {
-    GET_MODELS: 'codex:get-models',
-  },
-
-  // Cortex Integration
-  CORTEX: {
-    GET_MODELS: 'cortex:get-models',
-  },
-
-  // Pi Integration
-  PI: {
-    GET_MODELS: 'pi:get-models',
-  },
-
-  // Factory Droid Integration
-  DROID: {
-    GET_MODELS: 'droid:get-models',
-  },
-
-  // Grok Build Integration
-  GROK: {
-    GET_MODELS: 'grok:get-models',
-  },
-
-  // Unsloth Integration (local GGUF models via the daemon's managed server)
-  UNSLOTH: {
-    GET_MODELS: 'unsloth:get-models',
-  },
-
-  // Google Antigravity Integration
-  ANTIGRAVITY: {
-    GET_MODELS: 'antigravity:get-models',
-  },
-
-  // Cursor Integration
-  CURSOR: {
-    GET_MODELS: 'cursor:get-models',
-  },
-
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
+    // One model-list route for every provider: `{ providerId, providerRef?, forceRefresh?, workspaceId? }`.
+    GET_MODELS: 'providers:get-models',
     GET_AVAILABILITY: 'providers:get-availability',
     PREPARE_ADAPTERS: 'providers:prepare-adapters',
     GET_PATHS: 'providers:get-paths',

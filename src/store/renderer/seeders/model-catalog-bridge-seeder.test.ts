@@ -1,7 +1,7 @@
 /**
  * Wire-contract tests for the model catalog bridge seeder.
  *
- * Asserts the `*:get-models` channels forward uniformly to the daemon's
+ * Asserts `providers:get-models` forwards any provider id to the daemon's
  * per-provider model catalog (`models.list { providerId, forceRefresh }`,
  * PROTOCOL §6.7) and return honest envelopes: mapped rows on success,
  * daemon-provided `warning`/`stale` labeling on fallback, and
@@ -16,22 +16,17 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { mockInvoke } from '$shared/ipc-mock-router';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { GetModelsEnvelope as Envelope } from '$shared/models/wire-model-info';
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
 
-const ALL_CHANNELS: Array<[string, string]> = [
-  ['antigravity', 'antigravity:get-models'],
-  ['auggie', 'auggie:get-models'],
-  ['claude-code', 'claude-code:get-models'],
-  ['codex', 'codex:get-models'],
-  ['cortex', 'cortex:get-models'],
-  ['cursor', 'cursor:get-models'],
-  ['droid', 'droid:get-models'],
-  ['grok', 'grok:get-models'],
-  ['opencode', 'opencode:get-models'],
-  ['pi', 'pi:get-models'],
-  ['unsloth', 'unsloth:get-models'],
+const MODELS = PROVIDERS_CHANNELS.GET_MODELS;
+
+const PROVIDER_IDS = [
+  ...Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter((id) => id !== 'mock'),
+  'provider-added-later',
 ];
 
 describe('model-catalog-bridge-seeder', () => {
@@ -44,9 +39,9 @@ describe('model-catalog-bridge-seeder', () => {
     vi.clearAllMocks();
   });
 
-  it.each(ALL_CHANNELS)(
+  it.each(PROVIDER_IDS)(
     '%s → models.list { providerId } with wire id/name mapped to value/label',
-    async (providerId, channel) => {
+    async (providerId) => {
       mockedRequest.mockResolvedValue({
         providerId,
         models: [
@@ -56,7 +51,7 @@ describe('model-catalog-bridge-seeder', () => {
         source: providerId,
       });
 
-      const response = await mockInvoke<Envelope>(channel);
+      const response = await mockInvoke<Envelope>(MODELS, { providerId });
 
       expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId });
       expect(response.success).toBe(true);
@@ -69,25 +64,28 @@ describe('model-catalog-bridge-seeder', () => {
     },
   );
 
-  // §5.54: profile catalogs ride their base provider's channel.
+  // §5.54: a profile catalog is listed under its own reference.
   it('lists a named profile under its own reference', async () => {
     mockedRequest.mockResolvedValue({ providerId: 'codex@pwork00000001', models: [] });
-    await mockInvoke<Envelope>('codex:get-models', { providerRef: 'codex@pwork00000001' });
+    await mockInvoke<Envelope>(MODELS, { providerId: 'codex', providerRef: 'codex@pwork00000001' });
     expect(mockedRequest).toHaveBeenCalledWith('models.list', {
       providerId: 'codex@pwork00000001',
     });
   });
 
-  it("never lists another provider's profile through a channel", async () => {
+  it("never lists another provider's profile", async () => {
     mockedRequest.mockResolvedValue({ providerId: 'codex', models: [] });
-    await mockInvoke<Envelope>('codex:get-models', { providerRef: 'claude-code@pwork00000001' });
+    await mockInvoke<Envelope>(MODELS, {
+      providerId: 'codex',
+      providerRef: 'claude-code@pwork00000001',
+    });
     expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
   });
 
   it('forwards forceRefresh: true from the invoke payload', async () => {
     mockedRequest.mockResolvedValue({ providerId: 'auggie', models: [] });
 
-    await mockInvoke<Envelope>('auggie:get-models', { forceRefresh: true });
+    await mockInvoke<Envelope>(MODELS, { providerId: 'auggie', forceRefresh: true });
 
     expect(mockedRequest).toHaveBeenCalledWith('models.list', {
       providerId: 'auggie',
@@ -105,7 +103,7 @@ describe('model-catalog-bridge-seeder', () => {
       source: 'auggie',
     });
 
-    const response = await mockInvoke<Envelope>('auggie:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'auggie' });
 
     expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'auggie' });
     expect(response.data).toEqual([
@@ -117,7 +115,7 @@ describe('model-catalog-bridge-seeder', () => {
   it('omits forceRefresh from the wire params unless explicitly true', async () => {
     mockedRequest.mockResolvedValue({ providerId: 'auggie', models: [] });
 
-    await mockInvoke<Envelope>('auggie:get-models', { forceRefresh: false });
+    await mockInvoke<Envelope>(MODELS, { providerId: 'auggie', forceRefresh: false });
 
     expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'auggie' });
   });
@@ -131,7 +129,7 @@ describe('model-catalog-bridge-seeder', () => {
       warning: 'Codex not installed; using static model list',
     });
 
-    const response = await mockInvoke<Envelope>('codex:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'codex' });
 
     expect(response.success).toBe(true);
     expect(response.data).toEqual([
@@ -153,7 +151,7 @@ describe('model-catalog-bridge-seeder', () => {
       warning: 'codex: Install codex on the execution host',
       warningKind: wire,
     });
-    const response = await mockInvoke<Envelope>('codex:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'codex' });
     expect(response.warningKind).toBe(expected);
   });
 
@@ -163,7 +161,7 @@ describe('model-catalog-bridge-seeder', () => {
       models: [],
       warningKind: 'cli-missing',
     });
-    const response = await mockInvoke<Envelope>('codex:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'codex' });
     expect(response.warningKind).toBeUndefined();
   });
 
@@ -175,7 +173,7 @@ describe('model-catalog-bridge-seeder', () => {
       warning: 'opencode: opencode binary not found',
     });
 
-    const response = await mockInvoke<Envelope>('opencode:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'opencode' });
 
     expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'opencode' });
     expect(response.success).toBe(true);
@@ -195,7 +193,7 @@ describe('model-catalog-bridge-seeder', () => {
       ],
       source: 'claude-code',
     });
-    const live = await mockInvoke<Envelope>('claude-code:get-models');
+    const live = await mockInvoke<Envelope>(MODELS, { providerId: 'claude-code' });
     expect(live.success).toBe(true);
     expect(live.data?.map((m) => m.value)).toEqual(['default', 'claude-sonnet-4-5']);
 
@@ -204,7 +202,7 @@ describe('model-catalog-bridge-seeder', () => {
       models: [],
       warning: 'Claude Code not available',
     });
-    const empty = await mockInvoke<Envelope>('claude-code:get-models');
+    const empty = await mockInvoke<Envelope>(MODELS, { providerId: 'claude-code' });
     expect(empty.data).toEqual([]);
     expect(empty.warning).toBe('Claude Code not available');
   });
@@ -220,16 +218,27 @@ describe('model-catalog-bridge-seeder', () => {
       ],
     });
 
-    const response = await mockInvoke<Envelope>('droid:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'droid' });
 
     expect(response.success).toBe(true);
     expect(response.data).toEqual([{ value: 'valid', label: 'Valid' }]);
   });
 
-  it('returns success: false only on wire/transport failure', async () => {
+  it.each([
+    ['no params', undefined],
+    ['no provider id', { forceRefresh: true }],
+    ['an empty provider id', { providerId: '' }],
+  ])('refuses %s without calling the daemon', async (_name, params) => {
+    const response = await mockInvoke<Envelope>(MODELS, params);
+    expect(response.success).toBe(false);
+    expect(response.error).toBeTruthy();
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it('returns success: false on wire/transport failure', async () => {
     mockedRequest.mockRejectedValue(new Error('daemon unreachable'));
 
-    const response = await mockInvoke<Envelope>('cortex:get-models');
+    const response = await mockInvoke<Envelope>(MODELS, { providerId: 'cortex' });
 
     expect(response.success).toBe(false);
     expect(response.error).toBe('daemon unreachable');

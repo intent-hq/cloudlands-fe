@@ -4,8 +4,12 @@ import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
-import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
-import { setupModelPickerPreviewHandler } from '../../../../test/catalog-preview-ipc';
+import { mockInvoke } from '$shared/ipc-mock-router';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import {
+  overrideProviderModelsHandler,
+  setupModelPickerPreviewHandler,
+} from '../../../../test/catalog-preview-ipc';
 import {
   providerModelsLoaded,
   providerModelsCacheCleared,
@@ -94,14 +98,14 @@ function setupModels(
     if (bridge && originalInvoke) {
       // electronAPI.invoke takes precedence over the router in the UI-preview build.
       bridge.invoke = (channel, ...args) =>
-        channel === 'codex:get-models' || channel === 'claude-code:get-models'
+        channel === PROVIDERS_CHANNELS.GET_MODELS
           ? mockInvoke(channel, ...args)
           : originalInvoke.call(bridge, channel, ...args);
     }
     appStore.dispatch(hydrateDefaultProvider('codex'));
     for (const group of previousCollapsed)
       appStore.dispatch(setModelPickerGroupCollapsed(group, false));
-    // Catalogs arrive only through the mocked `<provider>:get-models` channel
+    // Catalogs arrive only through the mocked `providers:get-models` channel
     // and the app's provider-models saga, so the cache, loading state and
     // warnings land exactly where the app puts them.
     const restoreModelHandlers: Array<() => void> = [];
@@ -137,7 +141,7 @@ function setupModels(
       if (activeCleanup === cleanup) activeCleanup = undefined;
       cancelCatalog();
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
-      for (const restoreHandler of restoreModelHandlers) restoreHandler();
+      for (const restoreHandler of [...restoreModelHandlers].reverse()) restoreHandler();
       appStore.dispatch(providerModelsCacheCleared());
       const restoreEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       for (const [providerId, entry] of Object.entries(previousCache))
@@ -206,9 +210,9 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
       const prefix = previewProfiles.find((p) => p.providerRef === providerId)?.id ?? providerId;
       return models.map((model) => ({ ...model, value: `${prefix}-${model.value}` }));
     };
-    // Profiles are listed through their base provider's channel (`providerRef`).
+    // Profiles are listed under their reference (`providerRef`).
     const restoreHandlers = ['codex', 'claude-code'].map((base) =>
-      overrideMockIpcHandler(`${base}:get-models`, (data?: unknown) => ({
+      overrideProviderModelsHandler(base, (data?: unknown) => ({
         success: true,
         data: rowsFor((data as { providerRef?: string } | undefined)?.providerRef ?? base),
       })),
@@ -237,7 +241,7 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
       for (const profileId of signedOut)
         appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'configured'));
       if (agent) appStore.dispatch(removeSession(PROFILE_AGENT_ID));
-      for (const restore of restoreHandlers) restore();
+      for (const restore of [...restoreHandlers].reverse()) restore();
       cleanupModels();
     };
   };

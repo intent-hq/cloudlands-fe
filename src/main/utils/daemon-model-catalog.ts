@@ -7,7 +7,7 @@
  * version-key change, or `forceRefresh`), and stale/fallback labeling for
  * every provider — the FE no
  * longer keeps its own model caches or probe implementations. This helper is
- * the single wire seam the per-provider `GET_MODELS` IPC handlers call into;
+ * the single wire seam the shared `providers:get-models` IPC handler calls;
  * the reply is built by the shared `toGetModelsEnvelope` (also used by the
  * daemon/web bridge seeder).
  *
@@ -19,42 +19,37 @@
  */
 import { Logger } from '../../shared/logger';
 import {
+  missingProviderEnvelope,
   toGetModelsEnvelope,
+  toModelsListParams,
   type GetModelsEnvelope,
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
 import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
-import { modelsListProviderId } from '../../shared/provider-profiles';
 
 const logger = new Logger('DaemonModelCatalog');
 
 /**
- * Uniform `GET_MODELS` handler body: thin call to the daemon catalog on the
+ * `providers:get-models` handler body: thin call to the daemon catalog on the
  * invoking window's backend (local when `event` is absent — main-side
- * callers). A wire/transport failure OR a window backend without a live
- * pooled client produces `success: false` (fail-closed, never retargets the
- * primary) — probe/CLI failures are degraded daemon-side to
- * last-good/static data plus a `warning` (§6.7).
+ * callers). A request without a provider id, a wire/transport failure, or a
+ * window backend without a live pooled client produces `success: false`
+ * (fail-closed, never retargets the primary) — probe/CLI failures are
+ * degraded daemon-side to last-good/static data plus a `warning` (§6.7).
  */
 export async function getProviderModelsEnvelope(
-  providerId: string,
-  params?: { forceRefresh?: boolean; workspaceId?: string; providerRef?: string },
+  params: unknown,
   event?: Electron.IpcMainInvokeEvent,
 ): Promise<GetModelsEnvelope> {
+  const request = toModelsListParams(params);
+  if (!request) return missingProviderEnvelope(params);
   try {
     const { client } = getBackendClientForIpcEvent(event);
-    // A named profile's catalog (§5.54) is listed under its own reference.
-    const catalogProviderId = modelsListProviderId(providerId, params?.providerRef);
-    const request: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
-      providerId: catalogProviderId,
-    };
-    if (params?.workspaceId) request.workspaceId = params.workspaceId;
-    if (params?.forceRefresh === true) request.forceRefresh = true;
     const result = await client.request<WireModelsListResult>('models.list', request);
     return toGetModelsEnvelope(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.debug('models.list request failed', { providerId, error: message });
+    logger.debug('models.list request failed', { providerId: request.providerId, error: message });
     return { success: false, error: message };
   }
 }
