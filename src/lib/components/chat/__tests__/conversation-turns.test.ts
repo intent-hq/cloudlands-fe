@@ -97,6 +97,28 @@ describe('conversation turn indexing', () => {
     expect(turn.noticeMessages).toEqual([]);
   });
 
+  it('keeps the auto-unarchive notice between the archive turn and the message that unarchived it', () => {
+    const turns = groupIntoTurns([
+      message('archive-request', 'user'),
+      message('archive-reply', 'assistant'),
+      message('unarchived', 'system', 'auto_unarchived'),
+      message('next-request', 'user'),
+      message('next-reply', 'assistant'),
+    ]);
+    expect(turns.map((turn) => turn.userMessage?.id)).toEqual(['archive-request', 'next-request']);
+    expect(turns[0].bodyMessages.map(({ id }) => id)).toEqual(['archive-reply', 'unarchived']);
+    expect(turns[0].assistantMessages.map(({ id }) => id)).toEqual(['archive-reply']);
+    expect(turns[1].bodyMessages.map(({ id }) => id)).toEqual(['next-reply']);
+  });
+
+  it('keeps an orphan auto-unarchive notice addressable when a history page begins with it', () => {
+    const indexed = indexConversationTurns([
+      { groupKey: 'older', messages: [message('unarchived', 'system', 'auto_unarchived')] },
+    ]);
+    expect(indexed.groups[0].turns[0].bodyMessages.map(({ id }) => id)).toEqual(['unarchived']);
+    expect(indexed.turnKeyByMessageId.get('unarchived')).toBe('group-older-turn-0');
+  });
+
   it('orders a failed return before the failover that follows it', () => {
     const [turn] = groupIntoTurns([
       message('user', 'user'),
