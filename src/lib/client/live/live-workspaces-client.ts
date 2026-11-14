@@ -27,6 +27,11 @@ import { createRepositoryContextTransport } from './repository-context-transport
  */
 import { WorkspaceStatus, createWorkspaceId } from '$shared/types';
 import { parseBaseRefreshFailure } from '$shared/types/base-refresh-failure';
+import {
+  parseWorkspaceHome,
+  type MoveHomeTarget,
+  type WorkspaceHome,
+} from '$shared/types/workspace-home';
 import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
@@ -107,12 +112,15 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
 function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
-  const { defaultAgentPlacement, ...fields } = raw;
+  const { defaultAgentPlacement, home, ...fields } = raw;
+  // Workspace homes (PROTOCOL nodes.md): a value outside the contract is dropped.
+  const parsedHome = parseWorkspaceHome(home);
   return {
     ...(fields as Partial<Workspace>),
     ...(defaultAgentPlacement === undefined
       ? {}
       : { defaultAgentPlacement: AgentPlacementRequestSchema.parse(defaultAgentPlacement) }),
+    ...(parsedHome ? { home: parsedHome } : {}),
     id: createWorkspaceId(id),
     title: String(raw.title ?? raw.name ?? id),
     branch: String(raw.branch ?? ''),
@@ -610,6 +618,17 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       clientId,
     });
     return requireBrowserClient(result?.browserClient, 'workspace.setBrowserClient');
+  }
+
+  /** `workspace.setHome { workspaceId, to }` → `{ home }` (PROTOCOL nodes.md "Moving the home"). */
+  async setHome(workspaceId: string, to: MoveHomeTarget): Promise<WorkspaceHome> {
+    const result = await backendRequest<{ home?: unknown }>('workspace.setHome', {
+      workspaceId,
+      to,
+    });
+    const home = parseWorkspaceHome(result?.home);
+    if (!home) throw new Error('Invalid workspace.setHome response shape');
+    return home;
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

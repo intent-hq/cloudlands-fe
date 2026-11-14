@@ -8,6 +8,7 @@
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeWorkspacePurgedBadge from './HomeWorkspacePurgedBadge.svelte';
+  import WorkspaceHomeMarker from '$features/workspace-home/components/WorkspaceHomeMarker.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import type { Workspace } from '$shared/types';
@@ -295,6 +296,7 @@
         {/if}
         <span class="ml-auto flex shrink-0 items-center gap-2">
           <HomeWorkspacePurgedBadge {workspace} />
+          <WorkspaceHomeMarker {workspace} />
           <span class="shrink-0" data-home-card-time>
             <HomeActivityTime {workspace} />
           </span>

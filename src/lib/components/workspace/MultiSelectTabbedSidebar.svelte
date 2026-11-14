@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import WorkspaceHomePanelGate from '$features/workspace-home/components/WorkspaceHomePanelGate.svelte';
   import './multi-select-sidebar-transitions.css';
   import {
     selectStagedWorkingChanges,
@@ -1029,17 +1030,19 @@
                 </div>
               {:else if tabId === 'files'}
                 <div class="flex h-full min-h-0 flex-col">
-                  <FilesPanel
-                    bind:this={filesPanelRef}
-                    {workspaceId}
-                    selectedFile={effectiveSelectedFile}
-                    onOpenFile={handleOpenFileInPanel}
-                    {onCreateFile}
-                    {onFileRenamed}
-                    onSelectAgent={handleOpenAgentInPanel}
-                    showOnlyChanged={showOnlyChangedFiles}
-                    searchQuery={fileSearchQuery}
-                  />
+                  <WorkspaceHomePanelGate {workspaceId}>
+                    <FilesPanel
+                      bind:this={filesPanelRef}
+                      {workspaceId}
+                      selectedFile={effectiveSelectedFile}
+                      onOpenFile={handleOpenFileInPanel}
+                      {onCreateFile}
+                      {onFileRenamed}
+                      onSelectAgent={handleOpenAgentInPanel}
+                      showOnlyChanged={showOnlyChangedFiles}
+                      searchQuery={fileSearchQuery}
+                    />
+                  </WorkspaceHomePanelGate>
                 </div>
               {:else if tabId === 'browser'}
                 <SidebarBrowserList {workspaceId} {panelLayoutId} />

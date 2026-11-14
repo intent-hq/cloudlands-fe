@@ -1,4 +1,5 @@
 import type { AgentPlacement, AgentPlacementRequest } from './types/agent-node';
+import type { WorkspaceHome } from './types/workspace-home';
 /**
  * Unified Type Definitions
  *
@@ -458,6 +459,10 @@ export interface Workspace {
    *  workspace. Omitted when unpinned (default routing); cleared via
    *  `workspace.setBrowserClient { clientId: null }`. */
   browserClientId?: string;
+  /** The workspace's home machine (PROTOCOL `methods/nodes.md` → "Workspace
+   *  homes"): orchestrator only. Absent everywhere else, which hides every
+   *  home surface. Live via `workspace:updated { changes: { home } }`. */
+  home?: WorkspaceHome;
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;

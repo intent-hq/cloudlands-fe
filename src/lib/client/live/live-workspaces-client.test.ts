@@ -709,6 +709,27 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
 describe('LiveWorkspacesClient.get (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
+  it('keeps a served home and drops one outside the contract (nodes.md "Workspace homes")', async () => {
+    const home = {
+      homeId: 'h-1',
+      nodeId: 'd-mac-studio',
+      name: 'Mac Studio',
+      state: 'detached',
+      since: '2026-11-12T09:42:00Z',
+      lastBackupAt: '2026-11-12T09:41:00Z',
+      backupWarning: true,
+    };
+    const base = { id: 'ws-home', title: 'Home', branch: 'main', status: 'Active' };
+    mockedRequest.mockResolvedValueOnce({ workspace: { ...base, home } });
+    const client = new LiveWorkspacesClient();
+    expect((await client.get('ws-home'))?.home).toEqual(home);
+
+    mockedRequest.mockResolvedValueOnce({ workspace: { ...base, home: { name: 'x' } } });
+    const served = await new LiveWorkspacesClient().get('ws-home');
+    expect(served).toMatchObject({ id: 'ws-home' });
+    expect(served && 'home' in served).toBe(false);
+  });
+
   it('shares one in-flight workspace.get between open() and the on-demand detail helper', async () => {
     const workspace = {
       id: '88888888-8888-4888-8888-888888888888',
@@ -1511,6 +1532,53 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
     const client = new LiveWorkspacesClient();
 
     expect(await client.getBrowserClient('ws-abc')).toEqual({ source: 'default', resolved: null });
+  });
+
+  it.each([
+    ['an agent', { agentId: 'agent-1' }],
+    ['a machine', { kind: 'machine', nodeId: 'd-garage' }],
+    ['a cloud entry', { kind: 'cloud', cloudMachineId: 'e2b-team' }],
+  ] as const)('setHome sends the documented `to` for %s and returns the moving home', async (_, to) => {
+    const home = {
+      homeId: 'h-2',
+      name: 'Garage node',
+      state: 'moving',
+      since: '2026-11-12T10:00:00Z',
+      lastBackupAt: '2026-11-12T09:41:00Z',
+    };
+    mockedRequest.mockResolvedValueOnce({ home });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.setHome('ws-abc', to)).toEqual(home);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setHome', {
+      workspaceId: 'ws-abc',
+      to,
+    });
+  });
+
+  it('setHome propagates a documented refusal with its data.code', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'INVALID_PARAMS',
+        message: 'a move is already running',
+        rpcCode: -32602,
+        data: { code: 'home-moving' },
+      }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    await expect(
+      client.setHome('ws-abc', { kind: 'machine', nodeId: 'd-garage' }),
+    ).rejects.toMatchObject({ rpcCode: -32602, data: { code: 'home-moving' } });
+  });
+
+  it('setHome rejects a result without a documented home', async () => {
+    mockedRequest.mockResolvedValueOnce({ home: { state: 'moving' } });
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.setHome('ws-abc', { agentId: 'agent-1' })).rejects.toThrow(
+      'Invalid workspace.setHome response shape',
+    );
   });
 
   it('setBrowserClient sends the pinned clientId and returns the new pin state', async () => {

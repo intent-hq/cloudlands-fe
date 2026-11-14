@@ -2,6 +2,7 @@ import { dockConversationReducer } from './slices/dock-conversation/dock-convers
 import { desktopControlReducer } from './slices/desktop-control/desktop-control-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
+import { workspaceHomeReducer } from '$features/workspace-home/workspace-home-slice';
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
 import { nodesReducer } from '$features/nodes/nodes-slice';
 import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
@@ -142,6 +143,7 @@ export const reducers = {
   desktopControl: desktopControlReducer,
   homeIntegrations: homeIntegrationsReducer,
   homeWorkspaces: homeWorkspacesReducer,
+  workspaceHome: workspaceHomeReducer,
   repositoryContext: repositoryContextReducer,
   repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,

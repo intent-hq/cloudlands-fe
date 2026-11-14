@@ -23,6 +23,7 @@
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeWorkspacePurgedBadge from './HomeWorkspacePurgedBadge.svelte';
+  import WorkspaceHomeMarker from '$features/workspace-home/components/WorkspaceHomeMarker.svelte';
   import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
@@ -238,6 +239,7 @@
             ></Tooltip.Provider
           >{/if}
         <HomeWorkspacePurgedBadge workspace={item} />
+        <WorkspaceHomeMarker workspace={item} />
         <HomeWorkspaceStatus workspace={item} />
         <span class="home-aside-slot shrink-0">
           <span
