@@ -24,8 +24,15 @@ vi.mock('electron', () => ({
 }));
 
 let lifetime = true;
+/** The window the link was opened from: a machine it adds joins that window's rail. */
+const linkWindow = vi.hoisted(() => ({ id: 'link-window' }));
 vi.mock('../invite-attempt', () => ({
-  captureInviteAttempt: () => ({ current: () => lifetime, allowed: () => lifetime, release() {} }),
+  captureInviteAttempt: () => ({
+    current: () => lifetime,
+    allowed: () => lifetime,
+    parent: linkWindow,
+    release() {},
+  }),
 }));
 const inspectCredential = vi.hoisted(() => vi.fn());
 const tested = vi.hoisted(() => ({
@@ -282,7 +289,7 @@ describe('a full daemon pairing link', () => {
     await handlePairDeepLink(LINK);
     expect(pairLinks.hold).not.toHaveBeenCalled();
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ daemonMode: 'orchestrator' }));
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id', { parentWindow: linkWindow });
   });
 
   it('saves a daemon reporting a mode this app does not know without a mode', async () => {
@@ -291,7 +298,7 @@ describe('a full daemon pairing link', () => {
     await handlePairDeepLink(LINK);
     expect(add).toHaveBeenCalledTimes(1);
     expect(add.mock.calls[0][0]).not.toHaveProperty('daemonMode');
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id', { parentWindow: linkWindow });
   });
 
   it('keeps the owner pairing flow and stores the detected mode', async () => {
@@ -299,7 +306,7 @@ describe('a full daemon pairing link', () => {
     expect(pairLinks.hold).not.toHaveBeenCalled();
     expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ daemonMode: 'regular' }));
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id', { parentWindow: linkWindow });
   });
 
   it('a new record found to be a node at window time goes to the app window to be refused or asked about', async () => {
@@ -397,7 +404,7 @@ describe('handlePairDeepLink', () => {
       port: 8443,
       fingerprint: PIN,
     });
-    expect(openBackendWindow).toHaveBeenCalledWith('known-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('known-id', { parentWindow: linkWindow });
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
   });
@@ -406,7 +413,7 @@ describe('handlePairDeepLink', () => {
     findMatching.mockResolvedValue({ id: 'by-host' });
     await handlePairDeepLink(LINK);
     expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id', { parentWindow: linkWindow });
   });
 
   it('new server: confirms, adds with token + tc, then opens', async () => {
@@ -421,7 +428,7 @@ describe('handlePairDeepLink', () => {
       tcAddress: 'ts.example:443',
       daemonMode: 'regular',
     });
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id', { parentWindow: linkWindow });
   });
 
   it('new server without tc omits tcAddress', async () => {
@@ -520,7 +527,7 @@ describe('routePairLinkFromOs', () => {
     findMatching.mockResolvedValue({ id: 'known-id', fingerprint: PIN });
     const park = vi.fn();
     await routePairLinkFromOs(LINK, park);
-    expect(openBackendWindow).toHaveBeenCalledWith('known-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('known-id', { parentWindow: linkWindow });
     expect(park).not.toHaveBeenCalled();
   });
 
@@ -555,6 +562,7 @@ describe('personal invited pairing (controlled authenticated principal fixture)'
     expect(add).not.toHaveBeenCalled();
     expect(openBackendWindow).toHaveBeenCalledWith('invited-person', {
       mayOpen: expect.any(Function),
+      parentWindow: linkWindow,
     });
   });
   it('classifies a legacy non-administrator as guest, never member or owner', async () => {

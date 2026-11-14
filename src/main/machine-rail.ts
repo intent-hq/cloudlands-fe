@@ -525,15 +525,19 @@ export async function openInvitedMachineInWindow(
   mayOpen: () => boolean = () => true,
 ): Promise<boolean> {
   if (!isMachineRailEnabled() || window.isDestroyed() || !mayOpen()) return false;
+  // A machine that cannot be in a rail (this app's own daemon, a node) keeps its own window.
+  if (!deps || !(await deps.listMachineIds()).includes(id)) return false;
   const canContinue = () => isMachineRailEnabled() && !window.isDestroyed() && mayOpen();
   try {
     await addMachine(window, id, canContinue);
   } catch (error) {
-    // A full rail leaves this window untouched; the caller can open the backend window.
-    if (error instanceof MachineRailFullError) return false;
+    // A full rail, or a window closed meanwhile, leaves the caller to open the backend window.
+    if (error instanceof MachineRailFullError || window.isDestroyed()) return false;
     throw error;
   }
-  if (!canContinue()) return true;
+  // The rail was turned off or the window closed meanwhile: the machine still needs a window.
+  if (!isMachineRailEnabled() || window.isDestroyed()) return false;
+  if (!mayOpen()) return true;
   const rail = readWindowRail(window);
   const contents =
     id === rail.machineIds[0] ? window.webContents : ensureView(window, id).webContents;
