@@ -34,6 +34,7 @@
   import { addMermaidLabelKnockouts, insertLabelKnockout } from './mermaid-label-knockouts';
   import { loadMermaidTextFont } from './mermaid-font-loading';
   import { ensureMermaidLabelContrast } from './mermaid-label-contrast';
+  import { repairMermaidCurveCrossings } from './mermaid-curved-routing';
   import {
     alignMermaidOpenArrowheads,
     applyMermaidTerminalGaps,
@@ -1390,6 +1391,7 @@ ${source}`;
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
     // Keep native ranks and routes together; source-order stacking separates branches from joins.
     if (flowchart) {
+      repairMermaidCurveCrossings(svg);
       const bounds = svg.getBBox();
       const padding = 16;
       const width = Math.ceil(bounds.width + padding * 2);

@@ -148,12 +148,36 @@ function readTraceGeometry(svg: SVGSVGElement) {
     };
   });
   const edgeLabels = labels.filter((label) => label.node === null);
+  const crossing = (a: { x: number; y: number }, b: typeof a, c: typeof a, d: typeof a) => {
+    const cross = (p: typeof a, q: typeof a) => p.x * q.y - p.y * q.x;
+    const ab = { x: b.x - a.x, y: b.y - a.y };
+    const cd = { x: d.x - c.x, y: d.y - c.y };
+    const det = cross(ab, cd);
+    if (Math.abs(det) < 0.0001) return false;
+    const ac = { x: c.x - a.x, y: c.y - a.y };
+    const t = cross(ac, cd) / det;
+    const u = cross(ac, ab) / det;
+    return t > 0.0001 && t < 0.9999 && u > 0.0001 && u < 0.9999;
+  };
+  const crossings = routes.flatMap((route, index) =>
+    routes.slice(index + 1).flatMap((other) => {
+      const thin = (samples: typeof route.samples) =>
+        samples.filter((_, i) => i % 4 === 0 || i === samples.length - 1);
+      const a = thin(route.samples);
+      const b = thin(other.samples);
+      const hits = a
+        .slice(1)
+        .some((point, i) => b.slice(1).some((end, j) => crossing(a[i], point, b[j], end)));
+      return hits ? [[route.edge, other.edge]] : [];
+    }),
+  );
   const viewport = svg.closest('.mermaid-svg-viewport') as HTMLElement;
   return {
     frame,
     nodes,
     labels,
     routes,
+    crossings,
     labelNodeHits: edgeLabels.flatMap((label) =>
       nodes
         .filter((node) => overlaps(label.bounds, node.bounds))
@@ -300,6 +324,7 @@ for (const width of [960, 320]) {
         'return label clears every node, including Mailgun and inbox',
       ).toEqual([]);
       expect(geometry.nodeOverlaps).toEqual([]);
+      expect(geometry.crossings, 'connectors do not cross one another').toEqual([]);
       expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
     });
   }
