@@ -209,7 +209,7 @@ async function verifyStage(
   }
   expect(g.pageOverflow, 'scroll belongs to diagram, not page').toBeLessThanOrEqual(1);
   const sourceButton = page
-    .locator('.mermaid-renderer')
+    .locator('.node-mermaidBlock')
     .getByRole('button', { name: 'View source', exact: true });
   await sourceButton.focus();
   await sourceButton.press('Enter');

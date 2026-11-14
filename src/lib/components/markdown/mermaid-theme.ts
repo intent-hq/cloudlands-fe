@@ -60,7 +60,7 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
     theme: 'base',
     // Mermaid 12 defaults to the `neo` look and to a new ELK preset with line hops,
     // edge straightening and feedback-edge reorientation. Pin the pre-12 rendering;
-    // MermaidRenderer chooses `layout` (dagre, or ELK for state/ER) per diagram.
+    // MermaidRenderer chooses the layout and flowchart routing options per diagram.
     look: 'classic',
     elk: {
       preset: 'legacy',
@@ -74,9 +74,12 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
     htmlLabels,
     // Mermaid scopes this CSS to its SVG before measuring temporary HTML labels.
     // A global reduced-motion duration otherwise animates their initial 2000px
-    // dimensions, so Dagre reads the placeholder rather than the measured label.
+    // dimensions, so the layout reads the placeholder rather than the measured label.
     themeCSS: [
       '.label, foreignObject { transition-property: opacity, color, background-color !important; }',
+      // Reserve the same label width as the mounted medium-weight typography.
+      `.edgeLabel { font-family: ${fontFamily}; font-size: ${fontSize}; font-weight: 500; line-height: 1.5; letter-spacing: normal; }`,
+      '.edgeLabel p { margin: 0; }',
       // Defaults only: authored foregrounds win; the mounted label contrast pass
       // checks each node/header against its own effective surface.
       `.cluster-label text { fill: ${metadata}; }`,

@@ -1388,7 +1388,7 @@ ${source}`;
     if (flowchart)
       svg.dataset.flowchartDirection =
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
-    // Keep native ranks and routes together; source-order stacking separates branches from joins.
+    // Keep native ranks, ports, routes, and label reservations together.
     if (flowchart) {
       const bounds = svg.getBBox();
       const padding = 16;
@@ -1651,11 +1651,19 @@ ${source}`;
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
       const usesEntityDiagram = /^\s*erDiagram\b/m.test(renderCode);
-      config.layout = usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
+      config.layout = usesHtmlLabels || usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
       if (usesHtmlLabels) {
+        config.elk = {
+          ...config.elk,
+          // Model-order cycle breaking fails on nested cyclic subgraphs in ELK.
+          preset: /\bsubgraph\b/.test(renderCode) ? 'depthFirst' : 'modelOrder',
+          mergeEdges: false,
+          forceNodeModelOrder: false,
+          considerModelOrder: 'NODES_AND_EDGES',
+          straightenEdges: true,
+        };
         config.flowchart = {
           ...config.flowchart,
-          curve: 'basis',
           nodeSpacing: 48,
           rankSpacing: 64,
         };
@@ -1684,6 +1692,8 @@ ${source}`;
       // they followed the flowchart width, which the layout branches above tune.
       config.state = { ...config.state, wrappingWidth: config.flowchart?.wrappingWidth };
       await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
+      if (usesHtmlLabels)
+        await document.fonts?.load(`500 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
       if (!isCurrent()) return;
       const renderResult = await runSerializedMermaidRender(
         async () => {
