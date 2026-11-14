@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.336.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.335.0...v2.336.0) (2026-11-14)
+
+
+### 🚀 Features
+
+* group tabs by project and drag collapsed tab groups ([#4364](https://github.com/intent-hq/cloudlands-fe/issues/4364)) ([4c1e2df](https://github.com/intent-hq/cloudlands-fe/commit/4c1e2df21241cca1aceb2561cc4e1be2ba439eb5))
+* **machines:** say Node.js is needed when that is why no provider runs ([#4574](https://github.com/intent-hq/cloudlands-fe/issues/4574)) ([c376483](https://github.com/intent-hq/cloudlands-fe/commit/c37648342b81ce45fc61323e675fa4140cf9f5cc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.207 ([#4601](https://github.com/intent-hq/cloudlands-fe/issues/4601)) ([2e22f99](https://github.com/intent-hq/cloudlands-fe/commit/2e22f99b9c25a78d8de0d8005cf5d968112928e3))
+
 ## [2.335.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.334.6...v2.335.0) (2026-11-13)
 
 
