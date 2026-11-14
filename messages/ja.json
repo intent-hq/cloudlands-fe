@@ -4573,7 +4573,7 @@
   "onboarding_testPrompt_busy_error": "デーモンは現在ほかのエージェントの実行で混み合っています — 少し待ってからもう一度お試しください。",
   "onboarding_testPrompt_claudeDesktopNote_label": "Claude デスクトップアプリへのサインインは CLI には引き継がれません — CLI のログインを実行してください。",
   "onboarding_testPrompt_generic_error": "テストプロンプトが失敗しました: {message}",
-  "onboarding_testPrompt_notInstalled_error": "{name} はインストールされていません: {message}",
+  "onboarding_testPrompt_notInstalled_error": "{name} を起動できませんでした: {message}",
   "onboarding_testPrompt_runToLogIn_label": "ターミナルで実行してログイン:",
   "onboarding_testPrompt_running_label": "テストプロンプトを送信中…",
   "onboarding_testPrompt_timeout_error": "{name} が時間内に応答しませんでした。まだダウンロード中か起動中かもしれません — しばらくしてからもう一度お試しください。",

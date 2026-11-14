@@ -4573,7 +4573,7 @@
   "onboarding_testPrompt_busy_error": "El daemon está ocupado ejecutando otros agentes ahora mismo — espera un momento y vuelve a intentarlo.",
   "onboarding_testPrompt_claudeDesktopNote_label": "Iniciar sesión en la app de escritorio de Claude no se traslada a la CLI — ejecuta el login de la CLI.",
   "onboarding_testPrompt_generic_error": "El prompt de prueba falló: {message}",
-  "onboarding_testPrompt_notInstalled_error": "{name} no está instalado: {message}",
+  "onboarding_testPrompt_notInstalled_error": "No se pudo iniciar {name}: {message}",
   "onboarding_testPrompt_runToLogIn_label": "Ejecuta en una terminal para iniciar sesión:",
   "onboarding_testPrompt_running_label": "Enviando un prompt de prueba…",
   "onboarding_testPrompt_timeout_error": "{name} no respondió a tiempo. Puede que aún esté descargando o iniciándose — inténtalo de nuevo en un momento.",
