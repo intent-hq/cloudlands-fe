@@ -6,7 +6,6 @@
   import type { ComponentProps } from 'svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
   import RetireWorkspaceConfirmDialog from './RetireWorkspaceConfirmDialog.svelte';
-  import MoveHomeDialogHost from '$features/workspace-home/components/MoveHomeDialogHost.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -249,6 +248,3 @@
     {/snippet}
   </BulkActionConfirmDialog>
 {/if}
-
-<!-- Move home (workspace homes, orchestrator only); this host is global like the warnings above. -->
-<MoveHomeDialogHost />

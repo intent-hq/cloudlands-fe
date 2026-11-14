@@ -1,5 +1,9 @@
 <script lang="ts">
-  /** Store host for the Move home dialog (one for the app, like the Transfer wizard). */
+  /**
+   * Store host for the Move home dialog. Each workspace surface mounts one
+   * (inside its banner host) and shows the dialog only for its own workspace,
+   * so retained surfaces never open duplicates.
+   */
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -14,6 +18,8 @@
     selectWorkspaceHomeView,
   } from '../workspace-home-selectors';
   import { moveHomeDialogClosed, moveHomeRequested } from '../workspace-home-slice';
+
+  let { workspaceId }: { workspaceId: string } = $props();
 
   const dialogWorkspaceId$ = selectMoveHomeDialogWorkspaceId();
   const submitting$ = selectMoveHomeSubmitting();
@@ -35,7 +41,7 @@
   });
 </script>
 
-{#if $dialogWorkspaceId$ && view}
+{#if $dialogWorkspaceId$ && $dialogWorkspaceId$ === workspaceId && view}
   <MoveHomeDialog
     open
     {view}
