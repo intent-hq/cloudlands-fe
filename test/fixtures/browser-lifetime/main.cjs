@@ -25,6 +25,9 @@ if (new URL(url).searchParams.get('owned') === 'true') {
   }
 }
 app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-attach-webview', (_attachEvent, webPreferences) => {
+    webPreferences.enableBlinkFeatures = require(cdpBundle).WEBVIEW_BLINK_FEATURES;
+  });
   if (contents.getType() !== 'webview') return;
   const guest = { id: contents.id, navigations: [], destroyed: false };
   globalThis.lifetimeEvidence.guests.push(guest);

@@ -28,6 +28,13 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
+import {
+  LIST_TOOLS_EXPRESSION,
+  callToolExpression,
+  listWarning,
+  parseCallOutcome,
+  parseListOutcome,
+} from './browser-webmcp';
 // Visibility checks use ANY_HOST: the executor has no host for the workspace
 // (the embedded browser service keys tabs by workspace id alone).
 import {
@@ -144,6 +151,23 @@ const EvaluateActionSchema = z.object({
   expression: z.string(),
   tabId: z.string().optional(),
 });
+
+// WebMCP tools a page registered with document.modelContext.registerTool().
+const ListToolsActionSchema = z
+  .object({
+    action: z.literal('listTools'),
+    tabId: z.string().optional(),
+  })
+  .strict();
+
+const CallToolActionSchema = z
+  .object({
+    action: z.literal('callTool'),
+    name: z.string().min(1),
+    input: z.record(z.string(), z.unknown()).optional(),
+    tabId: z.string().optional(),
+  })
+  .strict();
 
 const WaitForOptionsSchema = z.object({
   console: z.string().optional(),
@@ -398,6 +422,8 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   ScreenshotActionSchema,
   PreviewHtmlActionSchema,
   EvaluateActionSchema,
+  ListToolsActionSchema,
+  CallToolActionSchema,
   SnapshotActionSchema,
   StartSessionActionSchema,
   StartCaptureActionSchema,
@@ -809,6 +835,8 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
   'getAccessibilityTree',
   'screenshot',
   'evaluate',
+  'listTools',
+  'callTool',
   'snapshot',
   'startSession',
   'resetTab',
@@ -831,6 +859,8 @@ const AGENT_DRAWING_ACTIONS = new Set([
   'getAccessibilityTree',
   'screenshot',
   'evaluate',
+  'listTools',
+  'callTool',
   'snapshot',
   'startSession',
   'navigate',
@@ -1278,6 +1308,45 @@ async function executeAction(
           action: action.action,
           success: true,
           result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
+      }
+
+      case 'listTools':
+      case 'callTool': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        if (mount.failure) return mount.failure;
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const expression =
+          action.action === 'listTools'
+            ? LIST_TOOLS_EXPRESSION
+            : callToolExpression(action.name, action.input);
+        const raw = await embeddedBrowserCdp.evaluate(tabId, expression, {
+          deadline,
+          awaitPromise: true,
+        });
+        if (action.action === 'listTools') {
+          const outcome = parseListOutcome(raw);
+          const warning = listWarning(outcome) ?? mount.warning;
+          return {
+            action: 'listTools',
+            success: true,
+            result: { tools: outcome.available ? outcome.tools : [] },
+            ...(warning ? { warning } : {}),
+          };
+        }
+        const outcome = parseCallOutcome(raw, action.name);
+        if (!outcome.ok) return { action: 'callTool', success: false, error: outcome.error };
+        return {
+          action: 'callTool',
+          success: true,
+          result: outcome.output,
           ...(mount.warning ? { warning: mount.warning } : {}),
         };
       }

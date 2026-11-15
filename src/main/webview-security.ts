@@ -20,7 +20,11 @@ import { app, session, systemPreferences } from 'electron';
 import { openExternal } from './open-external';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
+import {
+  BROWSER_PANEL_PARTITION,
+  BROWSER_PROTOCOLS,
+  WEBVIEW_BLINK_FEATURES,
+} from '../shared/constants';
 import { arePasskeysEnabled } from '../features/passkeys/main/passkeys.ipc';
 import {
   HUD_ROUTE_PREFIX,
@@ -353,6 +357,10 @@ export function setupWebviewSecurity(): void {
       });
 
       applyBrowserGuestWebPreferences(webPreferences);
+
+      // Expose `document.modelContext` so pages can offer WebMCP tools to the
+      // agent browser's listTools / callTool actions.
+      webPreferences.enableBlinkFeatures = WEBVIEW_BLINK_FEATURES;
 
       // If this webview uses the browser panel partition, ensure its session
       // has the OAuth-friendly permission handlers configured.

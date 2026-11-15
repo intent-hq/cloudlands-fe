@@ -2673,18 +2673,20 @@ class EmbeddedBrowserCdpService {
 
   /**
    * Evaluate JavaScript in a tab. With a `deadline`, the command is bounded
-   * by the remaining request budget (#4835).
+   * by the remaining request budget (#4835). `awaitPromise` returns the
+   * settled value of a promise result.
    */
   async evaluate(
     tabId: string | undefined,
     expression: string,
-    options: CaptureOptions = {},
+    options: CaptureOptions & { awaitPromise?: boolean } = {},
   ): Promise<unknown> {
     const webContentsId = this.resolveActionTarget(tabId);
     const result = (await this.withDeadline(
       this.sendCommand(webContentsId, 'Runtime.evaluate', {
         expression,
         returnByValue: true,
+        ...(options.awaitPromise ? { awaitPromise: true } : {}),
       }),
       'Runtime.evaluate',
       options.deadline,
