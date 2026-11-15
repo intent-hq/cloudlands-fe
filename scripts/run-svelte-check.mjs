@@ -333,8 +333,13 @@ export function readRssMiB(pid, platform = process.platform) {
   }
 }
 
-// Match the existing CI Svelte-check step, without changing other Node processes.
-const DEFAULT_HEAP_FLAG = '--max-old-space-size=8192';
+/**
+ * Heap (MB) of the "Svelte check" step in intent-pr.yml, applied to the local
+ * checker only (other Node processes keep theirs) so a local OOM means what it
+ * means on CI. scripts/run-svelte-check.test.ts fails if the two drift.
+ */
+export const SVELTE_CHECK_HEAP_MB = 8192;
+const DEFAULT_HEAP_FLAG = `--max-old-space-size=${SVELTE_CHECK_HEAP_MB}`;
 
 /** Recognize Node heap choices, including aliases and double-quoted option tokens. */
 function heapFlags(options) {
