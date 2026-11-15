@@ -31,7 +31,7 @@ export function trackPinnedAutomatedRun(
   let current: string | null = null;
   let cancelRead: CancelLayoutTask | null = null;
   let readPending = false;
-  const resizeObserver = new ResizeObserver(() => schedule());
+  let resizeObserver: ResizeObserver | null = null;
 
   const emit = (next: string | null) => {
     if (next === current) return;
@@ -40,29 +40,45 @@ export function trackPinnedAutomatedRun(
   };
   const measure = () => {
     readPending = false;
-    emit(options.enabled ? findPinnedAutomatedRun(container) : null);
+    if (resizeObserver) emit(findPinnedAutomatedRun(container));
   };
-  function schedule() {
-    if (readPending) return;
+  const schedule = () => {
+    if (readPending || !resizeObserver) return;
     readPending = true;
     cancelRead = scheduleLayoutRead(measure);
+  };
+
+  // Attaches nothing while disabled, so the Labs switch off costs no observers.
+  function start() {
+    if (resizeObserver) return;
+    resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(container);
+    if (container.firstElementChild) resizeObserver.observe(container.firstElementChild);
+    container.addEventListener('scroll', schedule, { passive: true });
+    schedule();
+  }
+  function stop() {
+    if (!resizeObserver) return emit(null);
+    container.removeEventListener('scroll', schedule);
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    cancelRead?.();
+    cancelRead = null;
+    readPending = false;
+    emit(null);
   }
 
-  container.addEventListener('scroll', schedule, { passive: true });
-  resizeObserver.observe(container);
-  if (container.firstElementChild) resizeObserver.observe(container.firstElementChild);
-  schedule();
+  if (options.enabled) start();
 
   return {
     update(next: PinnedAutomatedRunOptions) {
       options = next;
-      if (!options.enabled) emit(null);
-      else schedule();
+      if (!options.enabled) stop();
+      else if (resizeObserver) schedule();
+      else start();
     },
     destroy() {
-      container.removeEventListener('scroll', schedule);
-      resizeObserver.disconnect();
-      cancelRead?.();
+      stop();
     },
   };
 }

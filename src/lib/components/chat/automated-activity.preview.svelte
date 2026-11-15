@@ -31,6 +31,7 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
   import type { AgentMessage } from '$shared/types';
+  import { appClient } from '$lib/client';
   import { store } from '$store/renderer/store';
   import { setLabsHideAutomatedActivityEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import ChatPanelComposerGeometryHost from './__tests__/ChatPanelComposerGeometryHost.svelte';
@@ -46,7 +47,12 @@
 
   const previous = store.state.userPreferences.labsHideAutomatedActivityEnabled;
   store.dispatch(setLabsHideAutomatedActivityEnabled(untrack(() => enabled)));
-  onDestroy(() => store.dispatch(setLabsHideAutomatedActivityEnabled(previous)));
+  const previousGetQueue = appClient.agents.getQueue;
+  appClient.agents.getQueue = async () => [];
+  onDestroy(() => {
+    appClient.agents.getQueue = previousGetQueue;
+    store.dispatch(setLabsHideAutomatedActivityEnabled(previous));
+  });
 
   let at = Date.parse('2026-11-14T09:00:00.000Z');
   const text = (id: string, role: AgentMessage['role'], body: string, metadata?: object) =>
