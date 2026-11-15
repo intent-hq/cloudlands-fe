@@ -31,9 +31,14 @@
 </script>
 
 {#if view.starting}
-  <EmptyState class="h-full" data-workspace-home-panel-notice="starting" role="status">
+  <EmptyState
+    class="h-full min-h-0"
+    density="compact"
+    data-workspace-home-panel-notice="starting"
+    role="status"
+  >
     {#snippet icon()}
-      <IntentMarkLoader size={20} />
+      <IntentMarkLoader size={16} />
     {/snippet}
     {#snippet title()}
       {m.workspaceHome_starting_label()}

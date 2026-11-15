@@ -10,7 +10,11 @@
  * served.
  */
 import { AgentStatus, WorkspaceStatusEnum, type AgentSession, type Workspace } from '$shared/types';
-import type { MoveHomeTarget, WorkspaceHomeState } from '$shared/types/workspace-home';
+import type {
+  KnownWorkspaceHomeState,
+  MoveHomeTarget,
+  WorkspaceHomeState,
+} from '$shared/types/workspace-home';
 import {
   START_ON_BACKEND,
   startOnCloudMachineId,
@@ -45,10 +49,17 @@ export interface WorkspaceHomeView {
  * unavailable and presented like a detached home (its sentence, Wait and
  * Move home), so a newer backend's state is never shown as available.
  */
-function presentedState(
-  state: WorkspaceHomeState,
-): 'attached' | 'detached' | 'moving' | 'starting' {
-  return state === 'attached' || state === 'moving' || state === 'starting' ? state : 'detached';
+function presentedState(state: WorkspaceHomeState): KnownWorkspaceHomeState {
+  switch (state) {
+    case 'attached':
+      return 'attached';
+    case 'moving':
+      return 'moving';
+    case 'starting':
+      return 'starting';
+    default:
+      return 'detached';
+  }
 }
 
 /** The home's view, or null when the workspace has none. */

@@ -9092,5 +9092,6 @@
   "workspaceHome_moveError_targetUnavailable": "That machine can't be a home right now. Pick another one.",
   "workspaceHome_moveError_updateRequired": "Update Intent on that machine before you make it a home.",
   "workspaceHome_moveError_failed": "Couldn't move the home: {message}",
-  "workspaceHome_starting_label": "Starting home…"
+  "workspaceHome_starting_label": "Starting home…",
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Starts a new sandbox"
 }

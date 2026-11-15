@@ -53,7 +53,8 @@
     {/key}
   </div>
   {#if view?.unavailable}
-    <div class="absolute inset-0 z-10 bg-background">
+    <!-- Clipped to the panel: a short panel never spills the notice onto its neighbours. -->
+    <div class="absolute inset-0 z-10 overflow-hidden bg-background">
       <WorkspaceHomePanelNotice
         {view}
         canMove={$canMove$}

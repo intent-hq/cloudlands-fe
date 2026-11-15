@@ -9092,5 +9092,6 @@
   "workspaceHome_moveError_targetUnavailable": "Esa máquina no puede ser la principal ahora mismo. Elige otra.",
   "workspaceHome_moveError_updateRequired": "Actualiza Intent en esa máquina antes de convertirla en la principal.",
   "workspaceHome_moveError_failed": "No se pudo mover la máquina principal: {message}",
-  "workspaceHome_starting_label": "Iniciando la máquina principal…"
+  "workspaceHome_starting_label": "Iniciando la máquina principal…",
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Inicia un nuevo sandbox"
 }

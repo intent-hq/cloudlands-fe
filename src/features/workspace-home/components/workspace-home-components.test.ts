@@ -252,3 +252,50 @@ describe('WorkspaceHomePanelGate while a cloud home starts', () => {
     expect(after).not.toBe(before);
   });
 });
+
+describe('MoveHomeDialog cloud entries', () => {
+  const CLOUD = homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'e2b-4x8' });
+  const CLOUD_OPTIONS: MoveHomeOption[] = [
+    ...OPTIONS,
+    { key: CLOUD, kind: 'cloud', label: 'E2B 4x8', platform: null, disabled: false },
+    {
+      key: homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'northflank' }),
+      kind: 'cloud',
+      label: 'Northflank',
+      platform: null,
+      disabled: true,
+      reason: 'Key rejected',
+    },
+  ];
+
+  it('says a cloud entry starts a new sandbox and moves the home there', async () => {
+    const onSubmit = vi.fn();
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: CLOUD_OPTIONS,
+      onSubmit,
+      onCancel: vi.fn(),
+    });
+    const cloud = screen.getByRole('radio', { name: /E2B 4x8/ });
+    expect(cloud.textContent).toContain(m.workspaceHome_moveDialog_cloudStartsSandbox());
+    await fireEvent.click(cloud);
+    await fireEvent.click(submitButton());
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: 'cloud', cloudMachineId: 'e2b-4x8' });
+  });
+
+  it('shows an unusable cloud entry disabled with its reason instead', () => {
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: CLOUD_OPTIONS,
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    const blocked = screen.getByRole('radio', { name: /Northflank/ }) as HTMLButtonElement;
+    expect(blocked.textContent).toContain('Key rejected');
+    expect(blocked.textContent).not.toContain(m.workspaceHome_moveDialog_cloudStartsSandbox());
+  });
+});
