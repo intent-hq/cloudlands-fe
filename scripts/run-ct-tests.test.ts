@@ -1,6 +1,7 @@
+// @verify-changed-triggers: .github/workflows/browser-tests.yml
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -28,6 +29,7 @@ import {
   worktreeCtPort,
 } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
+import { CT_BUILD_HEAP_MB } from './ct-changed-repeat.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
 
@@ -210,9 +212,20 @@ describe('buildChildEnv', () => {
     expect(env.PLAYWRIGHT_HTML_OPEN).toBe('on-failure');
   });
 
-  it('defaults NODE_OPTIONS to the 8 GB heap cap when unset', () => {
+  it("defaults NODE_OPTIONS to the heap cap of CI's CT bundle build when unset", () => {
     const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
-    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=8192');
+    expect(env.NODE_OPTIONS).toBe(`--max-old-space-size=${CT_BUILD_HEAP_MB}`);
+  });
+
+  // A lower local default let a full local run die with "JavaScript heap out
+  // of memory" while CI passed the same code (cloudlands-fe#4632).
+  it('matches the heap of the "Build CT bundle" step in browser-tests.yml', () => {
+    const workflow = readFileSync(path.resolve('.github/workflows/browser-tests.yml'), 'utf8');
+    const step = workflow.slice(workflow.indexOf('- name: Build CT bundle'));
+    const heap = /NODE_OPTIONS: '--max-old-space-size=(\d+)'/.exec(step)?.[1];
+    expect(heap).toBe(String(CT_BUILD_HEAP_MB));
+    const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
+    expect(env.NODE_OPTIONS).toBe(`--max-old-space-size=${heap}`);
   });
 
   it('appends the heap cap to a pre-set NODE_OPTIONS that has no heap flag', () => {
@@ -222,7 +235,7 @@ describe('buildChildEnv', () => {
       isTTY: false,
       root: '/repo',
     });
-    expect(env.NODE_OPTIONS).toBe(`${preset} --max-old-space-size=8192`);
+    expect(env.NODE_OPTIONS).toBe(`${preset} --max-old-space-size=${CT_BUILD_HEAP_MB}`);
   });
 
   it.each([
@@ -266,7 +279,7 @@ describe('buildChildEnv', () => {
     });
     const hint = heapExhaustionHint({ code: 134, signal: null, env });
     expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
-    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain(String(CT_BUILD_HEAP_MB));
   });
 });
 
@@ -431,7 +444,7 @@ describe('heapExhaustionHint', () => {
       ...abort,
       env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init' },
     });
-    expect(hint).toContain('--max-old-space-size=8192');
+    expect(hint).toContain(`--max-old-space-size=${CT_BUILD_HEAP_MB}`);
     expect(hint).not.toContain('dd-trace');
   });
 
@@ -441,7 +454,7 @@ describe('heapExhaustionHint', () => {
       env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size=2048' },
     });
     expect(hint).toContain('--max-old-space-size=2048');
-    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain(String(CT_BUILD_HEAP_MB));
     expect(hint).not.toContain('dd-trace');
     expect(hint).not.toContain('--require');
   });
@@ -452,7 +465,7 @@ describe('heapExhaustionHint', () => {
   ])('recognises the %s spelling', (_label, preset, token) => {
     const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, NODE_OPTIONS: preset } });
     expect(hint).toContain(token);
-    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain(String(CT_BUILD_HEAP_MB));
   });
 
   it('names a CT_NODE_ARGS heap flag, which overrides NODE_OPTIONS', () => {
@@ -495,12 +508,11 @@ describe('heapExhaustionHint', () => {
       ...abort,
       env: {
         ...baseEnv,
-        NODE_OPTIONS:
-          '--require /x/dd-trace/init --max-old-space-size-percentage=25 --max-old-space-size=8192',
+        NODE_OPTIONS: `--require /x/dd-trace/init --max-old-space-size-percentage=25 --max-old-space-size=${CT_BUILD_HEAP_MB}`,
       },
     });
     expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
-    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain(String(CT_BUILD_HEAP_MB));
     expect(hint).not.toContain('dd-trace');
   });
 
@@ -543,7 +555,7 @@ describe('heapExhaustionHint', () => {
     const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, ...vars } });
     expect(hint).toContain(`--max-old-space-size-percentage 25 (${source})`);
     expect(hint).toContain(`${source}=--max-old-space-size-percentage=50 pnpm run test:ct`);
-    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain(String(CT_BUILD_HEAP_MB));
     expect(hint).not.toContain('--no-opt');
     expect(hint).not.toContain('dd-trace');
   });
@@ -580,6 +592,7 @@ describe('heapExhaustionHint', () => {
     expect(usage()).toContain(OPEN_REPORT_FLAG);
     expect(usage()).toContain(PRINT_OS_DEPS_FLAG);
     expect(usage()).toContain('CT_PORT');
+    expect(usage()).toContain(`--max-old-space-size=${CT_BUILD_HEAP_MB}`);
   });
 });
 
