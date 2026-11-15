@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.341.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.341.1...v2.341.2) (2026-11-15)
+
+
+### 🐛 Bug Fixes
+
+* **ct:** match local CT and svelte-check heaps to CI ([#4646](https://github.com/intent-hq/cloudlands-fe/issues/4646)) ([c6800a7](https://github.com/intent-hq/cloudlands-fe/commit/c6800a7e4771b12712af5bac81e02dc383192867))
+
 ## [2.341.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.341.0...v2.341.1) (2026-11-15)
 
 
