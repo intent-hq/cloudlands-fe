@@ -29,15 +29,15 @@ import {
   playwrightFilter,
 } from './ct-changed-specs.mjs';
 import { diffBase } from './ct-contract-paths.mjs';
-import { removeHeapFlags } from './run-ct-tests.mjs';
+import { CT_BUILD_HEAP_MB, removeHeapFlags } from './run-ct-tests.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const LAUNCHER = 'scripts/run-ct-tests.mjs';
 export const DEFAULT_BASE = 'origin/main';
 // The heaps of CI's "Build CT bundle" and "Component tests" steps (test-ct in
-// browser-tests.yml).
-export const CT_BUILD_HEAP_MB = 12288;
+// browser-tests.yml). The build heap is the launcher's, so the two cannot drift.
+export { CT_BUILD_HEAP_MB };
 export const CT_RUN_HEAP_MB = 4096;
 export const CT_CHANGED_WORKERS = 2;
 export const CT_CHANGED_JSON_REPORT = 'playwright-report/results.json';

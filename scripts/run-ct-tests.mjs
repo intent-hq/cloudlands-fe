@@ -14,7 +14,8 @@
  * version always matches the CT transform version, then forwards all CLI
  * args to `playwright test -c playwright-ct.config.ts`.
  *
- * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
+ * Local CT bundle builds need the same heap cap as CI's build step
+ * (`CT_BUILD_HEAP_MB`, 12 GiB);
  * Node's default heap can run out while Vite bundles the component registry.
  * Apply the heap default unless the caller already chose a heap cap: an unset
  * NODE_OPTIONS gets the flag, a pre-set one without a heap flag (e.g. a
@@ -22,7 +23,7 @@
  * intent-hq/intent#4565) keeps its options with the flag appended, and one that
  * already carries --max-old-space-size or --max-old-space-size-percentage (or
  * their V8 underscore aliases) is left untouched.
- * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
+ * CI keeps its per-step limits: 12 GiB for building, 4 GiB for cached test runs,
  * so the larger build allowance does not leak into its long-lived test phase.
  * Playwright rebuilds in-process when sources change between dependency
  * population and begin(), so concurrent edits during a cold build can exceed
@@ -124,6 +125,9 @@ export function usage() {
     '                    show-report`). Opt-in values only take effect on an interactive',
     '                    terminal; automated (non-TTY) runs never block on the report.',
     '  CT_NODE_ARGS      Space-separated Node flags (default: empty; no shell quoting).',
+    `  NODE_OPTIONS      Gets ${CT_HEAP_FLAG} (CI's CT bundle build heap) unless it`,
+    '                    already sets --max-old-space-size or --max-old-space-size-percentage;',
+    '                    a heap flag in CT_NODE_ARGS overrides it.',
     '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
     '  PLAYWRIGHT_HTML_OPEN',
     `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
@@ -404,8 +408,17 @@ export function forwardSignalsToChild({
 
 export { resolveCtAlignedPlaywrightCli } from './ct-browser.mjs';
 
+/**
+ * Heap (MB) of CI's "Build CT bundle" step (test-ct in browser-tests.yml), the
+ * single source for every CT bundle build: the launcher default below and
+ * scripts/ct-changed-repeat.mjs's build step. A lower local value let a full
+ * local run die with "JavaScript heap out of memory" while CI passed the same
+ * code (cloudlands-fe#4632); scripts/run-ct-tests.test.ts and
+ * scripts/ct-changed-repeat.test.ts check it against the workflow.
+ */
+export const CT_BUILD_HEAP_MB = 12288;
 /** Heap cap applied to the Playwright child unless the caller chose one. */
-const CT_HEAP_FLAG = '--max-old-space-size=8192';
+const CT_HEAP_FLAG = `--max-old-space-size=${CT_BUILD_HEAP_MB}`;
 // Both heap caps accept the V8 underscore alias (`--max_old_space_size=`, as
 // scripts/vite-build.mjs also honours). The percentage flag is Node's own and
 // also takes its value as the next token; the absolute flag is a V8

@@ -1,3 +1,4 @@
+// @verify-changed-triggers: .github/workflows/intent-pr.yml
 import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
@@ -16,8 +17,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
+import { createRequire } from 'node:module';
 import {
   MIN_FILES,
+  SVELTE_CHECK_HEAP_MB,
   NON_TS_SIZE_LIMIT_BYTES,
   RSS_FILE_ENV,
   createOutputCollector,
@@ -36,6 +39,28 @@ import {
   syncEnv,
   runSvelteCheck,
 } from './run-svelte-check.mjs';
+
+const { load } = createRequire(import.meta.url)('js-yaml');
+
+// Local and CI svelte-check runs share one heap cap, so a local OOM means a real
+// regression rather than a different allowance (cloudlands-fe#4632 hit that drift
+// for component tests: the launcher had 8 GB, CI 12 GiB).
+describe('local heap default parity with CI', () => {
+  it('matches the NODE_OPTIONS of every "Svelte check" step in intent-pr.yml', () => {
+    const workflow = load(readFileSync('.github/workflows/intent-pr.yml', 'utf8'));
+    const steps = Object.values(
+      workflow.jobs as Record<
+        string,
+        { steps?: { name?: string; env?: Record<string, string> }[] }
+      >,
+    ).flatMap((job) => job.steps ?? []);
+    const svelteSteps = steps.filter((step) => step.name === 'Svelte check');
+    expect(svelteSteps.length).toBeGreaterThan(0);
+    for (const step of svelteSteps) {
+      expect(step.env?.NODE_OPTIONS).toBe(`--max-old-space-size=${SVELTE_CHECK_HEAP_MB}`);
+    }
+  });
+});
 
 describe('parseMachineLine', () => {
   it('parses a COMPLETED summary line', () => {
@@ -684,7 +709,7 @@ describe('local checker heap with real children', () => {
     // varies by Node version and is additional to the old-space cap.
     const referenceArgs =
       Object.keys(options).length === 0
-        ? ['--max-old-space-size=8192']
+        ? [`--max-old-space-size=${SVELTE_CHECK_HEAP_MB}`]
         : (options.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? []);
     const reference = spawnSync(process.execPath, [...referenceArgs, cliPath], {
       env,
@@ -714,7 +739,7 @@ describe('local checker heap with real children', () => {
   it.each([0, 7])('adds local headroom and preserves child exit %i', async (exitCode) => {
     const result = await runHeapChild({}, exitCode);
     expect(result.exitCode).toBe(exitCode);
-    expect(result.oracle.nodeOptions).toBe('--max-old-space-size=8192');
+    expect(result.oracle.nodeOptions).toBe(`--max-old-space-size=${SVELTE_CHECK_HEAP_MB}`);
     expect(result.peakRssMiB).toBeGreaterThan(0);
   });
 
@@ -723,7 +748,9 @@ describe('local checker heap with real children', () => {
     expect(exitCode).toBe(0);
     expect(oracle.preloaded).toBe(true);
     expect(oracle.nodeOptions).toMatch(
-      /--require ".*preload with spaces.cjs" --max-old-space-size=8192$/,
+      new RegExp(
+        `--require ".*preload with spaces.cjs" --max-old-space-size=${SVELTE_CHECK_HEAP_MB}$`,
+      ),
     );
   });
 
@@ -774,7 +801,7 @@ describe('local checker heap with real children', () => {
     const { exitCode, oracle } = await runHeapChild(options);
     expect(exitCode).toBe(0);
     expect(oracle.nodeOptions).toBe(options.NODE_OPTIONS);
-    expect(oracle.argv).not.toContain('--max-old-space-size=8192');
+    expect(oracle.argv).not.toContain(`--max-old-space-size=${SVELTE_CHECK_HEAP_MB}`);
     expect(oracle.heapMiB).toBeGreaterThan(0);
   });
 
@@ -892,7 +919,11 @@ describe('checker wrapper diagnostics with real children', () => {
       expect(result.stdout).toMatch(
         /svelte-check \.js\/\.svelte input: 0\.0 MB of the 20\.0 MB limit/,
       );
-      expect(result.stdout).toMatch(/svelte-check peak RSS: \d+ MiB \(--max-old-space-size=8192\)/);
+      expect(result.stdout).toMatch(
+        new RegExp(
+          `svelte-check peak RSS: \\d+ MiB \\(--max-old-space-size=${SVELTE_CHECK_HEAP_MB}\\)`,
+        ),
+      );
       if (control.completed)
         expect(result.stdout).toContain(
           `svelte-check found ${control.errors} errors and 0 warnings in ${control.errors} files (checked 600 files)`,
