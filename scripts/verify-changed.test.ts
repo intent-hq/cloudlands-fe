@@ -3511,7 +3511,7 @@ describe('package.json lane selection', () => {
         ...manifest,
         scripts: { ...rest, 'test:ct': 'node other.mjs', 'lint:new': 'node new.mjs' },
       });
-      expect(classifyPackageJsonChange(text(manifest), after)).toEqual({
+      expect(classifyPackageJsonChange(text(manifest), after)).toMatchObject({
         kind: 'scripts-only',
         scripts: ['lint', 'lint:new', 'test:ct'],
       });
@@ -3521,7 +3521,7 @@ describe('package.json lane selection', () => {
       const { scripts, ...rest } = manifest;
       expect(
         classifyPackageJsonChange(text(manifest), JSON.stringify({ scripts, ...rest })),
-      ).toEqual({ kind: 'scripts-only', scripts: [] });
+      ).toMatchObject({ kind: 'scripts-only', scripts: [] });
     });
 
     it.each([
@@ -3562,7 +3562,7 @@ describe('package.json lane selection', () => {
     }
 
     it('selects the script readers but no full Vitest or CT fallback for a scripts-only edit', () => {
-      const plan = planFor({ kind: 'scripts-only', scripts: ['lint:root-spec-stubs'] });
+      const plan = planFor(scriptsOnly(['lint:root-spec-stubs']));
       expect(plan.fallbackReasons).toEqual([]);
       expect(ids(plan)).not.toContain('vitest-full');
       expect(ids(plan)).not.toContain('ct-full');
@@ -3575,14 +3575,74 @@ describe('package.json lane selection', () => {
       expect(declared?.args).not.toContain('scripts/unrelated.test.ts');
     });
 
-    it.each([['test:ct'], ['pretest:ct'], ['test:ct:full']])(
-      'still selects the full CT suite when the %s launcher changes',
-      (script) => {
-        const plan = planFor({ kind: 'scripts-only', scripts: [script] });
+    const scriptsOnly = (scripts: string[], current: Record<string, string> = {}) => ({
+      kind: 'scripts-only',
+      scripts,
+      current: { ...manifest.scripts, ...current },
+    });
+
+    it.each([
+      ['test:ct', {}],
+      ['pretest:ct', {}],
+      ['ct:helper', { 'test:ct': 'node scripts/pnpm-run.mjs ct:helper && node run.mjs' }],
+    ])(
+      'still selects the full CT suite when %s, which test:ct runs, changes',
+      (script, current) => {
+        const plan = planFor(scriptsOnly([script], current));
         expect(ids(plan)).toContain('ct-full');
         expect(ids(plan)).not.toContain('vitest-full');
       },
     );
+
+    it.each([
+      ['check', 'svelte-check'],
+      ['generate:build-config', 'tsc-main'],
+      ['generate:ipc-channels', 'tsc-preload'],
+      ['type-check', 'type-check-wrapper'],
+      ['lint:workflows', 'workflows'],
+      ['lint:i18n-strings', 'i18n-strings'],
+      ['test:ui-invariants', 'vitest-ui-invariants'],
+    ])('reruns the lane that runs a changed %s script', (script, lane) => {
+      const before = ids(planFor(scriptsOnly(['lint'])));
+      expect(before).not.toContain(lane);
+      const plan = planFor(scriptsOnly([script]));
+      expect(ids(plan)).toContain(lane);
+      expect(ids(plan)).not.toContain('vitest-full');
+    });
+
+    it('follows script references transitively to the lane that runs them', () => {
+      const plan = planFor(
+        scriptsOnly(['inner'], {
+          check: 'npm run middle',
+          middle: 'pnpm run inner && svelte-check',
+          inner: 'node x.mjs',
+        }),
+      );
+      expect(ids(plan)).toContain('svelte-check');
+    });
+
+    it('runs every unit suite that mentions package.json, declared or not', () => {
+      const root = fixtureRoot({
+        'package.json': text(manifest),
+        'vitest.config.ts': 'export default { test: { exclude: [] } };',
+        'scripts/reads-scripts.test.ts': "readFileSync('package.json', 'utf8');",
+        'tests/unit/pkg.test.ts': "import pkg from '../../package.json';",
+        'scripts/unrelated.test.ts': "readFileSync('README.md', 'utf8');",
+        'scripts/reads.visual.spec.ts': "readFileSync('package.json', 'utf8');",
+      });
+      const plan = createVerificationPlan(['package.json'], {
+        root,
+        ctTests: [],
+        declaredSuites: [],
+        packageJsonChange: scriptsOnly(['lint']),
+      });
+      const declared = plan.checks.find((check) => check.id === 'vitest-declared');
+      expect(declared?.args).toEqual(
+        expect.arrayContaining(['scripts/reads-scripts.test.ts', 'tests/unit/pkg.test.ts']),
+      );
+      expect(declared?.args).not.toContain('scripts/unrelated.test.ts');
+      expect(declared?.args).not.toContain('scripts/reads.visual.spec.ts');
+    });
 
     it.each([
       ['a dependency edit', { kind: 'other', reason: 'changed dependencies' }],
@@ -3601,7 +3661,7 @@ describe('package.json lane selection', () => {
         root,
         ctTests: [],
         declaredSuites: [],
-        packageJsonChange: { kind: 'scripts-only', scripts: ['lint'] },
+        packageJsonChange: { kind: 'scripts-only', scripts: ['lint'], current: manifest.scripts },
       });
       expect(plan.fallbackReasons).toEqual(['vitest.config.ts']);
       expect(ids(plan)).toContain('vitest-full');
@@ -3609,11 +3669,12 @@ describe('package.json lane selection', () => {
   });
 
   describe('runCli', () => {
-    function repository() {
+    function repository({ origin = true } = {}) {
       const root = gitRepository();
       writeFileSync(join(root, 'package.json'), text(manifest));
       git(root, 'add', 'package.json');
       git(root, 'commit', '-q', '-m', 'manifest');
+      if (origin) trackOriginMain(root);
       return root;
     }
 
@@ -3627,7 +3688,9 @@ describe('package.json lane selection', () => {
 
     const fallback = (lines: string[]) => lines.some((line) => line.includes('safe fallback'));
     const full = (lines: string[]) =>
-      lines.some((line) => /Vitest unit suite \(safe fallback\)|component suite/.test(line));
+      ['vitest run --config vitest.config.ts --maxWorkers=1', 'pnpm run test:ct'].every((command) =>
+        lines.some((line) => line.includes(command)),
+      );
 
     it.each([[['package.json']], [[]]])(
       'plans no full suite for an uncommitted scripts-only edit (paths %j)',
@@ -3687,9 +3750,56 @@ describe('package.json lane selection', () => {
 
     it('keeps the full fallback for a new package.json with no baseline', async () => {
       const root = gitRepository();
+      trackOriginMain(root);
       writeFileSync(join(root, 'package.json'), text(manifest));
       const lines = await dryRun(root, ['package.json']);
-      expect(fallback(lines)).toBe(true);
+      expect(lines).toContain(
+        'verify:changed: package.json no package.json at HEAD; full-suite fallback',
+      );
+      expect(full(lines)).toBe(true);
+    });
+
+    function branchWithScriptsEdit() {
+      const root = repository({ origin: false });
+      git(root, 'checkout', '-q', '-b', 'feature');
+      writeFileSync(join(root, 'package.json'), withScripts({ lint: 'x' }));
+      git(root, 'commit', '-q', '-am', 'scripts');
+      return root;
+    }
+
+    it('compares with the merge-base of an explicit --base, ignoring later base commits', async () => {
+      const root = branchWithScriptsEdit();
+      git(root, 'checkout', '-q', 'main');
+      writeFileSync(join(root, 'package.json'), text({ ...manifest, engines: { node: '>=99' } }));
+      git(root, 'commit', '-q', '-am', 'main moves on');
+      git(root, 'checkout', '-q', 'feature');
+      for (const argv of [
+        ['--base', 'main'],
+        ['--base', 'main', 'package.json'],
+      ]) {
+        const lines = await dryRun(root, argv);
+        expect(lines, argv.join(' ')).toContain(
+          'verify:changed: package.json changes only scripts (lint); no full-suite fallback',
+        );
+        expect(fallback(lines)).toBe(false);
+      }
+    });
+
+    it('keeps the full fallback for explicit paths when origin/main cannot be compared', async () => {
+      const root = branchWithScriptsEdit();
+      writeFileSync(join(root, 'package.json'), withScripts({ lint: 'y' }));
+      const lines = await dryRun(root, ['package.json']);
+      expect(lines.some((line) => line.includes('baseline unresolved'))).toBe(true);
+      expect(full(lines)).toBe(true);
+    });
+
+    it('compares uncommitted edits with HEAD when no base can be compared and no paths are given', async () => {
+      const root = branchWithScriptsEdit();
+      writeFileSync(join(root, 'package.json'), withScripts({ lint: 'y' }));
+      const lines = await dryRun(root, []);
+      expect(lines).toContain(
+        'verify:changed: package.json changes only scripts (lint); no full-suite fallback',
+      );
     });
   });
 });

@@ -27,8 +27,8 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'src/test/ct-test.ts',
   'src/lib/component-catalog/capture-stability.ts',
   'src/lib/component-catalog/preview-definition.ts',
-  // Contract paths. verify:changed narrows a scripts-only package.json edit to
-  // the CT launch scripts (test:ct*; see CT_LAUNCH_SCRIPT_RE in verify-changed.mjs).
+  // verify:changed narrows a scripts-only package.json edit to the scripts
+  // test:ct reaches (SCRIPT_LANES in verify-changed.mjs).
   'package.json',
   'pnpm-lock.yaml',
 ]);
