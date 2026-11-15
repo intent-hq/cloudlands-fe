@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.341.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.7...v2.341.0) (2026-11-15)
+
+
+### 🚀 Features
+
+* **machines:** show the workspace home, its detached state and Move home ([#4638](https://github.com/intent-hq/cloudlands-fe/issues/4638)) ([e2355b2](https://github.com/intent-hq/cloudlands-fe/commit/e2355b25913d0c98f16540e8c57032facfe3ffbe))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.217 ([#4647](https://github.com/intent-hq/cloudlands-fe/issues/4647)) ([2389077](https://github.com/intent-hq/cloudlands-fe/commit/2389077607bb45f8d585aa68a1fc7a92c8fab374))
+* **verify:** skip full suites for scripts-only package.json edits ([#4642](https://github.com/intent-hq/cloudlands-fe/issues/4642)) ([e45ec72](https://github.com/intent-hq/cloudlands-fe/commit/e45ec72dd7a7ac3c965ef3aa1e6f194c45064c10))
+
 ## [2.340.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.6...v2.340.7) (2026-11-15)
 
 
