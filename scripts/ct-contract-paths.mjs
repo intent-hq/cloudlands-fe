@@ -27,7 +27,8 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'src/test/ct-test.ts',
   'src/lib/component-catalog/capture-stability.ts',
   'src/lib/component-catalog/preview-definition.ts',
-  // Every edit is a trigger, including script-only changes such as dist:all.
+  // verify:changed narrows a scripts-only package.json edit to the scripts
+  // test:ct reaches (SCRIPT_LANES in verify-changed.mjs).
   'package.json',
   'pnpm-lock.yaml',
 ]);

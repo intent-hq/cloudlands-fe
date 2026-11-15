@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripVTControlCharacters } from 'node:util';
+import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 import { escape as escapeGlob, globSync } from 'glob';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
@@ -134,6 +134,131 @@ const FULL_RISK_FILES = new Set([
   'vitest.config.ts',
   'scripts/vitest-native-deps.mjs',
 ]);
+// package.json is a full-risk file only for what it changes. An edit confined
+// to "scripts" cannot change a dependency, the module type or the toolchain, so
+// it selects the lanes that read scripts (lint:package-scripts, the
+// architecture gates, knip, and the suites declaring package.json as a trigger)
+// instead of the full Vitest and component suites. cloudlands-fe#4632 added one
+// lint script and paid a 100-minute full local run. Any other top-level change,
+// or a baseline that cannot be read, keeps the full fallback.
+// A changed script still selects the lane that runs it: each entry names a
+// script this planner invokes. `scriptsReaching` adds its pre/post hooks and
+// every script it calls through `pnpm run` / `npm run` / pnpm-run.mjs.
+const SCRIPT_LANES = Object.freeze({
+  check: 'svelte-check',
+  'generate:build-config': 'main',
+  'generate:ipc-channels': 'preload',
+  'type-check': 'type-check-wrapper',
+  'lint:workflows': 'workflows',
+  'lint:i18n-strings': 'i18n-strings',
+  'test:ui-invariants': 'ui-invariants',
+  'test:ct': 'ct',
+});
+const SCRIPT_REFERENCE_RE = /(?:pnpm-run\.mjs|pnpm(?:\s+run)?|npm\s+run)\s+([\w:.@/-]+)/g;
+
+function scriptsReaching(name, scripts) {
+  const reached = new Set();
+  const pending = [name];
+  while (pending.length) {
+    const current = pending.pop();
+    for (const candidate of [current, `pre${current}`, `post${current}`]) {
+      if (reached.has(candidate)) continue;
+      reached.add(candidate);
+      const body = scripts[candidate];
+      if (typeof body !== 'string') continue;
+      for (const match of body.matchAll(SCRIPT_REFERENCE_RE)) pending.push(match[1]);
+    }
+  }
+  return reached;
+}
+
+/** Planner lanes whose script, or a script it reaches, changed. */
+export function lanesForChangedScripts(change) {
+  const scripts = change.current ?? {};
+  const changed = new Set(change.scripts);
+  const lanes = new Set();
+  for (const [name, lane] of Object.entries(SCRIPT_LANES)) {
+    if ([...scriptsReaching(name, scripts)].some((script) => changed.has(script))) lanes.add(lane);
+  }
+  return lanes;
+}
+
+// A scripts-only edit replaces the full unit fallback, so every unit suite that
+// mentions package.json runs, declared as a trigger or not (a suite asserting
+// what `dist:all` or `test:ct` runs reads the real scripts).
+function packageJsonReaderSuites(root, exclude) {
+  return globSync(VITEST_INCLUDE_GLOB, { cwd: root, ignore: exclude, nodir: true, posix: true })
+    .filter((file) => testRunner(file) === 'vitest')
+    .filter((file) => {
+      try {
+        return readFileSync(resolve(root, file), 'utf8').includes('package.json');
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+}
+
+/**
+ * Classifies a package.json edit from its baseline and current text:
+ * `{ kind: 'scripts-only', scripts }` with the added, removed or changed script
+ * names, or `{ kind: 'other', reason }` for anything else (dependencies,
+ * engines, config, unparsable JSON, a non-object "scripts").
+ */
+export function classifyPackageJsonChange(before, after) {
+  let previous;
+  let current;
+  try {
+    previous = JSON.parse(before);
+    current = JSON.parse(after);
+  } catch {
+    return { kind: 'other', reason: 'unparsable package.json' };
+  }
+  const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isObject(previous) || !isObject(current))
+    return { kind: 'other', reason: 'package.json is not an object' };
+  const keys = [...new Set([...Object.keys(previous), ...Object.keys(current)])].sort();
+  const changedKeys = keys.filter(
+    (key) => key !== 'scripts' && !isDeepStrictEqual(previous[key], current[key]),
+  );
+  if (changedKeys.length) return { kind: 'other', reason: `changed ${changedKeys.join(', ')}` };
+  const previousScripts = previous.scripts ?? {};
+  const currentScripts = current.scripts ?? {};
+  if (!isObject(previousScripts) || !isObject(currentScripts))
+    return { kind: 'other', reason: 'scripts is not an object' };
+  const names = [...new Set([...Object.keys(previousScripts), ...Object.keys(currentScripts)])];
+  const scripts = names
+    .filter(
+      (name) =>
+        !Object.hasOwn(previousScripts, name) ||
+        !Object.hasOwn(currentScripts, name) ||
+        previousScripts[name] !== currentScripts[name],
+    )
+    .sort();
+  return { kind: 'scripts-only', scripts, current: currentScripts };
+}
+
+/**
+ * Classifies the worktree package.json against `rev` (the merge-base for a
+ * branch, HEAD otherwise). Unreadable input classifies as `other`, which keeps
+ * the full fallback.
+ */
+export function readPackageJsonChange(root, rev) {
+  let before;
+  let after;
+  try {
+    before = gitRevision(['show', `${rev}:./package.json`], root);
+  } catch {
+    return { kind: 'other', reason: `no package.json at ${rev}` };
+  }
+  try {
+    after = readFileSync(resolve(root, 'package.json'), 'utf8');
+  } catch {
+    return { kind: 'other', reason: 'package.json was deleted' };
+  }
+  return classifyPackageJsonChange(before, after);
+}
+
 // svelte-check's own inputs: its tsconfig decides which files it checks (an
 // over-wide include can silently drop the whole project past the size limit),
 // and the wrapper decides how the run is guarded.
@@ -660,13 +785,24 @@ export function createVerificationPlan(files, options = {}) {
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
-  const uiInvariants = files.some(isRendererSource);
-  const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
-    (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
-  );
+  const packageScripts = files.includes('package.json');
+  const packageScriptsOnly = packageScripts && options.packageJsonChange?.kind === 'scripts-only';
+  const scriptLanes = packageScriptsOnly
+    ? lanesForChangedScripts(options.packageJsonChange)
+    : new Set();
+  const uiInvariants = files.some(isRendererSource) || scriptLanes.has('ui-invariants');
+  const declaredSelection = selectDeclaredSuites(declared.suites, files);
+  if (packageScriptsOnly && vitestExclude.complete)
+    declaredSelection.push(...packageJsonReaderSuites(root, vitestExclude.patterns));
+  const declaredUnit = [...new Set(declaredSelection)]
+    .sort()
+    .filter(
+      (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
+    );
   let architecture = files.some((file) => isArchitectureSource(file, root));
-  const workflowLint = files.some(isWorkflowLintInput);
-  const typeCheckWrapper = files.includes('scripts/type-check.ts');
+  const workflowLint = files.some(isWorkflowLintInput) || scriptLanes.has('workflows');
+  const typeCheckWrapper =
+    files.includes('scripts/type-check.ts') || scriptLanes.has('type-check-wrapper');
   const deadCode = files.some(
     (file) =>
       CODE_EXTENSIONS.has(extname(file)) ||
@@ -680,10 +816,18 @@ export function createVerificationPlan(files, options = {}) {
   let fullCt = false;
   let fullPlaywright = false;
   const fallbackReasons = [];
+  if (scriptLanes.has('svelte-check')) svelteCheck = true;
+  if (scriptLanes.has('main')) boundaries.add('main');
+  if (scriptLanes.has('preload')) boundaries.add('preload');
 
   for (const file of files) {
     // A resolved snapshot selects its runner above; it did not change source or types.
     if (snapshots.get(file)) continue;
+    if (file === 'package.json' && packageScriptsOnly) {
+      architecture = true;
+      if (scriptLanes.has('ct')) fullCt = true;
+      continue;
+    }
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte') || SVELTE_CHECK_INPUT_FILES.has(file)) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
@@ -730,6 +874,10 @@ export function createVerificationPlan(files, options = {}) {
       // An inherited skip from the caller's shell must not pass this lane unlinted.
       env: { [SKIP_WORKFLOW_LINT_ENV]: '0' },
     });
+  if (packageScripts)
+    checks.push(
+      command('package-scripts', 'Package scripts lint', ['run', 'lint:package-scripts']),
+    );
   if (typeCheckWrapper)
     checks.push(
       command('type-check-wrapper', 'Type check (wrapper, all programs)', ['run', 'type-check']),
@@ -746,7 +894,10 @@ export function createVerificationPlan(files, options = {}) {
       ignore: vitestExclude.patterns,
       nodir: true,
     }).length > 0;
-  if (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
+  if (
+    scriptLanes.has('i18n-strings') ||
+    (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
+  )
     checks.push(
       command('i18n-strings', 'Translation strings (required inventory scan)', [
         'run',
@@ -927,6 +1078,9 @@ export function createVerificationPlan(files, options = {}) {
     checks,
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
+    ...(packageScripts && options.packageJsonChange
+      ? { packageJsonChange: options.packageJsonChange }
+      : {}),
   };
 }
 
@@ -943,6 +1097,14 @@ function shellQuote(value) {
 export function printPlan(plan, dryRun, log = console.log) {
   log(`verify:changed: ${plan.files.length} file(s)`);
   for (const file of plan.files) log(`  - ${file}`);
+  if (plan.packageJsonChange?.kind === 'scripts-only') {
+    const names = plan.packageJsonChange.scripts;
+    log(
+      `verify:changed: package.json changes only scripts${names.length ? ` (${names.join(', ')})` : ''}; no full-suite fallback`,
+    );
+  } else if (plan.packageJsonChange?.kind === 'other') {
+    log(`verify:changed: package.json ${plan.packageJsonChange.reason}; full-suite fallback`);
+  }
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
   }
@@ -1602,7 +1764,18 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     mode = `worktree clean; verifying commits since merge-base with ${base}`;
   }
   log(`verify:changed: ${prefix}${mode}`);
-  const plan = createVerificationPlan(files, { root, static: args.static });
+  const plan = createVerificationPlan(files, {
+    root,
+    static: args.static,
+    packageJsonChange:
+      !args.static && files.includes('package.json')
+        ? packageJsonChangeFor(root, {
+            base: args.paths.length ? args.base : base,
+            ahead,
+            requireBase: args.paths.length > 0,
+          })
+        : undefined,
+  });
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
 
@@ -1623,6 +1796,31 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     log,
   });
   return 0;
+}
+
+// The baseline package.json: the merge-base with the branch base (explicit
+// --base, else origin/main when HEAD is ahead of it), else HEAD. Comparing the
+// worktree with it covers committed and uncommitted edits alike. Explicit-path
+// runs resolve the default base here, since only package.json needs git; when
+// origin/main cannot be compared, HEAD could hide this branch's committed
+// edits, so they keep the full fallback. Change-set runs then verify only the
+// uncommitted edits, so HEAD is their baseline.
+function packageJsonChangeFor(root, { base, ahead, requireBase }) {
+  let ref = base;
+  if (!ref) {
+    const state = ahead ?? aheadState(DEFAULT_BASE, root);
+    if (state === 'ahead') ref = DEFAULT_BASE;
+    else if (state === 'unresolved' && requireBase)
+      return {
+        kind: 'other',
+        reason: `baseline unresolved; cannot compare HEAD with ${DEFAULT_BASE}, pass --base <ref>`,
+      };
+  }
+  try {
+    return readPackageJsonChange(root, ref ? mergeBase(ref, root) : 'HEAD');
+  } catch (error) {
+    return { kind: 'other', reason: `baseline unreadable (${error.message})` };
+  }
 }
 
 /**
