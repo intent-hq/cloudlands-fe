@@ -300,8 +300,8 @@ jobs:
         # a quarantine failure cannot overwrite the required lane's report.
         # !cancelled() replaces the implicit success() guard so the lane
         # still runs when the required step on this shard is red; gating on
-        # the build step's outcome keeps it from re-running the 8 GB Vite
-        # build under the 4 GB cap when setup itself already failed.
+        # the build step's outcome keeps it from re-running the 12 GiB Vite
+        # build under the 4 GiB cap when setup itself already failed.
         # The tag regex is word-anchored so a future '@quarantine-*' tag or
         # a title that merely mentions the word does not match.
         if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' }}

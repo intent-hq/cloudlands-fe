@@ -1,5 +1,5 @@
 // @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/ct-changed-repeat.mjs,
-//   scripts/ct-changed-specs.mjs, scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
+//   scripts/run-ct-tests.mjs, scripts/ct-changed-specs.mjs, scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
@@ -30,6 +30,7 @@ import {
   parseArgs,
 } from './ct-changed-repeat.mjs';
 import { playwrightFilter } from './ct-changed-specs.mjs';
+import { buildChildEnv } from './run-ct-tests.mjs';
 
 const temps: string[] = [];
 afterEach(() => {
@@ -391,6 +392,15 @@ describe('parity with the nightly test-ct workflow job', () => {
     expect(stepRun('Build CT bundle').trim().split('\n').at(-1)).toBe(
       `pnpm run test:ct ${CT_BUILD_ARGS.join(' ')}`,
     );
+  });
+
+  // `pnpm run test:ct` alone (verify:changed's full CT run) builds the bundle
+  // under the launcher default; a lower default than this step let a local
+  // run die with "JavaScript heap out of memory" on code CI passes
+  // (cloudlands-fe#4632).
+  it('gives a plain launcher run the same heap as the build step', () => {
+    const { env } = buildChildEnv({ env: { PATH: '/usr/bin' }, isTTY: false, root: '/repo' });
+    expect(env.NODE_OPTIONS).toBe(envValue('Build CT bundle', 'NODE_OPTIONS'));
   });
 
   it('runs the tests under the same heap and JSON report path', () => {

@@ -1,11 +1,11 @@
-// @verify-changed-triggers: .github/workflows/browser-tests.yml
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  CT_BUILD_HEAP_MB,
   CT_HTML_REPORT_ENV,
   OPEN_REPORT_FLAG,
   PRINT_OS_DEPS_FLAG,
@@ -29,7 +29,6 @@ import {
   worktreeCtPort,
 } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
-import { CT_BUILD_HEAP_MB } from './ct-changed-repeat.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
 
@@ -215,17 +214,6 @@ describe('buildChildEnv', () => {
   it("defaults NODE_OPTIONS to the heap cap of CI's CT bundle build when unset", () => {
     const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
     expect(env.NODE_OPTIONS).toBe(`--max-old-space-size=${CT_BUILD_HEAP_MB}`);
-  });
-
-  // A lower local default let a full local run die with "JavaScript heap out
-  // of memory" while CI passed the same code (cloudlands-fe#4632).
-  it('matches the heap of the "Build CT bundle" step in browser-tests.yml', () => {
-    const workflow = readFileSync(path.resolve('.github/workflows/browser-tests.yml'), 'utf8');
-    const step = workflow.slice(workflow.indexOf('- name: Build CT bundle'));
-    const heap = /NODE_OPTIONS: '--max-old-space-size=(\d+)'/.exec(step)?.[1];
-    expect(heap).toBe(String(CT_BUILD_HEAP_MB));
-    const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
-    expect(env.NODE_OPTIONS).toBe(`--max-old-space-size=${heap}`);
   });
 
   it('appends the heap cap to a pre-set NODE_OPTIONS that has no heap flag', () => {
