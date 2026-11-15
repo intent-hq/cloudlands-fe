@@ -1,0 +1,93 @@
+# Announces beta and stable promotions in the community Discord's
+# #announcements channel. Alpha releases are never announced.
+#
+# Runs after every successful Promote Beta (promote-beta.yml) or Release
+# Stable (release-stable.yml) run, reads the version that channel's feed on
+# intent-hq/cloudlands-releases now serves, and posts one message through the
+# channel webhook in the DISCORD_ANNOUNCEMENTS_WEBHOOK secret
+# (scripts/discord-promotion-announce.mjs). Without the secret the post is
+# skipped with a notice. Re-running a promotion whose earlier attempt
+# succeeded posts nothing (the script reads that run's attempts, hence
+# actions: read). workflow_dispatch announces a channel by hand;
+# dry_run (default) prints the message without posting.
+#
+# Discord does not forward webhook posts to servers that follow the channel;
+# a moderator publishes the message in Discord when that is wanted.
+name: Announce Promotion
+
+on:
+  workflow_run:
+    workflows: ['Promote Beta', 'Release Stable']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel to announce'
+        required: true
+        type: choice
+        options: ['beta', 'stable']
+      dry_run:
+        description: 'Print the message without posting it'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: announce-promotion
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  announce:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Resolve channel
+        id: channel
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then CHANNEL="$INPUT_CHANNEL"
+          elif [ "$RUN_NAME" = "Promote Beta" ]; then CHANNEL=beta
+          elif [ "$RUN_NAME" = "Release Stable" ]; then CHANNEL=stable
+          else CHANNEL=""; fi
+          if [ "$CHANNEL" != "beta" ] && [ "$CHANNEL" != "stable" ]; then
+            echo "::error::No channel to announce for event '${EVENT_NAME}' (run '${RUN_NAME}')."
+            exit 1
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout announcement tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/discord-promotion-announce.mjs
+            scripts/intent-web-dist-tag-sync.mjs
+            scripts/intent-web-publish-plan.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Post to Discord
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          PROMOTION_RUN_ID: ${{ github.event.workflow_run.id }}
+          PROMOTION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_ANNOUNCEMENTS_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}
+        run: node scripts/discord-promotion-announce.mjs "$CHANNEL"
