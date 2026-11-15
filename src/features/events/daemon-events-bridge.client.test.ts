@@ -10160,9 +10160,14 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     handler(updatedNotification({ home: moving }));
     expect((await readWorkspace()).home).toEqual(moving);
 
-    // A value outside the contract is ignored.
-    handler(updatedNotification({ home: { ...home, state: 'lost' } }));
+    // A value outside the contract (no homeId) is ignored.
+    handler(updatedNotification({ home: { ...home, homeId: '' } }));
     expect((await readWorkspace()).home).toEqual(moving);
+
+    // A state this app does not know is kept as served, never dropped.
+    const later = { ...moving, state: 'hibernating', since: '2026-11-12T10:05:00Z' };
+    handler(updatedNotification({ home: later }));
+    expect((await readWorkspace()).home).toEqual(later);
   });
 
   it('clears statusImageAssetId on an explicit null in the delta', async () => {

@@ -22,7 +22,10 @@ type WorkspaceHomeBanner = 'detached' | 'moving' | 'backupWarning';
 
 export interface WorkspaceHomeView {
   name: string;
+  /** As served, including a state this app does not know. */
   state: WorkspaceHomeState;
+  /** A cloud home's sandbox is starting: a calm "Starting home…", no banner or actions. */
+  starting: boolean;
   /** Files, diffs, terminals and scripts fail with `home-unavailable`. */
   unavailable: boolean;
   lastBackupAt: string | null;
@@ -37,26 +40,73 @@ export interface WorkspaceHomeView {
   moveWarning: boolean;
 }
 
+/**
+ * How a served state is presented. A state this app does not know is
+ * unavailable and presented like a detached home (its sentence, Wait and
+ * Move home), so a newer backend's state is never shown as available.
+ */
+function presentedState(
+  state: WorkspaceHomeState,
+): 'attached' | 'detached' | 'moving' | 'starting' {
+  return state === 'attached' || state === 'moving' || state === 'starting' ? state : 'detached';
+}
+
 /** The home's view, or null when the workspace has none. */
 export function workspaceHomeView(
   workspace: Pick<Workspace, 'home'> | null | undefined,
 ): WorkspaceHomeView | null {
   const home = workspace?.home;
   if (!home) return null;
-  const { state } = home;
+  const presented = presentedState(home.state);
+  const starting = presented === 'starting';
   const banner: WorkspaceHomeBanner | null =
-    state === 'attached' ? (home.backupWarning === true ? 'backupWarning' : null) : state;
+    presented === 'attached'
+      ? home.backupWarning === true
+        ? 'backupWarning'
+        : null
+      : starting
+        ? null
+        : presented;
   return {
     name: home.name,
-    state,
-    unavailable: state !== 'attached',
+    state: home.state,
+    starting,
+    unavailable: presented !== 'attached',
     lastBackupAt: home.lastBackupAt ?? null,
     banner,
-    marker: state === 'attached' ? null : state,
-    canWait: state === 'detached',
-    canMove: state !== 'moving',
+    marker: presented === 'attached' || starting ? null : presented,
+    canWait: presented === 'detached',
+    canMove: presented === 'attached' || presented === 'detached',
     // When the old home is attached the backend pushes first, so nothing is lost.
-    moveWarning: state === 'detached',
+    moveWarning: presented === 'detached',
+  };
+}
+
+/** A panel's retry bookkeeping while the home is starting (see `nextHomeRetry`). */
+export interface HomeRetry {
+  /** Bumps once to remount the panel, so it re-reads from the now attached home. */
+  generation: number;
+  /** The panel has had a usable home since it mounted. */
+  usable: boolean;
+  /** The panel mounted, or stayed, while the home was unavailable. */
+  waited: boolean;
+}
+
+export const initialHomeRetry: HomeRetry = { generation: 0, usable: false, waited: false };
+
+/**
+ * Retry once the home is attached (nodes.md "Cloud homes" 6). A panel that
+ * opened while the home was starting has only failed reads under its notice
+ * and no user edits, so it remounts once to re-read. A panel that was
+ * already usable is never remounted: a resume must not drop unsaved work.
+ */
+export function nextHomeRetry(prev: HomeRetry, unavailable: boolean): HomeRetry {
+  if (prev.usable) return prev;
+  if (unavailable) return prev.waited ? prev : { ...prev, waited: true };
+  return {
+    generation: prev.waited ? prev.generation + 1 : prev.generation,
+    usable: true,
+    waited: false,
   };
 }
 

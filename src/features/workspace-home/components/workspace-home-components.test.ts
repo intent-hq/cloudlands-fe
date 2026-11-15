@@ -220,3 +220,35 @@ describe('WorkspaceHomePanelGate', () => {
     expect(document.querySelector('[data-gated-child]')).toBe(child);
   });
 });
+
+describe('WorkspaceHomePanelGate while a cloud home starts', () => {
+  it('shows a calm notice, then remounts the panel once the home is attached', async () => {
+    store.init();
+    const starting: WorkspaceHome = { ...HOME, state: 'starting', since: '2026-11-15T09:00:00Z' };
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-start', { home: starting })));
+    render(Harness, { workspaceId: 'ws-start' });
+
+    const notice = await vi.waitFor(() => {
+      const el = document.querySelector('[data-workspace-home-panel-notice="starting"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    // Calm: no Wait or Move home while it starts.
+    expect(notice.querySelectorAll('button')).toHaveLength(0);
+    const before = document.querySelector('[data-gated-child]');
+
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity('ws-start', {
+          home: { ...HOME, state: 'attached', since: '2026-11-15T09:00:20Z' },
+        }),
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    const after = document.querySelector('[data-gated-child]');
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(before);
+  });
+});

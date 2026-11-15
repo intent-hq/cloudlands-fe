@@ -15,6 +15,7 @@ function backupTime(view: Pick<WorkspaceHomeView, 'lastBackupAt'>): string {
 
 /** Why files, terminals and scripts are unavailable (detached or moving). */
 export function homeUnavailableText(view: WorkspaceHomeView): string {
+  if (view.starting) return m.workspaceHome_starting_label();
   if (view.state === 'moving') return m.workspaceHome_banner_moving();
   const time = backupTime(view);
   return time

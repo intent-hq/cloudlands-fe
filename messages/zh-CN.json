@@ -9091,5 +9091,6 @@
   "workspaceHome_moveError_homeMoving": "主机器已在迁移中。",
   "workspaceHome_moveError_targetUnavailable": "该机器目前不能作为主机器。请选择其他机器。",
   "workspaceHome_moveError_updateRequired": "请先在该机器上更新 Intent，再将其设为主机器。",
-  "workspaceHome_moveError_failed": "无法迁移主机器：{message}"
+  "workspaceHome_moveError_failed": "无法迁移主机器：{message}",
+  "workspaceHome_starting_label": "正在启动主机器…"
 }

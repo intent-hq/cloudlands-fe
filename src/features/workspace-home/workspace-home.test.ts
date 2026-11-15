@@ -10,6 +10,8 @@ import {
   parseMoveHomeTargetKey,
   setHomeErrorCode,
   workspaceHomeView,
+  initialHomeRetry,
+  nextHomeRetry,
 } from './workspace-home';
 import { parseWorkspaceHome, type WorkspaceHome } from '$shared/types/workspace-home';
 
@@ -40,13 +42,58 @@ describe('parseWorkspaceHome', () => {
   it('drops a value outside the contract', () => {
     expect(parseWorkspaceHome(undefined)).toBeUndefined();
     expect(parseWorkspaceHome(null)).toBeUndefined();
-    expect(parseWorkspaceHome({ ...ATTACHED, state: 'lost' })).toBeUndefined();
+    expect(parseWorkspaceHome({ ...ATTACHED, state: '' })).toBeUndefined();
+    expect(parseWorkspaceHome({ ...ATTACHED, state: 7 })).toBeUndefined();
     expect(parseWorkspaceHome({ ...ATTACHED, name: undefined })).toBeUndefined();
     expect(parseWorkspaceHome({ ...ATTACHED, homeId: '' })).toBeUndefined();
   });
 });
 
+describe('parseWorkspaceHome: starting and states this app does not know', () => {
+  it('keeps a starting cloud home (nodes.md "Cloud homes" 6)', () => {
+    const starting = {
+      ...ATTACHED,
+      nodeId: undefined,
+      cloudMachineId: 'e2b-team',
+      state: 'starting',
+    };
+    expect(parseWorkspaceHome(starting)).toEqual(starting);
+  });
+
+  it('keeps a home whose state this app does not know, never dropping it', () => {
+    expect(parseWorkspaceHome({ ...ATTACHED, state: 'hibernating' })).toEqual({
+      ...ATTACHED,
+      state: 'hibernating',
+    });
+  });
+});
+
 describe('workspaceHomeView', () => {
+  it('a starting home is unavailable but calm: no banner, no marker, no Wait or Move', () => {
+    const view = workspaceHomeView({ home: { ...ATTACHED, state: 'starting' } });
+    expect(view).toMatchObject({
+      state: 'starting',
+      starting: true,
+      unavailable: true,
+      banner: null,
+      marker: null,
+      canWait: false,
+      canMove: false,
+      moveWarning: false,
+    });
+  });
+
+  it('an unknown state is treated as unavailable, like a detached home', () => {
+    const view = workspaceHomeView({ home: { ...ATTACHED, state: 'hibernating' } });
+    expect(view).toMatchObject({
+      state: 'hibernating',
+      starting: false,
+      unavailable: true,
+      banner: 'detached',
+      marker: 'detached',
+    });
+  });
+
   it('is null for a workspace without a home (homes are gated)', () => {
     expect(workspaceHomeView(undefined)).toBeNull();
     expect(workspaceHomeView({})).toBeNull();
@@ -240,5 +287,25 @@ describe('isHomeBackedTab', () => {
     expect(isHomeBackedTab({ type: 'terminal', scriptId: 'build' })).toBe(false);
     expect(isHomeBackedTab({ type: 'file' })).toBe(true);
     expect(isHomeBackedTab({ type: 'note' })).toBe(false);
+  });
+});
+
+describe('nextHomeRetry (retry once the home is attached)', () => {
+  it('retries a panel that opened while the home was starting, once it is attached', () => {
+    let retry = nextHomeRetry(initialHomeRetry, true);
+    retry = nextHomeRetry(retry, true);
+    expect(retry.generation).toBe(0);
+    retry = nextHomeRetry(retry, false);
+    expect(retry).toMatchObject({ generation: 1, usable: true });
+    // Staying attached does not retry again.
+    expect(nextHomeRetry(retry, false)).toBe(retry);
+  });
+
+  it('never remounts a panel that was already usable, so its edits survive a resume', () => {
+    let retry = nextHomeRetry(initialHomeRetry, false);
+    expect(retry).toMatchObject({ generation: 0, usable: true });
+    retry = nextHomeRetry(retry, true);
+    retry = nextHomeRetry(retry, false);
+    expect(retry.generation).toBe(0);
   });
 });

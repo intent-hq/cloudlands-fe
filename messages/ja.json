@@ -9091,5 +9091,6 @@
   "workspaceHome_moveError_homeMoving": "ホームマシンはすでに移動中です。",
   "workspaceHome_moveError_targetUnavailable": "そのマシンは現在ホームマシンにできません。別のマシンを選んでください。",
   "workspaceHome_moveError_updateRequired": "ホームマシンにする前に、そのマシンの Intent を更新してください。",
-  "workspaceHome_moveError_failed": "ホームマシンを移動できませんでした: {message}"
+  "workspaceHome_moveError_failed": "ホームマシンを移動できませんでした: {message}",
+  "workspaceHome_starting_label": "ホームマシンを起動しています…"
 }

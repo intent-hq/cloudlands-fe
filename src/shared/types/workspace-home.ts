@@ -6,8 +6,14 @@
  */
 import { z } from 'zod';
 
-const WORKSPACE_HOME_STATES = ['attached', 'detached', 'moving'] as const;
-export type WorkspaceHomeState = (typeof WORKSPACE_HOME_STATES)[number];
+/**
+ * The documented states. `starting`: a cloud home's sandbox is starting,
+ * resuming or being rebuilt (nodes.md "Cloud homes" 6). A later backend may
+ * send a state this app does not know; it is kept as served and shown as
+ * unavailable, never dropped.
+ */
+export type KnownWorkspaceHomeState = 'attached' | 'detached' | 'moving' | 'starting';
+export type WorkspaceHomeState = KnownWorkspaceHomeState | (string & {});
 
 const WorkspaceHomeSchema = z.object({
   /** This home's generation: a new id at create and at every move. */
@@ -18,7 +24,7 @@ const WorkspaceHomeSchema = z.object({
   cloudMachineId: z.string().min(1).optional(),
   /** The machine's or entry's name. */
   name: z.string(),
-  state: z.enum(WORKSPACE_HOME_STATES),
+  state: z.string().min(1) as z.ZodType<WorkspaceHomeState>,
   /** When `state` last changed. */
   since: z.string(),
   /** The last push of home/head or home/wip the orchestrator holds. */

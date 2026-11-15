@@ -9091,5 +9091,6 @@
   "workspaceHome_moveError_homeMoving": "Der Home-Rechner wird bereits verschoben.",
   "workspaceHome_moveError_targetUnavailable": "Dieser Rechner kann gerade kein Home-Rechner sein. Wähle einen anderen.",
   "workspaceHome_moveError_updateRequired": "Aktualisiere Intent auf diesem Rechner, bevor du ihn zum Home-Rechner machst.",
-  "workspaceHome_moveError_failed": "Home-Rechner konnte nicht verschoben werden: {message}"
+  "workspaceHome_moveError_failed": "Home-Rechner konnte nicht verschoben werden: {message}",
+  "workspaceHome_starting_label": "Home-Rechner wird gestartet…"
 }
