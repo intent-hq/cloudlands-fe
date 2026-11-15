@@ -4798,10 +4798,20 @@
     };
     reveal(deepOpenTurnKey);
     if (showSearch) reveal(allSearchMatches[currentSearchIndex]?.turnKey);
+    for (const ref of pendingProposalRefs) reveal(messageIdToTurnKey.get(ref.messageId));
     if (lastAutomatedRun && (turnFailureError || $chatModelUnavailable$)) {
       ids.add(lastAutomatedRun.id);
     }
     return ids;
+  });
+  // The deep-open key clears shortly after navigation; keep its run open.
+  $effect(() => {
+    const run = deepOpenTurnKey
+      ? automatedActivityPlan.runByTurnKey.get(deepOpenTurnKey)
+      : undefined;
+    if (run && !untrack(() => expandedAutomatedRunIds.has(run.id))) {
+      setAutomatedRunExpanded(run.id, true);
+    }
   });
   function isAutomatedRunOpen(run: AutomatedActivityRun): boolean {
     return expandedAutomatedRunIds.has(run.id) || revealedAutomatedRunIds.has(run.id);
