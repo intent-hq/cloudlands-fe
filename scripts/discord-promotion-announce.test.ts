@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   announcementMessage,
   channelReleaseUrl,
+  earlierAttempts,
   isDiscordWebhookUrl,
   webhookPayload,
 } from './discord-promotion-announce.mjs';
@@ -80,6 +81,13 @@ describe('Discord promotion announcement', () => {
     expect(payload.content.length).toBeLessThanOrEqual(2000);
   });
 
+  it('checks every earlier attempt of a re-run promotion, and none of a first run', () => {
+    expect(earlierAttempts('1')).toEqual([]);
+    expect(earlierAttempts('3')).toEqual([1, 2]);
+    expect(earlierAttempts('')).toEqual([]);
+    expect(earlierAttempts(undefined)).toEqual([]);
+  });
+
   it('accepts only Discord webhook URLs', () => {
     expect(isDiscordWebhookUrl('https://discord.com/api/webhooks/123/abc-DEF_9')).toBe(true);
     expect(isDiscordWebhookUrl('https://discordapp.com/api/webhooks/123/abc')).toBe(true);
@@ -120,8 +128,8 @@ describe('announce-promotion.yml', () => {
     expect(resolve?.run).toContain('"Release Stable" ]; then CHANNEL=stable');
   });
 
-  it('reads no repository write access and checks out only the scripts it runs', () => {
-    expect(workflow.permissions).toEqual({ contents: 'read' });
+  it('has read-only access and checks out only the scripts it runs', () => {
+    expect(workflow.permissions).toEqual({ contents: 'read', actions: 'read' });
     expect(job.permissions).toBeUndefined();
     const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'));
     expect(checkout?.with?.ref).toBe('${{ github.workflow_sha }}');
@@ -140,6 +148,10 @@ describe('announce-promotion.yml', () => {
       '${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}',
     );
     expect(post?.run).not.toContain('secrets.');
+    // A re-run promotion is checked against its earlier attempts.
+    expect(post?.env?.PROMOTION_RUN_ID).toBe('${{ github.event.workflow_run.id }}');
+    expect(post?.env?.PROMOTION_RUN_ATTEMPT).toBe('${{ github.event.workflow_run.run_attempt }}');
+    expect(post?.env?.GH_TOKEN).toBe('${{ github.token }}');
     // Only a hand-started run can be a dry run; promotions always post.
     expect(post?.env?.DRY_RUN).toBe(
       "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}",

@@ -6,7 +6,9 @@
 # intent-hq/cloudlands-releases now serves, and posts one message through the
 # channel webhook in the DISCORD_ANNOUNCEMENTS_WEBHOOK secret
 # (scripts/discord-promotion-announce.mjs). Without the secret the post is
-# skipped with a notice. workflow_dispatch announces a channel by hand;
+# skipped with a notice. Re-running a promotion whose earlier attempt
+# succeeded posts nothing (the script reads that run's attempts, hence
+# actions: read). workflow_dispatch announces a channel by hand;
 # dry_run (default) prints the message without posting.
 #
 # Discord does not forward webhook posts to servers that follow the channel;
@@ -32,6 +34,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: announce-promotion
@@ -83,5 +86,8 @@ jobs:
         env:
           CHANNEL: ${{ steps.channel.outputs.channel }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          PROMOTION_RUN_ID: ${{ github.event.workflow_run.id }}
+          PROMOTION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
           DISCORD_ANNOUNCEMENTS_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCEMENTS_WEBHOOK }}
         run: node scripts/discord-promotion-announce.mjs "$CHANNEL"

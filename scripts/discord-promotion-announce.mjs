@@ -7,6 +7,10 @@
 // channel's rolling release notes.
 // The webhook URL comes from DISCORD_ANNOUNCEMENTS_WEBHOOK; when it is unset
 // the post is skipped with a notice, so forks and unconfigured repos stay green.
+// A re-run of a promotion that already succeeded posts nothing: when
+// PROMOTION_RUN_ATTEMPT > 1 the script asks the GitHub API whether an earlier
+// attempt of PROMOTION_RUN_ID succeeded, and fails rather than guess when it
+// cannot tell.
 // Usage: node scripts/discord-promotion-announce.mjs <beta|stable> [--dry-run]
 // DRY_RUN=true in the environment also prints the message without posting.
 import { pathToFileURL } from 'node:url';
@@ -58,6 +62,25 @@ export function isDiscordWebhookUrl(url) {
   return WEBHOOK_URL.test(url ?? '');
 }
 
+// The earlier attempts of a promotion run that could already have announced.
+export function earlierAttempts(attempt) {
+  const n = Number(attempt);
+  if (!Number.isInteger(n) || n < 1) return [];
+  return Array.from({ length: n - 1 }, (_, i) => i + 1);
+}
+
+async function earlierAttemptSucceeded(repo, runId, attempt, token) {
+  for (const n of earlierAttempts(attempt)) {
+    const url = `https://api.github.com/repos/${repo}/actions/runs/${runId}/attempts/${n}`;
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) throw new Error(`Reading ${url} failed: HTTP ${response.status}`);
+    if ((await response.json()).conclusion === 'success') return true;
+  }
+  return false;
+}
+
 async function fetchChannelVersion(channel) {
   const url = channelFeedUrl(channel);
   const response = await fetch(url);
@@ -69,6 +92,21 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const channel = process.argv[2];
   const dryRun = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
   if (!channel) throw new Error('Usage: discord-promotion-announce.mjs <beta|stable> [--dry-run]');
+  const { GITHUB_REPOSITORY, GH_TOKEN, PROMOTION_RUN_ID, PROMOTION_RUN_ATTEMPT } = process.env;
+  if (
+    PROMOTION_RUN_ID &&
+    (await earlierAttemptSucceeded(
+      GITHUB_REPOSITORY,
+      PROMOTION_RUN_ID,
+      PROMOTION_RUN_ATTEMPT,
+      GH_TOKEN,
+    ))
+  ) {
+    console.log(
+      `::notice::An earlier attempt of promotion run ${PROMOTION_RUN_ID} already succeeded and was announced; skipping.`,
+    );
+    process.exit(0);
+  }
   const payload = webhookPayload(channel, await fetchChannelVersion(channel));
   console.log(payload.content);
   const webhook = process.env.DISCORD_ANNOUNCEMENTS_WEBHOOK ?? '';
