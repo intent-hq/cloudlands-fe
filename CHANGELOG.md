@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.340.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.5...v2.340.6) (2026-11-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.215 ([#4640](https://github.com/intent-hq/cloudlands-fe/issues/4640)) ([26111fb](https://github.com/intent-hq/cloudlands-fe/commit/26111fbb45e251ce65f2cea3b981145db92b0154))
+* **chat:** show the auto-unarchive notice in the chat transcript ([#4629](https://github.com/intent-hq/cloudlands-fe/issues/4629)) ([4e4e56f](https://github.com/intent-hq/cloudlands-fe/commit/4e4e56fe8d007e210292e09a855967c58f6a04f1))
+* **machine-rail:** move an open machine menu instead of reopening it ([#4637](https://github.com/intent-hq/cloudlands-fe/issues/4637)) ([d21f282](https://github.com/intent-hq/cloudlands-fe/commit/d21f282bfa4ae42caed7ce99206b9964135b79c8))
+
 ## [2.340.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.340.4...v2.340.5) (2026-11-14)
 
 
