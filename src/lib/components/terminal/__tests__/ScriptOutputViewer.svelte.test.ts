@@ -386,6 +386,22 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     });
   });
 
+  it('keeps the output readable but does not run while the workspace home is away', async () => {
+    const { rerender } = render(ScriptOutputViewer, {
+      props: { scriptId: 's-1', workspaceId: 'ws-1' },
+    });
+    await waitForXTermInit();
+    await rerender({ scriptId: 's-1', workspaceId: 'ws-2', runDisabled: true });
+
+    await waitFor(() => expect(screen.getByText('pnpm build')).toBeTruthy());
+    const run = screen.getByRole('button', { name: /Run/ }) as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+    await fireEvent.click(run);
+    expect(appStore.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/startScriptRequested' }),
+    );
+  });
+
   it('offers "Ask AI to Fix" on a failed script when agent creation is allowed', async () => {
     render(ScriptOutputViewer, { props: { scriptId: 's-1', workspaceId: 'ws-failed' } });
     await waitForXTermInit();

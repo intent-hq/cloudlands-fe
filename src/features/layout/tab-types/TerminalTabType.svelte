@@ -21,6 +21,7 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import Terminal from '$lib/components/terminal/Terminal.svelte';
   import ScriptOutputViewer from '$lib/components/terminal/ScriptOutputViewer.svelte';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
   import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     openTerminalOverlay,
@@ -44,6 +45,8 @@
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
   const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, scriptIdStore);
+  // Workspace homes: script output stays readable while the home is away; only Run waits.
+  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
   let mounted = true;
   onDestroy(() => {
     mounted = false;
@@ -101,7 +104,12 @@
 
 {#if scriptId && isActive && $scriptContext$ && ($fullContext$ || $script$)}
   {#key scriptId}
-    <ScriptOutputViewer {scriptId} {workspaceId} class="h-full" />
+    <ScriptOutputViewer
+      {scriptId}
+      {workspaceId}
+      class="h-full"
+      runDisabled={$homeView$?.unavailable === true}
+    />
   {/key}
 {:else if terminalId && isActive && $fullContext$}
   {#key terminalId}

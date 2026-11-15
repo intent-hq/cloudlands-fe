@@ -10135,6 +10135,36 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect((await readWorkspace()).autoArchiveDisabled).toBeUndefined();
   });
 
+  it('merges a home delta (PROTOCOL nodes.md "Workspace homes")', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const home = {
+      homeId: 'h-1',
+      nodeId: 'd-mac-studio',
+      name: 'Mac Studio',
+      state: 'detached',
+      since: '2026-11-12T09:42:00Z',
+      lastBackupAt: '2026-11-12T09:41:00Z',
+    };
+
+    handler(updatedNotification({ home }));
+    expect((await readWorkspace()).home).toEqual(home);
+
+    // A delta without the key leaves the home untouched.
+    handler(updatedNotification({ title: 'Renamed' }));
+    expect((await readWorkspace()).home).toEqual(home);
+
+    // A move: the next delta replaces the whole home.
+    const moving = { ...home, homeId: 'h-2', state: 'moving', since: '2026-11-12T10:00:00Z' };
+    handler(updatedNotification({ home: moving }));
+    expect((await readWorkspace()).home).toEqual(moving);
+
+    // A value outside the contract is ignored.
+    handler(updatedNotification({ home: { ...home, state: 'lost' } }));
+    expect((await readWorkspace()).home).toEqual(moving);
+  });
+
   it('clears statusImageAssetId on an explicit null in the delta', async () => {
     await seedWorkspace();
     await primeBridge();

@@ -10,6 +10,7 @@ import {
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
 import { parseCloudMachineProvider } from '$shared/types/cloud-machines';
+import { parseWorkspaceHome } from '$shared/types/workspace-home';
 import {
   cloudMachineChanged,
   cloudMachineRemoved,
@@ -2893,6 +2894,14 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // the wire shape, so `false` is stored as absent.
   if (typeof raw.autoArchiveDisabled === 'boolean') {
     changes.autoArchiveDisabled = raw.autoArchiveDisabled || undefined;
+  }
+  // Workspace homes (PROTOCOL nodes.md): `home` arrives whole on every
+  // change. A value outside the contract is not applied (the stored home
+  // stays) and is logged as a wire mismatch, never patched.
+  if ('home' in raw) {
+    const home = parseWorkspaceHome(raw.home);
+    if (home) changes.home = home;
+    else logger.warn('workspace:updated carried a home outside the contract', { workspaceId });
   }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;

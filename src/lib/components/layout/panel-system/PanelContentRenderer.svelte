@@ -14,6 +14,8 @@
   import { tabTypeRegistry, type TabTypeComponent } from '$features/layout/tab-types/registry';
   import { Button } from '$lib/components/ui/button';
   import { isAlwaysMountedTab } from './panel-tab-cache';
+  import WorkspaceHomePanelGate from '$features/workspace-home/components/WorkspaceHomePanelGate.svelte';
+  import { isHomeBackedTab } from '$features/workspace-home/workspace-home';
 
   interface Props {
     tab: PanelTab;
@@ -116,7 +118,19 @@
 
 <div class="panel-content-renderer h-full w-full overflow-hidden">
   {#if tabTypeDef}
-    {#if RenderedTabComponent}
+    {#if RenderedTabComponent && isHomeBackedTab(tab)}
+      <!-- Files, diffs and shell terminals use the workspace's home (orchestrator); script output stays readable. -->
+      <WorkspaceHomePanelGate {workspaceId}>
+        <RenderedTabComponent
+          {tab}
+          {workspaceId}
+          {layoutId}
+          {isActive}
+          {isPanelFocused}
+          {onFocus}
+        />
+      </WorkspaceHomePanelGate>
+    {:else if RenderedTabComponent}
       <RenderedTabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
     {:else if isActive && loadFailed}
       <div class="flex h-full flex-col items-center justify-center gap-3 text-subtle">

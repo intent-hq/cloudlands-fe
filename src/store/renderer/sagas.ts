@@ -3,6 +3,7 @@ import { desktopControlSaga } from './slices/desktop-control/sagas/desktop-contr
 import { workspaceDiscussionSaga } from './slices/workspace-discussion/sagas/workspace-discussion-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
+import { workspaceHomeSaga } from '$features/workspace-home/workspace-home-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
 import { providerAdapterPreparationSaga } from './slices/agent-availability/sagas/provider-adapter-preparation-saga';
 import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
@@ -166,6 +167,7 @@ export const sagas = [
   pendingRetentionSaga,
   homeIntegrationsSaga,
   homeWorkspacesSaga,
+  workspaceHomeSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

@@ -95,6 +95,8 @@
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import RetiredWorkspaceBanner from '$lib/components/workspace/RetiredWorkspaceBanner.svelte';
+  import WorkspaceHomeBannerHost from '$features/workspace-home/components/WorkspaceHomeBannerHost.svelte';
+  import MoveHomeDialogHost from '$features/workspace-home/components/MoveHomeDialogHost.svelte';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -866,7 +868,12 @@
               <div class="relative min-h-0 flex-1">{@render panels()}</div>
             </div>
           {:else}
-            {@render panels()}
+            <!-- Workspace homes (orchestrator only): the banner renders nothing
+                 without a home, so the panels keep one stable parent. -->
+            <div class="flex h-full w-full flex-col">
+              <WorkspaceHomeBannerHost workspaceId={$workspace?.id || workspaceId} />
+              <div class="relative min-h-0 flex-1">{@render panels()}</div>
+            </div>
           {/if}
         </div>
       {/if}
@@ -888,6 +895,7 @@
 {#snippet modalsContent()}
   {#if active}
     <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
+    <MoveHomeDialogHost workspaceId={$workspace?.id || workspaceId} />
     <InputDialog
       bind:open={createFileDialogOpen}
       title={m.workspace_page_createFile_title()}

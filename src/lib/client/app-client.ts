@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MoveHomeTarget, WorkspaceHome } from '$shared/types/workspace-home';
 import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
@@ -613,6 +614,13 @@ export interface WorkspacesClient {
    * `getBrowserClient` shape.
    */
   setBrowserClient(workspaceId: string, clientId: string | null): Promise<WorkspaceBrowserClient>;
+  /**
+   * `workspace.setHome` (PROTOCOL `methods/nodes.md` → "Moving the home"):
+   * start moving the workspace's home to `to`. Resolves with the home in
+   * `state: "moving"`; the move ends with `workspace:updated { changes: { home } }`.
+   * Rejects with the backend's error (`data.code` names documented refusals).
+   */
+  setHome(workspaceId: string, to: MoveHomeTarget): Promise<WorkspaceHome>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
