@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/routes/**, scripts/production-routes.mjs
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -79,6 +80,7 @@ describe('production route graph', () => {
       'dock-annotation/+page.svelte',
       'dock-capture-editor/+page.svelte',
       'dock/+page.svelte',
+      'frame/+page.svelte',
       'hud/+layout.svelte',
       'hud/+page.svelte',
     ]);
