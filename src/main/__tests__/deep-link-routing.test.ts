@@ -30,6 +30,7 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: class {
     static getAllWindows = vi.fn(() => liveWindows);
+    static getFocusedWindow = vi.fn(() => null);
     static fromWebContents = vi.fn(
       (webContents: unknown) => liveWindows.find((w) => w.webContents === webContents) ?? null,
     );
@@ -114,7 +115,12 @@ import {
   createWindowForDeepLink,
 } from '../window';
 import { markRendererWindowsAllowed } from '../renderer-window-gate';
-import { setFrameOpener, writeWindowRail } from '../machine-rail-state';
+import {
+  readWindowRail,
+  setFrameMachineCommands,
+  setFrameOpener,
+  writeWindowRail,
+} from '../machine-rail-state';
 import { markFrameWindow } from '../window-backend';
 import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
 import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
@@ -188,6 +194,13 @@ beforeEach(() => {
     const route = machines.find((machine) => machine.id === selectedId)?.route;
     void mockLoadUrl(`app://workspaces${route ?? '/workspace/new'}`);
     return window.webContents;
+  });
+  setFrameMachineCommands({
+    select: (window, id) =>
+      readWindowRail(window).machineIds.includes(id)
+        ? { window, contents: window.webContents, ready: Promise.resolve(true) }
+        : null,
+    add: async () => false,
   });
 });
 

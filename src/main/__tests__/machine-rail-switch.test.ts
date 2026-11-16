@@ -80,6 +80,8 @@ const fakes = vi.hoisted(() => {
     children,
     makeWindow,
     window: makeWindow(),
+    /** Frames besides `window`, in window order after it. */
+    otherWindows: [] as Array<ReturnType<typeof makeWindow>>,
     bindings: new Map<unknown, string>(),
     shown: { current: null as unknown },
     windowListeners,
@@ -105,7 +107,11 @@ vi.mock('electron', () => {
   }
   return {
     app: { emit: () => true },
-    BrowserWindow: { fromWebContents: () => fakes.window },
+    BrowserWindow: {
+      fromWebContents: () => fakes.window,
+      getFocusedWindow: () =>
+        [fakes.window, ...fakes.otherWindows].find((window) => window.isFocused()) ?? null,
+    },
     ipcMain: {
       handle: (channel: string, handler: (event: unknown, data?: unknown) => Promise<unknown>) =>
         fakes.handlers.set(channel, handler),
@@ -129,7 +135,9 @@ vi.mock('../window', () => ({
 
 vi.mock('../renderer-hang-monitor', () => ({ attachRendererHangMonitor: () => {} }));
 
-vi.mock('../offscreen-window', () => ({ getAppWindows: () => [fakes.window] }));
+vi.mock('../offscreen-window', () => ({
+  getAppWindows: () => [fakes.window, ...fakes.otherWindows],
+}));
 
 vi.mock('../local-prefs', () => ({
   getLocalPref: async () => true,
@@ -163,11 +171,16 @@ import type { MachineRailState } from '../../shared/types/machine-rail';
 import {
   openInvitedMachineInWindow,
   registerMachineRailHandlers,
+  removeMachineFromAllRails,
   selectMachineInFrame,
 } from '../machine-rail';
 import {
+  addMachineToFrame,
   getMachineRailSession,
   openFrameMachines,
+  readWindowRail,
+  selectFrameMachine,
+  writeWindowRail,
   setMachineRailEnabledFlag,
   showRailMachine,
   startRailMachineRenderer,
@@ -235,6 +248,7 @@ afterEach(() => {
   // Closing the window drops its views, rail and any switch in progress.
   for (const listener of fakes.windowListeners.closed ?? []) listener();
   for (const key of Object.keys(fakes.windowListeners)) delete fakes.windowListeners[key];
+  fakes.otherWindows.length = 0;
   fakes.views.length = 0;
   fakes.children.length = 0;
   fakes.bindings.clear();
@@ -591,6 +605,82 @@ describe('a frame open on the local machine', () => {
     });
     vi.advanceTimersByTime(READY_TIMEOUT_MS);
     expect(await state()).toMatchObject({ selectedId: 'local', machineIds: ['local'] });
+  });
+
+  describe('opening a machine some frame holds', () => {
+    /** A second frame, after the first in window order, holding `machines` (the first shown). */
+    const otherFrame = (machines: string[]) => {
+      const window = fakes.makeWindow();
+      fakes.otherWindows.push(window);
+      writeWindowRail(window as never, { machineIds: machines, selectedId: machines[0] });
+      return window;
+    };
+
+    it('selects an invited machine the frame already holds, without adding it again', async () => {
+      await invoke(RAIL.ADD, local(), { id: 'b' });
+      await invoke(RAIL.READY, viewOf('b').webContents);
+      await invoke(RAIL.SELECT, local(), { id: 'local' });
+
+      expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
+
+      expect(await state()).toMatchObject({ machineIds: ['local', 'b'], selectedId: 'b' });
+      const { consumePendingDeepLinks } =
+        await import('../../features/deeplink/main/pending-deep-links');
+      expect(consumePendingDeepLinks(viewOf('b').webContents.id as never).actions).toEqual([
+        { type: 'open', params: { id: 'shared-ws' } },
+      ]);
+      expect(fakes.window.focus).toHaveBeenCalled();
+    });
+
+    it('shows an invited machine in the other frame that holds it, leaving this one as is', async () => {
+      const other = otherFrame(['c', 'b']);
+
+      expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
+
+      expect(readWindowRail(fakes.window as never).machineIds).toEqual(['local']);
+      expect(other.focus).toHaveBeenCalled();
+      expect(fakes.window.focus).not.toHaveBeenCalled();
+      const { consumePendingDeepLinks } =
+        await import('../../features/deeplink/main/pending-deep-links');
+      expect(consumePendingDeepLinks(viewOf('b').webContents.id as never).actions).toEqual([
+        { type: 'open', params: { id: 'shared-ws' } },
+      ]);
+    });
+
+    it('selects through the window command seam, and adds a machine no frame holds', async () => {
+      const other = otherFrame(['c', 'b']);
+      const selected = selectFrameMachine(other as never, 'b');
+      expect(selected?.window).toBe(other);
+      expect(selected?.contents).toBe(viewOf('b').webContents);
+      expect(selectFrameMachine(other as never, 'local')).toBeNull();
+
+      fakes.otherWindows.length = 0;
+      expect(await addMachineToFrame(fakes.window as never, 'b')).toBe(true);
+      expect(readWindowRail(fakes.window as never).machineIds).toEqual(['local', 'b']);
+      setMachineRailEnabledFlag(false);
+      expect(await addMachineToFrame(fakes.window as never, 'c')).toBe(false);
+    });
+
+    it('a rail request for a machine prefers the focused frame holding it', async () => {
+      const other = otherFrame(['c', 'b']);
+      await invoke(RAIL.ADD, local(), { id: 'b' });
+      other.isFocused = () => true;
+      expect(showRailMachine('b')?.window).toBe(other);
+    });
+
+    it('a forgotten machine leaves every frame, and a frame left empty closes', async () => {
+      await invoke(RAIL.ADD, local(), { id: 'b' });
+      const onlyB = otherFrame(['b']);
+      const mixed = otherFrame(['c', 'b']);
+
+      removeMachineFromAllRails('b');
+
+      expect(readWindowRail(fakes.window as never).machineIds).toEqual(['local']);
+      expect(readWindowRail(mixed as never).machineIds).toEqual(['c']);
+      expect(onlyB.close).toHaveBeenCalledOnce();
+      expect(fakes.window.close).not.toHaveBeenCalled();
+      expect(mixed.close).not.toHaveBeenCalled();
+    });
   });
 
   describe('frame backdrop', () => {

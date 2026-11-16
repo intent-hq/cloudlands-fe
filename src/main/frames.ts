@@ -137,3 +137,27 @@ export function framesByRecentFocus(): BrowserWindowType[] {
     .filter(isFrame)
     .sort((a, b) => (lastFocused.get(b) ?? 0) - (lastFocused.get(a) ?? 0));
 }
+
+/**
+ * The frame to bring up for `machineId`, among the frames that hold it (shown
+ * or not): `preferred` when it holds the machine, else the focused frame,
+ * else the most recently focused one, else the first in window order. Null
+ * when no frame holds the machine.
+ */
+export function frameToShow(
+  machineId: string,
+  preferred?: BrowserWindowType | null,
+): BrowserWindowType | null {
+  const holders = framesHolding(machineId);
+  if (preferred && holders.includes(preferred)) return preferred;
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && holders.includes(focused)) return focused;
+  return framesByRecentFocus().find((frame) => holders.includes(frame)) ?? null;
+}
+
+/** The focused frame, else the most recently focused one (window order before any focus); null with no frame. */
+export function mostRecentFrame(): BrowserWindowType | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && isFrame(focused)) return focused;
+  return framesByRecentFocus()[0] ?? null;
+}

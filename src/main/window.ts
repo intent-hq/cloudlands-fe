@@ -48,7 +48,13 @@ const logger = new Logger('Main');
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
 import { getAppWindows } from './offscreen-window';
-import { getMachineRailSession, openFrameMachines } from './machine-rail-state';
+import {
+  addMachineToFrame,
+  getMachineRailSession,
+  isMachineRailEnabled,
+  openFrameMachines,
+  selectFrameMachine,
+} from './machine-rail-state';
 import type {
   FrameMachineSession,
   FrameSession,
@@ -79,7 +85,14 @@ import {
   markFrameWindow,
   stampWindowWithBackend,
 } from './window-backend';
-import { focusedFrame, frameMachines, isFrame, rendererFor, shownMachine } from './frames';
+import {
+  focusedFrame,
+  frameMachines,
+  frameToShow,
+  mostRecentFrame,
+  rendererFor,
+  shownMachine,
+} from './frames';
 
 export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
 
@@ -878,47 +891,65 @@ export async function restoreAllBackendWindowSessions(
   return restoredAny;
 }
 
-/** First live frame that shows `backendId`, if any. */
-function findAppWindowForBackend(backendId: string): BrowserWindowType | undefined {
-  return getAppWindows().find((window) => isFrame(window) && shownMachine(window) === backendId);
-}
-
-/** Focus the first frame showing a backend, restoring saved/fresh frames if needed. */
-export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
-  const findAppWindow = () => findAppWindowForBackend(backendId);
-  let existing = findAppWindow();
-  if (!existing) {
-    await restoreWindowsForBackend(backendId);
-    existing = findAppWindow();
-  }
-  if (existing) {
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
-    setMainWindow(existing);
-  }
-}
-
-/**
- * Show `workspaceId` in a frame showing `backendId`: queue an `open` deep link
- * for that machine's view (drained by its deep-links saga once its daemon has
- * admitted it, so a just-restored view still picks it up) and bring the frame
- * to the front. Call after the backend's frame was opened or focused (see
- * `openOrFocusWindowsForBackend`). Returns false when no frame shows the
- * backend.
- */
-export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
-  const window = findAppWindowForBackend(backendId);
-  const contents = window ? rendererFor(window, backendId) : null;
-  if (!window || !contents) {
-    logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
-    return false;
-  }
-  queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
+/** Bring `window` to the front and make it the main window. */
+function bringToFront(window: BrowserWindowType): void {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
   setMainWindow(window);
+}
+
+/**
+ * Show `backendId` in the frame that should show it (see `frameToShow`),
+ * selecting it there when that frame holds it without showing it. Returns the
+ * frame and the machine's renderer, or null when no frame holds the machine.
+ */
+function showInFrame(
+  backendId: string,
+): { window: BrowserWindowType; contents: Electron.WebContents | null } | null {
+  const window = frameToShow(backendId);
+  if (!window) return null;
+  const selected = selectFrameMachine(window, backendId);
+  return { window, contents: selected?.contents ?? rendererFor(window, backendId) };
+}
+
+/**
+ * Open or focus a machine (Settings → Devices, deep links, invites): a frame
+ * that holds it (the focused one, else the most recently focused) selects it
+ * and comes to the front. Otherwise, with the rail on, the machine joins the
+ * most recently focused frame; with the rail off (or when that frame cannot
+ * take it) its saved frames reopen, or a fresh frame opens on it.
+ */
+export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
+  let shown = showInFrame(backendId)?.window ?? null;
+  if (!shown && isMachineRailEnabled()) {
+    const recent = mostRecentFrame();
+    if (recent && (await addMachineToFrame(recent, backendId)) && !recent.isDestroyed())
+      shown = recent;
+  }
+  if (!shown) {
+    await restoreWindowsForBackend(backendId);
+    shown = showInFrame(backendId)?.window ?? null;
+  }
+  if (shown) bringToFront(shown);
+}
+
+/**
+ * Show `workspaceId` in a frame holding `backendId` (picked and selected as
+ * by `openOrFocusWindowsForBackend`): queue an `open` deep link for that
+ * machine's view (drained by its deep-links saga once its daemon has admitted
+ * it, so a just-restored view still picks it up) and bring the frame to the
+ * front. Call after the machine was opened or focused. Returns false when no
+ * frame holds the machine.
+ */
+export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
+  const target = showInFrame(backendId);
+  if (!target?.contents) {
+    logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
+    return false;
+  }
+  queueDeepLinkForRenderer(target.contents, { type: 'open', params: { id: workspaceId } });
+  bringToFront(target.window);
   return true;
 }
 
@@ -1103,10 +1134,11 @@ export async function createWindowForDeepLink(
 
   const queueForLocalWindow = async (): Promise<void> => {
     await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
-    const localWindow = findAppWindowForBackend(LOCAL_CONNECTION_ID);
-    if (localWindow) {
-      queueDeepLinkForWindow(localWindow, action);
-      focusDeepLinkWindow(localWindow);
+    // The local machine's own view, even while the frame is still switching to it.
+    const local = showInFrame(LOCAL_CONNECTION_ID);
+    if (local?.contents) {
+      queueDeepLinkForRenderer(local.contents, action);
+      focusDeepLinkWindow(local.window);
       logger.info('Queued deep link for local window', { type: action.type });
     } else {
       logger.warn('No local window could be opened for deep link', { type: action.type });

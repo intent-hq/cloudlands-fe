@@ -22,6 +22,8 @@ import {
   frameMachines,
   framesByRecentFocus,
   framesHolding,
+  frameToShow,
+  mostRecentFrame,
   isMachineInUse,
   isMachineRendered,
   noteFrameFocused,
@@ -243,5 +245,55 @@ describe('framesByRecentFocus', () => {
     expect(framesByRecentFocus()[0]).toBe(b.window);
     (focusListeners[0][1] as (event: unknown, window: unknown) => void)({}, a.window);
     expect(framesByRecentFocus()).toEqual([a.window, b.window]);
+  });
+});
+
+describe('frameToShow', () => {
+  it('is null when no frame holds the machine', () => {
+    makeFrame(['local']);
+    makePlainWindow('host-B');
+    expect(frameToShow('host-B')).toBeNull();
+  });
+
+  it('prefers the given frame when it holds the machine, even unfocused', () => {
+    const a = makeFrame(['local', 'host-B']);
+    const b = makeFrame(['host-B']);
+    electron.focused = a.window;
+    expect(frameToShow('host-B', b.window)).toBe(b.window);
+    const c = makeFrame(['host-C']);
+    expect(frameToShow('host-B', c.window)).toBe(a.window);
+  });
+
+  it('prefers the focused frame, then the most recently focused, then window order', () => {
+    const a = makeFrame(['host-B']);
+    const b = makeFrame(['local', 'host-B']);
+    const other = makeFrame(['host-C']);
+    expect(frameToShow('host-B')).toBe(a.window);
+    noteFrameFocused(b.window);
+    noteFrameFocused(other.window);
+    expect(frameToShow('host-B')).toBe(b.window);
+    electron.focused = a.window;
+    expect(frameToShow('host-B')).toBe(a.window);
+  });
+
+  it('picks a frame that holds the machine without showing it', () => {
+    const { window } = makeFrame(['local', 'host-B'], ['local']);
+    expect(shownMachine(window)).toBe('local');
+    expect(frameToShow('host-B')).toBe(window);
+  });
+});
+
+describe('mostRecentFrame', () => {
+  it('is the focused frame, else the most recently focused one, else null', () => {
+    expect(mostRecentFrame()).toBeNull();
+    const a = makeFrame(['local']);
+    const b = makeFrame(['host-B']);
+    const dock = makePlainWindow('host-C');
+    expect(mostRecentFrame()).toBe(a.window);
+    noteFrameFocused(b.window);
+    electron.focused = dock.window;
+    expect(mostRecentFrame()).toBe(b.window);
+    electron.focused = a.window;
+    expect(mostRecentFrame()).toBe(a.window);
   });
 });

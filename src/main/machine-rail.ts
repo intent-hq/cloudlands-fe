@@ -49,6 +49,7 @@ import {
   readWindowRail,
   setMachineRailEnabledFlag,
   setPendingSelection,
+  setFrameMachineCommands,
   setFrameOpener,
   setMachineRailRendererStarter,
   setMachineRailShower,
@@ -56,7 +57,7 @@ import {
   type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
-import { framesHolding, isMachineInUse, isMachineRendered, rendererFor } from './frames';
+import { framesHolding, frameToShow, isMachineInUse, isMachineRendered } from './frames';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { decorateWindowTitle } from './utils/resolve-app-title';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
@@ -455,7 +456,7 @@ function whenReady(contents: Electron.WebContents): Promise<void> {
 }
 
 /**
- * Start `id`'s renderer, hidden, in a window whose rail lists it (the focused
+ * Start `id`'s renderer, hidden, in a frame that holds it (the focused, else most recently focused
  * one first) unless one runs already, then wait until it is ready or
  * `deadline` passes. A renderer still not ready after its startup budget is
  * not waited for again. Settles with whether a rail lists the machine.
@@ -466,7 +467,7 @@ async function startRendererFor(id: string, deadline: number): Promise<boolean> 
   const running = rails
     .map((window) => viewsOf(window).get(id))
     .find((view) => view && !view.webContents.isDestroyed());
-  const host = rails.find((window) => window.isFocused()) ?? rails[0];
+  const host = frameToShow(id) ?? rails[0];
   const contents = (running ?? ensureView(host, id)).webContents;
   const started = viewStartedAt.get(contents) ?? 0;
   if (readyViews.has(contents) || Date.now() - started >= READY_TIMEOUT_MS) return true;
@@ -480,14 +481,10 @@ async function startRendererFor(id: string, deadline: number): Promise<boolean> 
   return true;
 }
 
-/** Pick `id` in a window whose rail lists it (the focused one first). */
+/** Pick `id` in a frame that holds it (the focused one, else the most recently focused). */
 function showRailMachineFor(id: string): ShownRailMachine | null {
-  const rails = framesHolding(id);
-  const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
-  if (!window) return null;
-  selectMachine(window, id);
-  const contents = ensureView(window, id).webContents;
-  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
+  const window = frameToShow(id);
+  return window ? selectMachineInFrame(window, id) : null;
 }
 
 /**
@@ -641,6 +638,14 @@ export async function openInvitedMachineInWindow(
   mayOpen: () => boolean = () => true,
 ): Promise<boolean> {
   if (!isMachineRailEnabled() || window.isDestroyed() || !mayOpen()) return false;
+  // A frame that holds the machine already (this one first) shows it there.
+  const holder = frameToShow(id, window);
+  if (holder) {
+    const shown = selectMachineInFrame(holder, id);
+    if (!shown) return false;
+    showOpenedMachine(holder, shown.contents, workspaceId);
+    return true;
+  }
   // A machine that cannot be in a rail (this app's own daemon, a node) keeps its own window.
   if (!deps || !(await deps.listMachineIds()).includes(id)) return false;
   const canContinue = () => isMachineRailEnabled() && !window.isDestroyed() && mayOpen();
@@ -654,13 +659,21 @@ export async function openInvitedMachineInWindow(
   // The rail was turned off or the window closed meanwhile: the machine still needs a window.
   if (!isMachineRailEnabled() || window.isDestroyed()) return false;
   if (!mayOpen()) return true;
-  const contents = rendererFor(window, id) ?? ensureView(window, id).webContents;
+  showOpenedMachine(window, ensureView(window, id).webContents, workspaceId);
+  return true;
+}
+
+/** Queue `workspaceId` (if any) for the opened machine's view and bring its frame to the front. */
+function showOpenedMachine(
+  window: BrowserWindowType,
+  contents: Electron.WebContents,
+  workspaceId: string | undefined,
+): void {
   if (workspaceId)
     queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  return true;
 }
 
 /** Remove `id` from `window`; removing its last machine closes the frame. */
@@ -801,6 +814,10 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
   setMachineRailRendererStarter(startRendererFor);
   setMachineRailShower(showRailMachineFor);
   setFrameOpener(openFrame);
+  setFrameMachineCommands({
+    select: selectMachineInFrame,
+    add: (window, id) => openInvitedMachineInWindow(window, id),
+  });
   ipcMain.handle(
     MACHINE_RAIL.GET_STATE,
     createValidatedHandler(

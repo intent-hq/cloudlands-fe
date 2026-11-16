@@ -142,3 +142,36 @@ export function showRailMachine(backendId: string): ShownRailMachine | null {
   if (!enabled || !machineShower) return null;
   return machineShower(backendId);
 }
+
+/**
+ * What the rail owner does for window-level commands (open a machine, show a
+ * workspace) so main/window.ts never imports machine-rail.ts.
+ */
+export interface FrameMachineCommands {
+  /** Show `backendId` in `window`, which holds it; null when it does not. */
+  select(window: BrowserWindowType, backendId: string): ShownRailMachine | null;
+  /** Add `backendId` to `window` and show it; false when the window cannot take it. */
+  add(window: BrowserWindowType, backendId: string): Promise<boolean>;
+}
+let frameMachineCommands: FrameMachineCommands | null = null;
+
+export function setFrameMachineCommands(commands: FrameMachineCommands | null): void {
+  frameMachineCommands = commands;
+}
+
+/** Show `backendId` in `window`, which holds it. Null before the rail owner registered. */
+export function selectFrameMachine(
+  window: BrowserWindowType,
+  backendId: string,
+): ShownRailMachine | null {
+  return frameMachineCommands?.select(window, backendId) ?? null;
+}
+
+/** Add `backendId` to `window` (rail on) and show it; false when it cannot join. */
+export async function addMachineToFrame(
+  window: BrowserWindowType,
+  backendId: string,
+): Promise<boolean> {
+  if (!enabled || !frameMachineCommands) return false;
+  return frameMachineCommands.add(window, backendId);
+}

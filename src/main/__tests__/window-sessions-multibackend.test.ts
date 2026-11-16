@@ -178,8 +178,14 @@ import {
   markFrameWindow,
   setShownMachineView,
 } from '../window-backend';
-import { setFrameOpener, setMachineRailEnabledFlag, writeWindowRail } from '../machine-rail-state';
-import { shownMachine } from '../frames';
+import {
+  readWindowRail,
+  setFrameMachineCommands,
+  setFrameOpener,
+  setMachineRailEnabledFlag,
+  writeWindowRail,
+} from '../machine-rail-state';
+import { noteFrameFocused, rendererFor, shownMachine } from '../frames';
 import type { FrameMachineSession } from '../../shared/types/machine-rail';
 
 interface FrameProbe {
@@ -1372,6 +1378,156 @@ describe('multi-backend window sessions', () => {
       expect(forgotten.isDestroyed()).toBe(true);
       expect(surviving.isDestroyed()).toBe(false);
       expect(FakeBrowserWindow.getAllWindows()).toEqual([surviving]);
+    });
+  });
+
+  describe('frame-aware open and show', () => {
+    /** Stand-in for the rail owner's select/add commands. */
+    const commands = {
+      select: vi.fn((window: FakeWindow, id: string) => {
+        const rail = readWindowRail(window as never);
+        if (!rail.machineIds.includes(id)) return null;
+        const contents =
+          rendererFor(window as never, id) ??
+          (seedMachineView(window, id, 'app://workspaces/workspace/new') as never);
+        writeWindowRail(window as never, { machineIds: rail.machineIds, selectedId: id });
+        setShownMachineView(window as never, contents);
+        return { window: window as never, contents, ready: Promise.resolve(true) };
+      }),
+      add: vi.fn(async (window: FakeWindow, id: string) => {
+        const rail = readWindowRail(window as never);
+        writeWindowRail(window as never, { ...rail, machineIds: [...rail.machineIds, id] });
+        commands.select(window, id);
+        window.focus();
+        return true;
+      }),
+    };
+
+    /** A frame showing `shown` on `url` that also holds `hidden` (not started). */
+    function seedRailFrame(shown: string, hidden: string[], url = 'app://workspaces/work/x') {
+      const frame = seedLiveWindow(url, undefined, shown);
+      writeWindowRail(frame as never, { machineIds: [shown, ...hidden], selectedId: shown });
+      return frame;
+    }
+
+    beforeEach(() => {
+      commands.select.mockClear();
+      commands.add.mockClear();
+      setFrameMachineCommands(commands as never);
+    });
+
+    afterEach(() => setFrameMachineCommands(null));
+
+    it('opens a machine in a frame that holds it without showing it, selecting it there', async () => {
+      setMachineRailEnabledFlag(true);
+      const frame = seedRailFrame('local', ['remote-1']);
+      vi.mocked(setMainWindow).mockClear();
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([frame]);
+      expect(commands.select).toHaveBeenCalledExactlyOnceWith(frame, 'remote-1');
+      expect(frame.machine).toBe('remote-1');
+      expect(frame.focus).toHaveBeenCalledOnce();
+      expect(setMainWindow).toHaveBeenCalledExactlyOnceWith(frame);
+      expect(commands.add).not.toHaveBeenCalled();
+    });
+
+    it('prefers the focused frame, then the most recently focused, among frames holding it', async () => {
+      setMachineRailEnabledFlag(true);
+      const first = seedRailFrame('local', ['remote-1']);
+      const second = seedRailFrame('remote-2', ['remote-1']);
+      const third = seedRailFrame('remote-3', ['remote-1']);
+      noteFrameFocused(third as never);
+      noteFrameFocused(second as never);
+
+      await openOrFocusWindowsForBackend('remote-1');
+      expect(commands.select).toHaveBeenLastCalledWith(second, 'remote-1');
+
+      FakeBrowserWindow.focused = third;
+      await openOrFocusWindowsForBackend('remote-1');
+      expect(commands.select).toHaveBeenLastCalledWith(third, 'remote-1');
+      expect(first.focus).not.toHaveBeenCalled();
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(3);
+    });
+
+    it('rail on: adds a machine no frame holds to the most recently focused frame', async () => {
+      setMachineRailEnabledFlag(true);
+      const older = seedLiveWindow('app://workspaces/work/a', undefined, 'local');
+      const recent = seedLiveWindow('app://workspaces/work/b', undefined, 'remote-2');
+      noteFrameFocused(recent as never);
+      vi.mocked(setMainWindow).mockClear();
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      expect(commands.add).toHaveBeenCalledExactlyOnceWith(recent, 'remote-1');
+      expect(FakeBrowserWindow.getAllWindows()).toEqual([older, recent]);
+      expect(recent.machine).toBe('remote-1');
+      expect(setMainWindow).toHaveBeenLastCalledWith(recent);
+    });
+
+    it('rail on: opens a new frame when the recent frame cannot take the machine', async () => {
+      setMachineRailEnabledFlag(true);
+      const frame = seedLiveWindow('app://workspaces/work/a', undefined, 'local');
+      commands.add.mockResolvedValueOnce(false);
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      expect(commands.add).toHaveBeenCalledOnce();
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      expect(live[0]).toBe(frame);
+      expect(live[1].machine).toBe('remote-1');
+    });
+
+    it('rail off: opens a new frame for a machine no frame holds', async () => {
+      seedLiveWindow('app://workspaces/work/a', undefined, 'local');
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      expect(commands.add).not.toHaveBeenCalled();
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      expect(live[1].machine).toBe('remote-1');
+    });
+
+    it('shows a workspace in a frame that holds the machine without showing it', () => {
+      setMachineRailEnabledFlag(true);
+      const other = seedLiveWindow('app://workspaces/work/a', undefined, 'local');
+      const frame = seedRailFrame('remote-2', ['remote-1']);
+      frame.minimized = true;
+
+      expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(true);
+
+      expect(commands.select).toHaveBeenCalledExactlyOnceWith(frame, 'remote-1');
+      expect(frame.machine).toBe('remote-1');
+      expect(consumePendingDeepLinks(viewOf(frame).id).actions).toEqual([
+        { type: 'open', params: { id: 'ws-moved' } },
+      ]);
+      expect(frame.restore).toHaveBeenCalledOnce();
+      expect(frame.focus).toHaveBeenCalled();
+      expect(other.focus).not.toHaveBeenCalled();
+    });
+
+    it('forgetting a machine closes the frames holding only it and keeps frames holding others', () => {
+      setMachineRailEnabledFlag(true);
+      const only = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
+      const shared = seedRailFrame('local', ['remote-1']);
+      const showing = seedRailFrame('remote-1', ['remote-2']);
+
+      closeWindowsForBackend('remote-1');
+
+      expect(only.isDestroyed()).toBe(true);
+      expect(shared.isDestroyed()).toBe(false);
+      expect(showing.isDestroyed()).toBe(false);
+    });
+
+    it('does not open local before forgetting a machine a mixed frame survives', async () => {
+      seedRailFrame('remote-1', ['remote-2']);
+
+      await ensureLocalWindowBeforeClosingBackend('remote-1');
+
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
     });
   });
 
