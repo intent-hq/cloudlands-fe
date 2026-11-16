@@ -42,6 +42,8 @@
     disabledReason?: (session: ImportableSession) => string | null;
     /** Key (`provider:sessionId`) of the picked session, shown as selected. */
     selectedKey?: string;
+    /** Clicks inside it (filter, Refresh, the host's Back and tabs) do not dismiss the list; defaults to the list itself. */
+    interactionRoot?: HTMLElement | null;
   }
 
   let {
@@ -59,7 +61,15 @@
     inputRef = $bindable(null),
     disabledReason,
     selectedKey = '',
+    interactionRoot = null,
   }: Props = $props();
+
+  let root = $state<HTMLElement | null>(null);
+
+  function keepOpenForOwnControls(event: PointerEvent) {
+    const area = interactionRoot ?? root;
+    if (event.target instanceof Node && area?.contains(event.target)) event.preventDefault();
+  }
 
   const optionValue = (key: string) => `session:${key}`;
 
@@ -99,7 +109,12 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col" data-testid="import-session-list" data-status={status}>
+<div
+  bind:this={root}
+  class="flex min-h-0 flex-1 flex-col"
+  data-testid="import-session-list"
+  data-status={status}
+>
   {#if listedProviders.length > 1 && status !== 'error'}
     <div class="shrink-0 overflow-x-auto px-2 pt-2" data-testid="import-session-provider-filter">
       <ToggleGroup.Root
@@ -159,6 +174,7 @@
         onquerychange?.(next);
       }}
       oncommit={(_, option) => onselect(option.data as ImportableSession)}
+      oninteractoutside={keepOpenForOwnControls}
       onopenchange={(next) => {
         if (!next) onclose?.();
       }}

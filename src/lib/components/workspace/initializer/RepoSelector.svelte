@@ -317,6 +317,7 @@
    *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
+  let pickerContentElement = $state<HTMLElement | null>(null);
   let openOnTab: 'local' | 'new' | 'sessions' | null = null; // One-shot tab for the next open
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
@@ -2161,6 +2162,7 @@
       {/snippet}
     </Popover.Trigger>
     <Popover.Content
+      bind:ref={pickerContentElement}
       role="dialog"
       aria-label={formRowLabel ?? m.workspace_repoSelector_whichRepo_label()}
       class={rowLabel
@@ -2335,6 +2337,7 @@
                 knownRepos={knownSessionRepos}
                 selectedKey={selectedSession ? importableSessionKey(selectedSession) : ''}
                 onselect={handleSelectSession}
+                interactionRoot={pickerContentElement}
                 onclose={() => (isOpen = false)}
               />
             {/if}
