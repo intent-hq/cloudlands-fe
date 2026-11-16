@@ -42,7 +42,7 @@
     disabledReason?: (session: ImportableSession) => string | null;
     /** Key (`provider:sessionId`) of the picked session, shown as selected. */
     selectedKey?: string;
-    /** Clicks inside it (filter, Refresh, the host's Back and tabs) do not dismiss the list; defaults to the list itself. */
+    /** Clicks inside it (filter, Refresh) do not dismiss the list on an inline host such as onboarding; a host popup is covered by Combobox. Defaults to the list itself. */
     interactionRoot?: HTMLElement | null;
   }
 
