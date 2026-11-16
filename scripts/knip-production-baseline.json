@@ -260,9 +260,6 @@
     "src/features/events/main/events.ipc.ts": [
       "cleanupEventsIPC"
     ],
-    "src/features/events/main/renderer-subscription-registry.ts": [
-      "deliverEventToSubscriptions"
-    ],
     "src/features/events/types.ts": [
       "createWorkspaceEvent",
       "generateEventId",

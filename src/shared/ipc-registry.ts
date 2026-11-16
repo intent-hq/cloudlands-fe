@@ -175,8 +175,6 @@ export const IPC_CHANNELS = {
   // Events System
   EVENTS: {
     QUERY: 'events:query',
-    SUBSCRIBE: 'events:subscribe',
-    UNSUBSCRIBE: 'events:unsubscribe',
     EMIT: 'events:emit',
     GET_LAST_EVENT: 'events:getLastEvent',
     GET_STATISTICS: 'events:getStatistics',

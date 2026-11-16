@@ -216,8 +216,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'editor:get-selection',
   'events:emit',
   'events:get-agent-subscriptions',
-  'events:subscribe',
-  'events:unsubscribe',
   'export:chat-to-html',
   'file:getGitStatus',
   'file:getGitignorePatterns',
@@ -321,7 +319,7 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
 ]);
 
 /** Ceiling for UNREACHABLE_LEGACY — lower it as entries leave; never raise it. */
-const UNREACHABLE_LEGACY_CEILING = 133;
+const UNREACHABLE_LEGACY_CEILING = 131;
 
 const mainScan = scanMainInvokeHandlers(path.join(PACKAGE_ROOT, 'src'));
 const bridgeSources = readBridgeCallerSources(PACKAGE_ROOT);
