@@ -17,6 +17,7 @@ const fixtures = [
       G: 'Logs',
     },
     edges: ['A>D', 'B>E', 'C>D', 'A>F', 'B>G', 'C>F', 'E>D'],
+    labels: [],
     groups: [
       { label: 'Applications', members: ['A', 'B', 'C'] },
       { label: 'Data services', members: ['D', 'E'] },
@@ -38,6 +39,7 @@ const fixtures = [
       R: 'Read model',
     },
     edges: ['A>Z', 'B>Z', 'C>Z', 'D>Z', 'E>Z', 'F>Z', 'G>Z', 'H>Z', 'Z>R'],
+    labels: [],
     groups: [],
   },
   {
@@ -53,13 +55,31 @@ const fixtures = [
       H: 'End',
     },
     edges: ['A>B', 'B>C', 'C>D', 'D>E', 'E>F', 'F>G', 'G>H'],
+    labels: [],
     groups: [],
+  },
+  {
+    id: 'mermaid-nested-groups',
+    nodes: {
+      Client: 'Client',
+      Gateway: 'Gateway',
+      Queue: 'Queue',
+      Worker: 'Worker',
+      Store: 'Store',
+    },
+    edges: ['Client>Gateway', 'Gateway>Queue', 'Queue>Worker', 'Worker>Store', 'Store>Client'],
+    labels: ['request', 'enqueue', 'deliver', 'write', 'result'],
+    groups: [
+      { label: 'Runtime boundary', members: ['Gateway', 'Queue', 'Worker', 'Store'] },
+      { label: 'Worker boundary', members: ['Queue', 'Worker'] },
+    ],
   },
 ];
 
 // Failure modes: a missing marker/target; a tip too far from, inside, or facing
 // away from the native fill; dropped content; displaced group members; strokes
-// through nodes/text. Crossings and header hits are observations, not new gates.
+// through nodes/text; internal labels crossing a shared group boundary. The
+// sibling fixture additionally requires zero painted wire crossings.
 // This intentionally does not import production routing or terminal helpers.
 function groupedGeometry(svg: SVGSVGElement) {
   type Point = { x: number; y: number };
@@ -547,7 +567,12 @@ for (const fixture of fixtures)
           );
           expect(geometry.nodes).toHaveLength(Object.keys(fixture.nodes).length);
           expect(geometry.routes.map((r) => r.edge).sort()).toEqual([...fixture.edges].sort());
-          expect(geometry.labels.filter((l) => l.owner)).toHaveLength(0);
+          expect(
+            geometry.labels
+              .filter((l) => l.owner)
+              .map((l) => l.text)
+              .sort(),
+          ).toEqual([...fixture.labels].sort());
           expect(geometry.nodes.every((n) => n.visible && n.shapeCount > 0)).toBe(true);
           expect(geometry.labels.every((l) => l.visible && l.glyphs.length > 0)).toBe(true);
           expect(geometry.groups.map((g) => g.label).sort()).toEqual(
@@ -557,6 +582,24 @@ for (const fixture of fixtures)
             const actual = geometry.groups.find((g) => g.label === group.label)!;
             expect(actual.visible).toBe(true);
             expect(actual.contained.sort()).toEqual([...group.members].sort());
+          }
+          for (const label of geometry.labels.filter((item) => item.owner)) {
+            const route = geometry.routes.find((item) => item.id.endsWith(label.owner!))!;
+            for (const group of geometry.groups.filter(
+              (item) =>
+                item.contained.includes(route.source!) && item.contained.includes(route.target!),
+            )) {
+              expect(
+                label.glyphs.every(
+                  (glyph) =>
+                    glyph.left >= group.bounds.left - 0.75 &&
+                    glyph.right <= group.bounds.right + 0.75 &&
+                    glyph.top >= group.bounds.top - 0.75 &&
+                    glyph.bottom <= group.bounds.bottom + 0.75,
+                ),
+                `${label.text} remains inside ${group.label}`,
+              ).toBe(true);
+            }
           }
           if (fixture.id === 'edge-subgraph-siblings')
             expect(geometry.crossingObservations, 'shared dependency wires stay separate').toEqual(
