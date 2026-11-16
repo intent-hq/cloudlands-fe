@@ -26,7 +26,11 @@ import {
 } from '../../backend/main/invited-principal';
 import { canonicalFingerprint } from '../../backend/main/invited-session-key';
 import { captureInviteAttempt } from './invite-attempt';
-import { NodeWindowRefusedError, openBackendWindow } from '../../backend/main/backend.ipc';
+import {
+  NodeWindowRefusedError,
+  openBackendWindow,
+  refreshStoredDaemonMode,
+} from '../../backend/main/backend.ipc';
 import { getPairLinks } from '../../backend/main/pair-link.ipc';
 import { getNodeInvites } from '../../backend/main/remote-machines.ipc';
 import type { TestedPairLink } from '../../backend/main/pair-link';
@@ -131,6 +135,16 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     // Unknown mode from an older daemon: saving could keep a node the backend
     // can't use, so stop here. A reported mode this app doesn't know is never a node.
     if (!daemonMode && !tested.modeReported) throw new Error('Daemon mode unknown');
+    const match = await connectionsStore.findMatching({ hosts, port, fingerprint });
+    const existing =
+      match?.fingerprint &&
+      canonicalFingerprint(match.fingerprint) === canonicalFingerprint(fingerprint)
+        ? match
+        : null;
+    // A saved machine switched modes (node ↔ orchestrator or full daemon): store the
+    // tested mode first, so it opens as a backend or moves to Nodes.
+    if (existing && daemonMode && existing.daemonMode !== daemonMode)
+      await refreshStoredDaemonMode(existing.id, daemonMode);
     if (daemonMode === 'node') {
       await routeNodeLink({
         hosts,
@@ -144,11 +158,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       });
       return;
     }
-    const existing = await connectionsStore.findMatching({ hosts, port, fingerprint });
-    if (
-      existing?.fingerprint &&
-      canonicalFingerprint(existing.fingerprint) === canonicalFingerprint(fingerprint)
-    ) {
+    if (existing) {
       // Known server: connect if needed and open-or-focus its window. Do NOT
       // rewrite the stored credentials from a clicked link (see header).
       logger.info('Pairing link matches a known backend; opening its window', {
@@ -171,7 +181,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       ...(tcAddress !== null ? { tcAddress } : {}),
       ...(daemonMode ? { daemonMode } : {}),
     });
-    if (!existing) addedId = record.id;
+    if (!match) addedId = record.id;
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
     // With the machine rail on, the machine joins the rail of the window the link was opened from.
     await openBackendWindow(record.id, { parentWindow: attempt.parent });

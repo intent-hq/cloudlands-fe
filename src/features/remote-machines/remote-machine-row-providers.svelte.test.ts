@@ -137,6 +137,12 @@ describe('machineRowNeedsNode', () => {
     ).toEqual(['Pi']);
   });
 
+  it('is empty for an orchestrator, whose provider report is empty by design', () => {
+    const report = machine('disconnected', [{ id: 'pi', status: 'prerequisite-missing' }]);
+    expect(machineRowNeedsNode(report, name, 'orchestrator')).toEqual([]);
+    expect(machineRowNeedsNode(report, name, 'regular')).toEqual(['Pi']);
+  });
+
   it('is empty without a usable report', () => {
     expect(machineRowNeedsNode(null, name)).toEqual([]);
     expect(

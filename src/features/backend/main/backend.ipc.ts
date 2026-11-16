@@ -158,6 +158,7 @@ import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
   type ConnectionProviderSummary,
+  type DaemonMode,
   type ConnectionRecord,
   type DetectedDeviceKind,
 } from '../../../shared/types/connections';
@@ -4311,6 +4312,11 @@ export function saveOwnerConnection(
   return enqueueConnectionOperation(
     async (owner) => (await saveOwnerConnectionOwned(params, owner)).connection,
   );
+}
+
+/** Store a saved remote's newly tested mode and refresh every window's lists. */
+export async function refreshStoredDaemonMode(id: string, mode: DaemonMode): Promise<void> {
+  if (await connectionsStore.setDaemonMode(id, mode)) await broadcastConnectionsChanged();
 }
 
 /** A node only runs agents for other backends: it never opens a backend window. */

@@ -1,4 +1,4 @@
-import type { ConnectionRecord } from '$shared/types/connections';
+import type { ConnectionRecord, DaemonMode } from '$shared/types/connections';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isMachineProviderOffered } from './remote-model-picker';
 
@@ -76,7 +76,10 @@ export function machineRowProviders(
 export function machineRowNeedsNode(
   machine: RemoteMachine | null,
   catalogName: (providerId: string) => string | undefined,
+  daemonMode?: DaemonMode | null,
 ): string[] {
+  // An orchestrator runs no providers, so it never needs Node.js.
+  if (daemonMode === 'orchestrator') return [];
   const report = machineRowReport(machine);
   if (!report) return [];
   return report.providers

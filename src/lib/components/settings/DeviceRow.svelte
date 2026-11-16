@@ -330,6 +330,7 @@
     return machineRowNeedsNode(
       exposedMachine,
       (id) => entries.find((entry) => entry.id === id)?.displayName,
+      isOrchestrator ? 'orchestrator' : null,
     );
   });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
