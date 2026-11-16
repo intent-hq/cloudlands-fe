@@ -2128,10 +2128,19 @@ ${source}`;
     transition-property: fill, stroke, opacity;
   }
 
-  /* Layout reads must see the new transforms synchronously. The global reduced-motion
-     duration otherwise creates transitions on these groups' default `all` property. */
+  /* Measure the final node outlines and routes synchronously. Reduced motion's
+     nonzero duration otherwise animates native path/shape transforms and d too. */
   .mermaid-presentation
-    :global(svg[aria-roledescription='flowchart-v2'] :is(g.node, .edgeLabels > .edgeLabel)) {
+    :global(
+      svg[aria-roledescription='flowchart-v2']
+        :is(
+          g.node,
+          g.node > .label-container,
+          g.node > .flowchart-node-outline,
+          .edgePaths path,
+          .edgeLabels > .edgeLabel
+        )
+    ) {
     transition-property: fill, stroke, opacity;
   }
 

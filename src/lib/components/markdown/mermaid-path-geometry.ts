@@ -629,8 +629,21 @@ function diamondBoundary(bounds: Bounds): Point[] {
 }
 
 export function diamondRayIntersection(origin: Point, direction: Point, bounds: Bounds) {
+  return boundaryRayIntersection(origin, direction, diamondBoundary(bounds));
+}
+
+function nativePolygonBoundary(shape: SVGGraphicsElement): Point[] | null {
+  if (!(shape instanceof SVGPolygonElement) || shape.points.numberOfItems < 3) return null;
+  const matrix = shape.getScreenCTM();
+  if (!matrix) return null;
+  return Array.from({ length: shape.points.numberOfItems }, (_, i) => {
+    const p = shape.points.getItem(i).matrixTransform(matrix);
+    return { x: p.x, y: p.y };
+  });
+}
+
+function boundaryRayIntersection(origin: Point, direction: Point, boundary: Point[]) {
   const cross = (left: Point, right: Point) => left.x * right.y - left.y * right.x;
-  const boundary = diamondBoundary(bounds);
   return boundary
     .map((start, index) => ({ start, end: boundary[(index + 1) % boundary.length] }))
     .flatMap(({ start, end }) => {
@@ -680,11 +693,9 @@ function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement
       }
     }
   }
-  const boundary = isDiamondShape(shape)
-    ? diamondBoundary(bounds)
-    : shape.dataset.diagramCylinder === 'true'
-      ? cylinderBoundary(bounds, shape)
-      : null;
+  const boundary =
+    nativePolygonBoundary(shape) ??
+    (shape.dataset.diagramCylinder === 'true' ? cylinderBoundary(bounds, shape) : null);
   if (!boundary) return distanceToBounds(point, bounds);
   return Math.min(
     ...boundary.map((start, index) =>
@@ -702,8 +713,8 @@ function rayShapeEntry(
 ) {
   const boundsEntry = rayBoundsEntry(origin, direction, bounds, edgeTolerance);
   if (!boundsEntry) return null;
-  if (isDiamondShape(shape))
-    return diamondRayIntersection(origin, direction, bounds) ?? boundsEntry;
+  const polygon = nativePolygonBoundary(shape);
+  if (polygon) return boundaryRayIntersection(origin, direction, polygon) ?? boundsEntry;
   if (shape.dataset.diagramCylinder !== 'true') return boundsEntry;
   const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);

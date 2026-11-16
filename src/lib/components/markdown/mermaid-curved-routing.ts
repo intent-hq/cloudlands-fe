@@ -193,8 +193,9 @@ function peakCurvature(curve: Curve) {
 }
 
 export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
-  if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2' || svg.querySelector('g.cluster'))
-    return;
+  if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
+  const grouped = Boolean(svg.querySelector('g.cluster'));
+  const repaired = new Set<Route>();
   const paths = [...svg.querySelectorAll<SVGPathElement>('path.flowchart-link')];
   if (!paths.some((path) => path.getAttribute('d')?.includes('C'))) return;
   const reference = paths[0]?.getScreenCTM();
@@ -206,6 +207,9 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     const b = new DOMPoint(rect.right, rect.bottom).matrixTransform(inverse);
     return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y };
   };
+  const headers = [...svg.querySelectorAll<SVGGraphicsElement>('g.cluster > .cluster-label')]
+    .filter((label) => label.textContent?.trim())
+    .map(measure);
   const nodes = new Map(
     [...svg.querySelectorAll<SVGGElement>('g.node')].flatMap((node) => {
       const id = node.id.match(/flowchart-(.+)-\d+$/)?.[1];
@@ -225,9 +229,22 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
         : [];
     }),
   );
-  const nodePorts = (id: string, box: Box) => {
+  const nodePorts = (id: string, box: Box, slots = false) => {
     const node = nodes.get(id);
-    return ports(box).map((pair) =>
+    const candidates = ports(box).flatMap((pair, side) => {
+      const horizontal = side === 0 || side === 2;
+      if (!slots || (horizontal ? box.width : box.height) < gap * 5) return [pair];
+      return [
+        pair,
+        ...[-gap, gap].map((offset) =>
+          pair.map((p) => ({
+            x: p.x + (horizontal ? offset : 0),
+            y: p.y + (horizontal ? 0 : offset),
+          })),
+        ),
+      ];
+    });
+    return candidates.map((pair) =>
       node && !node.rect ? shapePort(box, node.outline, pair[0]) : pair,
     );
   };
@@ -278,6 +295,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     ];
   });
   const clear = (route: Route, curve: Curve, clearance = 8) =>
+    !headers.some((box) => hitsBox(curve.points, box, clearance)) &&
     ![...nodes].some(([id, node]) => {
       const padding = id === route.source || id === route.target ? -0.1 : clearance;
       const points = curve.points.slice(1, -1);
@@ -297,6 +315,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       .filter(
         (box) =>
           ![...nodes.values()].some((n) => overlaps(box, n.box, 6)) &&
+          !headers.some((header) => overlaps(box, header, 6)) &&
           !routes.some(
             (other) =>
               other !== route &&
@@ -312,10 +331,14 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     routes.filter(
       (other) =>
         other !== route &&
-        (crosses(curve.points, other.points) ||
+        ((grouped
+          ? route.target === other.target &&
+            distance(last(curve.points), last(other.points)) < gap / 2
+          : crosses(curve.points, other.points)) ||
           (other.labelBox && hitsBox(curve.points, other.labelBox, 6))),
-    ).length;
+    ).length + Number(grouped && !clear(route, curve));
   const write = (route: Route, curve: Curve, labelBox?: Box) => {
+    if (grouped) repaired.add(route);
     route.d = curve.d;
     route.points = curve.points;
     route.path.setAttribute('d', curve.d);
@@ -337,6 +360,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
   };
 
   if (
+    !grouped &&
     routes.length === paths.length &&
     routes.every((route) => route.d.includes('C')) &&
     [...nodes.values()].every((node) => node.outline.length >= 3)
@@ -528,6 +552,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
   for (const [id, record] of nodes) {
     const incoming = routes.filter((route) => route.target === id);
     if (
+      grouped ||
       !record.rect ||
       incoming.length < 2 ||
       incoming.length > 4 ||
@@ -690,7 +715,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       continue;
     let best: { curve: Curve; labelBox?: Box; conflicts: number; length: number } | undefined;
     for (const [start, lead] of nodePorts(route.source, route.sourceBox))
-      for (const [end, tail] of nodePorts(route.target, route.targetBox)) {
+      for (const [end, tail] of nodePorts(route.target, route.targetBox, grouped)) {
         const candidates = [
           [start, lead, tail, end],
           ...[outer.top, outer.bottom].flatMap((y) => [
@@ -706,8 +731,37 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
             ]),
           ]),
         ];
-        for (const candidate of candidates) {
-          const curve = basis(candidate);
+        const curves = candidates.map(basis);
+        if (grouped) {
+          const span = distance(start, end) / (gap * 2);
+          for (const from of [0.5, 0.35, 0.23])
+            for (const to of [0.5, 0.35, 0.23])
+              curves.unshift(
+                cubic(
+                  start,
+                  {
+                    x: start.x + (lead.x - start.x) * span * from,
+                    y: start.y + (lead.y - start.y) * span * from,
+                  },
+                  {
+                    x: end.x + (tail.x - end.x) * span * to,
+                    y: end.y + (tail.y - end.y) * span * to,
+                  },
+                  end,
+                ),
+              );
+        }
+        for (const curve of curves) {
+          if (
+            grouped &&
+            routes.some(
+              (other) =>
+                other !== route &&
+                route.target === other.target &&
+                distance(last(curve.points), last(other.points)) < gap / 2,
+            )
+          )
+            continue;
           if (!clear(route, curve)) continue;
           const count = conflicts(route, curve);
           if (count >= before || (best && count > best.conflicts)) continue;
@@ -726,6 +780,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
   // Spread each bend along the connection instead of concentrating it at a port.
   for (const route of routes) {
     if (
+      (grouped && !repaired.has(route)) ||
       !route.d.includes('C') ||
       route.source === route.target ||
       !nodes.get(route.source)?.outline.length ||
