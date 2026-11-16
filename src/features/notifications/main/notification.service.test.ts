@@ -9,10 +9,17 @@ import {
 import {
   getFocusedWindowWorkspaceId,
   getRendererWebContentsForWorkspace,
-  getViewedWorkspaceIdForWindow,
+  getViewedWorkspaceIdForRenderer,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
+import { noteFrameFocused } from '../../../main/frames';
+import { setMachineRailEnabledFlag, writeWindowRail } from '../../../main/machine-rail-state';
+import {
+  bindMachineViewToBackend,
+  getShownRendererWebContents,
+  setShownMachineView,
+} from '../../../main/window-backend';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
@@ -254,12 +261,47 @@ vi.mock('electron', () => ({
 
 // workspace-event-bus mock removed — module was deleted
 
-vi.mock('../../system/main/system.ipc', () => ({
-  getFocusedWindowWorkspaceId: vi.fn(() => undefined),
-  getWindowIdsForWorkspace: vi.fn(() => []),
-  getRendererWebContentsForWorkspace: vi.fn(() => []),
-  getViewedWorkspaceIdForWindow: vi.fn(() => undefined),
-  sendToWorkspaceWindows: vi.fn(),
+// The per-renderer lookups default to adapters over window-level fakes, so
+// the suites that model one renderer per window (no machine rail) set window
+// ids only: `getWindowIdsForWorkspace` (the real export) and
+// `getViewedWorkspaceIdForWindow` (a stand-in: which workspace a window's own
+// page views). The frame-routing suite replaces them with a per-renderer
+// registry.
+const { getViewedWorkspaceIdForWindow } = vi.hoisted(() => ({
+  getViewedWorkspaceIdForWindow: vi.fn((_windowId: number): string | undefined => undefined),
+}));
+
+vi.mock('../../system/main/system.ipc', async () => {
+  const { BrowserWindow } = await import('electron');
+  const getWindowIdsForWorkspace = vi.fn((_workspaceId: string, _scope: unknown): number[] => []);
+  const windowRendering = (contents: unknown) =>
+    BrowserWindow.getAllWindows().find((window) => window.webContents === contents);
+  return {
+    getFocusedWindowWorkspaceId: vi.fn(() => undefined),
+    getWindowIdsForWorkspace,
+    getRendererWebContentsForWorkspace: vi.fn((workspaceId: string, scope: unknown) =>
+      getWindowIdsForWorkspace(workspaceId, scope).flatMap(
+        (id) => BrowserWindow.fromId(id)?.webContents ?? [],
+      ),
+    ),
+    getViewedWorkspaceIdForRenderer: vi.fn((contents: unknown) => {
+      const window = windowRendering(contents);
+      return window ? getViewedWorkspaceIdForWindow(window.id) : undefined;
+    }),
+    sendToWorkspaceWindows: vi.fn(),
+  };
+});
+
+// Rail actions a notification click takes; the rail itself is covered in
+// machine-rail-switch.test.ts. By default a frame shows the machine at once.
+const { selectMachineInFrameMock, openInvitedMachineInWindowMock } = vi.hoisted(() => ({
+  selectMachineInFrameMock: vi.fn(),
+  openInvitedMachineInWindowMock: vi.fn(async () => true),
+}));
+
+vi.mock('../../../main/machine-rail', () => ({
+  selectMachineInFrame: selectMachineInFrameMock,
+  openInvitedMachineInWindow: openInvitedMachineInWindowMock,
 }));
 
 vi.mock('../../workspace/main/workspace.service', () => ({
@@ -2981,5 +3023,416 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     expect(payloads).toHaveLength(1);
     // A click on another host's window must not navigate it to this workspace.
     expect(payloads[0]).not.toHaveProperty('navigateTarget');
+  });
+});
+
+describe('NotificationService routing by frame (one machine in several frames)', () => {
+  const REMOTE_ID = 'remote-1';
+
+  function makeContents() {
+    return {
+      send: vi.fn(),
+      isDestroyed: () => false,
+      isOffscreen: () => false,
+      getURL: () => 'http://127.0.0.1:5190/',
+      on: vi.fn(),
+      once: vi.fn(),
+    };
+  }
+  type MockContents = ReturnType<typeof makeContents>;
+
+  /**
+   * A frame whose own page renders `own` and whose rail also holds `added`,
+   * each with a started machine view. `show(id)` puts a machine on screen.
+   */
+  function makeFrame(id: number, own: string, added: string[] = []) {
+    const window = {
+      id,
+      backendId: own,
+      webContents: makeContents(),
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+      on: vi.fn(),
+      once: vi.fn(),
+    };
+    const views = new Map<string, MockContents>();
+    if (added.length > 0) {
+      writeWindowRail(window as never, { machineIds: [own, ...added], selectedId: own });
+    }
+    for (const machine of added) {
+      const view = makeContents();
+      bindMachineViewToBackend(window as never, view as never, machine);
+      views.set(machine, view);
+    }
+    const renderer = (machine: string): MockContents =>
+      machine === own ? window.webContents : views.get(machine)!;
+    const show = (machine: string): void => {
+      setShownMachineView(window as never, machine === own ? null : (renderer(machine) as never));
+      if (added.length > 0) {
+        writeWindowRail(window as never, { machineIds: [own, ...added], selectedId: machine });
+      }
+    };
+    return { window, views, renderer, show };
+  }
+  type Frame = ReturnType<typeof makeFrame>;
+
+  /** Per-renderer workspace registry behind the system.ipc fakes. */
+  type Entry = { contents: MockContents; backendId: string; workspaceId: string; viewing: boolean };
+  let entries: Entry[];
+  let frames: Frame[];
+
+  function setFrames(...list: Frame[]) {
+    frames = list;
+    const windows = list.map((frame) => frame.window);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue(windows as never);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (windows.find((w) => w.id === id) ?? null) as never,
+    );
+  }
+
+  function focus(frame: Frame | null) {
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue((frame?.window ?? null) as never);
+    if (frame) noteFrameFocused(frame.window as never);
+  }
+
+  const open = (contents: MockContents, backendId: string, workspaceId: string, viewing = false) =>
+    entries.push({ contents, backendId, workspaceId, viewing });
+
+  function payloads(contents: MockContents, channel: string): unknown[] {
+    return contents.send.mock.calls
+      .filter(([sent]: unknown[]) => sent === channel)
+      .map(([, payload]: unknown[]) => payload);
+  }
+
+  function idleEvent(workspaceId = 'workspace-1'): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: { agentId: 'agent-self', agentName: 'Self Agent', isBackground: false },
+    } as AgentIdleEvent;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetBackendMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    liveBackendIds.push(REMOTE_ID);
+    entries = [];
+    frames = [];
+    setMachineRailEnabledFlag(true);
+    focus(null);
+    vi.mocked(getRendererWebContentsForWorkspace).mockImplementation(((workspaceId: string, scope: unknown) =>
+      entries
+        .filter(
+          (e) =>
+            e.workspaceId === workspaceId && (typeof scope !== 'string' || scope === e.backendId),
+        )
+        .map((e) => e.contents)) as never);
+    vi.mocked(getViewedWorkspaceIdForRenderer).mockImplementation(
+      (contents: unknown) => entries.find((e) => e.contents === contents && e.viewing)?.workspaceId,
+    );
+    vi.mocked(getFocusedWindowWorkspaceId).mockImplementation(() => {
+      const focused = BrowserWindow.getFocusedWindow();
+      return focused
+        ? getViewedWorkspaceIdForRenderer(getShownRendererWebContents(focused as never))
+        : undefined;
+    });
+    vi.mocked(sendToWorkspaceWindows).mockImplementation(((
+      workspaceId: string,
+      channel: string,
+      data: unknown,
+      scope: unknown,
+    ) => {
+      const targets = vi.mocked(getRendererWebContentsForWorkspace)(workspaceId, scope as never);
+      for (const contents of targets) contents.send(channel, data);
+      return {
+        windowCount: targets.length,
+        browserClientsNotified: false,
+        delivered: targets.length > 0,
+      };
+    }) as never);
+    selectMachineInFrameMock.mockImplementation((window: unknown, id: string) => {
+      const frame = frames.find((f) => f.window === window);
+      if (!frame) return null;
+      frame.show(id);
+      return { window, contents: frame.renderer(id), ready: Promise.resolve(true) };
+    });
+    openInvitedMachineInWindowMock.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    setMachineRailEnabledFlag(false);
+    resetBackendMocks();
+  });
+
+  describe('viewing gate and in-app toast', () => {
+    it('stays quiet (sound only) when the focused frame shows the machine and its view is on the workspace', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(REMOTE_ID);
+      focus(frame);
+      open(frame.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1', true);
+
+      await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
+
+      expect(mockNotificationInstances).toHaveLength(0);
+      const sound = payloads(frame.renderer(REMOTE_ID), 'notification:show');
+      expect(sound).toHaveLength(1);
+      expect(sound[0]).not.toHaveProperty('navigateTarget');
+      expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
+    });
+
+    it('shows the OS banner when the focused frame holds the machine but shows another one', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      focus(frame);
+      // The hidden view of the machine is on the workspace; the user is not looking at it.
+      open(frame.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1', true);
+
+      await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
+
+      expect(mockNotificationInstances).toHaveLength(1);
+      // The sound reaches the renderer holding the workspace, without a toast.
+      const sound = payloads(frame.renderer(REMOTE_ID), 'notification:show');
+      expect(sound).toHaveLength(1);
+      expect(sound[0]).not.toHaveProperty('navigateTarget');
+      expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
+    });
+
+    it('sends the in-app toast to the view of the machine the focused frame shows, not the frame page', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      const other = makeFrame(2, REMOTE_ID);
+      setFrames(frame, other);
+      frame.show(REMOTE_ID);
+      focus(frame);
+      open(other.window.webContents, REMOTE_ID, 'workspace-1');
+
+      await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
+
+      expect(mockNotificationInstances).toHaveLength(0);
+      expect(payloads(frame.renderer(REMOTE_ID), 'notification:show')).toEqual([
+        expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+      ]);
+      expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
+      const sound = payloads(other.window.webContents, 'notification:show');
+      expect(sound).toHaveLength(1);
+      expect(sound[0]).not.toHaveProperty('navigateTarget');
+    });
+
+    it('keeps the Assistant id per host: a frame showing the local Assistant does not silence the remote one', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      focus(frame);
+      open(frame.renderer(LOCAL_ID), LOCAL_ID, CHIEF_WORKSPACE_ID, true);
+
+      await new NotificationService().handleAgentIdle(idleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+      expect(mockNotificationInstances).toHaveLength(1);
+
+      // Once the frame shows the remote machine on its Assistant, it is quiet.
+      frame.show(REMOTE_ID);
+      open(frame.renderer(REMOTE_ID), REMOTE_ID, CHIEF_WORKSPACE_ID, true);
+      await new NotificationService().handleAgentIdle(idleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+      expect(mockNotificationInstances).toHaveLength(1);
+    });
+
+    it('plays the sound once per renderer when one frame holds the workspace in two machine renderers', async () => {
+      const frame = makeFrame(1, REMOTE_ID, ['remote-2']);
+      setFrames(frame);
+      open(frame.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1');
+
+      await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
+
+      expect(payloads(frame.window.webContents, 'notification:show')).toHaveLength(1);
+      expect(payloads(frame.views.get('remote-2')!, 'notification:show')).toEqual([]);
+    });
+
+    it('falls back to the renderer of the machine in the focused frame when no renderer has the workspace', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      focus(frame);
+
+      await new NotificationService().handleAgentIdle(idleEvent('workspace-closed'), REMOTE_ID);
+
+      expect(mockNotificationInstances).toHaveLength(1);
+      expect(payloads(frame.renderer(REMOTE_ID), 'notification:show')).toHaveLength(1);
+      expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
+    });
+  });
+
+  describe('click target', () => {
+    async function clickBanner(workspaceId = 'workspace-1') {
+      await new NotificationService().handleAgentIdle(idleEvent(workspaceId), REMOTE_ID);
+      expect(mockNotificationInstances).toHaveLength(1);
+      mockNotificationInstances[0].handlers['click']();
+      await flush();
+    }
+
+    it('picks, of two frames holding the machine, the one whose view of it shows the workspace', async () => {
+      const railed = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      const own = makeFrame(2, REMOTE_ID);
+      setFrames(own, railed);
+      railed.show(LOCAL_ID);
+      open(own.window.webContents, REMOTE_ID, 'workspace-1');
+      open(railed.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1', true);
+
+      await clickBanner();
+
+      expect(railed.window.focus).toHaveBeenCalled();
+      expect(own.window.focus).not.toHaveBeenCalled();
+      expect(selectMachineInFrameMock).toHaveBeenCalledWith(railed.window, REMOTE_ID);
+      expect(payloads(railed.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
+        { workspaceId: 'workspace-1' },
+      ]);
+      expect(payloads(railed.window.webContents, 'notification:navigate')).toEqual([]);
+      expect(getActivationFocusClaim()).toBe(railed.window);
+    });
+
+    it('then prefers a frame that has the workspace open in a tab', async () => {
+      const first = makeFrame(1, REMOTE_ID);
+      const second = makeFrame(2, LOCAL_ID, [REMOTE_ID]);
+      setFrames(first, second);
+      second.show(REMOTE_ID);
+      open(second.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1');
+
+      await clickBanner();
+
+      expect(second.window.focus).toHaveBeenCalled();
+      expect(first.window.focus).not.toHaveBeenCalled();
+      // The frame already shows the machine: nothing to select.
+      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
+      expect(payloads(second.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
+        { workspaceId: 'workspace-1' },
+      ]);
+    });
+
+    it('then prefers the focused frame, then the most recently focused one', async () => {
+      const first = makeFrame(1, REMOTE_ID);
+      const second = makeFrame(2, LOCAL_ID, [REMOTE_ID]);
+      const third = makeFrame(3, REMOTE_ID);
+      setFrames(first, second, third);
+      focus(third);
+      focus(second);
+      focus(null);
+
+      await clickBanner();
+      expect(second.window.focus).toHaveBeenCalled();
+      expect(payloads(second.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
+        { workspaceId: 'workspace-1' },
+      ]);
+
+      // The user focuses another frame holding the machine while the banner waits.
+      mockNotificationInstances.length = 0;
+      __resetNotificationCacheForTesting();
+      await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
+      vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(third.window as never);
+      mockNotificationInstances[0].handlers['click']();
+      expect(third.window.focus).toHaveBeenCalled();
+      expect(first.window.focus).not.toHaveBeenCalled();
+    });
+
+    it('selects the machine in a focused frame that holds but does not show it, then navigates once its view is ready', async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      let markReady: (ready: boolean) => void = () => {};
+      selectMachineInFrameMock.mockImplementation((window: unknown, id: string) => ({
+        window,
+        contents: frame.renderer(id),
+        ready: new Promise<boolean>((resolve) => {
+          markReady = resolve;
+        }),
+      }));
+
+      await clickBanner();
+      expect(selectMachineInFrameMock).toHaveBeenCalledWith(frame.window, REMOTE_ID);
+      expect(frame.window.focus).toHaveBeenCalled();
+      expect(payloads(frame.renderer(REMOTE_ID), 'notification:navigate')).toEqual([]);
+
+      markReady(true);
+      await flush();
+      expect(payloads(frame.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
+        { workspaceId: 'workspace-1' },
+      ]);
+      expect(payloads(frame.window.webContents, 'notification:navigate')).toEqual([]);
+    });
+
+    it('rail on: adds a machine no frame holds to the most recently focused frame', async () => {
+      const older = makeFrame(1, LOCAL_ID);
+      const recent = makeFrame(2, 'remote-2');
+      setFrames(older, recent);
+      focus(older);
+      focus(recent);
+      focus(null);
+
+      await clickBanner();
+
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
+        recent.window,
+        REMOTE_ID,
+        'workspace-1',
+      );
+      expect(createWindowForSessionMock).not.toHaveBeenCalled();
+    });
+
+    it('rail on: opens a new frame when the recent frame cannot take the machine', async () => {
+      const frame = makeFrame(1, LOCAL_ID);
+      setFrames(frame);
+      openInvitedMachineInWindowMock.mockResolvedValue(false);
+
+      await clickBanner();
+
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
+        frame.window,
+        REMOTE_ID,
+        'workspace-1',
+      );
+      expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
+      expect(createWindowForSessionMock.mock.calls[0][2]).toBe(REMOTE_ID);
+    });
+
+    it('rail off: opens a machine no frame holds in a new frame, as before', async () => {
+      setMachineRailEnabledFlag(false);
+      const frame = makeFrame(1, LOCAL_ID);
+      setFrames(frame);
+      focus(frame);
+      focus(null);
+
+      await clickBanner();
+
+      expect(openInvitedMachineInWindowMock).not.toHaveBeenCalled();
+      expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
+      const [session, , backendId] = createWindowForSessionMock.mock.calls[0];
+      expect(session).toEqual(expect.objectContaining({ route: '/workspace/workspace-1' }));
+      expect(backendId).toBe(REMOTE_ID);
+      expect(frame.window.focus).not.toHaveBeenCalled();
+    });
+
+    it('keeps the Assistant id per host when picking the frame', async () => {
+      const local = makeFrame(1, LOCAL_ID);
+      const remote = makeFrame(2, REMOTE_ID);
+      setFrames(local, remote);
+      open(local.window.webContents, LOCAL_ID, CHIEF_WORKSPACE_ID, true);
+
+      await clickBanner(CHIEF_WORKSPACE_ID);
+
+      expect(remote.window.focus).toHaveBeenCalled();
+      expect(local.window.focus).not.toHaveBeenCalled();
+      expect(payloads(remote.window.webContents, 'notification:navigate')).toEqual([
+        { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
+      ]);
+    });
   });
 });

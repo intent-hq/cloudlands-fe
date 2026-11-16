@@ -6,8 +6,10 @@ const electron = vi.hoisted(() => ({
   windows: [] as object[],
   owners: new Map<object, object>(),
   focused: null as object | null,
+  appOn: vi.fn(),
 }));
 vi.mock('electron', () => ({
+  app: { on: electron.appOn },
   BrowserWindow: {
     fromWebContents: (sender: object) => electron.owners.get(sender) ?? null,
     getAllWindows: () => electron.windows,
@@ -18,10 +20,13 @@ vi.mock('electron', () => ({
 import {
   focusedFrame,
   frameMachines,
+  framesByRecentFocus,
   framesHolding,
+  noteFrameFocused,
   rendererFor,
   setNonFrameWindowPredicate,
   shownMachine,
+  trackFrameFocus,
 } from '../frames';
 import { writeWindowRail } from '../machine-rail-state';
 import { setMainWindow } from '../state';
@@ -170,5 +175,43 @@ describe('focusedFrame', () => {
     electron.focused = dock.window;
     setNonFrameWindowPredicate((window) => window === dock.window);
     expect(focusedFrame()).toBeNull();
+  });
+});
+
+describe('framesByRecentFocus', () => {
+  it('lists the most recently focused frame first, then the others in window order', () => {
+    const a = makeWindow('local');
+    const b = makeWindow('host-B');
+    const c = makeWindow('host-C');
+    expect(framesByRecentFocus()).toEqual([a.window, b.window, c.window]);
+    noteFrameFocused(c.window);
+    noteFrameFocused(b.window);
+    expect(framesByRecentFocus()).toEqual([b.window, c.window, a.window]);
+  });
+
+  it('skips closed windows and windows that are not frames', () => {
+    const closed = makeWindow('local');
+    const dock = makeWindow('host-B');
+    const frame = makeWindow('host-C');
+    noteFrameFocused(dock.window);
+    noteFrameFocused(closed.window);
+    closed.window.destroy();
+    setNonFrameWindowPredicate((window) => window === dock.window);
+    expect(framesByRecentFocus()).toEqual([frame.window]);
+  });
+
+  it('records app focus once tracking starts, starting with the focused window', () => {
+    const a = makeWindow('local');
+    const b = makeWindow('host-B');
+    electron.focused = b.window;
+    trackFrameFocus();
+    trackFrameFocus();
+    const focusListeners = electron.appOn.mock.calls.filter(
+      ([event]) => event === 'browser-window-focus',
+    );
+    expect(focusListeners).toHaveLength(1);
+    expect(framesByRecentFocus()[0]).toBe(b.window);
+    (focusListeners[0][1] as (event: unknown, window: unknown) => void)({}, a.window);
+    expect(framesByRecentFocus()).toEqual([a.window, b.window]);
   });
 });

@@ -386,17 +386,6 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
 }
 
 /**
- * Get the workspace ID a specific window is viewing right now (focused or
- * not). Returns undefined when the window is not in a workspace view. Lets
- * callers rank windows that actively show a workspace above windows that only
- * hold it in a background tab.
- */
-export function getViewedWorkspaceIdForWindow(windowId: number): string | undefined {
-  const window = liveWindow(windowId);
-  return window ? currentViewedWorkspaceId(window) : undefined;
-}
-
-/**
  * Get the last-known workspace ID viewed by a specific window, for diagnostics.
  * Unlike the current-workspace maps this survives the window navigating away
  * from the workspace; it returns undefined only when the window has never
@@ -494,6 +483,24 @@ export function hasWorkspaceShellFor(backendId: string): boolean {
     if (entryMatchesScope(key, entry.backendId, backendId, liveWindowHostChecker)) return true;
   }
   return false;
+}
+
+/**
+ * The workspace `contents` (a window's own page or a machine view, shown or
+ * not) is viewing, only while it is still on the host it reported from.
+ */
+export function getViewedWorkspaceIdForRenderer(
+  contents: Electron.WebContents,
+): string | undefined {
+  if (contents.isDestroyed()) return undefined;
+  const window = getWindowForWebContents(contents);
+  if (!window) return undefined;
+  const key = rendererKey(window, contents);
+  const entry = windowWorkspaceIds.get(key);
+  if (!entry) return undefined;
+  return entryMatchesScope(key, entry.backendId, ANY_HOST, liveWindowHostChecker)
+    ? entry.workspaceId
+    : undefined;
 }
 
 /** The backend a tracked renderer is connected to, or null once it is gone. */

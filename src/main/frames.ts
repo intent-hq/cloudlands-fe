@@ -12,7 +12,7 @@
  * main module can import it without main/window.ts's module graph.
  */
 
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { readWindowRail } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
@@ -56,21 +56,13 @@ export function frameMachines(window: BrowserWindowType): string[] {
   return [...readWindowRail(window).machineIds];
 }
 
-/**
- * The machine whose renderer `window` shows (the one menu commands and input reach).
- *
- * @internal First production caller is notification routing for frames.
- */
+/** The machine whose renderer `window` shows (the one menu commands and input reach). */
 export function shownMachine(window: BrowserWindowType): string {
   const shown = getShownRendererWebContents(window);
   return shown === window.webContents ? frameOwnMachine(window) : getBackendIdForWebContents(shown);
 }
 
-/**
- * Every live frame that holds `machineId`, in window order.
- *
- * @internal First production caller is notification routing for frames.
- */
+/** Every live frame that holds `machineId`, in window order. */
 export function framesHolding(machineId: string): BrowserWindowType[] {
   return getAppWindows().filter(
     (window) => isFrame(window) && frameMachines(window).includes(machineId),
@@ -98,4 +90,37 @@ export function rendererFor(
   const [own, ...views] = getRendererWebContents(window);
   if (frameOwnMachine(window) === machineId) return own;
   return views.find((view) => getBackendIdForWebContents(view) === machineId) ?? null;
+}
+
+/** When each frame was last focused (a rising counter, not a clock). */
+const lastFocused = new WeakMap<BrowserWindowType, number>();
+let focusCount = 0;
+let trackingFocus = false;
+
+/**
+ * Record that `window` was just focused.
+ *
+ * @internal Test seam; production records focus through {@link trackFrameFocus}.
+ */
+export function noteFrameFocused(window: BrowserWindowType): void {
+  lastFocused.set(window, ++focusCount);
+}
+
+/** Start recording which frame was focused last. Safe to call more than once. */
+export function trackFrameFocus(): void {
+  if (trackingFocus) return;
+  trackingFocus = true;
+  app.on('browser-window-focus', (_event, window) => noteFrameFocused(window));
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused) noteFrameFocused(focused);
+}
+
+/**
+ * Every live frame, the most recently focused first. Frames not focused since
+ * {@link trackFrameFocus} started keep window order after them.
+ */
+export function framesByRecentFocus(): BrowserWindowType[] {
+  return getAppWindows()
+    .filter(isFrame)
+    .sort((a, b) => (lastFocused.get(b) ?? 0) - (lastFocused.get(a) ?? 0));
 }

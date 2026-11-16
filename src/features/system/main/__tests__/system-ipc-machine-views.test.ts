@@ -108,7 +108,7 @@ import {
   getBackendIdForRendererKey,
   getRendererKeysForWorkspace,
   getRendererWebContentsForWorkspace,
-  getViewedWorkspaceIdForWindow,
+  getViewedWorkspaceIdForRenderer,
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
   hasWorkspaceShellFor,
@@ -260,15 +260,32 @@ describe('workspace hosting by machine views', () => {
     await reportViewed(window.webContents, 'ws-home');
     await reportViewed(viewB, 'ws-b');
 
-    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-home');
+    expect(getWindowIdForWorkspace('ws-home', ANY_HOST)).toBe(window.id);
     expect(getWindowIdForWorkspace('ws-b', ANY_HOST)).toBeUndefined();
     // The hidden view still hosts its workspace for routing.
     expect(getWindowIdsForWorkspace('ws-b', 'b')).toEqual([window.id]);
 
     fakes.shown.set(window, viewB);
-    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-b');
     expect(getWindowIdForWorkspace('ws-b', 'b')).toBe(window.id);
     expect(getWindowIdForWorkspace('ws-home', ANY_HOST)).toBeUndefined();
+  });
+
+  it('answers what each renderer views, a hidden machine view included', async () => {
+    const window = makeWindow('local');
+    const viewB = makeView(window, 'b');
+    const otherWindow = makeWindow('b');
+    await reportViewed(window.webContents, 'ws-home');
+    await reportViewed(viewB, 'ws-b');
+    await reportTabStrip(otherWindow.webContents, ['ws-b']);
+
+    // The window shows its own renderer, yet its hidden view of b views ws-b.
+    expect(getWindowIdForWorkspace('ws-b', ANY_HOST)).toBeUndefined();
+    expect(getViewedWorkspaceIdForRenderer(viewB)).toBe('ws-b');
+    expect(getViewedWorkspaceIdForRenderer(window.webContents)).toBe('ws-home');
+    expect(getViewedWorkspaceIdForRenderer(otherWindow.webContents)).toBeUndefined();
+
+    viewB.destroyed = true;
+    expect(getViewedWorkspaceIdForRenderer(viewB)).toBeUndefined();
   });
 
   it('resolves the backend of a workspace hosted by a hidden view from that view', async () => {
