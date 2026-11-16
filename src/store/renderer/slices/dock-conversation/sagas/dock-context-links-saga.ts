@@ -283,7 +283,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
     let label = value.appName ?? '';
     if (value.url)
       try {
-        label = new URL(value.url).hostname;
+        label = new URL(value.url).host;
       } catch {
         /* Unknown remains app-only. */
       }
