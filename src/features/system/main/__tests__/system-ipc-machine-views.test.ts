@@ -107,6 +107,7 @@ import {
   getAllOpenWorkspaceIds,
   getBackendIdForRendererKey,
   getRendererKeysForWorkspace,
+  getRendererWebContentsForWorkspace,
   getViewedWorkspaceIdForWindow,
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
@@ -207,6 +208,25 @@ describe('workspace hosting by machine views', () => {
       requestId: 'req-1',
     });
     expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('lists the hidden machine view, not its window’s own renderer, as the host of its workspace', async () => {
+    const window = makeWindow('local');
+    const viewB = makeView(window, 'b');
+    const other = makeWindow('b');
+    await reportTabStrip(window.webContents, ['ws-b']);
+    await reportTabStrip(viewB, ['ws-b']);
+    await reportTabStrip(other.webContents, ['ws-b']);
+
+    expect(getRendererWebContentsForWorkspace('ws-b', 'b')).toEqual(
+      expect.arrayContaining([viewB, other.webContents]),
+    );
+    expect(getRendererWebContentsForWorkspace('ws-b', 'b')).toHaveLength(2);
+    // The window's own renderer holds the same id on its own host only.
+    expect(getRendererWebContentsForWorkspace('ws-b', 'local')).toEqual([window.webContents]);
+
+    viewB.destroyed = true;
+    expect(getRendererWebContentsForWorkspace('ws-b', 'b')).toEqual([other.webContents]);
   });
 
   it('asks a hidden machine view to background-host a workspace of its machine', async () => {

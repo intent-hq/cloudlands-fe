@@ -465,6 +465,24 @@ export function getRendererKeysForWorkspace(workspaceId: string, scope: WindowHo
 }
 
 /**
+ * Live web contents of every renderer (a window's own, or a machine view the
+ * window may not show) that has `workspaceId` open or hosts it in the
+ * background on the hosts allowed by `scope`. Send workspace-scoped messages
+ * here, not to the hosting window's own web contents: a hidden machine view's
+ * workspace lives in that view, while the window's own renderer belongs to
+ * another host.
+ */
+export function getRendererWebContentsForWorkspace(
+  workspaceId: string,
+  scope: WindowHostScope,
+): Electron.WebContents[] {
+  return getRendererKeysForWorkspace(workspaceId, scope).flatMap((key) => {
+    const contents = resolveRendererKey(key)?.contents;
+    return contents && !contents.isDestroyed() ? [contents] : [];
+  });
+}
+
+/**
  * Whether a renderer connected to `backendId` runs the workspace shell (it
  * reported its tab strip), so it can host that backend's workspaces.
  */
@@ -637,9 +655,7 @@ export function sendToWorkspaceWindows(
     // Workspace-scoped events go to the renderers hosting the workspace (a
     // machine the window does not show included) and never fall back to
     // unrelated windows.
-    targets = getRendererKeysForWorkspace(effectiveWorkspaceId, scope).flatMap(
-      (key) => resolveRendererKey(key)?.contents ?? [],
-    );
+    targets = getRendererWebContentsForWorkspace(effectiveWorkspaceId, scope);
   } else if (isContentBearing) {
     // Without a workspace context there is no safe target for workspace content.
     targets = [];

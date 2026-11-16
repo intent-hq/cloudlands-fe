@@ -8,6 +8,7 @@ import {
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import {
   getFocusedWindowWorkspaceId,
+  getRendererWebContentsForWorkspace,
   getViewedWorkspaceIdForWindow,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
@@ -256,6 +257,7 @@ vi.mock('electron', () => ({
 vi.mock('../../system/main/system.ipc', () => ({
   getFocusedWindowWorkspaceId: vi.fn(() => undefined),
   getWindowIdsForWorkspace: vi.fn(() => []),
+  getRendererWebContentsForWorkspace: vi.fn(() => []),
   getViewedWorkspaceIdForWindow: vi.fn(() => undefined),
   sendToWorkspaceWindows: vi.fn(),
 }));
@@ -1012,6 +1014,9 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
     );
     // Only the unfocused window has (or background-hosts) the workspace.
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([46]);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([
+      backgroundWindow.webContents,
+    ] as never);
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
@@ -1028,6 +1033,58 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
     expect(backgroundCalls).toHaveLength(1);
     expect(backgroundCalls[0][1]).not.toHaveProperty('navigateTarget');
     expect(backgroundCalls[0][1]).toMatchObject({ title: expect.any(String) });
+  });
+
+  it('frontmost: a hidden machine view hosting the workspace gets the sound on the view, not on its window’s own renderer', async () => {
+    const focusedWindow = createMockWindow(47);
+    const railWindow = { ...createMockWindow(48), isFocused: () => false };
+    railWindow.webContents = { send: vi.fn(), isDestroyed: () => false };
+    // The rail window shows its home machine; its hidden machine view on the
+    // emitting backend hosts the workspace.
+    const hiddenView = { send: vi.fn(), isDestroyed: () => false };
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 47 ? focusedWindow : id === 48 ? railWindow : null) as never,
+    );
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([48]);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([hiddenView] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
+      'notification:show',
+      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+    );
+    const viewCalls = hiddenView.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
+    );
+    expect(viewCalls).toHaveLength(1);
+    expect(viewCalls[0][1]).not.toHaveProperty('navigateTarget');
+    expect(railWindow.webContents.send).not.toHaveBeenCalled();
+    // Hosting is resolved on the emitting host only.
+    expect(getRendererWebContentsForWorkspace).toHaveBeenCalledWith('workspace-1', LOCAL_ID);
+  });
+
+  it('frontmost: the focused window’s renderer gets the toast once, not a second sound-only copy', async () => {
+    const focusedWindow = createMockWindow(49);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 49 ? focusedWindow : null) as never,
+    );
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([49]);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([
+      focusedWindow.webContents,
+    ] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    const showCalls = focusedWindow.webContents.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
+    );
+    expect(showCalls).toHaveLength(1);
+    expect(showCalls[0][1]).toHaveProperty('navigateTarget');
   });
 
   it('frontmost with the workspace open nowhere: navigateTarget payload falls back to the focused window', async () => {

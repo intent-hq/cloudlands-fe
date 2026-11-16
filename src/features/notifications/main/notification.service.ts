@@ -42,6 +42,7 @@ import {
 } from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
+  getRendererWebContentsForWorkspace,
   getViewedWorkspaceIdForWindow,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
@@ -818,7 +819,8 @@ export class NotificationService {
    * one window that receives `navigateTarget`, so the toast appears where the
    * user is looking — not in background windows that merely have the
    * workspace open or host it offscreen. Those still get the sound-only
-   * payload, keeping sound delivery unchanged.
+   * payload on each hosting renderer: a machine view the window does not
+   * show gets it on the view, not on the window's own (other-host) renderer.
    */
   private sendShowEvent(
     content: NotificationContent,
@@ -839,12 +841,13 @@ export class NotificationService {
       if (!toastWindow.webContents.isDestroyed()) {
         toastWindow.webContents.send('notification:show', payload);
       }
-      for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
-        if (id === toastWindow.id) continue;
-        const window = BrowserWindow.fromId(id);
-        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-          window.webContents.send('notification:show', soundOnlyPayload);
-        }
+      // Per hosting renderer: a hidden machine view hosting the workspace gets
+      // the sound itself, not its window's own renderer (another host).
+      for (const contents of workspaceId
+        ? getRendererWebContentsForWorkspace(workspaceId, scope)
+        : []) {
+        if (contents === toastWindow.webContents || contents.isDestroyed()) continue;
+        contents.send('notification:show', soundOnlyPayload);
       }
       return;
     }
