@@ -120,6 +120,33 @@ async function waitForRenderer(page, timeout) {
   });
 }
 
+/**
+ * The page on screen. Every app window is a frame whose machines are views,
+ * so the first page Playwright reports may be the frame page (backdrop only)
+ * or a hidden machine view (its screenshot fails). Ask the main process for
+ * the visible view of the focused (else first) window and use the page with
+ * its URL; fall back to the first window.
+ */
+async function shownPage(app, first, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const url = await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const view = window?.contentView.children.find((child) => child.getVisible?.());
+      return view?.webContents?.getURL() ?? null;
+    });
+    const match =
+      url &&
+      app
+        .context()
+        .pages()
+        .find((candidate) => candidate.url() === url);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return first;
+}
+
 /** Close through the app's own quit path; kill it if that wedges. */
 async function closeApp(app) {
   const child = app.process();
@@ -151,10 +178,15 @@ async function run(options) {
     : defaultScreenshotPath(appDir, options.route);
   const check = options.check ? path.resolve(options.check) : null;
   if (check && !fs.existsSync(check)) fail(`--check module not found: ${check}`);
+  const seed = options.seedProfile ? path.resolve(options.seedProfile) : null;
+  if (seed && !fs.statSync(seed, { throwIfNoEntry: false })?.isDirectory()) {
+    fail(`--seed-profile is not a directory: ${seed}`);
+  }
 
   // Imported lazily so --help and argument errors work without node_modules.
   const { _electron: electron } = await import('@playwright/test');
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'intent-headless-electron-'));
+  if (seed) fs.cpSync(seed, userDataDir, { recursive: true });
   const consoleErrors = [];
   let app;
   let failure;
@@ -177,7 +209,8 @@ async function run(options) {
       ...electronLaunchOptions({ appDir, userDataDir, socket }),
       timeout: options.timeoutMs,
     });
-    const page = await app.firstWindow({ timeout: options.timeoutMs });
+    const first = await app.firstWindow({ timeout: options.timeoutMs });
+    const page = await shownPage(app, first, options.timeoutMs);
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
@@ -203,7 +236,7 @@ async function run(options) {
       if (typeof mod.default !== 'function') {
         throw new Error(`--check module must default-export a function: ${check}`);
       }
-      await mod.default({ app, page, route: options.route });
+      await mod.default({ app, page, route: options.route, userDataDir });
       console.log(`check: passed (${check})`);
     }
   } catch (error) {

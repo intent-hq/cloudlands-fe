@@ -25,6 +25,7 @@ describe('parseHeadlessArgs', () => {
       settleMs: DEFAULT_SETTLE_MS,
       timeoutMs: DEFAULT_TIMEOUT_MS,
       check: null,
+      seedProfile: null,
       keepProfile: false,
       help: false,
     });
@@ -45,6 +46,8 @@ describe('parseHeadlessArgs', () => {
       '5000',
       '--check',
       'check.mjs',
+      '--seed-profile',
+      'seed',
       '--keep-profile',
     ]);
     expect(options).toMatchObject({
@@ -55,6 +58,7 @@ describe('parseHeadlessArgs', () => {
       settleMs: 0,
       timeoutMs: 5000,
       check: 'check.mjs',
+      seedProfile: 'seed',
       keepProfile: true,
     });
   });

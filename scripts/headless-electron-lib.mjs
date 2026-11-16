@@ -28,8 +28,10 @@ Options:
   --wait-for <css>     Wait for this selector to be visible before the screenshot
   --settle-ms <n>      Extra wait after the route renders (default: ${DEFAULT_SETTLE_MS})
   --timeout-ms <n>     Budget for launch and each wait (default: ${DEFAULT_TIMEOUT_MS})
-  --check <module>     ES module whose default export async ({ app, page, route }) => void
-                       runs after the screenshot; a throw fails the run (exit 1)
+  --check <module>     ES module whose default export async ({ app, page, route, userDataDir })
+                       => void runs after the screenshot; a throw fails the run (exit 1)
+  --seed-profile <dir> Copy this directory's files into the throwaway profile before launch
+                       (e.g. saved windows or machines from an older client)
   --keep-profile       Keep the throwaway profile directory and print its path
   -h, --help           Show this help
 `;
@@ -54,6 +56,7 @@ export function parseHeadlessArgs(argv) {
     settleMs: DEFAULT_SETTLE_MS,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     check: null,
+    seedProfile: null,
     keepProfile: false,
     help: false,
   };
@@ -65,6 +68,7 @@ export function parseHeadlessArgs(argv) {
     '--settle-ms': 'settleMs',
     '--timeout-ms': 'timeoutMs',
     '--check': 'check',
+    '--seed-profile': 'seedProfile',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
