@@ -168,6 +168,7 @@ import {
   createWindowForSession,
   discardSavedWindowFrames,
   ensureLocalWindowBeforeClosingBackend,
+  openLocalFrameBeforeClosingLast,
   getWindowFramesPath,
   getBackendIdForWebContents,
   getFocusedWindowBackendId,
@@ -1555,6 +1556,20 @@ describe('multi-backend window sessions', () => {
 
       await ensureLocalWindowBeforeClosingBackend('remote-1');
       closeWindowsForBackend('remote-1');
+
+      expect(commands.add).not.toHaveBeenCalled();
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(1);
+      expect(live[0].machine).toBe('local');
+    });
+
+    it('rail on: closing the only frame (remote) opens local in a frame of its own that survives', async () => {
+      setMachineRailEnabledFlag(true);
+      const closing = seedRailFrame('remote-1', ['remote-2']);
+      noteFrameFocused(closing as never);
+
+      await openLocalFrameBeforeClosingLast();
+      closing.destroy();
 
       expect(commands.add).not.toHaveBeenCalled();
       const live = FakeBrowserWindow.getAllWindows();

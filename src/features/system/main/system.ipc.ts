@@ -1200,8 +1200,8 @@ export function setupSystemIPC() {
           ? frameMachines(window)
           : [getBackendIdForWebContents(window.webContents)];
         if (survivors.length === 0 && !machines.includes(LOCAL_CONNECTION_ID)) {
-          const { openOrFocusWindowsForBackend } = await import('../../../main/window');
-          await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
+          const { openLocalFrameBeforeClosingLast } = await import('../../../main/window');
+          await openLocalFrameBeforeClosingLast();
         }
         if (!window.isDestroyed()) {
           window.close();

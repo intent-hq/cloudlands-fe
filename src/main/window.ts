@@ -972,6 +972,15 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
   await openOrFocusMachine(backendId, true);
 }
 
+/**
+ * The last window is about to close and holds no local machine: open (or
+ * focus) local in a frame of its own. It must not join the closing frame,
+ * which would close it too.
+ */
+export async function openLocalFrameBeforeClosingLast(): Promise<void> {
+  await openOrFocusMachine(LOCAL_CONNECTION_ID, false);
+}
+
 /** {@link openOrFocusWindowsForBackend}; `mayJoin` false never adds the machine to a live frame. */
 async function openOrFocusMachine(backendId: string, mayJoin: boolean): Promise<void> {
   let shown = showInFrame(backendId)?.window ?? null;

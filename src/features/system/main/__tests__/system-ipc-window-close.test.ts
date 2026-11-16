@@ -22,6 +22,7 @@ const electronMocks = vi.hoisted(() => ({
 
 const windowModuleMocks = vi.hoisted(() => ({
   openOrFocusWindowsForBackend: vi.fn(async (_backendId: string) => {}),
+  openLocalFrameBeforeClosingLast: vi.fn(async () => {}),
 }));
 
 vi.mock('electron', () => ({
@@ -50,6 +51,7 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 
 vi.mock('../../../../main/window', () => ({
   openOrFocusWindowsForBackend: windowModuleMocks.openOrFocusWindowsForBackend,
+  openLocalFrameBeforeClosingLast: windowModuleMocks.openLocalFrameBeforeClosingLast,
 }));
 
 // Every test window is a frame holding `machines`.
@@ -90,6 +92,7 @@ beforeEach(() => {
   electronMocks.getFocusedWindow.mockReset();
   electronMocks.getAllWindows.mockReset().mockReturnValue([]);
   windowModuleMocks.openOrFocusWindowsForBackend.mockClear();
+  windowModuleMocks.openLocalFrameBeforeClosingLast.mockClear();
   setupSystemIPC();
 });
 
@@ -114,7 +117,7 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
 
     await closeFrom(guest);
 
-    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
+    expect(windowModuleMocks.openLocalFrameBeforeClosingLast).not.toHaveBeenCalled();
     expect(guest.close).toHaveBeenCalledOnce();
   });
 
@@ -123,14 +126,16 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
     const dead = makeWindow({ machines: ['other'], destroyed: true });
     electronMocks.getAllWindows.mockReturnValue([guest, dead]);
     const order: string[] = [];
-    windowModuleMocks.openOrFocusWindowsForBackend.mockImplementation(async () => {
+    windowModuleMocks.openLocalFrameBeforeClosingLast.mockImplementation(async () => {
       order.push('ensure-local');
     });
     guest.close.mockImplementation(() => order.push('close'));
 
     await closeFrom(guest);
 
-    expect(windowModuleMocks.openOrFocusWindowsForBackend).toHaveBeenCalledWith('local');
+    // Local opens in a frame of its own: joining the closing frame would close it too.
+    expect(windowModuleMocks.openLocalFrameBeforeClosingLast).toHaveBeenCalledOnce();
+    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
     expect(order).toEqual(['ensure-local', 'close']);
   });
 
@@ -140,7 +145,7 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
 
     await closeFrom(frame);
 
-    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
+    expect(windowModuleMocks.openLocalFrameBeforeClosingLast).not.toHaveBeenCalled();
     expect(frame.close).toHaveBeenCalledOnce();
   });
 
@@ -150,6 +155,6 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
     const result = await closeFrom(null);
 
     expect(result).toEqual({ success: true });
-    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
+    expect(windowModuleMocks.openLocalFrameBeforeClosingLast).not.toHaveBeenCalled();
   });
 });
