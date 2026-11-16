@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 
 type Handler = (...args: unknown[]) => unknown;
 
@@ -42,6 +43,7 @@ import type { BrowserWindow } from 'electron';
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { registerHudWindow, _resetHudWindowRefForTests } from '../../../../main/hud-window';
+import { bindMachineViewToBackend } from '../../../../main/window-backend';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
@@ -69,7 +71,7 @@ function makeWindow(
 
 async function cycleFrom(sender: unknown) {
   electronMocks.fromWebContents.mockReturnValue(sender);
-  return handlerFor(WINDOW_CHANNELS.CYCLE_FOCUS)({ sender: {} });
+  return handlerFor(WINDOW_CHANNELS.CYCLE_FOCUS)({ sender: { isDestroyed: () => false } });
 }
 
 beforeEach(() => {
@@ -82,6 +84,20 @@ beforeEach(() => {
 });
 
 describe('WINDOW_CHANNELS.CYCLE_FOCUS', () => {
+  it('cycles from the parent window when a device view sends the request', async () => {
+    const first = makeWindow();
+    const parent = { ...makeWindow(), once: vi.fn() };
+    const next = makeWindow();
+    const child = Object.assign(new EventEmitter(), { isDestroyed: () => false });
+    bindMachineViewToBackend(parent as never, child as never, 'cycle-remote');
+    electronMocks.fromWebContents.mockReturnValue(null);
+    electronMocks.getAllWindows.mockReturnValue([first, parent, next]);
+    const result = await handlerFor(WINDOW_CHANNELS.CYCLE_FOCUS)({ sender: child });
+    expect(result).toEqual({ cycled: true, windowCount: 3 });
+    expect(next.focus).toHaveBeenCalledOnce();
+    expect(first.focus).not.toHaveBeenCalled();
+  });
+
   it('focuses the next window in list order', async () => {
     const [w1, w2, w3] = [makeWindow(), makeWindow(), makeWindow()];
     electronMocks.getAllWindows.mockReturnValue([w1, w2, w3]);

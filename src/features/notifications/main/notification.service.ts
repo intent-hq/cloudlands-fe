@@ -23,7 +23,12 @@
 import { app, BrowserWindow, Notification, screen } from 'electron';
 import { claimActivationFocus } from '../../../main/activation-focus-claim';
 import { isHudWindow } from '../../../main/hud-window';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import {
+  getBackendIdForWebContents,
+  getBackendIdForWindow,
+  getShownRendererWebContents,
+} from '../../../main/window-backend';
+import { showRailMachine } from '../../../main/machine-rail-state';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -145,6 +150,14 @@ interface NotificationContent {
   structured?: NotificationStructuredContent;
 }
 
+/** Resolve host scope from the renderer on screen, including rail children. */
+function getShownBackendId(window: BrowserWindow): string {
+  const contents = getShownRendererWebContents(window);
+  return contents === window.webContents
+    ? getBackendIdForWindow(window)
+    : getBackendIdForWebContents(contents);
+}
+
 /**
  * Pick the window a notification click should focus/navigate. Resolved at
  * CLICK time — a banner can sit in Notification Center while the user moves
@@ -153,8 +166,8 @@ interface NotificationContent {
  *   2. a window holding the workspace in a background tab,
  *   3. the focused window,
  *   4. any window.
- * When `backendId` is given, only windows bound to that daemon connection
- * (`getBackendIdForWindow`) qualify at every tier: a window on another host
+ * When `backendId` is given, only windows showing that daemon connection
+ * qualify at every tier: a window on another host
  * must never be asked to open the workspace, and workspace ids are not unique
  * across hosts (the Assistant's virtual workspace id is the same constant on
  * every daemon), so the workspace lookup itself is scoped to that host.
@@ -168,7 +181,7 @@ function pickNotificationClickTarget(
   const usable = (w: BrowserWindow): boolean =>
     !w.isDestroyed() &&
     !isHudWindow(w) &&
-    (backendId === undefined || getBackendIdForWindow(w) === backendId);
+    (backendId === undefined || getShownBackendId(w) === backendId);
 
   if (workspaceId) {
     const workspaceWindows = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST)
@@ -653,7 +666,7 @@ export class NotificationService {
       const focusedWindow = BrowserWindow.getFocusedWindow();
       const focusedViewingWorkspace =
         focusedWindow !== null &&
-        getBackendIdForWindow(focusedWindow) === backendId &&
+        getShownBackendId(focusedWindow) === backendId &&
         getFocusedWindowWorkspaceId() === workspaceId;
       if (focusedViewingWorkspace) {
         logger.debug('Focused window is viewing the workspace, sound only', {
@@ -679,7 +692,7 @@ export class NotificationService {
       const appFrontmostOnHost =
         focusedWindow !== null &&
         !isHudWindow(focusedWindow) &&
-        getBackendIdForWindow(focusedWindow) === backendId;
+        getShownBackendId(focusedWindow) === backendId;
       if (appFrontmostOnHost) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,
@@ -838,15 +851,16 @@ export class NotificationService {
     };
     if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
       const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
-      if (!toastWindow.webContents.isDestroyed()) {
-        toastWindow.webContents.send('notification:show', payload);
+      const toastContents = getShownRendererWebContents(toastWindow);
+      if (!toastContents.isDestroyed()) {
+        toastContents.send('notification:show', payload);
       }
       // Per hosting renderer: a hidden machine view hosting the workspace gets
       // the sound itself, not its window's own renderer (another host).
       for (const contents of workspaceId
         ? getRendererWebContentsForWorkspace(workspaceId, scope)
         : []) {
-        if (contents === toastWindow.webContents || contents.isDestroyed()) continue;
+        if (contents === toastContents || contents.isDestroyed()) continue;
         contents.send('notification:show', soundOnlyPayload);
       }
       return;
@@ -856,14 +870,13 @@ export class NotificationService {
       return;
     }
     const send = (window: BrowserWindow | null | undefined, data: unknown): void => {
-      if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send('notification:show', data);
+      if (window && !window.isDestroyed()) {
+        const contents = getShownRendererWebContents(window);
+        if (!contents.isDestroyed()) contents.send('notification:show', data);
       }
     };
     const onHost = (w: BrowserWindow): boolean =>
-      !w.isDestroyed() &&
-      !isHudWindow(w) &&
-      (scope === ANY_HOST || getBackendIdForWindow(w) === scope);
+      !w.isDestroyed() && !isHudWindow(w) && (scope === ANY_HOST || getShownBackendId(w) === scope);
     const focused = BrowserWindow.getFocusedWindow();
     const hostWindow =
       focused && onHost(focused) ? focused : BrowserWindow.getAllWindows().find(onHost);
@@ -951,9 +964,14 @@ export class NotificationService {
         // have closed, navigated to /hud, or moved the workspace while the
         // notification sat in Notification Center. The picker never returns
         // the HUD or a window on another backend.
-        const target = hostLive
+        const shownTarget = hostLive
           ? pickNotificationClickTarget(workspaceId, backendId)
           : pickNotificationClickTarget(undefined, undefined);
+        // A rail can own this backend without currently showing it. Select
+        // it before routing, and wait for a cold renderer's listeners.
+        const rail =
+          !shownTarget && hostLive && backendId !== undefined ? showRailMachine(backendId) : null;
+        const target = shownTarget ?? rail?.window;
 
         if (!target) {
           if (!hostLive) {
@@ -987,7 +1005,7 @@ export class NotificationService {
           });
           return;
         }
-        if (workspaceId && !target.webContents.isDestroyed()) {
+        if (workspaceId) {
           // Chief completions route to the sidebar Assistant panel (the
           // chief workspace page is hidden); everything else keeps the
           // bare `{ workspaceId }` payload.
@@ -995,7 +1013,29 @@ export class NotificationService {
             workspaceId === CHIEF_WORKSPACE_ID
               ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
               : { workspaceId };
-          target.webContents.send('notification:navigate', payload);
+          const contents = rail?.contents ?? getShownRendererWebContents(target);
+          const navigate = (): void => {
+            if (
+              target.isDestroyed() ||
+              contents.isDestroyed() ||
+              getShownRendererWebContents(target) !== contents ||
+              (backendId !== undefined && this.clientFor(backendId) === undefined)
+            ) {
+              return;
+            }
+            contents.send('notification:navigate', payload);
+          };
+          if (rail) {
+            void rail.ready
+              .then((ready) => {
+                if (ready) navigate();
+              })
+              .catch((error: unknown) => {
+                logger.warn('Notification target renderer failed to start', { error });
+              });
+          } else {
+            navigate();
+          }
         }
       });
 

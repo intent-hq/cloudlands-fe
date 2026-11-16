@@ -25,6 +25,14 @@
   } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
 
+  // Use the device actually on screen; selectedId can still be loading.
+  const selectOwnsNotice = appStore.createSelector((state) => {
+    const rail = state.machineRail;
+    return (
+      !rail.enabled || rail.shownId === '' || rail.shownId === state.connections.windowBackendId
+    );
+  });
+  const ownsNotice$ = selectOwnsNotice();
   const toastVisible$ = selectAutoUpdateToastVisible();
   const status$ = selectAutoUpdateStatus();
   const dismissedAt$ = selectAutoUpdateDismissedAt();
@@ -47,25 +55,28 @@
   }
 
   function showUpdateToast() {
+    if (!selectOwnsNotice.select(appStore.state)) return;
     // Dismiss any existing update toast first
     if (currentToastId !== undefined) {
       dismissToastInternally(currentToastId);
     }
 
     // Show the update toast with custom component
-    currentToastId = notify.update(
+    const toastId = notify.update(
       {
         onDismiss: () => {
-          // UpdateToast's close button — an explicit user dismissal. The raw
-          // notify.dismiss routes through the sonner-level onDismiss below,
-          // which arms the 24h cooldown when the status is 'downloaded'.
-          if (currentToastId !== undefined) {
-            notify.dismiss(currentToastId);
-            currentToastId = undefined;
+          if (currentToastId !== toastId || !selectOwnsNotice.select(appStore.state)) return;
+          // Record the user action now: Sonner may deliver its callback
+          // after this device has handed ownership to another renderer.
+          dismissToast();
+          if (selectAutoUpdateStatus.select(appStore.state) === 'downloaded') {
+            appStore.dispatch(dismissDownloadedToast(Date.now()));
+          } else {
+            appStore.dispatch(hideToast());
           }
-          appStore.dispatch(hideToast());
         },
         onAutoDismiss: () => {
+          if (currentToastId !== toastId || !selectOwnsNotice.select(appStore.state)) return;
           // UpdateToast's auto-dismiss $effect for not-available/error —
           // programmatic, so it must never arm the cooldown, even if the
           // status flips to 'downloaded' before sonner's deferred onDismiss
@@ -82,11 +93,10 @@
             // Internal programmatic dismiss — not a user action
             return;
           }
-          if (currentToastId === dismissed.id) {
-            currentToastId = undefined;
-          }
+          if (currentToastId !== dismissed.id || !selectOwnsNotice.select(appStore.state)) return;
+          currentToastId = undefined;
           const currentStatus = selectAutoUpdateStatus.select(appStore.state);
-          if (currentStatus === 'downloaded') {
+          if (currentStatus === 'downloaded' && selectOwnsNotice.select(appStore.state)) {
             // Allow dismissal but track the time so we can re-prompt after 24h
             appStore.dispatch(dismissDownloadedToast(Date.now()));
             return;
@@ -95,6 +105,7 @@
         },
       },
     );
+    currentToastId = toastId;
   }
 
   function dismissToast() {
@@ -106,7 +117,7 @@
 
   // Show toast when toastVisible becomes true (manual check)
   $effect(() => {
-    if ($toastVisible$ && currentToastId === undefined) {
+    if ($ownsNotice$ && $toastVisible$ && currentToastId === undefined) {
       showUpdateToast();
     }
   });
@@ -114,6 +125,12 @@
   // ALWAYS show toast when downloading or downloaded - this is the most important state
   $effect(() => {
     const status = $status$;
+    if (!$ownsNotice$) {
+      dismissToast();
+      // Returning to this device must handle an unchanged update status.
+      previousStatus = undefined;
+      return;
+    }
 
     // Don't react if status hasn't changed
     if (status === previousStatus) return;
@@ -159,12 +176,20 @@
     previousStatus = status;
   });
 
+  // A dismissal mirrored from another renderer must also remove this toast,
+  // even when the downloaded status itself has not changed.
+  $effect(() => {
+    if ($status$ === 'downloaded' && !$toastVisible$ && $dismissedAt$ !== null) {
+      dismissToast();
+    }
+  });
+
   // Re-show "downloaded" toast after the 24h cooldown expires
   $effect(() => {
     const status = $status$;
     const dismissedAt = $dismissedAt$;
 
-    if (status !== 'downloaded' || dismissedAt == null) return;
+    if (!$ownsNotice$ || status !== 'downloaded' || dismissedAt == null) return;
 
     const elapsed = Date.now() - dismissedAt;
     const remaining = DISMISS_COOLDOWN_MS - elapsed;
@@ -174,7 +199,7 @@
     const timeout = setTimeout(() => {
       // Re-show the toast now that cooldown has expired
       const currentStatus = selectAutoUpdateStatus.select(appStore.state);
-      if (currentStatus === 'downloaded') {
+      if (currentStatus === 'downloaded' && selectOwnsNotice.select(appStore.state)) {
         showUpdateToast();
         appStore.dispatch(showToast());
       }
@@ -186,10 +211,11 @@
   // Dismiss toast when not-available or error after a delay (handled by UpdateToast component)
   $effect(() => {
     const status = $status$;
-    if (status === 'not-available' || status === 'error') {
+    if ($ownsNotice$ && (status === 'not-available' || status === 'error')) {
       // Longer delay for errors so user can read the message
       const delay = status === 'error' ? 5500 : 3500;
       const timeout = setTimeout(() => {
+        if (!selectOwnsNotice.select(appStore.state)) return;
         dismissToast();
         appStore.dispatch(hideToast());
       }, delay);

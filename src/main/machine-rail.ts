@@ -325,6 +325,7 @@ function applySelection(window: BrowserWindowType): void {
   if (transition.shownId === selectedId) finishReveal(window);
   else transition.revealTimer = setTimeout(() => finishReveal(window), REVEAL_TIMEOUT_MS);
   const target = selected ? selected.webContents : window.webContents;
+  if (!target.isDestroyed()) target.send('window:focus', window.isFocused());
   if (window.isFocused() && !target.isDestroyed()) target.focus();
 }
 
@@ -371,6 +372,7 @@ function isMachineReady(window: BrowserWindowType, id: string): boolean {
 function markReady(window: BrowserWindowType, sender: Electron.WebContents): void {
   const entry = [...viewsOf(window)].find(([, view]) => view.webContents === sender);
   if (!entry) return;
+  sender.send('window:focus', window.isFocused());
   readyViews.add(sender);
   settleReadyWaiters(sender);
   if (isMachineRailEnabled() && transitions.get(window)?.pendingId === entry[0]) {
@@ -436,10 +438,15 @@ async function startRendererFor(id: string, deadline: number): Promise<boolean> 
 
 /** Pick `id` in a window whose rail lists it (the focused one first). */
 function showRailMachineFor(id: string): ShownRailMachine | null {
-  const rails = railsListing(id);
+  const rails = getAppWindows().filter(
+    (window) => !window.isDestroyed() && readWindowRail(window).machineIds.includes(id),
+  );
   const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
   if (!window) return null;
   selectMachine(window, id);
+  if (id === getBackendIdForWindow(window)) {
+    return { window, contents: window.webContents, ready: Promise.resolve(true) };
+  }
   const contents = ensureView(window, id).webContents;
   return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
 }

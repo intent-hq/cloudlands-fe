@@ -310,6 +310,7 @@ const liveWindowHostChecker: WindowHostChecker = {
 };
 
 function forgetRenderer(key: number): void {
+  clearWindowBrowserFocusOwner(key);
   windowWorkspaceState.delete(key);
   windowWorkspaceIds.delete(key);
   lastKnownWindowWorkspaceIds.delete(key);
@@ -328,6 +329,7 @@ function observeMachineView(key: number, contents: Electron.WebContents): void {
   if (key > 0 || observedMachineViews.has(contents)) return;
   observedMachineViews.add(contents);
   const forgetBackgroundWorkspaces = () => {
+    clearWindowBrowserFocusOwner(key);
     if (windowBackgroundAdoptions.delete(key)) app.emit('window-workspace-state-changed');
   };
   contents.on('did-navigate', forgetBackgroundWorkspaces);
@@ -701,7 +703,7 @@ export function sendToWorkspaceWindows(
 export function isFocusedWindowBrowserActive(): boolean {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return false;
-  return hasWindowBrowserFocusOwner(focusedWindow.id);
+  return hasWindowBrowserFocusOwner(shownRendererKey(focusedWindow));
 }
 
 // Clean up state when windows are closed
@@ -723,25 +725,31 @@ app.on('browser-window-created', (_event, window) => {
   // browser op re-adopts on demand.
   const windowId = window.id;
   const forgetBackgroundWorkspaces = () => {
+    clearWindowBrowserFocusOwner(windowId);
     if (windowBackgroundAdoptions.delete(windowId)) app.emit('window-workspace-state-changed');
   };
   window.webContents.on('did-navigate', forgetBackgroundWorkspaces);
   window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
+  const sendToRenderers = (channel: string, value: boolean) => {
+    for (const renderer of getRendererWebContents(window)) {
+      if (!renderer.isDestroyed()) renderer.send(channel, value);
+    }
+  };
   // Keep each window's renderer in sync with its native full-screen state,
   // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
   window.on('enter-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
+    sendToRenderers('window:fullscreen', true);
   });
   window.on('leave-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
+    sendToRenderers('window:fullscreen', false);
   });
   // Renderer DOM blur also fires when focus enters an embedded webview. Use
   // BrowserWindow focus instead so the renderer tracks the native app window.
   window.on('focus', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
+    sendToRenderers('window:focus', true);
   });
   window.on('blur', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
+    sendToRenderers('window:focus', false);
   });
 });
 
@@ -1189,11 +1197,7 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       EmptySchema,
       async (event) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          return { success: true, data: window.webContents.getZoomFactor() };
-        }
-        return { success: true, data: 1.0 };
+        return { success: true, data: event.sender.getZoomFactor() };
       },
       WINDOW_CHANNELS.GET_ZOOM_FACTOR,
     ),
@@ -1206,7 +1210,7 @@ export function setupSystemIPC() {
       WindowSetThemeSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
+          const window = getWindowForWebContents(event.sender);
           if (window) {
             nativeTheme.themeSource = validated.theme;
             const isDark = nativeTheme.shouldUseDarkColors;
@@ -1288,8 +1292,8 @@ export function setupSystemIPC() {
       WindowSetTitleSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
+          const window = getWindowForWebContents(event.sender);
+          if (window && getShownRendererWebContents(window) === event.sender) {
             window.setTitle(decorateWindowTitle(validated.title));
           }
           return { success: true };
@@ -1400,10 +1404,10 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowSetBrowserFocusedSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
+        const renderer = reportingRenderer(event.sender);
+        if (renderer) {
           updateWindowBrowserFocusOwner(
-            window.id,
+            renderer.key,
             validated.browserFocused,
             validated.focusOwnerId,
           );
@@ -1843,7 +1847,7 @@ export function setupSystemIPC() {
         if (windows.length < 2) {
           return { cycled: false, windowCount: windows.length };
         }
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const senderWindow = getWindowForWebContents(event.sender);
         const senderIndex = senderWindow ? windows.indexOf(senderWindow) : -1;
         const next = windows[(senderIndex + 1) % windows.length];
         if (next.isMinimized()) next.restore();

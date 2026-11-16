@@ -16,6 +16,8 @@ import {
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
+import { bindMachineViewToBackend, setShownMachineView } from '../../../main/window-backend';
+import { setMachineRailEnabledFlag, setMachineRailShower } from '../../../main/machine-rail-state';
 import { getActivationFocusClaim } from '../../../main/activation-focus-claim';
 
 vi.mock('../../../shared/logger', () => ({
@@ -2982,4 +2984,123 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     // A click on another host's window must not navigate it to this workspace.
     expect(payloads[0]).not.toHaveProperty('navigateTarget');
   });
+
+  function childRenderer(window: MockWindow, backendId = REMOTE_ID) {
+    const contents = { send: vi.fn(), isDestroyed: () => false, on: vi.fn(), once: vi.fn() };
+    Object.assign(window, { once: vi.fn() });
+    bindMachineViewToBackend(window as never, contents as never, backendId);
+    return contents;
+  }
+
+  afterEach(() => {
+    setMachineRailEnabledFlag(false);
+    setMachineRailShower(null);
+  });
+
+  it('suppresses the banner while the shown child views its own Assistant', async () => {
+    const window = makeWindow(81);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(CHIEF_WORKSPACE_ID);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([child as never]);
+    entries = [{ windowId: window.id, backendId: REMOTE_ID, workspaceId: CHIEF_WORKSPACE_ID }];
+    vi.mocked(sendToWorkspaceWindows).mockImplementation((_workspace, channel, payload) => {
+      child.send(channel, payload);
+      return { windowCount: 1, browserClientsNotified: false, delivered: true };
+    });
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+
+    expect(mockNotificationInstances).toHaveLength(0);
+    expect(child.send.mock.calls.every(([, payload]) => !payload.navigateTarget)).toBe(true);
+    expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('does not suppress a home Assistant completion while the child Assistant is shown', async () => {
+    const window = makeWindow(82);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(CHIEF_WORKSPACE_ID);
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), LOCAL_ID);
+
+    expect(mockNotificationInstances).toHaveLength(1);
+    expect(child.send).toHaveBeenCalledWith(
+      'notification:show',
+      expect.not.objectContaining({
+        navigateTarget: expect.anything(),
+      }),
+    );
+  });
+
+  it('sends the clickable toast once to the shown child, with no hidden home toast', async () => {
+    const window = makeWindow(83);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([child as never]);
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
+
+    expect(mockNotificationInstances).toHaveLength(0);
+    expect(child.send).toHaveBeenCalledExactlyOnceWith(
+      'notification:show',
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1' },
+      }),
+    );
+    expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'selects a rail device on banner click and navigates only when ready=%s',
+    async (ready) => {
+      const window = makeWindow(84);
+      const child = childRenderer(window);
+      setLiveWindows([window]);
+      vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null);
+      let finish!: (value: boolean) => void;
+      const started = new Promise<boolean>((resolve) => {
+        finish = resolve;
+      });
+      setMachineRailEnabledFlag(true);
+      const show = vi.fn(() => {
+        setShownMachineView(window as never, child as never);
+        return { window: window as never, contents: child as never, ready: started };
+      });
+      setMachineRailShower(show);
+      await new NotificationService().handleAgentIdle(
+        buildIdleEvent(CHIEF_WORKSPACE_ID),
+        REMOTE_ID,
+      );
+      child.send.mockClear();
+
+      mockNotificationInstances[0].handlers['click']();
+
+      expect(show).toHaveBeenCalledWith(REMOTE_ID);
+      expect(window.focus).toHaveBeenCalled();
+      expect(child.send).not.toHaveBeenCalled();
+      finish(ready);
+      await flush();
+      if (ready) {
+        expect(child.send).toHaveBeenCalledWith('notification:navigate', {
+          workspaceId: CHIEF_WORKSPACE_ID,
+          chief: true,
+          agentId: 'agent-self',
+        });
+      } else {
+        expect(child.send).not.toHaveBeenCalled();
+      }
+      expect(
+        window.webContents.send.mock.calls.filter(
+          ([channel]) => channel === 'notification:navigate',
+        ),
+      ).toEqual([]);
+    },
+  );
 });

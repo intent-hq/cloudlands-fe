@@ -437,29 +437,10 @@
       },
     });
 
-    // Initialize release notes store to detect version changes and show release notes
-    // We need to fetch the channel directly from main process since the auto-update
-    // Redux state hasn't loaded the user's preference yet at this point
+    // Main owns startup version detection and the single app-wide claim.
+    // Subscribe immediately; channel preferences are not a prerequisite.
     if (hasCapability('autoUpdate')) {
-      (async () => {
-        try {
-          // Import dynamically to avoid the formatter removing unused imports
-          const { autoUpdateClient } = await import('$features/auto-update/auto-update.client');
-
-          const updateState = await autoUpdateClient.getState().catch(() => null);
-
-          // Build-time constant — the app version is FE-only, not a daemon surface.
-          const currentVersion = __APP_VERSION__;
-          const channel = updateState?.channel || 'stable';
-
-          logger.info(
-            `[+layout] Initializing release notes: version=${currentVersion}, channel=${channel}`,
-          );
-          appStore.dispatch(initializeReleaseNotes());
-        } catch (e) {
-          logger.warn('[+layout] Failed to initialize release notes store', e);
-        }
-      })();
+      appStore.dispatch(initializeReleaseNotes());
     }
 
     // Recovery mechanism for router corruption after HMR reloads

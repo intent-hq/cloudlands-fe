@@ -27,6 +27,13 @@ import {
   resetQuitConfirmationStateForTests,
 } from '../quit-confirmation';
 import type { RespondingAgent, RunningAgentsRpc } from '../running-agents';
+import { app } from 'electron';
+import { getShownRendererWebContents } from '../window-backend';
+import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../machine-rail-state';
+
+vi.mock('../window-backend', () => ({
+  getShownRendererWebContents: vi.fn((window: BrowserWindow) => window.webContents),
+}));
 
 /**
  * Fake for the throwaway client the default probe builds. `behavior` decides
@@ -465,7 +472,9 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
  * fake window.
  */
 describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
-  function makeRendererDeps(options: { agents?: RespondingAgent[]; response?: number } = {}) {
+  function makeRendererDeps(
+    options: { agents?: RespondingAgent[]; response?: number; shownDevice?: boolean } = {},
+  ) {
     const { deps } = makeDeps({ agents: options.agents ?? AGENTS, response: options.response });
     const { confirmViaRenderer: _omitted, ...rest } = deps;
     const send = vi.fn();
@@ -485,10 +494,21 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
       webContents,
     } as unknown as BrowserWindow;
     rest.getParentWindow.mockReturnValue(window);
+    const shownContents = options.shownDevice ? { ...webContents, send: vi.fn() } : webContents;
+    vi.mocked(getShownRendererWebContents).mockReturnValue(
+      shownContents as unknown as Electron.WebContents,
+    );
     const emitRendererGone = (event: string) => {
       for (const listener of goneListeners.get(event) ?? []) listener();
     };
-    return { deps: rest, send, webContents, emitRendererGone };
+    return {
+      deps: rest,
+      send: shownContents.send,
+      homeSend: send,
+      webContents: shownContents,
+      window,
+      emitRendererGone,
+    };
   }
 
   async function getHandlers() {
@@ -505,12 +525,16 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     };
   }
 
+  beforeEach(() => {
+    Object.assign(app, { removeListener: vi.fn() });
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it('resolves the renderer decision after ack + response, skipping the native dialog', async () => {
-    const { deps, send } = makeRendererDeps();
+    const { deps, send, webContents } = makeRendererDeps();
 
     const pending = confirmQuitWithRunningAgents(deps);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -520,33 +544,39 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     expect(payload.interrupted).toHaveLength(AGENTS.length);
 
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: payload.requestId });
-    await handlers.response({}, { requestId: payload.requestId, proceed: false });
+    await handlers.ack({ sender: webContents }, { requestId: payload.requestId });
+    await handlers.response(
+      { sender: webContents },
+      { requestId: payload.requestId, proceed: false },
+    );
 
     await expect(pending).resolves.toBe(false);
     expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 
   it('ignores ack/response for a stale requestId and keeps waiting', async () => {
-    const { deps, send } = makeRendererDeps();
+    const { deps, send, webContents } = makeRendererDeps();
 
     const pending = confirmQuitWithRunningAgents(deps);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
 
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: 'stale-id' });
-    await handlers.response({}, { requestId: 'stale-id', proceed: false });
+    await handlers.ack({ sender: webContents }, { requestId: 'stale-id' });
+    await handlers.response({ sender: webContents }, { requestId: 'stale-id', proceed: false });
     // The genuine request is still pending — settle it now.
-    await handlers.ack({}, { requestId: payload.requestId });
-    await handlers.response({}, { requestId: payload.requestId, proceed: true });
+    await handlers.ack({ sender: webContents }, { requestId: payload.requestId });
+    await handlers.response(
+      { sender: webContents },
+      { requestId: payload.requestId, proceed: true },
+    );
 
     await expect(pending).resolves.toBe(true);
   });
 
   it('treats a valid response as an implicit ack when the ack invoke was lost', async () => {
     vi.useFakeTimers();
-    const { deps, send } = makeRendererDeps({ response: 0 });
+    const { deps, send, webContents } = makeRendererDeps({ response: 0 });
 
     const pending = confirmQuitWithRunningAgents(deps);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -554,7 +584,10 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
 
     // The ack invoke never arrives, but the user answers within the 3s window.
     const handlers = await getHandlers();
-    await handlers.response({}, { requestId: payload.requestId, proceed: false });
+    await handlers.response(
+      { sender: webContents },
+      { requestId: payload.requestId, proceed: false },
+    );
     // The ack timeout must have been defused: advancing past it changes nothing.
     await vi.advanceTimersByTimeAsync(3_000);
 
@@ -564,14 +597,14 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
   });
 
   it('falls back to the native dialog when the renderer dies after acking, and clears the in-flight memo', async () => {
-    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+    const { deps, send, webContents, emitRendererGone } = makeRendererDeps({ response: 0 });
 
     const pending = confirmQuitWithRunningAgents(deps);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
 
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: payload.requestId });
+    await handlers.ack({ sender: webContents }, { requestId: payload.requestId });
     // Renderer crashes after acking — the decision will never arrive.
     emitRendererGone('render-process-gone');
 
@@ -585,8 +618,14 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     const secondPayload = second.send.mock.calls[0][1] as QuitConfirmationShowPayload;
     expect(secondPayload.requestId).not.toBe(payload.requestId);
     const secondHandlers = await getHandlers();
-    await secondHandlers.ack({}, { requestId: secondPayload.requestId });
-    await secondHandlers.response({}, { requestId: secondPayload.requestId, proceed: true });
+    await secondHandlers.ack(
+      { sender: second.webContents },
+      { requestId: secondPayload.requestId },
+    );
+    await secondHandlers.response(
+      { sender: second.webContents },
+      { requestId: secondPayload.requestId, proceed: true },
+    );
     await expect(secondPending).resolves.toBe(true);
   });
 
@@ -603,14 +642,14 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
   });
 
   it('falls back to the native dialog when the renderer navigates away mid-decision', async () => {
-    const { deps, send, emitRendererGone } = makeRendererDeps({ response: 0 });
+    const { deps, send, webContents, emitRendererGone } = makeRendererDeps({ response: 0 });
 
     const pending = confirmQuitWithRunningAgents(deps);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
 
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: payload.requestId });
+    await handlers.ack({ sender: webContents }, { requestId: payload.requestId });
     // A reload/navigation wipes the modal and its renderer-side state.
     emitRendererGone('did-navigate');
 
@@ -654,5 +693,75 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
     expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the prompt on the shown device and ignores another renderer answering it', async () => {
+    const { deps, send, homeSend, webContents, window } = makeRendererDeps({ shownDevice: true });
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(homeSend).not.toHaveBeenCalled();
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+    const handlers = await getHandlers();
+    await handlers.response(
+      { sender: window.webContents },
+      { requestId: payload.requestId, proceed: true },
+    );
+    await handlers.response(
+      { sender: webContents },
+      { requestId: payload.requestId, proceed: false },
+    );
+    await expect(pending).resolves.toBe(false);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'dismisses the original recipient when devices switch (acked: %s)',
+    async (acknowledged) => {
+      const { deps, send, homeSend, webContents, window } = makeRendererDeps({
+        shownDevice: true,
+        response: 1,
+      });
+      const pending = confirmQuitWithRunningAgents(deps);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+      if (acknowledged) {
+        const handlers = await getHandlers();
+        await handlers.ack({ sender: webContents }, { requestId: payload.requestId });
+      }
+      vi.mocked(getShownRendererWebContents).mockReturnValue(window.webContents);
+      const onChanged = vi
+        .mocked(app.on)
+        .mock.calls.filter(([name]) => name === MACHINE_RAIL_SHOWN_CHANGED_EVENT)
+        .at(-1)?.[1];
+      expect(onChanged).toBeTypeOf('function');
+      onChanged?.(window);
+      await expect(pending).resolves.toBe(false);
+      expect(send).toHaveBeenCalledWith('quit-confirmation:dismiss', {
+        requestId: payload.requestId,
+      });
+      expect(homeSend).not.toHaveBeenCalled();
+      expect(deps.showMessageBox).toHaveBeenCalledTimes(1);
+      expect(app.removeListener).toHaveBeenCalledWith(MACHINE_RAIL_SHOWN_CHANGED_EVENT, onChanged);
+    },
+  );
+
+  it('ignores a switch in another window and a same-device event', async () => {
+    const { deps, send, webContents, window } = makeRendererDeps({ shownDevice: true });
+    const pending = confirmQuitWithRunningAgents(deps);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
+    const onChanged = vi
+      .mocked(app.on)
+      .mock.calls.filter(([name]) => name === MACHINE_RAIL_SHOWN_CHANGED_EVENT)
+      .at(-1)?.[1];
+    onChanged?.({});
+    onChanged?.(window);
+    const handlers = await getHandlers();
+    await handlers.response(
+      { sender: webContents },
+      { requestId: payload.requestId, proceed: true },
+    );
+    await expect(pending).resolves.toBe(true);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 });

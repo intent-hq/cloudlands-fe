@@ -5,7 +5,7 @@
  * one renderer prompt, with a native fallback if the renderer is unavailable.
  */
 
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type { MessageBoxOptions, MessageBoxReturnValue, WebContents } from 'electron';
 import { randomUUID } from 'node:crypto';
 
@@ -27,8 +27,11 @@ import {
   type RunningAgentsRpc,
 } from './running-agents';
 import { getMainWindow } from './state';
+import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from './machine-rail-state';
+import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
+const appEvents: NodeJS.EventEmitter = app;
 
 /**
  * Overall budget for the short-lived startup-backend probe opened when no
@@ -144,6 +147,7 @@ function defaultShowMessageBox(
 /** The renderer decision (or ack failure) for the request main is waiting on. */
 interface PendingRendererRequest {
   requestId: string;
+  recipient: WebContents;
   acked: boolean;
   ack: () => void;
   settle: (proceed: boolean) => void;
@@ -164,8 +168,11 @@ function registerRendererHandlers(): void {
     QUIT_CONFIRMATION_CHANNELS.ACK,
     createValidatedHandler(
       QuitConfirmationAckSchema,
-      async (_event, payload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.recipient === event.sender
+        ) {
           pendingRendererRequest.acked = true;
           pendingRendererRequest.ack();
         }
@@ -178,8 +185,11 @@ function registerRendererHandlers(): void {
     QUIT_CONFIRMATION_CHANNELS.RESPONSE,
     createValidatedHandler(
       QuitConfirmationResponseSchema,
-      async (_event, payload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.recipient === event.sender
+        ) {
           // A valid response proves the modal mounted — treat it as an
           // implicit ack so a lost/rejected ack invoke cannot let the ack
           // timeout fire and show the native dialog over an answered modal.
@@ -216,9 +226,13 @@ async function defaultConfirmViaRenderer(
   parent: BrowserWindow | null,
   payload: QuitConfirmationShowPayload,
 ): Promise<boolean | null> {
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed()) {
+  if (!parent || parent.isDestroyed()) {
     return null;
   }
+  // Keep this exact recipient for the entire request. The window's home
+  // renderer may be hidden beneath the device the user is actually viewing.
+  const contents = getShownRendererWebContents(parent);
+  if (contents.isDestroyed()) return null;
   registerRendererHandlers();
 
   let ackReceived!: () => void;
@@ -231,13 +245,13 @@ async function defaultConfirmViaRenderer(
   });
   const request: PendingRendererRequest = {
     requestId: payload.requestId,
+    recipient: contents,
     acked: false,
     ack: ackReceived,
     settle,
   };
   pendingRendererRequest = request;
 
-  const contents = parent.webContents;
   // The modal lives in this webContents: destruction, a renderer crash, or a
   // main-frame navigation (reload included) all destroy it, so any of them
   // settles the wait and falls back to the native dialog.
@@ -249,6 +263,25 @@ async function defaultConfirmViaRenderer(
   contents.once('render-process-gone', rendererGone);
   contents.once('did-navigate', rendererGone);
 
+  const dismiss = (): void => {
+    try {
+      if (!contents.isDestroyed()) {
+        contents.send(QUIT_CONFIRMATION_CHANNELS.DISMISS, { requestId: payload.requestId });
+      }
+    } catch {
+      // The original recipient is already going away.
+    }
+  };
+  const shownChanged = (window: BrowserWindow): void => {
+    if (window !== parent || getShownRendererWebContents(parent) === contents) return;
+    // An acknowledged modal must not become an invisible, indefinite wait.
+    // Retire it before falling back to a window-owned native confirmation.
+    if (pendingRendererRequest === request) pendingRendererRequest = null;
+    dismiss();
+    rendererGone();
+  };
+  appEvents.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, shownChanged);
+
   try {
     contents.send(QUIT_CONFIRMATION_CHANNELS.SHOW, payload);
   } catch (error) {
@@ -257,6 +290,7 @@ async function defaultConfirmViaRenderer(
     });
     pendingRendererRequest = null;
     removeRendererGoneListeners(contents, rendererGone);
+    appEvents.removeListener(MACHINE_RAIL_SHOWN_CHANGED_EVENT, shownChanged);
     return null;
   }
 
@@ -281,15 +315,7 @@ async function defaultConfirmViaRenderer(
         timeoutMs: RENDERER_ACK_TIMEOUT_MS,
       });
       // Close a modal that mounts late for this now-abandoned request.
-      try {
-        if (!parent.isDestroyed() && !contents.isDestroyed()) {
-          contents.send(QUIT_CONFIRMATION_CHANNELS.DISMISS, {
-            requestId: payload.requestId,
-          });
-        }
-      } catch {
-        // The window is going away; nothing to dismiss.
-      }
+      dismiss();
       return null;
     }
     // Acked: the modal is up — wait for the user, however long they take,
@@ -306,6 +332,7 @@ async function defaultConfirmViaRenderer(
   } finally {
     clearTimeout(ackTimer);
     removeRendererGoneListeners(contents, rendererGone);
+    appEvents.removeListener(MACHINE_RAIL_SHOWN_CHANGED_EVENT, shownChanged);
     if (pendingRendererRequest === request) pendingRendererRequest = null;
   }
 }

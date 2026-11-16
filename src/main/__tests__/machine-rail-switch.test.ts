@@ -163,6 +163,21 @@ describe('machine rail switching', () => {
     expect(auxiliary.show).not.toHaveBeenCalled();
   });
 
+  it('hydrates native window focus when a preloaded renderer is ready and selected', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    const child = viewOf('b').webContents;
+    await invoke(RAIL.READY, child);
+    expect(child.send).toHaveBeenCalledWith('window:focus', false);
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(true);
+    try {
+      child.send.mockClear();
+      await invoke(RAIL.SELECT, home(), { id: 'b' });
+      expect(child.send).toHaveBeenCalledWith('window:focus', true);
+    } finally {
+      focused.mockRestore();
+    }
+  });
+
   it('queues the invited workspace for the new view without replacing home', async () => {
     expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
     const view = viewOf('b');
@@ -577,6 +592,17 @@ describe('machine rail switching', () => {
     await invoke(RAIL.READY, viewOf('b').webContents);
     expect(await shown?.ready).toBe(true);
     expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
+    expect(fakes.views).toHaveLength(1);
+  });
+
+  it('returns to the window’s home machine for a notification without creating another renderer', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    const shown = showRailMachine('local');
+    expect(shown?.window).toBe(fakes.window);
+    expect(shown?.contents).toBe(home());
+    expect(await shown?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'local', pendingId: '' });
     expect(fakes.views).toHaveLength(1);
   });
 
