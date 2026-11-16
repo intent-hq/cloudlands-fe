@@ -63,13 +63,10 @@ test('keeps an unknown secondary device visible and removable without affecting 
   const cloud = component.locator('[data-machine-id="cloud-machine"]');
   await expect(unknown.locator('svg')).toBeVisible();
   await expect(cloud).toHaveAccessibleName('reliablesite');
-  await component.getByRole('button', { name: 'Add a machine to this window' }).click();
-  const remove = page.locator(
-    '[data-testid="machine-rail-remove-item"][data-machine-id="unknown-machine"]',
-  );
-  await expect(remove).toHaveText('Unknown machine');
-  await expect(remove.locator('svg')).toBeVisible();
-  await remove.click();
+  await unknown.click({ button: 'right' });
+  const menu = page.getByTestId('machine-rail-item-menu');
+  await expect(menu).toHaveAccessibleName('Unknown machine');
+  await menu.getByTestId('machine-rail-menu-remove').click();
   await expect(component.locator('[data-machine-id="unknown-machine"]')).toHaveCount(0);
   await expect(cloud).toHaveAttribute('aria-current', 'true');
   await expect(cloud.locator('svg')).toBeVisible();

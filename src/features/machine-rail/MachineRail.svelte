@@ -155,8 +155,6 @@
   export function getMachineIds(): string[] {
     return orderedItems.map((item) => item.id);
   }
-  // Everything but the window's own machine can leave the rail.
-  const removableItems = $derived(orderedItems.filter((item) => !item.home));
   const guestItems = $derived(orderedItems.filter((item) => item.guest));
 
   // Main's reply carries the new order: the local one is no longer needed.
@@ -700,26 +698,6 @@
           {/snippet}
           {m.settings_devices_add_label()}
         </Menu.Item>
-        {#if removableItems.length > 0}
-          <Menu.Separator />
-          <Header class="px-2 pt-1.5 pb-0.5" size={6}>{m.machineRail_remove_header()}</Header>
-          {#each removableItems as item (item.id)}
-            <Menu.Item
-              data-testid="machine-rail-remove-item"
-              data-machine-id={item.id}
-              onSelect={() => removeFromRail(item.id)}
-            >
-              {#snippet leading()}
-                {#if item.guest}
-                  {@render guestIcon(item.guest, 16, 'text-foreground')}
-                {:else}
-                  <DeviceIcon record={item.record ?? {}} size={16} class="text-foreground" />
-                {/if}
-              {/snippet}
-              <span class="min-w-0 flex-1 truncate">{itemName(item)}</span>
-            </Menu.Item>
-          {/each}
-        {/if}
       </Menu.Content>
     </Menu.Root>
 
