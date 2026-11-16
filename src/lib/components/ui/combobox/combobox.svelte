@@ -86,6 +86,7 @@
     /** Accepted user activation, including reselecting the current single value. */
     oncommit?: (value: string | string[], option: ComboboxOption) => void;
     onopenchange?: (open: boolean) => void;
+    /** Clicks inside a popover or dialog that holds a static list are not outside clicks. */
     oninteractoutside?: (event: PointerEvent) => void;
   }
 
@@ -159,6 +160,7 @@
   const accessibleLabelId = $derived(ariaLabelledby || labelId);
 
   let retryRef = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let rootRef = $state<HTMLDivElement | null>(null);
   let viewportRef = $state<HTMLDivElement | null>(null);
   let query = $state('');
   let singleValue = $state('');
@@ -475,6 +477,19 @@
     onopenchange?.(nextOpen);
   }
 
+  const HOST_LAYER = '[data-popover-content], [data-dialog-content], [data-alert-dialog-content]';
+
+  // An embedded list opens above its host popup, so bits-ui asks the list about
+  // clicks on the host's other controls. Closing it there would close the host too.
+  function handleStaticInteractOutside(event: PointerEvent) {
+    const host = rootRef?.closest(HOST_LAYER);
+    if (host && event.target instanceof Node && host.contains(event.target)) {
+      event.preventDefault();
+      return;
+    }
+    oninteractoutside?.(event);
+  }
+
   function withoutListboxSemantics(props: Record<string, unknown>) {
     const {
       role: _role,
@@ -486,7 +501,10 @@
   }
 </script>
 
-<div class={cn('relative w-full', inputVariant === 'search' && 'flex flex-col gap-1', className)}>
+<div
+  bind:this={rootRef}
+  class={cn('relative w-full', inputVariant === 'search' && 'flex flex-col gap-1', className)}
+>
   <span id={labelId} class="sr-only">{ariaLabel}</span>
   {#if multiple}
     <ComboboxPrimitive.Root
@@ -732,7 +750,7 @@
   {#if staticPosition}
     <ComboboxPrimitive.ContentStatic
       preventScroll={false}
-      onInteractOutside={oninteractoutside}
+      onInteractOutside={handleStaticInteractOutside}
       data-static-position
       data-surface-level={surface}
       class={cn(menuOverlay(), 'w-full max-h-72', contentClass)}

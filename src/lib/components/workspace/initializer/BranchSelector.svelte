@@ -169,8 +169,6 @@
   let formMenuBelow = $state(false);
   let containerEl: HTMLDivElement | undefined = $state(); // Container for positioning
   let triggerEl: HTMLButtonElement | null = $state(null); // Focus target after a selection closes the content
-  let directCheckoutFooterEl: HTMLDivElement | undefined = $state();
-  let isolationControlEl: HTMLDivElement | undefined = $state();
   let isolationSwitchEl = $state<HTMLButtonElement | null>(null);
   // While a mode change holds the popup in place, the area above the bottom
   // isolation footer keeps its height so the switch stays under the pointer.
@@ -1925,15 +1923,6 @@
                 oncommit={(branch) => {
                   if (typeof branch === 'string') selectBranch(branch);
                 }}
-                oninteractoutside={(event) => {
-                  if (
-                    event.target instanceof Node &&
-                    (directCheckoutFooterEl?.contains(event.target) ||
-                      isolationControlEl?.contains(event.target))
-                  ) {
-                    event.preventDefault();
-                  }
-                }}
                 class={rowLabel
                   ? 'flex min-h-0 flex-1 flex-col gap-1 px-2'
                   : 'flex min-h-0 flex-1 flex-col px-2 pb-1'}
@@ -1951,7 +1940,6 @@
             </div>
 
             {#if !rowLabel}<div
-                bind:this={directCheckoutFooterEl}
                 class="flex shrink-0 flex-wrap items-center gap-1 border-t border-border bg-popover px-2 py-1.5"
               >
                 {#each branchGroups.filter((group) => (group.key === 'workspace' && group.options.length > 0) || group.key === 'remote') as group (group.key)}
@@ -1983,7 +1971,7 @@
         </div>
         {#if repoType === 'local' && typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="shrink-0 border-t border-border p-2">
-            <div bind:this={isolationControlEl} class="px-3 py-2.5">
+            <div class="px-3 py-2.5">
               <SettingsFieldRow
                 id={`${uid}-isolation-row`}
                 htmlFor={`${uid}-isolation`}
