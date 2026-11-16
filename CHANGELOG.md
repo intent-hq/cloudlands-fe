@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.7...v2.342.8) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* **pairing:** refresh a saved machine's mode from its pair link ([#4689](https://github.com/intent-hq/cloudlands-fe/issues/4689)) ([05fe451](https://github.com/intent-hq/cloudlands-fe/commit/05fe45106ec65ee2f7838b91b479547a25584140))
+
 ## [2.342.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.6...v2.342.7) (2026-11-16)
 
 
