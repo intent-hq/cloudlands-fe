@@ -3,6 +3,7 @@ import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { EmptySchema, WindowSetDockLabSchema } from './ipc-schemas';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref } from './local-prefs';
+import { getRendererWebContents } from './window-backend';
 
 /** Main owns the dock Labs setting; it is off until the user turns it on. */
 let enabled = false;
@@ -37,8 +38,9 @@ export type DockLabEffects = {
 
 function broadcast(): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
-    window.webContents.send(WINDOW_CHANNELS.DOCK_LAB_CHANGED, { enabled });
+    for (const renderer of getRendererWebContents(window)) {
+      if (!renderer.isDestroyed()) renderer.send(WINDOW_CHANNELS.DOCK_LAB_CHANGED, { enabled });
+    }
   }
 }
 
