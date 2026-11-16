@@ -37,6 +37,8 @@
     autoload?: boolean;
     inputRef?: HTMLInputElement | null;
     onclose?: () => void;
+    /** The host surface whose clicks keep the list open (Back, tabs); defaults to this tab. */
+    interactionRoot?: HTMLElement | null;
     class?: string;
   }
 
@@ -47,6 +49,7 @@
     autoload = true,
     inputRef = $bindable(null),
     onclose,
+    interactionRoot = null,
     class: className = '',
   }: Props = $props();
 
@@ -121,7 +124,7 @@
     {onclose}
     {disabledReason}
     {selectedKey}
-    interactionRoot={root}
+    interactionRoot={interactionRoot ?? root}
   />
   {#if listStatus !== 'error'}
     <div class="flex shrink-0 justify-end border-t border-border px-2 py-1">

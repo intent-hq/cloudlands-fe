@@ -2,7 +2,7 @@ import { expect, test } from '../../test/ct-test';
 import { expectDismissibleLayerArmed } from '../../test/dismissible-layer';
 import SessionImportTabPreview from './session-import-tab.preview.svelte';
 
-test('the provider filter and Refresh keep the codebase picker on its Sessions tab', async ({
+test('the Sessions tab controls keep the codebase picker open; an outside click closes it', async ({
   mount,
   page,
 }) => {
@@ -41,6 +41,24 @@ test('the provider filter and Refresh keep the codebase picker on its Sessions t
   await expect(picker).toBeVisible();
   await expect(picker.getByTestId('import-session-tab')).toBeVisible();
 
-  await page.keyboard.press('Escape');
+  // The picker's own Back and tab controls act instead of closing it.
+  await expectDismissibleLayerArmed(claudeRow);
+  await picker.getByRole('tab', { name: 'Existing folder' }).click();
+  await expect(picker.getByRole('tab', { name: 'Existing folder' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await picker.getByRole('tab', { name: 'Sessions' }).click();
+  await expect(claudeRow).toBeVisible();
+
+  await expectDismissibleLayerArmed(claudeRow);
+  await picker.getByRole('button', { name: 'Go back' }).click();
+  await expect(picker.getByTestId('repo-form-import-session')).toBeVisible();
+
+  // A click outside the picker still closes it.
+  await picker.getByTestId('repo-form-import-session').click();
+  await expect(claudeRow).toBeVisible();
+  await expectDismissibleLayerArmed(claudeRow);
+  await page.mouse.click(1260, 880);
   await expect(picker).toHaveCount(0);
 });
