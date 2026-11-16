@@ -32,6 +32,8 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/remote-machines/AgentPlacementNotice.svelte',
     'src/features/scripts/components/ScriptDetectionControls.svelte',
     'src/features/workspace-home/components/WorkspaceHomeBanner.svelte',
+    'src/features/workspace-home/components/WorkspaceHomeLine.svelte',
+    'src/features/workspace-home/components/WorkspaceHomePanelNotice.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/AuggieSetupGate.svelte',
