@@ -1,26 +1,15 @@
 /**
  * Events IPC Handlers
  *
- * IPC handlers for renderer event subscriptions.
+ * IPC handlers for renderer event emits and agent subscription reads.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import {
-  EventsEmitSchema,
-  EventsSubscribeSchema,
-  EventsUnsubscribeSchema,
-} from '../../../main/ipc-schemas';
-import {
-  addRendererSubscription,
-  clearRendererSubscriptions,
-  removeRendererSubscription,
-  rendererSubscriptions,
-  windowCloseListeners,
-} from './renderer-subscription-registry';
+import { EventsEmitSchema } from '../../../main/ipc-schemas';
 import {
   getAgentSubscriptions,
   getAgentSubscriptionStatus,
@@ -57,99 +46,9 @@ export function setupEventsIPC(): void {
     ),
   );
 
-  // Subscribe to events from renderer — watch Redux store for new events
-  ipcMain.handle(
-    EVENTS_CHANNELS.SUBSCRIBE,
-    createSafeValidatedHandler(
-      EventsSubscribeSchema,
-      async (event, validated) => {
-        try {
-          const windowId = event.sender.id;
-          const win = BrowserWindow.fromId(windowId);
-
-          if (!win || win.isDestroyed()) {
-            logger.debug('Skipping renderer subscription for destroyed window', {
-              windowId,
-              subscriptionId: validated.subscriptionId,
-            });
-            return { success: true, subscriptionId: validated.subscriptionId };
-          }
-
-          // Historical events are daemon-owned. The legacy main-process store
-          // never held a usable snapshot, so there is nothing to replay here.
-
-          addRendererSubscription(validated.subscriptionId, {
-            windowId,
-            filters: validated.filters,
-          });
-
-          // Register cleanup when the BrowserWindow closes so we don't leak
-          // subscriptions after the renderer is gone.
-          const subId = validated.subscriptionId;
-          const onClosed = () => {
-            const toRemove: string[] = [];
-            for (const [id, info] of rendererSubscriptions.entries()) {
-              if (info.windowId === windowId) {
-                toRemove.push(id);
-              }
-            }
-            for (const id of toRemove) {
-              removeRendererSubscription(id);
-            }
-            if (toRemove.length > 0) {
-              logger.info('Cleaned up renderer subscriptions on window close', {
-                windowId,
-                count: toRemove.length,
-              });
-            }
-          };
-          win.once('closed', onClosed);
-
-          // Track the window listener so we can remove it if the subscription
-          // is explicitly unsubscribed before the window closes.
-          windowCloseListeners.set(subId, { window: win, listener: onClosed });
-
-          logger.debug('Renderer subscription created', {
-            windowId,
-            subscriptionId: validated.subscriptionId,
-            filterCount: validated.filters.length,
-          });
-
-          return { success: true, subscriptionId: validated.subscriptionId };
-        } catch (error) {
-          logger.error('Failed to create subscription', { error });
-          throw error;
-        }
-      },
-      EVENTS_CHANNELS.SUBSCRIBE,
-    ),
-  );
-
-  // Unsubscribe from events — remove subscription from registry
-  ipcMain.handle(
-    EVENTS_CHANNELS.UNSUBSCRIBE,
-    createSafeValidatedHandler(
-      EventsUnsubscribeSchema,
-      async (_event, validated) => {
-        try {
-          removeRendererSubscription(validated.subscriptionId);
-
-          logger.debug('Renderer subscription removed', {
-            subscriptionId: validated.subscriptionId,
-          });
-
-          return { success: true };
-        } catch (error) {
-          logger.error('Failed to unsubscribe', {
-            error,
-            subscriptionId: validated.subscriptionId,
-          });
-          throw error;
-        }
-      },
-      EVENTS_CHANNELS.UNSUBSCRIBE,
-    ),
-  );
+  // NOTE: the `events:subscribe` / `events:unsubscribe` handlers were removed —
+  // no renderer subscribed, and renderers receive daemon events through the
+  // JSON-RPC `events.subscribe` bridge instead.
 
   // NOTE: the `events:query` handler was removed — historical event reads are
   // daemon-owned (`event.query`, PROTOCOL §5.10) and resolve in the renderer
@@ -268,19 +167,7 @@ function describeSubscription(sub: any): string {
 export function cleanupEventsIPC(): void {
   // Remove all IPC handlers
   ipcMain.removeHandler(EVENTS_CHANNELS.EMIT);
-  ipcMain.removeHandler(EVENTS_CHANNELS.SUBSCRIBE);
-  ipcMain.removeHandler(EVENTS_CHANNELS.UNSUBSCRIBE);
   ipcMain.removeHandler(EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS);
-
-  // Clear all renderer subscriptions (no store.subscribe to tear down —
-  // event delivery is handled by the renderer-subscription saga)
-  clearRendererSubscriptions();
-
-  // Remove all window close listeners
-  for (const wcl of windowCloseListeners.values()) {
-    wcl.window.removeListener('closed', wcl.listener);
-  }
-  windowCloseListeners.clear();
 
   logger.info('Events IPC handlers cleaned up');
 }

@@ -568,25 +568,6 @@ interface ProvenanceInfo {
   };
 }
 
-// Filter types
-export type FilterOperator =
-  | 'equals'
-  | 'not_equals'
-  | 'greater_than'
-  | 'less_than'
-  | 'starts_with'
-  | 'ends_with'
-  | 'contains'
-  | 'matches'
-  | 'in'
-  | 'not_in';
-
-export interface EventFilter {
-  field: string;
-  operator: FilterOperator;
-  value: any;
-}
-
 // Type guards
 export function isFileChangedEvent(event: WorkspaceEvent): event is FileChangedEvent {
   return event.type === 'file:changed';

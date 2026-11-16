@@ -499,17 +499,6 @@ export const EventsEmitSchema = z.object({
     .optional(),
 });
 
-export const EventsSubscribeSchema = z.object({
-  subscriptionId: z.string().min(1, 'Subscription ID is required'),
-  filters: z.array(z.any()),
-  includeHistorical: z.boolean().optional(),
-  historicalLimit: z.number().optional(),
-});
-
-export const EventsUnsubscribeSchema = z.object({
-  subscriptionId: z.string().min(1, 'Subscription ID is required'),
-});
-
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
 });
