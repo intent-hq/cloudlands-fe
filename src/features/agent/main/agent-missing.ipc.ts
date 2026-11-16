@@ -12,7 +12,7 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { z } from 'zod';
 import { Logger } from '$shared/logger';
 import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
-import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { getRendererWebContentsForWorkspace } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -26,23 +26,30 @@ const AgentCircuitBreakerResetSchema = z.object({
 let circuitBreakerBroadcastUnsubscribe: (() => void) | null = null;
 
 /**
- * Broadcast a circuit-breaker status change to the renderer windows that are
- * viewing the affected workspace, so the UI can surface (or clear) a notice.
+ * Broadcast a circuit-breaker status change to the renderers hosting the
+ * affected workspace, so the UI can surface (or clear) a notice. A machine
+ * view the window does not show gets it on the view, not on the window's own
+ * renderer (another host). When no renderer hosts the workspace, every
+ * window gets it.
  */
 function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatus): void {
   // ANY_HOST: the circuit breaker is keyed by workspace id alone and carries
-  // no host, so every host's windows holding this id are notified.
-  const targetWindowIds = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
-  const targetSet = targetWindowIds.length > 0 ? new Set(targetWindowIds) : null;
+  // no host, so every host's renderers holding this id are notified.
+  const hosting = getRendererWebContentsForWorkspace(workspaceId, ANY_HOST);
+  const targets =
+    hosting.length > 0
+      ? hosting
+      : BrowserWindow.getAllWindows()
+          .filter((win) => !win.isDestroyed())
+          .map((win) => win.webContents);
 
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (targetSet && !targetSet.has(win.id)) continue;
+  for (const contents of targets) {
+    if (contents.isDestroyed()) continue;
     try {
-      win.webContents.send('agent:circuit-breaker:status', { workspaceId, status });
+      contents.send('agent:circuit-breaker:status', { workspaceId, status });
     } catch (error) {
-      logger.warn('Failed to send circuit-breaker status to window', {
-        windowId: win.id,
+      logger.warn('Failed to send circuit-breaker status to renderer', {
+        webContentsId: contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
