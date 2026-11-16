@@ -18,7 +18,6 @@ const { MACHINE_RAIL } = IPC_CHANNELS;
 
 const railOff = (): MachineRailState => ({
   enabled: false,
-  homeId: LOCAL_CONNECTION_ID,
   machineIds: [LOCAL_CONNECTION_ID],
   selectedId: LOCAL_CONNECTION_ID,
   shownId: LOCAL_CONNECTION_ID,

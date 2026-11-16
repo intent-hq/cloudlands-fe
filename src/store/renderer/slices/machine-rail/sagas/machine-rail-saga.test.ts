@@ -22,9 +22,8 @@ import {
 import { MACHINE_HIDDEN_ATTRIBUTE } from '$shared/types/machine-rail';
 import { machineRailSaga } from './machine-rail-saga';
 
-// The root attributes app.css keys the rail inset and the hidden page on.
+// The root attribute app.css keys the rail inset on.
 const MACHINE_RAIL_ATTRIBUTE = 'data-machine-rail';
-const MACHINE_PAGE_HIDDEN_ATTRIBUTE = 'data-machine-page-hidden';
 
 const initialState = machineRailReducer(undefined, { type: '@@INIT' } as never);
 
@@ -34,7 +33,6 @@ const settle = async () => {
 
 const railState = (overrides: Partial<MachineRailState> = {}): MachineRailState => ({
   enabled: true,
-  homeId: 'local',
   machineIds: ['local'],
   selectedId: 'local',
   shownId: 'local',
@@ -121,7 +119,6 @@ describe('machineRailSaga', () => {
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
     document.documentElement.removeAttribute(MACHINE_HIDDEN_ATTRIBUTE);
     document.documentElement.removeAttribute(MACHINE_RAIL_ATTRIBUTE);
-    document.documentElement.removeAttribute(MACHINE_PAGE_HIDDEN_ATTRIBUTE);
     document.getElementById('splash')?.remove();
   });
 
@@ -196,30 +193,49 @@ describe('machineRailSaga', () => {
     task.cancel();
   });
 
-  it("keeps the window's own page up until the selected machine is on screen", async () => {
-    const rail = { machineIds: ['local', 'b'] };
-    const main = installMain(railState({ ...rail, selectedId: 'b', shownId: 'local' }));
-    const { task } = createHarness('local');
-    await settle();
-    const pageHidden = () => document.documentElement.hasAttribute(MACHINE_PAGE_HIDDEN_ATTRIBUTE);
-    expect(pageHidden()).toBe(false);
-    main.push(railState({ ...rail, selectedId: 'b', shownId: 'b' }));
-    await settle();
-    expect(pageHidden()).toBe(true);
-    // Switching back shows the page at once, before main takes the other machine away.
-    main.push(railState({ ...rail, selectedId: 'local', shownId: 'b' }));
-    await settle();
-    expect(pageHidden()).toBe(false);
-    task.cancel();
-  });
+  describe('frame backdrop', () => {
+    beforeEach(() => {
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+        setTimeout(() => callback(0), 0),
+      );
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
 
-  it("never hides another machine's page: main hides its view instead", async () => {
-    installMain(railState({ machineIds: ['local', 'b'] }));
-    const { task } = createHarness('b');
-    await settle();
-    expect(document.documentElement.hasAttribute(MACHINE_PAGE_HIDDEN_ATTRIBUTE)).toBe(false);
-    expect(document.documentElement.hasAttribute(MACHINE_HIDDEN_ATTRIBUTE)).toBe(true);
-    task.cancel();
+    const backdropCalls = (main: ReturnType<typeof installMain>) =>
+      main.invoke.mock.calls.filter(([channel]) => channel === 'machine-rail:backdrop');
+
+    it("reports its own machine's backdrop while the rail is on", async () => {
+      const main = installMain(railState({ machineIds: ['local', 'b'], selectedId: 'b' }));
+      const { task } = createHarness('b');
+      await vi.waitFor(() => expect(backdropCalls(main)).toHaveLength(1));
+      const [, backdrop] = backdropCalls(main)[0] as [string, Record<string, unknown>];
+      expect(backdrop).toEqual({
+        background: expect.any(String),
+        // A remote machine with no accent picked gets the default accent's tint.
+        tint: expect.not.stringMatching(/^transparent$/),
+        reducedMotion: expect.any(Boolean),
+      });
+      task.cancel();
+    });
+
+    it('reports no tint for the local machine', async () => {
+      const main = installMain(railState());
+      const { task } = createHarness('local');
+      await vi.waitFor(() => expect(backdropCalls(main)).toHaveLength(1));
+      expect(backdropCalls(main)[0][1]).toMatchObject({ tint: 'transparent' });
+      task.cancel();
+    });
+
+    it('reports nothing while the rail is off', async () => {
+      const main = installMain(railState({ enabled: false }));
+      const { task } = createHarness('b');
+      await settle();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(backdropCalls(main)).toHaveLength(0);
+      task.cancel();
+    });
   });
 
   it('reports ready once its backend answers, dropping the splash of a machine not shown', async () => {

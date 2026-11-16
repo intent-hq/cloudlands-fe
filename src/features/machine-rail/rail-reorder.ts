@@ -3,19 +3,14 @@
  * how the others move aside to make room for it.
  */
 
-/** The slot nearest to the dragged item's moved centre, never above `min`. */
-export function railDropIndex(
-  slotCenters: readonly number[],
-  from: number,
-  dy: number,
-  min: number,
-): number {
+/** The slot nearest to the dragged item's moved centre. */
+export function railDropIndex(slotCenters: readonly number[], from: number, dy: number): number {
   const center = slotCenters[from] + dy;
   let best = from;
   for (let index = 0; index < slotCenters.length; index++) {
     if (Math.abs(slotCenters[index] - center) < Math.abs(slotCenters[best] - center)) best = index;
   }
-  return Math.max(min, best);
+  return best;
 }
 
 /** How many slots item `index` moves while item `from` is dragged to slot `to`. */

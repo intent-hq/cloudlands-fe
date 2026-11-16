@@ -48,7 +48,6 @@ function setState(rail: Partial<MachineRailState>) {
   mocks.state = {
     machineRail: {
       enabled: true,
-      homeId: 'local',
       machineIds: ['local', 'g1', 'b'],
       selectedId: 'local',
       shownId: 'local',

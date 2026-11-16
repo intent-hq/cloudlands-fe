@@ -866,56 +866,55 @@ body.panel-resizing webview {
   justify-content: center;
 }
 
-/* Machine rail (Labs). A window can host one renderer per machine; the rail
-   takes a strip at the left edge of each. `--machine-rail-inset` keeps the
-   per-machine reconnect overlay off that strip so another machine stays one
-   click away. The window's own renderer sits under the others and paints the
-   shell background for all of them, so the accent tint cross-fades on a
-   switch; it hides the rest of its page while another machine is on screen. */
+/* Machine rail (Labs). Every machine has its own renderer (a view) in the
+   window; the rail takes a strip at the left edge of each. `--machine-rail-inset`
+   keeps the per-machine reconnect overlay off that strip so another machine
+   stays one click away. The frame page under the views paints the shell
+   background for all of them (see routes/frame), so the accent tint
+   cross-fades on a switch. */
 :root[data-machine-rail] {
   --machine-rail-inset: 3.5rem;
 }
 
 :root[data-machine-rail] .panel-layout-container {
   background-color: transparent;
-  /* The rail's backdrop paints the accent tint (an inline style) for every machine. */
+  /* The frame's backdrop paints the accent tint for every machine. */
   background-image: none !important;
 }
 
-.machine-rail-backdrop {
+.frame-backdrop {
   position: fixed;
   inset: 0;
-  z-index: -1;
   pointer-events: none;
-  background-color: hsl(var(--background) / 0.35);
 }
 
-:where(.dark) .machine-rail-backdrop {
-  background-color: transparent;
-}
-
-.machine-rail-backdrop[data-shell-opaque] {
-  background-color: hsl(var(--background));
-}
-
-.machine-rail-backdrop > span {
+.frame-backdrop > span {
   position: absolute;
   inset: 0;
   transition: background-color var(--spring-slow) var(--spring-slow-ease);
 }
 
-@container style(--motion-reduced: 1) {
-  .machine-rail-backdrop > span {
-    transition: none;
-  }
+.frame-backdrop[data-reduced-motion] > span {
+  transition: none;
 }
 
-/* Opacity, not visibility: elements with their own transitions would keep
-   showing for a moment after a visibility change. */
-:root[data-machine-page-hidden] body > :not(#app, .machine-rail-backdrop),
-:root[data-machine-page-hidden] #app > * {
-  opacity: 0;
+/* A machine's renderer resolves its backdrop colours from this probe (see the
+   machine rail saga) and hands them to the frame page. */
+.machine-rail-backdrop-probe {
+  position: fixed;
+  width: 0;
+  height: 0;
   pointer-events: none;
+  visibility: hidden;
+  background-color: hsl(var(--background) / 0.35);
+}
+
+:where(.dark) .machine-rail-backdrop-probe {
+  background-color: transparent;
+}
+
+.machine-rail-backdrop-probe[data-shell-opaque] {
+  background-color: hsl(var(--background));
 }
 
 /* Native drag regions ignore opacity and pointer-events, even beneath another

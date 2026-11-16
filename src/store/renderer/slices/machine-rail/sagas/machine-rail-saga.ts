@@ -20,18 +20,21 @@ import {
   MACHINE_HIDDEN_ATTRIBUTE,
   MACHINE_RAIL_CHANGED_EVENT,
   MACHINE_RAIL_TOAST_EVENT,
+  type MachineRailBackdrop,
   type MachineRailHealthParams,
   type MachineRailState,
   type MachineRailToastEvent,
 } from '$shared/types/machine-rail';
 import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { selectConnectionRecoveryTarget } from '../../connections/connections-selectors';
 import { selectDaemonHealth } from '../../daemon-health/daemon-health-selectors';
 import type { DaemonHealth } from '../../daemon-health/daemon-health-types';
 import {
   selectIsRailMachineShown,
-  selectIsRailPageHidden,
   selectMachineRailEnabled,
+  selectRailBackdropInputs,
+  type RailBackdropInputs,
 } from '../machine-rail-selectors';
 import {
   addRailMachineRequested,
@@ -47,8 +50,6 @@ const MACHINE_RAIL = IPC_CHANNELS.MACHINE_RAIL;
 
 /** Root attribute while the rail takes space at the window's left edge. */
 const MACHINE_RAIL_ATTRIBUTE = 'data-machine-rail';
-/** Root attribute while the window's own renderer hides its page under another machine. */
-const MACHINE_PAGE_HIDDEN_ATTRIBUTE = 'data-machine-page-hidden';
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -136,8 +137,39 @@ function* shownWorker({ payload: shown }: SelectorChannelPayload<boolean>) {
   yield* call(reportPainted);
 }
 
-function* pageHiddenWorker({ payload: hidden }: SelectorChannelPayload<boolean>) {
-  yield* call(toggleRootAttribute, MACHINE_PAGE_HIDDEN_ATTRIBUTE, hidden);
+/** The probe the backdrop colours are resolved from (styled in app.css). */
+const BACKDROP_PROBE_CLASS = 'machine-rail-backdrop-probe';
+
+/**
+ * This renderer's backdrop as resolved colours, read once the theme for this
+ * frame has been applied to the page.
+ */
+async function resolveBackdrop(inputs: RailBackdropInputs): Promise<MachineRailBackdrop | null> {
+  if (typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return null;
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const probe = document.createElement('div');
+  probe.className = BACKDROP_PROBE_CLASS;
+  if (inputs.opaque) probe.dataset.shellOpaque = '';
+  document.body.append(probe);
+  const background = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return { background, tint: inputs.tint, reducedMotion: prefersReducedMotion() };
+}
+
+/**
+ * Report this machine's shell backdrop, which the frame page paints under the
+ * machine's view while it is shown (the rail strips each page's own shell
+ * background so the tint can cross-fade between machines).
+ */
+function* backdropWorker({ payload: inputs }: SelectorChannelPayload<RailBackdropInputs>) {
+  if (!inputs.enabled) return;
+  const backdrop = yield* call(resolveBackdrop, inputs);
+  if (!backdrop) return;
+  yield* call(() =>
+    requireApi()
+      .invoke(MACHINE_RAIL.BACKDROP, backdrop)
+      .catch(() => {}),
+  );
 }
 
 /** Report this renderer's machine health, so every rail can mark a degraded machine. */
@@ -275,7 +307,7 @@ export function* machineRailSaga() {
   if (!getApi()?.on) return;
 
   yield* takeLatestFromSelector(selectIsRailMachineShown, shownWorker);
-  yield* takeLatestFromSelector(selectIsRailPageHidden, pageHiddenWorker);
+  yield* takeLatestFromSelector(selectRailBackdropInputs, backdropWorker);
   yield* takeLatestFromSelector(selectMachineRailEnabled, enabledWorker);
   yield* takeLatestFromSelector(selectDaemonHealth, healthWorker);
   yield* takeEvery(selectRailMachineRequested, function* ({ payload: [id] }) {

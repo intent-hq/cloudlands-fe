@@ -15,11 +15,14 @@
   import RootAppProviders from './RootAppProviders.svelte';
   import { isDevConsoleRoute } from '$shared/dev-console-route';
   import { isDesktopOverlayRoute } from '$shared/desktop-overlay';
+  import { isFrameRoute } from '$shared/frame-route';
   let { children }: { children?: Snippet } = $props();
+  // Diagnostic pages and the frame page boot without the app store or a backend.
   const diagnostic =
     typeof window !== 'undefined' &&
     (isDevConsoleRoute(window.location.pathname) ||
-      isDesktopOverlayRoute(window.location.pathname));
+      isDesktopOverlayRoute(window.location.pathname) ||
+      isFrameRoute(window.location.pathname));
 </script>
 
 {#if diagnostic}

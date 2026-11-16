@@ -7,14 +7,14 @@ const centers = [16, 54, 92, 130];
 
 describe('railDropIndex', () => {
   it('lands in the slot nearest to where the dragged item is', () => {
-    expect(railDropIndex(centers, 1, 0, 1)).toBe(1);
-    expect(railDropIndex(centers, 1, 20, 1)).toBe(2);
-    expect(railDropIndex(centers, 1, 70, 1)).toBe(3);
+    expect(railDropIndex(centers, 1, 0)).toBe(1);
+    expect(railDropIndex(centers, 1, 20)).toBe(2);
+    expect(railDropIndex(centers, 1, 70)).toBe(3);
   });
 
-  it('stays within the group and never above the first movable slot', () => {
-    expect(railDropIndex(centers, 2, -200, 1)).toBe(1);
-    expect(railDropIndex(centers, 1, 500, 1)).toBe(3);
+  it('stays within the group, the first slot included', () => {
+    expect(railDropIndex(centers, 2, -200)).toBe(0);
+    expect(railDropIndex(centers, 1, 500)).toBe(3);
   });
 });
 
