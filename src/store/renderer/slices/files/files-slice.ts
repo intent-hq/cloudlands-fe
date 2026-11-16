@@ -17,6 +17,7 @@ import type {
   FileContent,
   FileContentUpdateOptions,
   FileDeleteOptions,
+  FileReadErrorInfo,
   FilesState,
   FilesWorkspaceState,
 } from './files-types';
@@ -43,6 +44,7 @@ function createEmptyFileEntry(path: string, absolutePath: string | null = null):
     loading: false,
     saving: false,
     error: null,
+    errorInfo: null,
     truncated: false,
     notFoundCandidates: null,
   };
@@ -94,7 +96,14 @@ export const loadFileContentSucceeded = createAction<
 >('files/loadFileContentSucceeded');
 
 export const loadFileContentFailed = createAction<
-  [wsId: string, path: string, absolutePath: string, error: string, notFoundCandidates?: string[]]
+  [
+    wsId: string,
+    path: string,
+    absolutePath: string,
+    error: string,
+    notFoundCandidates?: string[],
+    errorInfo?: FileReadErrorInfo | null,
+  ]
 >('files/loadFileContentFailed');
 
 export const updateFileContent =
@@ -141,6 +150,7 @@ filesReducer.with(loadFileContentRequested, (state, { payload: [wsId, path, abso
     absolutePath,
     loading: true,
     error: null,
+    errorInfo: null,
     truncated: false,
     notFoundCandidates: null,
   })),
@@ -161,6 +171,7 @@ filesReducer.with(
         ...data,
         loading: false,
         error: null,
+        errorInfo: null,
         truncated: truncated ?? false,
         notFoundCandidates: null,
       };
@@ -168,13 +179,14 @@ filesReducer.with(
 );
 filesReducer.with(
   loadFileContentFailed,
-  (state, { payload: [wsId, path, absolutePath, error, notFoundCandidates] }) =>
+  (state, { payload: [wsId, path, absolutePath, error, notFoundCandidates, errorInfo] }) =>
     upsertFileEntry(state, wsId, path, (entry) => ({
       ...entry,
       absolutePath,
       ...fileContentData({ kind: 'preview-only', isBinary: entry.isBinary }),
       loading: false,
       error,
+      errorInfo: errorInfo ?? null,
       truncated: false,
       notFoundCandidates: notFoundCandidates ?? null,
     })),
@@ -191,6 +203,7 @@ filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, abso
     absolutePath,
     saving: true,
     error: null,
+    errorInfo: null,
   })),
 );
 filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, content] }) =>
@@ -204,6 +217,7 @@ filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, cont
         lastUpdated: bumpLastUpdated(entry),
         saving: false,
         error: null,
+        errorInfo: null,
         truncated: false,
       };
     }
@@ -219,6 +233,7 @@ filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, cont
       lastUpdated: bumpLastUpdated(entry),
       saving: false,
       error: null,
+      errorInfo: null,
       truncated: false,
     };
   }),
@@ -228,5 +243,6 @@ filesReducer.with(saveFileContentFailed, (state, { payload: [wsId, path, error] 
     ...entry,
     saving: false,
     error,
+    errorInfo: null,
   })),
 );

@@ -20,6 +20,9 @@ export type FileContentData =
   | { kind: 'editable-text'; originalContent: string; localContent: string; isBinary: false }
   | { kind: 'restorable-snapshot'; originalContent: string; localContent: string; isBinary: true };
 
+/** The JSON-RPC `code` and `data` of a daemon refusal (PROTOCOL §9). */
+export type FileReadErrorInfo = { rpcCode: number; data?: unknown };
+
 export type FileContentEntry = FileContentData & {
   path: string;
   absolutePath: string | null;
@@ -27,6 +30,8 @@ export type FileContentEntry = FileContentData & {
   loading: boolean;
   saving: boolean;
   error: string | null;
+  /** A failed read's JSON-RPC code and data, so a panel can tell a home that is away. */
+  errorInfo?: FileReadErrorInfo | null;
   truncated: boolean;
   /** [] = suffix resolution attempted, no matches; null/absent = not attempted. */
   notFoundCandidates?: string[] | null;

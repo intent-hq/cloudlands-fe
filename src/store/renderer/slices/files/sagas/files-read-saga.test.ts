@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { m } from '$shared/paraglide/messages.js';
 import { updateFileTabPath } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -188,6 +189,37 @@ describe('filesReadSaga', () => {
       ),
     ]);
     expect(backendRequest).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the JSON-RPC code and data of a failed read', async () => {
+    const data = {
+      code: 'home-unavailable',
+      name: 'E2B · Team',
+      starting: true,
+      retryable: true,
+    };
+    vi.spyOn(appClient.files, 'read')
+      .mockRejectedValueOnce(
+        new BackendError({ code: 'INTERNAL', message: 'Internal error', data, rpcCode: -32603 }),
+      )
+      .mockRejectedValueOnce(new Error('bridge unavailable'));
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts'));
+    channel.put(loadFileContentRequested('ws-1', 'b.ts', '/repo/b.ts'));
+    await settle();
+
+    expect(actions).toEqual([
+      loadFileContentFailed('ws-1', 'a.ts', '/repo/a.ts', 'Internal error', undefined, {
+        rpcCode: -32603,
+        data,
+      }),
+      loadFileContentFailed('ws-1', 'b.ts', '/repo/b.ts', 'bridge unavailable', undefined, null),
+    ]);
     task.cancel();
     await task.toPromise();
   });

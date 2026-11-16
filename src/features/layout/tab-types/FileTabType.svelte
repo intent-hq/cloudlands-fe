@@ -18,6 +18,7 @@
     selectFileContent,
     selectFileContentEntry,
     selectFileError,
+    selectFileErrorInfo,
     selectFileIsBinary,
     selectFileIsDirty,
     selectFileLastUpdated,
@@ -79,6 +80,9 @@
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
   import { classifyFileReadError, fileReadErrorLabel } from './file-read-error';
   import { getHomePanelContext } from '$features/workspace-home/home-panel-context';
+  import { homeErrorView, homeUnavailableError } from '$features/workspace-home/workspace-home';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import WorkspaceHomePanelNotice from '$features/workspace-home/components/WorkspaceHomePanelNotice.svelte';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
@@ -117,6 +121,10 @@
   // svelte-ignore state_referenced_locally
   const fileErrorStore = selectFileError(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
+  const fileErrorInfoStore = selectFileErrorInfo(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
+  const homeView$ = selectWorkspaceHomeView(workspaceId);
+  // svelte-ignore state_referenced_locally
   const fileNotFoundCandidatesStore = selectFileNotFoundCandidates(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
   const isFileBinaryStore = selectFileIsBinary(workspaceId, filePathStore);
@@ -151,6 +159,18 @@
   const fileSaving = $derived($fileSavingStore);
   const fileError = $derived($fileErrorStore);
   const fileErrorKind = $derived(fileError ? classifyFileReadError(fileError) : 'generic');
+  // A read that failed because the home is away shows that reason, and reads
+  // again once the home is attached.
+  const fileHomeError = $derived(fileError ? homeUnavailableError($fileErrorInfoStore) : null);
+  let homeReadRetry = $state(0);
+  let homeWasUnavailable = false;
+  $effect(() => {
+    const unavailable = $homeView$?.unavailable === true;
+    if (homeWasUnavailable && !unavailable && untrack(() => fileHomeError)) {
+      untrack(() => homeReadRetry++);
+    }
+    homeWasUnavailable = unavailable;
+  });
   // Suffix-resolution candidates recorded by the read saga on a not-found
   // error (see files-read-saga); capped for display in the error panel.
   const MAX_NOT_FOUND_CANDIDATES = 5;
@@ -386,6 +406,7 @@
     const filePath = tab.filePath;
     const absolutePath = fileAbsolutePath;
     const wsId = workspaceId;
+    void homeReadRetry;
     if (!isActive) return;
 
     // `file.read` is scoped by workspaceId and accepts a repository-relative
@@ -704,6 +725,8 @@
           {/each}
         </div>
       </div>
+    {:else if fileHomeError}
+      <WorkspaceHomePanelNotice view={homeErrorView(fileHomeError)} />
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
         <p class="text-danger" role="alert">{fileReadErrorLabel(fileErrorKind)}</p>
