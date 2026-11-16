@@ -8391,6 +8391,7 @@
             <!-- Keep private edit recovery alive after the final queue row disappears. -->
             <div
               hidden={!!pendingQuestions && !questionWizardCollapsed}
+              class:pt-6={queuedMessagesVisibility.showQueue}
               class:pb-2={queuedMessagesVisibility.showQueue}
               style:--queued-messages-max-height="{Math.max(120, containerHeight / 2)}px"
             >
