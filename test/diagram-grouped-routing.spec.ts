@@ -558,6 +558,10 @@ for (const fixture of fixtures)
             expect(actual.visible).toBe(true);
             expect(actual.contained.sort()).toEqual([...group.members].sort());
           }
+          if (fixture.id === 'edge-subgraph-siblings')
+            expect(geometry.crossingObservations, 'shared dependency wires stay separate').toEqual(
+              [],
+            );
           for (const route of geometry.routes) {
             expect(
               route.visible && route.length > 0 && route.paintedSampleCount > 0,
@@ -582,6 +586,12 @@ for (const fixture of fixtures)
             expect(route.nodeHits, `${route.id} unrelated native node fill hits`).toEqual([]);
             expect(route.textHits, `${route.id} visible text hits`).toEqual([]);
             if (fixture.id === 'edge-subgraph-siblings') {
+              const source = geometry.nodes.find((node) => node.id === route.source)!;
+              const target = geometry.nodes.find((node) => node.id === route.target)!;
+              expect(
+                source.bounds.bottom,
+                `${route.id} keeps its downward reading direction`,
+              ).toBeLessThan(target.bounds.top);
               for (const other of geometry.routes) {
                 if (other === route || other.target !== route.target || !other.terminal) continue;
                 const a = route.terminal.tip,
@@ -617,7 +627,6 @@ for (const fixture of fixtures)
               ).toBeLessThanOrEqual(1.5);
             }
           }
-          // Group headers and crossingObservations remain in JSON for lead review.
-          // No zero-crossings expectation is added for the existing grouped layout.
+          // The full header/crossing evidence remains in JSON for gallery comparison.
         });
       }

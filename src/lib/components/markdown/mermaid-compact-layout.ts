@@ -16,14 +16,15 @@ export function compactGroupedFlowchartLayouts(
     groups.size < 2 ||
     groups.size > 8 ||
     boxes.size > 16 ||
-    edges.length > 24
+    edges.length > 24 ||
+    edges.some((e) => !boxes.has(e.source) || !boxes.has(e.target))
   )
     return [];
   const owners = new Map<string, string>();
   for (const [id, group] of groups) {
     if (!group.members.length) return [];
     for (const member of group.members) {
-      if (owners.has(member)) return [];
+      if (!boxes.has(member) || owners.has(member)) return [];
       owners.set(member, id);
     }
   }
@@ -55,6 +56,101 @@ export function compactGroupedFlowchartLayouts(
     y: Math.min(...[...groups.values()].map((g) => g.box.y)),
   };
   const results: { nodes: Map<string, Box>; groups: Map<string, Box> }[] = [];
+  // A source group can span several ranks between its destination groups.
+  // Staggering its children keeps every edge forward without braiding the wires
+  // between two full-width rows of group boxes.
+  const sources = [...groups.keys()].filter((id) => !groupEdges.some((e) => e.target === id));
+  const nodeRanks = ranks([...boxes.keys()], edges);
+  if (
+    groups.size === 3 &&
+    sources.length === 1 &&
+    groupEdges.every((e) => e.source === sources[0]) &&
+    nodeRanks
+  ) {
+    const root = sources[0];
+    const destinations = [...groups.keys()].filter((id) => id !== root);
+    const depth = new Map<string, number>();
+    for (const id of [...boxes.keys()].toSorted(
+      (a, b) => nodeValue(nodeRanks, b) - nodeValue(nodeRanks, a),
+    ))
+      depth.set(
+        id,
+        Math.max(
+          0,
+          ...edges.filter((e) => e.source === id).map((e) => nodeValue(depth, e.target) + 1),
+        ),
+      );
+    for (const reverseRoots of [false, true])
+      for (const reverseGroups of [false, true]) {
+        const stages = new Map<string, number>();
+        nodeValue(groups, root)
+          .members.toSorted(
+            (a, b) =>
+              nodeValue(depth, b) - nodeValue(depth, a) ||
+              (reverseRoots ? -1 : 1) * (nodeValue(boxes, a).x - nodeValue(boxes, b).x),
+          )
+          .forEach((id, rank) => stages.set(id, rank));
+        const occupied = new Map([...groups.keys()].map((id) => [id, new Set<number>()]));
+        for (const [id, rank] of stages) nodeValue(occupied, nodeValue(owners, id)).add(rank);
+        for (const id of [...boxes.keys()]
+          .filter((id) => !stages.has(id))
+          .toSorted(
+            (a, b) =>
+              nodeValue(depth, b) - nodeValue(depth, a) ||
+              nodeValue(boxes, a).y - nodeValue(boxes, b).y,
+          )) {
+          const inputs = edges.filter((e) => e.target === id);
+          let rank = Math.max(1, ...inputs.map((e) => nodeValue(stages, e.source) + 1));
+          const used = nodeValue(occupied, nodeValue(owners, id));
+          while (used.has(rank)) rank++;
+          stages.set(id, rank);
+          used.add(rank);
+        }
+        const rows = new Map<number, number>();
+        let y = origin.y + Math.max(...[...groups.values()].map((g) => g.headerHeight)) + 48;
+        for (let rank = 0; rank <= Math.max(...stages.values()); rank++) {
+          const height = Math.max(
+            0,
+            ...[...boxes].filter(([id]) => stages.get(id) === rank).map(([, b]) => b.height),
+          );
+          rows.set(rank, y + height / 2);
+          y += height + 32;
+        }
+        const sides = reverseGroups ? [...destinations].reverse() : destinations;
+        const placedNodes = new Map<string, Box>(),
+          placedGroups = new Map<string, Box>();
+        let x = origin.x;
+        for (const id of [sides[0], root, sides[1]]) {
+          const group = nodeValue(groups, id);
+          const width = Math.max(
+            group.headerWidth + 48,
+            ...group.members.map((member) => nodeValue(boxes, member).width + 64),
+          );
+          for (const member of group.members) {
+            const node = nodeValue(boxes, member);
+            placedNodes.set(member, {
+              ...node,
+              x: x + (width - node.width) / 2,
+              y: nodeValue(rows, nodeValue(stages, member)) - node.height / 2,
+            });
+          }
+          const top =
+            Math.min(...group.members.map((member) => nodeValue(placedNodes, member).y)) -
+            Math.max(24, group.headerHeight) -
+            28;
+          const bottom =
+            Math.max(
+              ...group.members.map((member) => {
+                const node = nodeValue(placedNodes, member);
+                return node.y + node.height;
+              }),
+            ) + 32;
+          placedGroups.set(id, { x, y: top, width, height: bottom - top });
+          x += width + 48;
+        }
+        results.push({ nodes: placedNodes, groups: placedGroups });
+      }
+  }
   for (const reverseGroups of [false, true])
     for (const reverseNodes of [false, true])
       for (const alignment of [0, 0.5, 1]) {
@@ -143,7 +239,7 @@ export function compactGroupedFlowchartLayouts(
   return results;
 }
 
-function nodeValue<T>(nodes: ReadonlyMap<string, T>, id: string): T {
+function nodeValue<K, T>(nodes: ReadonlyMap<K, T>, id: K): T {
   const node = nodes.get(id);
   if (node === undefined) throw new Error('Compact flowchart references an unknown node');
   return node;

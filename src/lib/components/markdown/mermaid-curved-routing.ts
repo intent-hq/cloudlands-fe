@@ -355,6 +355,12 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
         ? hitsBox(points, node.box, padding)
         : hitsShape(points, node.box, node.outline, padding);
     });
+  const crossingCount = () =>
+    routes.reduce(
+      (sum, route, i) =>
+        sum + routes.slice(i + 1).filter((other) => crosses(route.points, other.points)).length,
+      0,
+    );
   const labelPlacement = (route: Route, curve: Curve, followCurve = true): Box | undefined => {
     if (!route.labelBox) return;
     const current = route.labelBox;
@@ -609,7 +615,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
             const crossings = planned.filter((other) =>
               crosses(curve.points, other.curve.points),
             ).length;
-            if (!grouped && crossings) return;
+            if (crossings) return;
             if (grouped && turning(curve) > Math.PI * 0.6) return;
             const label = route.labelBox;
             const labelBox = label
@@ -885,6 +891,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       const ports = incoming.map((r) => last(r.points)).toSorted((a, b) => a.y - b.y);
       const previous = incoming.map((r) => ({ route: r, d: r.d, points: r.points }));
       const before = incoming.reduce((sum, r) => sum + conflicts(r, r), 0);
+      const previousCrossings = grouped ? crossingCount() : 0;
       const proposed = ordered.map((r, i) => {
         const end = last(r.points);
         return {
@@ -903,7 +910,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       const valid = proposed.every(
         ({ route, curve }, i) => clear(route, curve) && (!route.label || placements[i]),
       );
-      if (valid && after < before)
+      if (valid && after < before && (!grouped || crossingCount() <= previousCrossings))
         proposed.forEach(({ route, curve }, i) => write(route, curve, placements[i]));
       else for (const { route, d, points } of previous) Object.assign(route, { d, points });
     }
@@ -930,6 +937,9 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     )
       continue;
     let best: { curve: Curve; labelBox?: Box; conflicts: number; length: number } | undefined;
+    const previousCrossings = grouped
+      ? routes.filter((other) => other !== route && crosses(route.points, other.points)).length
+      : 0;
     for (const [start, lead] of nodePorts(route.source, route.sourceBox))
       for (const [end, tail] of nodePorts(route.target, route.targetBox, grouped)) {
         const candidates = [
@@ -979,6 +989,12 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
           )
             continue;
           if (!clear(route, curve)) continue;
+          if (
+            grouped &&
+            routes.filter((other) => other !== route && crosses(curve.points, other.points))
+              .length > previousCrossings
+          )
+            continue;
           const count = conflicts(route, curve);
           if (count >= before || (best && count > best.conflicts)) continue;
           const labelBox = labelPlacement(route, curve);
