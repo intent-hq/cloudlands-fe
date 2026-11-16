@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.2...v2.342.3) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* **session-import:** keep the codebase picker open on provider filter clicks ([#4674](https://github.com/intent-hq/cloudlands-fe/issues/4674)) ([f41948a](https://github.com/intent-hq/cloudlands-fe/commit/f41948a6a3d1466a844dd2101e3bd0dab78e4726))
+
 ## [2.342.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.1...v2.342.2) (2026-11-16)
 
 
