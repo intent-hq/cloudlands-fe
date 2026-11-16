@@ -388,7 +388,7 @@ import {
   getActiveId,
   list as listConnections,
 } from '../features/backend/main/desktop-connections-store';
-import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+import { resolveBootWindowBackendId } from './boot-window-backend';
 import {
   probeDaemonVersion,
   resolveSocketPath,
@@ -1894,8 +1894,27 @@ const bootFlow = app.whenReady().then(async () => {
       intentUrlArg && !isPairLinkArg
         ? false
         : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
-    // Nothing saved (or a deep link): one frame on the local machine.
-    if (!restored) await createWindow(LOCAL_CONNECTION_ID);
+    if (!restored) {
+      // Nothing saved (or a deep link): one frame on the persisted active
+      // machine, or the local one for an `open` link (the `intent` CLI's
+      // folder, or a workspace id) or when the active client cannot be built.
+      const coldStartWantsLocal =
+        intentUrlArg !== undefined &&
+        !isPairLinkArg &&
+        deepLinkHandler.parseDeepLink(intentUrlArg)?.type === 'open';
+      const windowBackendId = await resolveBootWindowBackendId({
+        activeId: bootBackendId,
+        wantsLocal: coldStartWantsLocal,
+        connect: connectBackendClient,
+        onFallback: (backendId, error) => {
+          logger.warn('Boot backend has no connectable client; opening a local window', {
+            backendId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      });
+      await createWindow(windowBackendId);
+    }
 
     startupMetrics.end('createWindow');
   }
