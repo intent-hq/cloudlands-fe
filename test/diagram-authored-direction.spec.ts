@@ -299,3 +299,53 @@ test('painted direction oracle rejects moved nodes and reversed edge paint indep
   edge.points.reverse();
   expect(directionViolations(g, 'LR')).toContain('A_B: painted edge direction');
 });
+
+test('actual note keeps suffix-colliding edge labels on their own connections', async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const source = `flowchart LR
+    A[First source] -->|alpha| B[Destination]
+    foo_L_A[Second source] -->|beta| B`;
+  await mountNote(page, source, 1000);
+  await geometry(page);
+  const svg = page.locator('.node-mermaidBlock .mermaid-svg > svg');
+  const assignments = await svg.evaluate((svg) => {
+    const paths = [...svg.querySelectorAll<SVGPathElement>('path.flowchart-link')];
+    return ['L_A_B_0', 'L_foo_L_A_B_0'].map((id) => {
+      const label = svg
+        .querySelector(`.edgeLabels > .edgeLabel > .label[data-id="${id}"]`)
+        ?.closest('.edgeLabel');
+      const path = paths.find((path) => path.id === id || path.id === `${svg.id}-${id}`);
+      const bounds = label?.getBoundingClientRect();
+      const matrix = path?.getScreenCTM();
+      let attached = false;
+      if (path && bounds && matrix) {
+        const length = path.getTotalLength();
+        const count = Math.max(1, Math.ceil(length * Math.hypot(matrix.a, matrix.b) * 2));
+        for (let i = 0; i <= count; i++) {
+          const p = path.getPointAtLength((length * i) / count).matrixTransform(matrix);
+          if (
+            p.x >= bounds.left &&
+            p.x <= bounds.right &&
+            p.y >= bounds.top &&
+            p.y <= bounds.bottom
+          ) {
+            attached = true;
+            break;
+          }
+        }
+      }
+      return { id, text: label?.textContent?.trim(), attached };
+    });
+  });
+  await writeFile(
+    info.outputPath('edge-label-ownership.json'),
+    JSON.stringify({ source, assignments }, null, 2),
+  );
+  await svg.screenshot({ path: info.outputPath('edge-label-ownership.png') });
+  expect(assignments).toEqual([
+    { id: 'L_A_B_0', text: 'alpha', attached: true },
+    { id: 'L_foo_L_A_B_0', text: 'beta', attached: true },
+  ]);
+});

@@ -297,10 +297,11 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       const p = path.getPointAtLength((length * i) / count);
       return { x: p.x, y: p.y };
     });
-    const label = labels.find((l) => {
-      const id = l.querySelector('[data-id]')?.getAttribute('data-id');
-      return id && path.id.endsWith(id);
-    });
+    const edgeId =
+      svg.id && path.id.startsWith(`${svg.id}-`) ? path.id.slice(svg.id.length + 1) : path.id;
+    const label = labels.find(
+      (l) => l.querySelector(':scope > .label[data-id]')?.getAttribute('data-id') === edgeId,
+    );
     return [
       {
         path,
