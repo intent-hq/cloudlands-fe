@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.5...v2.342.6) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.228 ([#4685](https://github.com/intent-hq/cloudlands-fe/issues/4685)) ([7854327](https://github.com/intent-hq/cloudlands-fe/commit/7854327a57b14f58e3e7053dbcc6f91e31c6df8e))
+* **combobox:** keep an embedded list's host popup open on inside clicks ([#4681](https://github.com/intent-hq/cloudlands-fe/issues/4681)) ([2f19c2e](https://github.com/intent-hq/cloudlands-fe/commit/2f19c2e7ad4f6a376908aced8c22dd5508272077))
+
 ## [2.342.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.4...v2.342.5) (2026-11-16)
 
 
