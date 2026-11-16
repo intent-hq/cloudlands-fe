@@ -8989,7 +8989,7 @@
   "machineSetup_pick_backend_label": "Intent サーバーをインストール",
   "machineSetup_pick_backend_description": "別のコンピュータに、独自のワークスペースとエージェントを持つ完全な Intent を入れます。",
   "machineSetup_pick_node_label": "ノードをインストール",
-  "machineSetup_pick_node_description": "このバックエンドが別のコンピュータでエージェントを実行できるようにします。",
+  "machineSetup_pick_node_description": "別のマシンを接続して、そこでエージェントを実行します。",
   "machineSetup_paste_description": "もう一方のコンピュータが表示した intent://pair または intent://node リンクを貼り付けます。",
   "machineSetup_method_description": "もう一方のコンピュータに Intent をどうインストールしますか？",
   "machineSetup_method_ariaLabel": "インストール方法",

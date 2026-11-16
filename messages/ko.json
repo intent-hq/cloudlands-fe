@@ -8989,7 +8989,7 @@
   "machineSetup_pick_backend_label": "Intent 서버 설치",
   "machineSetup_pick_backend_description": "다른 컴퓨터에 자체 워크스페이스와 에이전트를 갖춘 완전한 Intent를 설치합니다.",
   "machineSetup_pick_node_label": "노드 설치",
-  "machineSetup_pick_node_description": "이 백엔드가 다른 컴퓨터에서 에이전트를 실행하게 합니다.",
+  "machineSetup_pick_node_description": "다른 머신을 연결해 그곳에서 에이전트를 실행합니다.",
   "machineSetup_paste_description": "다른 컴퓨터가 표시한 intent://pair 또는 intent://node 링크를 붙여넣습니다.",
   "machineSetup_method_description": "다른 컴퓨터에 Intent를 어떻게 설치할까요?",
   "machineSetup_method_ariaLabel": "설치 방법",
