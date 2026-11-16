@@ -35,7 +35,7 @@
       closed: { props: { state: 'closed' } },
       // The codebase picker's first step: "Import a session" under "Add codebase".
       'selector-browse': { props: { state: 'selector-browse' } },
-      // The codebase picker open on its Sessions tab, next to Clone / Existing folder / New.
+      // The codebase picker open on its Sessions tab, with the provider filter above the rows.
       'selector-open': { props: { state: 'selector-open' } },
       // A picked session shows as the codebase, with its provider icon and the not-copied note.
       selected: { props: { state: 'selected' } },
@@ -191,6 +191,7 @@
   const rows = untrack((): ImportableSession[] => {
     switch (scenario) {
       case 'multi-provider':
+      case 'selector-open':
         return [
           claudeSessions[0],
           otherSessions[0],
@@ -213,7 +214,7 @@
     }
   });
   const providers = untrack(() =>
-    scenario === 'multi-provider'
+    scenario === 'multi-provider' || scenario === 'selector-open'
       ? providerList()
       : scenario === 'provider-error'
         ? providerList(true).filter((provider) => provider.id !== 'auggie')

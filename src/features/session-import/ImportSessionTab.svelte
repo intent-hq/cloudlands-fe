@@ -54,6 +54,7 @@
   const status$ = selectImportableSessionsStatus();
   const providers$ = selectImportableSessionProviders();
   let providerFilter = $state('');
+  let root = $state<HTMLElement | null>(null);
   let query = '';
 
   // The first page shows the loading row; a typed search keeps the rows,
@@ -102,7 +103,7 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-col {className}" data-testid="import-session-tab">
+<div bind:this={root} class="flex min-h-0 flex-col {className}" data-testid="import-session-tab">
   <ImportSessionList
     status={listStatus}
     sessions={$sessions$}
@@ -120,6 +121,7 @@
     {onclose}
     {disabledReason}
     {selectedKey}
+    interactionRoot={root}
   />
   {#if listStatus !== 'error'}
     <div class="flex shrink-0 justify-end border-t border-border px-2 py-1">
