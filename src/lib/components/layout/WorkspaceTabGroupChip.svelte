@@ -156,7 +156,7 @@
 
   .tab-group-chip.is-collapsed {
     background: hsl(var(--tab-group-color) / 0.16);
-    color: hsl(var(--foreground));
+    color: color-mix(in srgb, hsl(var(--tab-group-color)) 40%, hsl(var(--foreground)));
   }
 
   .tab-group-chip.is-collapsed:hover {
@@ -165,7 +165,7 @@
 
   .tab-group-chip.is-open {
     background: hsl(var(--tab-group-color));
-    color: hsl(var(--background));
+    color: color-mix(in srgb, hsl(var(--tab-group-color)) 25%, hsl(var(--tab-group-ink)));
   }
 
   .tab-group-chip.is-editing {
@@ -177,6 +177,7 @@
     display: flex;
     height: 100%;
     min-width: 0;
+    max-width: 100%;
     align-items: center;
     gap: 6px;
     padding: 0 8px;
@@ -206,7 +207,7 @@
   }
 
   .is-open .tab-group-dot {
-    background: hsl(var(--background));
+    background: currentColor;
   }
 
   .tab-group-name {
@@ -219,7 +220,7 @@
 
   .tab-group-count {
     flex: none;
-    color: hsl(var(--muted-foreground));
+    color: inherit;
     font-variant-numeric: tabular-nums;
   }
 

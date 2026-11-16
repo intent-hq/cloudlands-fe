@@ -279,7 +279,8 @@
               class={cn(
                 menuItem(),
                 OPTION_LIST_ROW_CLASS,
-                'max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                'max-w-full cursor-pointer overflow-hidden text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                embedded ? 'font-normal' : 'font-medium',
                 !embedded &&
                   'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large)',
                 embedded

@@ -899,7 +899,7 @@
                                     role="option"
                                     aria-selected={index === activeSuggestion}
                                     tabindex={-1}
-                                    class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
+                                    class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-medium hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
                                     data-testid="share-pin-suggestion"
                                     data-login={user.login}
                                     onpointerdown={(event) => event.preventDefault()}

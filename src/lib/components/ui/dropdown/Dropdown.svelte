@@ -756,7 +756,7 @@
     onkeydown={handleKeyDown}
     {disabled}
     class={cn(
-      'type-caption inline-flex cursor-pointer items-center gap-2 rounded-(--radius-medium)',
+      'type-caption inline-flex cursor-pointer items-center gap-2 rounded-(--radius-medium) font-medium',
       'disabled:cursor-not-allowed disabled:opacity-50',
       sizeClasses[size],
       variantClasses[variant],

@@ -34,6 +34,7 @@ interface CheckboxAction extends ActionBase {
 export interface RadioAction extends ActionBase {
   kind: 'radio';
   value: string;
+  swatch?: string;
   checked?: never;
   destructive?: never;
   children?: never;
@@ -42,6 +43,7 @@ export interface RadioAction extends ActionBase {
 interface RadioGroupAction extends ActionBase {
   kind: 'radio-group';
   value: string;
+  presentation?: 'swatches';
   children: readonly RadioAction[];
   checked?: never;
   destructive?: never;

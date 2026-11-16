@@ -3,7 +3,8 @@ import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
 import './menu-overlay.css';
 
 export const menuItem = tv({
-  base: `${OPTION_LIST_ROW_CLASS} menu-row group/menu-item relative z-10 flex w-full min-w-0 cursor-default select-none items-start gap-2.5 border-none bg-transparent px-2.5 py-1.5 transition-colors duration-spring-fast ease-spring-fast focus:text-foreground focus-visible:outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none`,
+  // The recipe also serves non-menu lists; scope dropdown weight to menu rows.
+  base: `${OPTION_LIST_ROW_CLASS} menu-row group/menu-item relative z-10 flex w-full min-w-0 cursor-default select-none items-start gap-2.5 border-none bg-transparent px-2.5 py-1.5 transition-colors duration-spring-fast ease-spring-fast focus:text-foreground focus-visible:outline-none data-[menu-item]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none`,
   variants: {
     inset: { true: 'pl-8' },
   },

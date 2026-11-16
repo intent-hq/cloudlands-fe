@@ -48,27 +48,33 @@ export function toSidebarActions(
           id: child.id,
           value: child.id,
           label: child.label,
+          swatch: child.swatch,
           icon: child.icon,
           disabled: child.disabled,
           disabledReason: child.disabledReason,
           shortcut: child.shortcut,
           closeOnSelect: child.closeOnSelect,
         }));
+        const selectionGroup = {
+          kind: 'radio-group' as const,
+          id: `${entry.id}-selection`,
+          label: entry.label,
+          value: choices.find((child) => child.checked)?.id ?? '',
+          presentation: entry.presentation,
+          children,
+        };
+        if (entry.presentation === 'swatches') {
+          actions.push(
+            { ...base, ...selectionGroup },
+            ...toSidebarActions(commands).map((action) => ({ ...action, group: String(group) })),
+          );
+          continue;
+        }
         actions.push({
           ...base,
           kind: 'submenu',
           children: [
-            ...(children.length > 0
-              ? [
-                  {
-                    kind: 'radio-group' as const,
-                    id: `${entry.id}-selection`,
-                    label: entry.label,
-                    value: choices.find((child) => child.checked)?.id ?? '',
-                    children,
-                  },
-                ]
-              : []),
+            ...(children.length > 0 ? [selectionGroup] : []),
             ...toSidebarActions(commands),
           ],
         });

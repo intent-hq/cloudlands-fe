@@ -91,7 +91,6 @@ describe('ChatMessageNavigator', () => {
     expect(longResult.className).toContain('bg-accent');
     expect(longResult.className).toContain('text-accent-foreground');
     expect(longResult.className).toContain('type-caption');
-    expect(longResult.className).toContain('font-normal');
     expect(longResult.className).toContain('h-(--control-height-large)');
     expect(results.every((result) => result.className.includes('text-left'))).toBe(true);
     expect(longResult.className).toContain('focus-visible:ring-inset');

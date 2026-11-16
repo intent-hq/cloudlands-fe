@@ -51,7 +51,7 @@
     if (!container) return;
     container.dataset.listOverlay = '';
     container.classList.add('relative', 'isolate');
-    const instance = createProximityHover(container);
+    const instance = createProximityHover(container, { axis: 'xy' });
     hover = instance;
     let items: HTMLElement[] = [];
 

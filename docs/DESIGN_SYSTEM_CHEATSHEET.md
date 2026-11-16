@@ -179,6 +179,7 @@ with an explicit colour from the status mapping above.
 
 - One command definition must drive inline, overflow, and context menu presentations.
 - Actions need declarative visibility, grouping, shortcuts, disabled reasons, or submenus.
+- Use radio-group presentation="swatches" and named radio choices with semantic HSL swatch values for an inline color palette.
 
 ### Do not use when
 

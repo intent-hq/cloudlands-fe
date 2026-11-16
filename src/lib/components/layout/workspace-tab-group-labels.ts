@@ -11,6 +11,12 @@ const TAB_GROUP_COLOR_VALUES: Record<WorkspaceTabGroupColor, string> = {
   orange: 'var(--tab-group-orange)',
   pink: 'var(--tab-group-pink)',
   grey: 'var(--tab-group-grey)',
+  lightGreen: 'var(--tab-group-light-green)',
+  turquoise: 'var(--tab-group-turquoise)',
+  lightBlue: 'var(--tab-group-light-blue)',
+  red: 'var(--tab-group-red)',
+  yellow: 'var(--tab-group-yellow)',
+  beige: 'var(--tab-group-beige)',
 };
 
 /** The HSL channels of a group color, for `hsl(var(--tab-group-color))`. */
@@ -32,6 +38,18 @@ export function workspaceTabGroupColorLabel(color: WorkspaceTabGroupColor): stri
       return m.layout_workspaceTabGroup_color_pink_label();
     case 'grey':
       return m.layout_workspaceTabGroup_color_grey_label();
+    case 'lightGreen':
+      return m.layout_workspaceTabGroup_color_lightGreen_label();
+    case 'turquoise':
+      return m.layout_workspaceTabGroup_color_turquoise_label();
+    case 'lightBlue':
+      return m.layout_workspaceTabGroup_color_lightBlue_label();
+    case 'red':
+      return m.layout_workspaceTabGroup_color_red_label();
+    case 'yellow':
+      return m.layout_workspaceTabGroup_color_yellow_label();
+    case 'beige':
+      return m.layout_workspaceTabGroup_color_beige_label();
   }
 }
 

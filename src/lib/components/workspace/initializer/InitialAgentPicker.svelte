@@ -988,7 +988,7 @@
             active={specialistDropdownOpen}
             aria-labelledby="{agentLabelId} {agentValueId}"
             class={presentation === 'footer'
-              ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
+              ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-medium'
               : workspacePickerStyles.fieldTrigger}
           >
             <span
@@ -1102,7 +1102,7 @@
       menuSideOffset={24}
       menuMaxHeight={440}
       triggerClass={presentation === 'footer'
-        ? 'h-9 min-w-0 max-w-36 px-2 text-sm font-normal'
+        ? 'h-9 min-w-0 max-w-36 px-2 text-sm font-medium'
         : workspacePickerStyles.fieldTrigger}
       showReasoning
       reasoningEffort={displayedReasoningEffort}
