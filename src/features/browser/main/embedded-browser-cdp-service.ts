@@ -68,6 +68,9 @@ const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
  */
 const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
 
+/** Cap for the mouse-release cleanup of an input action (intent#9266). */
+const INPUT_RELEASE_TIMEOUT_MS = 2_000;
+
 /**
  * How long (ms) to wait for the webContents.capturePage() fallback. On a
  * guest whose compositor produces no frames (e.g. viewport-culled or
@@ -2654,9 +2657,15 @@ class EmbeddedBrowserCdpService {
     return runInputAction(
       async (method, params) => {
         // Releasing a pressed button is cleanup, never new input: it ignores
-        // the deadline so an expired request cannot leave the button held.
+        // the deadline so an expired request cannot leave the button held,
+        // but has its own cap so an unresponsive guest cannot hang the action.
         if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseReleased') {
-          return this.sendCommand(webContentsId, method, params);
+          return this.withStageTimeout(
+            this.sendCommand(webContentsId, method, params),
+            // i18n-ignore (CDP method label in an agent-facing diagnostic)
+            'Input.dispatchMouseEvent mouseReleased',
+            { timeoutMs: INPUT_RELEASE_TIMEOUT_MS, deadlineBound: false },
+          );
         }
         await this.withDeadline(this.attachDebugger(webContentsId), method, deadline);
         // Checked after attaching, so an expired request injects nothing new.

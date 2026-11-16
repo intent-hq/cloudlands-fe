@@ -582,6 +582,26 @@ describe('trusted input (intent#9266)', () => {
     expect(inputCalls(wc)).toEqual([]);
   });
 
+  it('bounds a mouse release that the guest never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      const wc = fakeCdpWebview(72, {});
+      wc.debugger.sendCommand.mockImplementation((_method, params) =>
+        params?.type === 'mouseReleased' ? new Promise(() => {}) : Promise.resolve({}),
+      );
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-hung', 72);
+
+      const click = service.input('tab-hung', { action: 'click', x: 1, y: 1 });
+      const outcome = expect(click).rejects.toThrow(/mouseReleased|timed out/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('scales pointer coordinates on a tab drawn scaled to fit its panel', async () => {
     const service = await loadService();
     const wc = fakeCdpWebview(71, {});

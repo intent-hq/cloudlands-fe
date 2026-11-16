@@ -378,7 +378,7 @@ const SELECT_OPTION = `(selector, wanted) => {
   const picks = wanted.map((w) => options.find((o) => o.value === w) || options.find((o) => o.label === w || o.text.trim() === w));
   const missing = wanted.filter((_, i) => !picks[i]);
   if (missing.length) return { status: 'option-not-found', missing };
-  if (!el.multiple && picks.length > 1) return { status: 'option-not-found', message: 'the select is not multiple' };
+  if (!el.multiple && picks.length > 1) return { status: 'option-not-found', message: 'is not a multiple select' };
   const disabled = (o) => o.disabled || (o.parentElement instanceof HTMLOptGroupElement && o.parentElement.disabled);
   if (el.matches(':disabled') || picks.some(disabled)) return { status: 'disabled' };
   el.focus();
@@ -389,49 +389,54 @@ const SELECT_OPTION = `(selector, wanted) => {
 }`;
 
 function failForStatus(page: PageStatus, selector: string): never {
-  // i18n-ignore-start (agent-facing protocol errors, not user-facing)
   switch (page.status) {
     case 'invalid-selector':
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `Invalid selector "${selector}": ${page.message}`,
         'invalid-selector',
       );
     case 'not-visible':
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `"${selector}" has no visible box (zero size or visibility: hidden).`,
         'element-not-visible',
       );
     case 'obscured':
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `"${selector}" is covered by ${page.hit} at (${Math.round(page.x ?? 0)}, ${Math.round(page.y ?? 0)}). Dismiss the covering element first; clicking by x/y would hit it too.`,
         'element-obscured',
       );
     case 'disabled':
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `"${selector}" or the requested option is disabled.`,
         'element-disabled',
       );
     case 'not-focusable':
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       throw new InputActionError(`"${selector}" cannot take focus.`, 'not-focusable');
     case 'not-a-select':
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `"${selector}" is a <${page.message}>, not a <select>. Click custom dropdowns with click instead.`,
         'not-a-select',
       );
-    case 'option-not-found':
-      throw new InputActionError(
-        page.missing
-          ? `No option of "${selector}" has the value or label ${page.missing.map((m) => JSON.stringify(m)).join(', ')}.`
-          : `"${selector}": ${page.message}.`,
-        'option-not-found',
-      );
+    case 'option-not-found': {
+      const wanted = page.missing?.map((m) => JSON.stringify(m)).join(', ');
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      const detail = wanted ? `has no option with the value or label ${wanted}` : page.message;
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      throw new InputActionError(`"${selector}" ${detail}.`, 'option-not-found');
+    }
     default:
       throw new InputActionError(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `No element matches "${selector}" in the page or its open shadow roots (iframes are not searched).`,
         'element-not-found',
       );
   }
-  // i18n-ignore-end
 }
 
 async function resolvePoint(send: CdpSend, target: Target): Promise<{ x: number; y: number }> {
