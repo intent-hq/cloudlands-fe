@@ -585,6 +585,16 @@ for (const fixture of fixtures)
           }
           for (const label of geometry.labels.filter((item) => item.owner)) {
             const route = geometry.routes.find((item) => item.id.endsWith(label.owner!))!;
+            expect(
+              route.samples.some(
+                (sample) =>
+                  sample.x >= label.bounds.left &&
+                  sample.x <= label.bounds.right &&
+                  sample.y >= label.bounds.top &&
+                  sample.y <= label.bounds.bottom,
+              ),
+              `${label.text} remains attached to its own connection`,
+            ).toBe(true);
             for (const group of geometry.groups.filter(
               (item) =>
                 item.contained.includes(route.source!) && item.contained.includes(route.target!),
@@ -628,6 +638,8 @@ for (const fixture of fixtures)
             );
             expect(route.nodeHits, `${route.id} unrelated native node fill hits`).toEqual([]);
             expect(route.textHits, `${route.id} visible text hits`).toEqual([]);
+            if (fixture.id === 'mermaid-nested-groups')
+              expect(route.headerHits, `${route.id} group title clearance`).toEqual([]);
             if (fixture.id === 'edge-subgraph-siblings') {
               const source = geometry.nodes.find((node) => node.id === route.source)!;
               const target = geometry.nodes.find((node) => node.id === route.target)!;

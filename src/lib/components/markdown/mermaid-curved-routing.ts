@@ -367,13 +367,25 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
         sum + routes.slice(i + 1).filter((other) => crosses(route.points, other.points)).length,
       0,
     );
-  const labelWithinGroups = (route: Route, label: Box, groups = groupBounds) =>
-    groups.every(
+  const fitLabelWithinGroups = (route: Route, label: Box, groups = groupBounds) => {
+    const common = groups.filter(
       (group) =>
-        !containsBox(group, route.sourceBox, -0.1) ||
-        !containsBox(group, route.targetBox, -0.1) ||
-        containsBox(group, label, 6),
+        containsBox(group, route.sourceBox, -0.1) && containsBox(group, route.targetBox, -0.1),
     );
+    const fitted = { ...label };
+    for (const group of common) {
+      fitted.x = Math.max(group.x + 6, Math.min(fitted.x, group.x + group.width - label.width - 6));
+      fitted.y = Math.max(
+        group.y + 6,
+        Math.min(fitted.y, group.y + group.height - label.height - 6),
+      );
+    }
+    return inside(center(label), fitted) &&
+      distance(center(fitted), center(label)) <= gap * 2 &&
+      common.every((group) => containsBox(group, fitted, 6))
+      ? fitted
+      : undefined;
+  };
   const labelPlacement = (route: Route, curve: Curve, followCurve = true): Box | undefined => {
     if (!route.labelBox) return;
     const current = route.labelBox;
@@ -382,10 +394,16 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       ...curve.points.filter((_, i) => i % 3 === 0),
     ];
     return candidates
-      .map((p) => ({ ...current, x: p.x - current.width / 2, y: p.y - current.height / 2 }))
+      .flatMap((p) => {
+        const box = fitLabelWithinGroups(route, {
+          ...current,
+          x: p.x - current.width / 2,
+          y: p.y - current.height / 2,
+        });
+        return box ? [box] : [];
+      })
       .filter(
         (box) =>
-          labelWithinGroups(route, box) &&
           ![...nodes.values()].some((n) => overlaps(box, n.box, 6)) &&
           !headers.some((header) => overlaps(box, header, 6)) &&
           !routes.some(
@@ -635,13 +653,17 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
             const label = route.labelBox;
             const labelBox = label
               ? [0.5, 0.35, 0.65]
-                  .map((fraction) => {
+                  .flatMap((fraction) => {
                     const at = curve.points[Math.round((curve.points.length - 1) * fraction)];
-                    return { ...label, x: at.x - label.width / 2, y: at.y - label.height / 2 };
+                    const box = fitLabelWithinGroups(
+                      route,
+                      { ...label, x: at.x - label.width / 2, y: at.y - label.height / 2 },
+                      plannedGroups,
+                    );
+                    return box ? [box] : [];
                   })
                   .find(
                     (box) =>
-                      labelWithinGroups(route, box, plannedGroups) &&
                       ![...nodes.values()].some((node) => overlaps(box, node.box, 6)) &&
                       !headers.some((header) => overlaps(box, header, 6)) &&
                       !planned.some(
