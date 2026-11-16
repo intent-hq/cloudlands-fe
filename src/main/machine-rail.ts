@@ -43,8 +43,11 @@ import {
   readWindowRail,
   setMachineRailEnabledFlag,
   setPendingSelection,
+  setMachineRailRendererStarter,
   setMachineRailRestoreHandler,
+  setMachineRailShower,
   writeWindowRail,
+  type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
@@ -390,6 +393,49 @@ function whenReady(contents: Electron.WebContents): Promise<void> {
   });
 }
 
+/** Live windows whose rail lists `id` as one of its added machines. */
+function railsListing(id: string): BrowserWindowType[] {
+  return getAppWindows().filter(
+    (window) => !window.isDestroyed() && readWindowRail(window).machineIds.indexOf(id) > 0,
+  );
+}
+
+/**
+ * Start `id`'s renderer, hidden, in a window whose rail lists it (the focused
+ * one first) when no window renders it yet, then wait until it is ready or
+ * `deadline` passes.
+ */
+async function startRendererFor(id: string, deadline: number): Promise<void> {
+  if (
+    getAppWindows().some((window) => !window.isDestroyed() && getBackendIdForWindow(window) === id)
+  )
+    return;
+  const rails = railsListing(id);
+  if (rails.length === 0) return;
+  const running = rails
+    .map((window) => viewsOf(window).get(id))
+    .find((view) => view && !view.webContents.isDestroyed());
+  const host = rails.find((window) => window.isFocused()) ?? rails[0];
+  const contents = (running ?? ensureView(host, id)).webContents;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    whenReady(contents),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Pick `id` in a window whose rail lists it (the focused one first). */
+function showRailMachineFor(id: string): ShownRailMachine | null {
+  const rails = railsListing(id);
+  const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
+  if (!window) return null;
+  selectMachine(window, id);
+  const contents = ensureView(window, id).webContents;
+  return { window, contents, ready: whenReady(contents) };
+}
+
 /** Longest the background start waits for a machine that is still connecting. */
 const PRELOAD_CONNECT_WAIT_MS = 60_000;
 
@@ -656,6 +702,8 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
   connectedFeed = null;
   for (const wait of [...connectionWaits]) wait.finish(null);
   deps = railDeps;
+  setMachineRailRendererStarter(startRendererFor);
+  setMachineRailShower(showRailMachineFor);
   setMachineRailRestoreHandler((window, session) => {
     void restoreRail(window, session).catch((error: unknown) =>
       logger.warn('Failed to restore a machine rail', {

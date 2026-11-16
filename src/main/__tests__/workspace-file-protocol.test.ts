@@ -87,7 +87,8 @@ vi.mock('../../features/backend/main/backend.ipc', () => ({
 }));
 
 vi.mock('../../features/system/main/system.ipc', () => ({
-  getWindowIdsForWorkspace: (workspaceId: string) => workspaceWindows.get(workspaceId) ?? [],
+  getRendererKeysForWorkspace: (workspaceId: string) => workspaceWindows.get(workspaceId) ?? [],
+  getBackendIdForRendererKey: (key: number) => windowBackends.get(key) ?? null,
 }));
 
 // Remote-backend transfer calls land in `transfer` instead of a real socket;
@@ -122,7 +123,6 @@ vi.mock('../../features/backend/main/transfer-connections', async (importOrigina
 const machineViewBackends = vi.hoisted(() => new Map<number, string>());
 vi.mock('../window-backend', () => ({
   getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
-  getShownBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
   getBackendIdForWebContents: (contents: { id: number }) =>
     machineViewBackends.get(contents.id) ??
     windowBackends.get(webContentsWindows.get(contents.id) ?? -1) ??

@@ -16,7 +16,7 @@ import {
   resolveWorkspaceBackendClientWithRetry,
   type WorkspaceOwnershipProber,
 } from './utils/workspace-backend-client';
-import { getBackendIdForWebContents, getShownBackendIdForWindow } from './window-backend';
+import { getBackendIdForWebContents } from './window-backend';
 import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
@@ -47,23 +47,21 @@ const WORKSPACE_BACKEND_RESOLUTION_RETRY_MS = 200;
  * See `./utils/workspace-backend-client`.
  */
 async function backendClientForWorkspace(workspaceId: string, backendIdHint: string | null) {
-  const [{ getBackendClient, getBackendClientForConnection }, { getWindowIdsForWorkspace }] =
-    await Promise.all([
-      import('../features/backend/main/backend.ipc'),
-      import('../features/system/main/system.ipc'),
-    ]);
+  const [
+    { getBackendClient, getBackendClientForConnection },
+    { getBackendIdForRendererKey, getRendererKeysForWorkspace },
+  ] = await Promise.all([
+    import('../features/backend/main/backend.ipc'),
+    import('../features/system/main/system.ipc'),
+  ]);
   const resolution = await resolveWorkspaceBackendClientWithRetry(
     workspaceId,
     {
-      // ANY_HOST: this resolver's job is to find the host from the windows
-      // (and to report windows on different hosts as ambiguous).
-      getWindowIdsForWorkspace: (id) => getWindowIdsForWorkspace(id, ANY_HOST),
-      getBackendIdForWindowId: (windowId) => {
-        const window = BrowserWindow.fromId(windowId);
-        // The workspace entries behind this lookup are reported by the renderer
-        // the window shows, so the window's host is that renderer's backend.
-        return window && !window.isDestroyed() ? getShownBackendIdForWindow(window) : null;
-      },
+      // ANY_HOST: this resolver's job is to find the host from the renderers
+      // (and to report renderers on different hosts as ambiguous). A window
+      // with a machine rail hosts one renderer per machine.
+      getWindowIdsForWorkspace: (id) => getRendererKeysForWorkspace(id, ANY_HOST),
+      getBackendIdForWindowId: getBackendIdForRendererKey,
       getClientForBackend: getBackendClientForConnection,
       getPrimaryClient: getBackendClient,
       // The local pooled client and the compatibility client coincide at

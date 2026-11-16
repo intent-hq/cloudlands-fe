@@ -73,6 +73,47 @@ export function setMachineRailRestoreHandler(handler: RestoreHandler | null): vo
   restoreHandler = handler;
 }
 
+type RendererStarter = (backendId: string, deadline: number) => Promise<void>;
+let rendererStarter: RendererStarter | null = null;
+
+export function setMachineRailRendererStarter(starter: RendererStarter | null): void {
+  rendererStarter = starter;
+}
+
+/**
+ * Make sure a machine some rail lists has a renderer, starting it hidden if
+ * none runs yet, so work main routes to that machine's renderer (agent
+ * browser ops) reaches it without the user opening the machine. Settles once
+ * the renderer is ready, or at `deadline` (epoch ms).
+ */
+export async function startRailMachineRenderer(backendId: string, deadline: number): Promise<void> {
+  if (!enabled || !rendererStarter) return;
+  await rendererStarter(backendId, deadline);
+}
+
+/** A machine a rail now shows, and when its renderer is ready to take a route. */
+export interface ShownRailMachine {
+  window: BrowserWindowType;
+  contents: Electron.WebContents;
+  ready: Promise<void>;
+}
+
+type MachineShower = (backendId: string) => ShownRailMachine | null;
+let machineShower: MachineShower | null = null;
+
+export function setMachineRailShower(shower: MachineShower | null): void {
+  machineShower = shower;
+}
+
+/**
+ * Pick `backendId` in a window whose rail lists it (the focused one first),
+ * starting its renderer if needed. Null when no rail lists the machine.
+ */
+export function showRailMachine(backendId: string): ShownRailMachine | null {
+  if (!enabled || !machineShower) return null;
+  return machineShower(backendId);
+}
+
 /** Hand a saved rail to the rail owner; ignored while the lab is off. */
 export function restoreMachineRailSession(window: BrowserWindowType, session: unknown): void {
   if (!enabled || session === undefined || session === null) return;
