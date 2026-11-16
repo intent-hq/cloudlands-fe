@@ -12,6 +12,7 @@ interface FakeWebContents {
   id: string;
   send: ReturnType<typeof vi.fn>;
   focus: ReturnType<typeof vi.fn>;
+  isFocused: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   loadURL: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
@@ -28,6 +29,7 @@ const fakes = vi.hoisted(() => {
     id,
     send: vi.fn(),
     focus: vi.fn(),
+    isFocused: vi.fn(() => false),
     close: vi.fn(),
     loadURL: vi.fn(async () => {}),
     on: vi.fn(),
@@ -594,6 +596,19 @@ describe('a frame open on the local machine', () => {
     local().focus.mockClear();
     for (const listener of fakes.windowListeners.focus ?? []) listener();
     expect(local().focus).toHaveBeenCalled();
+    expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+  });
+
+  it('leaves keyboard focus alone when the machine on screen already has it', async () => {
+    // Refocusing a view that already has focus re-activated its window on
+    // Linux/X11, so two frames traded focus thousands of times a second and
+    // the main process stopped answering (frame-window E2E).
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SHOWN, viewOf('b').webContents);
+    viewOf('b').webContents.focus.mockClear();
+    viewOf('b').webContents.isFocused.mockReturnValue(true);
+    for (const listener of fakes.windowListeners.focus ?? []) listener();
     expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
   });
 
