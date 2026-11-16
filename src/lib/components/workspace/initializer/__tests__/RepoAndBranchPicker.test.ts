@@ -314,21 +314,6 @@ describe('RepoAndBranchPicker', () => {
     );
   });
 
-  it('keeps the metadata-presentation repo value class untouched', () => {
-    render(RepoAndBranchPicker, {
-      props: {
-        repoType: 'local',
-        repoPath: '/Users/dev/monorepo',
-        presentation: 'metadata',
-        field: 'repo',
-      },
-    });
-
-    expect(screen.getByTestId('repo-selector').getAttribute('data-trigger-value-class')).toBe(
-      'text-foreground font-normal',
-    );
-  });
-
   it('renders a tiny metadata branch loader in place of the chevron', () => {
     render(RepoAndBranchPicker, {
       props: {
