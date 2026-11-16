@@ -51,7 +51,7 @@ import {
   getViewedWorkspaceIdForRenderer,
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
-  getWorkspaceIdForWindow,
+  getLastKnownWorkspaceIdForRenderer,
   isFocusedWindowBrowserActive,
   setupSystemIPC,
 } from '../system.ipc';
@@ -125,16 +125,17 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
     const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
     await handle(event, { inWorkspace: true, workspaceId: 'ws-diag' });
     expect(getFocusedWindowWorkspaceId()).toBe('ws-diag');
-    expect(getWorkspaceIdForWindow(window.id)).toBe('ws-diag');
+    expect(getLastKnownWorkspaceIdForRenderer(event.sender as never)).toBe('ws-diag');
 
     await handle(event, { inWorkspace: false });
 
     expect(getFocusedWindowWorkspaceId()).toBeUndefined();
-    expect(getWorkspaceIdForWindow(window.id)).toBe('ws-diag');
+    expect(getLastKnownWorkspaceIdForRenderer(event.sender as never)).toBe('ws-diag');
   });
 
   it('returns undefined for a window that never reported a workspace', () => {
-    expect(getWorkspaceIdForWindow(4242)).toBeUndefined();
+    electronMocks.fromWebContents.mockReturnValueOnce({ id: 4242, isDestroyed: () => false });
+    expect(getLastKnownWorkspaceIdForRenderer(event.sender as never)).toBeUndefined();
   });
 
   it('reports the workspace a renderer is viewing now, independent of focus, and clears it when the window leaves', async () => {

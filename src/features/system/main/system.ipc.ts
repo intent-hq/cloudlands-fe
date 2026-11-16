@@ -366,11 +366,6 @@ function currentViewedWorkspaceId(window: BrowserWindow): string | undefined {
     : undefined;
 }
 
-function liveWindow(windowId: number): BrowserWindow | null {
-  const window = BrowserWindow.fromId(windowId);
-  return window && !window.isDestroyed() ? window : null;
-}
-
 /**
  * Check if the currently focused window is in a workspace.
  * Used by the menu builder to enable/disable workspace-specific menu items.
@@ -389,17 +384,6 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return undefined;
   return currentViewedWorkspaceId(focusedWindow);
-}
-
-/**
- * Get the last-known workspace ID viewed by a specific window, for diagnostics.
- * Unlike the current-workspace maps this survives the window navigating away
- * from the workspace; it returns undefined only when the window has never
- * reported a workspace view.
- */
-export function getWorkspaceIdForWindow(windowId: number): string | undefined {
-  const window = liveWindow(windowId);
-  return lastKnownWindowWorkspaceIds.get(window ? shownRendererKey(window) : windowId);
 }
 
 /** The workspace `contents` (a window's own page or a machine view, shown or not) last showed. */

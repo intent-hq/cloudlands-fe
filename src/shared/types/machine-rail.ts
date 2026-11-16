@@ -12,8 +12,6 @@ export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
 
-export const MACHINE_RAIL_BACKDROP_CHANGED_EVENT = 'machine-rail:backdrop-changed';
-
 /**
  * The shell backdrop a machine's renderer paints under it while the rail is
  * on: `machine-rail:backdrop` params, and (for the machine a frame shows)
