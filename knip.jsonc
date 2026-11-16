@@ -229,7 +229,8 @@
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
   // notify-fixed-issues.sh test stub applies the script's --jq projection with it),
   // taskset (Linux util-linux; scripts/vitest-loaded.mjs pins vitest to one core with it),
-  // osascript (macOS; the dock media clipboard sets and reads the pasteboard's file reference)
+  // osascript (macOS; the dock media clipboard sets and reads the pasteboard's file reference),
+  // xprop (optional X11 probe for the native invite fixture's window-manager capability)
   "ignoreBinaries": [
     "pkill",
     "pgrep",
@@ -241,6 +242,7 @@
     "jq",
     "taskset",
     "osascript",
+    "xprop",
   ],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
