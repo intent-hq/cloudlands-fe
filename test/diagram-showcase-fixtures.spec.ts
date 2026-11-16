@@ -87,10 +87,15 @@ function collectUnexpectedConsoleErrors(page: Page) {
   return errors;
 }
 
-async function openShowcase(page: Page, width = 960, theme: 'light' | 'dark' = 'light') {
+async function openShowcase(
+  page: Page,
+  width = 960,
+  theme: 'light' | 'dark' = 'light',
+  target?: (typeof showcaseIds)[number],
+) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=mermaid-nested-routing&theme=${theme}&width=${width}&motion=reduced`,
+    `${baseUrl}/sandbox/diagram-workbench?state=${target ?? 'mermaid-nested-routing'}&theme=${theme}&width=${width}&motion=reduced${target ? '&cases=target' : ''}`,
     { waitUntil: 'domcontentloaded' },
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -107,9 +112,8 @@ test('renders every added showcase with its expected visual contract and no cons
   page,
 }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
-  await openShowcase(page);
-
   for (const id of showcaseIds) {
+    await openShowcase(page, 960, 'light', id);
     const root = page.locator(`#${id}`);
     await expect(root.locator('[data-visual-contract]')).toBeVisible();
     if (id.startsWith('custom-')) {
