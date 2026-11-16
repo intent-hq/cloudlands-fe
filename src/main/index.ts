@@ -463,10 +463,9 @@ import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
-  clearWindowSessionsSnapshot,
   createWindow,
   createWindowForDeepLink,
-  getWindowSessionsPath,
+  discardSavedWindowFrames,
   markWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   saveAllWindowSessions,
@@ -2064,19 +2063,10 @@ app.on('window-all-closed', async () => {
   // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
   // already saved sessions in before-quit — doesn't lose them.
   if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate) {
-    try {
-      const sessionsPath = getWindowSessionsPath();
-      if (fs.existsSync(sessionsPath)) {
-        fs.unlinkSync(sessionsPath);
-        logger.info('Cleared window sessions (all windows manually closed on macOS)');
-      }
-    } catch (err) {
-      logger.warn('Failed to clear sessions file on window-all-closed:', err);
-    }
-    // Also wipe the in-memory fallback snapshot so a pending debounced saver,
-    // or any later saveWindowSessions() trigger, can't resurrect the file we
-    // just deleted from the last-known-sessions cache.
-    clearWindowSessionsSnapshot();
+    // Also wipes the in-memory last-known frames, so a pending debounced
+    // saver cannot resurrect the layout just discarded.
+    discardSavedWindowFrames();
+    logger.info('Cleared saved frames (all windows manually closed on macOS)');
   }
 
   // On non-macOS this handler runs the full backend teardown (persist, kill

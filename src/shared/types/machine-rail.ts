@@ -58,10 +58,38 @@ export interface MachineRailHealthParams {
   degraded: boolean;
 }
 
-/** What a window session remembers about its rail (the home machine is implied). */
+/**
+ * What a window remembers about its rail: the machines in rail order (the
+ * window's own machine may be listed; restore always puts it first) and the
+ * one it showed. `routes` holds the page each machine's view showed, so a
+ * restored view reopens there instead of on the default route.
+ */
 export interface MachineRailSession {
   machineIds: string[];
   selectedId: string;
+  routes?: Record<string, string>;
+}
+
+/** One machine a saved frame holds, with the page its renderer showed. */
+export interface FrameMachineSession {
+  id: string;
+  /** App route (path, starts with `/`); missing → the machine's default page. */
+  route?: string;
+}
+
+/** A saved frame (app window): where it was, its machines in order, and the one it showed. */
+export interface FrameSession {
+  bounds: { x: number; y: number; width: number; height: number };
+  isFullScreen?: boolean;
+  /** Never empty. Until frames stop having an own machine, the first is the window's own. */
+  machines: FrameMachineSession[];
+  selectedId: string;
+}
+
+/** On-disk shape of window-frames.json. */
+export interface WindowFramesFile {
+  version: 1;
+  frames: FrameSession[];
 }
 
 /**

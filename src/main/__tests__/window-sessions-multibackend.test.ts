@@ -155,24 +155,26 @@ import {
   createWindow,
   createWindowForDeepLink,
   createWindowForSession,
+  discardSavedWindowFrames,
   ensureLocalWindowBeforeClosingBackend,
-  getWindowSessionsPath,
+  getWindowFramesPath,
   getBackendIdForWebContents,
   getFocusedWindowBackendId,
-  isValidWindowSession,
-  listSavedSessionBackendIds,
-  loadWindowSessions,
   markWindowSessionTeardown,
   openOrFocusWindowsForBackend,
   unmarkWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   restoreWindowsForBackend,
   saveAllWindowSessions,
-  saveWindowSessions,
   setOnLastWindowClosedForBackend,
   showWorkspaceInBackendWindow,
-  type WindowSession,
 } from '../window';
+import { bindMachineViewToBackend } from '../window-backend';
+import {
+  setMachineRailEnabledFlag,
+  setMachineRailRestoreHandler,
+  writeWindowRail,
+} from '../machine-rail-state';
 
 function seedLiveWindow(
   url: string,
@@ -185,8 +187,49 @@ function seedLiveWindow(
   return w;
 }
 
-function readMap(): Record<string, WindowSession[]> {
-  return JSON.parse(fs.readFileSync(getWindowSessionsPath(), 'utf-8'));
+/** Older clients' file: migrated once, never written. */
+function legacySessionsPath(): string {
+  return path.join(mockGetPath('userData') as string, 'window-sessions.json');
+}
+
+interface SavedFrame {
+  bounds: { x: number; y: number; width: number; height: number };
+  isFullScreen?: boolean;
+  machines: Array<{ id: string; route?: string }>;
+  selectedId: string;
+}
+
+function readFramesFile(): { version: number; frames: SavedFrame[] } {
+  return JSON.parse(fs.readFileSync(getWindowFramesPath(), 'utf-8'));
+}
+
+function readFrames(): SavedFrame[] {
+  return readFramesFile().frames;
+}
+
+function writeFrames(frames: unknown[]): void {
+  fs.writeFileSync(getWindowFramesPath(), JSON.stringify({ version: 1, frames }), 'utf-8');
+}
+
+/** A saved frame holding only `id`, on `route`. */
+function single(
+  id: string,
+  route: string,
+  bounds = { x: 0, y: 0, width: 1200, height: 800 },
+): SavedFrame {
+  return { bounds, machines: [{ id, route }], selectedId: id };
+}
+
+/** A machine view inside `window`, bound to `id` and showing `url`. */
+function seedMachineView(window: FakeBrowserWindow, id: string, url: string) {
+  const contents = {
+    getURL: () => url,
+    isDestroyed: () => false,
+    on: vi.fn(),
+    once: vi.fn(),
+  };
+  bindMachineViewToBackend(window as never, contents as never, id);
+  return contents;
 }
 
 /** Drain every already-queued microtask (and a macrotask turn) without releasing any gate. */
@@ -210,23 +253,24 @@ describe('multi-backend window sessions', () => {
     _resetHudWindowRefForTests();
     _resetRendererWindowGateForTests();
     markRendererWindowsAllowed();
+    setMachineRailEnabledFlag(false);
   });
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('per-backend save/restore', () => {
+  describe('saved frames', () => {
     it('never persists the exact registered dock overlay even before its route is loaded', async () => {
       const main = seedLiveWindow('app://workspaces/work/main', undefined, 'remote-1');
       const overlay = seedLiveWindow('about:blank', undefined, 'remote-1');
       registerDockAnnotationWindow(overlay as never);
       expect(isDockAnnotationWindow(overlay as never)).toBe(true);
-      await saveWindowSessions('remote-1');
-      expect(readMap()['remote-1'].map((session) => session.route)).toEqual(['/work/main']);
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([single('remote-1', '/work/main')]);
       overlay.setURLForTest('app://workspaces/dock-annotation');
-      await saveWindowSessions('remote-1');
-      expect(readMap()['remote-1'].map((session) => session.route)).toEqual(['/work/main']);
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([single('remote-1', '/work/main')]);
       expect(main.isDestroyed()).toBe(false);
       overlay.destroy();
       expect(isDockAnnotationWindow(overlay as never)).toBe(false);
@@ -234,15 +278,10 @@ describe('multi-backend window sessions', () => {
 
     it('filters saved dock-annotation routes and never recreates an overlay as a normal window', async () => {
       const bounds = { x: 0, y: 0, width: 1000, height: 700 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({
-          'remote-1': [
-            { route: '/dock-annotation', bounds },
-            { route: '/work/main', bounds },
-          ],
-        }),
-      );
+      writeFrames([
+        single('remote-1', '/dock-annotation', bounds),
+        single('remote-1', '/work/main', bounds),
+      ]);
       await restoreWindowsForBackend('remote-1');
       expect(
         FakeBrowserWindow.getAllWindows().map(
@@ -252,57 +291,8 @@ describe('multi-backend window sessions', () => {
       await createWindowForSession({ route: '/dock-annotation', bounds }, false, 'remote-1');
       expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
     });
-    it('saves each backend under its own key without clobbering the others', async () => {
-      const localBounds = { x: 10, y: 20, width: 1400, height: 900 };
-      seedLiveWindow('app://workspaces/work/local', localBounds);
-      await saveWindowSessions('local');
 
-      // Move to a different set of live windows and save under a remote id.
-      FakeBrowserWindow.instances = [];
-      _resetWindowSessionsCacheForTests();
-      const remoteBounds = { x: 30, y: 40, width: 1000, height: 700 };
-      seedLiveWindow('app://workspaces/work/remote', remoteBounds, 'remote-1');
-      await saveWindowSessions('remote-1');
-
-      const map = readMap();
-      expect(map).toEqual({
-        local: [{ route: '/work/local', bounds: localBounds }],
-        'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
-      });
-    });
-
-    it('restores only the requested backend bucket', async () => {
-      const localBounds = { x: 1, y: 2, width: 1300, height: 850 };
-      seedLiveWindow('app://workspaces/work/l', localBounds);
-      await saveWindowSessions('local');
-
-      FakeBrowserWindow.instances = [];
-      _resetWindowSessionsCacheForTests();
-      const remoteBounds = { x: 5, y: 6, width: 1100, height: 720 };
-      seedLiveWindow('app://workspaces/work/r', remoteBounds, 'remote-1');
-      await saveWindowSessions('remote-1');
-
-      expect(loadWindowSessions('local')).toEqual([{ route: '/work/l', bounds: localBounds }]);
-      expect(loadWindowSessions('remote-1')).toEqual([{ route: '/work/r', bounds: remoteBounds }]);
-      expect(loadWindowSessions('never-seen')).toBeNull();
-    });
-
-    it('caps each backend at 20 restored windows', async () => {
-      const bounds = { x: 0, y: 0, width: 1200, height: 800 };
-      const many = Array.from({ length: 25 }, (_, i) => ({ route: `/w/${i}`, bounds }));
-      fs.writeFileSync(getWindowSessionsPath(), JSON.stringify({ 'remote-1': many }), 'utf-8');
-      expect(loadWindowSessions('remote-1')).toHaveLength(20);
-    });
-
-    it('explicit local save/load round-trips under the local bucket', async () => {
-      const bounds = { x: 7, y: 8, width: 1280, height: 820 };
-      seedLiveWindow('app://workspaces/work/default', bounds);
-      await saveWindowSessions('local');
-      expect(readMap()).toEqual({ local: [{ route: '/work/default', bounds }] });
-      expect(loadWindowSessions('local')).toEqual([{ route: '/work/default', bounds }]);
-    });
-
-    it('persists concurrently open local and remote windows without activeId', async () => {
+    it('saves every open window as a frame on its own machine, in a version-1 file', async () => {
       const localBounds = { x: 10, y: 20, width: 1200, height: 800 };
       const remoteBounds = { x: 30, y: 40, width: 1000, height: 700 };
       seedLiveWindow('app://workspaces/work/local', localBounds, 'local');
@@ -310,25 +300,108 @@ describe('multi-backend window sessions', () => {
 
       await saveAllWindowSessions();
 
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: localBounds }],
-        'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
+      expect(readFramesFile()).toEqual({
+        version: 1,
+        frames: [
+          single('local', '/work/local', localBounds),
+          single('remote-1', '/work/remote', remoteBounds),
+        ],
       });
     });
 
-    it('does not restore a remote layout after its last window is explicitly closed', async () => {
+    it('saves every rail machine with the page its view shows, and the machine shown', async () => {
+      setMachineRailEnabledFlag(true);
+      const window = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      writeWindowRail(window as never, {
+        machineIds: ['local', 'remote-1', 'remote-2'],
+        selectedId: 'remote-1',
+      });
+      seedMachineView(window, 'remote-1', 'app://workspaces/workspace/r1');
+      // remote-2 has not started a view yet: it saves without a page.
+
+      await saveAllWindowSessions();
+
+      expect(readFrames()).toEqual([
+        {
+          bounds: window.bounds,
+          machines: [
+            { id: 'local', route: '/work/local' },
+            { id: 'remote-1', route: '/workspace/r1' },
+            { id: 'remote-2' },
+          ],
+          selectedId: 'remote-1',
+        },
+      ]);
+    });
+
+    it('saves only the window machine while the rail lab is off', async () => {
+      const window = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      writeWindowRail(window as never, {
+        machineIds: ['local', 'remote-1'],
+        selectedId: 'remote-1',
+      });
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([single('local', '/work/local', window.bounds)]);
+    });
+
+    it('restores only the frames that open on the requested machine', async () => {
+      const localBounds = { x: 1, y: 2, width: 1300, height: 850 };
+      const remoteBounds = { x: 5, y: 6, width: 1100, height: 720 };
+      writeFrames([
+        single('local', '/work/l', localBounds),
+        single('remote-1', '/work/r', remoteBounds),
+      ]);
+
+      await restoreWindowsForBackend('remote-1');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live.map((w) => [w.backendId, new URL(w.webContents.getURL()).pathname])).toEqual([
+        ['remote-1', '/work/r'],
+      ]);
+      expect(live[0].bounds).toEqual(remoteBounds);
+    });
+
+    it('restores at most 20 frames', async () => {
+      writeFrames(Array.from({ length: 25 }, (_, i) => single('remote-1', `/w/${i}`)));
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(20);
+    });
+
+    it('round-trips a saved frame through restore', async () => {
+      const bounds = { x: 7, y: 8, width: 1280, height: 820 };
+      const window = seedLiveWindow('app://workspaces/work/default', bounds);
+      await saveAllWindowSessions();
+      window.destroy();
+      _resetWindowSessionsCacheForTests();
+
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+
+      const [restored] = FakeBrowserWindow.getAllWindows();
+      expect(restored.backendId).toBe('local');
+      expect(restored.bounds).toEqual(bounds);
+      expect(new URL(restored.webContents.getURL()).pathname).toBe('/work/default');
+    });
+
+    it('keeps the saved page of a restored window that has not loaded yet', async () => {
+      writeFrames([single('remote-1', '/work/r')]);
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+      const [restored] = FakeBrowserWindow.getAllWindows();
+      restored.setURLForTest('about:blank');
+
+      await saveAllWindowSessions();
+
+      expect(readFrames()).toEqual([single('remote-1', '/work/r')]);
+    });
+
+    it('does not restore a window the user closed while others stayed open', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
 
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
-
-      expect(loadWindowSessions('remote-1')).toBeNull();
       await saveAllWindowSessions();
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
 
       await openOrFocusWindowsForBackend('remote-1');
       const remoteWindows = FakeBrowserWindow.getAllWindows().filter(
@@ -338,37 +411,43 @@ describe('multi-backend window sessions', () => {
       expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
     });
 
-    it('prunes the on-disk bucket immediately at close time (crash-safe tombstone)', async () => {
-      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+    it('drops a closed window from disk at close time, even one of two on the same machine', async () => {
+      const kept = seedLiveWindow('app://workspaces/work/kept', undefined, 'remote-1');
+      const closed = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
-      expect(readMap()['remote-1']).toBeDefined();
+      expect(readFrames()).toHaveLength(2);
 
-      // The close listener alone must clear the bucket — no aggregate save may
-      // run before a crash/force-quit, so the tombstone cannot stay memory-only.
-      captureWindowSessionsSnapshot.call(remote as never);
-      remote.destroy();
+      // The close listener alone must update the file — no save may run
+      // before a crash or force-quit.
+      captureWindowSessionsSnapshot.call(closed as never);
+      closed.destroy();
 
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
+      expect(readFrames()).toEqual([single('remote-1', '/work/kept', kept.bounds)]);
+    });
+
+    it('keeps the last window when it closes, so the next launch reopens it', async () => {
+      const last = seedLiveWindow('app://workspaces/work/last', undefined, 'remote-1');
+      captureWindowSessionsSnapshot.call(last as never);
+      last.destroy();
+
+      await saveAllWindowSessions();
+
+      expect(readFrames()).toEqual([single('remote-1', '/work/last', last.bounds)]);
     });
 
     it('excludes diagnostic windows from persistence and ignores stale saved console routes', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       seedLiveWindow('app://workspaces/dev-console', undefined, 'local');
       await saveAllWindowSessions();
-      expect(readMap().local).toEqual([{ route: '/work/local', bounds: local.bounds }]);
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({
-          local: [
-            { route: '/dev-console', bounds: local.bounds },
-            { route: '/work/local', bounds: local.bounds },
-          ],
-        }),
-      );
-      expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
+
+      for (const window of FakeBrowserWindow.getAllWindows()) window.destroy();
+      _resetWindowSessionsCacheForTests();
+      writeFrames([single('local', '/dev-console'), single('local', '/work/local')]);
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+      expect(
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+      ).toEqual(['/work/local']);
     });
 
     it('never restores a desktop-control indicator without an active native session', async () => {
@@ -376,26 +455,24 @@ describe('multi-backend window sessions', () => {
       seedLiveWindow('app://workspaces/desktop-overlay?kind=glow', undefined, 'local');
       seedLiveWindow('app://workspaces/desktop-overlay?kind=controls', undefined, 'local');
       await saveAllWindowSessions();
-      expect(readMap().local).toEqual([{ route: '/work/local', bounds: local.bounds }]);
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({
-          local: [
-            { route: '/desktop-overlay', bounds: local.bounds },
-            { route: '/work/local', bounds: local.bounds },
-          ],
-        }),
-      );
-      expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
+
+      for (const window of FakeBrowserWindow.getAllWindows()) window.destroy();
+      _resetWindowSessionsCacheForTests();
+      writeFrames([single('local', '/desktop-overlay'), single('local', '/work/local')]);
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+      expect(
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+      ).toEqual(['/work/local']);
     });
 
-    it('an aggregate save in flight during the sync prune cannot resurrect the bucket', async () => {
+    it('a save in flight while a window closes cannot bring the closed window back', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
 
-      // Park the aggregate save's async write mid-flight; the sync prune below
-      // uses fs.writeFileSync, so only the save path is suspended.
+      // Park the save's async write mid-flight; the close listener writes
+      // synchronously, so only the save is suspended.
       let releaseWrite!: () => void;
       const gate = new Promise<void>((resolve) => (releaseWrite = resolve));
       const realWrite = fsAsync.writeFile.bind(fsAsync);
@@ -407,80 +484,58 @@ describe('multi-backend window sessions', () => {
         });
       const inFlight = saveAllWindowSessions();
 
-      // While the write is parked, the remote's last window closes:
-      // tombstone + sync prune drop the bucket from disk.
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
-      expect(readMap()['remote-1']).toBeUndefined();
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
 
       releaseWrite();
       await inFlight;
       writeSpy.mockRestore();
 
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
     });
 
-    it('a single-backend save in flight during the sync prune cannot resurrect the bucket', async () => {
-      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+    it('macOS close-all discards the layout without deleting or touching the old file', async () => {
+      const legacy = JSON.stringify({
+        local: [{ route: '/work/old', bounds: { x: 0, y: 0, width: 800, height: 600 } }],
+      });
+      fs.writeFileSync(legacySessionsPath(), legacy, 'utf-8');
+      const window = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      await saveAllWindowSessions();
+      captureWindowSessionsSnapshot.call(window as never);
+      window.destroy();
+
+      discardSavedWindowFrames();
       await saveAllWindowSessions();
 
-      let releaseWrite!: () => void;
-      const gate = new Promise<void>((resolve) => (releaseWrite = resolve));
-      const realWrite = fsAsync.writeFile.bind(fsAsync);
-      const writeSpy = vi
-        .spyOn(fsAsync, 'writeFile')
-        .mockImplementationOnce(async (...args: Parameters<typeof fsAsync.writeFile>) => {
-          await gate;
-          return realWrite(...args);
-        });
-      const inFlight = saveWindowSessions('local');
-
-      captureWindowSessionsSnapshot.call(remote as never);
-      remote.destroy();
-      expect(readMap()['remote-1']).toBeUndefined();
-
-      releaseWrite();
-      await inFlight;
-      writeSpy.mockRestore();
-
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
+      expect(readFramesFile()).toEqual({ version: 1, frames: [] });
+      expect(fs.readFileSync(legacySessionsPath(), 'utf-8')).toBe(legacy);
+      const connect = vi.fn().mockResolvedValue({});
+      expect(await restoreAllBackendWindowSessions('local', connect)).toBe(false);
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(0);
     });
   });
 
   describe('quit/update-install teardown (markWindowSessionTeardown)', () => {
-    it('does not tombstone or prune a backend closed during app-quit teardown', async () => {
-      // Two backends, one window each — the app-quit scenario where
-      // gracefulShutdown()'s mainWindow.close() fires the close listener while
-      // the other backend's window is still live.
+    it('keeps a window closed during app-quit teardown and does not dispose its client', async () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
       await saveAllWindowSessions();
-      expect(readMap()['remote-1']).toBeDefined();
 
       markWindowSessionTeardown();
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
 
-      // No tombstone: the bucket saved before quit survives on disk and stays
-      // loadable, and the pooled client is not disposed mid-shutdown.
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-        'remote-1': [{ route: '/work/remote', bounds: remote.bounds }],
-      });
-      expect(loadWindowSessions('remote-1')).toEqual([
-        { route: '/work/remote', bounds: remote.bounds },
+      expect(readFrames()).toEqual([
+        single('local', '/work/local', local.bounds),
+        single('remote-1', '/work/remote', remote.bounds),
       ]);
       expect(disposer).not.toHaveBeenCalled();
     });
 
-    it('teardown closes still refresh the snapshot so a final save persists every bucket', async () => {
+    it('teardown closes keep every window for the final save', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
 
@@ -490,47 +545,26 @@ describe('multi-backend window sessions', () => {
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
 
-      // All windows are gone; the aggregate save must fall back to the
-      // snapshots captured by the teardown-time close listeners.
+      // All windows are gone; the save falls back to the frames captured
+      // before the first teardown close.
       await saveAllWindowSessions();
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-        'remote-1': [{ route: '/work/remote', bounds: remote.bounds }],
-      });
+      expect(readFrames()).toEqual([
+        single('local', '/work/local', local.bounds),
+        single('remote-1', '/work/remote', remote.bounds),
+      ]);
     });
 
-    it('unmark (aborted update install) restores tombstoning for later deliberate closes', async () => {
+    it('unmark (aborted update install) makes later closes deliberate again', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
 
-      // quitAndInstall() failed: the teardown mark is reverted and the app
-      // keeps running — a later deliberate last-window close must behave
-      // exactly as if teardown was never marked.
       markWindowSessionTeardown();
       unmarkWindowSessionTeardown();
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
 
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
-      expect(loadWindowSessions('remote-1')).toBeNull();
-    });
-
-    it('a deliberate last-window close before teardown still tombstones + prunes', async () => {
-      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
-      await saveAllWindowSessions();
-
-      // No teardown mark: this is the mid-session deliberate close path.
-      captureWindowSessionsSnapshot.call(remote as never);
-      remote.destroy();
-
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/local', bounds: local.bounds }],
-      });
-      expect(loadWindowSessions('remote-1')).toBeNull();
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
     });
   });
 
@@ -561,6 +595,20 @@ describe('multi-backend window sessions', () => {
       expect(disposer).not.toHaveBeenCalled();
     });
 
+    it("does not dispose while another window's rail holds the machine", () => {
+      setMachineRailEnabledFlag(true);
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      writeWindowRail(local as never, { machineIds: ['local', 'remote-1'], selectedId: 'local' });
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).not.toHaveBeenCalled();
+    });
+
     it('never disposes the local backend (sidecar management stays alive)', () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
@@ -574,8 +622,8 @@ describe('multi-backend window sessions', () => {
     });
 
     it('does not dispose on a whole-process last-window close (quit path)', () => {
-      // No surviving backend → this is window-all-closed / quit territory, not
-      // a per-backend close; gracefulShutdown() owns client teardown there.
+      // No surviving window → window-all-closed / quit territory;
+      // gracefulShutdown() owns client teardown there.
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
       const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
@@ -586,49 +634,184 @@ describe('multi-backend window sessions', () => {
       expect(disposer).not.toHaveBeenCalled();
     });
 
-    it('a throwing disposer still records the closed-backend tombstone', async () => {
+    it('a throwing disposer still drops the closed window from disk', async () => {
       setOnLastWindowClosedForBackend(() => {
         throw new Error('dispose failed');
       });
-      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
 
       expect(() => captureWindowSessionsSnapshot.call(remote as never)).not.toThrow();
       remote.destroy();
 
-      expect(loadWindowSessions('remote-1')).toBeNull();
+      expect(readFrames()).toEqual([single('local', '/work/local', local.bounds)]);
     });
   });
 
-  describe('legacy migration', () => {
-    it('reads a legacy top-level array as the local backend bucket', () => {
-      const bounds = { x: 3, y: 4, width: 1500, height: 950 };
-      const legacy: WindowSession[] = [{ route: '/work/legacy', bounds }];
-      fs.writeFileSync(getWindowSessionsPath(), JSON.stringify(legacy), 'utf-8');
+  describe('startup migration from window-sessions.json', () => {
+    const bounds = { x: 3, y: 4, width: 1500, height: 950 };
 
-      expect(loadWindowSessions('local')).toEqual(legacy);
-      expect(loadWindowSessions('remote-1')).toBeNull();
-    });
+    it('restores an old multi-backend file with rails, and writes the frames file once', async () => {
+      const legacy = JSON.stringify({
+        local: [
+          {
+            route: '/work/l',
+            bounds,
+            rail: { machineIds: ['remote-2'], selectedId: 'remote-2' },
+          },
+        ],
+        'remote-1': [{ route: '/work/r1', bounds, isFullScreen: true }],
+      });
+      fs.writeFileSync(legacySessionsPath(), legacy, 'utf-8');
 
-    it('rewrites the legacy array into keyed-map form on the next save', async () => {
-      const legacyBounds = { x: 3, y: 4, width: 1500, height: 950 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify([{ route: '/work/legacy', bounds: legacyBounds }]),
-        'utf-8',
+      const restored = await restoreAllBackendWindowSessions(
+        'local',
+        vi.fn().mockResolvedValue({}),
       );
 
-      // Saving a remote backend must migrate the legacy local layout into the
-      // map (under `local`) rather than dropping it.
-      const remoteBounds = { x: 9, y: 9, width: 1000, height: 700 };
-      seedLiveWindow('app://workspaces/work/remote', remoteBounds, 'remote-1');
-      await saveWindowSessions('remote-1');
-
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/legacy', bounds: legacyBounds }],
-        'remote-1': [{ route: '/work/remote', bounds: remoteBounds }],
+      expect(restored).toBe(true);
+      expect(
+        FakeBrowserWindow.getAllWindows().map((w) => [
+          w.backendId,
+          new URL(w.webContents.getURL()).pathname,
+        ]),
+      ).toEqual([
+        ['local', '/work/l'],
+        ['remote-1', '/work/r1'],
+      ]);
+      expect(readFramesFile()).toEqual({
+        version: 1,
+        frames: [
+          {
+            bounds,
+            machines: [{ id: 'local', route: '/work/l' }, { id: 'remote-2' }],
+            selectedId: 'remote-2',
+          },
+          {
+            bounds,
+            isFullScreen: true,
+            machines: [{ id: 'remote-1', route: '/work/r1' }],
+            selectedId: 'remote-1',
+          },
+        ],
       });
+      // Update compatibility: an older client still finds its own file.
+      expect(fs.readFileSync(legacySessionsPath(), 'utf-8')).toBe(legacy);
+    });
+
+    it('restores the oldest bare-array file as local windows', async () => {
+      fs.writeFileSync(legacySessionsPath(), JSON.stringify([{ route: '/work/legacy', bounds }]));
+
+      const restored = await restoreAllBackendWindowSessions('local', vi.fn());
+
+      expect(restored).toBe(true);
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(1);
+      expect(live[0].backendId).toBe('local');
+      expect(live[0].webContents.getURL()).toContain('/work/legacy');
+    });
+
+    it('never touches the old file when saving after a migration', async () => {
+      const legacy = JSON.stringify([{ route: '/work/legacy', bounds }]);
+      fs.writeFileSync(legacySessionsPath(), legacy, 'utf-8');
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+      seedLiveWindow('app://workspaces/work/new', bounds, 'remote-1');
+
+      await saveAllWindowSessions();
+
+      expect(fs.readFileSync(legacySessionsPath(), 'utf-8')).toBe(legacy);
+      expect(readFrames().map((frame) => frame.machines[0])).toEqual([
+        { id: 'local', route: '/work/legacy' },
+        { id: 'remote-1', route: '/work/new' },
+      ]);
+    });
+
+    it('migrates again when an older client saved after this one (downgrade, then upgrade)', async () => {
+      writeFrames([single('local', '/work/stale')]);
+      const past = new Date(Date.now() - 60_000);
+      fs.utimesSync(getWindowFramesPath(), past, past);
+      fs.writeFileSync(
+        legacySessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/newer', bounds }] }),
+      );
+
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+
+      expect(
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+      ).toEqual(['/work/newer']);
+    });
+
+    it('prefers the frames file once it is newer than the old file', async () => {
+      fs.writeFileSync(
+        legacySessionsPath(),
+        JSON.stringify({ local: [{ route: '/work/old', bounds }] }),
+      );
+      const past = new Date(Date.now() - 60_000);
+      fs.utimesSync(legacySessionsPath(), past, past);
+      writeFrames([single('local', '/work/current')]);
+
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+
+      expect(
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+      ).toEqual(['/work/current']);
+    });
+
+    it('drops machines that are no longer saved and opens the frame on the next one', async () => {
+      fs.writeFileSync(
+        legacySessionsPath(),
+        JSON.stringify({
+          forgotten: [
+            {
+              route: '/work/gone',
+              bounds,
+              rail: { machineIds: ['remote-2'], selectedId: 'remote-2' },
+            },
+          ],
+        }),
+      );
+      const connect = vi.fn((id: string) =>
+        id === 'forgotten'
+          ? Promise.reject(new Error('Backend connection not found'))
+          : Promise.resolve({}),
+      );
+
+      await restoreAllBackendWindowSessions('local', connect);
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live.map((w) => w.backendId)).toEqual(['remote-2']);
+      expect(new URL(live[0].webContents.getURL()).pathname).toBe('/workspace/new');
+    });
+
+    it.each([
+      ['not JSON', '{oops'],
+      ['a string', '"corrupt"'],
+      ['buckets of junk', JSON.stringify({ local: [null, { route: 1 }], 'remote-1': 'x' })],
+    ])(
+      'restores nothing from a corrupt old file (%s) and leaves it in place',
+      async (_label, raw) => {
+        fs.writeFileSync(legacySessionsPath(), raw, 'utf-8');
+
+        const restored = await restoreAllBackendWindowSessions(
+          'local',
+          vi.fn().mockResolvedValue({}),
+        );
+
+        expect(restored).toBe(false);
+        expect(FakeBrowserWindow.getAllWindows()).toHaveLength(0);
+        expect(fs.readFileSync(legacySessionsPath(), 'utf-8')).toBe(raw);
+      },
+    );
+
+    it('restores nothing from a corrupt frames file', async () => {
+      fs.writeFileSync(getWindowFramesPath(), '{oops', 'utf-8');
+      const restored = await restoreAllBackendWindowSessions(
+        'local',
+        vi.fn().mockResolvedValue({}),
+      );
+      expect(restored).toBe(false);
     });
   });
 
@@ -640,11 +823,7 @@ describe('multi-backend window sessions', () => {
       const secondaryWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
       mockGetDisplayMatching.mockReturnValue({ workArea: secondaryWorkArea });
       const bounds = { x: 2000, y: 100, width: 1200, height: 800 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({ local: [{ route: '/work/second', bounds }] }),
-        'utf-8',
-      );
+      writeFrames([single('local', '/work/second', bounds)]);
 
       await restoreWindowsForBackend('local');
 
@@ -659,11 +838,7 @@ describe('multi-backend window sessions', () => {
       const nearestWorkArea = { x: 0, y: 0, width: 1920, height: 1080 };
       mockGetDisplayMatching.mockReturnValue({ workArea: nearestWorkArea });
       const bounds = { x: 99999, y: 99999, width: 1200, height: 800 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({ local: [{ route: '/work/gone', bounds }] }),
-        'utf-8',
-      );
+      writeFrames([single('local', '/work/gone', bounds)]);
 
       await restoreWindowsForBackend('local');
 
@@ -699,28 +874,24 @@ describe('multi-backend window sessions', () => {
       expect(window.bounds).toEqual(matchedWorkArea);
     });
 
-    it('captures isFullScreen in the saved session', async () => {
+    it('captures isFullScreen in the saved frame', async () => {
       const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
       const window = seedLiveWindow('app://workspaces/work/fs', bounds);
       window.fullScreen = true;
 
-      await saveWindowSessions('local');
+      await saveAllWindowSessions();
 
-      expect(readMap()).toEqual({
-        local: [{ route: '/work/fs', bounds, isFullScreen: true }],
-      });
+      expect(readFrames()).toEqual([
+        { ...single('local', '/work/fs', bounds), isFullScreen: true },
+      ]);
     });
 
-    it('restores a fullscreen session via setFullScreen(true)', async () => {
+    it('restores a fullscreen frame via setFullScreen(true)', async () => {
       const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
       mockGetDisplayMatching.mockReturnValue({
         workArea: { x: 1920, y: 0, width: 2560, height: 1415 },
       });
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({ local: [{ route: '/work/fs', bounds, isFullScreen: true }] }),
-        'utf-8',
-      );
+      writeFrames([{ ...single('local', '/work/fs', bounds), isFullScreen: true }]);
 
       await restoreWindowsForBackend('local');
 
@@ -732,7 +903,7 @@ describe('multi-backend window sessions', () => {
     it('does not enter fullscreen for legacy sessions without the flag', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({ local: [{ route: '/work/plain', bounds }] }),
         'utf-8',
       );
@@ -743,14 +914,6 @@ describe('multi-backend window sessions', () => {
       expect(window.setFullScreen).not.toHaveBeenCalled();
       expect(window.isFullScreen()).toBe(false);
     });
-
-    it('isValidWindowSession accepts the flag, its absence, and rejects non-booleans', () => {
-      const bounds = { x: 0, y: 0, width: 1200, height: 800 };
-      expect(isValidWindowSession({ route: '/a', bounds })).toBe(true);
-      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: true })).toBe(true);
-      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: false })).toBe(true);
-      expect(isValidWindowSession({ route: '/a', bounds, isFullScreen: 'yes' })).toBe(false);
-    });
   });
 
   describe('restoreWindowsForBackend', () => {
@@ -758,7 +921,7 @@ describe('multi-backend window sessions', () => {
       await createWindow();
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({ 'remote-a': [{ route: '/hud', bounds }] }),
         'utf-8',
       );
@@ -773,7 +936,7 @@ describe('multi-backend window sessions', () => {
     it('stamps restored windows with their saved backend bucket', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           'remote-a': [{ route: '/work/a', bounds }],
           'remote-b': [{ route: '/work/b', bounds }],
@@ -803,7 +966,7 @@ describe('multi-backend window sessions', () => {
     it('stamps a restored HUD window with its saved backend bucket (not forced local)', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({ 'remote-a': [{ route: '/hud', bounds }] }),
         'utf-8',
       );
@@ -817,7 +980,7 @@ describe('multi-backend window sessions', () => {
     it('registers a restored /hud session in the tracked HUD registry', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           'remote-a': [
             { route: '/hud', bounds },
@@ -843,7 +1006,7 @@ describe('multi-backend window sessions', () => {
     it('restores the incoming backend layout', async () => {
       const remoteBounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds: remoteBounds }] }),
         'utf-8',
       );
@@ -869,7 +1032,7 @@ describe('multi-backend window sessions', () => {
       const local = seedLiveWindow('app://workspaces/work/local', bounds);
       (local as unknown as { backendId: string }).backendId = 'local';
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds }] }),
         'utf-8',
       );
@@ -997,7 +1160,7 @@ describe('multi-backend window sessions', () => {
         if (hud) registerHudWindow(hud as never);
         const bounds = { x: 100, y: 100, width: 1024, height: 768 };
         fs.writeFileSync(
-          getWindowSessionsPath(),
+          legacySessionsPath(),
           JSON.stringify({
             'remote-1': [
               { route: '/hud', bounds },
@@ -1034,7 +1197,7 @@ describe('multi-backend window sessions', () => {
           : null;
         const bounds = { x: 100, y: 100, width: 1024, height: 768 };
         fs.writeFileSync(
-          getWindowSessionsPath(),
+          legacySessionsPath(),
           JSON.stringify({
             'remote-1': [{ route: '/hud', bounds }],
           }),
@@ -1157,7 +1320,8 @@ describe('multi-backend window sessions', () => {
       seedLiveWindow('app://workspaces/hud', hudBounds);
 
       // Save A's layout, tear its windows down, then restore it.
-      await saveWindowSessions('local');
+      await saveAllWindowSessions();
+      _resetWindowSessionsCacheForTests();
       clearWindowSessionsSnapshot();
       for (const w of FakeBrowserWindow.getAllWindows()) w.destroy();
       await restoreWindowsForBackend('local');
@@ -1180,7 +1344,7 @@ describe('multi-backend window sessions', () => {
 
     it('restores every saved backend bucket, each window stamped with its backend id', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [{ route: '/work/l', bounds }],
           'remote-1': [{ route: '/work/r1', bounds }],
@@ -1206,7 +1370,7 @@ describe('multi-backend window sessions', () => {
 
     it('connects a pooled client for every bucket, including the active backend', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [{ route: '/work/l', bounds }],
           'remote-1': [{ route: '/work/r1', bounds }],
@@ -1228,7 +1392,7 @@ describe('multi-backend window sessions', () => {
 
     it("the active backend's first window restores first and becomes the main window", async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [{ route: '/work/l', bounds }],
           'remote-1': [{ route: '/work/r1', bounds }],
@@ -1246,7 +1410,7 @@ describe('multi-backend window sessions', () => {
 
     it('skips a backend whose client cannot be built (fail-soft) but restores the rest', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [{ route: '/work/l', bounds }],
           'remote-forgotten': [{ route: '/work/gone', bounds }],
@@ -1278,16 +1442,15 @@ describe('multi-backend window sessions', () => {
       expect(setMainWindow).not.toHaveBeenCalled();
     });
 
-    it('does not restore a tombstoned backend whose last window was explicitly closed', async () => {
+    it('does not restore a window the user closed while others stayed open', async () => {
       seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
       await saveAllWindowSessions();
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
 
-      expect(listSavedSessionBackendIds()).toEqual(['local']);
-
       FakeBrowserWindow.instances = [];
+      _resetWindowSessionsCacheForTests();
       const connect = vi.fn().mockResolvedValue({});
       const restored = await restoreAllBackendWindowSessions('local', connect);
 
@@ -1301,7 +1464,7 @@ describe('multi-backend window sessions', () => {
 
     it('restores a legacy top-level array as the local bucket', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify([{ route: '/work/legacy', bounds }]),
         'utf-8',
       );
@@ -1318,7 +1481,7 @@ describe('multi-backend window sessions', () => {
     it('the active bucket still provides the main window when a non-active bucket also restores', async () => {
       // Non-active buckets sort after the active one regardless of on-disk order.
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           'remote-1': [{ route: '/work/r1', bounds }],
           local: [{ route: '/work/l', bounds }],
@@ -1335,31 +1498,55 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('save + restore across backends', () => {
-    it('saving one backend leaves another backend restorable from its own bucket', async () => {
-      const localBounds = { x: 10, y: 10, width: 1300, height: 860 };
-      const w1 = seedLiveWindow('app://workspaces/work/a', localBounds);
-
-      // The other backend has a saved layout from a prior session.
+    it('keeps saved frames whose machine could not connect until that machine opens', async () => {
       const remoteBounds = { x: 100, y: 100, width: 1024, height: 768 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds: remoteBounds }] }),
-        'utf-8',
+      writeFrames([single('local', '/work/l'), single('remote-1', '/work/remote', remoteBounds)]);
+      const connect = vi.fn((id: string) =>
+        id === 'remote-1' ? Promise.reject(new Error('no token')) : Promise.resolve({}),
       );
+      await restoreAllBackendWindowSessions('local', connect);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(['local']);
 
-      await saveWindowSessions('local');
-      clearWindowSessionsSnapshot();
-      w1.destroy();
-      await restoreWindowsForBackend('remote-1');
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([
+        single('local', '/work/l'),
+        single('remote-1', '/work/remote', remoteBounds),
+      ]);
 
-      expect(w1.isDestroyed()).toBe(true);
-      const map = readMap();
-      expect(map.local).toEqual([{ route: '/work/a', bounds: localBounds }]);
-      expect(map['remote-1']).toEqual([{ route: '/work/remote', bounds: remoteBounds }]);
-
+      await openOrFocusWindowsForBackend('remote-1');
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live).toHaveLength(1);
-      expect(live[0].webContents.getURL()).toContain('/work/remote');
+      expect(live).toHaveLength(2);
+      expect(live[1].backendId).toBe('remote-1');
+      expect(new URL(live[1].webContents.getURL()).pathname).toBe('/work/remote');
+      expect(live[1].bounds).toEqual(remoteBounds);
+    });
+
+    it('restores a rail frame with each machine page for the rail to reopen', async () => {
+      setMachineRailEnabledFlag(true);
+      const handler = vi.fn();
+      setMachineRailRestoreHandler(handler);
+      writeFrames([
+        {
+          bounds: { x: 0, y: 0, width: 1200, height: 800 },
+          machines: [
+            { id: 'local', route: '/work/l' },
+            { id: 'remote-1', route: '/work/r1' },
+            { id: 'remote-2' },
+          ],
+          selectedId: 'remote-1',
+        },
+      ]);
+
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      expect(new URL(window.webContents.getURL()).pathname).toBe('/work/l');
+      expect(handler).toHaveBeenCalledExactlyOnceWith(window, {
+        machineIds: ['local', 'remote-1', 'remote-2'],
+        selectedId: 'remote-1',
+        routes: { local: '/work/l', 'remote-1': '/work/r1' },
+      });
+      setMachineRailRestoreHandler(null);
     });
   });
 
@@ -1391,7 +1578,7 @@ describe('multi-backend window sessions', () => {
 
     it('restores a legacy root session onto the bootstrap route and keeps other routes', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [
             { route: '/', bounds },
@@ -1495,7 +1682,7 @@ describe('multi-backend window sessions', () => {
 
     it('restoreAllBackendWindowSessions constructs nothing while closed, then every saved window', async () => {
       fs.writeFileSync(
-        getWindowSessionsPath(),
+        legacySessionsPath(),
         JSON.stringify({
           local: [{ route: '/work/l', bounds }],
           'remote-1': [

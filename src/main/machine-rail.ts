@@ -273,9 +273,31 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
   window.contentView.addChildView(view);
   layoutViews(window);
   view.webContents
-    .loadURL(buildLoadUrl())
+    .loadURL(buildLoadUrl(takeRestoredRoute(window, id)))
     .catch((error: unknown) => logger.error('Failed to load a machine view', error as Error));
   return view;
+}
+
+/** Pages a restored window's machines showed, used once by each machine's first view. */
+const restoredRoutes = new WeakMap<BrowserWindowType, Map<string, string>>();
+
+function takeRestoredRoute(window: BrowserWindowType, id: string): string | undefined {
+  const routes = restoredRoutes.get(window);
+  const route = routes?.get(id);
+  routes?.delete(id);
+  return route;
+}
+
+/** The saved page of each machine in `session`, keeping only app paths. */
+function readRestoredRoutes(session: unknown, machineIds: string[]): Map<string, string> {
+  const routes = new Map<string, string>();
+  const raw = (session as { routes?: unknown } | null)?.routes;
+  if (typeof raw !== 'object' || raw === null) return routes;
+  for (const id of machineIds) {
+    const route = (raw as Record<string, unknown>)[id];
+    if (typeof route === 'string' && route.startsWith('/')) routes.set(id, route);
+  }
+  return routes;
 }
 
 /** Longest the previous machine stays up waiting for the selected renderer to paint. */
@@ -444,6 +466,26 @@ function showRailMachineFor(id: string): ShownRailMachine | null {
   return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
 }
 
+/**
+ * Show `id` in `window` as a rail click would, starting its renderer when it
+ * has not started yet. Returns that renderer and when it is ready for
+ * messages; null when `window` does not hold the machine.
+ */
+export function selectMachineInFrame(
+  window: BrowserWindowType,
+  id: string,
+): ShownRailMachine | null {
+  if (window.isDestroyed()) return null;
+  const { machineIds } = readWindowRail(window);
+  if (!machineIds.includes(id)) return null;
+  selectMachine(window, id);
+  if (id === machineIds[0]) {
+    return { window, contents: window.webContents, ready: Promise.resolve(true) };
+  }
+  const contents = ensureView(window, id).webContents;
+  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
+}
+
 /** Longest the background start waits for a machine that is still connecting. */
 const PRELOAD_CONNECT_WAIT_MS = 60_000;
 
@@ -608,6 +650,7 @@ function removeMachine(window: BrowserWindowType, id: string): MachineRailState 
   writeWindowRail(window, next);
   applySelection(window);
   destroyView(window, id);
+  restoredRoutes.get(window)?.delete(id);
   broadcastState(window);
   releaseMachine(id);
   return stateOf(window);
@@ -638,6 +681,7 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   const rail = normalizeRailSession(homeId, session, (id) => id !== homeId && saved.includes(id));
   if (rail.machineIds.length < 2) return;
   observeWindow(window);
+  restoredRoutes.set(window, readRestoredRoutes(session, rail.machineIds.slice(1)));
   // The window opens straight on the machine it showed: that machine's
   // renderer starts like the app does (its own startup screen), and the
   // window's own page stays hidden, so it never shows in between.
@@ -667,6 +711,7 @@ function resetWindow(window: BrowserWindowType): void {
   clearTransition(window);
   for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
   clearWindowRail(window);
+  restoredRoutes.delete(window);
   setShownMachineView(window, null);
   app.emit(MACHINE_RAIL_SHOWN_CHANGED_EVENT, window);
   if (!window.webContents.isDestroyed() && window.isFocused()) window.webContents.focus();

@@ -97,7 +97,7 @@ vi.mock('../ipc-validation-middleware', () => ({
 }));
 
 vi.mock('../window', () => ({
-  buildLoadUrl: () => 'app://index.html',
+  buildLoadUrl: (route = '/workspace/new') => `app://workspaces${route}`,
   buildRendererWebPreferences: () => ({}),
   forwardRendererConsoleToMainLog: () => {},
 }));
@@ -126,7 +126,11 @@ vi.mock('../window-backend', () => ({
 
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
-import { openInvitedMachineInWindow, registerMachineRailHandlers } from '../machine-rail';
+import {
+  openInvitedMachineInWindow,
+  registerMachineRailHandlers,
+  selectMachineInFrame,
+} from '../machine-rail';
 import {
   getMachineRailSession,
   restoreMachineRailSession,
@@ -357,7 +361,7 @@ describe('machine rail switching', () => {
   it('saves the machine being waited for as the selection, so a quit does not lose it', async () => {
     await invoke(RAIL.ADD, home(), { id: 'b' });
     expect(getMachineRailSession(fakes.window as never)).toEqual({
-      machineIds: ['b'],
+      machineIds: ['local', 'b'],
       selectedId: 'b',
     });
     await invoke(RAIL.SELECT, home(), { id: 'local' });
@@ -370,7 +374,7 @@ describe('machine rail switching', () => {
     expect(await invoke(RAIL.REORDER, home(), { machineIds: ['local', 'c', 'b'] })).toMatchObject({
       machineIds: ['local', 'c', 'b'],
     });
-    expect(getMachineRailSession(fakes.window as never)?.machineIds).toEqual(['c', 'b']);
+    expect(getMachineRailSession(fakes.window as never)?.machineIds).toEqual(['local', 'c', 'b']);
     expect(await invoke(RAIL.REORDER, home(), { machineIds: ['c', 'local', 'b'] })).toMatchObject({
       machineIds: ['local', 'c', 'b'],
     });
@@ -391,6 +395,36 @@ describe('machine rail switching', () => {
       pendingId: '',
     });
     expect(viewOf('c').visible).toBe(true);
+  });
+
+  it('reopens each restored machine on the page it showed, and a re-added one on its default page', async () => {
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['local', 'b', 'c'],
+      selectedId: 'c',
+      routes: { local: '/settings', b: '/workspace/b1', c: '/workspace/c1' },
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(viewOf('c').webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/c1');
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    expect(viewOf('b').webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/b1');
+
+    await invoke(RAIL.REMOVE, home(), { id: 'c' });
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    const readded = fakes.views
+      .filter((view) => fakes.bindings.get(view.webContents) === 'c')
+      .at(-1);
+    expect(readded?.webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/new');
+  });
+
+  it('ignores a restored page that is not an app path', async () => {
+    restoreMachineRailSession(fakes.window as never, {
+      machineIds: ['b'],
+      selectedId: 'b',
+      routes: { b: 'https://example.com/' },
+    });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    expect(viewOf('b').webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/new');
   });
 
   it('loads the other connected machines in the background once the shown one is ready, one at a time', async () => {
@@ -569,6 +603,29 @@ describe('machine rail switching', () => {
     expect(await shown?.ready).toBe(true);
     expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
     expect(fakes.views).toHaveLength(1);
+  });
+
+  it('selects a machine the frame holds, starting it, and settles once it is ready', async () => {
+    expect(selectMachineInFrame(fakes.window as never, 'b')).toBeNull();
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+
+    const selected = selectMachineInFrame(fakes.window as never, 'b');
+    expect(selected?.contents).toBe(viewOf('b').webContents);
+    expect(await state()).toMatchObject({ selectedId: 'local', pendingId: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    expect(await selected?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
+  });
+
+  it("selects the frame's own machine at once, served by the window's own renderer", async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+
+    const selected = selectMachineInFrame(fakes.window as never, 'local');
+    expect(selected?.contents).toBe(home());
+    expect(await selected?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'local' });
   });
 
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
