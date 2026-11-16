@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { COLLABORATION_AUTH } from '../types';
 import { captureInviteAttempt } from '../../deeplink/main/invite-attempt';
+import { registerChatWindow } from '../../../main/chat-window-identity';
 
 const state = vi.hoisted(() => ({
   handlers: new Map<string, (event: any, input?: any) => any>(),
@@ -60,6 +61,7 @@ beforeEach(() => {
     backendId: 'remote-A',
     once: vi.fn(),
   };
+  registerChatWindow(state.parent);
   state.localRequest.mockReset().mockImplementation(async (method: string) => {
     if (method === 'identity.authStatus')
       return {

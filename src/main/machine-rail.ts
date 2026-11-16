@@ -50,6 +50,7 @@ import {
   type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
+import { isChatWindow } from './chat-window-identity';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
 import {
   buildLoadUrl,
@@ -577,7 +578,7 @@ export async function openInvitedMachineInWindow(
   workspaceId?: string,
   mayOpen: () => boolean = () => true,
 ): Promise<boolean> {
-  if (!isMachineRailEnabled() || window.isDestroyed() || !mayOpen()) return false;
+  if (!isMachineRailEnabled() || !isChatWindow(window) || !mayOpen()) return false;
   // A machine that cannot be in a rail (this app's own daemon, a node) keeps its own window.
   if (!deps || !(await deps.listMachineIds()).includes(id)) return false;
   const canContinue = () => isMachineRailEnabled() && !window.isDestroyed() && mayOpen();

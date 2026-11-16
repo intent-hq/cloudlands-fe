@@ -30,7 +30,7 @@
  * only — never the stored credential.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { type BrowserWindow, ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 
 import { INVITE_CONSENT_CHANNELS } from '../shared/ipc/channels';
@@ -45,7 +45,7 @@ import type {
 import { Logger } from '../shared/logger';
 import { InviteConsentAckSchema, InviteConsentResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { getMainWindow } from './state';
+import { getInviteWindow } from './invite-window';
 import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteConsent');
@@ -81,18 +81,10 @@ export interface InviteConsentPrompt {
 
 /** Injectable collaborators (defaults wire up the real main-process ones). */
 export interface InviteConsentDeps {
-  /** Window to show the modal in (focused window, else main window). */
+  /** Normal app window to show the modal in. */
   getParentWindow(): BrowserWindow | null;
   /** Original renderer for the attempt, retained across machine or focus changes. */
   getRendererWebContents?(): WebContents | null;
-}
-
-function defaultGetParentWindow(): BrowserWindow | null {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed()) return focused;
-  const main = getMainWindow();
-  if (main && !main.isDestroyed()) return main;
-  return null;
 }
 
 /** The renderer request main is currently waiting on. */
@@ -175,7 +167,7 @@ const UNAVAILABLE_PROMPT: InviteConsentPrompt = {
 };
 
 /**
- * Show the invite consent modal in the focused/main window. Returns
+ * Show the invite consent modal in a normal app window. Returns
  * immediately with the request handle; `decision` resolves once the renderer
  * answers (or `null` on every unavailable-renderer path — no window, `send`
  * throwing, no ack within {@link RENDERER_ACK_TIMEOUT_MS} (a dismiss is sent
@@ -190,7 +182,7 @@ export function showInviteConsent(
   payload: InviteConsentShowPayload,
   overrides: Partial<InviteConsentDeps> = {},
 ): InviteConsentPrompt {
-  const deps: InviteConsentDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
+  const deps: InviteConsentDeps = { getParentWindow: getInviteWindow, ...overrides };
   const parent = deps.getParentWindow();
   const contents = deps.getRendererWebContents
     ? deps.getRendererWebContents()

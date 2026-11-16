@@ -22,8 +22,7 @@ vi.mock('../../../../main/window-backend', () => ({
   getShownRendererWebContents: (parent: { webContents: unknown }) =>
     state.shown ?? parent.webContents,
 }));
-vi.mock('electron', () => ({ BrowserWindow: { getFocusedWindow: () => state.parent } }));
-vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
+vi.mock('../../../../main/invite-window', () => ({ getInviteWindow: () => state.parent }));
 vi.mock('../../../backend/main/backend.ipc', () => ({
   captureLocalIdentityConnection: () => state.local,
 }));
@@ -53,6 +52,20 @@ beforeEach(() => {
 });
 
 describe('original invitation lifetime (controlled main fixtures)', () => {
+  it('captures the prepared app window even when another window gains focus', () => {
+    const prepared = state.parent!;
+    state.parent = {
+      isDestroyed: () => false,
+      webContents: Object.assign(new EventEmitter(), { id: 24, isDestroyed: () => false }),
+    };
+    const attempt = captureInviteAttempt(prepared as never);
+    expect(attempt.parent).toBe(prepared);
+    expect(attempt.contents).toBe(prepared.webContents);
+    expect(state.listeners.has(19)).toBe(true);
+    expect(state.listeners.has(24)).toBe(false);
+    attempt.release();
+  });
+
   it('binds policy and lifetime to the visible view instead of hidden home', async () => {
     const shown = Object.assign(new EventEmitter(), { id: 23, isDestroyed: () => false });
     state.shown = shown;

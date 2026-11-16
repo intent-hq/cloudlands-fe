@@ -16,6 +16,7 @@ import {
   dockShortcutAvailable,
 } from './dock-global-shortcuts';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
+import { configureIntentProtocolClient } from './intent-protocol-client';
 
 // CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
@@ -1913,26 +1914,15 @@ const bootFlow = app.whenReady().then(async () => {
   }
   bootWindowsGate.release();
 
-  // Register intent:// protocol handler with the OS.
-  // In production, electron-builder registers the scheme statically (Info.plist / registry),
-  // but we also call setAsDefaultProtocolClient at runtime as a belt-and-suspenders measure
-  // to ensure the association is set even if the installer didn't complete properly.
-  // In dev mode, we pass extra args so macOS launches the Electron binary correctly.
   try {
-    if (isIsolatedTestBuild()) {
-      // Dedicated test packages do not claim the normal app's OS URL scheme.
-    } else if (isDev) {
-      app.setAsDefaultProtocolClient('intent', process.execPath, [path.resolve(app.getAppPath())]);
-      logger.info('Registered intent:// protocol handler for development mode', {
-        execPath: process.execPath,
-        appPath: path.resolve(app.getAppPath()),
-      });
+    const result = configureIntentProtocolClient(app, isIsolatedTestBuild());
+    if (result === 'failed') {
+      logger.warn('Could not configure the intent:// protocol handler');
     } else {
-      app.setAsDefaultProtocolClient('intent');
-      logger.info('Registered intent:// protocol handler for production mode');
+      logger.info('Configured intent:// protocol handler', { result });
     }
   } catch (error) {
-    logger.warn('Failed to register intent:// protocol handler:', error);
+    logger.warn('Failed to configure intent:// protocol handler:', error);
   }
 
   // Route any deep link URL that arrived before the window was ready (macOS
