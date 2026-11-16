@@ -11,6 +11,10 @@ const ISO_TIMESTAMP = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9}
 const WAIT_DURATION = String.raw`(?:\d+s|\d+m \d+s|\d+h \d+m)`;
 const DEQUEUE_WAIT_NOTE = String.raw`\[SYSTEM NOTE\] This message was queued at ${ISO_TIMESTAMP} and waited ${WAIT_DURATION} before delivery\.`;
 const STALE_REDRIVE_NOTE = String.raw`\[SYSTEM NOTE\] This message was queued before you completed; your completion report was already delivered to your parent at ${ISO_TIMESTAMP}\. Only call reportToParent again if this message materially changes the outcome — do not re-send the same report\.`;
+// Appended by the daemon to a non-user delivery that cut the recipient's turn
+// (intent-hq/intent#9430); model-facing only, like the queue notes.
+const PREEMPTION_NOTE_STEM = '[SYSTEM NOTE] This message interrupted your previous turn.';
+const PREEMPTION_ATTRIBUTION_NOTE = String.raw`\[SYSTEM NOTE\] This message interrupted your previous turn\. Any "interrupted by user" text, or tool-use rejection telling you to stop and wait for the user, just before this message was caused by this message's delivery, not by the user\. Do not wait for the user because of it: act on this message, and re-run an interrupted tool call if it is still needed\.`;
 
 function trailingNotePattern(note: string): RegExp {
   return new RegExp(String.raw`(?:^|(?:\r?\n){2,})${note}[\t ]*(?:\r?\n)?$`, 'u');
@@ -18,6 +22,7 @@ function trailingNotePattern(note: string): RegExp {
 
 const TRAILING_DEQUEUE_WAIT_NOTE = trailingNotePattern(DEQUEUE_WAIT_NOTE);
 const TRAILING_STALE_REDRIVE_NOTE = trailingNotePattern(STALE_REDRIVE_NOTE);
+const TRAILING_PREEMPTION_ATTRIBUTION_NOTE = trailingNotePattern(PREEMPTION_ATTRIBUTION_NOTE);
 
 /**
  * Remove only daemon-authored delivery annotations from a presentation copy.
@@ -30,8 +35,16 @@ const TRAILING_STALE_REDRIVE_NOTE = trailingNotePattern(STALE_REDRIVE_NOTE);
 export function stripInternalDeliveryNotes(text: string, metadata?: unknown): string {
   let presented = text;
   const patterns = getQueueInfo(metadata)
-    ? [TRAILING_DEQUEUE_WAIT_NOTE, TRAILING_STALE_REDRIVE_NOTE]
-    : [TRAILING_STALE_REDRIVE_NOTE, TRAILING_DEQUEUE_WAIT_NOTE];
+    ? [
+        TRAILING_DEQUEUE_WAIT_NOTE,
+        TRAILING_STALE_REDRIVE_NOTE,
+        TRAILING_PREEMPTION_ATTRIBUTION_NOTE,
+      ]
+    : [
+        TRAILING_STALE_REDRIVE_NOTE,
+        TRAILING_DEQUEUE_WAIT_NOTE,
+        TRAILING_PREEMPTION_ATTRIBUTION_NOTE,
+      ];
   let previous: string;
   do {
     previous = presented;
@@ -45,17 +58,22 @@ const QUEUE_NOTE_STEM = '[SYSTEM NOTE] This message was queued';
 /**
  * Best-effort removal of a trailing delivery note chopped mid-note by
  * server-side preview truncation (`agent.listUserMessages` previews, §5.5).
- * Applies only when `metadata.queueInfo` proves the daemon appended a note;
- * the trailing paragraph is dropped when it is a prefix of — or extends —
- * the shared queue-note stem. Full texts use `stripInternalDeliveryNotes`.
+ * A queue-note fragment is dropped only when `metadata.queueInfo` proves the
+ * daemon appended one, and when it is a prefix of — or extends — the shared
+ * queue-note stem. A preemption-note fragment carries no metadata, so it is
+ * dropped only once its full first sentence survived the cut. Complete notes
+ * left in front of the dropped fragment are then stripped as usual. Full texts
+ * use `stripInternalDeliveryNotes`.
  */
 export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unknown): string {
-  if (!getQueueInfo(metadata)) return text;
   const match = /(?:\r?\n){2,}(\[[^\n]*)$/u.exec(text);
   if (!match) return text;
   const fragment = match[1];
-  if (!fragment.startsWith(QUEUE_NOTE_STEM) && !QUEUE_NOTE_STEM.startsWith(fragment)) return text;
-  return text.slice(0, match.index);
+  const queueFragment =
+    !!getQueueInfo(metadata) &&
+    (fragment.startsWith(QUEUE_NOTE_STEM) || QUEUE_NOTE_STEM.startsWith(fragment));
+  if (!queueFragment && !fragment.startsWith(PREEMPTION_NOTE_STEM)) return text;
+  return stripInternalDeliveryNotes(text.slice(0, match.index), metadata);
 }
 
 /**
