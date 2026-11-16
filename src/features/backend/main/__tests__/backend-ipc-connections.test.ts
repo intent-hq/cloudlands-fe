@@ -4663,6 +4663,19 @@ describe('connections:list hides the self entry on the owning machine', () => {
     ]);
   });
 
+  it('lists every saved machine (self records and nodes included) for restoring frames', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, SELF_ENTRY]);
+    guestStore.list.mockResolvedValue([GUEST]);
+    const { mod } = await loadModule();
+
+    await expect(mod.listSavedMachineIds()).resolves.toEqual([
+      LOCAL.id,
+      REMOTE.id,
+      SELF_ENTRY.id,
+      GUEST.id,
+    ]);
+  });
+
   it('clears retained display records on pool teardown', async () => {
     installWindow(REMOTE.id);
     const { mod } = await loadModule();

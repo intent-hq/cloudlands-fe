@@ -344,11 +344,36 @@ function isRestorableRoute(route: string): boolean {
   );
 }
 
-// Machines no longer saved are dropped at restore: their clients cannot be built.
+// Machines no longer saved (forgotten connections and guest sessions) are
+// dropped when the saved frames are read; a frame left with none is dropped.
+// Every machine counts as saved until boot reports the saved ones.
+let savedMachineIds: ReadonlySet<string> | null = null;
+
+function isSavedMachine(id: string): boolean {
+  return id === LOCAL_CONNECTION_ID || !savedMachineIds || savedMachineIds.has(id);
+}
+
 const SAVED_FRAME_FILTER: FrameSessionFilter = {
-  isSavedMachine: () => true,
+  isSavedMachine,
   isRestorableRoute,
 };
+
+/**
+ * Boot: the machines still saved (connection records and guest sessions; the
+ * local machine always is). Call before restoring frames; frames already read
+ * drop the other machines too.
+ */
+export function setSavedMachineIds(ids: Iterable<string>): void {
+  savedMachineIds = new Set(ids);
+  if (parkedFrames) parkedFrames = keepSavedMachines(parkedFrames, isSavedMachine);
+}
+
+/** `frames` with only the machines `keep` accepts; frames left empty are dropped. */
+function keepSavedMachines(frames: FrameSession[], keep: (id: string) => boolean): FrameSession[] {
+  return frames
+    .map((frame) => keepFrameMachines(frame, keep))
+    .filter((frame): frame is FrameSession => frame !== null);
+}
 
 function modifiedAt(file: string): number | null {
   try {
@@ -642,6 +667,7 @@ export function discardSavedWindowFrames(): void {
 export function _resetWindowSessionsCacheForTests(): void {
   clearWindowSessionsSnapshot();
   parkedFrames = null;
+  savedMachineIds = null;
   syncWriteCount = 0;
   lastSyncWrite = '';
   onLastWindowClosedForBackend = null;
@@ -1009,6 +1035,8 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
  * other machines too keep them; the caller removes the backend from them.
  */
 export function closeWindowsForBackend(backendId: string): void {
+  // A forgotten machine leaves the saved frames not restored this run too.
+  if (parkedFrames) parkedFrames = keepSavedMachines(parkedFrames, (id) => id !== backendId);
   const windows = getAppWindows();
   for (const window of windows) {
     if (!window.isDestroyed() && !isDockWindow(window) && closesWith(window, backendId))

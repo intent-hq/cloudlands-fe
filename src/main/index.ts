@@ -370,6 +370,7 @@ import {
   disconnectBackendClient,
   isBackendClientConnected,
   listMachineRailCandidateIds,
+  listSavedMachineIds,
   onAnyBackendStatus,
   retryBackendConnection,
   disposeAllBackendClients,
@@ -470,6 +471,7 @@ import {
   markWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   saveAllWindowSessions,
+  setSavedMachineIds,
   setOnLastWindowClosedForBackend,
   stampWindowWithBackend,
 } from './window.js';
@@ -1890,6 +1892,15 @@ const bootFlow = app.whenReady().then(async () => {
     // stopped overlay). Frames showing the last-used machine (persisted
     // activeId, legacy field) restore first and provide the main window.
     const bootBackendId = await getActiveId();
+    // Saved frames drop machines that are no longer saved (fail-soft: a
+    // failed listing keeps every machine).
+    try {
+      setSavedMachineIds(await listSavedMachineIds());
+    } catch (error) {
+      logger.warn('Could not list saved machines; keeping every machine of the saved frames', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     const restored =
       intentUrlArg && !isPairLinkArg
         ? false

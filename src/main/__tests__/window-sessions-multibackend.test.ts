@@ -178,6 +178,7 @@ import {
   restoreWindowsForBackend,
   saveAllWindowSessions,
   setOnLastWindowClosedForBackend,
+  setSavedMachineIds,
   showWorkspaceInBackendWindow,
 } from '../window';
 import {
@@ -1610,6 +1611,54 @@ describe('multi-backend window sessions', () => {
       });
       expect(String(frame?.webPreferences?.preload)).toMatch(/preload[\\/]frame\.js$/);
       expect(String(hud?.webPreferences?.preload)).toMatch(/preload[\\/]index\.js$/);
+    });
+  });
+
+  describe('machines that are no longer saved', () => {
+    const bounds = { x: 0, y: 0, width: 1200, height: 800 };
+    const frame = (ids: string[]) => ({
+      bounds,
+      machines: ids.map((id) => ({ id, route: `/work/${id}` })),
+      selectedId: ids[0],
+    });
+
+    it('drops them at restore, with any frame left empty, instead of keeping it parked', async () => {
+      writeFrames([frame(['gone']), frame(['gone', 'remote-1']), frame(['local'])]);
+      setSavedMachineIds(['remote-1']);
+      const connect = vi.fn(async (id: string) => {
+        if (id === 'gone') throw new Error('no record');
+        return {};
+      });
+
+      expect(await restoreAllBackendWindowSessions('local', connect)).toBe(true);
+      expect(connect).not.toHaveBeenCalledWith('gone');
+      await saveAllWindowSessions();
+
+      const saved = readFrames();
+      expect(saved.flatMap((f) => f.machines.map((m) => m.id)).sort()).toEqual([
+        'local',
+        'remote-1',
+      ]);
+    });
+
+    it('drops a forgotten machine from a parked frame', async () => {
+      writeFrames([frame(['remote-2', 'remote-3']), frame(['local'])]);
+      setSavedMachineIds(['remote-2', 'remote-3']);
+      const connect = vi.fn(async (id: string) => {
+        if (id !== 'local') throw new Error('offline');
+        return {};
+      });
+      await restoreAllBackendWindowSessions('local', connect);
+
+      closeWindowsForBackend('remote-2');
+      await saveAllWindowSessions();
+
+      expect(readFrames()).toContainEqual({
+        bounds,
+        machines: [{ id: 'remote-3', route: '/work/remote-3' }],
+        selectedId: 'remote-3',
+      });
+      expect(JSON.stringify(readFrames())).not.toContain('remote-2');
     });
   });
 

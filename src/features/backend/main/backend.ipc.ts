@@ -4734,6 +4734,21 @@ export async function retryBackendConnection(id: string): Promise<boolean> {
  * connection except nodes, which never open a window, then every host joined
  * as a guest.
  */
+/**
+ * Every saved machine: connection records (self records and nodes included)
+ * and guest sessions. Restored frames drop machines that are not listed.
+ */
+export async function listSavedMachineIds(): Promise<string[]> {
+  const [connections, guests] = await Promise.all([
+    connectionsStore.list(),
+    guestSessionsStore.list(),
+  ]);
+  return [
+    ...connections.map((connection) => connection.id),
+    ...guests.map((session) => session.id),
+  ];
+}
+
 export async function listMachineRailCandidateIds(): Promise<string[]> {
   // Eligibility must use the actual store, never the presentation snapshots
   // retained for live renderers. Self records remain unavailable for new rails.
