@@ -8,11 +8,8 @@
    */
   import { onMount } from 'svelte';
   import { Screen } from '$lib/components/patterns/screen';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import {
-    MACHINE_RAIL_BACKDROP_CHANGED_EVENT,
-    type MachineRailBackdrop,
-  } from '$shared/types/machine-rail';
+  import type { FrameBridge } from '$shared/frame-route';
+  import type { MachineRailBackdrop } from '$shared/types/machine-rail';
 
   let backdrop = $state<MachineRailBackdrop | null>(null);
   let pushed = false;
@@ -20,23 +17,21 @@
   onMount(() => {
     document.getElementById('splash')?.remove();
     document.getElementById('app-drag-region')?.remove();
-    const api = window.electronAPI;
-    if (!api?.on) return;
+    // The frame page's preload exposes only this bridge (preload/frame.ts).
+    const bridge = (window as Window & { frameBridge?: FrameBridge }).frameBridge;
+    if (!bridge) return;
     /* eslint-disable intent/no-component-async-data-fetch -- the frame page runs without the app store by design; main owns the backdrop and pushes each change. */
-    const listenerId = api.on(
-      MACHINE_RAIL_BACKDROP_CHANGED_EVENT,
-      (next: MachineRailBackdrop | null) => {
-        pushed = true;
-        backdrop = next;
-      },
-    );
-    void api
-      .invoke(IPC_CHANNELS.MACHINE_RAIL.GET_BACKDROP, {})
+    const unsubscribe = bridge.onBackdrop((next) => {
+      pushed = true;
+      backdrop = next;
+    });
+    void bridge
+      .getBackdrop()
       .then((initial) => {
-        if (!pushed) backdrop = initial as MachineRailBackdrop | null;
+        if (!pushed) backdrop = initial;
       })
       .catch(() => {});
-    return () => api.offById(MACHINE_RAIL_BACKDROP_CHANGED_EVENT, listenerId);
+    return unsubscribe;
     /* eslint-enable intent/no-component-async-data-fetch */
   });
 </script>

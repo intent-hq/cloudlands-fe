@@ -45,7 +45,16 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
       session: { clearCache: () => Promise.resolve() },
     };
 
-    constructor(opts?: { x: number; y: number; width: number; height: number }) {
+    webPreferences: Record<string, unknown> | undefined;
+
+    constructor(opts?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      webPreferences?: Record<string, unknown>;
+    }) {
+      this.webPreferences = opts?.webPreferences;
       this.bounds = opts
         ? { x: opts.x, y: opts.y, width: opts.width, height: opts.height }
         : { x: 0, y: 0, width: 1200, height: 800 };
@@ -1582,6 +1591,25 @@ describe('multi-backend window sessions', () => {
       expect(urls.some((u) => new URL(u).pathname.startsWith('/hud'))).toBe(true);
       expect(urls.some((u) => new URL(u).pathname === '/work/a')).toBe(true);
       expect(live).toHaveLength(2);
+    });
+  });
+
+  describe('frame page privileges', () => {
+    it("gives a frame's own page only the backdrop bridge, while a HUD keeps the app preload", async () => {
+      writeFrames([single('local', '/work/a'), single('local', '/hud')]);
+      await restoreWindowsForBackend('local');
+      const live = FakeBrowserWindow.getAllWindows();
+      const frame = live.find((w) => isFrameWindow(w as never));
+      const hud = live.find((w) => !isFrameWindow(w as never));
+
+      expect(frame?.webPreferences).toMatchObject({
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false,
+      });
+      expect(String(frame?.webPreferences?.preload)).toMatch(/preload[\\/]frame\.js$/);
+      expect(String(hud?.webPreferences?.preload)).toMatch(/preload[\\/]index\.js$/);
     });
   });
 

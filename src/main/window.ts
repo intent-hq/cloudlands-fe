@@ -160,6 +160,21 @@ export function buildRendererWebPreferences(): Electron.WebPreferences {
 }
 
 /**
+ * A frame's own page (the frame route) only paints the backdrop under its
+ * machine views: a sandboxed page with the backdrop bridge alone, no app
+ * preload and no webviews.
+ */
+export function buildFramePageWebPreferences(): Electron.WebPreferences {
+  return {
+    preload: path.join(__dirname, '../preload-build/preload/frame.js'),
+    sandbox: true,
+    contextIsolation: true,
+    nodeIntegration: false,
+    webviewTag: false,
+  };
+}
+
+/**
  * Build the standard BrowserWindowConstructorOptions used by all window creation functions.
  */
 function buildWindowOptions(opts: {
@@ -168,6 +183,8 @@ function buildWindowOptions(opts: {
   iconPath?: string;
   /** Show the window once created (default); false keeps it hidden until shown. */
   show?: boolean;
+  /** The window's own page privileges (default: the app renderer's). */
+  webPreferences?: Electron.WebPreferences;
 }): Electron.BrowserWindowConstructorOptions {
   const isDarkMode = nativeTheme.shouldUseDarkColors;
   return {
@@ -178,7 +195,7 @@ function buildWindowOptions(opts: {
     minWidth: 800,
     minHeight: 600,
     ...(opts.show === false && { show: false }),
-    webPreferences: buildRendererWebPreferences(),
+    webPreferences: opts.webPreferences ?? buildRendererWebPreferences(),
     ...getWindowTitleBarOptions(),
     title: opts.title,
     ...getWindowAppearanceOptions(isDarkMode),
@@ -689,6 +706,7 @@ async function createFrameWindow(opts: {
     title: resolveAppTitle(),
     iconPath,
     show: opts.show,
+    webPreferences: buildFramePageWebPreferences(),
   });
   markFrameWindow(window);
   registerChatWindow(window);
