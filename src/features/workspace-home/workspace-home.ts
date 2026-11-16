@@ -304,15 +304,14 @@ export function homeUnavailableError(error: unknown): HomeUnavailableError | nul
 
 /** The panel view of a failed call's home: its reason, without Wait. */
 export function homeErrorView(error: HomeUnavailableError): WorkspaceHomeView {
-  const view = workspaceHomeView({
-    home: {
-      homeId: '',
-      name: error.name,
-      state: error.state,
-      since: '',
-      ...(error.lastBackupAt ? { lastBackupAt: error.lastBackupAt } : {}),
-    },
-  })!;
+  const home = {
+    homeId: '',
+    name: error.name,
+    state: error.state,
+    since: '',
+    ...(error.lastBackupAt ? { lastBackupAt: error.lastBackupAt } : {}),
+  };
+  const view = workspaceHomeView({ home }) as WorkspaceHomeView;
   return { ...view, canWait: false };
 }
 

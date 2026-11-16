@@ -92,6 +92,7 @@ describe('filesReducer', () => {
       loading: true,
       saving: false,
       error: null,
+      errorInfo: null,
       isBinary: false,
       truncated: false,
       notFoundCandidates: null,

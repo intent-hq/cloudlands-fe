@@ -23,6 +23,12 @@ const {
   remoteScripts: { supported: false },
 }));
 
+vi.mock('$features/workspace-home/workspace-home-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  // No workspace home: Run is available.
+  return { selectWorkspaceHomeView: () => readable(null) };
+});
+
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
   selectScriptEntries: Object.assign(

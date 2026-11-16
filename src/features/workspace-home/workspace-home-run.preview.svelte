@@ -31,12 +31,9 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { ScriptWithState } from '$features/scripts/types';
   import type { WorkspaceHome } from '$shared/types/workspace-home';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { WorkspaceStatus } from '$shared/types';
-  import { appClient } from '$lib/client';
-  import { BackendError } from '$lib/client/live/backend-transport-types';
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import WorkspaceShellList from '$lib/components/workspace/WorkspaceShellList.svelte';
   import TerminalSidebar from '$lib/components/terminal/TerminalSidebar.svelte';
@@ -50,8 +47,7 @@
     setScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import { loadWorkspaceTerminals } from '$store/renderer/slices/terminals/terminals-slice';
-  import { filesReadSaga } from '$store/renderer/slices/files/sagas/files-read-saga';
-  import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+  import { setupWorkspaceHomeRunPreview } from '../../test/workspace-home-run-preview';
 
   let { scenario = 'starting' }: { scenario?: Scenario } = $props();
 
@@ -96,39 +92,22 @@
   } as const;
 
   const fileScenario = $derived(scenario in FILE_ERRORS);
-  const workspaceId = $derived(`preview-home-run-${scenario}`);
+  const workspaceId = $derived(WorkspaceId(`preview-home-run-${scenario}`));
   // TerminalTabType registers its header actions here.
   createPanelHeaderContext();
 
-  const previous = {
-    read: appClient.files.read,
-    output: appClient.scripts.output,
-    list: appClient.scripts.list,
-  };
-  appClient.files.read = async (ws) => {
-    const key = ws.replace('preview-home-run-', '') as keyof typeof FILE_ERRORS;
-    const data = { code: 'home-unavailable', retryable: true, ...FILE_ERRORS[key] };
-    throw new BackendError({ code: 'INTERNAL', message: 'Internal error', rpcCode: -32603, data });
-  };
-  appClient.scripts.output = async () => '';
-  appClient.scripts.list = async (ws) =>
-    Object.values(store.state.scripts.byWorkspaceId[ws]?.scripts ?? {}).filter(
-      (row): row is ScriptWithState => typeof row.command === 'string',
-    );
-  const stopFiles = store.runSaga(filesReadSaga);
-  onDestroy(() => {
-    stopFiles();
-    Object.assign(appClient.files, { read: previous.read });
-    Object.assign(appClient.scripts, { output: previous.output, list: previous.list });
-  });
-  admitLegacyPrincipal();
+  onDestroy(
+    setupWorkspaceHomeRunPreview(
+      (ws) => FILE_ERRORS[ws.replace('preview-home-run-', '') as keyof typeof FILE_ERRORS] ?? {},
+    ),
+  );
 
   $effect(() => {
     const id = workspaceId;
     const home = fileScenario ? HOMES.attached : HOMES[scenario as keyof typeof HOMES];
     store.dispatch(
       setWorkspaceEntity({
-        id: WorkspaceId(id),
+        id,
         title: 'Importer',
         branch: 'preview',
         path: '/preview/project',
@@ -162,7 +141,7 @@
     store.dispatch(
       loadWorkspaceTerminals(
         id,
-        [{ id: 'preview-terminal', name: 'Terminal', workspaceId: id }],
+        [],
         { isOpen: true, activeTerminalId: null, selectedScriptId: 'preview-build' },
         'preview-boot',
       ),
@@ -172,7 +151,7 @@
 
 {#key workspaceId}
   {#if fileScenario}
-    <div class="h-[360px] w-full bg-background text-foreground" data-testid="home-run-file">
+    <div class="h-96 w-full bg-background text-foreground" data-testid="home-run-file">
       <FileTabType
         tab={{
           id: 'file-tab',
@@ -222,7 +201,7 @@
       </div>
       <section>
         <h2 class="mb-4 px-3 type-caption text-muted-foreground">Bottom overlay</h2>
-        <div class="relative h-[320px] overflow-hidden rounded-md border border-border">
+        <div class="relative h-80 overflow-hidden rounded-md border border-border">
           <QuakeTerminalOverlay {workspaceId} />
         </div>
       </section>

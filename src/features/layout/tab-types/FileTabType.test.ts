@@ -13,6 +13,12 @@ import { loadFileContentSucceeded } from '$store/renderer/slices/files/files-sli
 import { invoke } from '$lib/electron-bridge';
 import { notify } from '$lib/components/patterns/notify';
 
+vi.mock('$features/workspace-home/workspace-home-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  // No workspace home unless a test's read error names one.
+  return { selectWorkspaceHomeView: () => readable(null) };
+});
+
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
@@ -37,6 +43,7 @@ const {
     loading: boolean;
     saving: boolean;
     error: string | null;
+    errorInfo?: { rpcCode: number; data?: unknown } | null;
     isBinary: boolean;
     lastUpdated: number;
     notFoundCandidates?: string[] | null;
@@ -271,6 +278,9 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   ),
   selectFileError: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.error ?? null) : null,
+  ),
+  selectFileErrorInfo: createMockSelector((_wsId: string, path: string | null | undefined) =>
+    path ? (mockReduxState.files[path]?.errorInfo ?? null) : null,
   ),
   selectFileIsBinary: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.isBinary ?? false) : false,
@@ -1975,6 +1985,37 @@ describe('FileTabType Redux integration', () => {
     expect(await screen.findByText(m.layout_fileTab_errorGeneric_label())).toBeTruthy();
     expect(screen.getByText('Internal error: disk on fire')).toBeTruthy();
     expect(screen.getByText('notes/plan.md')).toBeTruthy();
+  });
+
+  it.each([
+    [{ starting: true }, () => m.workspaceHome_starting_label()],
+    [{ moving: true }, () => m.workspaceHome_banner_moving()],
+    [{}, () => m.workspaceHome_banner_detachedNoBackup({ name: 'E2B · Team' })],
+  ])('shows the home reason a home-unavailable read carries (%o)', async (flags, reason) => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error',
+      errorInfo: {
+        rpcCode: -32603,
+        data: { code: 'home-unavailable', name: 'E2B · Team', retryable: true, ...flags },
+      },
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(reason())).toBeTruthy();
+    expect(screen.queryByText(m.layout_fileTab_errorGeneric_label())).toBeNull();
+    expect(screen.queryByText('Internal error')).toBeNull();
+  });
+
+  it('keeps the generic failure for another error that carries data', async () => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error: disk on fire',
+      errorInfo: { rpcCode: -32603, data: { detail: 'disk on fire' } },
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorGeneric_label())).toBeTruthy();
   });
 
   it('renders clickable candidates and retargets the tab on click', async () => {
