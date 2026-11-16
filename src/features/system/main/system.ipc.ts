@@ -66,6 +66,7 @@ import {
   WindowOpenNewSchema,
   WindowSetThemeSchema,
   WindowSetTranslucencySchema,
+  WindowSetMenuBarAutoHideSchema,
   WindowSetTitleSchema,
   WindowSetInWorkspaceSchema,
   WindowSetOpenWorkspaceTabsSchema,
@@ -94,6 +95,7 @@ import { m } from '../../../shared/paraglide/messages.js';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
 import {
+  applyMenuBarAutoHide,
   applyWindowTranslucency,
   getWindowAppearanceOptions,
   getWindowBackgroundColor,
@@ -108,6 +110,7 @@ import {
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { isDockWindow } from '../../../main/dock-window';
+import { saveMenuBarAutoHidePref } from '../../../main/menu-bar-auto-hide-pref';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { isWebviewPopupWindow } from '../../../main/webview-security';
@@ -1234,6 +1237,31 @@ export function setupSystemIPC() {
         return { success: true };
       },
       WINDOW_CHANNELS.SET_TRANSLUCENCY,
+    ),
+  );
+
+  // Mirror the "Auto-hide menu bar" preference onto every Linux/Windows app
+  // window; Alt still reveals the bar and menu shortcuts keep working.
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_MENU_BAR_AUTO_HIDE,
+    createSafeValidatedHandler(
+      WindowSetMenuBarAutoHideSchema,
+      async (_event, validated) => {
+        if (process.platform === 'darwin') return { success: true };
+        await saveMenuBarAutoHidePref(validated.enabled);
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (
+            window.isDestroyed() ||
+            isDockWindow(window) ||
+            isDockAnnotationWindow(window) ||
+            isDesktopOverlayWindow(window)
+          )
+            continue;
+          applyMenuBarAutoHide(window, validated.enabled);
+        }
+        return { success: true };
+      },
+      WINDOW_CHANNELS.SET_MENU_BAR_AUTO_HIDE,
     ),
   );
 

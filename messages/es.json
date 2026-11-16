@@ -4962,6 +4962,8 @@
   "settings_appearance_chatContentWidth_label": "Ancho completo",
   "settings_appearance_collapseToolRuns_description": "Agrupa en una fila desplegable las llamadas a herramientas y los pasos de razonamiento consecutivos del chat.",
   "settings_appearance_collapseToolRuns_label": "Contraer actividad de herramientas",
+  "settings_appearance_menuBarAutoHide_description": "Oculta los menús Archivo, Editar y Ver hasta que pulses Alt.",
+  "settings_appearance_menuBarAutoHide_label": "Ocultar automáticamente la barra de menús",
   "settings_appearance_pauseAnimationsWhenUnfocused_description": "Pausa las animaciones en bucle mientras otra ventana está en primer plano.",
   "settings_appearance_pauseAnimationsWhenUnfocused_label": "Pausar animaciones sin foco",
   "settings_appearance_reduceMotionOnBattery_description": "Pausa las animaciones ambientales mientras el equipo funciona con batería.",

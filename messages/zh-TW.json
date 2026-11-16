@@ -4962,6 +4962,8 @@
   "settings_appearance_chatContentWidth_label": "全寬",
   "settings_appearance_collapseToolRuns_description": "將聊天中連續的工具呼叫和思考步驟合併為一列，可展開查看。",
   "settings_appearance_collapseToolRuns_label": "摺疊工具活動",
+  "settings_appearance_menuBarAutoHide_description": "在按下 Alt 鍵之前隱藏「檔案」、「編輯」和「檢視」選單。",
+  "settings_appearance_menuBarAutoHide_label": "自動隱藏選單列",
   "settings_appearance_pauseAnimationsWhenUnfocused_description": "當其他視窗位於前景時，暫停循環動畫。",
   "settings_appearance_pauseAnimationsWhenUnfocused_label": "失去焦點時暫停動畫",
   "settings_appearance_reduceMotionOnBattery_description": "裝置使用電池供電時暫停環境動畫。",

@@ -4962,6 +4962,8 @@
   "settings_appearance_chatContentWidth_label": "Full width",
   "settings_appearance_collapseToolRuns_description": "Group back-to-back tool calls and thinking steps in chat into one expandable row.",
   "settings_appearance_collapseToolRuns_label": "Collapse tool activity",
+  "settings_appearance_menuBarAutoHide_description": "Hide the File, Edit and View menus until you press Alt.",
+  "settings_appearance_menuBarAutoHide_label": "Auto-hide menu bar",
   "settings_appearance_pauseAnimationsWhenUnfocused_description": "Pause looping animations while another window is in front.",
   "settings_appearance_pauseAnimationsWhenUnfocused_label": "Pause animations when not in focus",
   "settings_appearance_reduceMotionOnBattery_description": "Pause ambient animations while the machine runs on battery power.",

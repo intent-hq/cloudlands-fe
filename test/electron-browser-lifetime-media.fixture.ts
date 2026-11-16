@@ -57,7 +57,9 @@ test.describe('native Markdown media routes', () => {
                 export const getLiveBackendIds = () => ['local'];`;
             if (id === '\0media-windows')
               return `import { BrowserWindow } from 'electron';
-                export const getWindowIdsForWorkspace = () => BrowserWindow.getAllWindows().map(w => w.id);`;
+                export const getWindowIdsForWorkspace = () => BrowserWindow.getAllWindows().map(w => w.id);
+                export const getRendererKeysForWorkspace = () => BrowserWindow.getAllWindows().map(w => w.id);
+                export const getBackendIdForRendererKey = () => 'local';`;
             if (id === '\0media-transfer')
               return 'export const requestRouted = (client, method, params) => client.request(method, params);';
           },

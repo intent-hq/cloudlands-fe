@@ -75,6 +75,10 @@ export const selectShellTransparencyEnabled = store.createSelector((state) => {
   return state.userPreferences?.shellTransparencyEnabled ?? true;
 });
 
+export const selectMenuBarAutoHide = store.createSelector((state) => {
+  return state.userPreferences?.menuBarAutoHide ?? false;
+});
+
 export const selectReduceMotionOnBattery = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });

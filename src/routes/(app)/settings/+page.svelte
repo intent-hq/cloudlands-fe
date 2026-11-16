@@ -32,6 +32,7 @@
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ChatAppearanceSettings from '$lib/components/settings/ChatAppearanceSettings.svelte';
+  import MenuBarAutoHideSettings from '$lib/components/settings/MenuBarAutoHideSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import PauseAnimationsWhenUnfocusedSettings from '$lib/components/settings/PauseAnimationsWhenUnfocusedSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
@@ -84,6 +85,7 @@
 
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
@@ -715,6 +717,17 @@
                   />
                 </SettingsFieldRow>
               </section>
+              {#if isElectronPlatform() && !isMacPlatform()}
+                <section
+                  id="menu-bar-auto-hide"
+                  data-highlight-id="menu-bar-auto-hide"
+                  use:highlightTarget
+                  data-slot="settings-section-body"
+                  class="px-6 py-4"
+                >
+                  <MenuBarAutoHideSettings />
+                </section>
+              {/if}
               <section
                 id="reduce-motion-on-battery"
                 data-highlight-id="reduce-motion-on-battery"

@@ -11,6 +11,7 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke, isElectron: mocks
 
 import {
   initialState,
+  setMenuBarAutoHide,
   setShellTransparencyEnabled,
   toggleShellTransparency,
   userPreferencesHydrated,
@@ -59,13 +60,13 @@ describe('windowTranslucencySaga', () => {
   });
 
   it('reports a saved setting that was hydrated before the saga started', async () => {
-    start({ shellTransparencyEnabled: false, preferencesHydrated: true });
+    start({ shellTransparencyEnabled: false, menuBarAutoHide: true, preferencesHydrated: true });
     await settle();
 
-    expect(mocks.invoke).toHaveBeenCalledOnce();
-    expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CHANNELS.SET_TRANSLUCENCY, {
-      enabled: false,
-    });
+    expect(mocks.invoke.mock.calls).toEqual([
+      [WINDOW_CHANNELS.SET_TRANSLUCENCY, { enabled: false }],
+      [WINDOW_CHANNELS.SET_MENU_BAR_AUTO_HIDE, { enabled: true }],
+    ]);
   });
 
   it('waits for hydration instead of reporting the default value', async () => {
@@ -97,10 +98,21 @@ describe('windowTranslucencySaga', () => {
     dispatch(userPreferencesHydrated());
     await settle();
 
-    expect(mocks.invoke).toHaveBeenCalledOnce();
-    expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CHANNELS.SET_TRANSLUCENCY, {
-      enabled: true,
-    });
+    expect(mocks.invoke.mock.calls).toEqual([
+      [WINDOW_CHANNELS.SET_TRANSLUCENCY, { enabled: true }],
+      [WINDOW_CHANNELS.SET_MENU_BAR_AUTO_HIDE, { enabled: false }],
+    ]);
+  });
+
+  it('reports only the menu bar setting when it changes', async () => {
+    const { dispatch } = start();
+
+    dispatch(setMenuBarAutoHide(true));
+    await settle();
+
+    expect(mocks.invoke.mock.calls).toEqual([
+      [WINDOW_CHANNELS.SET_MENU_BAR_AUTO_HIDE, { enabled: true }],
+    ]);
   });
 
   it('keeps a failed native sync non-fatal', async () => {

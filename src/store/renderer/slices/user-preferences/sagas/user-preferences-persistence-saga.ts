@@ -37,6 +37,7 @@ import {
   selectLabsSshMachineSetupEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectMenuBarAutoHide,
   selectPauseAnimationsWhenUnfocused,
   selectReduceMotionOnBattery,
   selectShowArchived,
@@ -73,6 +74,7 @@ import {
   setLabsSshMachineSetupEnabled,
   setLanguagePreference,
   setNoteFontStyle,
+  setMenuBarAutoHide,
   setPauseAnimationsWhenUnfocused,
   setReduceMotionOnBattery,
   setShowArchived,
@@ -97,6 +99,7 @@ import {
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
+  toggleMenuBarAutoHide,
   toggleSpellcheck,
   type ActivityLogPresetPreference,
   type FontStyle,
@@ -112,6 +115,7 @@ const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const CHAT_CONTENT_WIDTH_STORAGE_KEY = 'chat:contentWidth';
 const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
+const MENU_BAR_AUTO_HIDE_STORAGE_KEY = 'appearance:menuBarAutoHide';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY = 'appearance:pauseAnimationsWhenUnfocused';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
@@ -232,6 +236,11 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof shellTransparencyEnabled === 'boolean') {
     yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
+  }
+
+  const menuBarAutoHide = yield* getLocalStorageJSON<boolean>(MENU_BAR_AUTO_HIDE_STORAGE_KEY);
+  if (typeof menuBarAutoHide === 'boolean') {
+    yield* put(setMenuBarAutoHide(menuBarAutoHide));
   }
 
   const reduceMotionOnBattery = yield* getLocalStorageJSON<boolean>(
@@ -416,6 +425,10 @@ function* persistShellTransparencyWorker() {
   );
 }
 
+function* persistMenuBarAutoHideWorker() {
+  yield* setLocalStorageJSON(MENU_BAR_AUTO_HIDE_STORAGE_KEY, yield* selectMenuBarAutoHide.effect());
+}
+
 function* persistReduceMotionOnBatteryWorker() {
   yield* setLocalStorageJSON(
     REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
@@ -577,6 +590,7 @@ function* watchUserPreferenceWrites() {
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,
   );
+  yield* takeEvery([setMenuBarAutoHide, toggleMenuBarAutoHide], persistMenuBarAutoHideWorker);
   yield* takeEvery(
     [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
     persistReduceMotionOnBatteryWorker,

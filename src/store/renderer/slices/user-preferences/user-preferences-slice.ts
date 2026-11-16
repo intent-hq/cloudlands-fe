@@ -69,6 +69,8 @@ export type UserPreferencesState = {
   /** Whether runs of consecutive tool calls and thinking steps collapse into one chat row. */
   collapseToolRuns: boolean;
   shellTransparencyEnabled: boolean;
+  /** Linux/Windows: hide the native menu bar until Alt is pressed. */
+  menuBarAutoHide: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
   /** Whether looping animations pause while the window is not focused. */
@@ -168,6 +170,7 @@ export const initialState: UserPreferencesStoreState = {
   chatContentWidth: 'full',
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
+  menuBarAutoHide: false,
   reduceMotionOnBattery: false,
   pauseAnimationsWhenUnfocused: false,
   labsSettingsVisible: false,
@@ -419,6 +422,17 @@ export const setShellTransparencyEnabled = shellTransparencyPreference.setAction
 
 export const toggleShellTransparency = shellTransparencyPreference.toggleAction;
 
+const menuBarAutoHidePreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'menuBarAutoHide',
+  setActionName: 'setMenuBarAutoHide',
+  toggleActionName: 'toggleMenuBarAutoHide',
+});
+
+export const setMenuBarAutoHide = menuBarAutoHidePreference.setAction;
+
+export const toggleMenuBarAutoHide = menuBarAutoHidePreference.toggleAction;
+
 const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'reduceMotionOnBattery',
@@ -657,6 +671,7 @@ userPreferencesReducer.with(setChatContentWidth, (state, { payload: [width] }) =
 );
 collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
+menuBarAutoHidePreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 pauseAnimationsWhenUnfocusedPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
