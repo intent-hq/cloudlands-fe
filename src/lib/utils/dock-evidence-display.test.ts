@@ -434,3 +434,67 @@ describe('batched capture display provenance', () => {
     expect(dockCaptureDisplayCandidates(metadata)).toEqual([metadata]);
   });
 });
+
+describe('ordinary screenshot queue display', () => {
+  const own = {
+    type: 'dock_screen_evidence',
+    version: 1,
+    images: [{ id: 'shot', attachment_id: 'first', index: 0 }],
+  };
+  const content = `${screen}\n\n${prose}`;
+  const group = {
+    content,
+    messageMetadata: own,
+    imageBlocks: [{ type: 'image', attachmentId: 'first' }],
+  };
+  it('hides the ordinary trusted Screen prefix without changing raw content or attachments', () => {
+    const before = JSON.stringify(group);
+    expect(queuedCaptureDisplay(group)).toEqual({ text: prose, captures: [] });
+    expect(JSON.stringify(group)).toBe(before);
+    expect(queuedCaptureDisplay({ ...group, content: screen }).text).toBe('');
+  });
+  it('retains copied, malformed, non-prefix and untrusted screen-looking prose', () => {
+    for (const messageMetadata of [undefined, { type: 'other' }])
+      expect(queuedCaptureDisplay({ ...group, messageMetadata }).text).toBe(content);
+    for (const value of [
+      `User text\n\n${content}`,
+      content.replace('```json', '```text'),
+      content.replace('"dock_screen_evidence"', '"other"'),
+    ])
+      expect(queuedCaptureDisplay({ ...group, content: value }).text).toBe(value);
+    expect(queuedCaptureDisplay({ ...group, content: `${content}\n\n${screen}` }).text).toBe(
+      `${prose}\n\n${screen}`,
+    );
+  });
+  it('allows singleton merged provenance but refuses mixed or duplicate contributions', () => {
+    expect(
+      queuedCaptureDisplay({ ...group, messageMetadata: { mergedMessageMetadata: [own] } }).text,
+    ).toBe(prose);
+    for (const parts of [[{}, own], [own, own], [{ mergedMessageMetadata: [own] }]])
+      expect(
+        queuedCaptureDisplay({ ...group, messageMetadata: { mergedMessageMetadata: parts } }).text,
+      ).toBe(content);
+  });
+  it('does not partially strip a mismatched Edited envelope', () => {
+    for (const messageMetadata of [own, { ...own, edited_captures: [] }, metadata]) {
+      const value = `${screen}\n\n[Edited capture outputs]\n{bad}\n\n${prose}`;
+      expect(queuedCaptureDisplay({ ...group, content: value, messageMetadata }).text).toBe(value);
+    }
+  });
+  it('uses confirmed projection and identical single delivery provenance without borrowing across groups', () => {
+    const confirmed = { ...group, id: 'screen', queuedAt: '', position: 0 };
+    const projected = queuePresentationMessages(
+      projectPendingSubmissions(undefined, [confirmed as never]).queue,
+    )[0];
+    expect(queuedCaptureDisplay(projected).text).toBe(prose);
+    const { messageMetadata: _, ...unit } = group;
+    expect(
+      queuedCaptureDisplay(queuedCaptureGroup({ ...group, deliveryGroups: [unit] }, unit)).text,
+    ).toBe(prose);
+    expect(
+      queuedCaptureDisplay(
+        queuedCaptureGroup({ ...group, deliveryGroups: [unit, { content: 'Other' }] }, unit),
+      ).text,
+    ).toBe(content);
+  });
+});

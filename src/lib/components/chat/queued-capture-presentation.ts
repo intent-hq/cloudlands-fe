@@ -26,7 +26,25 @@ export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
     const envelope = consumeEditedCaptureEnvelope(text, metadata);
     return envelope ? [{ metadata, envelope }] : [];
   });
-  if (matches.length !== 1) return original;
+  if (matches.length !== 1) {
+    // Ordinary screenshots have no Edited envelope. Only the unit's own
+    // provenance (or a genuinely singleton batch) may own its Screen prefix;
+    // a candidate inside a mixed batch cannot vouch for another member's text.
+    const own = group.messageMetadata;
+    const single =
+      own?.type === 'dock_screen_evidence' ||
+      (Array.isArray(own?.mergedMessageMetadata) && own.mergedMessageMetadata.length === 1);
+    if (
+      matches.length === 0 &&
+      screen &&
+      single &&
+      candidates.length === 1 &&
+      candidates[0].edited_captures === undefined &&
+      !text.startsWith('[Edited capture outputs]') // i18n-ignore (persisted producer marker)
+    )
+      return { text: screen.remaining, captures: [] };
+    return original;
+  }
   const { metadata, envelope } = matches[0];
   // Queue arrays own the resource kind; contradictory explicit tags are refused.
   const blocks: CaptureResource[] = [

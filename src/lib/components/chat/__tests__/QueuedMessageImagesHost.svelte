@@ -25,8 +25,14 @@
   let {
     messages: incoming,
     lookupFails = false,
+    disabled = false,
     projectSubmissions = false,
-  }: { messages: QueuedMessage[]; lookupFails?: boolean; projectSubmissions?: boolean } = $props();
+  }: {
+    messages: QueuedMessage[];
+    lookupFails?: boolean;
+    disabled?: boolean;
+    projectSubmissions?: boolean;
+  } = $props();
   let messages = $state<QueuedMessage[]>([]);
   let requests = $state<{ attachmentId: string; workspaceId: string }[]>([]);
   let sent = $state<QueuedMessage | null>(null);
@@ -149,6 +155,7 @@
 <section class="w-[420px] bg-background p-4" data-testid="queued-image-host">
   <QueuedMessageList
     {messages}
+    {disabled}
     {displayRows}
     ownPrincipalId="image-author"
     onedit={async (id, content, editing) => {

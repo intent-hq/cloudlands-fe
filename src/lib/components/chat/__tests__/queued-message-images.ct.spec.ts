@@ -571,3 +571,48 @@ for (const failure of ['lookup', 'image'] as const) {
     },
   );
 }
+
+for (const scenario of [
+  { name: 'editable', disabled: false, empty: false },
+  { name: 'docked', disabled: true, empty: false },
+  { name: 'image only', disabled: true, empty: true },
+]) {
+  test(`ordinary screenshot evidence is display-only ${scenario.name}`, async ({ mount }, info) => {
+    const { DOCK_EVIDENCE_CONTEXT_HEADER } = await import('$shared/dock-evidence');
+    const metadata = {
+      type: 'dock_screen_evidence',
+      fromPrincipalId: 'image-author',
+      version: 1,
+      images: [{ id: 'shot', attachment_id: 'first', index: 0 }],
+    };
+    const prefix = `${DOCK_EVIDENCE_CONTEXT_HEADER}\n\`\`\`json\n${JSON.stringify({ type: 'dock_screen_evidence', version: 1, images: [{ image: 1, attachment_id: 'first', size: [32, 32], scale: 1, marks: [] }] })}\n\`\`\``;
+    const prose = scenario.empty ? '' : 'Please fix this screenshot.';
+    const content = prose ? `${prefix}\n\n${prose}` : prefix;
+    const component = await mount(QueuedMessageImagesHost, {
+      props: {
+        disabled: scenario.disabled,
+        messages: [
+          {
+            ...queued('ordinary-screen', [reference('first')], content),
+            messageMetadata: metadata,
+          },
+        ],
+      },
+    });
+    const row = component.getByTestId('queued-message-row');
+    await expect(row.getByTestId('queued-image-thumbnail')).toBeVisible();
+    await info.attach('ordinary-screen-queue.png', {
+      body: await queueScreenshot(component),
+      contentType: 'image/png',
+    });
+    await expect(row).not.toContainText(DOCK_EVIDENCE_CONTEXT_HEADER);
+    if (prose) await expect(row.getByTestId('queued-message-text')).toHaveText(prose);
+    // Editing still starts from the exact stored payload, not the display-only projection.
+    if (!scenario.disabled) {
+      await row.getByTestId('queued-message-content').press('F2');
+      await expect(row.getByRole('textbox')).toHaveValue(content);
+      await row.getByRole('textbox').press('Escape');
+    }
+    await expect(row.getByTestId('queued-image-thumbnail')).toBeVisible();
+  });
+}
