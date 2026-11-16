@@ -8989,7 +8989,7 @@
   "machineSetup_pick_backend_label": "Intent-Server installieren",
   "machineSetup_pick_backend_description": "Ein vollständiges, eigenes Intent auf einem anderen Computer, mit eigenen Workspaces und Agenten.",
   "machineSetup_pick_node_label": "Node installieren",
-  "machineSetup_pick_node_description": "Dieses Backend Agenten auf einem anderen Computer ausführen lassen.",
+  "machineSetup_pick_node_description": "Einen anderen Rechner verbinden, um dort Agenten auszuführen.",
   "machineSetup_paste_description": "Füge den intent://pair- oder intent://node-Link ein, den der andere Computer ausgegeben hat.",
   "machineSetup_method_description": "Wie soll Intent auf den anderen Computer kommen?",
   "machineSetup_method_ariaLabel": "Installationsart",

@@ -8989,7 +8989,7 @@
   "machineSetup_pick_backend_label": "安装 Intent 服务器",
   "machineSetup_pick_backend_description": "在另一台电脑上安装一个完整、独立的 Intent，拥有自己的工作区和智能体。",
   "machineSetup_pick_node_label": "安装节点",
-  "machineSetup_pick_node_description": "让此后端在另一台电脑上运行智能体。",
+  "machineSetup_pick_node_description": "连接另一台机器，在其上运行智能体。",
   "machineSetup_paste_description": "粘贴另一台电脑输出的 intent://pair 或 intent://node 链接。",
   "machineSetup_method_description": "如何在另一台电脑上安装 Intent？",
   "machineSetup_method_ariaLabel": "安装方式",
