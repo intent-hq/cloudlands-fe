@@ -27,6 +27,11 @@ import {
   type RunningAgentsRpc,
 } from './running-agents';
 import { getMainWindow } from './state';
+import {
+  getRendererWebContents,
+  getShownRendererWebContents,
+  isFrameWindow,
+} from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
 
@@ -216,7 +221,10 @@ async function defaultConfirmViaRenderer(
   parent: BrowserWindow | null,
   payload: QuitConfirmationShowPayload,
 ): Promise<boolean | null> {
-  if (!parent || parent.isDestroyed() || parent.webContents.isDestroyed()) {
+  if (!parent || parent.isDestroyed()) return null;
+  // The modal lives in the renderer the window shows (a frame's machine view).
+  const contents = getShownRendererWebContents(parent);
+  if (contents.isDestroyed() || (contents === parent.webContents && isFrameWindow(parent))) {
     return null;
   }
   registerRendererHandlers();
@@ -237,7 +245,6 @@ async function defaultConfirmViaRenderer(
   };
   pendingRendererRequest = request;
 
-  const contents = parent.webContents;
   // The modal lives in this webContents: destruction, a renderer crash, or a
   // main-frame navigation (reload included) all destroy it, so any of them
   // settles the wait and falls back to the native dialog.
@@ -380,10 +387,11 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
         const seen = new Set<string>();
         const targets: QuitBackendTarget[] = [];
         for (const window of BrowserWindow.getAllWindows()) {
-          if (window.isDestroyed()) continue;
-          const id = backendIpc.getBackendIdForIpcSender(window.webContents);
-          if (seen.has(id)) continue;
-          seen.add(id);
+          for (const renderer of getRendererWebContents(window)) {
+            seen.add(backendIpc.getBackendIdForIpcSender(renderer));
+          }
+        }
+        for (const id of seen) {
           const pooledClient = backendIpc.getBackendClientForConnection(id);
           if (pooledClient) targets.push({ id, client: pooledClient });
         }

@@ -18,6 +18,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
+import { getRendererWebContents, getShownRendererWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import {
   RELEASE_NOTES_CHANNELS,
@@ -38,11 +39,10 @@ const EmptySchema = z.object({}).optional();
  */
 let pendingReleaseNotes: ReleaseNotesContent | null = null;
 
-/** Send an event to every live window. */
+/** Send an event to every app renderer of every live window (a frame's machine views). */
 function broadcastToAllWindows(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed()) continue;
-    window.webContents.send(channel, payload);
+    for (const contents of getRendererWebContents(window)) contents.send(channel, payload);
   }
 }
 
@@ -80,13 +80,13 @@ export function setupReleaseNotesIPC(): void {
   );
 }
 
-/** Push the modal-open event to a window. */
+/** Push the modal-open event to the renderer a window shows. */
 export function sendShowReleaseNotes(
   window: BrowserWindow | null,
   payload: ShowReleaseNotesPayload,
 ): void {
   if (!window || window.isDestroyed()) return;
-  window.webContents.send(RELEASE_NOTES_CHANNELS.SHOW, payload);
+  getShownRendererWebContents(window).send(RELEASE_NOTES_CHANNELS.SHOW, payload);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { isFocusedWindowBrowserActive } from '../features/system/main/system.ipc';
 import { hasFixedZoom } from './fixed-zoom';
-import { getShownRendererWebContents } from './window-backend';
+import { getRendererWebContents, getShownRendererWebContents } from './window-backend';
 
 type ZoomCommand = 'menu:zoom-in' | 'menu:zoom-out' | 'menu:reset-zoom';
 
@@ -11,20 +11,14 @@ export function handleMenuZoom(
   sendWorkspaceCommand: (channel: ZoomCommand) => void,
 ): void {
   const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (
-    !focusedWindow ||
-    focusedWindow.isDestroyed() ||
-    focusedWindow.webContents.isDestroyed() ||
-    hasFixedZoom(focusedWindow.webContents)
-  ) {
-    return;
-  }
+  if (!focusedWindow || focusedWindow.isDestroyed()) return;
+  const contents = getShownRendererWebContents(focusedWindow);
+  if (contents.isDestroyed() || hasFixedZoom(contents)) return;
   if (isFocusedWindowBrowserActive()) {
     sendWorkspaceCommand(command);
     return;
   }
 
-  const contents = getShownRendererWebContents(focusedWindow);
   contents.setZoomLevel(
     command === 'menu:reset-zoom'
       ? 0
@@ -35,9 +29,8 @@ export function handleMenuZoom(
   // setZoomLevel calls. Chromium can also share zoom across same-origin windows:
   // publish each window's actual factor, never copy the focused window's factor.
   for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
-    window.webContents.send('window:zoom-changed', {
-      zoomFactor: window.webContents.getZoomFactor(),
-    });
+    for (const renderer of getRendererWebContents(window)) {
+      renderer.send('window:zoom-changed', { zoomFactor: renderer.getZoomFactor() });
+    }
   }
 }

@@ -18,6 +18,7 @@ import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { EmptySchema } from '../../../main/ipc-schemas';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { getRendererTargets } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('PowerState');
@@ -85,9 +86,10 @@ export class PowerStateBroadcaster<W extends PowerStateWindow = PowerStateWindow
 }
 
 /** Wire the broadcaster to Electron. Call after `app` is ready. */
-export function setupPowerStateIPC(): PowerStateBroadcaster<BrowserWindow> {
-  const broadcaster = new PowerStateBroadcaster<BrowserWindow>(powerMonitor, () =>
-    BrowserWindow.getAllWindows(),
+export function setupPowerStateIPC(): PowerStateBroadcaster {
+  // Every app renderer: a frame's machine views, not its frame page.
+  const broadcaster = new PowerStateBroadcaster(powerMonitor, () =>
+    getRendererTargets(BrowserWindow.getAllWindows()),
   );
   app.on('browser-window-created', (_event, window) => broadcaster.registerWindow(window));
   ipcMain.handle(
