@@ -12,7 +12,11 @@ import {
   workspaceHomeView,
   initialHomeRetry,
   nextHomeRetry,
+  homeUnavailableError,
+  homeErrorView,
 } from './workspace-home';
+import { homeRunDisabledReason, homeUnavailableText } from './workspace-home-copy';
+import { m } from '$shared/paraglide/messages.js';
 import { parseWorkspaceHome, type WorkspaceHome } from '$shared/types/workspace-home';
 
 // Shapes from PROTOCOL `methods/nodes.md` → "Workspace homes".
@@ -230,6 +234,75 @@ describe('setHomeErrorCode', () => {
     expect(setHomeErrorCode(rpc(-32003))).toBe('forbidden');
     expect(setHomeErrorCode(rpc(-32603, 'something-else'))).toBeNull();
     expect(setHomeErrorCode('boom')).toBeNull();
+  });
+});
+
+describe('homeUnavailableError (a call failed because the home is away)', () => {
+  // 09-error-codes.md: -32603 `home-unavailable` with
+  // `{ nodeId?, cloudMachineId?, name, lastBackupAt?, moving?, starting?, retryable }`.
+  const rpc = (rpcCode: number, data: unknown) => ({ rpcCode, data });
+  const base = { code: 'home-unavailable', name: 'E2B · Team', retryable: true };
+
+  it('reads a starting, moving and detached home from the error data', () => {
+    expect(homeUnavailableError(rpc(-32603, { ...base, starting: true }))).toEqual({
+      name: 'E2B · Team',
+      lastBackupAt: null,
+      state: 'starting',
+    });
+    expect(homeUnavailableError(rpc(-32603, { ...base, moving: true }))?.state).toBe('moving');
+    expect(
+      homeUnavailableError(
+        rpc(-32603, { ...base, nodeId: 'd-1', lastBackupAt: '2026-11-12T09:41:00Z' }),
+      ),
+    ).toEqual({ name: 'E2B · Team', lastBackupAt: '2026-11-12T09:41:00Z', state: 'detached' });
+  });
+
+  it('is null for any other error', () => {
+    expect(homeUnavailableError(rpc(-32602, { ...base, starting: true }))).toBeNull();
+    expect(homeUnavailableError(rpc(-32603, { code: 'home-reply-too-large' }))).toBeNull();
+    expect(homeUnavailableError(rpc(-32603, 'home-unavailable'))).toBeNull();
+    expect(homeUnavailableError(rpc(-32603, null))).toBeNull();
+    expect(homeUnavailableError(null)).toBeNull();
+    expect(homeUnavailableError(new Error('Internal error'))).toBeNull();
+  });
+
+  it('keeps the reason when the name is missing or not a string', () => {
+    expect(homeUnavailableError(rpc(-32603, { code: 'home-unavailable', starting: true }))).toEqual(
+      { name: '', lastBackupAt: null, state: 'starting' },
+    );
+  });
+
+  it('shows the same reason a panel shows for that state, without Wait', () => {
+    const view = (data: object) => homeErrorView(homeUnavailableError(rpc(-32603, data))!);
+    expect(view({ ...base, starting: true })).toMatchObject({ starting: true, canWait: false });
+    expect(homeUnavailableText(view({ ...base, starting: true }))).toBe(
+      m.workspaceHome_starting_label(),
+    );
+    expect(homeUnavailableText(view({ ...base, moving: true }))).toBe(
+      m.workspaceHome_banner_moving(),
+    );
+    const detached = view(base);
+    expect(detached).toMatchObject({ state: 'detached', canWait: false });
+    expect(homeUnavailableText(detached)).toBe(
+      m.workspaceHome_banner_detachedNoBackup({ name: 'E2B · Team' }),
+    );
+  });
+});
+
+describe('homeRunDisabledReason', () => {
+  const view = (state: string) => workspaceHomeView({ home: { ...ATTACHED, state } });
+
+  it('is null without a home or while it is attached', () => {
+    expect(homeRunDisabledReason(null)).toBeNull();
+    expect(homeRunDisabledReason(view('attached'))).toBeNull();
+  });
+
+  it('is the home reason while it is detached, moving, starting or unknown', () => {
+    for (const state of ['detached', 'moving', 'starting', 'paused-forever']) {
+      const v = view(state)!;
+      expect(homeRunDisabledReason(v)).toBe(homeUnavailableText(v));
+    }
+    expect(homeRunDisabledReason(view('starting'))).toBe(m.workspaceHome_starting_label());
   });
 });
 

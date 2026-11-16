@@ -53,6 +53,8 @@
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import { homeRunDisabledReason } from '$features/workspace-home/workspace-home-copy';
 
   interface Props {
     workspaceId: string;
@@ -78,6 +80,9 @@
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
+  // Workspace homes: Run waits while the home is detached, moving or starting.
+  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
+  const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
   const logger = createLogger('TerminalSidebar');
   const createConsumerId = crypto.randomUUID();
   const removeConsumerId = crypto.randomUUID();
@@ -358,8 +363,10 @@
       icon: any;
       label: string;
       tooltip?: string;
+      disabled?: boolean;
       onClick: (e: MouseEvent) => void;
     }> = [];
+    const blocked = runDisabledReason ? { tooltip: runDisabledReason, disabled: true } : {};
     if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
@@ -369,12 +376,14 @@
       actions.push({
         icon: faRotateRight,
         label: m.terminal_quakeOverlay_restart_label(),
+        ...blocked,
         onClick: () => handleRestart(script.id),
       });
     } else {
       actions.push({
         icon: faPlay,
         label: m.terminal_quakeOverlay_start_label(),
+        ...blocked,
         onClick: () => handleStart(script.id),
       });
     }
@@ -382,6 +391,7 @@
   }
 
   function handleStart(scriptId: string) {
+    if (runDisabledReason) return;
     appStore.dispatch(
       startScriptRequested(
         workspaceId,
@@ -400,6 +410,7 @@
   }
 
   function handleRestart(scriptId: string) {
+    if (runDisabledReason) return;
     appStore.dispatch(
       restartScriptRequested(
         workspaceId,
@@ -911,6 +922,8 @@
                       variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
+                      disabled={runDisabledReason !== null}
+                      tooltip={runDisabledReason ?? undefined}
                       onclick={() => handleContextMenuAction('startAll')}
                     >
                       {m.terminal_sidebar_startAll_label()}
@@ -938,6 +951,8 @@
                         variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
+                        disabled={runDisabledReason !== null}
+                        tooltip={runDisabledReason ?? undefined}
                         onclick={() => handleContextMenuAction('restart')}
                       >
                         {m.terminal_quakeOverlay_restart_label()}
@@ -947,6 +962,8 @@
                         variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
+                        disabled={runDisabledReason !== null}
+                        tooltip={runDisabledReason ?? undefined}
                         onclick={() => handleContextMenuAction('start')}
                       >
                         {m.terminal_quakeOverlay_start_label()}

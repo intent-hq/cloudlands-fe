@@ -25,6 +25,11 @@ export function homeUnavailableText(view: WorkspaceHomeView): string {
     : m.workspaceHome_banner_detachedNoBackup({ name: view.name });
 }
 
+/** Why Run is disabled: the home reason while it is not attached, else null. */
+export function homeRunDisabledReason(view: WorkspaceHomeView | null | undefined): string | null {
+  return view?.unavailable ? homeUnavailableText(view) : null;
+}
+
 /** The banner sentence for the view's banner; empty when it has none. */
 export function homeBannerText(view: WorkspaceHomeView): string {
   if (view.banner === 'detached' || view.banner === 'moving') return homeUnavailableText(view);

@@ -39,6 +39,7 @@
       icon: any;
       label: string;
       tooltip?: string; // Optional tooltip text (defaults to label if not provided)
+      disabled?: boolean;
       onClick: (e: MouseEvent) => void;
       className?: string;
     }>;
@@ -292,7 +293,7 @@
               size="icon-compact"
               iconOnly
               aria-label={action.tooltip ?? action.label}
-              {disabled}
+              disabled={disabled || action.disabled === true}
               class={cn(
                 'h-auto w-auto cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground motion-reduce:transition-none',
                 action.className,

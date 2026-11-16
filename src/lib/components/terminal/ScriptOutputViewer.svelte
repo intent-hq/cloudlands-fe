@@ -49,9 +49,18 @@
     class?: string;
     /** Running is unavailable (the workspace home is detached or moving); output stays readable. */
     runDisabled?: boolean;
+    /** Why Run is unavailable; also disables it. */
+    runDisabledReason?: string | null;
   }
 
-  let { scriptId, workspaceId, class: className = '', runDisabled = false }: Props = $props();
+  let {
+    scriptId,
+    workspaceId,
+    class: className = '',
+    runDisabled: runDisabledProp = false,
+    runDisabledReason = null,
+  }: Props = $props();
+  const runDisabled = $derived(runDisabledProp || runDisabledReason !== null);
 
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
@@ -396,6 +405,7 @@
           variant="ghost"
           size="xs"
           disabled={runDisabled}
+          tooltip={runDisabledReason ?? undefined}
           onclick={handleStart}
           class="text-muted-foreground hover:text-foreground"
         >

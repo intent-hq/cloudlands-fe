@@ -52,6 +52,8 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import { homeRunDisabledReason } from '$features/workspace-home/workspace-home-copy';
 
   let { workspaceId }: { workspaceId: string } = $props();
   const workspaceIdStore = writable('');
@@ -65,6 +67,9 @@
   const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
+  // Workspace homes: Run waits while the home is detached, moving or starting.
+  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
+  const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -379,7 +384,7 @@
                     {#if live}
                       <Menu.Separator />
                       <Menu.Item
-                        disabled={operation?.pending ?? false}
+                        disabled={operation?.pending === true || runDisabledReason !== null}
                         aria-busy={operation?.pending && operation.action === 'restart'
                           ? true
                           : undefined}
@@ -430,13 +435,15 @@
                   {/if}
                 </Button>
               {:else}
-                {@const startLabel = m.workspace_devScripts_start_ariaLabel({ name: script.name })}
+                {@const startLabel =
+                  runDisabledReason ??
+                  m.workspace_devScripts_start_ariaLabel({ name: script.name })}
                 <Button
                   variant="ghost"
                   size="icon-compact"
                   iconOnly
                   class="size-(--row-action-target-compact) shrink-0 active:bg-accent/80"
-                  disabled={operation?.pending ?? false}
+                  disabled={operation?.pending === true || runDisabledReason !== null}
                   aria-busy={operation?.pending || undefined}
                   aria-label={startLabel}
                   tooltip={startLabel}
