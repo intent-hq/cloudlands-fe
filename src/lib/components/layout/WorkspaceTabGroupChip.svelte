@@ -177,6 +177,7 @@
     display: flex;
     height: 100%;
     min-width: 0;
+    max-width: 100%;
     align-items: center;
     gap: 6px;
     padding: 0 8px;
