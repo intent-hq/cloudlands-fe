@@ -75,6 +75,7 @@ import {
   getWindowForWebContents,
   getShownRendererWebContents,
   isFrameWindow,
+  isMachineViewOf,
   isShownRenderer,
   setShownMachineView,
 } from './window-backend';
@@ -812,6 +813,19 @@ function windowOf(sender: Electron.WebContents): BrowserWindowType {
   return window;
 }
 
+/**
+ * The frame whose machine view sent a request. Requests that change a frame's
+ * rail, or report a view's progress, must come from one of its machine views:
+ * not the frame page (which only reads the backdrop) or any other renderer.
+ */
+function viewWindowOf(sender: Electron.WebContents): BrowserWindowType {
+  const window = windowOf(sender);
+  if (!isFrameWindow(window) || !isMachineViewOf(window, sender)) {
+    throw new Error('Only a machine view may send this request');
+  }
+  return window;
+}
+
 function assertEnabled(): void {
   if (!isMachineRailEnabled()) throw new Error('The machine rail is turned off');
 }
@@ -842,7 +856,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MachineRailMachineSchema,
       async (event, { id }) => {
         assertEnabled();
-        return selectMachine(windowOf(event.sender), id);
+        return selectMachine(viewWindowOf(event.sender), id);
       },
       MACHINE_RAIL.SELECT,
     ),
@@ -853,7 +867,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MachineRailMachineSchema,
       async (event, { id }) => {
         assertEnabled();
-        return addMachine(windowOf(event.sender), id);
+        return addMachine(viewWindowOf(event.sender), id);
       },
       MACHINE_RAIL.ADD,
     ),
@@ -864,7 +878,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MachineRailMachineSchema,
       async (event, { id }) => {
         assertEnabled();
-        return removeMachine(windowOf(event.sender), id);
+        return removeMachine(viewWindowOf(event.sender), id);
       },
       MACHINE_RAIL.REMOVE,
     ),
@@ -875,7 +889,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MachineRailReorderSchema,
       async (event, { machineIds }) => {
         assertEnabled();
-        return reorderMachines(windowOf(event.sender), machineIds);
+        return reorderMachines(viewWindowOf(event.sender), machineIds);
       },
       MACHINE_RAIL.REORDER,
     ),
@@ -885,7 +899,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
     createValidatedHandler(
       EmptySchema,
       async (event) => {
-        completeReveal(windowOf(event.sender), event.sender);
+        completeReveal(viewWindowOf(event.sender), event.sender);
         return { ok: true };
       },
       MACHINE_RAIL.SHOWN,
@@ -911,7 +925,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
     createValidatedHandler(
       EmptySchema,
       async (event) => {
-        markReady(windowOf(event.sender), event.sender);
+        markReady(viewWindowOf(event.sender), event.sender);
         return { ok: true };
       },
       MACHINE_RAIL.READY,
@@ -944,7 +958,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MachineRailBackdropSchema,
       async (event, backdrop) => {
         backdrops.set(event.sender, backdrop);
-        const window = windowOf(event.sender);
+        const window = viewWindowOf(event.sender);
         if (isShownRenderer(window, event.sender)) pushBackdrop(window);
         return { ok: true };
       },

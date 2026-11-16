@@ -166,6 +166,7 @@ vi.mock('../window-backend', () => ({
   isShownRenderer: (_window: unknown, sender: unknown) =>
     sender === fakes.shown.current && sender !== fakes.window.webContents,
   isFrameWindow: () => true,
+  isMachineViewOf: (_window: unknown, sender: unknown) => fakes.bindings.has(sender),
 }));
 
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
@@ -742,6 +743,30 @@ describe('a frame open on the local machine', () => {
 });
 
 describe('the frame page', () => {
+  it('may only read the backdrop: rail changes and reports must come from a machine view', async () => {
+    openFrame([{ id: 'local' }, { id: 'b' }], 'local');
+    const stranger = fakes.webContents('stranger');
+    for (const sender of [framePage(), stranger]) {
+      await expect(invoke(RAIL.SELECT, sender, { id: 'b' })).rejects.toThrow();
+      await expect(invoke(RAIL.ADD, sender, { id: 'c' })).rejects.toThrow();
+      await expect(invoke(RAIL.REMOVE, sender, { id: 'local' })).rejects.toThrow();
+      await expect(
+        invoke(RAIL.REORDER, sender, { machineIds: ['b', 'local'] }),
+      ).rejects.toThrow();
+      await expect(invoke(RAIL.READY, sender)).rejects.toThrow();
+      await expect(invoke(RAIL.SHOWN, sender)).rejects.toThrow();
+      await expect(
+        invoke(RAIL.BACKDROP, sender, { background: 'red', tint: 'red', reducedMotion: false }),
+      ).rejects.toThrow();
+    }
+    expect(getMachineRailSession(fakes.window as never)).toEqual({
+      machineIds: ['local', 'b'],
+      selectedId: 'local',
+    });
+    expect(fakes.window.close).not.toHaveBeenCalled();
+    await expect(invoke(RAIL.GET_BACKDROP, framePage())).resolves.not.toBeUndefined();
+  });
+
   const framePageLoads = () => framePage().loadURL.mock.calls.map(([url]) => url);
 
   it('is not loaded while the rail is off: every machine paints its own shell', async () => {
@@ -828,8 +853,8 @@ describe('opening a frame', () => {
     await vi.waitFor(() => expect(fakes.views.length).toBe(3));
     expect(viewOf('b').webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/b1');
 
-    await invoke(RAIL.REMOVE, framePage(), { id: 'c' });
-    await invoke(RAIL.ADD, framePage(), { id: 'c' });
+    await invoke(RAIL.REMOVE, local(), { id: 'c' });
+    await invoke(RAIL.ADD, local(), { id: 'c' });
     expect(viewOf('c').webContents.loadURL).toHaveBeenCalledWith('app://workspaces/workspace/new');
   });
 
@@ -850,7 +875,7 @@ describe('opening a frame', () => {
     await invoke(RAIL.READY, viewOf('b').webContents);
 
     // A machine loaded in the background shows at once when picked.
-    expect(await invoke(RAIL.SELECT, framePage(), { id: 'b' })).toMatchObject({
+    expect(await invoke(RAIL.SELECT, viewOf('c').webContents, { id: 'b' })).toMatchObject({
       selectedId: 'b',
       pendingId: '',
     });
@@ -860,7 +885,7 @@ describe('opening a frame', () => {
     openFrame([{ id: 'local' }, { id: 'b' }, { id: 'c' }], 'local');
     await invoke(RAIL.READY, local());
     await vi.waitFor(() => expect(fakes.views.length).toBe(2));
-    await invoke(RAIL.REMOVE, framePage(), { id: 'b' });
+    await invoke(RAIL.REMOVE, local(), { id: 'b' });
     await vi.waitFor(() => expect(fakes.views.length).toBe(3));
     expect(viewOf('c').visible).toBe(false);
   });
