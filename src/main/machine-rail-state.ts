@@ -61,6 +61,29 @@ export function writeWindowRail(window: BrowserWindowType, rail: WindowRail): vo
 export function clearWindowRail(window: BrowserWindowType): void {
   rails.delete(window);
   pendingSelections.delete(window);
+  machinesAside.delete(window);
+}
+
+/**
+ * A frame's whole machine list, in rail order, while the rail is off and the
+ * frame holds only the machine it shows. Saved in its place, so a launch with
+ * the rail off does not lose the frame's other machines.
+ */
+const machinesAside = new WeakMap<BrowserWindowType, string[]>();
+
+/** Keep `machineIds` (the shown one among them) aside for `window`; null forgets them. */
+export function setFrameMachinesAside(
+  window: BrowserWindowType,
+  machineIds: readonly string[] | null,
+): void {
+  if (machineIds && machineIds.length > 1) machinesAside.set(window, [...machineIds]);
+  else machinesAside.delete(window);
+}
+
+/** The machine list kept aside for `window`, if any. */
+export function getFrameMachinesAside(window: BrowserWindowType): string[] | undefined {
+  const aside = machinesAside.get(window);
+  return aside ? [...aside] : undefined;
 }
 
 const emptiedFrames = new WeakSet<BrowserWindowType>();
@@ -95,6 +118,8 @@ export function getMachineRailSession(window: BrowserWindowType): MachineRailSes
   if (rail.machineIds.length === 0) return undefined;
   const pending = pendingSelections.get(window);
   const selectedId = pending && rail.machineIds.includes(pending) ? pending : rail.selectedId;
+  const aside = machinesAside.get(window);
+  if (aside?.includes(selectedId)) return { machineIds: [...aside], selectedId };
   return { machineIds: [...rail.machineIds], selectedId };
 }
 

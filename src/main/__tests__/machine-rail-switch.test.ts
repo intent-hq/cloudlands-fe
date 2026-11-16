@@ -826,6 +826,43 @@ describe('opening a frame', () => {
     expect(fakes.views).toHaveLength(1);
   });
 
+  it('still saves every machine of the frame while the rail is off, so the layout is not lost', async () => {
+    setMachineRailEnabledFlag(false);
+    openFrame([{ id: 'local' }, { id: 'b' }, { id: 'c' }], 'b');
+    expect(getMachineRailSession(fakes.window as never)).toEqual({
+      machineIds: ['local', 'b', 'c'],
+      selectedId: 'b',
+    });
+  });
+
+  it('brings back the machines it kept aside when the rail is turned on', async () => {
+    setMachineRailEnabledFlag(false);
+    openFrame([{ id: 'local' }, { id: 'b' }, { id: 'c' }], 'b');
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    expect(
+      await invoke(RAIL.SET_ENABLED, viewOf('b').webContents, { enabled: true }),
+    ).toMatchObject({ enabled: true, machineIds: ['local', 'b', 'c'], selectedId: 'b' });
+    // The others load in the background, one at a time, behind the shown one.
+    await vi.waitFor(() => expect(fakes.views.length).toBe(2));
+    await invoke(RAIL.READY, fakes.views[1].webContents);
+    await vi.waitFor(() => expect(fakes.views.length).toBe(3));
+    expect(viewOf('b').visible).toBe(true);
+    expect(viewOf('c').visible).toBe(false);
+  });
+
+  it('keeps the machines aside when the rail is turned off, and drops a forgotten one', async () => {
+    openFrame([{ id: 'local' }, { id: 'b' }, { id: 'c' }], 'b');
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SET_ENABLED, viewOf('b').webContents, { enabled: false });
+    expect(getMachineRailSession(fakes.window as never)?.machineIds).toEqual(['local', 'b', 'c']);
+
+    removeMachineFromAllRails('c');
+    expect(getMachineRailSession(fakes.window as never)).toEqual({
+      machineIds: ['local', 'b'],
+      selectedId: 'b',
+    });
+  });
+
   it('falls back to its first machine when the saved selection is not one of them', async () => {
     openFrame([{ id: 'b' }, { id: 'c' }], 'gone');
     expect(await state()).toMatchObject({ machineIds: ['b', 'c'], selectedId: 'b' });

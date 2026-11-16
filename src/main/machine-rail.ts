@@ -45,6 +45,8 @@ import {
   clearWindowRail,
   emptyFrameForClose,
   FRAME_LAYOUT_CHANGED_EVENT,
+  getFrameMachinesAside,
+  setFrameMachinesAside,
   isMachineRailEnabled,
   MACHINE_RAIL_SHOWN_CHANGED_EVENT,
   readWindowRail,
@@ -718,6 +720,15 @@ function reorderMachines(window: BrowserWindowType, order: string[]): MachineRai
 /** A forgotten machine leaves every frame; a frame left with no machine closes. */
 export function removeMachineFromAllRails(id: string): void {
   for (const window of framesHolding(id)) removeMachine(window, id);
+  for (const window of getAppWindows()) {
+    const aside = getFrameMachinesAside(window);
+    if (!aside?.includes(id) || window.isDestroyed()) continue;
+    setFrameMachinesAside(
+      window,
+      aside.filter((machineId) => machineId !== id),
+    );
+    app.emit(FRAME_LAYOUT_CHANGED_EVENT, window);
+  }
 }
 
 /**
@@ -747,6 +758,8 @@ function openFrame(
   clearTransition(window);
   restoredRoutes.set(window, routes);
   writeWindowRail(window, { machineIds, selectedId: selected });
+  // With the rail off the frame still saves its other machines.
+  setFrameMachinesAside(window, isMachineRailEnabled() ? null : ids);
   applySelection(window);
   broadcastState(window);
   ensureFramePage(window);
@@ -773,13 +786,17 @@ async function startOthers(
   await preloadMachines(window, others);
 }
 
-/** The rail lab was turned off: a frame keeps only the machine it shows. */
+/**
+ * The rail lab was turned off: a frame keeps only the machine it shows, and
+ * keeps the others aside for its saved layout and for the rail's return.
+ */
 function resetWindow(window: BrowserWindowType): void {
   const rail = readWindowRail(window);
   if (rail.machineIds.length === 0) return;
   const keep = rail.machineIds.includes(rail.selectedId) ? rail.selectedId : rail.machineIds[0];
   clearTransition(window);
   writeWindowRail(window, { machineIds: [keep], selectedId: keep });
+  setFrameMachinesAside(window, rail.machineIds);
   applySelection(window);
   for (const id of [...viewsOf(window).keys()]) if (id !== keep) destroyView(window, id);
   for (const id of rail.machineIds) if (id !== keep) releaseMachine(id);
@@ -792,10 +809,30 @@ async function setEnabled(next: boolean): Promise<void> {
   for (const window of getAppWindows()) {
     if (window.isDestroyed()) continue;
     if (!next) resetWindow(window);
-    else ensureFramePage(window);
+    else {
+      restoreMachinesAside(window);
+      ensureFramePage(window);
+    }
     broadcastState(window);
     pushBackdrop(window);
   }
+}
+
+/** The rail is back on: a frame takes back the machines it kept aside, loading them in the background. */
+function restoreMachinesAside(window: BrowserWindowType): void {
+  const aside = getFrameMachinesAside(window);
+  setFrameMachinesAside(window, null);
+  const rail = readWindowRail(window);
+  if (!aside || !aside.includes(rail.selectedId)) return;
+  const machineIds = aside.slice(0, MACHINE_RAIL_MAX_MACHINES);
+  if (!machineIds.includes(rail.selectedId)) machineIds[machineIds.length - 1] = rail.selectedId;
+  writeWindowRail(window, { machineIds, selectedId: rail.selectedId });
+  const others = machineIds.filter((id) => id !== rail.selectedId);
+  void startOthers(window, rail.selectedId, others).catch((error: unknown) =>
+    logger.warn("Failed to start a frame's other machines", {
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
 }
 
 /** Reads the persisted Labs setting once at startup; a failed read keeps it off. */
