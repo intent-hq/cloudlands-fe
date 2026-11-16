@@ -28,10 +28,6 @@ export function setWindowTranslucencyEnabled(enabled: boolean): void {
  */
 let menuBarAutoHideEnabled = false;
 
-export function isMenuBarAutoHideEnabled(): boolean {
-  return menuBarAutoHideEnabled;
-}
-
 export function setMenuBarAutoHideEnabled(enabled: boolean): void {
   menuBarAutoHideEnabled = enabled;
 }
