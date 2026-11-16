@@ -53,6 +53,90 @@ export function compactFlowchartLayouts(
     return members.length >= 3 && members.length <= 8 ? [members] : [];
   });
   const results: Map<string, Box>[] = [];
+  const output = (placed: ReadonlyMap<string, Position>) => {
+    const result = new Map(
+      [...placed].map(([id, p]) => {
+        const original = nodeValue(boxes, id);
+        return [
+          id,
+          {
+            ...original,
+            x: (horizontal ? sign * p.u : p.v) - original.width / 2,
+            y: (horizontal ? p.v : sign * p.u) - original.height / 2,
+          },
+        ] as const;
+      }),
+    );
+    const all = [...result.values()];
+    return all.some((a, i) =>
+      all
+        .slice(i + 1)
+        .some(
+          (b) =>
+            a.x < b.x + b.width + 16 &&
+            a.x + a.width + 16 > b.x &&
+            a.y < b.y + b.height + 16 &&
+            a.y + a.height + 16 > b.y,
+        ),
+    )
+      ? undefined
+      : result;
+  };
+  const ids = [...boxes.keys()];
+  for (let i = 0; i < ids.length && results.length < 8; i++)
+    for (let j = i + 1; j < ids.length && results.length < 8; j++) {
+      const pair = [ids[i], ids[j]];
+      const destinations = [...new Set(outgoing(pair[0]).map((e) => e.target))].filter(
+        (id) => !pair.includes(id) && outgoing(pair[1]).some((e) => e.target === id),
+      );
+      if (destinations.length !== 2) continue;
+      const roots = [...new Set(incoming(pair[0]).map((e) => e.source))].filter(
+        (id) =>
+          !pair.includes(id) &&
+          !destinations.includes(id) &&
+          incoming(pair[1]).some((e) => e.source === id),
+      );
+      const joins = [...new Set(outgoing(destinations[0]).map((e) => e.target))].filter(
+        (id) =>
+          !pair.includes(id) &&
+          !destinations.includes(id) &&
+          outgoing(destinations[1]).some((e) => e.target === id),
+      );
+      if (
+        roots.length !== 1 ||
+        joins.length !== 1 ||
+        new Set([...pair, ...destinations, ...roots, ...joins]).size !== 6
+      )
+        continue;
+      const placed = new Map([...positions].map(([id, p]) => [id, { ...p }]));
+      const parent = nodeValue(placed, roots[0]);
+      const branches = pair.toSorted((a, b) => nodeValue(placed, a).v - nodeValue(placed, b).v);
+      const outcomes = destinations.toSorted(
+        (a, b) =>
+          outgoing(a).filter((e) => pair.includes(e.target)).length -
+          outgoing(b).filter((e) => pair.includes(e.target)).length,
+      );
+      const middle = nodeValue(placed, outcomes[0]),
+        outside = nodeValue(placed, outcomes[1]),
+        join = nodeValue(placed, joins[0]);
+      const u = Math.max(
+        Math.min(...pair.map((id) => nodeValue(placed, id).u)),
+        parent.u +
+          parent.width / 2 +
+          gap +
+          Math.max(...pair.map((id) => nodeValue(placed, id).width / 2)),
+      );
+      const spread =
+        Math.max(...pair.map((id) => nodeValue(placed, id).height / 2)) + middle.height / 2 + gap;
+      branches.forEach((id, index) =>
+        Object.assign(nodeValue(placed, id), { u, v: parent.v + (index ? 1 : -1) * spread }),
+      );
+      Object.assign(middle, { u, v: parent.v });
+      Object.assign(join, { u: u + middle.width / 2 + gap + join.width / 2, v: parent.v });
+      Object.assign(outside, { u: join.u + join.width / 2 + gap + outside.width / 2, v: parent.v });
+      const candidate = output(placed);
+      if (candidate) results.push(candidate);
+    }
   for (const members of components) {
     const core = new Set(members);
     const entries = edges.filter((e) => !core.has(e.source) && core.has(e.target));

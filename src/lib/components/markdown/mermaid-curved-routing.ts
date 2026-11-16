@@ -1,4 +1,5 @@
 import { compactFlowchartLayouts } from './mermaid-compact-layout';
+import { hitsShape, shapeOutline, shapePort } from './mermaid-shape-geometry';
 
 type Point = { x: number; y: number };
 type Box = Point & { width: number; height: number };
@@ -52,7 +53,7 @@ const overlaps = (a: Box, b: Box, padding = 0) =>
   a.y < b.y + b.height + padding &&
   a.y + a.height + padding > b.y;
 
-function intersects(a: Point, b: Point, c: Point, d: Point) {
+function intersects(a: Point, b: Point, c: Point, d: Point, shared: Point[] = []) {
   if (
     Math.max(a.x, b.x) < Math.min(c.x, d.x) ||
     Math.max(c.x, d.x) < Math.min(a.x, b.x) ||
@@ -64,17 +65,32 @@ function intersects(a: Point, b: Point, c: Point, d: Point) {
   const ab = { x: b.x - a.x, y: b.y - a.y };
   const cd = { x: d.x - c.x, y: d.y - c.y };
   const det = cross(ab, cd);
-  if (Math.abs(det) < 0.0001) return false;
   const ac = { x: c.x - a.x, y: c.y - a.y };
+  if (Math.abs(det) < 0.0001) {
+    const size = ab.x ** 2 + ab.y ** 2;
+    if (size < 0.000001 || Math.abs(cross(ac, ab)) > 0.0001 * Math.sqrt(size)) return false;
+    const project = (p: Point) => ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / size;
+    const lo = Math.max(0, Math.min(project(c), project(d)));
+    const hi = Math.min(1, Math.max(project(c), project(d)));
+    if (hi < lo - 0.000001) return false;
+    if ((hi - lo) * Math.sqrt(size) > 0.05) return true;
+    const p = { x: a.x + ab.x * lo, y: a.y + ab.y * lo };
+    return !shared.some((endpoint) => distance(p, endpoint) < 0.05);
+  }
   const t = cross(ac, cd) / det;
   const u = cross(ac, ab) / det;
-  return t > 0.0001 && t < 0.9999 && u > 0.0001 && u < 0.9999;
+  if (t < -0.000001 || t > 1.000001 || u < -0.000001 || u > 1.000001) return false;
+  const p = { x: a.x + ab.x * t, y: a.y + ab.y * t };
+  return !shared.some((endpoint) => distance(p, endpoint) < 0.05);
 }
 
 function crosses(a: Point[], b: Point[]) {
+  const shared = [a[0], last(a)].filter((p) =>
+    [b[0], last(b)].some((other) => distance(p, other) < 0.05),
+  );
   for (let i = 1; i < a.length; i++) {
     for (let j = 1; j < b.length; j++) {
-      if (intersects(a[i - 1], a[i], b[j - 1], b[j])) return true;
+      if (intersects(a[i - 1], a[i], b[j - 1], b[j], shared)) return true;
     }
   }
   return false;
@@ -198,12 +214,23 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
         ? [
             [
               id,
-              { box: measure(shape), rect: shape.tagName.toLowerCase() === 'rect', element: node },
+              {
+                box: measure(shape),
+                rect: shape.tagName.toLowerCase() === 'rect',
+                element: node,
+                outline: shapeOutline(shape, measure(shape), inverse),
+              },
             ] as const,
           ]
         : [];
     }),
   );
+  const nodePorts = (id: string, box: Box) => {
+    const node = nodes.get(id);
+    return ports(box).map((pair) =>
+      node && !node.rect ? shapePort(box, node.outline, pair[0]) : pair,
+    );
+  };
   const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].filter(
     (label) => label.textContent?.trim(),
   );
@@ -251,14 +278,14 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     ];
   });
   const clear = (route: Route, curve: Curve, clearance = 8) =>
-    ![...nodes].some(([id, node]) =>
-      hitsBox(
-        curve.points.slice(1, -1),
-        node.box,
-        id === route.source || id === route.target ? -0.1 : clearance,
-      ),
-    );
-  const labelPlacement = (route: Route, curve: Curve, followCurve = false): Box | undefined => {
+    ![...nodes].some(([id, node]) => {
+      const padding = id === route.source || id === route.target ? -0.1 : clearance;
+      const points = curve.points.slice(1, -1);
+      return node.rect || node.outline.length < 3
+        ? hitsBox(points, node.box, padding)
+        : hitsShape(points, node.box, node.outline, padding);
+    });
+  const labelPlacement = (route: Route, curve: Curve, followCurve = true): Box | undefined => {
     if (!route.labelBox) return;
     const current = route.labelBox;
     const candidates = [
@@ -312,7 +339,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
   if (
     routes.length === paths.length &&
     routes.every((route) => route.d.includes('C')) &&
-    [...nodes.values()].every((node) => node.rect)
+    [...nodes.values()].every((node) => node.outline.length >= 3)
   ) {
     const originalNodes = new Map(nodes);
     const originalRoutes = routes.map((route) => ({
@@ -324,6 +351,7 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       labelBox: route.labelBox,
     }));
     const originalLength = routes.reduce((sum, route) => sum + curveLength(route), 0);
+    const originallyCrossed = routes.some((route) => conflicts(route, route) > 0);
     const layouts = compactFlowchartLayouts(
       new Map([...nodes].map(([id, node]) => [id, node.box])),
       routes,
@@ -368,11 +396,18 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
           group.forEach((route, i) => {
             const offset = (i - (group.length - 1) / 2) * spacing;
             const [base, outside] = ports(box)[side];
-            const p = {
+            const nominal = {
               x: base.x + (horizontalSide ? offset : 0),
               y: base.y + (horizontalSide ? 0 : offset),
             };
-            const lead = { x: p.x + outside.x - base.x, y: p.y + outside.y - base.y };
+            const node = nodes.get(id);
+            const [p, lead] =
+              node && !node.rect
+                ? shapePort(box, node.outline, nominal)
+                : [
+                    nominal,
+                    { x: nominal.x + outside.x - base.x, y: nominal.y + outside.y - base.y },
+                  ];
             const record = anchors.get(route) ?? {};
             Object.assign(
               record,
@@ -392,32 +427,50 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       for (const route of ordered) {
         const anchor = anchors.get(route);
         if (!anchor) break;
-        const { start, lead, end, tail } = anchor;
-        if (!start || !lead || !end || !tail) break;
-        const span = distance(start, end);
+        if (!anchor.start || !anchor.lead || !anchor.end || !anchor.tail) break;
         let best: { curve: Curve; cost: number } | undefined;
-        for (const from of [0.5, 0.35, 0.23])
-          for (const to of [0.5, 0.35, 0.23]) {
-            const curve = cubic(
-              start,
-              {
-                x: start.x + ((lead.x - start.x) * span * from) / (gap * 2),
-                y: start.y + ((lead.y - start.y) * span * from) / (gap * 2),
-              },
-              {
-                x: end.x + ((tail.x - end.x) * span * to) / (gap * 2),
-                y: end.y + ((tail.y - end.y) * span * to) / (gap * 2),
-              },
-              end,
+        const pairs = [
+          [
+            [anchor.start, anchor.lead],
+            [anchor.end, anchor.tail],
+          ],
+          ...nodePorts(route.source, route.sourceBox)
+            .flatMap((from) => nodePorts(route.target, route.targetBox).map((to) => [from, to]))
+            .toSorted((a, b) => distance(a[0][0], a[1][0]) - distance(b[0][0], b[1][0])),
+        ];
+        for (const [[start, lead], [end, tail]] of pairs) {
+          const occupied = (id: string, p: Point) =>
+            planned.some(
+              (other) =>
+                (other.route.source === id && distance(p, other.curve.points[0]) < gap / 2) ||
+                (other.route.target === id && distance(p, last(other.curve.points)) < gap / 2),
             );
-            if (
-              !clear(route, curve, gap) ||
-              planned.some((other) => crosses(curve.points, other.curve.points))
-            )
-              continue;
-            const cost = curveLength(curve) + peakCurvature(curve) * gap ** 2;
-            if (!best || cost < best.cost) best = { curve, cost };
-          }
+          if (occupied(route.source, start) || occupied(route.target, end)) continue;
+          const span = distance(start, end);
+          for (const from of [0.5, 0.35, 0.23])
+            for (const to of [0.5, 0.35, 0.23]) {
+              const curve = cubic(
+                start,
+                {
+                  x: start.x + ((lead.x - start.x) * span * from) / (gap * 2),
+                  y: start.y + ((lead.y - start.y) * span * from) / (gap * 2),
+                },
+                {
+                  x: end.x + ((tail.x - end.x) * span * to) / (gap * 2),
+                  y: end.y + ((tail.y - end.y) * span * to) / (gap * 2),
+                },
+                end,
+              );
+              if (
+                !clear(route, curve, gap) ||
+                planned.some((other) => crosses(curve.points, other.curve.points))
+              )
+                continue;
+              const cost = curveLength(curve) + peakCurvature(curve) * gap ** 2;
+              if (!best || cost < best.cost) best = { curve, cost };
+            }
+          if (best) break;
+        }
         if (!best) break;
         planned.push({ route, curve: best.curve });
       }
@@ -433,10 +486,8 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
           }
           item.route.labelBox = item.labelBox;
         }
-        if (
-          valid &&
-          planned.reduce((sum, item) => sum + curveLength(item.curve), 0) < originalLength * 0.82
-        )
+        const length = planned.reduce((sum, item) => sum + curveLength(item.curve), 0);
+        if (valid && length < originalLength * (originallyCrossed ? 1.4 : 0.82))
           compact = { boxes, curves: planned };
       }
       for (const [id, record] of originalNodes) nodes.set(id, record);
@@ -481,7 +532,8 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       incoming.length < 2 ||
       incoming.length > 4 ||
       incoming.some(
-        (route) => route.label || !route.d.includes('C') || !nodes.get(route.source)?.rect,
+        (route) =>
+          route.label || !route.d.includes('C') || !nodes.get(route.source)?.outline.length,
       ) ||
       routes.some((route) => route.source === id)
     )
@@ -530,8 +582,8 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
         const planned: { route: Route; curve: Curve }[] = [];
         for (const route of incoming.toSorted((a, b) => curveLength(b) - curveLength(a))) {
           let chosen: { curve: Curve; length: number } | undefined;
-          for (const [start, lead] of ports(route.sourceBox))
-            for (const [end, tail] of ports(box)) {
+          for (const [start, lead] of nodePorts(route.source, route.sourceBox))
+            for (const [end, tail] of nodePorts(route.target, box)) {
               if (planned.some((other) => distance(end, last(other.curve.points)) < gap)) continue;
               const curve = basis([start, lead, tail, end]);
               if (
@@ -632,13 +684,13 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       !before ||
       !route.d.includes('C') ||
       route.source === route.target ||
-      !nodes.get(route.source)?.rect ||
-      !nodes.get(route.target)?.rect
+      !nodes.get(route.source)?.outline.length ||
+      !nodes.get(route.target)?.outline.length
     )
       continue;
     let best: { curve: Curve; labelBox?: Box; conflicts: number; length: number } | undefined;
-    for (const [start, lead] of ports(route.sourceBox))
-      for (const [end, tail] of ports(route.targetBox)) {
+    for (const [start, lead] of nodePorts(route.source, route.sourceBox))
+      for (const [end, tail] of nodePorts(route.target, route.targetBox)) {
         const candidates = [
           [start, lead, tail, end],
           ...[outer.top, outer.bottom].flatMap((y) => [
@@ -676,8 +728,8 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     if (
       !route.d.includes('C') ||
       route.source === route.target ||
-      !nodes.get(route.source)?.rect ||
-      !nodes.get(route.target)?.rect
+      !nodes.get(route.source)?.outline.length ||
+      !nodes.get(route.target)?.outline.length
     )
       continue;
     const start = route.points[0],

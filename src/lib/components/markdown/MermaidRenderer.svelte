@@ -1405,6 +1405,28 @@ ${source}`;
         await new Promise<void>((resolve) => setTimeout(resolve, 64));
       }
       if (generation !== renderGeneration || fit !== fitGeneration) return false;
+      // Arrow trimming can move a cubic control point outside the first fit.
+      const painted = measureFinalFlowchartBounds(svg);
+      const view = svg.viewBox.baseVal;
+      if (
+        painted.x < view.x ||
+        painted.y < view.y ||
+        painted.x + painted.width > view.x + view.width ||
+        painted.y + painted.height > view.y + view.height
+      ) {
+        const left = Math.min(view.x, painted.x - padding);
+        const top = Math.min(view.y, painted.y - padding);
+        const finalWidth = Math.ceil(
+          Math.max(view.x + view.width, painted.x + painted.width + padding) - left,
+        );
+        const finalHeight = Math.ceil(
+          Math.max(view.y + view.height, painted.y + painted.height + padding) - top,
+        );
+        svg.setAttribute('viewBox', `${left} ${top} ${finalWidth} ${finalHeight}`);
+        svg.setAttribute('width', String(finalWidth));
+        svg.setAttribute('height', String(finalHeight));
+        setReadableMermaidWidth(svg, finalWidth);
+      }
       svg.dataset.layoutGeneration = String(generation);
       svg.dataset.layoutSettled = 'true';
       return true;
