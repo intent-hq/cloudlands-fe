@@ -30,7 +30,7 @@ import {
 
 import { Logger } from '../shared/logger';
 import { m } from '../shared/paraglide/messages.js';
-import { getBackendIdForWindow } from './window-backend';
+import { frameOwnMachine } from './frames';
 
 const logger = new Logger('RendererHangMonitor');
 
@@ -227,7 +227,7 @@ export function attachRendererHangMonitor(
 
   const handleUnresponsive = async (abort: AbortController): Promise<void> => {
     const unresponsiveAt = deps.now();
-    const backendId = getBackendIdForWindow(window);
+    const backendId = frameOwnMachine(window);
     let workspaceId: string | undefined;
     try {
       workspaceId = await deps.resolveWorkspaceId(windowId);

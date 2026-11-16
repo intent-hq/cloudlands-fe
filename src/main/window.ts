@@ -59,18 +59,17 @@ import {
   getBackendIdForWindow,
   stampWindowWithBackend,
 } from './window-backend';
+import { focusedFrame, frameOwnMachine, setNonFrameWindowPredicate } from './frames';
 
 export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
 
-/** The focused window's backend; falls back to the main window, then local. */
+// Dock and capture windows are not frames.
+setNonFrameWindowPredicate(isTransientCaptureWindow);
+
+/** The focused frame's own machine; falls back to the main window, then local. */
 export function getFocusedWindowBackendId(): string {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed() && !isTransientCaptureWindow(focused))
-    return getBackendIdForWindow(focused);
-  const main = getMainWindow();
-  return main && !main.isDestroyed() && !isTransientCaptureWindow(main)
-    ? getBackendIdForWindow(main)
-    : LOCAL_CONNECTION_ID;
+  const frame = focusedFrame();
+  return frame ? frameOwnMachine(frame) : LOCAL_CONNECTION_ID;
 }
 
 /**
@@ -431,7 +430,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return getAppWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed() || isTransientCaptureWindow(w)) return false;
-      if (getBackendIdForWindow(w) !== backendId) return false;
+      if (frameOwnMachine(w) !== backendId) return false;
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
@@ -481,7 +480,7 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
   try {
     const allLiveWindows = getAppWindows().filter((window) => !window.isDestroyed());
     const liveWindows = allLiveWindows.filter((window) => !isTransientCaptureWindow(window));
-    const backendIds = new Set(liveWindows.map(getBackendIdForWindow));
+    const backendIds = new Set(liveWindows.map(frameOwnMachine));
     for (const backendId of backendIds) {
       const sessions = buildSessionsFromOpenWindows(backendId);
       if (sessions.length > 0) lastKnownSessions[backendId] = sessions;
@@ -496,12 +495,11 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       typeof this.isDestroyed === 'function' &&
       !isTransientCaptureWindow(this)
     ) {
-      const closingBackendId = getBackendIdForWindow(this);
+      const closingBackendId = frameOwnMachine(this);
       const isLastForBackend =
-        liveWindows.filter((window) => getBackendIdForWindow(window) === closingBackendId)
-          .length === 1;
+        liveWindows.filter((window) => frameOwnMachine(window) === closingBackendId).length === 1;
       const hasSurvivingBackend = liveWindows.some(
-        (window) => getBackendIdForWindow(window) !== closingBackendId,
+        (window) => frameOwnMachine(window) !== closingBackendId,
       );
       const hasSurvivingDock = allLiveWindows.some(
         (window) => window !== this && isTransientCaptureWindow(window),
@@ -583,7 +581,7 @@ export async function saveAllWindowSessions(): Promise<void> {
       ...closedBackendSessions,
       ...getAppWindows()
         .filter((window) => !window.isDestroyed() && !isTransientCaptureWindow(window))
-        .map(getBackendIdForWindow),
+        .map(frameOwnMachine),
     ]);
     const map = readSessionsMap();
     for (const backendId of backendIds) {
@@ -867,7 +865,7 @@ function findAppWindowForBackend(backendId: string): BrowserWindowType | undefin
     (window) =>
       !window.isDestroyed() &&
       !isTransientCaptureWindow(window) &&
-      getBackendIdForWebContents(window.webContents) === backendId &&
+      frameOwnMachine(window) === backendId &&
       !isTrackedHudWindow(window) &&
       !isHudWindow(window),
   );
@@ -915,10 +913,8 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
   const liveWindows = getAppWindows().filter(
     (window) => !window.isDestroyed() && !isTransientCaptureWindow(window),
   );
-  const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
-  const hasSurvivingWindow = liveWindows.some(
-    (window) => getBackendIdForWindow(window) !== backendId,
-  );
+  const closesAnyWindow = liveWindows.some((window) => frameOwnMachine(window) === backendId);
+  const hasSurvivingWindow = liveWindows.some((window) => frameOwnMachine(window) !== backendId);
   if (closesAnyWindow && !hasSurvivingWindow) {
     await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
   }
@@ -928,11 +924,7 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
 export function closeWindowsForBackend(backendId: string): void {
   const windows = getAppWindows();
   for (const window of windows) {
-    if (
-      !window.isDestroyed() &&
-      !isDockWindow(window) &&
-      getBackendIdForWindow(window) === backendId
-    )
+    if (!window.isDestroyed() && !isDockWindow(window) && frameOwnMachine(window) === backendId)
       window.destroy();
   }
   const main = getMainWindow();

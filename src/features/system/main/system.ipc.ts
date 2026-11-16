@@ -29,7 +29,6 @@ import {
 } from './window-workspace-tracking';
 import {
   getBackendIdForWebContents,
-  getBackendIdForWindow,
   getRendererWebContents,
   getShownRendererWebContents,
   getWindowForWebContents,
@@ -109,6 +108,7 @@ import {
   registerWindowTitleListener,
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
+import { frameOwnMachine } from '../../../main/frames';
 import { isDockWindow } from '../../../main/dock-window';
 import { saveMenuBarAutoHidePref } from '../../../main/menu-bar-auto-hide-pref';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
@@ -304,7 +304,7 @@ const liveWindowHostChecker: WindowHostChecker = {
     const renderer = resolveRendererKey(key);
     if (!renderer) return null;
     return key > 0
-      ? getBackendIdForWindow(renderer.window)
+      ? frameOwnMachine(renderer.window)
       : getBackendIdForWebContents(renderer.contents);
   },
 };
@@ -1166,13 +1166,12 @@ export function setupSystemIPC() {
         if (!window || window.isDestroyed()) {
           return { success: true };
         }
-        const { ensureLocalWindowBeforeClosingBackend, getBackendIdForWindow } =
-          await import('../../../main/window');
+        const { ensureLocalWindowBeforeClosingBackend } = await import('../../../main/window');
         const survivors = BrowserWindow.getAllWindows().filter(
           (other) => other !== window && !other.isDestroyed(),
         );
         if (survivors.length === 0) {
-          await ensureLocalWindowBeforeClosingBackend(getBackendIdForWindow(window));
+          await ensureLocalWindowBeforeClosingBackend(frameOwnMachine(window));
         }
         if (!window.isDestroyed()) {
           window.close();
@@ -1589,7 +1588,7 @@ export function setupSystemIPC() {
       !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
       !isHudWindow(existing) &&
       !isTrackedHudWindow(existing) &&
-      getBackendIdForWindow(existing) === backendId
+      frameOwnMachine(existing) === backendId
     );
   }
 

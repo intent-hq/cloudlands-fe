@@ -455,7 +455,8 @@ import {
   disposeDevConsole,
 } from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
-import { getBackendIdForWindow, getShownRendererWebContents } from './window-backend.js';
+import { getShownRendererWebContents } from './window-backend.js';
+import { frameOwnMachine } from './frames.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
@@ -1159,7 +1160,7 @@ const bootFlow = app.whenReady().then(async () => {
         liveWindows.map((w) => ({
           windowId: w.id,
           isHud: isHudWindow(w) || isTrackedHudWindow(w),
-          backendId: getBackendIdForWindow(w),
+          backendId: frameOwnMachine(w),
           isFocused: w.isFocused(),
         })),
         connections,

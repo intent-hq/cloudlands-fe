@@ -50,6 +50,7 @@ import {
   type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
+import { rendererFor } from './frames';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
 import {
   buildLoadUrl,
@@ -591,9 +592,7 @@ export async function openInvitedMachineInWindow(
   // The rail was turned off or the window closed meanwhile: the machine still needs a window.
   if (!isMachineRailEnabled() || window.isDestroyed()) return false;
   if (!mayOpen()) return true;
-  const rail = readWindowRail(window);
-  const contents =
-    id === rail.machineIds[0] ? window.webContents : ensureView(window, id).webContents;
+  const contents = rendererFor(window, id) ?? ensureView(window, id).webContents;
   if (workspaceId)
     queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
   if (window.isMinimized()) window.restore();

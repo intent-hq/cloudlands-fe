@@ -1,5 +1,5 @@
 import { app, BrowserWindow, screen } from 'electron';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import { frameOwnMachine } from '../../../main/frames';
 import { showRailMachine } from '../../../main/machine-rail-state';
 import { isHudWindow } from '../../../main/hud-window';
 import { isDevConsoleRoute } from '../../../shared/dev-console-route';
@@ -15,7 +15,7 @@ function findDesktopOwningWindow(identity: OwningIdentity): BrowserWindow | unde
   const windows = BrowserWindow.getAllWindows().filter((window) => {
     if (window.isDestroyed() || isHudWindow(window) || window.webContents.isLoadingMainFrame())
       return false;
-    if (getBackendIdForWindow(window) !== identity.backendId) return false;
+    if (frameOwnMachine(window) !== identity.backendId) return false;
     try {
       const { pathname, protocol } = new URL(window.webContents.getURL());
       return (
