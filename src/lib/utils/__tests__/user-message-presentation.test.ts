@@ -16,6 +16,11 @@ const WAIT_NOTE =
 const STALE_NOTE =
   '[SYSTEM NOTE] This message was queued before you completed; your completion report was already delivered to your parent at 2026-08-17T05:01:00Z. Only call reportToParent again if this message materially changes the outcome — do not re-send the same report.';
 
+// Byte-identical to intentd's `preemption_attribution_note` golden
+// (crates/intent-services/src/v1_goldens.rs, intent-hq/intent#9430).
+const PREEMPTION_NOTE =
+  '[SYSTEM NOTE] This message interrupted your previous turn. Any "interrupted by user" text, or tool-use rejection telling you to stop and wait for the user, just before this message was caused by this message\'s delivery, not by the user. Do not wait for the user because of it: act on this message, and re-run an interrupted tool call if it is still needed.';
+
 function user(text: string): AgentMessage {
   return {
     id: 'user-message',
@@ -35,6 +40,26 @@ describe('user-message presentation sanitization', () => {
     expect(stripInternalDeliveryNotes(`Ship it\r\n\r\n${WAIT_NOTE}\r\n\r\n${STALE_NOTE}`)).toBe(
       'Ship it',
     );
+  });
+
+  it('removes the preemption-attribution note alone or alongside queue notes', () => {
+    expect(stripInternalDeliveryNotes(`Rebase onto main\n\n${PREEMPTION_NOTE}`)).toBe(
+      'Rebase onto main',
+    );
+    expect(
+      stripInternalDeliveryNotes(`Rebase onto main\n\n${PREEMPTION_NOTE}\n\n${WAIT_NOTE}`),
+    ).toBe('Rebase onto main');
+    const message = agentMessage(`${A2A_HEADER}\n\nRebase onto main\n\n${PREEMPTION_NOTE}`);
+    const snapshot = structuredClone(message);
+    expect(getPresentedUserMessageText(message)).toBe('Rebase onto main');
+    expect(message).toEqual(snapshot);
+  });
+
+  it('keeps a preemption note that is not the trailing paragraph or is altered', () => {
+    const leading = `${PREEMPTION_NOTE}\n\nKeep this trailing user paragraph.`;
+    expect(stripInternalDeliveryNotes(leading)).toBe(leading);
+    const altered = `Keep\n\n${PREEMPTION_NOTE.replace('by the user.', 'by a user.')}`;
+    expect(stripInternalDeliveryNotes(altered)).toBe(altered);
   });
 
   it('preserves authored literals, quotes, Markdown, and code', () => {
@@ -494,6 +519,20 @@ describe('stripTruncatedTrailingDeliveryNote', () => {
     expect(
       stripTruncatedTrailingDeliveryNote('Keep this prompt\n\n[SYSTEM NOTE] This mess', queued),
     ).toBe('Keep this prompt');
+  });
+
+  it('drops a chopped preemption note, and a full one before a chopped queue note', () => {
+    expect(
+      stripTruncatedTrailingDeliveryNote(`Keep this prompt\n\n${PREEMPTION_NOTE.slice(0, 90)}`),
+    ).toBe('Keep this prompt');
+    expect(
+      stripTruncatedTrailingDeliveryNote(
+        `Keep this prompt\n\n${PREEMPTION_NOTE}\n\n[SYSTEM NOTE] This message was queued at 2026`,
+        queued,
+      ),
+    ).toBe('Keep this prompt');
+    const tooShort = 'Keep this prompt\n\n[SYSTEM NOTE] This message interrupted your';
+    expect(stripTruncatedTrailingDeliveryNote(tooShort)).toBe(tooShort);
   });
 
   it('keeps text without queueInfo metadata, authored brackets, and non-trailing notes', () => {
