@@ -349,7 +349,7 @@ import {
 } from './dock-lab';
 import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
 import { loadMachineRailEnabled, registerMachineRailHandlers } from './machine-rail';
-import { FRAME_LAYOUT_CHANGED_EVENT } from './machine-rail-state';
+import { FRAME_LAYOUT_CHANGED_EVENT, MACHINE_RAIL_SHOWN_CHANGED_EVENT } from './machine-rail-state';
 import {
   setupBrowserAccess,
   shutdownBrowserAccess,
@@ -1543,6 +1543,11 @@ const bootFlow = app.whenReady().then(async () => {
   });
 
   app.on('backend-connection-changed', () => {
+    void rebuildMenu();
+  });
+
+  // A frame switched the machine it shows: its Window menu entry is labeled by it.
+  app.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, () => {
     void rebuildMenu();
   });
 
