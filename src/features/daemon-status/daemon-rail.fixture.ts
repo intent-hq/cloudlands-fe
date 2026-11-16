@@ -19,6 +19,7 @@ export function createDaemonRailFixture(rail: boolean, onSelect: (id: string) =>
       connections: [
         {
           id: 'local',
+          // i18n-ignore (synthetic device name for browser tests)
           label: 'This computer',
           host: null,
           port: null,
@@ -27,7 +28,9 @@ export function createDaemonRailFixture(rail: boolean, onSelect: (id: string) =>
         },
         {
           id: 'audit-host',
+          // i18n-ignore (synthetic device name for browser tests)
           label: 'Build server',
+          // i18n-ignore (synthetic device name for browser tests)
           hostname: 'Build server',
           host: 'development.example.com',
           port: 4321,
