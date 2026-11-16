@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.4...v2.342.5) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.227 ([#4683](https://github.com/intent-hq/cloudlands-fe/issues/4683)) ([7104cf3](https://github.com/intent-hq/cloudlands-fe/commit/7104cf323db45c9781528fea6e86bc0d6ca39f5f))
+* **chat:** hide the daemon's preemption-attribution note in user bubbles ([#4677](https://github.com/intent-hq/cloudlands-fe/issues/4677)) ([c37490a](https://github.com/intent-hq/cloudlands-fe/commit/c37490a1ac383e3e6734a1d17fecbeedacab9d72))
+
 ## [2.342.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.3...v2.342.4) (2026-11-16)
 
 
