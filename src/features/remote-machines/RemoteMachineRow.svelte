@@ -81,6 +81,7 @@
     return machineRowNeedsNode(
       machine,
       (id) => entries.find((entry) => entry.id === id)?.displayName,
+      $connections$.find((connection) => connection.id === connectionId)?.daemonMode,
     );
   });
   // Green while the backend holds a link to it, grey without one; a

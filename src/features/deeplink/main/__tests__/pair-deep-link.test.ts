@@ -69,6 +69,7 @@ vi.mock('../../../backend/main/desktop-connections-store', () => ({
 }));
 
 const openBackendWindow = vi.fn();
+const refreshStoredDaemonMode = vi.fn();
 const NodeWindowRefusedError = vi.hoisted(
   () =>
     class NodeWindowRefusedError extends Error {
@@ -80,6 +81,9 @@ const NodeWindowRefusedError = vi.hoisted(
 vi.mock('../../../backend/main/backend.ipc', () => ({
   get openBackendWindow() {
     return openBackendWindow;
+  },
+  get refreshStoredDaemonMode() {
+    return refreshStoredDaemonMode;
   },
   NodeWindowRefusedError,
 }));
@@ -330,6 +334,55 @@ describe('a full daemon pairing link', () => {
     openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
     await handlePairDeepLink(LINK);
     expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+  });
+});
+
+describe('a pairing link to a saved machine whose mode changed', () => {
+  it('a saved node that is now an orchestrator is stored as one and opens as a backend', async () => {
+    tested.daemonMode = 'orchestrator';
+    tested.modeReported = true;
+    findMatching.mockResolvedValue({ id: 'intent-cache', fingerprint: PIN, daemonMode: 'node' });
+    await handlePairDeepLink(LINK);
+    expect(refreshStoredDaemonMode).toHaveBeenCalledWith('intent-cache', 'orchestrator');
+    expect(pairLinks.hold).not.toHaveBeenCalled();
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('intent-cache', { parentWindow: linkWindow });
+    expect(refreshStoredDaemonMode.mock.invocationCallOrder[0]).toBeLessThan(
+      openBackendWindow.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a saved orchestrator that is now a node is stored as one before the app window asks', async () => {
+    tested.daemonMode = 'node';
+    tested.modeReported = true;
+    mainWindow = fakeWindow();
+    findMatching.mockResolvedValue({ id: 'gpu-rig', fingerprint: PIN, daemonMode: 'orchestrator' });
+    await handlePairDeepLink(LINK);
+    expect(refreshStoredDaemonMode).toHaveBeenCalledWith('gpu-rig', 'node');
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(pairLinks.hold).toHaveBeenCalledTimes(1);
+    expect(refreshStoredDaemonMode.mock.invocationCallOrder[0]).toBeLessThan(
+      pairLinks.hold.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('leaves a saved record alone when the mode is unchanged or unknown', async () => {
+    tested.modeReported = true;
+    findMatching.mockResolvedValue({ id: 'saved', fingerprint: PIN, daemonMode: 'regular' });
+    await handlePairDeepLink(LINK);
+    tested.daemonMode = null;
+    await handlePairDeepLink(LINK);
+    expect(refreshStoredDaemonMode).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it('never refreshes a record whose pin differs from the link', async () => {
+    tested.daemonMode = 'orchestrator';
+    tested.modeReported = true;
+    findMatching.mockResolvedValue({ id: 'other', fingerprint: 'cd'.repeat(32), daemonMode: 'node' });
+    await handlePairDeepLink(LINK);
+    expect(refreshStoredDaemonMode).not.toHaveBeenCalled();
   });
 });
 
