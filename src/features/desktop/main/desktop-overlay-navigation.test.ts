@@ -1,5 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ windows: [] as any[], create: vi.fn(), focus: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  windows: [] as any[],
+  create: vi.fn(),
+  focus: vi.fn(),
+  showRailMachine: vi.fn((): any => null),
+}));
 vi.mock('electron', () => ({
   app: { focus: mocks.focus },
   BrowserWindow: { getAllWindows: () => mocks.windows },
@@ -12,6 +17,7 @@ vi.mock('../../../main/hud-window', () => ({
   isHudWindow: (window: any) => window.url.includes('/hud'),
 }));
 vi.mock('../../../main/window', () => ({ createWindowForSession: mocks.create }));
+vi.mock('../../../main/machine-rail-state', () => ({ showRailMachine: mocks.showRailMachine }));
 import {
   focusDesktopOwningWindow,
   openDesktopControllingAgent,
@@ -38,7 +44,19 @@ beforeEach(() => {
   mocks.windows.length = 0;
   mocks.create.mockReset();
   mocks.focus.mockReset();
+  mocks.showRailMachine.mockReset().mockReturnValue(null);
 });
+
+/** A window that keeps the owning machine in its rail, as a hidden machine renderer. */
+function railMachine(ready: Promise<void> = Promise.resolve()) {
+  const rail = window('local', '/workspace/home');
+  const contents = { isDestroyed: () => false, send: vi.fn() };
+  mocks.windows.push(rail);
+  mocks.showRailMachine.mockImplementation((backendId: string) =>
+    backendId === identity.backendId ? { window: rail, contents, ready } : null,
+  );
+  return { rail, contents };
+}
 it('targets the owning backend/workspace and excludes overlay and diagnostic windows', async () => {
   const wrongBackend = window('remote-b', '/workspace/space%2F%23a');
   const overlay = window('remote-a', '/desktop-overlay?kind=controls');
@@ -113,4 +131,39 @@ it('never opens a window to refocus when the owning backend has none', () => {
   expect(focusDesktopOwningWindow(identity, 'darwin')).toBe(false);
   expect(mocks.create).not.toHaveBeenCalled();
   expect(mocks.focus).not.toHaveBeenCalled();
+});
+
+it('switches a rail to the owning machine and navigates it once ready, instead of opening a window', async () => {
+  let markReady: () => void = () => {};
+  const { rail, contents } = railMachine(new Promise<void>((resolve) => (markReady = resolve)));
+  const opened = openDesktopControllingAgent(identity);
+  await Promise.resolve();
+  expect(mocks.showRailMachine).toHaveBeenCalledWith('remote-a');
+  expect(rail.focus).toHaveBeenCalledOnce();
+  expect(contents.send).not.toHaveBeenCalled();
+  markReady();
+  await opened;
+  expect(contents.send).toHaveBeenCalledWith(
+    'navigate',
+    '/desktop-control-agent?workspaceId=space%2F%23a&agentId=agent%26a',
+  );
+  expect(rail.webContents.send).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
+});
+it('prefers a window of the owning machine over switching a rail', async () => {
+  const { contents } = railMachine();
+  const target = window('remote-a', '/workspace/space%2F%23a');
+  mocks.windows.push(target);
+  await openDesktopControllingAgent(identity);
+  expect(target.webContents.send).toHaveBeenCalledOnce();
+  expect(mocks.showRailMachine).not.toHaveBeenCalled();
+  expect(contents.send).not.toHaveBeenCalled();
+});
+it('refocuses by switching a rail to the owning machine, without navigating', () => {
+  const { rail, contents } = railMachine();
+  expect(focusDesktopOwningWindow(identity, 'darwin')).toBe(true);
+  expect(mocks.showRailMachine).toHaveBeenCalledWith('remote-a');
+  expect(mocks.focus).toHaveBeenCalledWith({ steal: true });
+  expect(rail.focus).toHaveBeenCalledOnce();
+  expect(contents.send).not.toHaveBeenCalled();
 });

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, screen } from 'electron';
 import { getBackendIdForWindow } from '../../../main/window-backend';
+import { showRailMachine } from '../../../main/machine-rail-state';
 import { isHudWindow } from '../../../main/hud-window';
 import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../../../shared/desktop-overlay';
@@ -53,6 +54,16 @@ export async function openDesktopControllingAgent(identity: {
     target.webContents.send('navigate', route);
     return;
   }
+  // No window of its own: a window that keeps the machine in its rail shows it.
+  const rail = showRailMachine(identity.backendId);
+  if (rail) {
+    if (rail.window.isMinimized()) rail.window.restore();
+    rail.window.show();
+    rail.window.focus();
+    await rail.ready;
+    if (!rail.contents.isDestroyed()) rail.contents.send('navigate', route);
+    return;
+  }
   const { createWindowForSession } = await import('../../../main/window');
   await createWindowForSession(
     { route, bounds: screen.getPrimaryDisplay().workArea },
@@ -63,13 +74,14 @@ export async function openDesktopControllingAgent(identity: {
 
 /**
  * Bring the window that owns a finished desktop session back to the front
- * without navigating it. Never opens a window. Returns whether one was raised.
+ * without navigating it; a window that keeps the owning machine in its rail
+ * switches to it. Never opens a window. Returns whether one was raised.
  */
 export function focusDesktopOwningWindow(
   identity: OwningIdentity,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  const target = findDesktopOwningWindow(identity);
+  const target = findDesktopOwningWindow(identity) ?? showRailMachine(identity.backendId)?.window;
   if (!target) return false;
   if (target.isMinimized()) target.restore();
   // Another app is frontmost after desktop control; a plain focus() only
