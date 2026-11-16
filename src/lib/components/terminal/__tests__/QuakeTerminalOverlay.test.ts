@@ -37,6 +37,27 @@ const {
   remoteScripts: { supported: false },
 }));
 
+const homeView = vi.hoisted(() => {
+  const subscribers = new Set<(value: unknown) => void>();
+  let value: unknown = null;
+  return {
+    set(next: unknown) {
+      value = next;
+      for (const run of subscribers) run(value);
+    },
+    subscribe(run: (value: unknown) => void) {
+      subscribers.add(run);
+      run(value);
+      return () => subscribers.delete(run);
+    },
+  };
+});
+
+vi.mock('$features/workspace-home/workspace-home-selectors', () => ({
+  // No workspace home unless a test sets one.
+  selectWorkspaceHomeView: () => homeView,
+}));
+
 vi.mock('$lib/client', () => ({ appClient: { scripts: { get: mockGet } } }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -313,6 +334,7 @@ vi.mock('svelte/transition', () => ({ slide: () => ({}) }));
 
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
+import { workspaceHomeView } from '$features/workspace-home/workspace-home';
 import RootQuakeTerminalOverlay from '../RootQuakeTerminalOverlay.svelte';
 
 const runningScript = {
@@ -723,6 +745,64 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       ).toEqual([[{ type: 'terminals/setHeight', payload: [wsId, 90] }]]);
     },
   );
+});
+
+describe('QuakeTerminalOverlay header while the workspace home is away', () => {
+  const starting = () =>
+    workspaceHomeView({
+      home: { homeId: 'h-1', name: 'E2B · Team', state: 'starting', since: '2026-11-16' },
+    });
+  const reasonOf = (button: HTMLElement) =>
+    document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    selectorSubscribers.clear();
+    workflowOutcomes.clear();
+    terminalState.isOpen = true;
+    terminalState.byWorkspace = {};
+    selectedScript.id = 'script-1';
+  });
+
+  afterEach(() => {
+    cleanup();
+    homeView.set(null);
+    selectedScript.id = null;
+  });
+
+  it('disables Restart with the home reason and keeps Stop for a running script', async () => {
+    homeView.set(starting());
+    scriptEntries.value = [runningScript];
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+
+    const restart = screen.getByLabelText('Restart script') as HTMLButtonElement;
+    expect(restart.disabled).toBe(true);
+    expect(reasonOf(restart)).toBe('Starting home…');
+    await fireEvent.click(restart);
+    expect((screen.getByLabelText('Stop script') as HTMLButtonElement).disabled).toBe(false);
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/restartScriptRequested' }),
+    );
+  });
+
+  it('disables Start with the home reason, and enables it once the home is attached', async () => {
+    homeView.set(starting());
+    scriptEntries.value = [{ ...runningScript, runtime: { status: 'idle', restartCount: 0 } }];
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+
+    const start = screen.getByLabelText('Start script') as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(reasonOf(start)).toBe('Starting home…');
+
+    homeView.set(
+      workspaceHomeView({
+        home: { homeId: 'h-1', name: 'E2B · Team', state: 'attached', since: '2026-11-16' },
+      }),
+    );
+    await waitFor(() =>
+      expect((screen.getByLabelText('Start script') as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
 });
 
 describe('QuakeTerminalOverlay machine runs', () => {

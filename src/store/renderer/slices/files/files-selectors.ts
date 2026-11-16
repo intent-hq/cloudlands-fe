@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyFilesWorkspaceState } from './files-slice';
-import type { FileContentEntry, FilesWorkspaceState } from './files-types';
+import type { FileContentEntry, FileReadErrorInfo, FilesWorkspaceState } from './files-types';
 
 const selectFilesWorkspaceState = store.createSelector(
   (state, wsId: string): FilesWorkspaceState =>
@@ -49,6 +49,12 @@ export const selectFileSaving = store.createSelector(
 export const selectFileError = store.createSelector(
   (state, wsId: string, path: string | null | undefined): string | null =>
     selectFileContentEntry.select(state, wsId, path)?.error ?? null,
+);
+
+/** The failed read's JSON-RPC code and data, or null. */
+export const selectFileErrorInfo = store.createSelector(
+  (state, wsId: string, path: string | null | undefined): FileReadErrorInfo | null =>
+    selectFileContentEntry.select(state, wsId, path)?.errorInfo ?? null,
 );
 
 export const selectFileNotFoundCandidates = store.createSelector(

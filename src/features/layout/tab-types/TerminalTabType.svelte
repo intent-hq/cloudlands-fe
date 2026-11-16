@@ -22,6 +22,7 @@
   import Terminal from '$lib/components/terminal/Terminal.svelte';
   import ScriptOutputViewer from '$lib/components/terminal/ScriptOutputViewer.svelte';
   import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import { homeRunDisabledReason } from '$features/workspace-home/workspace-home-copy';
   import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     openTerminalOverlay,
@@ -109,6 +110,7 @@
       {workspaceId}
       class="h-full"
       runDisabled={$homeView$?.unavailable === true}
+      runDisabledReason={homeRunDisabledReason($homeView$)}
     />
   {/key}
 {:else if terminalId && isActive && $fullContext$}

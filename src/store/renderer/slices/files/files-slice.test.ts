@@ -14,7 +14,12 @@ import {
   saveFileContentSucceeded,
   updateFileContent,
 } from './files-slice';
-import { selectFileContent, selectFileIsDirty, selectOriginalFileContent } from './files-selectors';
+import {
+  selectFileContent,
+  selectFileErrorInfo,
+  selectFileIsDirty,
+  selectOriginalFileContent,
+} from './files-selectors';
 
 const WS_ID = 'ws-1';
 const PATH = 'src/app.ts';
@@ -87,6 +92,7 @@ describe('filesReducer', () => {
       loading: true,
       saving: false,
       error: null,
+      errorInfo: null,
       isBinary: false,
       truncated: false,
       notFoundCandidates: null,
@@ -202,8 +208,30 @@ describe('filesReducer', () => {
       localContent: null,
       loading: false,
       error: 'boom',
+      errorInfo: null,
       truncated: false,
       notFoundCandidates: null,
+    });
+  });
+
+  it('keeps a load error code and data until the next read or save', () => {
+    const info = {
+      rpcCode: -32603,
+      data: { code: 'home-unavailable', name: 'E2B', starting: true, retryable: true },
+    };
+    const failed = filesReducer(
+      initialState,
+      loadFileContentFailed(WS_ID, PATH, ABS_PATH, 'Internal error', undefined, info),
+    );
+    expect(selectFileErrorInfo.select({ files: failed } as any, WS_ID, PATH)).toEqual(info);
+
+    const retried = filesReducer(failed, loadFileContentRequested(WS_ID, PATH, ABS_PATH));
+    expect(getItem(retried.byWorkspaceId[WS_ID].files, PATH)?.errorInfo).toBeNull();
+
+    const saveFailed = filesReducer(failed, saveFileContentFailed(WS_ID, PATH, 'disk full'));
+    expect(getItem(saveFailed.byWorkspaceId[WS_ID].files, PATH)).toMatchObject({
+      error: 'disk full',
+      errorInfo: null,
     });
   });
 

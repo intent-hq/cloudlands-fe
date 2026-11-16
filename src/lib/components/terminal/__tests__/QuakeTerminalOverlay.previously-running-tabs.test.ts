@@ -23,6 +23,12 @@ const scriptSelectorState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/workspace-home/workspace-home-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  // No workspace home: Run is available.
+  return { selectWorkspaceHomeView: () => readable(null) };
+});
+
 vi.mock('$store/renderer/store', async () => {
   const { get } = await import('svelte/store');
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');

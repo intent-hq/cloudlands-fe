@@ -6,6 +6,8 @@ import type {
   ScriptWithState,
 } from '$store/renderer/slices/scripts/scripts-types';
 import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
+import type { WorkspaceHomeView } from '$features/workspace-home/workspace-home';
+import { workspaceHomeView } from '$features/workspace-home/workspace-home';
 
 const mocks = vi.hoisted(() => {
   const openUserTab = vi.fn();
@@ -28,6 +30,7 @@ const mocks = vi.hoisted(() => {
       }
     >,
     placements: {} as Record<string, Record<string, 'overlay' | 'panel'>>,
+    homeView: null as WorkspaceHomeView | null,
   };
 });
 
@@ -101,6 +104,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: workspaceReadable(() => mocks.actionContext),
 }));
 
+vi.mock('$features/workspace-home/workspace-home-selectors', () => ({
+  selectWorkspaceHomeView: workspaceReadable(() => mocks.homeView),
+}));
+
 vi.mock('$features/scripts/confirm-script-deletion', () => ({
   confirmScriptDeletion: mocks.confirmScriptDeletion,
 }));
@@ -154,6 +161,7 @@ describe('WorkspaceShellList development script controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isCollaborator = false;
+    mocks.homeView = null;
     mocks.actionContext = 'admitted';
     mocks.scripts = {};
     mocks.operations = {};
@@ -511,6 +519,44 @@ describe('WorkspaceShellList development script controls', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'terminals/open' }),
     );
+  });
+
+  it('disables Start and Restart with the home reason while the home is away', async () => {
+    mocks.scripts[WS] = [script('idle', 'Build', 'idle'), script('running', 'Dev', 'running')];
+    const home = (state: string) =>
+      workspaceHomeView({
+        home: { homeId: 'h-1', name: 'E2B · Team', state, since: '2026-11-16T02:00:00Z' },
+      });
+    mocks.homeView = home('starting');
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+
+    const start = screen.getByRole('button', { name: 'Start Build' }) as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(document.getElementById(start.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+      'Starting home…',
+    );
+    await fireEvent.click(within(scriptRow('running')).getByRole('button', { name: 'Actions' }));
+    const restart = await screen.findByRole('menuitem', { name: 'Restart Dev' });
+    expect(restart.getAttribute('aria-disabled') ?? restart.getAttribute('data-disabled')).not.toBe(
+      null,
+    );
+    await fireEvent.click(start);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    // Stop still reaches the script's own run.
+    expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('keeps Start enabled while the home is attached', () => {
+    mocks.scripts[WS] = [script('idle', 'Build', 'idle')];
+    mocks.homeView = workspaceHomeView({
+      home: { homeId: 'h-1', name: 'Mac Studio', state: 'attached', since: '2026-11-16T02:00:00Z' },
+    });
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(
+      (screen.getByRole('button', { name: 'Start Build' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it('keeps pending and failure state isolated by workspace', () => {

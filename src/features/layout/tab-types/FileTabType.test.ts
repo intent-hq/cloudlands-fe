@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { m } from '$shared/paraglide/messages.js';
+import { tick } from 'svelte';
+import { workspaceHomeView } from '$features/workspace-home/workspace-home';
 import { fileContentKey } from '$features/file/utils/file-content-key';
 import { appClient } from '$lib/client';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -12,6 +14,27 @@ import { filesReadSaga } from '$store/renderer/slices/files/sagas/files-read-sag
 import { loadFileContentSucceeded } from '$store/renderer/slices/files/files-slice';
 import { invoke } from '$lib/electron-bridge';
 import { notify } from '$lib/components/patterns/notify';
+
+const homeView = vi.hoisted(() => {
+  const subscribers = new Set<(value: unknown) => void>();
+  let value: unknown = null;
+  return {
+    set(next: unknown) {
+      value = next;
+      for (const run of subscribers) run(value);
+    },
+    subscribe(run: (value: unknown) => void) {
+      subscribers.add(run);
+      run(value);
+      return () => subscribers.delete(run);
+    },
+  };
+});
+
+vi.mock('$features/workspace-home/workspace-home-selectors', () => ({
+  // No workspace home unless a test sets one.
+  selectWorkspaceHomeView: () => homeView,
+}));
 
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -27,6 +50,7 @@ const {
   createMockSelector,
   dispatchMock,
   applyExternalFileContentToMockState,
+  flushMockSelectors,
   mockReduxState,
   resetMockReduxState,
 } = vi.hoisted(() => {
@@ -37,6 +61,7 @@ const {
     loading: boolean;
     saving: boolean;
     error: string | null;
+    errorInfo?: { rpcCode: number; data?: unknown } | null;
     isBinary: boolean;
     lastUpdated: number;
     notFoundCandidates?: string[] | null;
@@ -231,6 +256,7 @@ const {
     applyExternalFileContentToMockState,
     createMockSelector,
     dispatchMock,
+    flushMockSelectors,
     mockReduxState,
     resetMockReduxState,
   };
@@ -271,6 +297,9 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   ),
   selectFileError: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.error ?? null) : null,
+  ),
+  selectFileErrorInfo: createMockSelector((_wsId: string, path: string | null | undefined) =>
+    path ? (mockReduxState.files[path]?.errorInfo ?? null) : null,
   ),
   selectFileIsBinary: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.isBinary ?? false) : false,
@@ -1975,6 +2004,77 @@ describe('FileTabType Redux integration', () => {
     expect(await screen.findByText(m.layout_fileTab_errorGeneric_label())).toBeTruthy();
     expect(screen.getByText('Internal error: disk on fire')).toBeTruthy();
     expect(screen.getByText('notes/plan.md')).toBeTruthy();
+  });
+
+  it.each([
+    [{ starting: true }, () => m.workspaceHome_starting_label()],
+    [{ moving: true }, () => m.workspaceHome_banner_moving()],
+    [{}, () => m.workspaceHome_banner_detachedNoBackup({ name: 'E2B · Team' })],
+  ])('shows the home reason a home-unavailable read carries (%o)', async (flags, reason) => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error',
+      errorInfo: {
+        rpcCode: -32603,
+        data: { code: 'home-unavailable', name: 'E2B · Team', retryable: true, ...flags },
+      },
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(reason())).toBeTruthy();
+    expect(screen.queryByText(m.layout_fileTab_errorGeneric_label())).toBeNull();
+    expect(screen.queryByText('Internal error')).toBeNull();
+  });
+
+  it('reads again once when a home-unavailable error arrives while the home is attached', async () => {
+    const view = (state: string) =>
+      workspaceHomeView({
+        home: { homeId: 'h-1', name: 'E2B · Team', state, since: '2026-11-16' },
+      });
+    const failRead = () => {
+      // A new failure: the link dropped mid-read, and the reply came after reattach.
+      mockReduxState.files['notes/plan.md'] = errorFileEntry({
+        error: 'Internal error',
+        errorInfo: {
+          rpcCode: -32603,
+          data: { code: 'home-unavailable', name: 'E2B · Team', starting: true, retryable: true },
+        },
+      });
+      flushMockSelectors();
+    };
+    const reads = () =>
+      vi
+        .mocked(actionMocks.loadFileContentRequested)
+        .mock.calls.filter(([, path]) => path === 'notes/plan.md').length;
+
+    homeView.set(view('attached'));
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+    await waitFor(() => expect(reads()).toBe(1));
+
+    failRead();
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(await screen.findByText(m.workspaceHome_starting_label())).toBeTruthy();
+
+    // The retry fails too: no loop until the home goes away and comes back.
+    failRead();
+    homeView.set(view('attached'));
+    expect(reads()).toBe(2);
+    homeView.set(view('starting'));
+    await tick();
+    homeView.set(view('attached'));
+    await waitFor(() => expect(reads()).toBe(3));
+    homeView.set(null);
+  });
+
+  it('keeps the generic failure for another error that carries data', async () => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error: disk on fire',
+      errorInfo: { rpcCode: -32603, data: { detail: 'disk on fire' } },
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorGeneric_label())).toBeTruthy();
   });
 
   it('renders clickable candidates and retargets the tab on click', async () => {

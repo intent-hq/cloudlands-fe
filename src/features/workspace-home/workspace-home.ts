@@ -277,6 +277,44 @@ export function setHomeErrorCode(error: unknown): SetHomeErrorCode | null {
     : null;
 }
 
+/** Why a call on the home failed (`home-unavailable`, PROTOCOL `09-error-codes.md`). */
+export interface HomeUnavailableError {
+  name: string;
+  lastBackupAt: string | null;
+  state: 'detached' | 'moving' | 'starting';
+}
+
+/**
+ * The home state a failed call reports, or null when the error is not
+ * `home-unavailable`. Takes a thrown `BackendError` or the `{ rpcCode, data }`
+ * a read failure keeps in the store.
+ */
+export function homeUnavailableError(error: unknown): HomeUnavailableError | null {
+  if (!error || typeof error !== 'object') return null;
+  const { rpcCode, data } = error as { rpcCode?: unknown; data?: unknown };
+  if (rpcCode !== -32603 || !data || typeof data !== 'object') return null;
+  const fields = data as Record<string, unknown>;
+  if (fields.code !== 'home-unavailable') return null;
+  return {
+    name: typeof fields.name === 'string' ? fields.name : '',
+    lastBackupAt: typeof fields.lastBackupAt === 'string' ? fields.lastBackupAt : null,
+    state: fields.starting === true ? 'starting' : fields.moving === true ? 'moving' : 'detached',
+  };
+}
+
+/** The panel view of a failed call's home: its reason, without Wait. */
+export function homeErrorView(error: HomeUnavailableError): WorkspaceHomeView {
+  const home = {
+    homeId: '',
+    name: error.name,
+    state: error.state,
+    since: '',
+    ...(error.lastBackupAt ? { lastBackupAt: error.lastBackupAt } : {}),
+  };
+  const view = workspaceHomeView({ home }) as WorkspaceHomeView;
+  return { ...view, canWait: false };
+}
+
 /**
  * Panel tab types whose content reads the home checkout (files, diffs, git
  * changes) or runs on the home (terminals). While the home is detached or

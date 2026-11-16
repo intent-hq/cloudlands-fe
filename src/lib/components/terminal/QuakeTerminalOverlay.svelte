@@ -84,6 +84,8 @@
   import MachineRunOutput from '$features/scripts/components/MachineRunOutput.svelte';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import { homeRunDisabledReason } from '$features/workspace-home/workspace-home-copy';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
@@ -137,6 +139,10 @@
   const workspaceId = $derived(propWorkspaceId);
   const workspaceIdStore = writable<string>(ROOT_WORKSPACE_ID);
   $effect(() => workspaceIdStore.set(workspaceId ?? ROOT_WORKSPACE_ID));
+  // Workspace homes: Run waits while the home is detached, moving or starting.
+  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
+  const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
+  const runDisabledReasonId = $props.id();
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
@@ -507,8 +513,10 @@
       icon: any;
       label: string;
       tooltip?: string;
+      disabled?: boolean;
       onClick: (e: MouseEvent) => void;
     }> = [];
+    const blocked = runDisabledReason ? { tooltip: runDisabledReason, disabled: true } : {};
     if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
@@ -518,12 +526,14 @@
       actions.push({
         icon: faRotateRight,
         label: m.terminal_quakeOverlay_restart_label(),
+        ...blocked,
         onClick: () => handleScriptAction('restart', script.id),
       });
     } else {
       actions.push({
         icon: faPlay,
         label: m.terminal_quakeOverlay_start_label(),
+        ...blocked,
         onClick: () => handleScriptAction('start', script.id),
       });
     }
@@ -580,6 +590,7 @@
       );
       return;
     }
+    if (runDisabledReason) return;
     appStore.dispatch(
       (action === 'start' ? startScriptRequested : restartScriptRequested)(
         mutationWorkspaceId,
@@ -1338,6 +1349,9 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
+              {#if runDisabledReason}
+                <span id={runDisabledReasonId} class="sr-only">{runDisabledReason}</span>
+              {/if}
               <Button
                 variant="ghost-light"
                 size="icon-xs"
@@ -1382,9 +1396,11 @@
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
+                  disabled={runDisabledReason !== null}
                   onclick={() => handleScriptAction('restart', selectedScriptId!)}
-                  tooltip={m.terminal_quakeOverlay_restart_label()}
+                  tooltip={runDisabledReason ?? m.terminal_quakeOverlay_restart_label()}
                   aria-label={m.terminal_quakeOverlay_restartScript_ariaLabel()}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                 >
                   <Fa icon={faRotateRight} size="xs" />
                 </Button>
@@ -1392,9 +1408,11 @@
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
+                  disabled={runDisabledReason !== null}
                   onclick={() => handleScriptAction('start', selectedScriptId!)}
-                  tooltip={m.terminal_quakeOverlay_start_label()}
+                  tooltip={runDisabledReason ?? m.terminal_quakeOverlay_start_label()}
                   aria-label={m.terminal_quakeOverlay_startScript_ariaLabel()}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                 >
                   <Fa icon={faPlay} size="xs" />
                 </Button>
@@ -1567,7 +1585,12 @@
                     class="flex-1"
                   />
                 {:else}
-                  <ScriptOutputViewer scriptId={selectedScriptId} {workspaceId} class="flex-1" />
+                  <ScriptOutputViewer
+                    scriptId={selectedScriptId}
+                    {workspaceId}
+                    class="flex-1"
+                    {runDisabledReason}
+                  />
                 {/if}
               {/key}
             {/if}

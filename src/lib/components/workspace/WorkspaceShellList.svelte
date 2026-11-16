@@ -52,6 +52,8 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWorkspaceHomeView } from '$features/workspace-home/workspace-home-selectors';
+  import { homeRunDisabledReason } from '$features/workspace-home/workspace-home-copy';
 
   let { workspaceId }: { workspaceId: string } = $props();
   const workspaceIdStore = writable('');
@@ -65,6 +67,10 @@
   const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
+  // Workspace homes: Run waits while the home is detached, moving or starting.
+  const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
+  const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
+  const runDisabledReasonId = $props.id();
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -149,6 +155,7 @@
 
   function runScript(scriptId: string, action: 'start' | 'stop' | 'restart', event: MouseEvent) {
     event.stopPropagation();
+    if (action !== 'stop' && runDisabledReason) return;
     const operation =
       action === 'start'
         ? startScriptRequested(workspaceId, scriptId)
@@ -169,6 +176,9 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-2 type-caption font-normal" data-workspace-shell-list>
+  {#if runDisabledReason}
+    <span id={runDisabledReasonId} class="sr-only">{runDisabledReason}</span>
+  {/if}
   {#if !$isCollaborator$}
     <section>
       <SidebarGroupHeader
@@ -379,7 +389,7 @@
                     {#if live}
                       <Menu.Separator />
                       <Menu.Item
-                        disabled={operation?.pending ?? false}
+                        disabled={operation?.pending === true || runDisabledReason !== null}
                         aria-busy={operation?.pending && operation.action === 'restart'
                           ? true
                           : undefined}
@@ -436,10 +446,11 @@
                   size="icon-compact"
                   iconOnly
                   class="size-(--row-action-target-compact) shrink-0 active:bg-accent/80"
-                  disabled={operation?.pending ?? false}
+                  disabled={operation?.pending === true || runDisabledReason !== null}
                   aria-busy={operation?.pending || undefined}
                   aria-label={startLabel}
-                  tooltip={startLabel}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
+                  tooltip={runDisabledReason ?? startLabel}
                   tooltipSide="left"
                   onclick={(event) => runScript(script.id, 'start', event)}
                   data-script-action="start"

@@ -20,6 +20,12 @@ const authority = vi.hoisted(() => ({ current: 'admitted' as string | null }));
 const asyncDefinitionActionHandlers = vi.hoisted(() => ({
   update: null as ((action: any, complete: (script: unknown) => void) => void) | null,
 }));
+vi.mock('$features/workspace-home/workspace-home-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  // No workspace home: Run is available.
+  return { selectWorkspaceHomeView: () => readable(null) };
+});
+
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: { select: () => authority.current },
   selectWorkspaceParticipationContext: { select: () => authority.current },

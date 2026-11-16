@@ -1,10 +1,11 @@
-import type { FileContent } from '../files-types';
+import type { FileContent, FileReadErrorInfo } from '../files-types';
 import { editableText } from '$features/file/utils/file-content';
 import { buffers, channel, type Channel } from 'redux-saga';
 import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { mutationErrorMessage } from '$lib/client/live/live-support';
+import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -26,8 +27,15 @@ export const MAX_CONCURRENT_FILE_READS = 4;
 type ReadAction = ReturnType<typeof loadFileContentRequested>;
 type ReadResult =
   | { kind: 'success'; content: FileContent; truncated?: boolean }
-  | { kind: 'failure'; message: string; candidates?: string[] }
+  | { kind: 'failure'; message: string; candidates?: string[]; info?: FileReadErrorInfo | null }
   | { kind: 'retarget'; path: string };
+
+/** A daemon refusal's code and data, kept so a panel can tell a home that is away. */
+function daemonErrorInfo(error: unknown): FileReadErrorInfo | null {
+  if (!isDaemonErrorResponse(error)) return null;
+  const { rpcCode, data } = error as { rpcCode: number; data?: unknown };
+  return data === undefined ? { rpcCode } : { rpcCode, data };
+}
 
 function* loadFileContentWorker(
   workspaceId: string,
@@ -71,9 +79,13 @@ function* loadFileContentWorker(
       truncated: entry.truncated,
     };
   } catch (error) {
-    logger.error('Failed to load file content', error);
+    const info = daemonErrorInfo(error);
+    // An away home is an expected, retryable state the panel explains.
+    const homeAway = (info?.data as { code?: unknown } | undefined)?.code === 'home-unavailable';
+    if (homeAway) logger.warn('File read waits for the workspace home', error);
+    else logger.error('Failed to load file content', error);
     const message = mutationErrorMessage(error);
-    return { kind: 'failure', message };
+    return { kind: 'failure', message, info };
   }
 }
 
@@ -84,7 +96,16 @@ function* applyReadResult(action: ReadAction, result: ReadResult): SagaGenerator
     yield* put(updateFileTabPath(workspaceId, path, result.path));
   } else if (result.kind === 'failure') {
     yield* put(
-      loadFileContentFailed(workspaceId, path, absolutePath, result.message, result.candidates),
+      result.info === undefined
+        ? loadFileContentFailed(workspaceId, path, absolutePath, result.message, result.candidates)
+        : loadFileContentFailed(
+            workspaceId,
+            path,
+            absolutePath,
+            result.message,
+            result.candidates,
+            result.info,
+          ),
     );
   } else {
     yield* put(
