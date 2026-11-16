@@ -108,7 +108,14 @@ import {
   registerWindowTitleListener,
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
-import { frameMachines, isFrame, rendererFor, shownMachine } from '../../../main/frames';
+import {
+  frameMachines,
+  frameToShow,
+  isFrame,
+  rendererFor,
+  shownMachine,
+} from '../../../main/frames';
+import { selectFrameMachine } from '../../../main/machine-rail-state';
 import { isDockWindow } from '../../../main/dock-window';
 import { saveMenuBarAutoHidePref } from '../../../main/menu-bar-auto-hide-pref';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
@@ -1622,12 +1629,26 @@ export function setupSystemIPC() {
     return !!contents && contents.getURL() !== '' && !contents.isLoadingMainFrame();
   }
 
+  /**
+   * Bring up a frame for the dock's "open workspace" and route the workspace
+   * to `backendId`'s own view there. A frame showing the machine with the
+   * workspace open wins, then any ready frame showing the machine (focused
+   * first). Otherwise a frame that holds the machine without showing it is
+   * picked as Settings → Devices "Open" picks it (`frameToShow`: focused, then
+   * most recently focused), the machine is selected there and the workspace
+   * follows once its view is ready. Null when no frame holds the machine.
+   */
   function focusExistingWorkspaceWindow(
     workspaceId: string,
     backendId: string,
     agentId?: string,
     workspaceTarget?: DockNavigationTarget['workspaceTarget'],
   ): BrowserWindow | null {
+    const payload = {
+      workspaceId,
+      ...(agentId ? { agentId } : {}),
+      ...(workspaceTarget ? { workspaceTarget } : {}),
+    };
     let existing: BrowserWindow | null = null;
     for (const windowId of getWindowIdsForWorkspace(workspaceId, backendId)) {
       const candidate = BrowserWindow.fromId(windowId);
@@ -1646,16 +1667,27 @@ export function setupSystemIPC() {
         candidates.find((candidate) => isReadyNormalWindowForBackend(candidate, backendId)) ?? null;
     }
 
-    if (!existing) return null;
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
-    shownViewForBackend(existing, backendId)?.send('notification:navigate', {
-      workspaceId,
-      ...(agentId ? { agentId } : {}),
-      ...(workspaceTarget ? { workspaceTarget } : {}),
+    if (existing) {
+      bringToFront(existing);
+      shownViewForBackend(existing, backendId)?.send('notification:navigate', payload);
+      return existing;
+    }
+
+    const holder = frameToShow(backendId);
+    const selected = holder ? selectFrameMachine(holder, backendId) : null;
+    if (!holder || !selected) return null;
+    bringToFront(holder);
+    const { contents } = selected;
+    void selected.ready.then((ready) => {
+      if (ready && !contents.isDestroyed()) contents.send('notification:navigate', payload);
     });
-    return existing;
+    return holder;
+  }
+
+  function bringToFront(window: BrowserWindow): void {
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
   }
 
   // Create new window
