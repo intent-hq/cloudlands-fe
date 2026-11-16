@@ -15,6 +15,30 @@ const gap = 16;
 const center = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const last = (points: Point[]) => points[points.length - 1];
+const curveLength = (curve: Curve) =>
+  curve.points.slice(1).reduce((sum, p, i) => sum + distance(curve.points[i], p), 0);
+
+function ports(box: Box) {
+  const c = center(box);
+  return [
+    [
+      { x: c.x, y: box.y },
+      { x: c.x, y: box.y - gap * 2 },
+    ],
+    [
+      { x: box.x + box.width, y: c.y },
+      { x: box.x + box.width + gap * 2, y: c.y },
+    ],
+    [
+      { x: c.x, y: box.y + box.height },
+      { x: c.x, y: box.y + box.height + gap * 2 },
+    ],
+    [
+      { x: box.x, y: c.y },
+      { x: box.x - gap * 2, y: c.y },
+    ],
+  ];
+}
 const inside = (p: Point, b: Box, padding = 0) =>
   p.x > b.x - padding &&
   p.x < b.x + b.width + padding &&
@@ -135,7 +159,12 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       const id = node.id.match(/flowchart-(.+)-\d+$/)?.[1];
       const shape = node.querySelector<SVGGraphicsElement>(':scope > .label-container');
       return id && shape
-        ? [[id, { box: measure(shape), rect: shape.tagName.toLowerCase() === 'rect' }] as const]
+        ? [
+            [
+              id,
+              { box: measure(shape), rect: shape.tagName.toLowerCase() === 'rect', element: node },
+            ] as const,
+          ]
         : [];
     }),
   );
@@ -241,6 +270,108 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     route.labelBox = labelBox;
   };
 
+  // Reflow distant shared sinks before adding outer detours.
+  for (const [id, record] of nodes) {
+    const incoming = routes.filter((route) => route.target === id);
+    if (
+      !record.rect ||
+      incoming.length < 2 ||
+      incoming.length > 4 ||
+      incoming.some(
+        (route) => route.label || !route.d.includes('C') || !nodes.get(route.source)?.rect,
+      ) ||
+      routes.some((route) => route.source === id)
+    )
+      continue;
+    const inputs = incoming.map((route) => center(route.sourceBox));
+    const axis = /^(LR|RL)$/.test(svg.dataset.flowchartDirection ?? '') ? 'x' : 'y';
+    const spread =
+      Math.max(...inputs.map((p) => p[axis])) - Math.min(...inputs.map((p) => p[axis]));
+    const spans = inputs.map((p) => distance(p, center(record.box)));
+    if (
+      spread < (axis === 'x' ? record.box.width : record.box.height) * 2 ||
+      Math.max(...spans) < Math.min(...spans) * 2.5
+    )
+      continue;
+    const transform = record.element.transform.baseVal.consolidate()?.matrix;
+    const parent = (record.element.parentElement as SVGGraphicsElement | null)?.getScreenCTM();
+    if (!transform || !parent) continue;
+    const average = {
+      x: inputs.reduce((sum, p) => sum + p.x, 0) / inputs.length,
+      y: inputs.reduce((sum, p) => sum + p.y, 0) / inputs.length,
+    };
+    const others = routes.filter((route) => !incoming.includes(route));
+    const otherNodes = [...nodes].filter(([key]) => key !== id).map(([, value]) => value.box);
+    const nearby = otherNodes.filter(
+      (box) =>
+        box.x + box.width >= Math.min(...inputs.map((p) => p.x)) &&
+        box.x <= Math.max(...inputs.map((p) => p.x)),
+    );
+    if (!nearby.length) continue;
+    const top = Math.min(...nearby.map((box) => box.y)) - record.box.height - gap * 3;
+    const bottom = Math.max(...nearby.map((box) => box.y + box.height)) + gap * 3;
+    const previousLength = incoming.reduce((sum, route) => sum + curveLength(route), 0);
+    let best: { box: Box; planned: { route: Route; curve: Curve }[]; cost: number } | undefined;
+    for (const y of [top, bottom, average.y - record.box.height / 2]) {
+      for (const offset of [0, -record.box.width / 2, record.box.width / 2]) {
+        const box = { ...record.box, x: average.x - record.box.width / 2 + offset, y };
+        if (
+          otherNodes.some((other) => overlaps(box, other, 12)) ||
+          others.some(
+            (route) =>
+              hitsBox(route.points, box, 8) || (route.labelBox && overlaps(box, route.labelBox, 8)),
+          )
+        )
+          continue;
+        nodes.set(id, { ...record, box });
+        const planned: { route: Route; curve: Curve }[] = [];
+        for (const route of incoming.toSorted((a, b) => curveLength(b) - curveLength(a))) {
+          let chosen: { curve: Curve; length: number } | undefined;
+          for (const [start, lead] of ports(route.sourceBox))
+            for (const [end, tail] of ports(box)) {
+              if (planned.some((other) => distance(end, last(other.curve.points)) < gap)) continue;
+              const curve = basis([start, lead, tail, end]);
+              if (
+                !clear(route, curve) ||
+                others.some(
+                  (other) =>
+                    crosses(curve.points, other.points) ||
+                    (other.labelBox && hitsBox(curve.points, other.labelBox, 6)),
+                ) ||
+                planned.some((other) => crosses(curve.points, other.curve.points))
+              )
+                continue;
+              const length = curveLength(curve);
+              if (!chosen || length < chosen.length) chosen = { curve, length };
+            }
+          if (!chosen) break;
+          planned.push({ route, curve: chosen.curve });
+        }
+        nodes.set(id, record);
+        if (planned.length !== incoming.length) continue;
+        const cost =
+          planned.reduce((sum, item) => sum + curveLength(item.curve), 0) +
+          distance(center(box), center(record.box)) * 0.15;
+        if (cost < previousLength * 0.8 && (!best || cost < best.cost))
+          best = { box, planned, cost };
+      }
+    }
+    if (!best) continue;
+    const origin = new DOMPoint(0, 0).matrixTransform(reference).matrixTransform(parent.inverse());
+    const moved = new DOMPoint(best.box.x - record.box.x, best.box.y - record.box.y)
+      .matrixTransform(reference)
+      .matrixTransform(parent.inverse());
+    record.element.setAttribute(
+      'transform',
+      `matrix(${transform.a},${transform.b},${transform.c},${transform.d},${transform.e + moved.x - origin.x},${transform.f + moved.y - origin.y})`,
+    );
+    nodes.set(id, { ...record, box: best.box });
+    for (const { route, curve } of best.planned) {
+      route.targetBox = best.box;
+      write(route, curve);
+    }
+  }
+
   // Reuse the existing ports, ordering incoming curves by their source positions.
   for (const [id, target] of nodes) {
     if (!target.rect) continue;
@@ -289,27 +420,6 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     right: Math.max(...boxes.map((b) => b.x + b.width)) + 64,
     top: Math.min(...boxes.map((b) => b.y)) - 64,
     bottom: Math.max(...boxes.map((b) => b.y + b.height)) + 64,
-  };
-  const ports = (box: Box) => {
-    const c = center(box);
-    return [
-      [
-        { x: c.x, y: box.y },
-        { x: c.x, y: box.y - gap * 2 },
-      ],
-      [
-        { x: box.x + box.width, y: c.y },
-        { x: box.x + box.width + gap * 2, y: c.y },
-      ],
-      [
-        { x: c.x, y: box.y + box.height },
-        { x: c.x, y: box.y + box.height + gap * 2 },
-      ],
-      [
-        { x: box.x, y: c.y },
-        { x: box.x - gap * 2, y: c.y },
-      ],
-    ];
   };
   for (const route of routes.toSorted(
     (a, b) => b.path.getTotalLength() - a.path.getTotalLength(),

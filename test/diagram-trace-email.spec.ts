@@ -126,6 +126,7 @@ function readTraceGeometry(svg: SVGSVGElement) {
       d: path.getAttribute('d'),
       visible: visible(path) && getComputedStyle(path).stroke !== 'none',
       length,
+      paintedLength: length * scale,
       samples,
       marker: path.getAttribute('marker-end'),
       clipped: samples.some(
@@ -325,6 +326,11 @@ for (const width of [960, 320]) {
       ).toEqual([]);
       expect(geometry.nodeOverlaps).toEqual([]);
       expect(geometry.crossings, 'connectors do not cross one another').toEqual([]);
+      const databaseRoute = geometry.routes.find((route) => route.edge === 'API-->P')!;
+      expect(
+        databaseRoute.paintedLength,
+        'database connection stays local after reflow',
+      ).toBeLessThan(geometry.frame.width / 2);
       expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
     });
   }
