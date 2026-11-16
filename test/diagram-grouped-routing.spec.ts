@@ -592,6 +592,20 @@ for (const fixture of fixtures)
                 ).toBeGreaterThanOrEqual(8);
               }
               const samples = route.samples;
+              let turn = 0;
+              for (let i = 1; i + 1 < samples.length; i++) {
+                const a = samples[i - 1],
+                  b = samples[i],
+                  c = samples[i + 1];
+                const ux = b.x - a.x,
+                  uy = b.y - a.y,
+                  vx = c.x - b.x,
+                  vy = c.y - b.y;
+                turn += Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy));
+              }
+              expect(turn, `${route.id} avoids looping around its group title`).toBeLessThanOrEqual(
+                2,
+              );
               const length = samples
                 .slice(1)
                 .reduce((sum, p, i) => sum + Math.hypot(p.x - samples[i].x, p.y - samples[i].y), 0);

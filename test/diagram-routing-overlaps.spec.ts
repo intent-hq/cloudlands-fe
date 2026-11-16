@@ -444,6 +444,32 @@ for (const fixture of fixtures) {
           ),
           'painted strokes must clear glyphs outside their own data-id label knockout',
         ).toEqual([]);
+        if (fixture.id === 'edge-braided-diamonds') {
+          for (const route of geometry.routes) {
+            const points = route.samples;
+            let length = 0,
+              turn = 0;
+            for (let i = 1; i < points.length; i++) {
+              const a = points[i - 1],
+                b = points[i];
+              const ux = b.x - a.x,
+                uy = b.y - a.y;
+              length += Math.hypot(ux, uy);
+              if (i + 1 === points.length) continue;
+              const c = points[i + 1],
+                vx = c.x - b.x,
+                vy = c.y - b.y;
+              turn += Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy));
+            }
+            expect(turn, `${route.edge} avoids broad bows and S bends`).toBeLessThanOrEqual(1.6);
+            const a = points[0],
+              b = points[points.length - 1];
+            expect(
+              length / Math.hypot(b.x - a.x, b.y - a.y),
+              `${route.edge} directness`,
+            ).toBeLessThanOrEqual(1.35);
+          }
+        }
       });
     }
   }

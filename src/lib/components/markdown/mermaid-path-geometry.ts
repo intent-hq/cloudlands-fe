@@ -669,10 +669,7 @@ function boundaryRayIntersection(origin: Point, direction: Point, boundary: Poin
 }
 
 function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement) {
-  if (
-    shape.tagName.toLowerCase() === 'rect' &&
-    shape.closest('svg')?.classList.contains('statediagram')
-  ) {
+  if (shape.tagName.toLowerCase() === 'rect') {
     const matrix = shape.getScreenCTM();
     const style = getComputedStyle(shape);
     const local = shape.getBBox();
@@ -684,7 +681,7 @@ function distanceToShape(point: Point, bounds: Bounds, shape: SVGGraphicsElement
       const screenRx = Math.min(local.width / 2, rx) * Math.abs(matrix.a);
       const screenRy = Math.min(local.height / 2, ry) * Math.abs(matrix.d);
       if (screenRx > 0 && Math.abs(screenRx - screenRy) < 1e-6) {
-        // Only circular, axis-aligned state corners are supported here. Other
+        // Only circular, axis-aligned corners are supported here. Other
         // shapes and elliptical/skewed corners retain their existing behavior.
         const dx = Math.abs(point.x - bounds.x - bounds.width / 2) - (bounds.width / 2 - screenRx);
         const dy =
@@ -715,6 +712,29 @@ function rayShapeEntry(
   if (!boundsEntry) return null;
   const polygon = nativePolygonBoundary(shape);
   if (polygon) return boundaryRayIntersection(origin, direction, polygon) ?? boundsEntry;
+  if (shape instanceof SVGRectElement) {
+    const inverse = shape.getScreenCTM()?.inverse();
+    if (inverse) {
+      const contains = (at: number) =>
+        shape.isPointInFill(
+          new DOMPoint(origin.x + direction.x * at, origin.y + direction.y * at).matrixTransform(
+            inverse,
+          ),
+        );
+      let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);
+      let far =
+        (bounds.x + bounds.width / 2 - origin.x) * direction.x +
+        (bounds.y + bounds.height / 2 - origin.y) * direction.y;
+      if (contains(far)) {
+        for (let i = 0; i < 24; i++) {
+          const middle = (near + far) / 2;
+          if (contains(middle)) far = middle;
+          else near = middle;
+        }
+        return { x: origin.x + direction.x * far, y: origin.y + direction.y * far };
+      }
+    }
+  }
   if (shape.dataset.diagramCylinder !== 'true') return boundsEntry;
   const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   let near = Math.hypot(boundsEntry.x - origin.x, boundsEntry.y - origin.y);

@@ -2,6 +2,147 @@ type Box = { x: number; y: number; width: number; height: number };
 type Edge = { source: string; target: string; labelBox?: Box };
 type Position = { u: number; v: number; width: number; height: number };
 
+export function compactGroupedFlowchartLayouts(
+  boxes: ReadonlyMap<string, Box>,
+  edges: readonly Edge[],
+  groups: ReadonlyMap<
+    string,
+    { box: Box; members: string[]; headerWidth: number; headerHeight: number }
+  >,
+  direction: string,
+): { nodes: Map<string, Box>; groups: Map<string, Box> }[] {
+  if (
+    !/^(TB|TD)$/.test(direction) ||
+    groups.size < 2 ||
+    groups.size > 8 ||
+    boxes.size > 16 ||
+    edges.length > 24
+  )
+    return [];
+  const owners = new Map<string, string>();
+  for (const [id, group] of groups) {
+    if (!group.members.length) return [];
+    for (const member of group.members) {
+      if (owners.has(member)) return [];
+      owners.set(member, id);
+    }
+  }
+  if (owners.size !== boxes.size) return [];
+  const ranks = (ids: string[], links: readonly Edge[]) => {
+    const result = new Map<string, number>();
+    const remaining = new Set(ids);
+    for (let rank = 0; remaining.size; rank++) {
+      const ready = [...remaining].filter((id) =>
+        links.every((e) => e.target !== id || !remaining.has(e.source)),
+      );
+      if (!ready.length) return;
+      for (const id of ready) {
+        result.set(id, rank);
+        remaining.delete(id);
+      }
+    }
+    return result;
+  };
+  const groupEdges = edges.flatMap((edge) => {
+    const source = owners.get(edge.source),
+      target = owners.get(edge.target);
+    return source && target && source !== target ? [{ source, target }] : [];
+  });
+  const levels = ranks([...groups.keys()], groupEdges);
+  if (!levels) return [];
+  const origin = {
+    x: Math.min(...[...groups.values()].map((g) => g.box.x)),
+    y: Math.min(...[...groups.values()].map((g) => g.box.y)),
+  };
+  const results: { nodes: Map<string, Box>; groups: Map<string, Box> }[] = [];
+  for (const reverseGroups of [false, true])
+    for (const reverseNodes of [false, true])
+      for (const alignment of [0, 0.5, 1]) {
+        const packed = new Map<string, { box: Box; nodes: Map<string, Box> }>();
+        for (const [id, group] of groups) {
+          const local = ranks(
+            group.members,
+            edges.filter((e) => owners.get(e.source) === id && owners.get(e.target) === id),
+          );
+          if (!local) return [];
+          const nodes = new Map<string, Box>();
+          let y = Math.max(24, group.headerHeight) + 28;
+          let width = group.headerWidth + 128;
+          for (let rank = 0; rank <= Math.max(...local.values()); rank++) {
+            const row = group.members
+              .filter((member) => local.get(member) === rank)
+              .toSorted((a, b) => nodeValue(boxes, a).x - nodeValue(boxes, b).x);
+            if (reverseNodes) row.reverse();
+            let x = 32;
+            const height = Math.max(...row.map((member) => nodeValue(boxes, member).height));
+            for (const member of row) {
+              const original = nodeValue(boxes, member);
+              nodes.set(member, { ...original, x, y: y + (height - original.height) / 2 });
+              x += original.width + 32;
+            }
+            width = Math.max(width, x);
+            y += height + 48;
+          }
+          for (let rank = 0; rank <= Math.max(...local.values()); rank++) {
+            const row = [...nodes].filter(([member]) => local.get(member) === rank);
+            const right = Math.max(...row.map(([, b]) => b.x + b.width));
+            const offset = (width - 32 - right) * (row.length === 1 ? rank % 2 : 0.5);
+            for (const [, box] of row) box.x += offset;
+          }
+          packed.set(id, { box: { x: 0, y: 0, width, height: y - 16 }, nodes });
+        }
+        const placedGroups = new Map<string, Box>(),
+          placedNodes = new Map<string, Box>();
+        const maxLevel = Math.max(...levels.values());
+        const rows = Array.from({ length: maxLevel + 1 }, (_, rank) => {
+          const row = [...groups.keys()]
+            .filter((id) => levels.get(id) === rank)
+            .toSorted((a, b) => nodeValue(groups, a).box.x - nodeValue(groups, b).box.x);
+          return reverseGroups ? row.reverse() : row;
+        });
+        const totalWidth = Math.max(
+          ...rows.map(
+            (row) =>
+              row.reduce((sum, id) => sum + nodeValue(packed, id).box.width, 0) +
+              (row.length - 1) * 48,
+          ),
+        );
+        let y = origin.y;
+        for (const row of rows) {
+          const width =
+            row.reduce((sum, id) => sum + nodeValue(packed, id).box.width, 0) +
+            (row.length - 1) * 48;
+          let x = origin.x + (totalWidth - width) * alignment;
+          for (const id of row) {
+            const group = nodeValue(packed, id);
+            const box = { ...group.box, x, y };
+            placedGroups.set(id, box);
+            for (const [member, node] of group.nodes)
+              placedNodes.set(member, { ...node, x: x + node.x, y: y + node.y });
+            x += box.width + 48;
+          }
+          y += Math.max(...row.map((id) => nodeValue(packed, id).box.height)) + 64;
+        }
+        const all = [...placedNodes.values()];
+        if (
+          all.some((a, i) =>
+            all
+              .slice(i + 1)
+              .some(
+                (b) =>
+                  a.x < b.x + b.width + 16 &&
+                  a.x + a.width + 16 > b.x &&
+                  a.y < b.y + b.height + 16 &&
+                  a.y + a.height + 16 > b.y,
+              ),
+          )
+        )
+          continue;
+        results.push({ nodes: placedNodes, groups: placedGroups });
+      }
+  return results;
+}
+
 function nodeValue<T>(nodes: ReadonlyMap<string, T>, id: string): T {
   const node = nodes.get(id);
   if (node === undefined) throw new Error('Compact flowchart references an unknown node');

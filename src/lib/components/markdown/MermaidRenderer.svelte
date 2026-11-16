@@ -2137,6 +2137,8 @@ ${source}`;
           g.node,
           g.node > .label-container,
           g.node > .flowchart-node-outline,
+          g.cluster > rect,
+          g.cluster > .cluster-label,
           .edgePaths path,
           .edgeLabels > .edgeLabel
         )
