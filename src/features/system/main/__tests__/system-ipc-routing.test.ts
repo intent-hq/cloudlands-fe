@@ -216,9 +216,8 @@ describe('window close cleanup', () => {
   });
 
   it('forwards native window focus to every machine view of a frame, not the frame page', async () => {
-    const { markFrameWindow, bindMachineViewToBackend } = await import(
-      '../../../../main/window-backend'
-    );
+    const { markFrameWindow, bindMachineViewToBackend } =
+      await import('../../../../main/window-backend');
     const createdHandler = electronMocks.appOn.mock.calls.find(
       ([event]) => event === 'browser-window-created',
     )?.[1] as ((event: unknown, window: unknown) => void) | undefined;
@@ -232,7 +231,12 @@ describe('window close cleanup', () => {
         handlers[event] = cb;
       }),
     };
-    const view = (): { send: ReturnType<typeof vi.fn>; on: () => void; once: () => void; isDestroyed: () => boolean } => ({
+    const view = (): {
+      send: ReturnType<typeof vi.fn>;
+      on: () => void;
+      once: () => void;
+      isDestroyed: () => boolean;
+    } => ({
       send: vi.fn(),
       on: vi.fn(),
       once: vi.fn(),

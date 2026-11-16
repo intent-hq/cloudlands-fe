@@ -624,7 +624,9 @@ describe('a frame open on the local machine', () => {
 
   /** Fire `event` on `contents` as Electron would. */
   const emit = (contents: FakeWebContents, event: string, ...args: unknown[]) => {
-    for (const [name, listener] of contents.on.mock.calls as Array<[string, (...a: unknown[]) => void]>) {
+    for (const [name, listener] of contents.on.mock.calls as Array<
+      [string, (...a: unknown[]) => void]
+    >) {
       if (name === event) listener({}, ...args);
     }
   };
@@ -801,9 +803,7 @@ describe('the frame page', () => {
       await expect(invoke(RAIL.SELECT, sender, { id: 'b' })).rejects.toThrow();
       await expect(invoke(RAIL.ADD, sender, { id: 'c' })).rejects.toThrow();
       await expect(invoke(RAIL.REMOVE, sender, { id: 'local' })).rejects.toThrow();
-      await expect(
-        invoke(RAIL.REORDER, sender, { machineIds: ['b', 'local'] }),
-      ).rejects.toThrow();
+      await expect(invoke(RAIL.REORDER, sender, { machineIds: ['b', 'local'] })).rejects.toThrow();
       await expect(invoke(RAIL.READY, sender)).rejects.toThrow();
       await expect(invoke(RAIL.SHOWN, sender)).rejects.toThrow();
       await expect(

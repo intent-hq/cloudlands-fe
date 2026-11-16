@@ -4,13 +4,7 @@
  */
 
 type DeepLinkActionType =
-  | 'open'
-  | 'create'
-  | 'clone'
-  | 'settings'
-  | 'node-link'
-  | 'node-invite'
-  | 'notification';
+  'open' | 'create' | 'clone' | 'settings' | 'node-link' | 'node-invite' | 'notification';
 
 export type DeepLinkActionPayload = {
   type: DeepLinkActionType;

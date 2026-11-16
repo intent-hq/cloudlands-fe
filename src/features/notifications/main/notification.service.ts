@@ -1046,8 +1046,8 @@ export class NotificationService {
           return;
         }
         void selectMachineForClick(target, backendId, payload).catch((error: unknown) => {
-            logger.error('Failed to show the machine for a notification click', error as Error);
-          });
+          logger.error('Failed to show the machine for a notification click', error as Error);
+        });
       });
 
       notification.on('close', () => {

@@ -77,9 +77,7 @@ async function defaultResolveWorkspaceId(
   _windowId: number,
   contents: Electron.WebContents,
 ): Promise<string | undefined> {
-  const { getLastKnownWorkspaceIdForRenderer } = await import(
-    '../features/system/main/system.ipc'
-  );
+  const { getLastKnownWorkspaceIdForRenderer } = await import('../features/system/main/system.ipc');
   return getLastKnownWorkspaceIdForRenderer(contents);
 }
 
