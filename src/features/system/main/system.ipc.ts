@@ -740,8 +740,9 @@ app.on('browser-window-created', (_event, window) => {
   };
   window.webContents.on('did-navigate', forgetBackgroundWorkspaces);
   window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
-  // Keep each window's renderer in sync with its native full-screen state,
-  // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
+  // Keep the window's own page in sync with its native full-screen state,
+  // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F). Only
+  // the HUD page listens; app renderers (machine views) do not.
   window.on('enter-full-screen', () => {
     if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
   });
@@ -750,12 +751,15 @@ app.on('browser-window-created', (_event, window) => {
   });
   // Renderer DOM blur also fires when focus enters an embedded webview. Use
   // BrowserWindow focus instead so the renderer tracks the native app window.
-  window.on('focus', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
-  });
-  window.on('blur', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
-  });
+  // A frame's machine views (not its frame page) each mount RootAppProviders,
+  // which pauses animations while the window is unfocused.
+  const sendFocus = (focused: boolean): void => {
+    for (const renderer of getRendererWebContents(window)) {
+      renderer.send('window:focus', focused);
+    }
+  };
+  window.on('focus', () => sendFocus(true));
+  window.on('blur', () => sendFocus(false));
 });
 
 // ============================================================================

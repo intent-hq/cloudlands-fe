@@ -214,4 +214,45 @@ describe('window close cleanup', () => {
     expect(window.webContents.send).toHaveBeenNthCalledWith(1, 'window:focus', true);
     expect(window.webContents.send).toHaveBeenNthCalledWith(2, 'window:focus', false);
   });
+
+  it('forwards native window focus to every machine view of a frame, not the frame page', async () => {
+    const { markFrameWindow, bindMachineViewToBackend } = await import(
+      '../../../../main/window-backend'
+    );
+    const createdHandler = electronMocks.appOn.mock.calls.find(
+      ([event]) => event === 'browser-window-created',
+    )?.[1] as ((event: unknown, window: unknown) => void) | undefined;
+    const handlers: Record<string, () => void> = {};
+    const window = {
+      id: 43,
+      isDestroyed: vi.fn(() => false),
+      once: vi.fn(),
+      webContents: { send: vi.fn(), on: vi.fn(), isDestroyed: () => false },
+      on: vi.fn((event: string, cb: () => void) => {
+        handlers[event] = cb;
+      }),
+    };
+    const view = (): { send: ReturnType<typeof vi.fn>; on: () => void; once: () => void; isDestroyed: () => boolean } => ({
+      send: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      isDestroyed: () => false,
+    });
+    const shown = view();
+    const hidden = view();
+
+    createdHandler!({}, window);
+    markFrameWindow(window as never);
+    bindMachineViewToBackend(window as never, shown as never, 'local');
+    bindMachineViewToBackend(window as never, hidden as never, 'remote');
+    handlers.focus();
+    handlers.blur();
+
+    // Each view mounts RootAppProviders and drives data-window-blurred from this event.
+    for (const contents of [shown, hidden]) {
+      expect(contents.send).toHaveBeenNthCalledWith(1, 'window:focus', true);
+      expect(contents.send).toHaveBeenNthCalledWith(2, 'window:focus', false);
+    }
+    expect(window.webContents.send).not.toHaveBeenCalledWith('window:focus', expect.anything());
+  });
 });
