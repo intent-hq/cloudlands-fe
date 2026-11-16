@@ -106,7 +106,7 @@ export function workspaceHomeView(
  * still be the one that woke a paused cloud home: the backend waits up to
  * 10 s for it to start, plus a margin.
  */
-export const HOME_WAKE_WINDOW_MS = 12_000;
+const HOME_WAKE_WINDOW_MS = 12_000;
 
 /** A panel's retry bookkeeping while the home is starting (see `nextHomeRetry`). */
 export interface HomeRetry {
