@@ -79,9 +79,13 @@ function* loadFileContentWorker(
       truncated: entry.truncated,
     };
   } catch (error) {
-    logger.error('Failed to load file content', error);
+    const info = daemonErrorInfo(error);
+    // An away home is an expected, retryable state the panel explains.
+    const homeAway = (info?.data as { code?: unknown } | undefined)?.code === 'home-unavailable';
+    if (homeAway) logger.warn('File read waits for the workspace home', error);
+    else logger.error('Failed to load file content', error);
     const message = mutationErrorMessage(error);
-    return { kind: 'failure', message, info: daemonErrorInfo(error) };
+    return { kind: 'failure', message, info };
   }
 }
 
