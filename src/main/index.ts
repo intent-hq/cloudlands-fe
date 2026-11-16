@@ -87,7 +87,6 @@ import { setupConsoleLogCapture } from './logging/console-log-capture.js';
 setupConsoleLogCapture();
 
 // Set the application name early. The same resolved value labels the macOS app menu.
-const isDev = process.env.NODE_ENV === 'development';
 const appName = setResolvedAppName(app);
 
 // Track registered handlers globally
