@@ -882,7 +882,9 @@ export class NotificationService {
     };
     if (navigateTarget && toastRenderer && !toastRenderer.isDestroyed()) {
       send(toastRenderer, payload);
-      for (const contents of workspaceId ? getRendererWebContentsForWorkspace(workspaceId, scope) : []) {
+      for (const contents of workspaceId
+        ? getRendererWebContentsForWorkspace(workspaceId, scope)
+        : []) {
         if (contents !== toastRenderer) send(contents, soundOnly);
       }
       return;

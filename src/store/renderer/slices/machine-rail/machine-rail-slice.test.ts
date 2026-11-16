@@ -92,9 +92,7 @@ describe('machine rail selectors', () => {
         'b',
       ),
     );
-    expect(
-      items.map(({ id, selected, offline }) => ({ id, selected, offline })),
-    ).toEqual([
+    expect(items.map(({ id, selected, offline }) => ({ id, selected, offline }))).toEqual([
       { id: 'local', selected: false, offline: false },
       { id: 'b', selected: true, offline: true },
       { id: 'c', selected: false, offline: true },

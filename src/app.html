@@ -17,9 +17,7 @@
       // no splash and no drag region: native drag regions apply even beneath
       // a view, so only the shown machine may contribute them.
       if (
-        ['/dock', '/dock-annotation', '/dock-capture-editor', '/frame'].includes(
-          launchUrl.pathname,
-        )
+        ['/dock', '/dock-annotation', '/dock-capture-editor', '/frame'].includes(launchUrl.pathname)
       ) {
         document.documentElement.dataset.auxiliaryWindow = launchUrl.pathname.slice(1);
         document.documentElement.dataset.startupSplash = 'suppressed';

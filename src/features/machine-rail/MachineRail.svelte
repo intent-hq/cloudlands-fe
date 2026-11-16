@@ -42,7 +42,10 @@
   import * as Menu from '$lib/components/ui/menu';
   import { prefersReducedMotion, spring } from '$lib/motion';
   import { cn } from '$lib/utils';
-  import { CONNECTION_ACCENT_CLASSES, resolveConnectionAccent } from '$lib/utils/connection-accents';
+  import {
+    CONNECTION_ACCENT_CLASSES,
+    resolveConnectionAccent,
+  } from '$lib/utils/connection-accents';
   import {
     formatConnectionLabel,
     formatGuestSessionLabel,

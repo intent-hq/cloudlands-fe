@@ -178,11 +178,7 @@ import {
   markFrameWindow,
   setShownMachineView,
 } from '../window-backend';
-import {
-  setFrameOpener,
-  setMachineRailEnabledFlag,
-  writeWindowRail,
-} from '../machine-rail-state';
+import { setFrameOpener, setMachineRailEnabledFlag, writeWindowRail } from '../machine-rail-state';
 import { shownMachine } from '../frames';
 import type { FrameMachineSession } from '../../shared/types/machine-rail';
 
@@ -365,9 +361,7 @@ describe('multi-backend window sessions', () => {
       ]);
       await restoreWindowsForBackend('remote-1');
       expect(
-        FakeBrowserWindow.getAllWindows().map(
-          (window) => new URL(window.page).pathname,
-        ),
+        FakeBrowserWindow.getAllWindows().map((window) => new URL(window.page).pathname),
       ).toEqual(['/work/main']);
       await createWindowForSession({ route: '/dock-annotation', bounds }, false, 'remote-1');
       expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
@@ -516,9 +510,9 @@ describe('multi-backend window sessions', () => {
       _resetWindowSessionsCacheForTests();
       writeFrames([single('local', '/dev-console'), single('local', '/work/local')]);
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
-      expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
-      ).toEqual(['/work/local']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname)).toEqual([
+        '/work/local',
+      ]);
     });
 
     it('never restores a desktop-control indicator without an active native session', async () => {
@@ -532,9 +526,9 @@ describe('multi-backend window sessions', () => {
       _resetWindowSessionsCacheForTests();
       writeFrames([single('local', '/desktop-overlay'), single('local', '/work/local')]);
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
-      expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
-      ).toEqual(['/work/local']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname)).toEqual([
+        '/work/local',
+      ]);
     });
 
     it('a save in flight while a window closes cannot bring the closed window back', async () => {
@@ -643,8 +637,7 @@ describe('multi-backend window sessions', () => {
     // A frame's machines are released by the rail owner when the frame
     // closes; window.ts disposes the client of a window that is not a frame
     // (a HUD) when nothing else uses its machine.
-    const hud = (backendId: string) =>
-      seedLiveWindow('app://workspaces/hud', undefined, backendId);
+    const hud = (backendId: string) => seedLiveWindow('app://workspaces/hud', undefined, backendId);
 
     it("leaves a closing frame's machines to the rail owner", () => {
       const disposer = vi.fn();
@@ -658,7 +651,7 @@ describe('multi-backend window sessions', () => {
       expect(disposer).not.toHaveBeenCalled();
     });
 
-    it("disposes a remote client when its last window, a HUD, is explicitly closed", () => {
+    it('disposes a remote client when its last window, a HUD, is explicitly closed', () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
       seedLiveWindow('app://workspaces/work/local', undefined, 'local');
@@ -814,9 +807,9 @@ describe('multi-backend window sessions', () => {
 
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
-      expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
-      ).toEqual(['/work/newer']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname)).toEqual([
+        '/work/newer',
+      ]);
     });
 
     it('prefers the frames file once it is newer than the old file', async () => {
@@ -830,9 +823,9 @@ describe('multi-backend window sessions', () => {
 
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
-      expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
-      ).toEqual(['/work/current']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname)).toEqual([
+        '/work/current',
+      ]);
     });
 
     it('drops machines that are no longer saved and opens the frame on the next one', async () => {
@@ -1326,9 +1319,7 @@ describe('multi-backend window sessions', () => {
       const overlay = seedLiveWindow('app://workspaces/dock-annotation', undefined, 'remote-2');
       registerDockAnnotationWindow(overlay as never);
       await ensureLocalWindowBeforeClosingBackend('remote-1');
-      const local = FakeBrowserWindow.getAllWindows().find(
-        (window) => window.machine === 'local',
-      );
+      const local = FakeBrowserWindow.getAllWindows().find((window) => window.machine === 'local');
       expect(local).toBeDefined();
       expect(overlay.show).not.toHaveBeenCalled();
       expect(overlay.focus).not.toHaveBeenCalled();

@@ -106,19 +106,17 @@ vi.mock('../../../../main/window', () => ({
   }),
   // A frame on one machine. The mock window's web contents stands in for the
   // machine's view; creation settles once that view has loaded its page.
-  openMachineFrame: vi.fn(
-    async (opts: { machineId: string; route?: string; show?: boolean }) => {
-      const window = new electronMocks.MockBrowserWindow({ show: opts.show });
-      (window as unknown as { backendId: string }).backendId = opts.machineId;
-      try {
-        await window.loadURL(`app://workspaces${opts.route ?? '/'}`);
-      } catch (error) {
-        window.destroy();
-        throw error;
-      }
-      return { window, contents: window.webContents };
-    },
-  ),
+  openMachineFrame: vi.fn(async (opts: { machineId: string; route?: string; show?: boolean }) => {
+    const window = new electronMocks.MockBrowserWindow({ show: opts.show });
+    (window as unknown as { backendId: string }).backendId = opts.machineId;
+    try {
+      await window.loadURL(`app://workspaces${opts.route ?? '/'}`);
+    } catch (error) {
+      window.destroy();
+      throw error;
+    }
+    return { window, contents: window.webContents };
+  }),
 }));
 
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';

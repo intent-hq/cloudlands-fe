@@ -432,9 +432,9 @@ describe('a frame open on the local machine', () => {
   it('saves a new order of the rail, with any machine first', async () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     await invoke(RAIL.ADD, local(), { id: 'c' });
-    expect(await invoke(RAIL.REORDER, local(), { machineIds: ['c', 'local', 'b'] })).toMatchObject(
-      { machineIds: ['c', 'local', 'b'] },
-    );
+    expect(await invoke(RAIL.REORDER, local(), { machineIds: ['c', 'local', 'b'] })).toMatchObject({
+      machineIds: ['c', 'local', 'b'],
+    });
     expect(getMachineRailSession(fakes.window as never)?.machineIds).toEqual(['c', 'local', 'b']);
     // An order that drops a machine is refused.
     expect(await invoke(RAIL.REORDER, local(), { machineIds: ['c', 'b'] })).toMatchObject({
@@ -594,7 +594,11 @@ describe('a frame open on the local machine', () => {
   });
 
   describe('frame backdrop', () => {
-    const backdrop = (tint: string) => ({ background: 'rgba(0, 0, 0, 0)', tint, reducedMotion: false });
+    const backdrop = (tint: string) => ({
+      background: 'rgba(0, 0, 0, 0)',
+      tint,
+      reducedMotion: false,
+    });
     const pushed = () =>
       framePage()
         .send.mock.calls.filter(([channel]) => channel === RAIL.BACKDROP_CHANGED)

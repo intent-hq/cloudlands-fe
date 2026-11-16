@@ -3165,7 +3165,10 @@ describe('NotificationService routing by frame (one machine in several frames)',
     frames = [];
     setMachineRailEnabledFlag(true);
     focus(null);
-    vi.mocked(getRendererWebContentsForWorkspace).mockImplementation(((workspaceId: string, scope: unknown) =>
+    vi.mocked(getRendererWebContentsForWorkspace).mockImplementation(((
+      workspaceId: string,
+      scope: unknown,
+    ) =>
       entries
         .filter(
           (e) =>
