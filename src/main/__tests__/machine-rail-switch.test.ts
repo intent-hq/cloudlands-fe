@@ -17,6 +17,7 @@ interface FakeWebContents {
   on: ReturnType<typeof vi.fn>;
   once: ReturnType<typeof vi.fn>;
   getTitle: () => string;
+  getURL: () => string;
   isLoading: () => boolean;
   isDestroyed: () => boolean;
   isLoadingMainFrame: () => boolean;
@@ -32,6 +33,7 @@ const fakes = vi.hoisted(() => {
     on: vi.fn(),
     once: vi.fn(),
     getTitle: () => '',
+    getURL: () => '',
     isLoading: () => false,
     isDestroyed: () => false,
     isLoadingMainFrame: () => false,
@@ -72,6 +74,7 @@ const fakes = vi.hoisted(() => {
   });
   return {
     webContents,
+    originalWebContents: webContents,
     handlers: new Map<string, (event: unknown, data?: unknown) => Promise<unknown>>(),
     views,
     children,
@@ -617,6 +620,44 @@ describe('a frame open on the local machine', () => {
       expect(pushed().at(-1)).toBeNull();
       expect(await invoke(RAIL.GET_BACKDROP, framePage())).toBeNull();
     });
+  });
+});
+
+describe('the frame page', () => {
+  const framePageLoads = () => framePage().loadURL.mock.calls.map(([url]) => url);
+
+  it('is not loaded while the rail is off: every machine paints its own shell', async () => {
+    setMachineRailEnabledFlag(false);
+    openFrame([{ id: 'local' }], 'local');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(framePageLoads()).toEqual([]);
+  });
+
+  it('loads once the shown machine has loaded, so the two do not start together', () => {
+    fakes.webContents = ((original) => (id: string) => {
+      const contents = original(id);
+      // Every machine view is still loading its first page.
+      return id.startsWith('view-') ? { ...contents, isLoading: () => true } : contents;
+    })(fakes.webContents);
+    try {
+      openFrame([{ id: 'local' }], 'local');
+      expect(framePageLoads()).toEqual([]);
+      const [event, listener] = local().once.mock.calls.find(
+        ([name]) => name === 'did-finish-load',
+      ) as [string, () => void];
+      expect(event).toBe('did-finish-load');
+      listener();
+      expect(framePageLoads()).toEqual(['app://workspaces/frame']);
+    } finally {
+      fakes.webContents = fakes.originalWebContents;
+    }
+  });
+
+  it('loads when the rail is turned on', async () => {
+    setMachineRailEnabledFlag(false);
+    openFrame([{ id: 'local' }], 'local');
+    await invoke(RAIL.SET_ENABLED, local(), { enabled: true });
+    expect(framePageLoads()).toEqual(['app://workspaces/frame']);
   });
 });
 

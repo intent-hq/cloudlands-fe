@@ -60,6 +60,7 @@ import { framesHolding, isMachineInUse, isMachineRendered, rendererFor } from '.
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { decorateWindowTitle } from './utils/resolve-app-title';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
+import { FRAME_ROUTE } from '../shared/frame-route';
 import {
   buildLoadUrl,
   buildRendererWebPreferences,
@@ -191,6 +192,30 @@ function pushBackdrop(window: BrowserWindowType): void {
   if (window.isDestroyed() || !isFrameWindow(window) || window.webContents.isDestroyed()) return;
   window.webContents.send(MACHINE_RAIL.BACKDROP_CHANGED, frameBackdrop(window));
 }
+
+/**
+ * Load the frame page under `window`'s views once it has something to paint:
+ * only while the rail lab is on (with it off every machine paints its own
+ * shell), and only after the shown machine's view has loaded, so the two
+ * renderers do not boot at the same time.
+ */
+function ensureFramePage(window: BrowserWindowType): void {
+  if (!isMachineRailEnabled() || window.isDestroyed() || !isFrameWindow(window)) return;
+  const page = window.webContents;
+  if (page.isDestroyed() || page.getURL() !== '' || framePageRequested.has(window)) return;
+  framePageRequested.add(window);
+  const load = (): void => {
+    if (window.isDestroyed() || page.isDestroyed()) return;
+    page
+      .loadURL(buildLoadUrl(FRAME_ROUTE))
+      .catch((error: unknown) => logger.error('Failed to load the frame page', error as Error));
+  };
+  const shown = getShownRendererWebContents(window);
+  if (shown === page || shown.isDestroyed() || !shown.isLoading()) load();
+  else shown.once('did-finish-load', load);
+}
+
+const framePageRequested = new WeakSet<BrowserWindowType>();
 
 function layoutViews(window: BrowserWindowType): void {
   if (window.isDestroyed()) return;
@@ -700,6 +725,7 @@ function openFrame(
   writeWindowRail(window, { machineIds, selectedId: selected });
   applySelection(window);
   broadcastState(window);
+  ensureFramePage(window);
   const others = machineIds.filter((id) => id !== selected);
   if (others.length > 0) {
     void startOthers(window, selected, others).catch((error: unknown) =>
@@ -742,6 +768,7 @@ async function setEnabled(next: boolean): Promise<void> {
   for (const window of getAppWindows()) {
     if (window.isDestroyed()) continue;
     if (!next) resetWindow(window);
+    else ensureFramePage(window);
     broadcastState(window);
     pushBackdrop(window);
   }

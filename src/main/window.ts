@@ -1,7 +1,6 @@
 import { registerChatWindow } from './chat-window-identity';
 import { isDevConsoleRoute } from '../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
-import { FRAME_ROUTE } from '../shared/frame-route';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -652,8 +651,9 @@ export interface OpenedFrame {
 }
 
 /**
- * Open a frame: a window whose own page is the frame page (backdrop only)
- * holding `machines`, each a view on its page, showing `selectedId`.
+ * Open a frame: a window holding `machines`, each a view on its page, showing
+ * `selectedId`. Its own page is the frame page (backdrop only), which the rail
+ * owner loads only while the rail lab is on.
  */
 async function createFrameWindow(opts: {
   bounds: { x: number; y: number; width: number; height: number };
@@ -688,9 +688,7 @@ async function createFrameWindow(opts: {
   // frame saved fullscreen restores fullscreen, not windowed at screen-sized
   // bounds.
   if (opts.isFullScreen) window.setFullScreen(true);
-  window
-    .loadURL(buildLoadUrl(FRAME_ROUTE))
-    .catch((error: unknown) => logger.error('Failed to load the frame page:', error as Error));
+  // The rail owner loads the frame page itself, once the shown machine has loaded.
   const contents = openFrameMachines(window, opts.machines, opts.selectedId);
   return { window, contents };
 }

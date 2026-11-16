@@ -124,8 +124,9 @@ const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&tok
 
 /**
  * Every app window is a frame. The rail owner is stood in for: a frame holds
- * the machines it opens on, and its own web contents stands in for the shown
- * machine's view, where links are queued.
+ * the machines it opens on and loads the shown one's page (recorded in
+ * `mockLoadUrl`), and its own web contents stands in for that machine's view,
+ * where links are queued.
  */
 function makeFrame<W extends { webContents: unknown }>(window: W, machineId: string): W {
   markFrameWindow(window as never);
@@ -184,6 +185,8 @@ beforeEach(() => {
   markRendererWindowsAllowed();
   setFrameOpener((window, machines, selectedId) => {
     writeWindowRail(window, { machineIds: machines.map((m) => m.id), selectedId });
+    const route = machines.find((machine) => machine.id === selectedId)?.route;
+    void mockLoadUrl(`app://workspaces${route ?? '/workspace/new'}`);
     return window.webContents;
   });
 });

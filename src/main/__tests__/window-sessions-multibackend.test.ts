@@ -1616,8 +1616,8 @@ describe('multi-backend window sessions', () => {
       });
       expect(window.machine).toBe('remote-1');
       expect(new URL(window.page).pathname).toBe('/work/r1');
-      // Its own page is the frame page, never a machine's.
-      expect(new URL(window.webContents.getURL()).pathname).toBe('/frame');
+      // Its own page renders no machine (the rail owner loads the frame page later).
+      expect(window.webContents.getURL()).toBe('about:blank');
     });
   });
 
