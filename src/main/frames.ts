@@ -2,14 +2,15 @@
  * Frames registry — main process.
  *
  * A frame is an app window that holds an ordered list of machines and shows
- * one of them. Callers ask this module which machines a frame holds, which one
+ * one of them. Its own web contents is the frame page (backdrop only, bound to
+ * no machine); every machine it holds, the local one included, is a view
+ * inside it. Callers ask this module which machines a frame holds, which one
  * it shows, which frames hold a machine, and which renderer serves a machine
- * in a frame, instead of reading the window's backend stamp.
+ * in a frame, instead of reading a window's backend stamp. Dock, HUD and
+ * capture windows are not frames: they keep their stamp.
  *
- * Today's model backs it: the window's own web contents renders the window's
- * stamped backend, and machine-rail views (Labs) render the other machines in
- * its rail. Dependency-light on purpose, like machine-rail-state.ts, so any
- * main module can import it without main/window.ts's module graph.
+ * Dependency-light on purpose, like machine-rail-state.ts, so any main module
+ * can import it without main/window.ts's module graph.
  */
 
 import { app, BrowserWindow } from 'electron';
@@ -22,44 +23,33 @@ import {
   getBackendIdForWindow,
   getRendererWebContents,
   getShownRendererWebContents,
+  isFrameWindow,
 } from './window-backend';
 
-type WindowPredicate = (window: BrowserWindowType) => boolean;
-
-let isNonFrameWindow: WindowPredicate = () => false;
-
-/**
- * Tell the registry which live windows are not frames (dock and capture
- * windows). main/window.ts registers it at load, so this module needs none of
- * those windows' modules.
- */
-export function setNonFrameWindowPredicate(predicate: WindowPredicate | null): void {
-  isNonFrameWindow = predicate ?? (() => false);
-}
-
 /** Whether `window` is a live frame. */
-function isFrame(window: BrowserWindowType | null | undefined): window is BrowserWindowType {
-  return !!window && !window.isDestroyed() && !isNonFrameWindow(window);
+export function isFrame(window: BrowserWindowType | null | undefined): boolean {
+  return !!window && !window.isDestroyed() && isFrameWindow(window);
 }
 
-/**
- * The machine the frame's own page renders (the window's backend stamp).
- * Transitional: window sessions and backend teardown still key on it until
- * frames stop having an own machine.
- */
-export function frameOwnMachine(window: BrowserWindowType): string {
-  return getBackendIdForWindow(window);
-}
-
-/** The machines `window` holds, in rail order; a window without a rail holds its own machine. */
+/** The machines `window` holds, in rail order; empty for a window that is not a frame. */
 export function frameMachines(window: BrowserWindowType): string[] {
   return [...readWindowRail(window).machineIds];
 }
 
-/** The machine whose renderer `window` shows (the one menu commands and input reach). */
+/**
+ * The machine whose renderer `window` shows (the one menu commands and input
+ * reach). A window that is not a frame shows the machine it is stamped with.
+ */
 export function shownMachine(window: BrowserWindowType): string {
+  if (!isFrameWindow(window)) return getBackendIdForWindow(window);
   const shown = getShownRendererWebContents(window);
-  return shown === window.webContents ? frameOwnMachine(window) : getBackendIdForWebContents(shown);
+  if (shown !== window.webContents) return getBackendIdForWebContents(shown);
+  return readWindowRail(window).selectedId;
+}
+
+/** The machines `window` renders: a frame's machines, or the machine any other window is bound to. */
+export function windowMachines(window: BrowserWindowType): string[] {
+  return isFrameWindow(window) ? frameMachines(window) : [getBackendIdForWindow(window)];
 }
 
 /** Every live frame that holds `machineId`, in window order. */
@@ -72,24 +62,47 @@ export function framesHolding(machineId: string): BrowserWindowType[] {
 /** The focused frame, else the main window when it is a frame, else null. */
 export function focusedFrame(): BrowserWindowType | null {
   const focused = BrowserWindow.getFocusedWindow();
-  if (isFrame(focused)) return focused;
+  if (focused && isFrame(focused)) return focused;
   const main = getMainWindow();
-  return isFrame(main) ? main : null;
+  return main && isFrame(main) ? main : null;
 }
 
 /**
- * The renderer serving `machineId` in `window`: the window's own web contents
- * for its own machine, else the machine's live view. Null when `window` does
- * not hold the machine or its view has not started yet.
+ * The view serving `machineId` in `window`. Null when `window` does not hold
+ * the machine or its view has not started yet.
  */
 export function rendererFor(
   window: BrowserWindowType,
   machineId: string,
 ): Electron.WebContents | null {
-  if (window.isDestroyed()) return null;
-  const [own, ...views] = getRendererWebContents(window);
-  if (frameOwnMachine(window) === machineId) return own;
-  return views.find((view) => getBackendIdForWebContents(view) === machineId) ?? null;
+  if (window.isDestroyed() || !isFrameWindow(window)) return null;
+  return (
+    getRendererWebContents(window).find((view) => getBackendIdForWebContents(view) === machineId) ??
+    null
+  );
+}
+
+/** Live windows that are not frames (dock, HUD, capture, dev console) stamped with `machineId`. */
+function otherWindowsOn(machineId: string): BrowserWindowType[] {
+  return getAppWindows().filter(
+    (window) =>
+      !window.isDestroyed() &&
+      !isFrameWindow(window) &&
+      getBackendIdForWindow(window) === machineId,
+  );
+}
+
+/** Whether a frame holds `machineId` or another window (dock, HUD) is bound to it. */
+export function isMachineInUse(machineId: string): boolean {
+  return framesHolding(machineId).length > 0 || otherWindowsOn(machineId).length > 0;
+}
+
+/** Whether any renderer serves `machineId`: a frame's view of it, or a window bound to it. */
+export function isMachineRendered(machineId: string): boolean {
+  return (
+    framesHolding(machineId).some((frame) => rendererFor(frame, machineId) !== null) ||
+    otherWindowsOn(machineId).length > 0
+  );
 }
 
 /** When each frame was last focused (a rising counter, not a clock). */

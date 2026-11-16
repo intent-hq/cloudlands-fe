@@ -54,11 +54,14 @@ import {
   getWindowFramesPath,
   saveAllWindowSessions,
 } from '../window';
+import { writeWindowRail } from '../machine-rail-state';
+import { bindMachineViewToBackend, markFrameWindow } from '../window-backend';
 
 interface FakeWindow {
   isDestroyed: () => boolean;
   isFullScreen: () => boolean;
-  webContents: { getURL: () => string };
+  once: () => void;
+  webContents: { getURL: () => string; isDestroyed: () => boolean };
   getBounds: () => { x: number; y: number; width: number; height: number };
 }
 
@@ -71,12 +74,19 @@ function makeWindow(
     height: 800,
   },
 ): FakeWindow {
-  return {
+  // A frame on the local machine, whose view shows `url`.
+  const window: FakeWindow = {
     isDestroyed: () => false,
     isFullScreen: () => false,
-    webContents: { getURL: () => url },
+    once: () => {},
+    webContents: { getURL: () => 'app://workspaces/frame', isDestroyed: () => false },
     getBounds: () => bounds,
   };
+  markFrameWindow(window as never);
+  writeWindowRail(window as never, { machineIds: ['local'], selectedId: 'local' });
+  const view = { getURL: () => url, isDestroyed: () => false, on: () => {}, once: () => {} };
+  bindMachineViewToBackend(window as never, view as never, 'local');
+  return window;
 }
 
 describe('saveAllWindowSessions — empty getAllWindows() fallback', () => {

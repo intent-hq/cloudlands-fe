@@ -1,13 +1,15 @@
 /**
- * Machine rail (Labs) — main process.
+ * Machine rail — frames' machine views, main process.
  *
- * One window stays connected to several machines and shows one at a time. The
- * window's own renderer serves its home machine exactly as before. Every other
- * machine in the rail gets its own renderer: a WebContentsView inside the same
- * window, bound to that machine's backend (see `bindMachineViewToBackend`) and
- * created the first time the machine is selected. Selecting a machine only
- * changes which view is visible, so each machine keeps its tabs, drafts and
- * scroll position.
+ * A frame (app window) holds one or more machines and shows one at a time;
+ * with the rail lab off it holds one. Every machine, the local one included,
+ * gets its own renderer: a WebContentsView filling the window, bound to that
+ * machine's backend (see `bindMachineViewToBackend`) and created when the
+ * frame opens on it or the machine is first selected. The window's own web
+ * contents is the frame page, which only paints the backdrop under the views.
+ * Selecting a machine only changes which view is visible, so each machine
+ * keeps its tabs, drafts and scroll position. Removing a frame's last machine
+ * closes the frame.
  *
  * Connections are pooled in backend.ipc.ts; this module asks for them through
  * {@link MachineRailDeps} so it never imports that module graph.
@@ -20,14 +22,17 @@ import { Logger } from '../shared/logger';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
   addRailMachine,
-  normalizeRailSession,
+  MACHINE_RAIL_MAX_MACHINES,
   removeRailMachine,
   reorderRailMachines,
+  type FrameMachineSession,
+  type MachineRailBackdrop,
   type MachineRailState,
   type MachineRailToastEvent,
 } from '../shared/types/machine-rail';
 import {
   EmptySchema,
+  MachineRailBackdropSchema,
   MachineRailForwardToastSchema,
   MachineRailHealthSchema,
   MachineRailMachineSchema,
@@ -38,19 +43,22 @@ import { createValidatedHandler } from './ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from './local-prefs';
 import {
   clearWindowRail,
+  FRAME_LAYOUT_CHANGED_EVENT,
   isMachineRailEnabled,
   MACHINE_RAIL_SHOWN_CHANGED_EVENT,
   readWindowRail,
   setMachineRailEnabledFlag,
   setPendingSelection,
+  setFrameOpener,
   setMachineRailRendererStarter,
-  setMachineRailRestoreHandler,
   setMachineRailShower,
   writeWindowRail,
   type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
-import { rendererFor } from './frames';
+import { framesHolding, isMachineInUse, isMachineRendered, rendererFor } from './frames';
+import { attachRendererHangMonitor } from './renderer-hang-monitor';
+import { decorateWindowTitle } from './utils/resolve-app-title';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
 import {
   buildLoadUrl,
@@ -59,11 +67,11 @@ import {
 } from './window';
 import {
   bindMachineViewToBackend,
-  getBackendIdForWindow,
   getBackendIdForWebContents,
   getRendererWebContents,
   getWindowForWebContents,
   getShownRendererWebContents,
+  isFrameWindow,
   isShownRenderer,
   setShownMachineView,
 } from './window-backend';
@@ -146,7 +154,6 @@ function stateOf(window: BrowserWindowType): MachineRailState {
   const listed = (id: string | undefined): id is string => !!id && rail.machineIds.includes(id);
   return {
     enabled: isMachineRailEnabled(),
-    homeId: rail.machineIds[0],
     machineIds: [...rail.machineIds],
     selectedId: rail.selectedId,
     shownId: listed(transition?.shownId) ? transition.shownId : rail.selectedId,
@@ -157,6 +164,7 @@ function stateOf(window: BrowserWindowType): MachineRailState {
 
 function broadcastState(window: BrowserWindowType): void {
   const state = stateOf(window);
+  app.emit(FRAME_LAYOUT_CHANGED_EVENT, window);
   for (const renderer of getRendererWebContents(window)) {
     try {
       renderer.send(MACHINE_RAIL.CHANGED, state);
@@ -169,19 +177,25 @@ function broadcastState(window: BrowserWindowType): void {
   }
 }
 
+/** The backdrop each machine view last reported for its machine. */
+const backdrops = new WeakMap<Electron.WebContents, MachineRailBackdrop>();
+
+/** What the frame page paints: the shown machine's backdrop while the rail is on. */
+function frameBackdrop(window: BrowserWindowType): MachineRailBackdrop | null {
+  if (!isMachineRailEnabled() || window.isDestroyed()) return null;
+  const shown = getShownRendererWebContents(window);
+  return shown === window.webContents ? null : (backdrops.get(shown) ?? null);
+}
+
+function pushBackdrop(window: BrowserWindowType): void {
+  if (window.isDestroyed() || !isFrameWindow(window) || window.webContents.isDestroyed()) return;
+  window.webContents.send(MACHINE_RAIL.BACKDROP_CHANGED, frameBackdrop(window));
+}
+
 function layoutViews(window: BrowserWindowType): void {
   if (window.isDestroyed()) return;
   const [width, height] = window.getContentSize();
   for (const view of viewsOf(window).values()) view.setBounds({ x: 0, y: 0, width, height });
-}
-
-/** Whether any window is bound to `id` or keeps it in its rail. */
-function isMachineInUse(id: string): boolean {
-  return getAppWindows().some(
-    (window) =>
-      !window.isDestroyed() &&
-      (getBackendIdForWindow(window) === id || readWindowRail(window).machineIds.includes(id)),
-  );
 }
 
 function releaseMachine(id: string): void {
@@ -189,7 +203,7 @@ function releaseMachine(id: string): void {
   try {
     deps?.disconnect(id);
   } catch (error) {
-    logger.warn('Failed to disconnect a machine removed from the rail', {
+    logger.warn('Failed to disconnect a machine no window uses', {
       backendId: id,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -212,23 +226,14 @@ function destroyView(window: BrowserWindowType, id: string): void {
   forgetHealthWithoutRenderer(id);
 }
 
-/** Broadcast to every window whose rail lists `id`. */
+/** Broadcast to every frame that holds `id`. */
 function broadcastToRailsOf(id: string): void {
-  for (const window of getAppWindows()) {
-    if (!window.isDestroyed() && readWindowRail(window).machineIds.includes(id)) {
-      broadcastState(window);
-    }
-  }
+  for (const window of framesHolding(id)) broadcastState(window);
 }
 
 /** Health is reported by a machine's renderers: with none left, its report is stale. */
 function forgetHealthWithoutRenderer(id: string): void {
-  if (!degradedMachines.has(id)) return;
-  const rendered = getAppWindows().some(
-    (window) =>
-      !window.isDestroyed() && (getBackendIdForWindow(window) === id || viewsOf(window).has(id)),
-  );
-  if (rendered) return;
+  if (!degradedMachines.has(id) || isMachineRendered(id)) return;
   degradedMachines.delete(id);
   broadcastToRailsOf(id);
 }
@@ -240,19 +245,20 @@ function observeWindow(window: BrowserWindowType): void {
   window.on('resize', relayout);
   window.on('enter-full-screen', relayout);
   window.on('leave-full-screen', relayout);
-  // A window that becomes active again focuses its own page; hand keyboard
+  // A window that becomes active again focuses its frame page; hand keyboard
   // focus to the machine on screen, so its shortcuts work without a click.
   window.on('focus', () => {
     const shown = getShownRendererWebContents(window);
     if (shown !== window.webContents && !shown.isDestroyed()) shown.focus();
   });
+  // The machines go with the frame; a machine no other window uses is released.
   window.once('closed', () => {
     const rail = readWindowRail(window);
     clearTransition(window);
     for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
     clearWindowRail(window);
-    forgetHealthWithoutRenderer(rail.machineIds[0]);
-    for (const id of rail.machineIds.slice(1)) releaseMachine(id);
+    restoredRoutes.delete(window);
+    for (const id of rail.machineIds) releaseMachine(id);
   });
 }
 
@@ -263,11 +269,23 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
   observeWindow(window);
   const view = new WebContentsView({ webPreferences: buildRendererWebPreferences() });
   bindMachineViewToBackend(window, view.webContents, id);
-  // The window's own renderer paints the shell background and accent tint
-  // under every view, so the tint can cross-fade between machines.
+  // The frame page paints the shell background and accent tint under every
+  // view, so the tint can cross-fade between machines.
   view.setBackgroundColor('#00000000');
   view.setVisible(false);
   forwardRendererConsoleToMainLog(window, view.webContents);
+  attachRendererHangMonitor(window, {}, view.webContents);
+  const layoutChanged = (): void => {
+    app.emit(FRAME_LAYOUT_CHANGED_EVENT, window);
+  };
+  view.webContents.on('did-navigate', layoutChanged);
+  view.webContents.on('did-navigate-in-page', layoutChanged);
+  // The window is titled after the machine it shows.
+  view.webContents.on('page-title-updated', (_event, title) => {
+    if (!window.isDestroyed() && getShownRendererWebContents(window) === view.webContents) {
+      window.setTitle(decorateWindowTitle(title));
+    }
+  });
   views.set(id, view);
   viewStartedAt.set(view.webContents, Date.now());
   window.contentView.addChildView(view);
@@ -286,18 +304,6 @@ function takeRestoredRoute(window: BrowserWindowType, id: string): string | unde
   const route = routes?.get(id);
   routes?.delete(id);
   return route;
-}
-
-/** The saved page of each machine in `session`, keeping only app paths. */
-function readRestoredRoutes(session: unknown, machineIds: string[]): Map<string, string> {
-  const routes = new Map<string, string>();
-  const raw = (session as { routes?: unknown } | null)?.routes;
-  if (typeof raw !== 'object' || raw === null) return routes;
-  for (const id of machineIds) {
-    const route = (raw as Record<string, unknown>)[id];
-    if (typeof route === 'string' && route.startsWith('/')) routes.set(id, route);
-  }
-  return routes;
 }
 
 /** Longest the previous machine stays up waiting for the selected renderer to paint. */
@@ -328,26 +334,27 @@ function completeReveal(window: BrowserWindowType, sender: Electron.WebContents)
 /**
  * Put the selected machine's renderer on top. The one on screen stays up
  * under it until the selected renderer has painted, so a switch never shows
- * an empty window. The window's own renderer is always at the bottom.
+ * an empty window. The frame page is always at the bottom.
  */
 function applySelection(window: BrowserWindowType): void {
   if (window.isDestroyed()) return;
-  const { machineIds, selectedId } = readWindowRail(window);
+  const { selectedId } = readWindowRail(window);
+  if (!selectedId) return;
   const transition = transitionOf(window);
-  const selected = selectedId === machineIds[0] ? null : ensureView(window, selectedId);
-  setShownMachineView(window, selected ? selected.webContents : null);
+  const selected = ensureView(window, selectedId);
+  setShownMachineView(window, selected.webContents);
   app.emit(MACHINE_RAIL_SHOWN_CHANGED_EVENT, window);
-  if (selected) {
-    selected.setVisible(true);
-    // Adding a child view again moves it to the top.
-    window.contentView.addChildView(selected);
-  }
+  pushBackdrop(window);
+  selected.setVisible(true);
+  // Adding a child view again moves it to the top.
+  window.contentView.addChildView(selected);
+  const title = selected.webContents.getTitle();
+  if (title && !selected.webContents.isLoading()) window.setTitle(decorateWindowTitle(title));
   clearTimeout(transition.revealTimer);
   transition.revealTimer = undefined;
   if (transition.shownId === selectedId) finishReveal(window);
   else transition.revealTimer = setTimeout(() => finishReveal(window), REVEAL_TIMEOUT_MS);
-  const target = selected ? selected.webContents : window.webContents;
-  if (window.isFocused() && !target.isDestroyed()) target.focus();
+  if (window.isFocused() && !selected.webContents.isDestroyed()) selected.webContents.focus();
 }
 
 function clearPending(window: BrowserWindowType): void {
@@ -384,7 +391,6 @@ function awaitMachine(window: BrowserWindowType, id: string): void {
 }
 
 function isMachineReady(window: BrowserWindowType, id: string): boolean {
-  if (id === readWindowRail(window).machineIds[0]) return true;
   const view = viewsOf(window).get(id);
   return !!view && !view.webContents.isDestroyed() && readyViews.has(view.webContents);
 }
@@ -423,13 +429,6 @@ function whenReady(contents: Electron.WebContents): Promise<void> {
   });
 }
 
-/** Live windows whose rail lists `id` as one of its added machines. */
-function railsListing(id: string): BrowserWindowType[] {
-  return getAppWindows().filter(
-    (window) => !window.isDestroyed() && readWindowRail(window).machineIds.indexOf(id) > 0,
-  );
-}
-
 /**
  * Start `id`'s renderer, hidden, in a window whose rail lists it (the focused
  * one first) unless one runs already, then wait until it is ready or
@@ -437,7 +436,7 @@ function railsListing(id: string): BrowserWindowType[] {
  * not waited for again. Settles with whether a rail lists the machine.
  */
 async function startRendererFor(id: string, deadline: number): Promise<boolean> {
-  const rails = railsListing(id);
+  const rails = framesHolding(id);
   if (rails.length === 0) return false;
   const running = rails
     .map((window) => viewsOf(window).get(id))
@@ -458,7 +457,7 @@ async function startRendererFor(id: string, deadline: number): Promise<boolean> 
 
 /** Pick `id` in a window whose rail lists it (the focused one first). */
 function showRailMachineFor(id: string): ShownRailMachine | null {
-  const rails = railsListing(id);
+  const rails = framesHolding(id);
   const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
   if (!window) return null;
   selectMachine(window, id);
@@ -476,12 +475,8 @@ export function selectMachineInFrame(
   id: string,
 ): ShownRailMachine | null {
   if (window.isDestroyed()) return null;
-  const { machineIds } = readWindowRail(window);
-  if (!machineIds.includes(id)) return null;
+  if (!readWindowRail(window).machineIds.includes(id)) return null;
   selectMachine(window, id);
-  if (id === machineIds[0]) {
-    return { window, contents: window.webContents, ready: Promise.resolve(true) };
-  }
   const contents = ensureView(window, id).webContents;
   return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
 }
@@ -643,10 +638,17 @@ export async function openInvitedMachineInWindow(
   return true;
 }
 
+/** Remove `id` from `window`; removing its last machine closes the frame. */
 function removeMachine(window: BrowserWindowType, id: string): MachineRailState {
   const rail = readWindowRail(window);
-  const next = removeRailMachine({ homeId: rail.machineIds[0], ...rail }, id);
+  if (!rail.machineIds.includes(id)) return stateOf(window);
+  const next = removeRailMachine(rail, id);
   if (transitionOf(window).pendingId === id) clearPending(window);
+  if (next.machineIds.length === 0) {
+    const state = stateOf(window);
+    window.close();
+    return { ...state, machineIds: [], selectedId: '', shownId: '', pendingId: '' };
+  }
   writeWindowRail(window, next);
   applySelection(window);
   destroyView(window, id);
@@ -664,58 +666,73 @@ function reorderMachines(window: BrowserWindowType, order: string[]): MachineRai
   return stateOf(window);
 }
 
-/** A forgotten machine leaves every rail. */
+/** A forgotten machine leaves every frame; a frame left with no machine closes. */
 export function removeMachineFromAllRails(id: string): void {
-  for (const window of getAppWindows()) {
-    if (window.isDestroyed()) continue;
-    const rail = readWindowRail(window);
-    if (rail.machineIds.indexOf(id) > 0) removeMachine(window, id);
-  }
+  for (const window of framesHolding(id)) removeMachine(window, id);
 }
 
-async function restoreRail(window: BrowserWindowType, session: unknown): Promise<void> {
-  if (!deps) return;
-  const saved = await deps.listMachineIds();
-  if (window.isDestroyed() || !isMachineRailEnabled()) return;
-  const homeId = getBackendIdForWindow(window);
-  const rail = normalizeRailSession(homeId, session, (id) => id !== homeId && saved.includes(id));
-  if (rail.machineIds.length < 2) return;
-  observeWindow(window);
-  restoredRoutes.set(window, readRestoredRoutes(session, rail.machineIds.slice(1)));
-  // The window opens straight on the machine it showed: that machine's
-  // renderer starts like the app does (its own startup screen), and the
-  // window's own page stays hidden, so it never shows in between.
-  clearTransition(window);
-  writeWindowRail(window, rail);
-  broadcastState(window);
-  // Every machine reconnects now. The one that was shown starts first; the
-  // others start in the background once it is ready, as each one connects.
-  const selected = rail.selectedId;
-  const others = rail.machineIds.slice(1).filter((id) => id !== selected);
-  for (const id of others) void connectQuietly(id);
-  if (selected !== rail.machineIds[0]) {
-    await connectQuietly(selected);
-    if (window.isDestroyed()) return;
-    if (readWindowRail(window).selectedId === selected) {
-      applySelection(window);
-      broadcastState(window);
-    }
-    const shown = viewsOf(window).get(selected);
-    if (shown) await whenReady(shown.webContents);
+/**
+ * Open `machines` in `window`, a new frame: the shown machine's view starts at
+ * once on its saved page; the others connect now and start in the background
+ * once it is ready, as each one connects. With the rail lab off the frame
+ * keeps only the machine it shows. Returns the shown machine's renderer.
+ */
+function openFrame(
+  window: BrowserWindowType,
+  machines: FrameMachineSession[],
+  selectedId: string,
+): Electron.WebContents | null {
+  if (window.isDestroyed()) return null;
+  const ids: string[] = [];
+  const routes = new Map<string, string>();
+  for (const machine of machines) {
+    if (ids.includes(machine.id)) continue;
+    if (ids.length >= MACHINE_RAIL_MAX_MACHINES) break;
+    ids.push(machine.id);
+    if (machine.route?.startsWith('/')) routes.set(machine.id, machine.route);
   }
+  if (ids.length === 0) return null;
+  const selected = ids.includes(selectedId) ? selectedId : ids[0];
+  const machineIds = isMachineRailEnabled() ? ids : [selected];
+  observeWindow(window);
+  clearTransition(window);
+  restoredRoutes.set(window, routes);
+  writeWindowRail(window, { machineIds, selectedId: selected });
+  applySelection(window);
+  broadcastState(window);
+  const others = machineIds.filter((id) => id !== selected);
+  if (others.length > 0) {
+    void startOthers(window, selected, others).catch((error: unknown) =>
+      logger.warn("Failed to start a frame's other machines", {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+  return viewsOf(window).get(selected)?.webContents ?? null;
+}
+
+/** Connect a new frame's other machines, then preload them once the shown one is ready. */
+async function startOthers(
+  window: BrowserWindowType,
+  selected: string,
+  others: string[],
+): Promise<void> {
+  for (const id of others) void connectQuietly(id);
+  const shown = viewsOf(window).get(selected);
+  if (shown) await whenReady(shown.webContents);
   await preloadMachines(window, others);
 }
 
+/** The rail lab was turned off: a frame keeps only the machine it shows. */
 function resetWindow(window: BrowserWindowType): void {
   const rail = readWindowRail(window);
+  if (rail.machineIds.length === 0) return;
+  const keep = rail.machineIds.includes(rail.selectedId) ? rail.selectedId : rail.machineIds[0];
   clearTransition(window);
-  for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
-  clearWindowRail(window);
-  restoredRoutes.delete(window);
-  setShownMachineView(window, null);
-  app.emit(MACHINE_RAIL_SHOWN_CHANGED_EVENT, window);
-  if (!window.webContents.isDestroyed() && window.isFocused()) window.webContents.focus();
-  for (const id of rail.machineIds.slice(1)) releaseMachine(id);
+  writeWindowRail(window, { machineIds: [keep], selectedId: keep });
+  applySelection(window);
+  for (const id of [...viewsOf(window).keys()]) if (id !== keep) destroyView(window, id);
+  for (const id of rail.machineIds) if (id !== keep) releaseMachine(id);
 }
 
 async function setEnabled(next: boolean): Promise<void> {
@@ -726,6 +743,7 @@ async function setEnabled(next: boolean): Promise<void> {
     if (window.isDestroyed()) continue;
     if (!next) resetWindow(window);
     broadcastState(window);
+    pushBackdrop(window);
   }
 }
 
@@ -755,13 +773,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
   deps = railDeps;
   setMachineRailRendererStarter(startRendererFor);
   setMachineRailShower(showRailMachineFor);
-  setMachineRailRestoreHandler((window, session) => {
-    void restoreRail(window, session).catch((error: unknown) =>
-      logger.warn('Failed to restore a machine rail', {
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  });
+  setFrameOpener(openFrame);
   ipcMain.handle(
     MACHINE_RAIL.GET_STATE,
     createValidatedHandler(
@@ -870,6 +882,27 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
         return { forwarded: true };
       },
       MACHINE_RAIL.FORWARD_TOAST,
+    ),
+  );
+  ipcMain.handle(
+    MACHINE_RAIL.BACKDROP,
+    createValidatedHandler(
+      MachineRailBackdropSchema,
+      async (event, backdrop) => {
+        backdrops.set(event.sender, backdrop);
+        const window = windowOf(event.sender);
+        if (isShownRenderer(window, event.sender)) pushBackdrop(window);
+        return { ok: true };
+      },
+      MACHINE_RAIL.BACKDROP,
+    ),
+  );
+  ipcMain.handle(
+    MACHINE_RAIL.GET_BACKDROP,
+    createValidatedHandler(
+      EmptySchema,
+      async (event) => frameBackdrop(windowOf(event.sender)),
+      MACHINE_RAIL.GET_BACKDROP,
     ),
   );
   ipcMain.handle(

@@ -12,6 +12,7 @@ import {
   getWindowForWebContents,
   getShownRendererWebContents,
   isShownRenderer,
+  markFrameWindow,
   setShownMachineView,
   getBackendIdForWebContents,
   getStrictBackendBindingForWebContents,
@@ -157,5 +158,43 @@ describe('machine views inside a window', () => {
     setShownMachineView(host.window, null);
     expect(getShownRendererWebContents(host.window)).toBe(host.sender);
     expect(isShownRenderer(host.window, host.sender)).toBe(true);
+  });
+
+  describe('a frame', () => {
+    it('is bound to no backend: its page loses the stamp the window-created hook gave it', () => {
+      const host = makeWindow();
+      stampWindowWithBackend(host.window, 'local');
+      markFrameWindow(host.window);
+      expect(getStrictBackendBindingForWebContents(host.sender)).toBeNull();
+      host.sender.emit('dom-ready');
+      expect(getStrictBackendBindingForWebContents(host.sender)).toBeNull();
+    });
+
+    it('lists only its machine views as renderers, never its page', () => {
+      const host = makeWindow();
+      markFrameWindow(host.window);
+      expect(getRendererWebContents(host.window)).toEqual([]);
+      const a = makeView(host.window);
+      const b = makeView(host.window);
+      bindMachineViewToBackend(host.window, a, 'local');
+      bindMachineViewToBackend(host.window, b, 'machine-b');
+      expect(getRendererWebContents(host.window)).toEqual([a, b]);
+    });
+
+    it('speaks through its first view until one is shown, and never through its page', () => {
+      const host = makeWindow();
+      markFrameWindow(host.window);
+      expect(isShownRenderer(host.window, host.sender)).toBe(false);
+      const a = makeView(host.window);
+      const b = makeView(host.window);
+      bindMachineViewToBackend(host.window, a, 'local');
+      bindMachineViewToBackend(host.window, b, 'machine-b');
+      expect(getShownRendererWebContents(host.window)).toBe(a);
+      setShownMachineView(host.window, b);
+      expect(getShownRendererWebContents(host.window)).toBe(b);
+      expect(isShownRenderer(host.window, b)).toBe(true);
+      expect(isShownRenderer(host.window, a)).toBe(false);
+      expect(isShownRenderer(host.window, host.sender)).toBe(false);
+    });
   });
 });

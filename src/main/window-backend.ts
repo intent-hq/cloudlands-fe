@@ -98,7 +98,9 @@ export function stampWindowWithBackend(
     if (mainFrame && !inPlace) retireStrictBinding(sender);
   });
   sender.on('dom-ready', () => {
-    if (window.webContents === sender) bindCurrentDocument(window, getBackendIdForWindow(window));
+    if (window.webContents === sender && !frameWindows.has(window)) {
+      bindCurrentDocument(window, getBackendIdForWindow(window));
+    }
   });
   sender.on('render-process-gone', () => retireStrictBinding(sender));
   sender.once('destroyed', () => retireStrictBinding(sender));
@@ -146,17 +148,54 @@ export function getWindowForWebContents(sender: Electron.WebContents): BrowserWi
   return window && !window.isDestroyed() ? window : null;
 }
 
+const frameWindows = new WeakSet<BrowserWindowType>();
+
 /**
- * Every live renderer hosted by `window`: its own web contents first, then its
- * machine views. Use it wherever a message must reach each renderer.
+ * Mark `window` as a frame: its own web contents is the frame page (backdrop
+ * only, bound to no machine) and every machine it holds is a view inside it.
+ */
+export function markFrameWindow(window: BrowserWindowType): void {
+  frameWindows.add(window);
+  // The generic window hook stamps every new window; a frame page serves no machine.
+  delete (window as BackendBoundWindow).backendId;
+  if (!window.webContents.isDestroyed()) retireStrictBinding(window.webContents);
+}
+
+/** Whether `window` is a frame (see {@link markFrameWindow}), live or not. */
+export function isFrameWindow(window: BrowserWindowType): boolean {
+  return frameWindows.has(window);
+}
+
+function liveMachineViews(window: BrowserWindowType): Electron.WebContents[] {
+  return [...(machineViewsByWindow.get(window) ?? [])].filter((view) => !view.isDestroyed());
+}
+
+/**
+ * Every live app renderer hosted by `window`: a frame's machine views, or any
+ * other window's own web contents. Use it wherever a message must reach each
+ * renderer.
  */
 export function getRendererWebContents(window: BrowserWindowType): Electron.WebContents[] {
   if (window.isDestroyed()) return [];
-  const renderers = [window.webContents];
-  for (const view of machineViewsByWindow.get(window) ?? []) {
-    if (!view.isDestroyed()) renderers.push(view);
-  }
-  return renderers;
+  if (frameWindows.has(window)) return liveMachineViews(window);
+  const own = window.webContents.isDestroyed() ? [] : [window.webContents];
+  return [...own, ...liveMachineViews(window)];
+}
+
+/** A renderer to send to, shaped like a window, for helpers typed on windows. */
+export interface RendererTarget {
+  isDestroyed(): boolean;
+  webContents: Electron.WebContents;
+}
+
+/** Every live app renderer of `windows` (see {@link getRendererWebContents}) as a send target. */
+export function getRendererTargets(windows: readonly BrowserWindowType[]): RendererTarget[] {
+  return windows.flatMap((window) =>
+    getRendererWebContents(window).map((contents) => ({
+      isDestroyed: () => contents.isDestroyed(),
+      webContents: contents,
+    })),
+  );
 }
 
 /** Whether `sender` is a machine view that main created inside `window`. */
@@ -166,7 +205,7 @@ export function isMachineViewOf(window: BrowserWindowType, sender: Electron.WebC
 
 const shownMachineViews = new WeakMap<BrowserWindowType, Electron.WebContents>();
 
-/** Record which machine view `window` shows; `null` when it shows its own renderer. */
+/** Record which machine view `window` shows; `null` when it shows none. */
 export function setShownMachineView(
   window: BrowserWindowType,
   sender: Electron.WebContents | null,
@@ -175,15 +214,23 @@ export function setShownMachineView(
   else shownMachineViews.delete(window);
 }
 
-/**
- * The renderer the user is looking at in `window`: the shown machine view, or
- * the window's own web contents. Menu commands and input gestures go here.
- */
-export function getShownRendererWebContents(window: BrowserWindowType): Electron.WebContents {
+function shownView(window: BrowserWindowType): Electron.WebContents | null {
   const shown = shownMachineViews.get(window);
   return shown && !shown.isDestroyed() && machineViewBindings.get(shown)?.window === window
     ? shown
-    : window.webContents;
+    : null;
+}
+
+/**
+ * The renderer the user is looking at in `window`: the machine view a frame
+ * shows (its first view before one is shown), or any other window's own web
+ * contents. Menu commands and input gestures go here.
+ */
+export function getShownRendererWebContents(window: BrowserWindowType): Electron.WebContents {
+  const shown = shownView(window);
+  if (shown) return shown;
+  if (frameWindows.has(window)) return liveMachineViews(window)[0] ?? window.webContents;
+  return window.webContents;
 }
 
 /**
@@ -191,10 +238,9 @@ export function getShownRendererWebContents(window: BrowserWindowType): Electron
  * for the window (current workspace, open tabs) to the main process.
  */
 export function isShownRenderer(window: BrowserWindowType, sender: Electron.WebContents): boolean {
-  const shown = shownMachineViews.get(window);
-  const showsView =
-    !!shown && !shown.isDestroyed() && machineViewBindings.get(shown)?.window === window;
-  return machineViewBindings.has(sender) ? showsView && shown === sender : !showsView;
+  if (getShownRendererWebContents(window) !== sender) return false;
+  // A frame page never speaks for its window, even before a machine view exists.
+  return !(frameWindows.has(window) && sender === window.webContents);
 }
 
 function getStrictMachineViewBinding(

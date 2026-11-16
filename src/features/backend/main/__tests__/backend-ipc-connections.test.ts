@@ -391,7 +391,12 @@ async function loadModule() {
  */
 function installWindow(backendId?: string) {
   const send = vi.fn();
-  const window = { id: 1, backendId, isDestroyed: () => false, webContents: { send } };
+  const window = {
+    id: 1,
+    backendId,
+    isDestroyed: () => false,
+    webContents: { send, isDestroyed: () => false },
+  };
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
   vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
     sender === window.webContents ? (window as never) : null,
@@ -408,13 +413,13 @@ function installBackendWindows() {
     id: 1,
     backendId: 'local',
     isDestroyed: () => false,
-    webContents: { ...localSender, send: localSend },
+    webContents: { ...localSender, send: localSend, isDestroyed: () => false },
   };
   const remoteWindow = {
     id: 2,
     backendId: 'remote-1',
     isDestroyed: () => false,
-    webContents: { ...remoteSender, send: remoteSend },
+    webContents: { ...remoteSender, send: remoteSend, isDestroyed: () => false },
   };
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
   vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
@@ -4557,13 +4562,15 @@ describe('connections:list hides the self entry on the owning machine', () => {
     await expect(list({}, undefined)).resolves.toMatchObject({ connections: [LOCAL, REMOTE] });
   });
 
-  it('keeps a self record referenced by a non-home rail item and hides unrelated self records', async () => {
+  it('keeps a self record a frame holds and hides unrelated self records', async () => {
     localPrefs.values.set('selfBackendFingerprint', '11:22:33:44');
     const otherSelf = { ...SELF_ENTRY, id: 'unreferenced-self' };
     store.list.mockResolvedValue([LOCAL, SELF_ENTRY, otherSelf]);
     installWindow();
     const { mod } = await loadModule();
     const { writeWindowRail } = await import('../../../../main/machine-rail-state');
+    const { markFrameWindow } = await import('../../../../main/window-backend');
+    markFrameWindow(BrowserWindow.getAllWindows()[0]);
     writeWindowRail(BrowserWindow.getAllWindows()[0], {
       machineIds: ['local', SELF_ENTRY.id],
       selectedId: SELF_ENTRY.id,
@@ -4634,6 +4641,8 @@ describe('connections:list hides the self entry on the owning machine', () => {
     installWindow(REMOTE.id);
     const { mod } = await loadModule();
     const { writeWindowRail } = await import('../../../../main/machine-rail-state');
+    const { markFrameWindow } = await import('../../../../main/window-backend');
+    markFrameWindow(BrowserWindow.getAllWindows()[0]);
     writeWindowRail(BrowserWindow.getAllWindows()[0], {
       machineIds: [REMOTE.id, SELF_ENTRY.id],
       selectedId: REMOTE.id,
@@ -5207,6 +5216,16 @@ describe('backend client pool', () => {
   it('treats the focused remote window as current for menu and quit gates', async () => {
     const { localWindow, remoteWindow } = installBackendWindows();
     const { mod } = await loadModule();
+    // Both are frames, each showing its machine.
+    const { markFrameWindow } = await import('../../../../main/window-backend');
+    const { writeWindowRail } = await import('../../../../main/machine-rail-state');
+    for (const [window, id] of [
+      [localWindow, 'local'],
+      [remoteWindow, 'remote-1'],
+    ] as const) {
+      markFrameWindow(window as never);
+      writeWindowRail(window as never, { machineIds: [id], selectedId: id });
+    }
     mod.getBackendClient();
     await mod.connectBackendClient('remote-1');
 

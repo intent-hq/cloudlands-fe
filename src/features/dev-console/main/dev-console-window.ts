@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBackendIdForWindow, stampWindowWithBackend } from '../../../main/window-backend';
-import { frameOwnMachine } from '../../../main/frames';
+import { shownMachine } from '../../../main/frames';
 import { DEV_CONSOLE_ROUTE } from '../../../shared/dev-console-route';
 import { devConsoleRequests } from '../../../shared/ipc/dev-console-contract';
 import { devConsoleCapture } from './dev-console-service';
@@ -171,7 +171,7 @@ export function registerDevConsoleIPC(
   // Deliberately bypass the general IPC debug tracker: responses can contain private payloads.
   ipcMain.handle('dev-console:open', (event, data) => {
     devConsoleRequests['dev-console:open'].parse(data);
-    return { windowId: windows.open(frameOwnMachine(windows.sender(event))).id };
+    return { windowId: windows.open(shownMachine(windows.sender(event))).id };
   });
   ipcMain.handle('dev-console:connect', (event, data) => {
     devConsoleRequests['dev-console:connect'].parse(data);

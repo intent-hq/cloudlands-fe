@@ -1177,13 +1177,13 @@ class AutoUpdateService {
         return;
       }
 
-      logger.info('Saving window sessions before installing update...');
-      // Persist every live backend. activeId remains only the boot restore default.
+      logger.info('Saving window frames before installing update...');
+      // Persist every live frame. activeId remains only the boot restore default.
       await saveAllWindowSessions();
       isInstallingUpdate = true;
       // quitAndInstall() closes every window BEFORE before-quit fires (macOS),
-      // so mark teardown now — the window close listeners must not tombstone/
-      // prune the buckets saveAllWindowSessions() just wrote.
+      // so mark teardown now — the window close listeners must not drop the
+      // frames saveAllWindowSessions() just wrote.
       markWindowSessionTeardown();
 
       logger.info('Installing update and restarting...');
@@ -1348,6 +1348,7 @@ export const autoUpdateService = new AutoUpdateService();
 
 /**
  * Flag indicating the app is quitting to install an update.
- * When true, the window-all-closed handler should not delete window-sessions.json.
+ * When true, the window-all-closed handler should not discard the saved frames
+ * (window-frames.json).
  */
 export let isInstallingUpdate = false;

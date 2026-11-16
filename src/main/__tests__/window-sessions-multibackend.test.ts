@@ -1,8 +1,10 @@
 /**
- * Multi-backend window/session state (T4).
+ * Saved frames across machines.
  *
- * window-sessions.json is a backend-keyed map (`Record<backendId,
- * WindowSession[]>`) so each backend restores its own window layout. This
+ * Every app window is a frame whose machines are views; window-frames.json
+ * saves each frame's machines with their pages (window-sessions.json, the
+ * older per-backend file, is migrated once). The rail owner is stood in for
+ * by a test frame opener that starts a view for the shown machine. This
  * suite covers:
  *   - per-backend save/restore (one backend's save never clobbers another's),
  *   - lazy migration of a legacy top-level array into the `local` bucket,
@@ -169,21 +171,85 @@ import {
   setOnLastWindowClosedForBackend,
   showWorkspaceInBackendWindow,
 } from '../window';
-import { bindMachineViewToBackend } from '../window-backend';
 import {
+  bindMachineViewToBackend,
+  getShownRendererWebContents,
+  isFrameWindow,
+  markFrameWindow,
+  setShownMachineView,
+} from '../window-backend';
+import {
+  setFrameOpener,
   setMachineRailEnabledFlag,
-  setMachineRailRestoreHandler,
   writeWindowRail,
 } from '../machine-rail-state';
+import { shownMachine } from '../frames';
+import type { FrameMachineSession } from '../../shared/types/machine-rail';
 
+interface FrameProbe {
+  /** The machine a frame shows (the stamp of any other window). */
+  readonly machine: string;
+  /** The page a frame's shown machine view shows (any other window's own URL). */
+  readonly page: string;
+}
+type FakeWindow = InstanceType<typeof FakeBrowserWindow> & FrameProbe;
+
+Object.defineProperties(FakeBrowserWindow.prototype, {
+  machine: {
+    get(this: FakeWindow) {
+      return isFrameWindow(this as never) ? shownMachine(this as never) : this.backendId;
+    },
+  },
+  page: {
+    get(this: FakeWindow) {
+      if (!isFrameWindow(this as never)) return this.webContents.getURL();
+      const shown = getShownRendererWebContents(this as never);
+      return shown === (this.webContents as never) ? 'about:blank' : shown.getURL();
+    },
+  },
+});
+
+/** Pages each frame opened, by window: what the rail owner was asked to open. */
+const openedFrames = new Map<unknown, { machines: FrameMachineSession[]; selectedId: string }>();
+
+/** Stand-in for the rail owner: a frame holds its machines and shows a view of the selected one. */
+function installFrameOpener(): void {
+  setFrameOpener((window, machines, selectedId) => {
+    openedFrames.set(window, { machines, selectedId });
+    const ids = machines.map((machine) => machine.id);
+    writeWindowRail(window, { machineIds: ids, selectedId });
+    const route = machines.find((machine) => machine.id === selectedId)?.route;
+    const view = seedMachineView(
+      window as unknown as FakeWindow,
+      selectedId,
+      `app://workspaces${route ?? '/workspace/new'}`,
+    );
+    setShownMachineView(window, view as never);
+    return view as never;
+  });
+}
+
+/**
+ * A live window: a frame showing `backendId` on `url`, or (HUD, dock, dev
+ * console, desktop overlay and about:blank pages) a plain window stamped with it.
+ */
 function seedLiveWindow(
   url: string,
   bounds = { x: 0, y: 0, width: 1200, height: 800 },
   backendId = 'local',
-): FakeBrowserWindow {
-  const w = new FakeBrowserWindow(bounds);
-  w.backendId = backendId;
-  w.setURLForTest(url);
+): FakeWindow {
+  const w = new FakeBrowserWindow(bounds) as FakeWindow;
+  const path = url === 'about:blank' ? '' : new URL(url).pathname;
+  const plain = ['/hud', '/dock', '/dev-console', '/desktop-overlay'];
+  if (url === 'about:blank' || plain.some((prefix) => path.startsWith(prefix))) {
+    w.backendId = backendId;
+    w.setURLForTest(url);
+    return w;
+  }
+  markFrameWindow(w as never);
+  w.setURLForTest('app://workspaces/frame');
+  writeWindowRail(w as never, { machineIds: [backendId], selectedId: backendId });
+  setShownMachineView(w as never, seedMachineView(w, backendId, url) as never);
   return w;
 }
 
@@ -220,13 +286,26 @@ function single(
   return { bounds, machines: [{ id, route }], selectedId: id };
 }
 
+let nextViewId = 10_000;
+
+/** The renderer links and messages reach: a frame's shown view, any other window's own page. */
+function viewOf(window: InstanceType<typeof FakeBrowserWindow>): { id: number; send: unknown } {
+  return getShownRendererWebContents(window as never) as never;
+}
+
 /** A machine view inside `window`, bound to `id` and showing `url`. */
-function seedMachineView(window: FakeBrowserWindow, id: string, url: string) {
+function seedMachineView(window: InstanceType<typeof FakeBrowserWindow>, id: string, url: string) {
+  let page = url;
   const contents = {
-    getURL: () => url,
-    isDestroyed: () => false,
+    id: nextViewId++,
+    getURL: () => page,
+    setURLForTest: (next: string) => {
+      page = next;
+    },
+    isDestroyed: () => window.destroyed,
     on: vi.fn(),
     once: vi.fn(),
+    send: vi.fn(),
   };
   bindMachineViewToBackend(window as never, contents as never, id);
   return contents;
@@ -254,6 +333,8 @@ describe('multi-backend window sessions', () => {
     _resetRendererWindowGateForTests();
     markRendererWindowsAllowed();
     setMachineRailEnabledFlag(false);
+    openedFrames.clear();
+    installFrameOpener();
   });
 
   afterEach(() => {
@@ -285,7 +366,7 @@ describe('multi-backend window sessions', () => {
       await restoreWindowsForBackend('remote-1');
       expect(
         FakeBrowserWindow.getAllWindows().map(
-          (window) => new URL(window.webContents.getURL()).pathname,
+          (window) => new URL(window.page).pathname,
         ),
       ).toEqual(['/work/main']);
       await createWindowForSession({ route: '/dock-annotation', bounds }, false, 'remote-1');
@@ -334,16 +415,6 @@ describe('multi-backend window sessions', () => {
       ]);
     });
 
-    it('saves only the window machine while the rail lab is off', async () => {
-      const window = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      writeWindowRail(window as never, {
-        machineIds: ['local', 'remote-1'],
-        selectedId: 'remote-1',
-      });
-      await saveAllWindowSessions();
-      expect(readFrames()).toEqual([single('local', '/work/local', window.bounds)]);
-    });
-
     it('restores only the frames that open on the requested machine', async () => {
       const localBounds = { x: 1, y: 2, width: 1300, height: 850 };
       const remoteBounds = { x: 5, y: 6, width: 1100, height: 720 };
@@ -355,7 +426,7 @@ describe('multi-backend window sessions', () => {
       await restoreWindowsForBackend('remote-1');
 
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live.map((w) => [w.backendId, new URL(w.webContents.getURL()).pathname])).toEqual([
+      expect(live.map((w) => [w.machine, new URL(w.page).pathname])).toEqual([
         ['remote-1', '/work/r'],
       ]);
       expect(live[0].bounds).toEqual(remoteBounds);
@@ -377,9 +448,9 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
       const [restored] = FakeBrowserWindow.getAllWindows();
-      expect(restored.backendId).toBe('local');
+      expect(restored.machine).toBe('local');
       expect(restored.bounds).toEqual(bounds);
-      expect(new URL(restored.webContents.getURL()).pathname).toBe('/work/default');
+      expect(new URL(restored.page).pathname).toBe('/work/default');
     });
 
     it('keeps the saved page of a restored window that has not loaded yet', async () => {
@@ -405,10 +476,10 @@ describe('multi-backend window sessions', () => {
 
       await openOrFocusWindowsForBackend('remote-1');
       const remoteWindows = FakeBrowserWindow.getAllWindows().filter(
-        (window) => window.backendId === 'remote-1',
+        (window) => window.machine === 'remote-1',
       );
       expect(remoteWindows).toHaveLength(1);
-      expect(remoteWindows[0].webContents.getURL()).not.toContain('/work/closed');
+      expect(remoteWindows[0].page).not.toContain('/work/closed');
     });
 
     it('drops a closed window from disk at close time, even one of two on the same machine', async () => {
@@ -446,7 +517,7 @@ describe('multi-backend window sessions', () => {
       writeFrames([single('local', '/dev-console'), single('local', '/work/local')]);
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
       expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
       ).toEqual(['/work/local']);
     });
 
@@ -462,7 +533,7 @@ describe('multi-backend window sessions', () => {
       writeFrames([single('local', '/desktop-overlay'), single('local', '/work/local')]);
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
       expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
       ).toEqual(['/work/local']);
     });
 
@@ -569,7 +640,13 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('pooled client disposal on last window close', () => {
-    it('disposes the remote client when its last window is explicitly closed', () => {
+    // A frame's machines are released by the rail owner when the frame
+    // closes; window.ts disposes the client of a window that is not a frame
+    // (a HUD) when nothing else uses its machine.
+    const hud = (backendId: string) =>
+      seedLiveWindow('app://workspaces/hud', undefined, backendId);
+
+    it("leaves a closing frame's machines to the rail owner", () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
       seedLiveWindow('app://workspaces/work/local', undefined, 'local');
@@ -578,30 +655,28 @@ describe('multi-backend window sessions', () => {
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
 
-      expect(disposer).toHaveBeenCalledTimes(1);
-      expect(disposer).toHaveBeenCalledWith('remote-1');
-    });
-
-    it('does not dispose while another window of the same backend survives', () => {
-      const disposer = vi.fn();
-      setOnLastWindowClosedForBackend(disposer);
-      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      const remoteA = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
-      seedLiveWindow('app://workspaces/work/b', undefined, 'remote-1');
-
-      captureWindowSessionsSnapshot.call(remoteA as never);
-      remoteA.destroy();
-
       expect(disposer).not.toHaveBeenCalled();
     });
 
-    it("does not dispose while another window's rail holds the machine", () => {
+    it("disposes a remote client when its last window, a HUD, is explicitly closed", () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = hud('remote-1');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+
+      expect(disposer).toHaveBeenCalledExactlyOnceWith('remote-1');
+    });
+
+    it('does not dispose while a frame still holds the machine', () => {
       setMachineRailEnabledFlag(true);
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       writeWindowRail(local as never, { machineIds: ['local', 'remote-1'], selectedId: 'local' });
-      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      const remote = hud('remote-1');
 
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
@@ -612,7 +687,7 @@ describe('multi-backend window sessions', () => {
     it('never disposes the local backend (sidecar management stays alive)', () => {
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
-      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const local = hud('local');
       seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
 
       captureWindowSessionsSnapshot.call(local as never);
@@ -626,7 +701,7 @@ describe('multi-backend window sessions', () => {
       // gracefulShutdown() owns client teardown there.
       const disposer = vi.fn();
       setOnLastWindowClosedForBackend(disposer);
-      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      const remote = hud('remote-1');
 
       captureWindowSessionsSnapshot.call(remote as never);
       remote.destroy();
@@ -639,8 +714,9 @@ describe('multi-backend window sessions', () => {
         throw new Error('dispose failed');
       });
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
-      const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+      const remote = hud('remote-1');
       await saveAllWindowSessions();
+      expect(readFrames()).toHaveLength(2);
 
       expect(() => captureWindowSessionsSnapshot.call(remote as never)).not.toThrow();
       remote.destroy();
@@ -671,14 +747,14 @@ describe('multi-backend window sessions', () => {
       );
 
       expect(restored).toBe(true);
-      expect(
-        FakeBrowserWindow.getAllWindows().map((w) => [
-          w.backendId,
-          new URL(w.webContents.getURL()).pathname,
-        ]),
-      ).toEqual([
-        ['local', '/work/l'],
-        ['remote-1', '/work/r1'],
+      // Each old session reopens as a frame on its bucket's machine and its
+      // rail machines, showing the rail's selection.
+      expect([...openedFrames.values()]).toEqual([
+        {
+          machines: [{ id: 'local', route: '/work/l' }, { id: 'remote-2' }],
+          selectedId: 'remote-2',
+        },
+        { machines: [{ id: 'remote-1', route: '/work/r1' }], selectedId: 'remote-1' },
       ]);
       expect(readFramesFile()).toEqual({
         version: 1,
@@ -708,8 +784,8 @@ describe('multi-backend window sessions', () => {
       expect(restored).toBe(true);
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
-      expect(live[0].backendId).toBe('local');
-      expect(live[0].webContents.getURL()).toContain('/work/legacy');
+      expect(live[0].machine).toBe('local');
+      expect(live[0].page).toContain('/work/legacy');
     });
 
     it('never touches the old file when saving after a migration', async () => {
@@ -739,7 +815,7 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
       expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
       ).toEqual(['/work/newer']);
     });
 
@@ -755,7 +831,7 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
       expect(
-        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname),
+        FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname),
       ).toEqual(['/work/current']);
     });
 
@@ -781,8 +857,8 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('local', connect);
 
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live.map((w) => w.backendId)).toEqual(['remote-2']);
-      expect(new URL(live[0].webContents.getURL()).pathname).toBe('/workspace/new');
+      expect(live.map((w) => w.machine)).toEqual(['remote-2']);
+      expect(new URL(live[0].page).pathname).toBe('/workspace/new');
     });
 
     it.each([
@@ -933,7 +1009,7 @@ describe('multi-backend window sessions', () => {
       );
     });
 
-    it('stamps restored windows with their saved backend bucket', async () => {
+    it('opens restored frames on their saved backend bucket', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         legacySessionsPath(),
@@ -947,16 +1023,15 @@ describe('multi-backend window sessions', () => {
       await restoreWindowsForBackend('remote-a');
       await restoreWindowsForBackend('remote-b');
 
-      const live = FakeBrowserWindow.getAllWindows();
-      expect(getBackendIdForWebContents(live[0].webContents as never)).toBe('remote-a');
-      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-b');
+      const live = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(live.map((window) => window.machine)).toEqual(['remote-a', 'remote-b']);
     });
 
-    it('stamps a fresh window without a backend id as local', async () => {
+    it('opens a fresh window without a backend id on the local machine', async () => {
       await createWindow();
 
-      const [window] = FakeBrowserWindow.getAllWindows();
-      expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
+      const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(window.machine).toBe('local');
     });
 
     it('defaults an unbound IPC sender to local', () => {
@@ -997,8 +1072,8 @@ describe('multi-backend window sessions', () => {
       // the plain window is not.
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(2);
-      const hud = live.find((w) => w.webContents.getURL().includes('/hud'));
-      const plain = live.find((w) => !w.webContents.getURL().includes('/hud'));
+      const hud = live.find((w) => w.page.includes('/hud'));
+      const plain = live.find((w) => !w.page.includes('/hud'));
       expect(isTrackedHudWindow(hud as never)).toBe(true);
       expect(isTrackedHudWindow(plain as never)).toBe(false);
     });
@@ -1016,7 +1091,7 @@ describe('multi-backend window sessions', () => {
       // Exactly one live window restored, loading the incoming backend's route.
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
-      expect(live[0].webContents.getURL()).toContain('/work/remote');
+      expect(live[0].page).toContain('/work/remote');
     });
 
     it('opens a single fresh window when the incoming backend has no saved sessions', async () => {
@@ -1029,8 +1104,7 @@ describe('multi-backend window sessions', () => {
 
     it('adds saved remote sessions without destroying an existing local window', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
-      const local = seedLiveWindow('app://workspaces/work/local', bounds);
-      (local as unknown as { backendId: string }).backendId = 'local';
+      const local = seedLiveWindow('app://workspaces/work/local', bounds, 'local');
       fs.writeFileSync(
         legacySessionsPath(),
         JSON.stringify({ 'remote-1': [{ route: '/work/remote', bounds }] }),
@@ -1042,12 +1116,11 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(local.isDestroyed()).toBe(false);
       expect(live).toHaveLength(2);
-      expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-1');
+      expect((live[1] as FakeWindow).machine).toBe('remote-1');
     });
 
     it('focuses an existing backend window instead of restoring duplicates', async () => {
-      const remote = seedLiveWindow('app://workspaces/work/remote');
-      (remote as unknown as { backendId: string }).backendId = 'remote-1';
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
 
       await openOrFocusWindowsForBackend('remote-1');
 
@@ -1102,14 +1175,14 @@ describe('multi-backend window sessions', () => {
       expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(true);
 
       const reopened = FakeBrowserWindow.getAllWindows().filter(
-        (window) => window.backendId === 'remote-1',
+        (window) => window.machine === 'remote-1',
       );
       expect(reopened).toHaveLength(1);
-      expect(consumePendingDeepLinks(reopened[0].webContents.id).actions).toEqual([
+      expect(consumePendingDeepLinks(viewOf(reopened[0]).id).actions).toEqual([
         { type: 'open', params: { id: 'ws-moved' } },
       ]);
-      expect(consumePendingDeepLinks(local.webContents.id).actions).toEqual([]);
-      expect(reopened[0].webContents.send).toHaveBeenCalledWith('deep-link', { pending: true });
+      expect(consumePendingDeepLinks(viewOf(local).id).actions).toEqual([]);
+      expect(viewOf(reopened[0]).send).toHaveBeenCalledWith('deep-link', { pending: true });
       expect(FakeBrowserWindow.getFocusedWindow()).toBe(reopened[0]);
       expect(setMainWindow).toHaveBeenLastCalledWith(reopened[0]);
     });
@@ -1123,7 +1196,7 @@ describe('multi-backend window sessions', () => {
       expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
       expect(remote.restore).toHaveBeenCalledOnce();
       expect(remote.focus).toHaveBeenCalled();
-      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([
+      expect(consumePendingDeepLinks(viewOf(remote).id).actions).toEqual([
         { type: 'open', params: { id: 'ws-moved' } },
       ]);
     });
@@ -1132,7 +1205,7 @@ describe('multi-backend window sessions', () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
 
       expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(false);
-      expect(consumePendingDeepLinks(local.webContents.id).actions).toEqual([]);
+      expect(consumePendingDeepLinks(viewOf(local).id).actions).toEqual([]);
       expect(local.focus).not.toHaveBeenCalled();
     });
 
@@ -1144,8 +1217,8 @@ describe('multi-backend window sessions', () => {
 
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(2);
-      expect(live[1].backendId).toBe('remote-1');
-      expect(new URL(live[1].webContents.getURL()).pathname).toBe('/workspace/new');
+      expect(live[1].machine).toBe('remote-1');
+      expect(new URL(live[1].page).pathname).toBe('/workspace/new');
       expect(FakeBrowserWindow.getFocusedWindow()).toBe(live[1]);
       expect(setMainWindow).toHaveBeenLastCalledWith(live[1]);
       expect(setMainWindow).not.toHaveBeenCalledWith(hud);
@@ -1175,12 +1248,12 @@ describe('multi-backend window sessions', () => {
 
         const live = FakeBrowserWindow.getAllWindows();
         expect(live).toHaveLength(4);
-        const remote = live.filter((window) => window.backendId === 'remote-1');
+        const remote = live.filter((window) => window.machine === 'remote-1');
         expect(remote).toHaveLength(3);
         const [restoredHud, first, second] = remote;
         if (hud) expect(restoredHud).toBe(hud);
-        expect(new URL(first.webContents.getURL()).pathname).toBe('/work/first');
-        expect(new URL(second.webContents.getURL()).pathname).toBe('/work/second');
+        expect(new URL(first.page).pathname).toBe('/work/first');
+        expect(new URL(second.page).pathname).toBe('/work/second');
         expect(FakeBrowserWindow.getFocusedWindow()).toBe(first);
         expect(setMainWindow).toHaveBeenLastCalledWith(first);
         expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
@@ -1210,8 +1283,8 @@ describe('multi-backend window sessions', () => {
         expect(live).toHaveLength(2);
         const [restoredHud, regular] = live;
         if (hud) expect(restoredHud).toBe(hud);
-        expect(regular.backendId).toBe('remote-1');
-        expect(new URL(regular.webContents.getURL()).pathname).toBe('/workspace/new');
+        expect(regular.machine).toBe('remote-1');
+        expect(new URL(regular.page).pathname).toBe('/workspace/new');
         expect(FakeBrowserWindow.getFocusedWindow()).toBe(regular);
         expect(setMainWindow).toHaveBeenLastCalledWith(regular);
         expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
@@ -1238,10 +1311,10 @@ describe('multi-backend window sessions', () => {
       expect(getFocusedWindowBackendId()).toBe('remote-main');
       vi.mocked(getMainWindow).mockReturnValueOnce(overlay as never);
       expect(getFocusedWindowBackendId()).toBe('local');
-      const unowned = seedLiveWindow(
+      // A frame whose view shows the annotation route is still a frame.
+      const unowned = seedLiveWindow('app://workspaces/work/x', undefined, 'remote-unowned');
+      (viewOf(unowned) as unknown as { setURLForTest(url: string): void }).setURLForTest(
         'app://workspaces/dock-annotation',
-        undefined,
-        'remote-unowned',
       );
       expect(isDockAnnotationWindow(unowned as never)).toBe(false);
       unowned.focus();
@@ -1254,7 +1327,7 @@ describe('multi-backend window sessions', () => {
       registerDockAnnotationWindow(overlay as never);
       await ensureLocalWindowBeforeClosingBackend('remote-1');
       const local = FakeBrowserWindow.getAllWindows().find(
-        (window) => window.backendId === 'local',
+        (window) => window.machine === 'local',
       );
       expect(local).toBeDefined();
       expect(overlay.show).not.toHaveBeenCalled();
@@ -1328,7 +1401,7 @@ describe('multi-backend window sessions', () => {
 
       // Both of A's windows are back, including the HUD.
       const live = FakeBrowserWindow.getAllWindows();
-      const urls = live.map((w) => w.webContents.getURL());
+      const urls = live.map((w) => w.page);
       expect(urls.some((u) => new URL(u).pathname.startsWith('/hud'))).toBe(true);
       expect(urls.some((u) => new URL(u).pathname === '/work/a')).toBe(true);
       expect(live).toHaveLength(2);
@@ -1362,7 +1435,7 @@ describe('multi-backend window sessions', () => {
       expect(restored).toBe(true);
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(4);
-      const byBackend = (id: string) => live.filter((w) => w.backendId === id);
+      const byBackend = (id: string) => live.filter((w) => w.machine === id);
       expect(byBackend('local')).toHaveLength(1);
       expect(byBackend('remote-1')).toHaveLength(1);
       expect(byBackend('remote-2')).toHaveLength(2);
@@ -1403,7 +1476,7 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('remote-1', vi.fn().mockResolvedValue({}));
 
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live[0].backendId).toBe('remote-1');
+      expect(live[0].machine).toBe('remote-1');
       expect(setMainWindow).toHaveBeenCalledTimes(1);
       expect(setMainWindow).toHaveBeenCalledWith(live[0]);
     });
@@ -1428,8 +1501,8 @@ describe('multi-backend window sessions', () => {
 
       expect(restored).toBe(true);
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live.map((w) => w.backendId).sort()).toEqual(['local', 'remote-2']);
-      expect(live.every((w) => !w.webContents.getURL().includes('/work/gone'))).toBe(true);
+      expect(live.map((w) => w.machine).sort()).toEqual(['local', 'remote-2']);
+      expect(live.every((w) => !w.page.includes('/work/gone'))).toBe(true);
     });
 
     it('returns false and opens nothing when no backend has saved sessions', async () => {
@@ -1457,7 +1530,7 @@ describe('multi-backend window sessions', () => {
       expect(restored).toBe(true);
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
-      expect(live[0].backendId).toBe('local');
+      expect(live[0].machine).toBe('local');
       expect(connect).toHaveBeenCalledTimes(1);
       expect(connect).toHaveBeenCalledWith('local');
     });
@@ -1474,8 +1547,8 @@ describe('multi-backend window sessions', () => {
       expect(restored).toBe(true);
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
-      expect(live[0].backendId).toBe('local');
-      expect(live[0].webContents.getURL()).toContain('/work/legacy');
+      expect(live[0].machine).toBe('local');
+      expect(live[0].page).toContain('/work/legacy');
     });
 
     it('the active bucket still provides the main window when a non-active bucket also restores', async () => {
@@ -1492,7 +1565,7 @@ describe('multi-backend window sessions', () => {
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
       const live = FakeBrowserWindow.getAllWindows();
-      expect(live[0].backendId).toBe('local');
+      expect(live[0].machine).toBe('local');
       expect(setMainWindow).toHaveBeenCalledWith(live[0]);
     });
   });
@@ -1505,7 +1578,7 @@ describe('multi-backend window sessions', () => {
         id === 'remote-1' ? Promise.reject(new Error('no token')) : Promise.resolve({}),
       );
       await restoreAllBackendWindowSessions('local', connect);
-      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(['local']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.machine)).toEqual(['local']);
 
       await saveAllWindowSessions();
       expect(readFrames()).toEqual([
@@ -1516,44 +1589,42 @@ describe('multi-backend window sessions', () => {
       await openOrFocusWindowsForBackend('remote-1');
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(2);
-      expect(live[1].backendId).toBe('remote-1');
-      expect(new URL(live[1].webContents.getURL()).pathname).toBe('/work/remote');
+      expect(live[1].machine).toBe('remote-1');
+      expect(new URL(live[1].page).pathname).toBe('/work/remote');
       expect(live[1].bounds).toEqual(remoteBounds);
     });
 
-    it('restores a rail frame with each machine page for the rail to reopen', async () => {
+    it('opens a rail frame with every machine and its page, showing the one it showed', async () => {
       setMachineRailEnabledFlag(true);
-      const handler = vi.fn();
-      setMachineRailRestoreHandler(handler);
-      writeFrames([
-        {
-          bounds: { x: 0, y: 0, width: 1200, height: 800 },
-          machines: [
-            { id: 'local', route: '/work/l' },
-            { id: 'remote-1', route: '/work/r1' },
-            { id: 'remote-2' },
-          ],
-          selectedId: 'remote-1',
-        },
-      ]);
+      const saved = {
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        machines: [
+          { id: 'local', route: '/work/l' },
+          { id: 'remote-1', route: '/work/r1' },
+          { id: 'remote-2' },
+        ],
+        selectedId: 'remote-1',
+      };
+      writeFrames([saved]);
 
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
-      const [window] = FakeBrowserWindow.getAllWindows();
-      expect(new URL(window.webContents.getURL()).pathname).toBe('/work/l');
-      expect(handler).toHaveBeenCalledExactlyOnceWith(window, {
-        machineIds: ['local', 'remote-1', 'remote-2'],
+      const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(openedFrames.get(window)).toEqual({
+        machines: saved.machines,
         selectedId: 'remote-1',
-        routes: { local: '/work/l', 'remote-1': '/work/r1' },
       });
-      setMachineRailRestoreHandler(null);
+      expect(window.machine).toBe('remote-1');
+      expect(new URL(window.page).pathname).toBe('/work/r1');
+      // Its own page is the frame page, never a machine's.
+      expect(new URL(window.webContents.getURL()).pathname).toBe('/frame');
     });
   });
 
   describe('workspace bootstrap route', () => {
     const bounds = { x: 100, y: 100, width: 1024, height: 768 };
     const loadedPaths = () =>
-      FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname);
+      FakeBrowserWindow.getAllWindows().map((w) => new URL(w.page).pathname);
 
     it('opens a fresh window on the workspace bootstrap route', async () => {
       await createWindow();
@@ -1565,14 +1636,14 @@ describe('multi-backend window sessions', () => {
       const people = ['invited-person-B', 'invited-person-C'];
       for (const id of people) await restoreWindowsForBackend(id);
       expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
-      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.machine)).toEqual(people);
       await saveAllWindowSessions();
       FakeBrowserWindow.instances = [];
       _resetWindowSessionsCacheForTests();
       const connect = vi.fn().mockResolvedValue({});
       await restoreAllBackendWindowSessions('local', connect);
       expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
-      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.machine)).toEqual(people);
       expect(connect.mock.calls.map(([id]) => id)).toEqual(people);
     });
 
@@ -1601,11 +1672,11 @@ describe('multi-backend window sessions', () => {
       } as unknown as DeepLinkHandler);
 
       const [window] = FakeBrowserWindow.getAllWindows();
-      const url = new URL(window.webContents.getURL());
+      const url = new URL(window.page);
       expect(url.pathname).toBe('/workspace/new');
       // The action never rides in the URL; the window pulls it from main.
       expect(url.searchParams.has('deepLink')).toBe(false);
-      expect(consumePendingDeepLinks(window.webContents.id).actions).toEqual([action]);
+      expect(consumePendingDeepLinks(viewOf(window).id).actions).toEqual([action]);
     });
 
     it('opens a local window for an open link when only a remote window exists', async () => {
@@ -1617,10 +1688,10 @@ describe('multi-backend window sessions', () => {
         handleDeepLink: vi.fn(async () => {}),
       } as unknown as DeepLinkHandler);
 
-      const local = FakeBrowserWindow.getAllWindows().filter((w) => w.backendId === 'local');
+      const local = FakeBrowserWindow.getAllWindows().filter((w) => w.machine === 'local');
       expect(local).toHaveLength(1);
-      expect(consumePendingDeepLinks(local[0].webContents.id).actions).toEqual([action]);
-      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([]);
+      expect(consumePendingDeepLinks(viewOf(local[0]).id).actions).toEqual([action]);
+      expect(consumePendingDeepLinks(viewOf(remote).id).actions).toEqual([]);
     });
   });
 
@@ -1663,7 +1734,7 @@ describe('multi-backend window sessions', () => {
 
       expect(FakeBrowserWindow.instances).toHaveLength(1);
       expect(
-        consumePendingDeepLinks(FakeBrowserWindow.instances[0].webContents.id).actions,
+        consumePendingDeepLinks(viewOf(FakeBrowserWindow.instances[0]).id).actions,
       ).toHaveLength(1);
     });
 
@@ -1677,7 +1748,7 @@ describe('multi-backend window sessions', () => {
       await pending;
 
       expect(FakeBrowserWindow.instances).toHaveLength(1);
-      expect(FakeBrowserWindow.instances[0].backendId).toBe('remote-1');
+      expect(FakeBrowserWindow.instances[0].machine).toBe('remote-1');
     });
 
     it('restoreAllBackendWindowSessions constructs nothing while closed, then every saved window', async () => {
@@ -1702,7 +1773,7 @@ describe('multi-backend window sessions', () => {
       await expect(pending).resolves.toBe(true);
 
       expect(FakeBrowserWindow.instances).toHaveLength(3);
-      expect(FakeBrowserWindow.instances.map((w) => w.backendId)).toEqual([
+      expect(FakeBrowserWindow.instances.map((w) => w.machine)).toEqual([
         'local',
         'remote-1',
         'remote-1',
@@ -1719,7 +1790,7 @@ describe('multi-backend window sessions', () => {
       await Promise.all([first, second]);
 
       expect(FakeBrowserWindow.instances).toHaveLength(2);
-      expect(FakeBrowserWindow.instances.map((w) => w.backendId).sort()).toEqual([
+      expect(FakeBrowserWindow.instances.map((w) => w.machine).sort()).toEqual([
         'local',
         'remote-1',
       ]);

@@ -12,6 +12,24 @@ export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
 
+export const MACHINE_RAIL_BACKDROP_CHANGED_EVENT = 'machine-rail:backdrop-changed';
+
+/**
+ * The shell backdrop a machine's renderer paints under it while the rail is
+ * on: `machine-rail:backdrop` params, and (for the machine a frame shows)
+ * the frame page's `machine-rail:get-backdrop` result and
+ * `machine-rail:backdrop-changed` payload, `null` while there is none.
+ * Resolved CSS colours, so the frame page needs no theme of its own.
+ */
+export interface MachineRailBackdrop {
+  /** The shell surface under the page (translucent, or opaque without shell transparency). */
+  background: string;
+  /** The machine's accent tint over it; `transparent` when it has none. */
+  tint: string;
+  /** Switch the tint without a cross-fade (reduced motion). */
+  reducedMotion: boolean;
+}
+
 /** Root attribute of a renderer whose machine is not the one the window shows. */
 export const MACHINE_HIDDEN_ATTRIBUTE = 'data-machine-hidden';
 
@@ -29,16 +47,14 @@ export interface MachineRailToastEvent extends MachineRailForwardToastParams {
   machineId: string;
 }
 
-/** The most machines one window keeps in its rail, the window's own included. */
-const MACHINE_RAIL_MAX_MACHINES = 9;
+/** The most machines one window (frame) holds. */
+export const MACHINE_RAIL_MAX_MACHINES = 9;
 
 /** `machine-rail:get-state` result and `machine-rail:changed` payload. */
 export interface MachineRailState {
-  /** The Labs setting. While off, a window shows only its own machine. */
+  /** The Labs setting. While off, a window holds and shows one machine. */
   enabled: boolean;
-  /** The machine the window itself is bound to. Always first; never removed. */
-  homeId: string;
-  /** Rail order: `homeId` first, then the machines added to this window. */
+  /** The machines this window holds, in rail order. Never empty while the window is open. */
   machineIds: string[];
   /** The machine whose renderer the window shows. */
   selectedId: string;
@@ -58,16 +74,10 @@ export interface MachineRailHealthParams {
   degraded: boolean;
 }
 
-/**
- * What a window remembers about its rail: the machines in rail order (the
- * window's own machine may be listed; restore always puts it first) and the
- * one it showed. `routes` holds the page each machine's view showed, so a
- * restored view reopens there instead of on the default route.
- */
+/** What a window remembers about its rail: the machines in rail order and the one it showed. */
 export interface MachineRailSession {
   machineIds: string[];
   selectedId: string;
-  routes?: Record<string, string>;
 }
 
 /** One machine a saved frame holds, with the page its renderer showed. */
@@ -81,7 +91,7 @@ export interface FrameMachineSession {
 export interface FrameSession {
   bounds: { x: number; y: number; width: number; height: number };
   isFullScreen?: boolean;
-  /** Never empty. Until frames stop having an own machine, the first is the window's own. */
+  /** Never empty. */
   machines: FrameMachineSession[];
   selectedId: string;
 }
@@ -103,10 +113,7 @@ export function addRailMachine(machineIds: readonly string[], id: string): strin
   return [...machineIds, id];
 }
 
-/**
- * A new rail order: the same machines with home still first, or the current
- * order unchanged when `next` is not that.
- */
+/** A new rail order: the same machines, or the current order unchanged when `next` is not that. */
 export function reorderRailMachines(
   machineIds: readonly string[],
   next: readonly string[],
@@ -115,7 +122,7 @@ export function reorderRailMachines(
     next.length === machineIds.length &&
     new Set(next).size === next.length &&
     next.every((id) => machineIds.includes(id));
-  return same && next[0] === machineIds[0] ? [...next] : [...machineIds];
+  return same ? [...next] : [...machineIds];
 }
 
 /**
@@ -136,43 +143,17 @@ export function nextRailMachine(
 }
 
 /**
- * State after removing `id`. The home machine stays; removing the selected
- * machine selects the home machine.
+ * State after removing `id`. Removing the selected machine selects the one
+ * after it, else the one before it. Removing the last machine leaves an empty
+ * list and no selection: the window then closes.
  */
 export function removeRailMachine(
-  state: Pick<MachineRailState, 'homeId' | 'machineIds' | 'selectedId'>,
+  state: Pick<MachineRailState, 'machineIds' | 'selectedId'>,
   id: string,
 ): Pick<MachineRailState, 'machineIds' | 'selectedId'> {
-  if (id === state.homeId) {
-    return { machineIds: [...state.machineIds], selectedId: state.selectedId };
-  }
-  return {
-    machineIds: state.machineIds.filter((machineId) => machineId !== id),
-    selectedId: state.selectedId === id ? state.homeId : state.selectedId,
-  };
-}
-
-/**
- * A saved rail made safe to restore: only machines that are still saved, no
- * duplicates, home first, capped, and a selection that is in the list.
- */
-export function normalizeRailSession(
-  homeId: string,
-  session: unknown,
-  isSavedMachine: (id: string) => boolean,
-): Pick<MachineRailState, 'machineIds' | 'selectedId'> {
-  const raw = (session ?? {}) as { machineIds?: unknown; selectedId?: unknown };
-  const machineIds = [homeId];
-  if (Array.isArray(raw.machineIds)) {
-    for (const id of raw.machineIds) {
-      if (machineIds.length >= MACHINE_RAIL_MAX_MACHINES) break;
-      if (typeof id !== 'string' || machineIds.includes(id) || !isSavedMachine(id)) continue;
-      machineIds.push(id);
-    }
-  }
-  const selectedId =
-    typeof raw.selectedId === 'string' && machineIds.includes(raw.selectedId)
-      ? raw.selectedId
-      : homeId;
-  return { machineIds, selectedId };
+  const index = state.machineIds.indexOf(id);
+  if (index < 0) return { machineIds: [...state.machineIds], selectedId: state.selectedId };
+  const machineIds = state.machineIds.filter((machineId) => machineId !== id);
+  if (state.selectedId !== id) return { machineIds, selectedId: state.selectedId };
+  return { machineIds, selectedId: machineIds[Math.min(index, machineIds.length - 1)] ?? '' };
 }

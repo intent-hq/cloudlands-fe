@@ -3,12 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   addRailMachine,
   nextRailMachine,
-  normalizeRailSession,
   reorderRailMachines,
   removeRailMachine,
 } from './machine-rail';
 
-// The documented cap: nine machines per window, the window's own included.
+// The documented cap: nine machines per window.
 const MACHINE_RAIL_MAX_MACHINES = 9;
 
 describe('addRailMachine', () => {
@@ -24,64 +23,32 @@ describe('addRailMachine', () => {
 });
 
 describe('removeRailMachine', () => {
-  const rail = { homeId: 'local', machineIds: ['local', 'b', 'c'], selectedId: 'b' };
+  const rail = { machineIds: ['local', 'b', 'c'], selectedId: 'b' };
 
-  it('selects the home machine when the shown machine is removed', () => {
-    expect(removeRailMachine(rail, 'b')).toEqual({
-      machineIds: ['local', 'c'],
-      selectedId: 'local',
-    });
+  it('selects the next machine when the shown machine is removed', () => {
+    expect(removeRailMachine(rail, 'b')).toEqual({ machineIds: ['local', 'c'], selectedId: 'c' });
   });
 
-  it('keeps the selection when another machine is removed', () => {
-    expect(removeRailMachine(rail, 'c')).toEqual({ machineIds: ['local', 'b'], selectedId: 'b' });
-  });
-
-  it('never removes the home machine', () => {
-    expect(removeRailMachine(rail, 'local')).toEqual({
-      machineIds: ['local', 'b', 'c'],
+  it('selects the previous machine when the shown last machine is removed', () => {
+    expect(removeRailMachine({ ...rail, selectedId: 'c' }, 'c')).toEqual({
+      machineIds: ['local', 'b'],
       selectedId: 'b',
     });
   });
-});
 
-describe('normalizeRailSession', () => {
-  const saved = (ids: string[]) => (id: string) => ids.includes(id);
-
-  it('puts home first and restores the saved selection', () => {
-    expect(
-      normalizeRailSession('local', { machineIds: ['b', 'c'], selectedId: 'c' }, saved(['b', 'c'])),
-    ).toEqual({ machineIds: ['local', 'b', 'c'], selectedId: 'c' });
+  it('keeps the selection when another machine is removed, the first one included', () => {
+    expect(removeRailMachine(rail, 'local')).toEqual({ machineIds: ['b', 'c'], selectedId: 'b' });
   });
 
-  it('drops forgotten, duplicate and malformed machines', () => {
-    expect(
-      normalizeRailSession(
-        'local',
-        { machineIds: ['b', 'gone', 'b', 7, 'local'], selectedId: 'b' },
-        saved(['b']),
-      ),
-    ).toEqual({ machineIds: ['local', 'b'], selectedId: 'b' });
-  });
-
-  it('falls back to home when the saved selection is no longer in the rail', () => {
-    expect(
-      normalizeRailSession('local', { machineIds: ['b'], selectedId: 'gone' }, saved(['b'])),
-    ).toEqual({ machineIds: ['local', 'b'], selectedId: 'local' });
-  });
-
-  it.each([undefined, null, 'rail', { machineIds: 'b' }])('treats %j as an empty rail', (raw) => {
-    expect(normalizeRailSession('remote-1', raw, saved(['b']))).toEqual({
-      machineIds: ['remote-1'],
-      selectedId: 'remote-1',
+  it('leaves nothing selected once the last machine is removed', () => {
+    expect(removeRailMachine({ machineIds: ['b'], selectedId: 'b' }, 'b')).toEqual({
+      machineIds: [],
+      selectedId: '',
     });
   });
 
-  it('caps the restored rail', () => {
-    const ids = Array.from({ length: 20 }, (_, index) => `m${index}`);
-    const restored = normalizeRailSession('local', { machineIds: ids }, saved(ids));
-    expect(restored.machineIds).toHaveLength(MACHINE_RAIL_MAX_MACHINES);
-    expect(restored.machineIds[0]).toBe('local');
+  it('ignores a machine that is not in the rail', () => {
+    expect(removeRailMachine(rail, 'x')).toEqual(rail);
   });
 });
 
@@ -112,8 +79,8 @@ describe('reorderRailMachines', () => {
     expect(reorderRailMachines(rail, ['local', 'c', 'b', 'g1'])).toEqual(['local', 'c', 'b', 'g1']);
   });
 
-  it('keeps the home machine first', () => {
-    expect(reorderRailMachines(rail, ['b', 'local', 'c', 'g1'])).toEqual(rail);
+  it('moves any machine to the first place', () => {
+    expect(reorderRailMachines(rail, ['b', 'local', 'c', 'g1'])).toEqual(['b', 'local', 'c', 'g1']);
   });
 
   it('refuses an order that adds, drops or repeats a machine', () => {

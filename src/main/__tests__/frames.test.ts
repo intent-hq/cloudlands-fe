@@ -22,9 +22,10 @@ import {
   frameMachines,
   framesByRecentFocus,
   framesHolding,
+  isMachineInUse,
+  isMachineRendered,
   noteFrameFocused,
   rendererFor,
-  setNonFrameWindowPredicate,
   shownMachine,
   trackFrameFocus,
 } from '../frames';
@@ -32,6 +33,7 @@ import { writeWindowRail } from '../machine-rail-state';
 import { setMainWindow } from '../state';
 import {
   bindMachineViewToBackend,
+  markFrameWindow,
   setShownMachineView,
   stampWindowWithBackend,
 } from '../window-backend';
@@ -49,7 +51,7 @@ function makeContents() {
   return contents;
 }
 
-function makeWindow(backendId: string) {
+function makeWindowShape() {
   let destroyed = false;
   const own = makeContents();
   const window = Object.assign(new EventEmitter(), {
@@ -61,14 +63,24 @@ function makeWindow(backendId: string) {
   }) as unknown as WindowType & { destroy(): void };
   electron.owners.set(own, window);
   electron.windows.push(window);
-  stampWindowWithBackend(window, backendId);
   return { window, own: own as unknown as WebContents };
 }
 
-/** A window holding `home` plus rail machines, with views started for `started`. */
-function makeRailWindow(home: string, added: string[], started: string[] = []) {
-  const frame = makeWindow(home);
-  writeWindowRail(frame.window, { machineIds: [home, ...added], selectedId: home });
+/** A window that is not a frame (dock, HUD): its own page renders `backendId`. */
+function makePlainWindow(backendId: string) {
+  const plain = makeWindowShape();
+  stampWindowWithBackend(plain.window, backendId);
+  return plain;
+}
+
+/**
+ * A frame holding `machines` (the first selected), with views started for
+ * `started`. Its own page renders no machine.
+ */
+function makeFrame(machines: string[], started: string[] = []) {
+  const frame = makeWindowShape();
+  markFrameWindow(frame.window);
+  writeWindowRail(frame.window, { machineIds: machines, selectedId: machines[0] });
   const views = new Map<string, WebContents & { destroy(): void }>();
   for (const id of started) {
     const view = makeContents() as unknown as WebContents & { destroy(): void };
@@ -83,82 +95,102 @@ afterEach(() => {
   electron.owners.clear();
   electron.focused = null;
   setMainWindow(null);
-  setNonFrameWindowPredicate(null);
 });
 
-describe('frames without a rail', () => {
-  it('holds and shows only the machine its own page renders', () => {
-    const { window, own } = makeWindow('host-A');
-    expect(frameMachines(window)).toEqual(['host-A']);
-    expect(shownMachine(window)).toBe('host-A');
-    expect(rendererFor(window, 'host-A')).toBe(own);
-    expect(rendererFor(window, 'host-B')).toBeNull();
-  });
-});
-
-describe('frames with a machine rail', () => {
-  it('lists its machines in rail order and serves each from its own renderer', () => {
-    const { window, own, views } = makeRailWindow('local', ['host-B', 'host-C'], ['host-B']);
+describe('a frame', () => {
+  it('lists its machines in rail order and serves each from its own view, never its page', () => {
+    const { window, own, views } = makeFrame(['local', 'host-B', 'host-C'], ['local', 'host-B']);
     expect(frameMachines(window)).toEqual(['local', 'host-B', 'host-C']);
-    expect(rendererFor(window, 'local')).toBe(own);
+    expect(rendererFor(window, 'local')).toBe(views.get('local'));
     expect(rendererFor(window, 'host-B')).toBe(views.get('host-B'));
-    // Listed, but its renderer has not started yet.
+    expect(rendererFor(window, 'local')).not.toBe(own);
+    // Listed, but its view has not started yet.
     expect(rendererFor(window, 'host-C')).toBeNull();
   });
 
-  it('shows the machine whose view is on screen, and its own machine otherwise', () => {
-    const { window, views } = makeRailWindow('local', ['host-B'], ['host-B']);
-    expect(shownMachine(window)).toBe('local');
+  it('shows the machine whose view is on screen, else its selection', () => {
+    const { window, views } = makeFrame(['local', 'host-B'], ['local', 'host-B']);
     setShownMachineView(window, views.get('host-B')!);
     expect(shownMachine(window)).toBe('host-B');
-    setShownMachineView(window, null);
+    setShownMachineView(window, views.get('local')!);
     expect(shownMachine(window)).toBe('local');
+    const unstarted = makeFrame(['host-C']);
+    expect(shownMachine(unstarted.window)).toBe('host-C');
   });
 
-  it('shows its own machine again once the shown view is gone', () => {
-    const { window, views } = makeRailWindow('local', ['host-B'], ['host-B']);
+  it('forgets a machine whose view is gone', () => {
+    const { window, views } = makeFrame(['local', 'host-B'], ['local', 'host-B']);
     const view = views.get('host-B')!;
     setShownMachineView(window, view);
     view.destroy();
-    expect(shownMachine(window)).toBe('local');
     expect(rendererFor(window, 'host-B')).toBeNull();
+    expect(shownMachine(window)).toBe('local');
+  });
+});
+
+describe('a window that is not a frame', () => {
+  it('holds no machine, shows the machine it is stamped with, and serves none', () => {
+    const { window } = makePlainWindow('host-A');
+    expect(frameMachines(window)).toEqual([]);
+    expect(shownMachine(window)).toBe('host-A');
+    expect(rendererFor(window, 'host-A')).toBeNull();
   });
 });
 
 describe('framesHolding', () => {
-  it('returns every frame that holds the machine, as its own page or in its rail', () => {
-    const railed = makeRailWindow('local', ['host-B']);
-    const own = makeWindow('host-B');
-    makeWindow('host-C');
-    expect(framesHolding('host-B')).toEqual([railed.window, own.window]);
-    expect(framesHolding('local')).toEqual([railed.window]);
+  it('returns every frame that holds the machine, wherever it sits in the rail', () => {
+    const a = makeFrame(['local', 'host-B']);
+    const b = makeFrame(['host-B']);
+    makeFrame(['host-C']);
+    expect(framesHolding('host-B')).toEqual([a.window, b.window]);
+    expect(framesHolding('local')).toEqual([a.window]);
     expect(framesHolding('host-D')).toEqual([]);
   });
 
-  it('skips closed windows and windows that are not frames', () => {
-    const closed = makeWindow('host-B');
-    const dock = makeWindow('host-B');
-    const frame = makeWindow('host-B');
+  it('skips closed frames and windows that are not frames', () => {
+    const closed = makeFrame(['host-B']);
+    makePlainWindow('host-B');
+    const frame = makeFrame(['host-B']);
     closed.window.destroy();
-    setNonFrameWindowPredicate((window) => window === dock.window);
     expect(framesHolding('host-B')).toEqual([frame.window]);
+  });
+});
+
+describe('machine use', () => {
+  it('is in use while a frame holds it or a dock or HUD window is bound to it', () => {
+    makeFrame(['local', 'host-B']);
+    const hud = makePlainWindow('host-C');
+    expect(isMachineInUse('host-B')).toBe(true);
+    expect(isMachineInUse('host-C')).toBe(true);
+    expect(isMachineInUse('host-D')).toBe(false);
+    hud.window.destroy();
+    expect(isMachineInUse('host-C')).toBe(false);
+  });
+
+  it('is rendered only by a started view or a window bound to it', () => {
+    const frame = makeFrame(['local', 'host-B'], ['local']);
+    makePlainWindow('host-C');
+    expect(isMachineRendered('local')).toBe(true);
+    expect(isMachineRendered('host-B')).toBe(false);
+    expect(isMachineRendered('host-C')).toBe(true);
+    frame.views.get('local')!.destroy();
+    expect(isMachineRendered('local')).toBe(false);
   });
 });
 
 describe('focusedFrame', () => {
   it('is the focused frame', () => {
-    const main = makeWindow('local');
-    const other = makeWindow('host-B');
+    const main = makeFrame(['local']);
+    const other = makeFrame(['host-B']);
     setMainWindow(main.window);
     electron.focused = other.window;
     expect(focusedFrame()).toBe(other.window);
   });
 
   it('falls back to the main window when the focused window is not a frame or none is focused', () => {
-    const main = makeWindow('local');
-    const dock = makeWindow('host-B');
+    const main = makeFrame(['local']);
+    const dock = makePlainWindow('host-B');
     setMainWindow(main.window);
-    setNonFrameWindowPredicate((window) => window === dock.window);
     electron.focused = dock.window;
     expect(focusedFrame()).toBe(main.window);
     electron.focused = null;
@@ -166,43 +198,41 @@ describe('focusedFrame', () => {
   });
 
   it('is null when neither the focused nor the main window is a live frame', () => {
-    const main = makeWindow('local');
+    const main = makeFrame(['local']);
     setMainWindow(main.window);
     main.window.destroy();
     expect(focusedFrame()).toBeNull();
-    const dock = makeWindow('host-B');
+    const dock = makePlainWindow('host-B');
     setMainWindow(dock.window);
     electron.focused = dock.window;
-    setNonFrameWindowPredicate((window) => window === dock.window);
     expect(focusedFrame()).toBeNull();
   });
 });
 
 describe('framesByRecentFocus', () => {
   it('lists the most recently focused frame first, then the others in window order', () => {
-    const a = makeWindow('local');
-    const b = makeWindow('host-B');
-    const c = makeWindow('host-C');
+    const a = makeFrame(['local']);
+    const b = makeFrame(['host-B']);
+    const c = makeFrame(['host-C']);
     expect(framesByRecentFocus()).toEqual([a.window, b.window, c.window]);
     noteFrameFocused(c.window);
     noteFrameFocused(b.window);
     expect(framesByRecentFocus()).toEqual([b.window, c.window, a.window]);
   });
 
-  it('skips closed windows and windows that are not frames', () => {
-    const closed = makeWindow('local');
-    const dock = makeWindow('host-B');
-    const frame = makeWindow('host-C');
+  it('skips closed frames and windows that are not frames', () => {
+    const closed = makeFrame(['local']);
+    const dock = makePlainWindow('host-B');
+    const frame = makeFrame(['host-C']);
     noteFrameFocused(dock.window);
     noteFrameFocused(closed.window);
     closed.window.destroy();
-    setNonFrameWindowPredicate((window) => window === dock.window);
     expect(framesByRecentFocus()).toEqual([frame.window]);
   });
 
   it('records app focus once tracking starts, starting with the focused window', () => {
-    const a = makeWindow('local');
-    const b = makeWindow('host-B');
+    const a = makeFrame(['local']);
+    const b = makeFrame(['host-B']);
     electron.focused = b.window;
     trackFrameFocus();
     trackFrameFocus();

@@ -1,4 +1,3 @@
-import { registerChatWindow } from '../../../main/chat-window-identity';
 /**
  * System IPC Handlers
  *
@@ -29,6 +28,7 @@ import {
 } from './window-workspace-tracking';
 import {
   getBackendIdForWebContents,
+  getBackendIdForWindow,
   getRendererWebContents,
   getShownRendererWebContents,
   getWindowForWebContents,
@@ -108,7 +108,7 @@ import {
   registerWindowTitleListener,
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
-import { frameOwnMachine } from '../../../main/frames';
+import { frameMachines, isFrame, rendererFor, shownMachine } from '../../../main/frames';
 import { isDockWindow } from '../../../main/dock-window';
 import { saveMenuBarAutoHidePref } from '../../../main/menu-bar-auto-hide-pref';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
@@ -303,8 +303,9 @@ const liveWindowHostChecker: WindowHostChecker = {
   backendIdOf(key: number) {
     const renderer = resolveRendererKey(key);
     if (!renderer) return null;
+    // A positive key is a window's own page (a HUD; frames' pages report nothing).
     return key > 0
-      ? frameOwnMachine(renderer.window)
+      ? getBackendIdForWindow(renderer.window)
       : getBackendIdForWebContents(renderer.contents);
   },
 };
@@ -980,11 +981,11 @@ export function setupSystemIPC() {
   >();
 
   async function waitForWorkspaceSurface(
-    targetWindow: BrowserWindow,
+    contents: Electron.WebContents,
     workspaceId: string,
   ): Promise<void> {
     const serializedWorkspaceId = JSON.stringify(workspaceId);
-    await targetWindow.webContents.executeJavaScript(`
+    await contents.executeJavaScript(`
       new Promise((resolve) => {
         const workspaceId = ${serializedWorkspaceId};
         const findSurface = () => workspaceId === ${JSON.stringify(CHIEF_WORKSPACE_ID)}
@@ -1173,12 +1174,16 @@ export function setupSystemIPC() {
         if (!window || window.isDestroyed()) {
           return { success: true };
         }
-        const { ensureLocalWindowBeforeClosingBackend } = await import('../../../main/window');
         const survivors = BrowserWindow.getAllWindows().filter(
           (other) => other !== window && !other.isDestroyed(),
         );
-        if (survivors.length === 0) {
-          await ensureLocalWindowBeforeClosingBackend(frameOwnMachine(window));
+        // Closing the last window of a remote machine leaves a local one open.
+        const machines = isFrame(window)
+          ? frameMachines(window)
+          : [getBackendIdForWebContents(window.webContents)];
+        if (survivors.length === 0 && !machines.includes(LOCAL_CONNECTION_ID)) {
+          const { openOrFocusWindowsForBackend } = await import('../../../main/window');
+          await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
         }
         if (!window.isDestroyed()) {
           window.close();
@@ -1457,6 +1462,83 @@ export function setupSystemIPC() {
       }
     }
 
+    if (!isHudRoute) {
+      // Every machine is a view inside a frame. The local-only chief route
+      // stays on the local machine; any other route opens the opener's.
+      const { openMachineFrame } = await import('../../../main/window');
+      const target = new URL(route ?? '/', 'app://workspaces');
+      if (suppressStartupSplash) target.searchParams.set('dockLaunch', '1');
+      const { window: newWindow, contents } = await openMachineFrame({
+        machineId: isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId,
+        route: `${target.pathname}${target.search}`,
+        show: !suppressStartupSplash,
+      });
+      if (!contents) {
+        newWindow.destroy();
+        throw new Error('The new window could not open its machine');
+      }
+
+      const directWorkspaceMatch = route?.match(/^\/workspace\/([^/]+)$/);
+      const directWorkspaceId = suppressStartupSplash
+        ? route === '/'
+          ? CHIEF_WORKSPACE_ID
+          : directWorkspaceMatch && decodeURIComponent(directWorkspaceMatch[1])
+        : undefined;
+      if (directWorkspaceId) {
+        pendingDockLaunches.set(openerBackendId, {
+          window: newWindow,
+          target: pendingDockCreations.get(openerBackendId)?.target ?? {
+            workspaceId: directWorkspaceId,
+          },
+        });
+        newWindow.on('closed', () => {
+          if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+            pendingDockLaunches.delete(openerBackendId);
+          }
+        });
+        contents.once('did-finish-load', () => {
+          void (async () => {
+            let renderedWorkspaceId = directWorkspaceId;
+            try {
+              await waitForWorkspaceSurface(contents, renderedWorkspaceId);
+              let pending = pendingDockLaunches.get(openerBackendId);
+              while (pending?.window === newWindow && !newWindow.isDestroyed()) {
+                const target = pending.target;
+                if (target.workspaceId !== renderedWorkspaceId) {
+                  renderedWorkspaceId = target.workspaceId;
+                  contents.send('notification:navigate', {
+                    workspaceId: renderedWorkspaceId,
+                  });
+                  await waitForWorkspaceSurface(contents, renderedWorkspaceId);
+                }
+                pending = pendingDockLaunches.get(openerBackendId);
+                // A newer agent in the same workspace also supersedes the old target.
+                if (pending?.window !== newWindow) break;
+                if (pending.target !== target) continue;
+                contents.send('notification:navigate', {
+                  ...target,
+                  ...(target.workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+                });
+                break;
+              }
+            } catch (error) {
+              logger.warn('Dock workspace launch did not finish rendering', { error });
+            } finally {
+              if (!newWindow.isDestroyed()) {
+                newWindow.show();
+                newWindow.focus();
+              }
+              if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+                pendingDockLaunches.delete(openerBackendId);
+              }
+            }
+          })();
+        });
+      }
+
+      return newWindow;
+    }
+
     const isDarkMode = nativeTheme.shouldUseDarkColors;
     const iconPath = resolveAppIconPath({
       isPackaged: app.isPackaged,
@@ -1480,81 +1562,19 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
-    if (!isHudRoute) registerChatWindow(newWindow);
     registerWindowTitleListener(newWindow);
-    // The HUD inherits the opener's backend (its data reflects that backend);
-    // only the local-only chief route stays pinned to the local backend.
-    stampWindowWithBackend(newWindow, isChiefRoute ? LOCAL_CONNECTION_ID : openerBackendId);
+    // The HUD is not a frame: its own page renders the opener's backend.
+    stampWindowWithBackend(newWindow, openerBackendId);
     forwardRendererConsoleToMainLog(newWindow);
 
     // Register AFTER stamping (the registry keys off the backend stamp) and
     // BEFORE loadURL so a concurrent HUD-open request reuses this window even
     // while its URL is still about:blank (mid-navigation race).
-    if (isHudRoute) {
-      registerHudWindow(newWindow);
-    }
+    registerHudWindow(newWindow);
 
     if (!suppressStartupSplash) {
       newWindow.once('ready-to-show', () => {
         newWindow.show();
-      });
-    }
-
-    const directWorkspaceMatch = route?.match(/^\/workspace\/([^/]+)$/);
-    const directWorkspaceId = suppressStartupSplash
-      ? route === '/'
-        ? CHIEF_WORKSPACE_ID
-        : directWorkspaceMatch && decodeURIComponent(directWorkspaceMatch[1])
-      : undefined;
-    if (directWorkspaceId) {
-      pendingDockLaunches.set(openerBackendId, {
-        window: newWindow,
-        target: pendingDockCreations.get(openerBackendId)?.target ?? {
-          workspaceId: directWorkspaceId,
-        },
-      });
-      newWindow.on('closed', () => {
-        if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
-          pendingDockLaunches.delete(openerBackendId);
-        }
-      });
-      newWindow.webContents.once('did-finish-load', () => {
-        void (async () => {
-          let renderedWorkspaceId = directWorkspaceId;
-          try {
-            await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
-            let pending = pendingDockLaunches.get(openerBackendId);
-            while (pending?.window === newWindow && !newWindow.isDestroyed()) {
-              const target = pending.target;
-              if (target.workspaceId !== renderedWorkspaceId) {
-                renderedWorkspaceId = target.workspaceId;
-                newWindow.webContents.send('notification:navigate', {
-                  workspaceId: renderedWorkspaceId,
-                });
-                await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
-              }
-              pending = pendingDockLaunches.get(openerBackendId);
-              // A newer agent in the same workspace also supersedes the old target.
-              if (pending?.window !== newWindow) break;
-              if (pending.target !== target) continue;
-              newWindow.webContents.send('notification:navigate', {
-                ...target,
-                ...(target.workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
-              });
-              break;
-            }
-          } catch (error) {
-            logger.warn('Dock workspace launch did not finish rendering', { error });
-          } finally {
-            if (!newWindow.isDestroyed()) {
-              newWindow.show();
-              newWindow.focus();
-            }
-            if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
-              pendingDockLaunches.delete(openerBackendId);
-            }
-          }
-        })();
       });
     }
 
@@ -1585,26 +1605,23 @@ export function setupSystemIPC() {
     return newWindow;
   }
 
+  /** `backendId`'s view in a frame that shows that machine, or null. */
+  function shownViewForBackend(
+    existing: BrowserWindow,
+    backendId: string,
+  ): Electron.WebContents | null {
+    if (!isFrame(existing) || shownMachine(existing) !== backendId) return null;
+    const contents = rendererFor(existing, backendId);
+    return contents && !contents.isDestroyed() ? contents : null;
+  }
+
   function isNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
-    return (
-      !existing.isDestroyed() &&
-      !existing.webContents.isDestroyed() &&
-      !isDockWindow(existing) &&
-      !isDockAnnotationWindow(existing) &&
-      !isWebviewPopupWindow(existing) &&
-      !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
-      !isHudWindow(existing) &&
-      !isTrackedHudWindow(existing) &&
-      frameOwnMachine(existing) === backendId
-    );
+    return shownViewForBackend(existing, backendId) !== null;
   }
 
   function isReadyNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
-    return (
-      isNormalWindowForBackend(existing, backendId) &&
-      existing.webContents.getURL() !== '' &&
-      !existing.webContents.isLoadingMainFrame()
-    );
+    const contents = shownViewForBackend(existing, backendId);
+    return !!contents && contents.getURL() !== '' && !contents.isLoadingMainFrame();
   }
 
   function focusExistingWorkspaceWindow(
@@ -1635,7 +1652,7 @@ export function setupSystemIPC() {
     if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
-    existing.webContents.send('notification:navigate', {
+    shownViewForBackend(existing, backendId)?.send('notification:navigate', {
       workspaceId,
       ...(agentId ? { agentId } : {}),
       ...(workspaceTarget ? { workspaceTarget } : {}),

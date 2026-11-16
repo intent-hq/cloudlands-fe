@@ -25,11 +25,10 @@ import { claimActivationFocus } from '../../../main/activation-focus-claim';
 import {
   framesByRecentFocus,
   framesHolding,
+  isFrame,
   rendererFor,
   shownMachine,
-  trackFrameFocus,
 } from '../../../main/frames';
-import { isHudWindow } from '../../../main/hud-window';
 import { isMachineRailEnabled } from '../../../main/machine-rail-state';
 import { getShownRendererWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
@@ -152,9 +151,9 @@ interface NotificationContent {
   structured?: NotificationStructuredContent;
 }
 
-/** A live frame the user can be sent to (never the HUD pop-out). */
+/** A live frame the user can be sent to (never a HUD, dock or console window). */
 function isTargetFrame(window: BrowserWindow): boolean {
-  return !window.isDestroyed() && !isHudWindow(window);
+  return isFrame(window);
 }
 
 /** The focused window when it is a frame a notification may use, else null. */
@@ -296,8 +295,6 @@ export class NotificationService {
   start(): void {
     if (this.started) return;
     this.started = true;
-    // A click for a machine no frame holds goes to the most recently focused frame.
-    trackFrameFocus();
     logger.info('NotificationService started');
     void this.attachIdleSubscriptions();
   }
@@ -717,7 +714,7 @@ export class NotificationService {
       // view cannot open this workspace. Otherwise the OS banner is shown
       // (visible even if, on macOS while frontmost, its click may not fire).
       const toastRenderer =
-        focusedShowsMachine && !isHudWindow(focusedWindow)
+        focusedShowsMachine && isFrame(focusedWindow)
           ? getShownRendererWebContents(focusedWindow)
           : null;
       if (toastRenderer) {
@@ -998,7 +995,7 @@ export class NotificationService {
           // to the most recently focused frame; otherwise open a fresh frame
           // on that machine, directly on the workspace route (no IPC race
           // against a still-loading renderer).
-          this.openMachineForNotificationClick(workspaceId, backendId);
+          this.openMachineForNotificationClick(workspaceId, backendId, agentId);
           return;
         }
 
@@ -1089,6 +1086,7 @@ export class NotificationService {
   private openMachineForNotificationClick(
     workspaceId?: string,
     backendId: string = LOCAL_CONNECTION_ID,
+    agentId?: string,
   ): void {
     const frame = isMachineRailEnabled() ? framesByRecentFocus().find(isTargetFrame) : undefined;
     if (!frame) {
@@ -1098,11 +1096,23 @@ export class NotificationService {
     void (async () => {
       try {
         const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
-        // The Assistant has no workspace page to open; the machine shows its home.
-        const route = workspaceId !== CHIEF_WORKSPACE_ID ? workspaceId : undefined;
+        // The Assistant has no workspace page to open: once the machine is
+        // ready its view opens the Assistant panel instead.
+        const isChief = workspaceId === CHIEF_WORKSPACE_ID;
+        const route = isChief ? undefined : workspaceId;
         if (await openInvitedMachineInWindow(frame, backendId, route)) {
           claimActivationFocus(frame);
           activateAppOnMac();
+          if (isChief) {
+            const contents = await selectMachineForClick(frame, backendId);
+            if (contents && !contents.isDestroyed()) {
+              contents.send('notification:navigate', {
+                workspaceId,
+                chief: true,
+                ...(agentId ? { agentId } : {}),
+              });
+            }
+          }
           logger.info('Notification click added the machine to the recent frame', {
             workspaceId,
             backendId,

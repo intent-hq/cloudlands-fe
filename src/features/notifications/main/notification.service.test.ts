@@ -18,12 +18,35 @@ import { setMachineRailEnabledFlag, writeWindowRail } from '../../../main/machin
 import {
   bindMachineViewToBackend,
   getShownRendererWebContents,
+  markFrameWindow,
   setShownMachineView,
 } from '../../../main/window-backend';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 import { getActivationFocusClaim } from '../../../main/activation-focus-claim';
+
+/**
+ * Make a single-machine test window a frame showing `machineId` (its
+ * `backendId`, else local). Its own `webContents` stands in for that
+ * machine's view, so a test reads what reached the machine's renderer there.
+ */
+function asFrame<
+  W extends {
+    backendId?: string;
+    webContents: object;
+  },
+>(window: W, machineId = window.backendId ?? 'local'): W {
+  const contents = window.webContents as Record<string, unknown>;
+  contents.on ??= vi.fn();
+  contents.once ??= vi.fn();
+  (window as Record<string, unknown>).once ??= vi.fn();
+  markFrameWindow(window as never);
+  writeWindowRail(window as never, { machineIds: [machineId], selectedId: machineId });
+  bindMachineViewToBackend(window as never, window.webContents as never, machineId);
+  setShownMachineView(window as never, window.webContents as never);
+  return window;
+}
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
@@ -290,6 +313,18 @@ vi.mock('../../system/main/system.ipc', async () => {
     }),
     sendToWorkspaceWindows: vi.fn(),
   };
+});
+
+// Tests that pin the hosting renderers (`mockReturnValue`) must not leak into
+// the next test: clearAllMocks keeps implementations, so every test starts
+// again from the per-window adapter above.
+const defaultRenderersForWorkspace = vi.hoisted(() => ({
+  current: undefined as undefined | ((...args: never[]) => unknown),
+}));
+beforeEach(() => {
+  const mocked = vi.mocked(getRendererWebContentsForWorkspace);
+  defaultRenderersForWorkspace.current ??= mocked.getMockImplementation() as never;
+  mocked.mockImplementation(defaultRenderersForWorkspace.current as never);
 });
 
 // Rail actions a notification click takes; the rail itself is covered in
@@ -872,7 +907,7 @@ describe('NotificationService viewing gate (focused window on the workspace)', (
    * frontmost in both cases — a BrowserWindow has focus.
    */
   function installFocusedWindow(viewingFocused: boolean) {
-    const mockWindow = {
+    const mockWindow = asFrame({
       id: 1,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -881,7 +916,7 @@ describe('NotificationService viewing gate (focused window on the workspace)', (
       isMinimized: () => false,
       isFocused: () => viewingFocused,
       isDestroyed: () => false,
-    };
+    });
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
     vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(
       viewingFocused ? 'workspace-1' : undefined,
@@ -987,7 +1022,7 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
   }
 
   function createMockWindow(id: number) {
-    return {
+    return asFrame({
       id,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -996,7 +1031,7 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
       isMinimized: () => false,
       isFocused: () => true,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -1209,7 +1244,7 @@ describe('NotificationService showNotification click behavior', () => {
     mockIsMinimized = vi.fn(() => isMinimized);
     mockShow = vi.fn();
 
-    return {
+    return asFrame({
       id: 1,
       webContents: { send: mockWebContentsSend, isDestroyed: () => false },
       focus: mockFocus,
@@ -1218,7 +1253,7 @@ describe('NotificationService showNotification click behavior', () => {
       isMinimized: mockIsMinimized,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -1454,7 +1489,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
   }
 
   function makeWindow(id: number, url: string) {
-    return {
+    const window = {
       id,
       webContents: {
         send: vi.fn(),
@@ -1468,6 +1503,8 @@ describe('NotificationService click-target selection excludes the HUD window', (
       isFocused: () => false,
       isDestroyed: () => false,
     };
+    // A HUD pop-out is not a frame; any other window is one.
+    return url.includes('/hud') ? window : asFrame(window);
   }
 
   const HUD_URL = 'http://127.0.0.1:5190/hud';
@@ -2083,7 +2120,7 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
   }
 
   function createMockWindow(id: number) {
-    return {
+    return asFrame({
       id,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -2092,7 +2129,7 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -2168,7 +2205,7 @@ describe('NotificationService chief-of-staff special-case', () => {
   }
 
   function createMockWindow(id: number) {
-    return {
+    return asFrame({
       id,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -2177,7 +2214,7 @@ describe('NotificationService chief-of-staff special-case', () => {
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -2292,7 +2329,7 @@ describe('NotificationService native id-based replacement', () => {
   }
 
   function createMockWindow(id: number) {
-    return {
+    return asFrame({
       id,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -2301,7 +2338,7 @@ describe('NotificationService native id-based replacement', () => {
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -2431,7 +2468,7 @@ describe('NotificationService structured notification:show payload', () => {
   }
 
   function createMockWindow(id: number) {
-    return {
+    return asFrame({
       id,
       webContents: { send: vi.fn(), isDestroyed: () => false },
       focus: vi.fn(),
@@ -2440,7 +2477,7 @@ describe('NotificationService structured notification:show payload', () => {
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -2555,7 +2592,7 @@ describe('NotificationService click-time window targeting (multiple windows, rem
 
   /** A regular (non-HUD) app window stamped with the backend its renderer talks to. */
   function makeWindow(id: number, backendId?: string) {
-    return {
+    return asFrame({
       id,
       ...(backendId ? { backendId } : {}),
       webContents: {
@@ -2569,7 +2606,7 @@ describe('NotificationService click-time window targeting (multiple windows, rem
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
 
   type MockWindow = ReturnType<typeof makeWindow>;
@@ -2830,7 +2867,7 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     typeof scope !== 'string' || scope === backendId;
 
   function makeWindow(id: number, backendId?: string) {
-    return {
+    return asFrame({
       id,
       ...(backendId ? { backendId } : {}),
       webContents: { send: vi.fn(), isDestroyed: () => false },
@@ -2840,7 +2877,7 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
       isMinimized: () => false,
       isFocused: () => false,
       isDestroyed: () => false,
-    };
+    });
   }
   type MockWindow = ReturnType<typeof makeWindow>;
 
@@ -3042,13 +3079,13 @@ describe('NotificationService routing by frame (one machine in several frames)',
   type MockContents = ReturnType<typeof makeContents>;
 
   /**
-   * A frame whose own page renders `own` and whose rail also holds `added`,
-   * each with a started machine view. `show(id)` puts a machine on screen.
+   * A frame holding `own`, then `added`, each with a started machine view;
+   * its own page (`window.webContents`) is the frame page and renders no
+   * machine. It shows `own` until `show(id)` puts another machine on screen.
    */
   function makeFrame(id: number, own: string, added: string[] = []) {
     const window = {
       id,
-      backendId: own,
       webContents: makeContents(),
       focus: vi.fn(),
       show: vi.fn(),
@@ -3059,23 +3096,21 @@ describe('NotificationService routing by frame (one machine in several frames)',
       on: vi.fn(),
       once: vi.fn(),
     };
+    markFrameWindow(window as never);
+    const machines = [own, ...added];
+    writeWindowRail(window as never, { machineIds: machines, selectedId: own });
     const views = new Map<string, MockContents>();
-    if (added.length > 0) {
-      writeWindowRail(window as never, { machineIds: [own, ...added], selectedId: own });
-    }
-    for (const machine of added) {
+    for (const machine of machines) {
       const view = makeContents();
       bindMachineViewToBackend(window as never, view as never, machine);
       views.set(machine, view);
     }
-    const renderer = (machine: string): MockContents =>
-      machine === own ? window.webContents : views.get(machine)!;
+    const renderer = (machine: string): MockContents => views.get(machine)!;
     const show = (machine: string): void => {
-      setShownMachineView(window as never, machine === own ? null : (renderer(machine) as never));
-      if (added.length > 0) {
-        writeWindowRail(window as never, { machineIds: [own, ...added], selectedId: machine });
-      }
+      setShownMachineView(window as never, renderer(machine) as never);
+      writeWindowRail(window as never, { machineIds: machines, selectedId: machine });
     };
+    show(own);
     return { window, views, renderer, show };
   }
   type Frame = ReturnType<typeof makeFrame>;
@@ -3216,7 +3251,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       setFrames(frame, other);
       frame.show(REMOTE_ID);
       focus(frame);
-      open(other.window.webContents, REMOTE_ID, 'workspace-1');
+      open(other.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1');
 
       await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
 
@@ -3225,7 +3260,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
         expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
       ]);
       expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
-      const sound = payloads(other.window.webContents, 'notification:show');
+      const sound = payloads(other.renderer(REMOTE_ID), 'notification:show');
       expect(sound).toHaveLength(1);
       expect(sound[0]).not.toHaveProperty('navigateTarget');
     });
@@ -3254,8 +3289,9 @@ describe('NotificationService routing by frame (one machine in several frames)',
 
       await new NotificationService().handleAgentIdle(idleEvent(), REMOTE_ID);
 
-      expect(payloads(frame.window.webContents, 'notification:show')).toHaveLength(1);
+      expect(payloads(frame.renderer(REMOTE_ID), 'notification:show')).toHaveLength(1);
       expect(payloads(frame.views.get('remote-2')!, 'notification:show')).toEqual([]);
+      expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
     });
 
     it('falls back to the renderer of the machine in the focused frame when no renderer has the workspace', async () => {
@@ -3285,7 +3321,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       const own = makeFrame(2, REMOTE_ID);
       setFrames(own, railed);
       railed.show(LOCAL_ID);
-      open(own.window.webContents, REMOTE_ID, 'workspace-1');
+      open(own.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1');
       open(railed.renderer(REMOTE_ID), REMOTE_ID, 'workspace-1', true);
 
       await clickBanner();
@@ -3387,6 +3423,31 @@ describe('NotificationService routing by frame (one machine in several frames)',
       expect(createWindowForSessionMock).not.toHaveBeenCalled();
     });
 
+    it('rail on: opens the Assistant in a machine no frame held, once it joins the recent frame', async () => {
+      const frame = makeFrame(1, LOCAL_ID);
+      setFrames(frame);
+      const added = makeContents();
+      selectMachineInFrameMock.mockImplementation((window: unknown) => ({
+        window,
+        contents: added,
+        ready: Promise.resolve(true),
+      }));
+
+      await clickBanner(CHIEF_WORKSPACE_ID);
+
+      // The Assistant has no workspace page: the machine joins on its home.
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
+        frame.window,
+        REMOTE_ID,
+        undefined,
+      );
+      expect(selectMachineInFrameMock).toHaveBeenCalledWith(frame.window, REMOTE_ID);
+      expect(payloads(added, 'notification:navigate')).toEqual([
+        { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
+      ]);
+      expect(createWindowForSessionMock).not.toHaveBeenCalled();
+    });
+
     it('rail on: opens a new frame when the recent frame cannot take the machine', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
@@ -3424,13 +3485,13 @@ describe('NotificationService routing by frame (one machine in several frames)',
       const local = makeFrame(1, LOCAL_ID);
       const remote = makeFrame(2, REMOTE_ID);
       setFrames(local, remote);
-      open(local.window.webContents, LOCAL_ID, CHIEF_WORKSPACE_ID, true);
+      open(local.renderer(LOCAL_ID), LOCAL_ID, CHIEF_WORKSPACE_ID, true);
 
       await clickBanner(CHIEF_WORKSPACE_ID);
 
       expect(remote.window.focus).toHaveBeenCalled();
       expect(local.window.focus).not.toHaveBeenCalled();
-      expect(payloads(remote.window.webContents, 'notification:navigate')).toEqual([
+      expect(payloads(remote.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
         { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
       ]);
     });

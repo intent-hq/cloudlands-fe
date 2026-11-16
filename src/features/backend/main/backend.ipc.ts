@@ -224,7 +224,7 @@ import {
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
 import { getRendererWebContents } from '../../../main/window-backend';
-import { frameMachines } from '../../../main/frames';
+import { windowMachines } from '../../../main/frames';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -3596,7 +3596,7 @@ function projectLiveConnectionRecords(connections: ConnectionRecord[]): {
   const referencedIds = new Set<string>();
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
-    for (const id of frameMachines(window)) referencedIds.add(id);
+    for (const id of windowMachines(window)) referencedIds.add(id);
   }
   for (const id of liveConnectionRecords.keys()) {
     if (!referencedIds.has(id)) liveConnectionRecords.delete(id);

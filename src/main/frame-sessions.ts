@@ -40,9 +40,9 @@ function readRoute(value: unknown): string | undefined {
 /**
  * A frame made safe to restore, or null when nothing restorable is left: valid
  * bounds, only saved machines, no duplicates, routes that are app paths, and a
- * selection that is in the list. The first machine's page is the window's own
- * page, so a frame whose first page may not reopen is dropped; any other
- * machine's unrestorable page just falls back to its default page.
+ * selection that is in the list. A frame whose first page may not reopen (a
+ * dock, console or overlay window saved by an older client) is dropped; any
+ * other machine's unrestorable page just falls back to its default page.
  */
 function normalizeFrameSession(raw: unknown, filter: FrameSessionFilter): FrameSession | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -134,36 +134,44 @@ export function migrateWindowSessions(
   return normalizeFrames(raws, filter);
 }
 
-/** The machine a saved frame opens its window on (the window's own machine, for now). */
-export function frameOwnMachineId(frame: FrameSession): string {
-  return frame.machines[0].id;
+/** Whether a saved frame holds `machineId`. */
+export function frameHolds(frame: FrameSession, machineId: string): boolean {
+  return frame.machines.some((machine) => machine.id === machineId);
 }
 
-/** Frames to restore, the ones opening on `activeId` first; the rest keep their saved order. */
+/** Frames to restore, the ones showing `activeId` first; the rest keep their saved order. */
 export function orderFramesForRestore(frames: FrameSession[], activeId: string): FrameSession[] {
-  const isActive = (frame: FrameSession) => frameOwnMachineId(frame) === activeId;
+  const isActive = (frame: FrameSession) => frame.selectedId === activeId;
   return [...frames.filter(isActive), ...frames.filter((frame) => !isActive(frame))];
 }
 
 /**
  * What to save: the live frames, then the saved frames not restored this run
- * (their machine could not connect) unless the user has since opened a window
- * on that machine, which replaces them.
+ * (none of their machines could connect) unless a live frame now holds one of
+ * their machines, which replaces them.
  */
 export function mergeParkedFrames(live: FrameSession[], parked: FrameSession[]): FrameSession[] {
-  const liveOwners = new Set(live.map(frameOwnMachineId));
-  return [...live, ...parked.filter((frame) => !liveOwners.has(frameOwnMachineId(frame)))];
+  const liveMachines = new Set(live.flatMap((frame) => frame.machines.map((m) => m.id)));
+  return [
+    ...live,
+    ...parked.filter((frame) => !frame.machines.some((machine) => liveMachines.has(machine.id))),
+  ];
 }
 
 /**
- * `frame` reopened on `ownId`: that machine first, the others after it in
- * their order. The machines before it could not connect and are dropped.
+ * `frame` with only the machines `keep` accepts, in their order, or null when
+ * none is left. A selection that was dropped moves to the first kept machine.
  */
-export function promoteFrameMachine(frame: FrameSession, ownId: string): FrameSession {
-  const index = frame.machines.findIndex((machine) => machine.id === ownId);
-  if (index <= 0) return frame;
-  const machines = frame.machines.slice(index);
-  const selectedId = machines.some((m) => m.id === frame.selectedId) ? frame.selectedId : ownId;
+export function keepFrameMachines(
+  frame: FrameSession,
+  keep: (id: string) => boolean,
+): FrameSession | null {
+  const machines = frame.machines.filter((machine) => keep(machine.id));
+  if (machines.length === 0) return null;
+  if (machines.length === frame.machines.length) return frame;
+  const selectedId = machines.some((m) => m.id === frame.selectedId)
+    ? frame.selectedId
+    : machines[0].id;
   return { ...frame, machines, selectedId };
 }
 

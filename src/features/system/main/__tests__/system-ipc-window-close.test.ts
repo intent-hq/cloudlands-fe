@@ -21,8 +21,7 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 const windowModuleMocks = vi.hoisted(() => ({
-  ensureLocalWindowBeforeClosingBackend: vi.fn(async () => {}),
-  getBackendIdForWindow: vi.fn((window: { backendId?: string }) => window.backendId ?? 'local'),
+  openOrFocusWindowsForBackend: vi.fn(async (_backendId: string) => {}),
 }));
 
 vi.mock('electron', () => ({
@@ -50,8 +49,15 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 }));
 
 vi.mock('../../../../main/window', () => ({
-  ensureLocalWindowBeforeClosingBackend: windowModuleMocks.ensureLocalWindowBeforeClosingBackend,
-  getBackendIdForWindow: windowModuleMocks.getBackendIdForWindow,
+  openOrFocusWindowsForBackend: windowModuleMocks.openOrFocusWindowsForBackend,
+}));
+
+// Every test window is a frame holding `machines`.
+vi.mock('../../../../main/frames', () => ({
+  isFrame: (window: { machines?: string[] }) => window.machines !== undefined,
+  frameMachines: (window: { machines: string[] }) => [...window.machines],
+  shownMachine: (window: { machines: string[] }) => window.machines[0],
+  rendererFor: () => null,
 }));
 
 import { setupSystemIPC } from '../system.ipc';
@@ -63,9 +69,9 @@ function handlerFor(channel: string): Handler {
   return call[1] as Handler;
 }
 
-function makeWindow(opts: { backendId?: string; destroyed?: boolean } = {}) {
+function makeWindow(opts: { machines?: string[]; destroyed?: boolean } = {}) {
   return {
-    backendId: opts.backendId ?? 'local',
+    machines: opts.machines ?? ['local'],
     isDestroyed: () => opts.destroyed ?? false,
     close: vi.fn(),
     on: vi.fn(),
@@ -83,14 +89,13 @@ beforeEach(() => {
   electronMocks.fromWebContents.mockReset();
   electronMocks.getFocusedWindow.mockReset();
   electronMocks.getAllWindows.mockReset().mockReturnValue([]);
-  windowModuleMocks.ensureLocalWindowBeforeClosingBackend.mockClear();
-  windowModuleMocks.getBackendIdForWindow.mockClear();
+  windowModuleMocks.openOrFocusWindowsForBackend.mockClear();
   setupSystemIPC();
 });
 
 describe('WINDOW_CHANNELS.CLOSE', () => {
   it('closes the sender window, not the focused one', async () => {
-    const guest = makeWindow({ backendId: 'guest-1' });
+    const guest = makeWindow({ machines: ['guest-1'] });
     const focused = makeWindow();
     electronMocks.getFocusedWindow.mockReturnValue(focused);
     electronMocks.getAllWindows.mockReturnValue([guest, focused]);
@@ -103,30 +108,40 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
   });
 
   it('leaves the local-window guard alone while another live window survives', async () => {
-    const guest = makeWindow({ backendId: 'guest-1' });
-    const other = makeWindow({ backendId: 'other' });
+    const guest = makeWindow({ machines: ['guest-1'] });
+    const other = makeWindow({ machines: ['other'] });
     electronMocks.getAllWindows.mockReturnValue([guest, other]);
 
     await closeFrom(guest);
 
-    expect(windowModuleMocks.ensureLocalWindowBeforeClosingBackend).not.toHaveBeenCalled();
+    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
     expect(guest.close).toHaveBeenCalledOnce();
   });
 
   it('opens a local window before closing the last live window', async () => {
-    const guest = makeWindow({ backendId: 'guest-1' });
-    const dead = makeWindow({ backendId: 'other', destroyed: true });
+    const guest = makeWindow({ machines: ['guest-1'] });
+    const dead = makeWindow({ machines: ['other'], destroyed: true });
     electronMocks.getAllWindows.mockReturnValue([guest, dead]);
     const order: string[] = [];
-    windowModuleMocks.ensureLocalWindowBeforeClosingBackend.mockImplementation(async () => {
+    windowModuleMocks.openOrFocusWindowsForBackend.mockImplementation(async () => {
       order.push('ensure-local');
     });
     guest.close.mockImplementation(() => order.push('close'));
 
     await closeFrom(guest);
 
-    expect(windowModuleMocks.ensureLocalWindowBeforeClosingBackend).toHaveBeenCalledWith('guest-1');
+    expect(windowModuleMocks.openOrFocusWindowsForBackend).toHaveBeenCalledWith('local');
     expect(order).toEqual(['ensure-local', 'close']);
+  });
+
+  it('opens no local window when the last frame closing holds the local machine', async () => {
+    const frame = makeWindow({ machines: ['guest-1', 'local'] });
+    electronMocks.getAllWindows.mockReturnValue([frame]);
+
+    await closeFrom(frame);
+
+    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
+    expect(frame.close).toHaveBeenCalledOnce();
   });
 
   it('is a no-op when the sender has no live window', async () => {
@@ -135,6 +150,6 @@ describe('WINDOW_CHANNELS.CLOSE', () => {
     const result = await closeFrom(null);
 
     expect(result).toEqual({ success: true });
-    expect(windowModuleMocks.ensureLocalWindowBeforeClosingBackend).not.toHaveBeenCalled();
+    expect(windowModuleMocks.openOrFocusWindowsForBackend).not.toHaveBeenCalled();
   });
 });

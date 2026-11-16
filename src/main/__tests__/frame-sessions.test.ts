@@ -4,7 +4,7 @@ import {
   migrateWindowSessions,
   orderFramesForRestore,
   parseWindowFramesFile,
-  promoteFrameMachine,
+  keepFrameMachines,
   routeFromRendererUrl,
 } from '../frame-sessions';
 import type { FrameSession } from '../../shared/types/machine-rail';
@@ -238,29 +238,30 @@ describe('saved frame validation', () => {
 });
 
 describe('restore ordering and saving', () => {
-  it('restores the frames opening on the active machine first, others in saved order', () => {
-    const frames = [frame(['a']), frame(['local', 'b']), frame(['b']), frame(['local'])];
-    expect(orderFramesForRestore(frames, 'local').map((f) => f.machines[0].id)).toEqual([
-      'local',
-      'local',
-      'a',
-      'b',
+  it('restores the frames showing the active machine first, others in saved order', () => {
+    const frames = [frame(['a']), frame(['b', 'local'], 'local'), frame(['local', 'b'], 'b')];
+    expect(orderFramesForRestore(frames, 'local')).toEqual([
+      frame(['b', 'local'], 'local'),
+      frame(['a']),
+      frame(['local', 'b'], 'b'),
     ]);
   });
 
-  it('keeps frames not restored this run unless a window on their machine is open', () => {
-    const live = [frame(['local', 'b'])];
-    const parked = [frame(['local']), frame(['remote-1'])];
-    expect(mergeParkedFrames(live, parked)).toEqual([frame(['local', 'b']), frame(['remote-1'])]);
+  it('keeps frames not restored this run unless a live frame holds one of their machines', () => {
+    const live = [frame(['b', 'local'])];
+    const parked = [frame(['local']), frame(['remote-1']), frame(['remote-2', 'b'])];
+    expect(mergeParkedFrames(live, parked)).toEqual([frame(['b', 'local']), frame(['remote-1'])]);
   });
 
-  it('reopens a frame on a later machine when the earlier ones cannot connect', () => {
-    expect(promoteFrameMachine(frame(['gone', 'b', 'c'], 'gone'), 'b')).toEqual(
+  it('keeps the machines that can connect, moving a dropped selection to the first kept one', () => {
+    const canConnect = (id: string) => id !== 'gone';
+    expect(keepFrameMachines(frame(['gone', 'b', 'c'], 'gone'), canConnect)).toEqual(
       frame(['b', 'c'], 'b'),
     );
-    expect(promoteFrameMachine(frame(['gone', 'b', 'c'], 'c'), 'b')).toEqual(
+    expect(keepFrameMachines(frame(['b', 'gone', 'c'], 'c'), canConnect)).toEqual(
       frame(['b', 'c'], 'c'),
     );
+    expect(keepFrameMachines(frame(['gone']), canConnect)).toBeNull();
   });
 });
 

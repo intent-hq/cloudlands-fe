@@ -114,13 +114,30 @@ import {
   createWindowForDeepLink,
 } from '../window';
 import { markRendererWindowsAllowed } from '../renderer-window-gate';
+import { setFrameOpener, writeWindowRail } from '../machine-rail-state';
+import { markFrameWindow } from '../window-backend';
 import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
 import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
 
 const TOKEN = 'super-secret-token-value';
 const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK}`;
 
+/**
+ * Every app window is a frame. The rail owner is stood in for: a frame holds
+ * the machines it opens on, and its own web contents stands in for the shown
+ * machine's view, where links are queued.
+ */
+function makeFrame<W extends { webContents: unknown }>(window: W, machineId: string): W {
+  markFrameWindow(window as never);
+  writeWindowRail(window as never, { machineIds: [machineId], selectedId: machineId });
+  return window;
+}
+
 function makeMainWindow(backendId?: string) {
+  return makeFrame(makeMainWindowShape(backendId), backendId ?? 'local');
+}
+
+function makeMainWindowShape(backendId?: string) {
   const webContents = {
     id: nextWebContentsId++,
     send: vi.fn(),
@@ -165,6 +182,10 @@ beforeEach(() => {
   __resetPendingDeepLinksForTesting();
   __resetColdStartDeepLinkForTesting();
   markRendererWindowsAllowed();
+  setFrameOpener((window, machines, selectedId) => {
+    writeWindowRail(window, { machineIds: machines.map((m) => m.id), selectedId });
+    return window.webContents;
+  });
 });
 
 describe('createWindowForDeepLink pair-link routing', () => {

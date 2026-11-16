@@ -1177,6 +1177,12 @@ export const IPC_CHANNELS = {
     // A renderer reports whether its machine's daemon is degraded, so every
     // rail can mark it.
     HEALTH: 'machine-rail:health',
+    // A machine's renderer reports the shell backdrop for its machine; main
+    // hands the shown machine's to the frame page, which reads it with
+    // GET_BACKDROP and gets BACKDROP_CHANGED pushes (also in EVENT_CHANNELS).
+    BACKDROP: 'machine-rail:backdrop',
+    GET_BACKDROP: 'machine-rail:get-backdrop',
+    BACKDROP_CHANGED: 'machine-rail:backdrop-changed',
   },
 
   // Workspace presence (multiplayer w5). The daemon connection is pooled per
@@ -1288,6 +1294,7 @@ export const EVENT_CHANNELS = [
   'window:dock-lab-changed',
   'machine-rail:changed',
   'machine-rail:toast',
+  'machine-rail:backdrop-changed',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',

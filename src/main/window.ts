@@ -1,6 +1,7 @@
 import { registerChatWindow } from './chat-window-identity';
 import { isDevConsoleRoute } from '../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
+import { FRAME_ROUTE } from '../shared/frame-route';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -11,7 +12,10 @@ import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-ap
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
-import { queueDeepLinkForWindow } from '../features/deeplink/main/pending-deep-links';
+import {
+  queueDeepLinkForRenderer,
+  queueDeepLinkForWindow,
+} from '../features/deeplink/main/pending-deep-links';
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { getMainWindow, setMainWindow } from './state';
@@ -45,20 +49,19 @@ const logger = new Logger('Main');
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
 import { getAppWindows } from './offscreen-window';
-import { getMachineRailSession, restoreMachineRailSession } from './machine-rail-state';
+import { getMachineRailSession, openFrameMachines } from './machine-rail-state';
 import type {
   FrameMachineSession,
   FrameSession,
-  MachineRailSession,
   WindowFramesFile,
 } from '../shared/types/machine-rail';
 import {
-  frameOwnMachineId,
+  frameHolds,
+  keepFrameMachines,
   mergeParkedFrames,
   migrateWindowSessions,
   orderFramesForRestore,
   parseWindowFramesFile,
-  promoteFrameMachine,
   routeFromRendererUrl,
   WINDOW_FRAMES_VERSION,
   type FrameSessionFilter,
@@ -73,25 +76,18 @@ import {
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
+  isFrameWindow,
+  markFrameWindow,
   stampWindowWithBackend,
 } from './window-backend';
-import {
-  focusedFrame,
-  frameMachines,
-  frameOwnMachine,
-  rendererFor,
-  setNonFrameWindowPredicate,
-} from './frames';
+import { focusedFrame, frameMachines, isFrame, rendererFor, shownMachine } from './frames';
 
 export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
 
-// Dock and capture windows are not frames.
-setNonFrameWindowPredicate(isTransientCaptureWindow);
-
-/** The focused frame's own machine; falls back to the main window, then local. */
+/** The machine the focused frame shows; falls back to the main window's, then local. */
 export function getFocusedWindowBackendId(): string {
   const frame = focusedFrame();
-  return frame ? frameOwnMachine(frame) : LOCAL_CONNECTION_ID;
+  return frame ? shownMachine(frame) : LOCAL_CONNECTION_ID;
 }
 
 /**
@@ -157,6 +153,8 @@ function buildWindowOptions(opts: {
   bounds: { x: number; y: number; width: number; height: number };
   title: string;
   iconPath?: string;
+  /** Show the window once created (default); false keeps it hidden until shown. */
+  show?: boolean;
 }): Electron.BrowserWindowConstructorOptions {
   const isDarkMode = nativeTheme.shouldUseDarkColors;
   return {
@@ -166,6 +164,7 @@ function buildWindowOptions(opts: {
     height: opts.bounds.height,
     minWidth: 800,
     minHeight: 600,
+    ...(opts.show === false && { show: false }),
     webPreferences: buildRendererWebPreferences(),
     ...getWindowTitleBarOptions(),
     title: opts.title,
@@ -293,14 +292,11 @@ export function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
 // clients, keyed by backend) is migrated once and left on disk untouched, so
 // an older client still restores its own layout after a downgrade.
 
-/** A window to restore (see `createWindowForSession`). */
+/** A window to open on one machine and page (see `createWindowForSession`). */
 export interface WindowSession {
   route: string;
   bounds: { x: number; y: number; width: number; height: number };
   isFullScreen?: boolean;
-  // Machine rail (Labs): the window's machines, their pages and the one it
-  // showed. Missing → the window shows only its own machine.
-  rail?: MachineRailSession;
 }
 
 export function getWindowFramesPath(): string {
@@ -318,8 +314,7 @@ function isRestorableRoute(route: string): boolean {
   );
 }
 
-// Machines no longer saved are dropped at restore: a window's own machine
-// fails to connect, and the rail keeps only saved machines.
+// Machines no longer saved are dropped at restore: their clients cannot be built.
 const SAVED_FRAME_FILTER: FrameSessionFilter = {
   isSavedMachine: () => true,
   isRestorableRoute,
@@ -405,9 +400,9 @@ async function writeFrames(frames: FrameSession[]): Promise<void> {
 // getAppWindows() is already empty).
 let lastKnownFrames: FrameSession[] | null = null;
 
-// Saved frames not restored this run (their machine could not connect, or a
-// deep link skipped the restore). Saves keep them until a window on their
-// machine opens. Null until the saved file is first read.
+// Saved frames not restored this run (no machine of theirs could connect, or a
+// deep link skipped the restore). Saves keep them until a frame holding one of
+// their machines opens. Null until the saved file is first read.
 let parkedFrames: FrameSession[] | null = null;
 
 function takeParkedFrames(): FrameSession[] {
@@ -447,11 +442,13 @@ export function unmarkWindowSessionTeardown(): void {
   isQuitTeardownInProgress = false;
 }
 
-// Invoked when a non-local machine's last window is explicitly closed while
-// another window survives, so its pooled JSON-RPC client (socket, reconnect
-// timers, subscriptions) can be disposed. Registered by index.ts — which wraps
-// the quit guard around disconnectBackendClient() — so window.ts never
-// imports the backend IPC module graph.
+// Invoked when a window that is not a frame (a HUD) is explicitly closed while
+// another window survives and nothing else uses its non-local machine, so its
+// pooled JSON-RPC client (socket, reconnect timers, subscriptions) can be
+// disposed. A frame's machines are released by the rail owner when the frame
+// closes. Registered by index.ts — which wraps the quit guard around
+// disconnectBackendClient() — so window.ts never imports the backend IPC
+// module graph.
 type LastWindowClosedForBackendHandler = (backendId: string) => void;
 let onLastWindowClosedForBackend: LastWindowClosedForBackendHandler | null = null;
 
@@ -461,42 +458,54 @@ export function setOnLastWindowClosedForBackend(
   onLastWindowClosedForBackend = handler;
 }
 
-function isLiveFrameWindow(window: BrowserWindowType): boolean {
-  return !window.isDestroyed() && !isTransientCaptureWindow(window);
+/** A live window whose layout is saved: a frame, or a HUD pop-out. */
+function isSavedWindow(window: BrowserWindowType): boolean {
+  if (window.isDestroyed()) return false;
+  return isFrameWindow(window) || isTrackedHudWindow(window) || isHudWindow(window);
+}
+
+function withPlacement(window: BrowserWindowType, frame: FrameSession): FrameSession {
+  // getBounds() during fullscreen returns that display's bounds, which is
+  // exactly what lets restore land on the right monitor.
+  if (window.isFullScreen()) frame.isFullScreen = true;
+  return frame;
 }
 
 /**
- * What `window` saves: its own machine with its page first, then its rail
- * machines with theirs (a machine whose renderer has not loaded keeps the
- * page it was restored with), and the machine it shows. Null for a window
- * that has not loaded a page or whose page never reopens.
+ * What `window` saves: a frame's machines in rail order, each with the page
+ * its view shows (one whose view has not loaded keeps the page it was
+ * restored with), and the machine it shows; a HUD its machine and page. Null
+ * for any other window, or a HUD that has not loaded its page.
  */
 function frameFromWindow(window: BrowserWindowType): FrameSession | null {
-  if (!isLiveFrameWindow(window)) return null;
+  if (!isSavedWindow(window)) return null;
+  if (!isFrameWindow(window)) {
+    const id = getBackendIdForWindow(window);
+    const route = routeFromRendererUrl(window.webContents.getURL(), DEFAULT_WINDOW_ROUTE);
+    if (!route?.startsWith(HUD_ROUTE_PREFIX)) return null;
+    return withPlacement(window, {
+      bounds: window.getBounds(),
+      machines: [{ id, route }],
+      selectedId: id,
+    });
+  }
+  const rail = getMachineRailSession(window);
+  if (!rail) return null;
   const restored = restoredFrames.get(window);
   const restoredRoute = (id: string) => restored?.machines.find((m) => m.id === id)?.route;
-  const ownId = frameOwnMachine(window);
-  const ownRoute =
-    routeFromRendererUrl(window.webContents.getURL(), DEFAULT_WINDOW_ROUTE) ?? restoredRoute(ownId);
-  if (!ownRoute || isDevConsoleRoute(ownRoute) || isDesktopOverlayRoute(ownRoute)) return null;
-  const machines: FrameMachineSession[] = [{ id: ownId, route: ownRoute }];
-  const rail = getMachineRailSession(window);
-  for (const id of rail?.machineIds ?? []) {
-    if (id === ownId) continue;
+  const machines: FrameMachineSession[] = rail.machineIds.map((id) => {
     const renderer = rendererFor(window, id);
     const route =
       (renderer && !renderer.isDestroyed()
         ? routeFromRendererUrl(renderer.getURL(), DEFAULT_WINDOW_ROUTE)
         : null) ?? restoredRoute(id);
-    machines.push(route ? { id, route } : { id });
-  }
-  const selectedId =
-    rail && machines.some((machine) => machine.id === rail.selectedId) ? rail.selectedId : ownId;
-  const frame: FrameSession = { bounds: window.getBounds(), machines, selectedId };
-  // getBounds() during fullscreen returns that display's bounds, which is
-  // exactly what lets restore land on the right monitor.
-  if (window.isFullScreen()) frame.isFullScreen = true;
-  return frame;
+    return route && isRestorableRoute(route) ? { id, route } : { id };
+  });
+  return withPlacement(window, {
+    bounds: window.getBounds(),
+    machines,
+    selectedId: rail.selectedId,
+  });
 }
 
 function liveFrames(exclude?: BrowserWindowType): FrameSession[] {
@@ -518,7 +527,7 @@ function liveFrames(exclude?: BrowserWindowType): FrameSession[] {
 export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): void {
   try {
     const closing =
-      this && typeof this.isDestroyed === 'function' && isLiveFrameWindow(this) ? this : null;
+      this && typeof this.isDestroyed === 'function' && isSavedWindow(this) ? this : null;
     const survivors = getAppWindows().filter(
       (window) => window !== closing && !window.isDestroyed(),
     );
@@ -531,11 +540,13 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
     }
     lastKnownFrames = liveFrames(closing);
     writeFramesSync(mergeParkedFrames(lastKnownFrames, takeParkedFrames()));
-    const machineId = frameOwnMachine(closing);
+    // A frame's machines are released by the rail owner once it closes.
+    if (isFrameWindow(closing)) return;
+    const machineId = getBackendIdForWindow(closing);
     const stillUsed = survivors.some((window) =>
-      isTransientCaptureWindow(window)
-        ? getBackendIdForWindow(window) === machineId
-        : frameMachines(window).includes(machineId),
+      isFrameWindow(window)
+        ? frameMachines(window).includes(machineId)
+        : getBackendIdForWindow(window) === machineId,
     );
     // Explicit last-window close for this machine: dispose its pooled client
     // so no socket or reconnect timer keeps dialing a daemon with no windows
@@ -604,136 +615,201 @@ export function _resetWindowSessionsCacheForTests(): void {
   isQuitTeardownInProgress = false;
 }
 
-/**
- * Create a window to restore a saved session.
- * Similar to createWindow() but accepts a specific route and bounds.
- */
-export async function createWindowForSession(
-  session: WindowSession,
-  setAsMain: boolean,
-  backendId: string = LOCAL_CONNECTION_ID,
-): Promise<BrowserWindowType | null> {
-  if (isTransientCaptureRoute(session.route)) return null;
-  const iconPath = resolveIcon(setAsMain);
-  // Validate against the display the saved bounds actually land on, not the
-  // primary display — otherwise a layout saved on a secondary monitor fails
-  // the visibility check and is reset to the primary work area. For bounds on
-  // a disconnected monitor, getDisplayMatching() returns the nearest display
-  // and validateBounds() then clamps/falls back within it.
-  const { workArea } = screen.getDisplayMatching(session.bounds);
-  const bounds = validateBounds(session.bounds, workArea);
-
-  const window = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
-  // A restored HUD session keeps its saved backend bucket — the HUD is bound
-  // to the backend it was opened on, not forced to local. Register it as THE
-  // HUD for that backend right away (stamp first — the registry keys off the
-  // stamp): its URL is still loading during startup restore, so the URL-scan
-  // fallback would miss it and a concurrent open-HUD request could create a
-  // duplicate.
-  stampWindowWithBackend(window, backendId);
-  if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
-    registerHudWindow(window);
-  } else {
-    registerChatWindow(window);
-    restoreMachineRailSession(window, session.rail);
-  }
-  forwardRendererConsoleToMainLog(window);
-
-  if (setAsMain) {
-    setMainWindow(window);
-  }
-
-  // Clear cache in production to ensure fresh file references after rebuilds
-  if (setAsMain && (!process.env.NODE_ENV || process.env.NODE_ENV === 'production')) {
-    window.webContents.session
-      .clearCache()
-      .then(() => logger.info('Cache cleared for session-restored window'))
-      .catch((error: unknown) =>
-        logger.error('Failed to clear cache for session-restored window:', error as Error),
-      );
-  }
-
-  // Re-enter fullscreen on the display the validated bounds landed on — a
-  // session saved fullscreen restores fullscreen, not windowed at
-  // screen-sized bounds.
-  if (session.isFullScreen) {
-    window.setFullScreen(true);
-  }
-
-  const route = session.route === '/' ? DEFAULT_WINDOW_ROUTE : session.route;
-  window
-    .loadURL(buildLoadUrl(route))
-    .catch((error: unknown) =>
-      logger.error('Failed to load session-restored window URL:', error as Error),
-    );
-
-  // Save bounds on resize/move (updates the main window bounds file for backward compat)
+/** Keep window-bounds.json (the boot window's bounds) up to date while `window` moves. */
+function saveBoundsWhileMoving(window: BrowserWindowType): void {
+  const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
   let saveBoundsTimeout: NodeJS.Timeout | null = null;
-  if (setAsMain) {
-    const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
-    const saveWindowBounds = () => {
-      if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-      saveBoundsTimeout = setTimeout(async () => {
-        if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
-        try {
-          const currentBounds = window.getBounds();
-          await fsAsync.writeFile(savedBoundsPath, JSON.stringify(currentBounds), 'utf-8');
-        } catch (err) {
-          logger.warn('Failed to save window bounds:', err);
-        }
-      }, 500);
-    };
-    window.on('resize', saveWindowBounds);
-    window.on('move', saveWindowBounds);
-  }
-
+  const saveWindowBounds = () => {
+    if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
+    saveBoundsTimeout = setTimeout(async () => {
+      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
+      try {
+        await fsAsync.writeFile(savedBoundsPath, JSON.stringify(window.getBounds()), 'utf-8');
+      } catch (err) {
+        logger.warn('Failed to save window bounds:', err);
+      }
+    }, 500);
+  };
+  window.on('resize', saveWindowBounds);
+  window.on('move', saveWindowBounds);
   window.on('closed', () => {
-    if (setAsMain) {
-      setMainWindow(null);
-    }
     if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
   });
+}
 
-  logger.info('Restored session window', { route: session.route, isMain: setAsMain });
+/** Clear the renderer cache in production, so a rebuilt app loads fresh files. */
+function clearCacheInProduction(window: BrowserWindowType): void {
+  if (process.env.NODE_ENV && process.env.NODE_ENV !== 'production') return;
+  window.webContents.session
+    .clearCache()
+    .catch((error: unknown) => logger.error('Failed to clear cache:', error as Error));
+}
+
+/** A new frame and the renderer of the machine it shows (null when none could open). */
+export interface OpenedFrame {
+  window: BrowserWindowType;
+  contents: Electron.WebContents | null;
+}
+
+/**
+ * Open a frame: a window whose own page is the frame page (backdrop only)
+ * holding `machines`, each a view on its page, showing `selectedId`.
+ */
+async function createFrameWindow(opts: {
+  bounds: { x: number; y: number; width: number; height: number };
+  machines: FrameMachineSession[];
+  selectedId: string;
+  isFullScreen?: boolean;
+  setAsMain: boolean;
+  /** Also sets the macOS Dock icon (the boot window does). */
+  setDockIcon?: boolean;
+  /** False keeps the frame hidden until the caller shows it. */
+  show?: boolean;
+}): Promise<OpenedFrame> {
+  const iconPath = resolveIcon(opts.setDockIcon ?? opts.setAsMain);
+  const window = await createConfiguredWindow({
+    bounds: opts.bounds,
+    title: resolveAppTitle(),
+    iconPath,
+    show: opts.show,
+  });
+  markFrameWindow(window);
+  registerChatWindow(window);
+  forwardRendererConsoleToMainLog(window);
+  if (opts.setAsMain) {
+    setMainWindow(window);
+    clearCacheInProduction(window);
+    saveBoundsWhileMoving(window);
+    window.on('closed', () => {
+      if (getMainWindow() === window) setMainWindow(null);
+    });
+  }
+  // Re-enter fullscreen on the display the validated bounds landed on — a
+  // frame saved fullscreen restores fullscreen, not windowed at screen-sized
+  // bounds.
+  if (opts.isFullScreen) window.setFullScreen(true);
+  window
+    .loadURL(buildLoadUrl(FRAME_ROUTE))
+    .catch((error: unknown) => logger.error('Failed to load the frame page:', error as Error));
+  const contents = openFrameMachines(window, opts.machines, opts.selectedId);
+  return { window, contents };
+}
+
+/**
+ * Open a new frame on one machine at `route` (a path, may carry a query),
+ * centred on the primary display. `show: false` keeps it hidden until the
+ * caller shows it (a dock launch waits for the page to render).
+ */
+export async function openMachineFrame(opts: {
+  machineId: string;
+  route?: string;
+  show?: boolean;
+}): Promise<OpenedFrame> {
+  const { workArea } = screen.getPrimaryDisplay();
+  const width = Math.min(1920, workArea.width);
+  const height = Math.min(1080, workArea.height);
+  return createFrameWindow({
+    bounds: {
+      x: workArea.x + Math.round((workArea.width - width) / 2),
+      y: workArea.y + Math.round((workArea.height - height) / 2),
+      width,
+      height,
+    },
+    machines: [{ id: opts.machineId, ...(opts.route ? { route: opts.route } : {}) }],
+    selectedId: opts.machineId,
+    setAsMain: false,
+    show: opts.show,
+  });
+}
+
+/** Open a saved HUD pop-out, bound to the machine it was opened on. */
+async function createHudWindowForFrame(
+  frame: FrameSession,
+  bounds: FrameSession['bounds'],
+): Promise<BrowserWindowType> {
+  const [{ id, route }] = frame.machines;
+  const window = await createConfiguredWindow({
+    bounds,
+    title: resolveAppTitle(),
+    iconPath: resolveIcon(false),
+  });
+  // Register it as THE HUD for that backend right away (stamp first — the
+  // registry keys off the stamp): its URL is still loading during startup
+  // restore, so the URL-scan fallback would miss it and a concurrent open-HUD
+  // request could create a duplicate.
+  stampWindowWithBackend(window, id);
+  registerHudWindow(window);
+  forwardRendererConsoleToMainLog(window);
+  if (frame.isFullScreen) window.setFullScreen(true);
+  window
+    .loadURL(buildLoadUrl(route))
+    .catch((error: unknown) => logger.error('Failed to load the HUD window:', error as Error));
   return window;
 }
 
 /**
- * Open the window for a saved frame on `ownId` (the frame's first machine for
- * now): its page, then its rail machines with their pages, showing the
- * machine it showed.
+ * Open a saved frame: its machines on their pages, showing the one it
+ * showed. A saved HUD reopens as a HUD window. The bounds are checked
+ * against the display they land on, not the primary display — otherwise a
+ * layout saved on a secondary monitor fails the visibility check and is reset
+ * to the primary work area. For bounds on a disconnected monitor,
+ * getDisplayMatching() returns the nearest display and validateBounds() then
+ * clamps/falls back within it.
  */
 async function createWindowForFrame(
   frame: FrameSession,
   setAsMain: boolean,
 ): Promise<BrowserWindowType | null> {
-  const [own] = frame.machines;
-  const route = own.route ?? DEFAULT_WINDOW_ROUTE;
-  const routes: Record<string, string> = {};
-  for (const machine of frame.machines) if (machine.route) routes[machine.id] = machine.route;
-  const session: WindowSession = { route, bounds: frame.bounds };
-  if (frame.isFullScreen) session.isFullScreen = true;
-  if (frame.machines.length > 1 && !route.startsWith(HUD_ROUTE_PREFIX)) {
-    session.rail = {
-      machineIds: frame.machines.map((machine) => machine.id),
-      selectedId: frame.selectedId,
-      routes,
-    };
+  const first = frame.machines[0];
+  if (!first || (first.route && isTransientCaptureRoute(first.route))) return null;
+  const bounds = validateBounds(frame.bounds, screen.getDisplayMatching(frame.bounds).workArea);
+  if (first.route?.startsWith(HUD_ROUTE_PREFIX)) {
+    const hud = await createHudWindowForFrame(frame, bounds);
+    restoredFrames.set(hud, frame);
+    return hud;
   }
-  const window = await createWindowForSession(session, setAsMain, own.id);
-  if (window) restoredFrames.set(window, frame);
+  // The bare root route (older saved sessions) reopens on the bootstrap route.
+  const machines = frame.machines.map((machine) =>
+    machine.route === '/' ? { ...machine, route: DEFAULT_WINDOW_ROUTE } : machine,
+  );
+  const { window } = await createFrameWindow({
+    bounds,
+    machines,
+    selectedId: frame.selectedId,
+    isFullScreen: frame.isFullScreen,
+    setAsMain,
+  });
+  restoredFrames.set(window, frame);
+  logger.info('Opened saved frame', { machines: frame.machines.length, isMain: setAsMain });
   return window;
 }
 
+/** Open a frame on one machine at `session.route` (a HUD route opens a HUD window). */
+export async function createWindowForSession(
+  session: WindowSession,
+  setAsMain: boolean,
+  backendId: string = LOCAL_CONNECTION_ID,
+): Promise<BrowserWindowType | null> {
+  const frame: FrameSession = {
+    bounds: session.bounds,
+    machines: [
+      { id: backendId, route: session.route === '/' ? DEFAULT_WINDOW_ROUTE : session.route },
+    ],
+    selectedId: backendId,
+  };
+  if (session.isFullScreen) frame.isFullScreen = true;
+  return createWindowForFrame(frame, setAsMain);
+}
+
 /**
- * Restore the saved frames that open on `toBackendId` and were not restored
- * yet, or open one fresh default window when there are none. Call AFTER the
- * backend's client is connected, so restored windows load against a live
+ * Restore the saved frames that hold `toBackendId` and were not restored
+ * yet, or open one fresh frame on it when there are none. Call AFTER the
+ * backend's client is connected, so restored views load against a live
  * daemon.
  */
 export async function restoreWindowsForBackend(toBackendId: string): Promise<void> {
   const parked = takeParkedFrames();
-  const frames = parked.filter((frame) => frameOwnMachineId(frame) === toBackendId);
+  const frames = parked.filter((frame) => frameHolds(frame, toBackendId));
   parkedFrames = parked.filter((frame) => !frames.includes(frame));
   if (frames.length === 0) {
     logger.info('No saved frames for backend; opening a fresh window', { backendId: toBackendId });
@@ -744,31 +820,25 @@ export async function restoreWindowsForBackend(toBackendId: string): Promise<voi
     backendId: toBackendId,
     count: frames.length,
   });
-  const firstAppFrame = frames.findIndex(
-    (frame) => !frame.machines[0].route?.startsWith(HUD_ROUTE_PREFIX),
-  );
+  const isHud = (frame: FrameSession) => !!frame.machines[0].route?.startsWith(HUD_ROUTE_PREFIX);
+  const firstAppFrame = frames.findIndex((frame) => !isHud(frame));
   for (let i = 0; i < frames.length; i++) {
     // Switching backends can restore app frames while its HUD is already open.
-    if (
-      frames[i].machines[0].route?.startsWith(HUD_ROUTE_PREFIX) &&
-      findExistingHudWindow(toBackendId)
-    ) {
-      continue;
-    }
+    if (isHud(frames[i]) && findExistingHudWindow(frames[i].machines[0].id)) continue;
     await createWindowForFrame(frames[i], i === firstAppFrame);
   }
   if (firstAppFrame === -1) await createWindow(toBackendId);
 }
 
 /**
- * Boot/dock-activate restore of every saved frame. Frames opening on the
- * active machine restore first, so the first one becomes the main window.
- * Each frame opens on its first machine whose pooled client can be built via
- * `connectBackend` (injected — window.ts must not import backend.ipc;
- * idempotent for already-connected machines); machines before it are dropped.
- * A frame with no such machine (forgotten remote, missing token) is skipped
- * and kept saved; an unreachable-but-buildable machine still restores behind
- * the stopped overlay. Returns true when at least one window was restored.
+ * Boot/dock-activate restore of every saved frame. Frames showing the active
+ * machine restore first, so the first one becomes the main window. A frame
+ * keeps the machines whose pooled client can be built via `connectBackend`
+ * (injected — window.ts must not import backend.ipc; idempotent for
+ * already-connected machines); a frame with none (forgotten remotes, missing
+ * tokens) is skipped and kept saved. An unreachable-but-buildable machine
+ * still restores behind the stopped overlay. Returns true when at least one
+ * window was restored.
  */
 export async function restoreAllBackendWindowSessions(
   activeBackendId: string,
@@ -796,37 +866,26 @@ export async function restoreAllBackendWindowSessions(
   };
   let restoredAny = false;
   for (const frame of frames) {
-    let ownId: string | null = null;
-    for (const machine of frame.machines) {
-      if (await canConnect(machine.id)) {
-        ownId = machine.id;
-        break;
-      }
-    }
-    if (!ownId) {
+    const usable = new Set<string>();
+    for (const machine of frame.machines) if (await canConnect(machine.id)) usable.add(machine.id);
+    const kept = keepFrameMachines(frame, (id) => usable.has(id));
+    if (!kept) {
       parkedFrames.push(frame);
       continue;
     }
-    const window = await createWindowForFrame(promoteFrameMachine(frame, ownId), !restoredAny);
+    const window = await createWindowForFrame(kept, !restoredAny);
     if (window) restoredAny = true;
   }
   if (restoredAny) logger.info('Restored saved frames', { count: frames.length });
   return restoredAny;
 }
 
-/** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
-/** First live, non-HUD app window bound to `backendId`, if any. */
+/** First live frame that shows `backendId`, if any. */
 function findAppWindowForBackend(backendId: string): BrowserWindowType | undefined {
-  return getAppWindows().find(
-    (window) =>
-      !window.isDestroyed() &&
-      !isTransientCaptureWindow(window) &&
-      frameOwnMachine(window) === backendId &&
-      !isTrackedHudWindow(window) &&
-      !isHudWindow(window),
-  );
+  return getAppWindows().find((window) => isFrame(window) && shownMachine(window) === backendId);
 }
 
+/** Focus the first frame showing a backend, restoring saved/fresh frames if needed. */
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
   const findAppWindow = () => findAppWindowForBackend(backendId);
   let existing = findAppWindow();
@@ -843,20 +902,21 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
 }
 
 /**
- * Show `workspaceId` in `backendId`'s app window: queue an `open` deep link
- * for it (drained by that window's deep-links saga once its daemon has
- * admitted it, so a just-restored window still picks it up) and bring the
- * window to the front. Call after the backend's window was opened or focused
- * (see `openOrFocusWindowsForBackend`). Returns false when no app window is
- * bound to the backend.
+ * Show `workspaceId` in a frame showing `backendId`: queue an `open` deep link
+ * for that machine's view (drained by its deep-links saga once its daemon has
+ * admitted it, so a just-restored view still picks it up) and bring the frame
+ * to the front. Call after the backend's frame was opened or focused (see
+ * `openOrFocusWindowsForBackend`). Returns false when no frame shows the
+ * backend.
  */
 export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
   const window = findAppWindowForBackend(backendId);
-  if (!window) {
+  const contents = window ? rendererFor(window, backendId) : null;
+  if (!window || !contents) {
     logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
     return false;
   }
-  queueDeepLinkForWindow(window, { type: 'open', params: { id: workspaceId } });
+  queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
@@ -864,23 +924,37 @@ export function showWorkspaceInBackendWindow(backendId: string, workspaceId: str
   return true;
 }
 
+/**
+ * Whether closing `backendId` closes `window`: a frame that holds only that
+ * machine, or another window (HUD, popup) bound to it.
+ */
+function closesWith(window: BrowserWindowType, backendId: string): boolean {
+  if (!isFrameWindow(window)) return getBackendIdForWindow(window) === backendId;
+  const machines = frameMachines(window);
+  return machines.length > 0 && machines.every((id) => id === backendId);
+}
+
 /** Ensure closing one backend cannot destroy the app's final live window. */
 export async function ensureLocalWindowBeforeClosingBackend(backendId: string): Promise<void> {
   const liveWindows = getAppWindows().filter(
     (window) => !window.isDestroyed() && !isTransientCaptureWindow(window),
   );
-  const closesAnyWindow = liveWindows.some((window) => frameOwnMachine(window) === backendId);
-  const hasSurvivingWindow = liveWindows.some((window) => frameOwnMachine(window) !== backendId);
+  const closesAnyWindow = liveWindows.some((window) => closesWith(window, backendId));
+  const hasSurvivingWindow = liveWindows.some((window) => !closesWith(window, backendId));
   if (closesAnyWindow && !hasSurvivingWindow) {
     await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
   }
 }
 
-/** Destroy only windows bound to one backend, preserving every other backend. */
+/**
+ * Destroy the windows that close with one backend (frames holding only it,
+ * and HUDs bound to it), preserving every other backend. Frames that hold
+ * other machines too keep them; the caller removes the backend from them.
+ */
 export function closeWindowsForBackend(backendId: string): void {
   const windows = getAppWindows();
   for (const window of windows) {
-    if (!window.isDestroyed() && !isDockWindow(window) && frameOwnMachine(window) === backendId)
+    if (!window.isDestroyed() && !isDockWindow(window) && closesWith(window, backendId))
       window.destroy();
   }
   const main = getMainWindow();
@@ -898,7 +972,6 @@ export function __resetColdStartDeepLinkForTesting(): void {
 }
 
 export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
-  const iconPath = resolveIcon(true);
   const { workArea } = screen.getPrimaryDisplay();
 
   // Try to restore saved window bounds, falling back to full workArea
@@ -950,79 +1023,38 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
     logger.warn('Failed to load saved window bounds:', err);
   }
 
-  const window = await createConfiguredWindow({
+  const { window, contents } = await createFrameWindow({
     bounds: windowBounds,
-    title: resolveAppTitle(),
-    iconPath,
+    machines: [{ id: backendId }],
+    selectedId: backendId,
+    setAsMain: true,
+    setDockIcon: true,
   });
-  stampWindowWithBackend(window, backendId);
-  forwardRendererConsoleToMainLog(window);
-
-  registerChatWindow(window);
-  setMainWindow(window);
-
-  // Save window bounds when resized or moved (debounced)
-  let saveBoundsTimeout: NodeJS.Timeout | null = null;
-  const saveWindowBounds = () => {
-    if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-    saveBoundsTimeout = setTimeout(async () => {
-      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
-      try {
-        const bounds = window.getBounds();
-        await fsAsync.writeFile(savedBoundsPath, JSON.stringify(bounds), 'utf-8');
-        logger.info('Saved window bounds:', bounds);
-      } catch (err) {
-        logger.warn('Failed to save window bounds:', err);
-      }
-    }, 500);
-  };
-
-  window.on('resize', saveWindowBounds);
-  window.on('move', saveWindowBounds);
 
   window.once('show', () => {
     logger.info('Window shown with bounds:', window.getBounds());
   });
 
-  // Clear cache in production to ensure fresh file references after rebuilds
-  if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
-    window.webContents.session
-      .clearCache()
-      .then(() => logger.info('Cache cleared for fresh build'))
-      .catch((error: unknown) => logger.error('Failed to clear cache:', error as Error));
-  }
-
   // Check process.argv for intent:// URL on cold start. Pair and invite links
   // are excluded: they are handled fully in the main process (parked at
   // startup, processed once the window is ready) and never reach the
-  // renderer. Any other link is queued for this window; its deep-links saga
-  // pulls it once it starts listening. argv never changes, so only the first
-  // window created takes the link — a later createWindow (session restore,
-  // another backend) must not replay it (a replayed `open?path` could create
-  // a second workspace).
+  // renderer. Any other link is queued for the frame's machine; its
+  // deep-links saga pulls it once it starts listening. argv never changes, so
+  // only the first frame created takes the link — a later createWindow
+  // (session restore, another backend) must not replay it (a replayed
+  // `open?path` could create a second workspace).
   const intentUrl = coldStartDeepLinkTaken ? undefined : findIntentUrl(process.argv);
-  const loadUrl = buildLoadUrl();
-
-  if (intentUrl && !isMainOnlyLinkUri(intentUrl) && !isInviteUri(intentUrl)) {
+  if (contents && intentUrl && !isMainOnlyLinkUri(intentUrl) && !isInviteUri(intentUrl)) {
     coldStartDeepLinkTaken = true;
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
     if (action) {
-      queueDeepLinkForWindow(window, action);
+      queueDeepLinkForRenderer(contents, action);
       logger.info('Queued cold-start deep link for the boot window:', {
         url: scrubToken(intentUrl),
       });
     }
   }
-
-  window
-    .loadURL(loadUrl)
-    .catch((error: unknown) => logger.error('Failed to load main window URL:', error as Error));
-
-  window.on('closed', () => {
-    setMainWindow(null);
-    if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-  });
 }
 
 /** Focus `window` (restoring it from the dock first) for a delivered deep link. */
@@ -1102,22 +1134,16 @@ export async function createWindowForDeepLink(
     return;
   }
 
-  // Create a new window with full workArea bounds
+  // Create a new local frame with full workArea bounds
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
-
-  const iconPath = resolveIcon(false);
-  const newWindow = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
-  registerChatWindow(newWindow);
-  stampWindowWithBackend(newWindow);
-  forwardRendererConsoleToMainLog(newWindow);
-  queueDeepLinkForWindow(newWindow, action);
-
-  newWindow
-    .loadURL(buildLoadUrl(DEFAULT_WINDOW_ROUTE))
-    .catch((error: unknown) =>
-      logger.error('Failed to load deep-link window URL:', error as Error),
-    );
+  const { window: newWindow, contents } = await createFrameWindow({
+    bounds,
+    machines: [{ id: LOCAL_CONNECTION_ID, route: DEFAULT_WINDOW_ROUTE }],
+    selectedId: LOCAL_CONNECTION_ID,
+    setAsMain: false,
+  });
+  if (contents) queueDeepLinkForRenderer(contents, action);
   newWindow.focus();
 
   logger.info('New window created for deep link:', { action: action.type });
