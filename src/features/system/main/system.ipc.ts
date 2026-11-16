@@ -402,6 +402,15 @@ export function getWorkspaceIdForWindow(windowId: number): string | undefined {
   return lastKnownWindowWorkspaceIds.get(window ? shownRendererKey(window) : windowId);
 }
 
+/** The workspace `contents` (a window's own page or a machine view, shown or not) last showed. */
+export function getLastKnownWorkspaceIdForRenderer(
+  contents: Electron.WebContents,
+): string | undefined {
+  if (contents.isDestroyed()) return undefined;
+  const window = getWindowForWebContents(contents);
+  return window ? lastKnownWindowWorkspaceIds.get(rendererKey(window, contents)) : undefined;
+}
+
 /**
  * Get all workspace IDs that have an open Electron window.
  * Includes both the currently viewed workspace per renderer AND all workspace

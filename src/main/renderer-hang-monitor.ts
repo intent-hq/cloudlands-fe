@@ -62,7 +62,8 @@ type StackTarget = Pick<BrowserWindow, 'webContents'>;
 
 /** Dependency seams for tests; production uses the defaults. */
 export interface RendererHangMonitorDeps {
-  resolveWorkspaceId(windowId: number): Promise<string | undefined>;
+  /** The workspace `contents` (a window's own page or a machine view) last showed. */
+  resolveWorkspaceId(windowId: number, contents: Electron.WebContents): Promise<string | undefined>;
   captureStack(target: StackTarget): Promise<RendererHangFrame[] | null>;
   showMessageBox(parent: BrowserWindow, options: MessageBoxOptions): Promise<MessageBoxReturnValue>;
   now(): number;
@@ -72,9 +73,14 @@ export interface RendererHangMonitorDeps {
  * Lazy import keeps this module dependency-light — system.ipc registers
  * ipcMain handlers on load, which real main already did.
  */
-async function defaultResolveWorkspaceId(windowId: number): Promise<string | undefined> {
-  const { getWorkspaceIdForWindow } = await import('../features/system/main/system.ipc');
-  return getWorkspaceIdForWindow(windowId);
+async function defaultResolveWorkspaceId(
+  _windowId: number,
+  contents: Electron.WebContents,
+): Promise<string | undefined> {
+  const { getLastKnownWorkspaceIdForRenderer } = await import(
+    '../features/system/main/system.ipc'
+  );
+  return getLastKnownWorkspaceIdForRenderer(contents);
 }
 
 interface DebuggerPausedParams {
@@ -237,7 +243,7 @@ export function attachRendererHangMonitor(
         : getBackendIdForWebContents(contents);
     let workspaceId: string | undefined;
     try {
-      workspaceId = await deps.resolveWorkspaceId(windowId);
+      workspaceId = await deps.resolveWorkspaceId(windowId, contents);
     } catch (error) {
       logger.warn('Failed to resolve workspace for unresponsive window', {
         windowId,

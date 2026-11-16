@@ -622,6 +622,57 @@ describe('a frame open on the local machine', () => {
     expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
   });
 
+  /** Fire `event` on `contents` as Electron would. */
+  const emit = (contents: FakeWebContents, event: string, ...args: unknown[]) => {
+    for (const [name, listener] of contents.on.mock.calls as Array<[string, (...a: unknown[]) => void]>) {
+      if (name === event) listener({}, ...args);
+    }
+  };
+
+  it('stops treating a machine view as ready once its renderer crashes, until it starts again', async () => {
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    const b = viewOf('b').webContents;
+    await invoke(RAIL.READY, b);
+    await invoke(RAIL.SELECT, b, { id: 'local' });
+
+    emit(b, 'render-process-gone', { reason: 'crashed' });
+    let ready: boolean | undefined;
+    void selectMachineInFrame(fakes.window as never, 'b')!.ready.then((value) => {
+      ready = value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBeUndefined();
+    // A reload after the crash reports ready again.
+    await invoke(RAIL.READY, b);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBe(true);
+  });
+
+  it('stops treating a machine view as ready while it loads a new document', async () => {
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    const b = viewOf('b').webContents;
+    await invoke(RAIL.READY, b);
+    await invoke(RAIL.SELECT, b, { id: 'local' });
+
+    // A same-document navigation keeps the renderer as it is.
+    emit(b, 'did-start-navigation', 'app://workspaces/workspace/x', true, true);
+    let ready: boolean | undefined;
+    void selectMachineInFrame(fakes.window as never, 'b')!.ready.then((value) => {
+      ready = value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBe(true);
+
+    await invoke(RAIL.SELECT, b, { id: 'local' });
+    emit(b, 'did-start-navigation', 'app://workspaces/workspace/new', false, true);
+    ready = undefined;
+    void selectMachineInFrame(fakes.window as never, 'b')!.ready.then((value) => {
+      ready = value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).toBeUndefined();
+  });
+
   it('forgets the wait for a machine removed while it starts', async () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     expect(await invoke(RAIL.REMOVE, local(), { id: 'b' })).toMatchObject({

@@ -321,6 +321,16 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
       window.setTitle(decorateWindowTitle(title));
     }
   });
+  // A crashed renderer, or one loading a new document, is starting again: it
+  // is not ready until it reports so (a reload from the View menu recovers it).
+  const restarting = (): void => {
+    readyViews.delete(view.webContents);
+    viewStartedAt.set(view.webContents, Date.now());
+  };
+  view.webContents.on('render-process-gone', restarting);
+  view.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) restarting();
+  });
   views.set(id, view);
   viewStartedAt.set(view.webContents, Date.now());
   window.contentView.addChildView(view);

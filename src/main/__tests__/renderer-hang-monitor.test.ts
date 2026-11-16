@@ -162,6 +162,26 @@ describe('attachRendererHangMonitor', () => {
     );
   });
 
+  it("names the hung machine view's own workspace, not the one the window shows", async () => {
+    const fake = createFakeWindow(42);
+    const listeners = new Map<string, Listener>();
+    const view = {
+      on: vi.fn((event: string, listener: Listener) => listeners.set(event, listener)),
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      isDestroyed: () => false,
+      getURL: () => 'app://workspaces/workspace/hidden',
+      reload: vi.fn(),
+    };
+    const h = createHarness();
+    attachRendererHangMonitor(fake.window, h.deps, view as unknown as Electron.WebContents);
+
+    listeners.get('unresponsive')?.();
+    await flush();
+
+    expect(h.deps.resolveWorkspaceId).toHaveBeenCalledWith(42, view);
+  });
+
   it('shows the dialog once per unresponsive episode', async () => {
     const fake = createFakeWindow();
     const h = createHarness();
