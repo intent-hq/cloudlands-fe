@@ -296,10 +296,16 @@ describe('isHomeBackedTab', () => {
 
 describe('nextHomeRetry (retry once the home is attached)', () => {
   const T0 = Date.parse('2026-11-16T02:00:00Z');
-  const at = (seconds: number, unavailable: boolean, workspaceId = 'ws-1') => ({
+  const at = (
+    seconds: number,
+    unavailable: boolean,
+    workspaceId = 'ws-1',
+    contentLoaded = false,
+  ) => ({
     workspaceId,
     loaded: true,
     unavailable,
+    contentLoaded,
     now: T0 + seconds * 1000,
   });
 
@@ -325,6 +331,14 @@ describe('nextHomeRetry (retry once the home is attached)', () => {
     let retry = nextHomeRetry(initialHomeRetry, at(0, false));
     retry = nextHomeRetry(retry, at(60, true));
     retry = nextHomeRetry(retry, at(90, false));
+    expect(retry.generation).toBe(0);
+  });
+
+  it('never remounts a panel that reported loaded content, even soon after it opened', () => {
+    // An editor that loaded keeps its undo history across a brief early disconnect.
+    let retry = nextHomeRetry(initialHomeRetry, at(0, false));
+    retry = nextHomeRetry(retry, at(3, true, 'ws-1', true));
+    retry = nextHomeRetry(retry, at(20, false, 'ws-1', true));
     expect(retry.generation).toBe(0);
   });
 

@@ -17,6 +17,7 @@
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceHomePanelNotice from './WorkspaceHomePanelNotice.svelte';
   import { initialHomeRetry, nextHomeRetry } from '../workspace-home';
+  import { setHomePanelContext } from '../home-panel-context';
   import {
     selectCanMoveWorkspaceHome,
     selectHomeWaiting,
@@ -48,17 +49,27 @@
   const view = $derived($view$);
   // Ephemeral panel state: which mount generation the children use.
   let retry = $state(initialHomeRetry);
+  // Set by the wrapped tab once its content loaded; a remount starts it over.
+  let contentLoaded = $state(false);
+  setHomePanelContext({
+    markContentLoaded: () => {
+      contentLoaded = true;
+    },
+  });
   $effect.pre(() => {
     const input = {
       workspaceId,
       loaded: $loaded$,
       unavailable: view?.unavailable === true,
+      contentLoaded,
       now: clock(),
     };
-    retry = nextHomeRetry(
+    const next = nextHomeRetry(
       untrack(() => retry),
       input,
     );
+    if (next.generation !== untrack(() => retry).generation) contentLoaded = false;
+    retry = next;
   });
 </script>
 

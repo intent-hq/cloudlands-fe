@@ -78,6 +78,7 @@
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
   import { classifyFileReadError, fileReadErrorLabel } from './file-read-error';
+  import { getHomePanelContext } from '$features/workspace-home/home-panel-context';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
@@ -140,6 +141,12 @@
   );
 
   const fileContent = $derived($fileContentStore);
+  // Workspace homes: once the file loaded, the home gate never remounts this
+  // editor to retry, so its undo history and selection survive a disconnect.
+  const homePanel = getHomePanelContext();
+  $effect(() => {
+    if (fileContent !== null && fileContent !== undefined) homePanel?.markContentLoaded();
+  });
   const fileLoading = $derived($fileLoadingStore);
   const fileSaving = $derived($fileSavingStore);
   const fileError = $derived($fileErrorStore);

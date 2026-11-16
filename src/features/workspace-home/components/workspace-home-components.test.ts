@@ -229,6 +229,29 @@ describe('WorkspaceHomePanelGate', () => {
     expect(document.querySelector('[data-gated-child]')).toBe(child);
   });
 
+  it('keeps a panel that reported loaded content across a brief early disconnect', async () => {
+    store.init();
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-loaded', { home: HOME })));
+    render(Harness, { workspaceId: 'ws-loaded', reportsContent: true });
+    const child = await vi.waitFor(() => {
+      const el = document.querySelector('[data-gated-child]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const setHome = (home: WorkspaceHome) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-loaded', { home })]));
+
+    setHome({ ...HOME, state: 'detached', since: '2026-11-16T02:00:02Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
+    );
+    setHome({ ...HOME, state: 'attached', since: '2026-11-16T02:00:09Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-gated-child]')).toBe(child);
+  });
+
   it('retries a panel whose own read woke a paused cloud home', async () => {
     store.init();
     // A paused cloud home reports attached until a read wakes it.

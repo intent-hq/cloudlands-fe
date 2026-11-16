@@ -132,14 +132,22 @@ export const initialHomeRetry: HomeRetry = {
  * remounts once, to re-read, when its reads may have failed while the home
  * was unavailable: it opened while the home was starting, or the home went
  * away within `HOME_WAKE_WINDOW_MS` of the panel opening (its own read woke a
- * paused cloud home, which reports attached until then). Such a panel has
- * shown no content to edit. A panel that was usable longer is never
- * remounted, so a resume never drops unsaved work. Nothing is decided until
- * the workspace row is loaded; another workspace starts over.
+ * paused cloud home, which reports attached until then). A panel that
+ * reported loaded content (`contentLoaded`, an editor) is never remounted,
+ * nor is one that was usable longer: a remount must not drop undo history or
+ * unsaved work. Nothing is decided until the workspace row is loaded; another
+ * workspace starts over.
  */
 export function nextHomeRetry(
   prev: HomeRetry,
-  input: { workspaceId: string; loaded: boolean; unavailable: boolean; now: number },
+  input: {
+    workspaceId: string;
+    loaded: boolean;
+    unavailable: boolean;
+    /** The panel reported that its content loaded (see `HomePanelContext`). */
+    contentLoaded: boolean;
+    now: number;
+  },
 ): HomeRetry {
   if (!input.loaded) return prev;
   const base: HomeRetry =
@@ -153,7 +161,12 @@ export function nextHomeRetry(
     return freshlyMounted ? { ...base, usableSince: null, waited: true } : base;
   }
   if (base.waited) {
-    return { ...base, generation: base.generation + 1, usableSince: input.now, waited: false };
+    return {
+      ...base,
+      generation: input.contentLoaded ? base.generation : base.generation + 1,
+      usableSince: input.now,
+      waited: false,
+    };
   }
   return base.usableSince === null ? { ...base, usableSince: input.now } : base;
 }
