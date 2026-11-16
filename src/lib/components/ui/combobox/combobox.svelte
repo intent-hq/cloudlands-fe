@@ -86,7 +86,7 @@
     /** Accepted user activation, including reselecting the current single value. */
     oncommit?: (value: string | string[], option: ComboboxOption) => void;
     onopenchange?: (open: boolean) => void;
-    /** Clicks inside a popover or dialog that holds a static list are not outside clicks. */
+    /** Not called for clicks inside the popover or dialog that holds a static list. */
     oninteractoutside?: (event: PointerEvent) => void;
   }
 
