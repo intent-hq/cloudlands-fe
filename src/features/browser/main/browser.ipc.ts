@@ -46,6 +46,7 @@ import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import {
   adoptWorkspaceForBackgroundHosting,
+  hasWorkspaceShellFor,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
@@ -536,6 +537,36 @@ export async function executeBrowserActions(
 const RAIL_RENDERER_START_MS = 20_000;
 
 /**
+ * A machine in a window's machine rail that was never opened has no renderer
+ * to host its workspaces: start one, hidden, and wait until it reports its
+ * workspace shell. Half the request budget at most, so the actions keep the
+ * rest.
+ */
+async function startRailMachineShell(backendId: string, deadline?: number): Promise<void> {
+  const budget =
+    deadline === undefined
+      ? RAIL_RENDERER_START_MS
+      : Math.min(RAIL_RENDERER_START_MS, (deadline - Date.now()) / 2);
+  if (budget <= 0) return;
+  const startBy = Date.now() + budget;
+  if (!(await startRailMachineRenderer(backendId, startBy))) return;
+  if (hasWorkspaceShellFor(backendId)) return;
+  const events = app as NodeJS.EventEmitter;
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      events.removeListener('window-workspace-state-changed', check);
+      resolve();
+    };
+    const check = (): void => {
+      if (hasWorkspaceShellFor(backendId)) finish();
+    };
+    const timer = setTimeout(finish, Math.max(0, startBy - Date.now()));
+    events.on('window-workspace-state-changed', check);
+  });
+}
+
+/**
  * Actions that never touch a tab — tunnels, and capture bookkeeping main
  * answers from its own session state and the capture directory — so they
  * need no window hosting the workspace.
@@ -578,12 +609,7 @@ async function ensureBrowserWorkspaceHost(
     return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
   });
   if (!touchesTabs) return;
-  // Half the request budget at most, so the actions keep the rest.
-  const startBy =
-    deadline === undefined
-      ? Date.now() + RAIL_RENDERER_START_MS
-      : Date.now() + Math.min(RAIL_RENDERER_START_MS, (deadline - Date.now()) / 2);
-  await startRailMachineRenderer(backendId, startBy);
+  if (!hasWorkspaceShellFor(backendId)) await startRailMachineShell(backendId, deadline);
   const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
   if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
   // Log the hosting state per workspace only when it changes: agents retry

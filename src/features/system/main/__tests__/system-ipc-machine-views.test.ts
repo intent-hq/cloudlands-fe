@@ -110,6 +110,7 @@ import {
   getViewedWorkspaceIdForWindow,
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
+  hasWorkspaceShellFor,
   sendToWorkspaceWindows,
   setupSystemIPC,
 } from '../system.ipc';
@@ -268,5 +269,39 @@ describe('workspace hosting by machine views', () => {
     viewB.destroyed = true;
     expect(getWindowIdsForWorkspace('ws-b', 'b')).toEqual([]);
     expect(getAllOpenWorkspaceIds()).not.toContain('ws-b');
+  });
+
+  it('forgets a machine view’s entries when the view is destroyed', async () => {
+    const window = makeWindow('local');
+    const viewB = makeView(window, 'b');
+    await reportTabStrip(viewB, ['ws-b']);
+    expect(hasWorkspaceShellFor('b')).toBe(true);
+
+    viewB.emit('destroyed');
+    expect(getAllOpenWorkspaceIds()).not.toContain('ws-b');
+    expect(hasWorkspaceShellFor('b')).toBe(false);
+  });
+
+  it('drops what a machine view hosted in the background once it reloads', async () => {
+    const window = makeWindow('local');
+    const viewB = makeView(window, 'b');
+    await reportTabStrip(viewB, []);
+    fakes.getFocusedWindow.mockReturnValue(window);
+    adoptWorkspaceForBackgroundHosting('ws-b', 'b');
+    await reportBackgroundHosting(viewB, ['ws-b']);
+    expect(getWindowIdsForWorkspace('ws-b', 'b')).toEqual([window.id]);
+
+    viewB.emit('did-navigate');
+    expect(getWindowIdsForWorkspace('ws-b', 'b')).toEqual([]);
+  });
+
+  it('knows which machines run the workspace shell, on their own backend', async () => {
+    const window = makeWindow('local');
+    makeView(window, 'b');
+    await reportTabStrip(window.webContents, []);
+
+    expect(hasWorkspaceShellFor('local')).toBe(true);
+    // The view exists but has not reported its tab strip yet.
+    expect(hasWorkspaceShellFor('b')).toBe(false);
   });
 });

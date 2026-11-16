@@ -118,6 +118,8 @@ const transitions = new WeakMap<BrowserWindowType, Transition>();
 const readyViews = new WeakSet<Electron.WebContents>();
 /** Callers waiting for a renderer to report ready. */
 const readyWaiters = new WeakMap<Electron.WebContents, Array<() => void>>();
+/** When each machine view started loading. */
+const viewStartedAt = new WeakMap<Electron.WebContents, number>();
 
 function transitionOf(window: BrowserWindowType): Transition {
   let transition = transitions.get(window);
@@ -266,6 +268,7 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
   view.setVisible(false);
   forwardRendererConsoleToMainLog(window, view.webContents);
   views.set(id, view);
+  viewStartedAt.set(view.webContents, Date.now());
   window.contentView.addChildView(view);
   layoutViews(window);
   view.webContents
@@ -383,13 +386,17 @@ function settleReadyWaiters(contents: Electron.WebContents): void {
 function whenReady(contents: Electron.WebContents): Promise<void> {
   if (contents.isDestroyed() || readyViews.has(contents)) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, READY_TIMEOUT_MS);
-    const waiters = readyWaiters.get(contents) ?? [];
-    waiters.push(() => {
+    const settle = (): void => {
       clearTimeout(timer);
       resolve();
-    });
-    readyWaiters.set(contents, waiters);
+    };
+    const timer = setTimeout(() => {
+      const waiters = readyWaiters.get(contents);
+      const index = waiters?.indexOf(settle) ?? -1;
+      if (index >= 0) waiters?.splice(index, 1);
+      resolve();
+    }, READY_TIMEOUT_MS);
+    readyWaiters.set(contents, [...(readyWaiters.get(contents) ?? []), settle]);
   });
 }
 
@@ -402,21 +409,20 @@ function railsListing(id: string): BrowserWindowType[] {
 
 /**
  * Start `id`'s renderer, hidden, in a window whose rail lists it (the focused
- * one first) when no window renders it yet, then wait until it is ready or
- * `deadline` passes.
+ * one first) unless one runs already, then wait until it is ready or
+ * `deadline` passes. A renderer still not ready after its startup budget is
+ * not waited for again. Settles with whether a rail lists the machine.
  */
-async function startRendererFor(id: string, deadline: number): Promise<void> {
-  if (
-    getAppWindows().some((window) => !window.isDestroyed() && getBackendIdForWindow(window) === id)
-  )
-    return;
+async function startRendererFor(id: string, deadline: number): Promise<boolean> {
   const rails = railsListing(id);
-  if (rails.length === 0) return;
+  if (rails.length === 0) return false;
   const running = rails
     .map((window) => viewsOf(window).get(id))
     .find((view) => view && !view.webContents.isDestroyed());
   const host = rails.find((window) => window.isFocused()) ?? rails[0];
   const contents = (running ?? ensureView(host, id)).webContents;
+  const started = viewStartedAt.get(contents) ?? 0;
+  if (readyViews.has(contents) || Date.now() - started >= READY_TIMEOUT_MS) return true;
   let timer: NodeJS.Timeout | undefined;
   await Promise.race([
     whenReady(contents),
@@ -424,6 +430,7 @@ async function startRendererFor(id: string, deadline: number): Promise<void> {
       timer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
     }),
   ]).finally(() => clearTimeout(timer));
+  return true;
 }
 
 /** Pick `id` in a window whose rail lists it (the focused one first). */
@@ -433,7 +440,7 @@ function showRailMachineFor(id: string): ShownRailMachine | null {
   if (!window) return null;
   selectMachine(window, id);
   const contents = ensureView(window, id).webContents;
-  return { window, contents, ready: whenReady(contents) };
+  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
 }
 
 /** Longest the background start waits for a machine that is still connecting. */

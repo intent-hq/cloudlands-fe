@@ -54,15 +54,18 @@ export async function openDesktopControllingAgent(identity: {
     target.webContents.send('navigate', route);
     return;
   }
-  // No window of its own: a window that keeps the machine in its rail shows it.
+  // No window of its own: a window that keeps the machine in its rail shows
+  // it. A renderer that did not start in time could drop the route, so the
+  // agent then opens in a window of its own.
   const rail = showRailMachine(identity.backendId);
   if (rail) {
     if (rail.window.isMinimized()) rail.window.restore();
     rail.window.show();
     rail.window.focus();
-    await rail.ready;
-    if (!rail.contents.isDestroyed()) rail.contents.send('navigate', route);
-    return;
+    if ((await rail.ready) && !rail.contents.isDestroyed()) {
+      rail.contents.send('navigate', route);
+      return;
+    }
   }
   const { createWindowForSession } = await import('../../../main/window');
   await createWindowForSession(

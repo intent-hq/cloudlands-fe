@@ -73,7 +73,7 @@ export function setMachineRailRestoreHandler(handler: RestoreHandler | null): vo
   restoreHandler = handler;
 }
 
-type RendererStarter = (backendId: string, deadline: number) => Promise<void>;
+type RendererStarter = (backendId: string, deadline: number) => Promise<boolean>;
 let rendererStarter: RendererStarter | null = null;
 
 export function setMachineRailRendererStarter(starter: RendererStarter | null): void {
@@ -84,18 +84,22 @@ export function setMachineRailRendererStarter(starter: RendererStarter | null): 
  * Make sure a machine some rail lists has a renderer, starting it hidden if
  * none runs yet, so work main routes to that machine's renderer (agent
  * browser ops) reaches it without the user opening the machine. Settles once
- * the renderer is ready, or at `deadline` (epoch ms).
+ * the renderer is ready, or at `deadline` (epoch ms), with whether a rail
+ * lists the machine.
  */
-export async function startRailMachineRenderer(backendId: string, deadline: number): Promise<void> {
-  if (!enabled || !rendererStarter) return;
-  await rendererStarter(backendId, deadline);
+export async function startRailMachineRenderer(
+  backendId: string,
+  deadline: number,
+): Promise<boolean> {
+  if (!enabled || !rendererStarter) return false;
+  return rendererStarter(backendId, deadline);
 }
 
-/** A machine a rail now shows, and when its renderer is ready to take a route. */
+/** A machine a rail now shows; `ready` settles with whether its renderer started in time. */
 export interface ShownRailMachine {
   window: BrowserWindowType;
   contents: Electron.WebContents;
-  ready: Promise<void>;
+  ready: Promise<boolean>;
 }
 
 type MachineShower = (backendId: string) => ShownRailMachine | null;

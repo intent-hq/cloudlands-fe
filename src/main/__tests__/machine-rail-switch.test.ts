@@ -533,6 +533,28 @@ describe('machine rail switching', () => {
     expect(settled).toBe(true);
   });
 
+  it('does not wait again for a renderer that never finished starting', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
+
+    let settled = false;
+    void startRailMachineRenderer('c', Date.now() + 5_000).then((listed) => {
+      settled = listed;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    expect(fakes.views).toHaveLength(1);
+  });
+
+  it('reports a rail machine that does not start in time as not ready', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    const shown = showRailMachine('c');
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
+    expect(await shown?.ready).toBe(false);
+  });
+
   it('picks a rail machine on request, starting it, and settles once it is ready', async () => {
     expect(showRailMachine('c')).toBeNull();
     await invoke(RAIL.ADD, home(), { id: 'b' });
@@ -544,7 +566,7 @@ describe('machine rail switching', () => {
     expect(await state()).toMatchObject({ selectedId: 'local', pendingId: 'b' });
 
     await invoke(RAIL.READY, viewOf('b').webContents);
-    await shown?.ready;
+    expect(await shown?.ready).toBe(true);
     expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
     expect(fakes.views).toHaveLength(1);
   });

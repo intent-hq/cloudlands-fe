@@ -464,6 +464,17 @@ export function getRendererKeysForWorkspace(workspaceId: string, scope: WindowHo
   );
 }
 
+/**
+ * Whether a renderer connected to `backendId` runs the workspace shell (it
+ * reported its tab strip), so it can host that backend's workspaces.
+ */
+export function hasWorkspaceShellFor(backendId: string): boolean {
+  for (const [key, entry] of windowOpenWorkspaceTabs) {
+    if (entryMatchesScope(key, entry.backendId, backendId, liveWindowHostChecker)) return true;
+  }
+  return false;
+}
+
 /** The backend a tracked renderer is connected to, or null once it is gone. */
 export function getBackendIdForRendererKey(key: number): string | null {
   return liveWindowHostChecker.backendIdOf(key);

@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
       _backendId: string,
     ): { windowId: number | undefined; adopted: boolean } => ({ windowId: 1, adopted: false }),
   ),
+  hasWorkspaceShellFor: vi.fn((_backendId: string) => true),
+  startRailMachineRenderer: vi.fn(async (_backendId: string, _deadline: number) => false),
+  appListeners: new Map<string, Array<() => void>>(),
   connection: {},
   backendClient: {
     getConfig: vi.fn(() => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' })),
@@ -19,14 +22,28 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('electron', () => ({
-  app: { on: vi.fn() },
-  ipcMain: { handle: vi.fn() },
-}));
+vi.mock('electron', () => {
+  const listen = (event: string, listener: () => void) =>
+    mocks.appListeners.set(event, [...(mocks.appListeners.get(event) ?? []), listener]);
+  const forget = (event: string, listener: () => void) =>
+    mocks.appListeners.set(
+      event,
+      (mocks.appListeners.get(event) ?? []).filter((candidate) => candidate !== listener),
+    );
+  return {
+    app: { on: vi.fn(listen), removeListener: vi.fn(forget) },
+    ipcMain: { handle: vi.fn() },
+  };
+});
 
 vi.mock('../../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
   adoptWorkspaceForBackgroundHosting: mocks.adoptWorkspaceForBackgroundHosting,
+  hasWorkspaceShellFor: mocks.hasWorkspaceShellFor,
+}));
+
+vi.mock('../../../../main/machine-rail-state', () => ({
+  startRailMachineRenderer: mocks.startRailMachineRenderer,
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -114,6 +131,8 @@ describe('browser:exec IPC workspace routing', () => {
     mocks.adoptWorkspaceForBackgroundHosting
       .mockReset()
       .mockReturnValue({ windowId: 1, adopted: false });
+    mocks.hasWorkspaceShellFor.mockReset().mockReturnValue(true);
+    mocks.startRailMachineRenderer.mockReset().mockResolvedValue(false);
     vi.mocked(embeddedBrowserCdp.noteWorkspaceAdopted).mockReset();
     vi.spyOn(Date, 'now').mockReturnValue(123);
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
@@ -259,6 +278,56 @@ describe('browser:exec IPC workspace routing', () => {
     await handler({}, { actions, workspaceId: 'ws-closed' });
 
     expect(mocks.adoptWorkspaceForBackgroundHosting).not.toHaveBeenCalled();
+  });
+
+  // Machine rail: a machine the user never opened has no renderer to host
+  // the workspace until one is started for it.
+  describe('with a rail machine that has no renderer yet', () => {
+    const openTab = { actions: [{ action: 'openTab', url: 'https://example.test' }] };
+
+    it('starts its renderer and waits for its workspace shell before hosting', async () => {
+      let shell = false;
+      mocks.hasWorkspaceShellFor.mockImplementation(() => shell);
+      mocks.startRailMachineRenderer.mockResolvedValue(true);
+      const handler = registerAndGetExecHandler();
+
+      const done = handler({}, { ...openTab, workspaceId: 'ws-b' });
+      await vi.waitFor(() => expect(mocks.startRailMachineRenderer).toHaveBeenCalled());
+      expect(mocks.startRailMachineRenderer.mock.calls[0][0]).toBe('local');
+      // Ready, but its tab strip report has not arrived: nothing is hosted yet.
+      await Promise.resolve();
+      expect(mocks.adoptWorkspaceForBackgroundHosting).not.toHaveBeenCalled();
+
+      shell = true;
+      for (const listener of mocks.appListeners.get('window-workspace-state-changed') ?? []) {
+        listener();
+      }
+      await done;
+      expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledExactlyOnceWith(
+        'ws-b',
+        'local',
+      );
+      expect(mocks.appListeners.get('window-workspace-state-changed') ?? []).toEqual([]);
+    });
+
+    it('hosts at once when no rail lists the machine', async () => {
+      mocks.hasWorkspaceShellFor.mockReturnValue(false);
+      const handler = registerAndGetExecHandler();
+
+      await handler({}, { ...openTab, workspaceId: 'ws-b' });
+
+      expect(mocks.startRailMachineRenderer).toHaveBeenCalledOnce();
+      expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledOnce();
+    });
+
+    it('starts nothing when a renderer on the machine already runs the workspace shell', async () => {
+      const handler = registerAndGetExecHandler();
+
+      await handler({}, { ...openTab, workspaceId: 'ws-b' });
+      await handler({}, { actions: [{ action: 'listTunnels' }], workspaceId: 'ws-b' });
+
+      expect(mocks.startRailMachineRenderer).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the not-open error when no window on the backend can host the workspace', async () => {

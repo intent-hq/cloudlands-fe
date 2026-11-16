@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 /** A window that keeps the owning machine in its rail, as a hidden machine renderer. */
-function railMachine(ready: Promise<void> = Promise.resolve()) {
+function railMachine(ready: Promise<boolean> = Promise.resolve(true)) {
   const rail = window('local', '/workspace/home');
   const contents = { isDestroyed: () => false, send: vi.fn() };
   mocks.windows.push(rail);
@@ -134,14 +134,14 @@ it('never opens a window to refocus when the owning backend has none', () => {
 });
 
 it('switches a rail to the owning machine and navigates it once ready, instead of opening a window', async () => {
-  let markReady: () => void = () => {};
-  const { rail, contents } = railMachine(new Promise<void>((resolve) => (markReady = resolve)));
+  let markReady: (started: boolean) => void = () => {};
+  const { rail, contents } = railMachine(new Promise<boolean>((resolve) => (markReady = resolve)));
   const opened = openDesktopControllingAgent(identity);
   await Promise.resolve();
   expect(mocks.showRailMachine).toHaveBeenCalledWith('remote-a');
   expect(rail.focus).toHaveBeenCalledOnce();
   expect(contents.send).not.toHaveBeenCalled();
-  markReady();
+  markReady(true);
   await opened;
   expect(contents.send).toHaveBeenCalledWith(
     'navigate',
@@ -166,4 +166,16 @@ it('refocuses by switching a rail to the owning machine, without navigating', ()
   expect(mocks.focus).toHaveBeenCalledWith({ steal: true });
   expect(rail.focus).toHaveBeenCalledOnce();
   expect(contents.send).not.toHaveBeenCalled();
+});
+it('opens a window of its own when the rail machine does not start in time', async () => {
+  const { contents } = railMachine(Promise.resolve(false));
+  await openDesktopControllingAgent(identity);
+  expect(contents.send).not.toHaveBeenCalled();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      route: '/desktop-control-agent?workspaceId=space%2F%23a&agentId=agent%26a',
+    }),
+    false,
+    'remote-a',
+  );
 });
