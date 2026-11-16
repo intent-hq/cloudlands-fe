@@ -51,6 +51,7 @@ import { getAppWindows } from './offscreen-window';
 import {
   addMachineToFrame,
   getMachineRailSession,
+  isFrameEmptied,
   isMachineRailEnabled,
   openFrameMachines,
   selectFrameMachine,
@@ -543,7 +544,10 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
     const survivors = getAppWindows().filter(
       (window) => window !== closing && !window.isDestroyed(),
     );
-    if (!closing || isQuitTeardownInProgress || survivors.length === 0) {
+    // A frame whose last machine the user removed is dropped even when it is
+    // the last window, so the next launch does not bring the machine back.
+    const emptied = closing !== null && isFrameEmptied(closing);
+    if (!closing || isQuitTeardownInProgress || (survivors.length === 0 && !emptied)) {
       const live = liveFrames();
       if (live.length > 0 && !(isQuitTeardownInProgress && lastKnownFrames)) {
         lastKnownFrames = live;

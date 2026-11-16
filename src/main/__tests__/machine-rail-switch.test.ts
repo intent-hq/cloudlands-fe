@@ -478,6 +478,15 @@ describe('a frame open on the local machine', () => {
     expect(fakes.window.close).toHaveBeenCalledOnce();
   });
 
+  it('empties the frame before closing it, so the closing save does not keep the removed machine', async () => {
+    let railAtClose: unknown = 'not closed';
+    fakes.window.close.mockImplementation(() => {
+      railAtClose = getMachineRailSession(fakes.window as never);
+    });
+    await invoke(RAIL.REMOVE, local(), { id: 'local' });
+    expect(railAtClose).toBeUndefined();
+  });
+
   it('releases a remote machine no window holds once it leaves the frame, never the local one', async () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     await invoke(RAIL.REMOVE, local(), { id: 'b' });

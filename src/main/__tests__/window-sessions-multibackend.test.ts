@@ -179,6 +179,7 @@ import {
   setShownMachineView,
 } from '../window-backend';
 import {
+  emptyFrameForClose,
   readWindowRail,
   setFrameMachineCommands,
   setFrameOpener,
@@ -504,6 +505,21 @@ describe('multi-backend window sessions', () => {
       await saveAllWindowSessions();
 
       expect(readFrames()).toEqual([single('remote-1', '/work/last', last.bounds)]);
+    });
+
+    it('does not reopen the last frame when the user removed its last machine', async () => {
+      const last = seedLiveWindow('app://workspaces/work/removed', undefined, 'remote-1');
+      await saveAllWindowSessions();
+      expect(readFrames()).toHaveLength(1);
+
+      // The rail owner empties the frame before it closes the window.
+      emptyFrameForClose(last as never);
+      captureWindowSessionsSnapshot.call(last as never);
+      last.destroy();
+      expect(readFrames()).toEqual([]);
+
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([]);
     });
 
     it('excludes diagnostic windows from persistence and ignores stale saved console routes', async () => {

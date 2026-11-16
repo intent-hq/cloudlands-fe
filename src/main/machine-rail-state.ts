@@ -63,6 +63,23 @@ export function clearWindowRail(window: BrowserWindowType): void {
   pendingSelections.delete(window);
 }
 
+const emptiedFrames = new WeakSet<BrowserWindowType>();
+
+/**
+ * The user removed the frame's last machine and it is about to close: empty
+ * its rail so no save keeps the removed machine, and mark it so the closing
+ * save drops the frame even when it is the last window.
+ */
+export function emptyFrameForClose(window: BrowserWindowType): void {
+  clearWindowRail(window);
+  emptiedFrames.add(window);
+}
+
+/** Whether `window` is closing because its last machine was removed. */
+export function isFrameEmptied(window: BrowserWindowType): boolean {
+  return emptiedFrames.has(window);
+}
+
 /** Record the machine the window waits to show (`''` when none). */
 export function setPendingSelection(window: BrowserWindowType, id: string): void {
   if (id) pendingSelections.set(window, id);

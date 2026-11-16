@@ -43,6 +43,7 @@ import { createValidatedHandler } from './ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from './local-prefs';
 import {
   clearWindowRail,
+  emptyFrameForClose,
   FRAME_LAYOUT_CHANGED_EVENT,
   isMachineRailEnabled,
   MACHINE_RAIL_SHOWN_CHANGED_EVENT,
@@ -283,12 +284,13 @@ function observeWindow(window: BrowserWindowType): void {
   });
   // The machines go with the frame; a machine no other window uses is released.
   window.once('closed', () => {
-    const rail = readWindowRail(window);
+    // A frame emptied by removing its last machine still has that view.
+    const held = new Set([...readWindowRail(window).machineIds, ...viewsOf(window).keys()]);
     clearTransition(window);
     for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
     clearWindowRail(window);
     restoredRoutes.delete(window);
-    for (const id of rail.machineIds) releaseMachine(id);
+    for (const id of held) releaseMachine(id);
   });
 }
 
@@ -688,6 +690,10 @@ function removeMachine(window: BrowserWindowType, id: string): MachineRailState 
   if (transitionOf(window).pendingId === id) clearPending(window);
   if (next.machineIds.length === 0) {
     const state = stateOf(window);
+    // Empty the frame first: the close listener saves the layout, and the
+    // removed machine must not come back on the next launch.
+    clearTransition(window);
+    emptyFrameForClose(window);
     window.close();
     return { ...state, machineIds: [], selectedId: '', shownId: '', pendingId: '' };
   }
