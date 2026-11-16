@@ -20,7 +20,6 @@
     // The frame page's preload exposes only this bridge (preload/frame.ts).
     const bridge = (window as Window & { frameBridge?: FrameBridge }).frameBridge;
     if (!bridge) return;
-    /* eslint-disable intent/no-component-async-data-fetch -- the frame page runs without the app store by design; main owns the backdrop and pushes each change. */
     const unsubscribe = bridge.onBackdrop((next) => {
       pushed = true;
       backdrop = next;
@@ -32,7 +31,6 @@
       })
       .catch(() => {});
     return unsubscribe;
-    /* eslint-enable intent/no-component-async-data-fetch */
   });
 </script>
 
