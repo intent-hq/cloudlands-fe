@@ -2164,7 +2164,7 @@
       role="dialog"
       aria-label={formRowLabel ?? m.workspace_repoSelector_whichRepo_label()}
       class={rowLabel
-        ? `${formStep === 'add' && activeTab === 'sessions' ? 'w-110' : 'w-[360px]'} max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
+        ? `${formStep === 'add' ? 'w-110' : 'w-[360px]'} max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
       side={rowLabel ? (isMobile.current || formMenuBelow ? 'bottom' : 'left') : undefined}
       sideOffset={rowLabel ? (isMobile.current || formMenuBelow ? 4 : 24) : undefined}
@@ -2295,7 +2295,7 @@
             {#if cloneTabVisible}
               <Tabs.Trigger
                 value="repository"
-                class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
+                class="flex-auto min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
                   ? 'bg-background font-medium text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'}"
               >
@@ -2305,7 +2305,7 @@
             {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...(sessionsTabVisible ? [{ id: 'sessions' as TabId, label: m.sessionImport_tab_label() }] : []), ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
               <Tabs.Trigger
                 value={tab.id}
-                class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
+                class="flex-auto min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
                 tab.id
                   ? 'bg-background font-medium text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'}"
