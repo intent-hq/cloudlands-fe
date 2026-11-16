@@ -6,6 +6,7 @@
     openWorkspaceIds: string[];
     activeWorkspaceId: string;
     tabGroups: WorkspaceTabGroup[];
+    widthPx?: number;
   }
 
   // i18n-ignore (preview fixture titles)
@@ -52,11 +53,50 @@
     workspaceIds: string[],
   ): WorkspaceTabGroup => ({ id, name, color, workspaceIds });
 
+  // i18n-ignore (preview group names)
+  const palette: Array<{ color: WorkspaceTabGroup['color']; name: string }> = [
+    { color: 'blue', name: 'Blue' },
+    { color: 'lightBlue', name: 'Light blue' },
+    { color: 'turquoise', name: 'Turquoise' },
+    { color: 'green', name: 'Green' },
+    { color: 'lightGreen', name: 'Light green' },
+    { color: 'yellow', name: 'Yellow' },
+    { color: 'purple', name: 'Purple' },
+    { color: 'pink', name: 'Pink' },
+    { color: 'beige', name: 'Beige' },
+    { color: 'orange', name: 'Orange' },
+    { color: 'red', name: 'Red' },
+    { color: 'grey', name: 'Grey' },
+  ];
+
   export const preview = definePreview<WorkspaceTabGroupsPreviewProps>({
     id: 'workspace-tab-groups',
     title: 'Workspace tab groups',
     defaultState: 'open-group',
     states: {
+      ...Object.fromEntries(
+        palette.map(({ color, name }) => [
+          `palette-${color}`,
+          {
+            props: {
+              openWorkspaceIds: ['tg-site', 'tg-app', 'tg-api', 'tg-docs', 'tg-trace'],
+              activeWorkspaceId: 'tg-app',
+              tabGroups: [group('intent', name, color, ['tg-app', 'tg-api', 'tg-docs'])],
+              widthPx: 800,
+            },
+          },
+        ]),
+      ),
+      'palette-collapsed': {
+        props: {
+          widthPx: 1480,
+          openWorkspaceIds: ['tg-site', ...palette.map(({ color }) => `palette-${color}`)],
+          activeWorkspaceId: 'tg-site',
+          tabGroups: palette.map(({ color, name }) =>
+            group(`palette-${color}`, name, color, [`palette-${color}`]),
+          ),
+        },
+      },
       'open-group': {
         props: {
           openWorkspaceIds: ['tg-site', 'tg-app', 'tg-api', 'tg-docs', 'tg-trace'],
@@ -143,13 +183,22 @@
 
   store.dispatch(setLabsTabGroupsEnabled(true));
 
-  let { openWorkspaceIds, activeWorkspaceId, tabGroups }: WorkspaceTabGroupsPreviewProps = $props();
+  let {
+    openWorkspaceIds,
+    activeWorkspaceId,
+    tabGroups,
+    widthPx = 1200,
+  }: WorkspaceTabGroupsPreviewProps = $props();
 </script>
 
 <WorkspaceTabStripGeometryPreview
-  extraWorkspaces={[...workspaces, ...projectWorkspaces]}
+  extraWorkspaces={[
+    ...workspaces,
+    ...projectWorkspaces,
+    ...palette.map(({ color, name }) => ({ id: `palette-${color}`, title: name })),
+  ]}
   initialOpenWorkspaceIds={openWorkspaceIds}
   {activeWorkspaceId}
   {tabGroups}
-  widthPx={1200}
+  {widthPx}
 />

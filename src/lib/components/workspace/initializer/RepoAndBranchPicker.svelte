@@ -187,7 +187,7 @@
       : 'px-1 font-medium text-sm bg-transparent h-auto min-h-(--control-height-compact) py-0.5 rounded-(--radius-medium) overflow-hidden', // i18n-ignore (Tailwind class list)
   );
   const metadataChevronClass = workspacePickerStyles.metadataChevron;
-  const metadataValueClass = 'text-foreground font-normal';
+  const metadataValueClass = 'text-foreground font-medium';
   // Match the branch trigger's explicit color (BranchSelector sets text-muted-foreground)
   // so the repo name renders with the same brightness as the branch name.
   const defaultValueClass = 'text-muted-foreground';

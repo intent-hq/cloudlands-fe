@@ -66,6 +66,7 @@ export const menuMetadata = {
   owner: '007-B5',
   useWhen: [
     'Presenting commands with shared keyboard, focus, and dismissal behavior.',
+    'Use RadioItem swatch with semantic HSL channels and an aria-label for compact color choices.',
     'Use CheckboxItem indicator="switch" with an icon for independent on/off settings, Label alignIconColumn={false} for section captions, and Footer for quiet menu metadata.',
     'Keeping an unavailable command visible with CommandItem disabledReason; the localized reason disables activation and is linked with aria-describedby.',
   ],

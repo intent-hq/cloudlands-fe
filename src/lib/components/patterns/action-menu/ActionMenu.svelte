@@ -95,6 +95,52 @@
     onAction?.(action.id, event);
   }
 
+  function moveSwatchFocus(event: KeyboardEvent) {
+    const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    if (!horizontal && !vertical) return;
+    const group = event.currentTarget as HTMLElement;
+    const items = Array.from(
+      group.querySelectorAll<HTMLElement>('[role="menuitemradio"]:not([data-disabled])'),
+    ).filter((item) => item.getAttribute('aria-disabled') !== 'true');
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (index < 0 || items.length === 0) return;
+    const current = items[index];
+    const row = items.filter((item) => item.offsetTop === current.offsetTop);
+    let target: HTMLElement | undefined;
+    if (horizontal) {
+      const direction = getComputedStyle(group).direction === 'rtl' ? -1 : 1;
+      const step = (event.key === 'ArrowRight' ? 1 : -1) * direction;
+      target = row[(row.indexOf(current) + step + row.length) % row.length];
+    } else {
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      const rows = items
+        .filter((item) => (item.offsetTop - current.offsetTop) * direction > 0)
+        .sort((a, b) =>
+          a.offsetTop === b.offsetTop
+            ? Math.abs(a.offsetLeft - current.offsetLeft) -
+              Math.abs(b.offsetLeft - current.offsetLeft)
+            : (a.offsetTop - b.offsetTop) * direction,
+        );
+      target = rows[0];
+      if (!target) {
+        const menuItems = Array.from(
+          group.closest('[role="menu"]')?.querySelectorAll<HTMLElement>('[data-menu-item]') ?? [],
+        ).filter(
+          (item) =>
+            !item.hasAttribute('data-disabled') && item.getAttribute('aria-disabled') !== 'true',
+        );
+        const edge = direction < 0 ? items[0] : items.at(-1)!;
+        target =
+          menuItems[(menuItems.indexOf(edge) + direction + menuItems.length) % menuItems.length];
+      }
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
   function close() {
     open = false;
     onOpenChange?.(false);
@@ -204,8 +250,15 @@
       {@render actionItems(action.children, disabled)}
     </Menu.Group>
   {:else if action.kind === 'radio-group'}
-    <Menu.RadioGroup value={action.value} aria-label={action.label}>
-      {@render groupLabel(action)}
+    <Menu.RadioGroup
+      value={action.value}
+      aria-label={action.label}
+      class={action.presentation === 'swatches'
+        ? 'mx-auto grid w-fit grid-cols-6 gap-0 px-1 py-0.5'
+        : undefined}
+      onkeydown={action.presentation === 'swatches' ? moveSwatchFocus : undefined}
+    >
+      {#if action.presentation !== 'swatches'}{@render groupLabel(action)}{/if}
       {@render actionItems(action.children, disabled)}
     </Menu.RadioGroup>
   {:else if action.children?.length}
@@ -229,6 +282,8 @@
   {:else if action.kind === 'radio'}
     <Menu.RadioItem
       value={action.value}
+      swatch={action.swatch}
+      aria-label={action.swatch ? action.label : undefined}
       leading={action.icon ? leading : undefined}
       {disabled}
       aria-describedby={descriptionId}

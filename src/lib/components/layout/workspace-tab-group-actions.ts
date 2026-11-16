@@ -2,7 +2,6 @@ import {
   faFolderPlus,
   faFolderTree,
   faLayerGroup,
-  faPalette,
   faPen,
   faRightFromBracket,
   faXmark,
@@ -10,15 +9,30 @@ import {
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { m } from '$shared/paraglide/messages.js';
 import {
-  WORKSPACE_TAB_GROUP_COLORS,
   findWorkspaceTabGroup,
   type WorkspaceTabGroup,
   type WorkspaceTabGroupColor,
 } from '$store/renderer/slices/tab-state/tab-groups';
 import {
   workspaceTabGroupColorLabel,
+  workspaceTabGroupColorValue,
   workspaceTabGroupDisplayName,
 } from './workspace-tab-group-labels';
+
+const PICKER_COLORS = [
+  'blue',
+  'lightBlue',
+  'turquoise',
+  'green',
+  'lightGreen',
+  'yellow',
+  'purple',
+  'pink',
+  'beige',
+  'orange',
+  'red',
+  'grey',
+] as const satisfies readonly WorkspaceTabGroupColor[];
 
 /** Group by project; without `run` the entry shows disabled because nothing would change. */
 export interface WorkspaceTabGroupByProject {
@@ -115,12 +129,13 @@ export function buildWorkspaceTabGroupMenu({
     {
       id: 'tab-group-color',
       label: m.layout_workspaceTabGroup_color_label(),
-      icon: faPalette,
       onClick: () => {},
       selection: 'single',
-      submenu: WORKSPACE_TAB_GROUP_COLORS.map((color) => ({
+      presentation: 'swatches',
+      submenu: PICKER_COLORS.map((color) => ({
         id: `tab-group-color-${color}`,
         label: workspaceTabGroupColorLabel(color),
+        swatch: workspaceTabGroupColorValue(color),
         checked: group.color === color,
         closeOnSelect: true,
         onClick: () => onSetColor(color),

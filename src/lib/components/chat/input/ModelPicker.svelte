@@ -3185,7 +3185,7 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate font-normal',
+                'block truncate font-medium',
                 !rowLabel && 'text-sm',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}

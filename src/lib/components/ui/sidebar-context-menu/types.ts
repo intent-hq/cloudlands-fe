@@ -15,6 +15,10 @@ export interface SidebarMenuItem {
   indicator?: 'check' | 'switch';
   /** Declare a submenu's children as one exclusive set of radio choices. */
   selection?: 'single';
+  /** Render exclusive color choices inline instead of in a flyout. */
+  presentation?: 'swatches';
+  /** Semantic HSL channels for a color choice. */
+  swatch?: string;
   /** Commands close by default; checked choices remain open unless explicitly requested. */
   closeOnSelect?: boolean;
   /** Child items rendered in a flyout submenu; `onClick` is ignored when set. */

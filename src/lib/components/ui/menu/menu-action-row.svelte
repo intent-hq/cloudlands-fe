@@ -32,7 +32,7 @@
   data-selected={selected ? '' : undefined}
   class={cn(
     menuItem(),
-    'items-start whitespace-normal text-foreground hover:bg-hover active:bg-active focus-visible:bg-hover focus-visible:outline-solid focus-visible:-outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
+    'items-start whitespace-normal font-medium text-foreground hover:bg-hover active:bg-active focus-visible:bg-hover focus-visible:outline-solid focus-visible:-outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
     selected && 'bg-selected hover:bg-selected focus-visible:bg-selected',
     className,
   )}

@@ -91,7 +91,7 @@
           disabled={!!lockedReason}
           aria-labelledby="{labelId} {valueId}"
           class={presentation === 'footer'
-            ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
+            ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-medium'
             : presentation === 'metadata'
               ? `${workspacePickerStyles.bareTrigger} w-full`
               : workspacePickerStyles.fieldTrigger}

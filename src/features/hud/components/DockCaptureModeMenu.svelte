@@ -89,7 +89,7 @@
     <Menu.Group>
       {#if heading || label}
         <Menu.Label
-          class="min-h-0 font-normal text-left text-foreground [&>[data-slot=menu-item-leading]]:hidden"
+          class="min-h-0 font-medium text-left text-foreground [&>[data-slot=menu-item-leading]]:hidden"
         >
           <span class="capture-menu-heading">
             <span>{heading ?? label}</span>

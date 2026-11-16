@@ -584,7 +584,7 @@
   {#snippet contentBody()}
     {#if header || headerAction}
       <div class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        {#if header}<span class="type-caption min-w-0 truncate font-normal text-muted-foreground"
+        {#if header}<span class="type-caption min-w-0 truncate font-medium text-muted-foreground"
             >{header}</span
           >{/if}
         {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
@@ -654,7 +654,7 @@
                       </ComboboxPrimitive.GroupHeading>
                       {@render groupHeader(group)}
                     {:else}
-                      <div class="type-caption px-2.5 py-1.5 font-normal text-muted-foreground">
+                      <div class="type-caption px-2.5 py-1.5 font-medium text-muted-foreground">
                         <ComboboxPrimitive.GroupHeading class="inline">
                           <span>{group.label}</span>
                           {#if groupDescription}{@render groupDescription(group)}{/if}

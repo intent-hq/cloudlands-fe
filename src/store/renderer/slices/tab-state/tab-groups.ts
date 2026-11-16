@@ -1,10 +1,16 @@
-export const WORKSPACE_TAB_GROUP_COLORS = [
+const WORKSPACE_TAB_GROUP_COLORS = [
   'blue',
   'green',
   'purple',
   'orange',
   'pink',
   'grey',
+  'lightGreen',
+  'turquoise',
+  'lightBlue',
+  'red',
+  'yellow',
+  'beige',
 ] as const;
 
 export type WorkspaceTabGroupColor = (typeof WORKSPACE_TAB_GROUP_COLORS)[number];

@@ -601,7 +601,7 @@
                   for={`${pickerId}-panel-${panel.id}`}
                   class={cn(
                     OPTION_LIST_ROW_CLASS,
-                    'flex h-auto w-full items-center justify-start gap-2 transition-colors',
+                    'flex h-auto w-full items-center justify-start gap-2 font-medium transition-colors',
                     isCurrentAgent
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-muted/40 cursor-pointer',
@@ -635,7 +635,7 @@
                   for={`${pickerId}-selection-${selection.id}`}
                   class={cn(
                     OPTION_LIST_ROW_CLASS,
-                    'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors',
+                    'flex h-auto w-full items-center justify-start gap-2 font-medium hover:bg-hover cursor-pointer transition-colors',
                   )}
                 >
                   <Checkbox
