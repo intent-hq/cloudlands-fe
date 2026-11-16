@@ -17,6 +17,8 @@ function backupTime(view: Pick<WorkspaceHomeView, 'lastBackupAt'>): string {
 export function homeUnavailableText(view: WorkspaceHomeView): string {
   if (view.starting) return m.workspaceHome_starting_label();
   if (view.state === 'moving') return m.workspaceHome_banner_moving();
+  // A state this app does not know: say it is unavailable, without backup times.
+  if (view.unknownState) return m.workspaceHome_banner_detachedNoBackup({ name: view.name });
   const time = backupTime(view);
   return time
     ? m.workspaceHome_banner_detached({ name: view.name, time })

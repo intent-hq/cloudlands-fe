@@ -25,7 +25,7 @@ vi.mock('$lib/components/terminal/Terminal.svelte', async () => ({
   default: (await import('./mocks/MockTerminal.svelte')).default,
 }));
 vi.mock('$lib/components/terminal/ScriptOutputViewer.svelte', async () => ({
-  default: (await import('./mocks/MockTerminal.svelte')).default,
+  default: (await import('./mocks/MockScriptOutputViewer.svelte')).default,
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -40,7 +40,12 @@ import {
 } from '$store/renderer/slices/scripts/scripts-slice';
 import { confirm } from '$lib/components/patterns/confirm';
 import { store } from '$store/renderer/store';
+import { addItem, createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import TerminalTabTypeHeaderHarness from './mocks/TerminalTabTypeHeaderHarness.svelte';
+
+// The panel reads the workspace's home (for Run while it starts): no homes by default.
+const emptyWorkspaces = () => ({ workspaces: createCollection('id') });
+(mockState as Record<string, unknown>).workspace = emptyWorkspaces();
 
 const action = (container: HTMLElement) =>
   container.querySelector<HTMLElement>('[data-move-to-bottom-bar]');
@@ -288,4 +293,46 @@ describe('script panel deletion', () => {
       expect(dispatch).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('script panel while the workspace home starts', () => {
+  afterEach(() => {
+    cleanup();
+    (mockState as Record<string, unknown>).workspace = emptyWorkspaces();
+  });
+
+  it('keeps the script output but disables Run until the home is attached', async () => {
+    mockState.scripts.byWorkspaceId = {
+      'workspace-1': {
+        scripts: {
+          check: {
+            id: 'check',
+            name: 'Check',
+            createdAt: '2026-10-09',
+            runtime: { status: 'idle' },
+          },
+        },
+        operations: {},
+      },
+    };
+    (mockState as Record<string, unknown>).workspace = {
+      workspaces: addItem(createCollection('id'), {
+        id: 'workspace-1',
+        home: {
+          homeId: 'h-1',
+          cloudMachineId: 'e2b-team',
+          name: 'E2B · Team',
+          state: 'starting',
+          since: '2026-11-16T02:00:00Z',
+        },
+      } as never),
+    };
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+
+    // The fake store re-reads selectors on emit, once the panel's workspace id is set.
+    (store as any).emitState();
+    const output = await screen.findByTestId('mock-terminal');
+    expect(output.getAttribute('data-script-id')).toBe('check');
+    await waitFor(() => expect(output.getAttribute('data-run-disabled')).toBe('true'));
+  });
 });

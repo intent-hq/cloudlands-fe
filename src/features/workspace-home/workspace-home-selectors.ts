@@ -82,3 +82,9 @@ export const selectMoveHomeOptions = store.createSelector(
     return options;
   },
 );
+
+/** The workspace's row is in the store (a panel's home retry waits for it). */
+export const selectWorkspaceRowLoaded = store.createSelector(
+  (state, workspaceId: string) =>
+    getItem(state.workspace.workspaces, workspaceId as Workspace['id']) !== undefined,
+);

@@ -7,9 +7,10 @@
    * Renders `children` unchanged without a home.
    *
    * While a cloud home starts, the notice is a calm "Starting home…". A panel
-   * that opened while the home was unavailable remounts once when it is
-   * attached, so its failed reads run again (`nextHomeRetry`); a panel that
-   * was already usable is never remounted.
+   * whose reads may have failed while the home was unavailable (it opened
+   * then, or its own first read woke a paused cloud home) remounts once when
+   * the home is attached, so they run again (`nextHomeRetry`); a panel that
+   * had been usable for longer is never remounted.
    */
   import { untrack, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
@@ -20,10 +21,20 @@
     selectCanMoveWorkspaceHome,
     selectHomeWaiting,
     selectWorkspaceHomeView,
+    selectWorkspaceRowLoaded,
   } from '../workspace-home-selectors';
   import { homeWaitRequested, moveHomeDialogOpened } from '../workspace-home-slice';
 
-  let { workspaceId, children }: { workspaceId: string; children: Snippet } = $props();
+  let {
+    workspaceId,
+    children,
+    clock = Date.now,
+  }: {
+    workspaceId: string;
+    children: Snippet;
+    /** Milliseconds now; tests pass a fake clock. */
+    clock?: () => number;
+  } = $props();
 
   // Seeded with the id so the first view read is this workspace's, not empty.
   const workspaceId$ = writable(untrack(() => workspaceId));
@@ -33,14 +44,20 @@
   const view$ = selectWorkspaceHomeView(workspaceId$);
   const canMove$ = selectCanMoveWorkspaceHome(workspaceId$);
   const waiting$ = selectHomeWaiting(workspaceId$);
+  const loaded$ = selectWorkspaceRowLoaded(workspaceId$);
   const view = $derived($view$);
   // Ephemeral panel state: which mount generation the children use.
   let retry = $state(initialHomeRetry);
   $effect.pre(() => {
-    const unavailable = view?.unavailable === true;
+    const input = {
+      workspaceId,
+      loaded: $loaded$,
+      unavailable: view?.unavailable === true,
+      now: clock(),
+    };
     retry = nextHomeRetry(
       untrack(() => retry),
-      unavailable,
+      input,
     );
   });
 </script>

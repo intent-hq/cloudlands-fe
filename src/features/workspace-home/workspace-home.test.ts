@@ -69,7 +69,7 @@ describe('parseWorkspaceHome: starting and states this app does not know', () =>
 });
 
 describe('workspaceHomeView', () => {
-  it('a starting home is unavailable but calm: no banner, no marker, no Wait or Move', () => {
+  it('a starting home is unavailable but calm: no banner, no marker, no Wait; Move stays possible', () => {
     const view = workspaceHomeView({ home: { ...ATTACHED, state: 'starting' } });
     expect(view).toMatchObject({
       state: 'starting',
@@ -78,19 +78,22 @@ describe('workspaceHomeView', () => {
       banner: null,
       marker: null,
       canWait: false,
-      canMove: false,
+      canMove: true,
       moveWarning: false,
     });
   });
 
-  it('an unknown state is treated as unavailable, like a detached home', () => {
+  it('an unknown state is unavailable but neutral: no backup or loss warnings', () => {
     const view = workspaceHomeView({ home: { ...ATTACHED, state: 'hibernating' } });
     expect(view).toMatchObject({
       state: 'hibernating',
       starting: false,
       unavailable: true,
-      banner: 'detached',
-      marker: 'detached',
+      banner: null,
+      marker: null,
+      canWait: false,
+      canMove: true,
+      moveWarning: false,
     });
   });
 
@@ -188,6 +191,7 @@ describe('moveHomeTargets', () => {
     expect(targets.find((target) => target.key === 'agent:a-remote')).toMatchObject({
       kind: 'agent',
       machineName: 'Garage node',
+      nodeId: 'd-garage',
       disabled: false,
     });
     expect(targets.find((target) => target.key === 'machine:d-old')).toMatchObject({
@@ -291,21 +295,48 @@ describe('isHomeBackedTab', () => {
 });
 
 describe('nextHomeRetry (retry once the home is attached)', () => {
-  it('retries a panel that opened while the home was starting, once it is attached', () => {
-    let retry = nextHomeRetry(initialHomeRetry, true);
-    retry = nextHomeRetry(retry, true);
-    expect(retry.generation).toBe(0);
-    retry = nextHomeRetry(retry, false);
-    expect(retry).toMatchObject({ generation: 1, usable: true });
-    // Staying attached does not retry again.
-    expect(nextHomeRetry(retry, false)).toBe(retry);
+  const T0 = Date.parse('2026-11-16T02:00:00Z');
+  const at = (seconds: number, unavailable: boolean, workspaceId = 'ws-1') => ({
+    workspaceId,
+    loaded: true,
+    unavailable,
+    now: T0 + seconds * 1000,
   });
 
-  it('never remounts a panel that was already usable, so its edits survive a resume', () => {
-    let retry = nextHomeRetry(initialHomeRetry, false);
-    expect(retry).toMatchObject({ generation: 0, usable: true });
-    retry = nextHomeRetry(retry, true);
-    retry = nextHomeRetry(retry, false);
+  it('retries a panel that opened while the home was starting, once it is attached', () => {
+    let retry = nextHomeRetry(initialHomeRetry, at(0, true));
+    retry = nextHomeRetry(retry, at(5, true));
     expect(retry.generation).toBe(0);
+    retry = nextHomeRetry(retry, at(20, false));
+    expect(retry).toMatchObject({ generation: 1, waited: false });
+    expect(retry.usableSince).not.toBeNull();
+    expect(nextHomeRetry(retry, at(25, false))).toBe(retry);
+  });
+
+  it('retries a panel whose own read woke a paused cloud home (attached at mount)', () => {
+    // A paused home reports attached; the panel's read starts it, waits 10 s, then fails.
+    let retry = nextHomeRetry(initialHomeRetry, at(0, false));
+    retry = nextHomeRetry(retry, at(2, true));
+    retry = nextHomeRetry(retry, at(30, false));
+    expect(retry.generation).toBe(1);
+  });
+
+  it('never remounts a panel that was usable well before the home went away', () => {
+    let retry = nextHomeRetry(initialHomeRetry, at(0, false));
+    retry = nextHomeRetry(retry, at(60, true));
+    retry = nextHomeRetry(retry, at(90, false));
+    expect(retry.generation).toBe(0);
+  });
+
+  it('starts over when the panel shows another workspace', () => {
+    let retry = nextHomeRetry(initialHomeRetry, at(0, false, 'ws-a'));
+    retry = nextHomeRetry(retry, at(100, true, 'ws-b'));
+    retry = nextHomeRetry(retry, at(120, false, 'ws-b'));
+    expect(retry).toMatchObject({ workspaceId: 'ws-b', generation: 1, waited: false });
+  });
+
+  it('waits for the workspace row before deciding anything', () => {
+    const retry = nextHomeRetry(initialHomeRetry, { ...at(0, false), loaded: false });
+    expect(retry).toBe(initialHomeRetry);
   });
 });

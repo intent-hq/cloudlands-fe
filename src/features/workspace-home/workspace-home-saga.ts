@@ -28,7 +28,7 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import type { Workspace } from '$shared/types';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
-import { setHomeErrorCode } from './workspace-home';
+import { setHomeErrorCode, workspaceHomeView } from './workspace-home';
 import {
   homeWaitRequested,
   homeWaitSettled,
@@ -116,9 +116,9 @@ function* waitForHome(
       }
     }
     const served = yield* call(rereadHome, workspaceId);
-    const home = served?.home;
-    if (home && home.state === 'detached') {
-      yield* call(notify.info, m.workspaceHome_wait_stillUnavailable({ name: home.name }));
+    const view = workspaceHomeView(served);
+    if (view?.unavailable && !view.starting) {
+      yield* call(notify.info, m.workspaceHome_wait_stillUnavailable({ name: view.name }));
     }
   } finally {
     waitsInFlight.delete(workspaceId);

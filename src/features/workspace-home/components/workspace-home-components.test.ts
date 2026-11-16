@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
 import { homeMoveTargetKey, workspaceHomeView, type MoveHomeOption } from '../workspace-home';
 import WorkspaceHomeBanner from './WorkspaceHomeBanner.svelte';
 import MoveHomeDialog from './MoveHomeDialog.svelte';
+import WorkspaceHomeLine from './WorkspaceHomeLine.svelte';
 import MoveHomeDialogHost from './MoveHomeDialogHost.svelte';
 import Harness from './WorkspaceHomePanelGateHarness.svelte';
 import { store } from '$store/renderer/store';
@@ -16,6 +17,11 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { moveHomeDialogClosed, moveHomeDialogOpened } from '../workspace-home-slice';
 import { labelWorkspace } from '../../../test/fixtures/workspace-labels-state';
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const HOME: WorkspaceHome = {
   homeId: 'h-1',
@@ -198,7 +204,8 @@ describe('WorkspaceHomePanelGate', () => {
   it('keeps the panel mounted under the notice, so unsaved work survives a detach', async () => {
     store.init();
     store.dispatch(setWorkspaceEntity(labelWorkspace('ws-gate', { home: HOME })));
-    render(Harness, { workspaceId: 'ws-gate' });
+    let nowMs = 0;
+    render(Harness, { workspaceId: 'ws-gate', clock: () => nowMs });
     const child = await vi.waitFor(() => {
       const el = document.querySelector('[data-gated-child]');
       expect(el).toBeTruthy();
@@ -207,6 +214,8 @@ describe('WorkspaceHomePanelGate', () => {
     const setHome = (home: WorkspaceHome) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-gate', { home })]));
 
+    // The panel has been usable for a while (past the wake window) before the detach.
+    nowMs = 60_000;
     setHome({ ...HOME, state: 'detached', since: '2026-11-12T09:42:00Z' });
     await vi.waitFor(() =>
       expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
@@ -218,6 +227,30 @@ describe('WorkspaceHomePanelGate', () => {
       expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
     );
     expect(document.querySelector('[data-gated-child]')).toBe(child);
+  });
+
+  it('retries a panel whose own read woke a paused cloud home', async () => {
+    store.init();
+    // A paused cloud home reports attached until a read wakes it.
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-paused', { home: HOME })));
+    render(Harness, { workspaceId: 'ws-paused' });
+    const before = await vi.waitFor(() => {
+      const el = document.querySelector('[data-gated-child]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const setHome = (home: WorkspaceHome) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-paused', { home })]));
+
+    setHome({ ...HOME, state: 'starting', since: '2026-11-16T02:00:01Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice="starting"]')).toBeTruthy(),
+    );
+    setHome({ ...HOME, state: 'attached', since: '2026-11-16T02:00:15Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-gated-child]')).not.toBe(before);
   });
 });
 
@@ -297,5 +330,19 @@ describe('MoveHomeDialog cloud entries', () => {
     const blocked = screen.getByRole('radio', { name: /Northflank/ }) as HTMLButtonElement;
     expect(blocked.textContent).toContain('Key rejected');
     expect(blocked.textContent).not.toContain(m.workspaceHome_moveDialog_cloudStartsSandbox());
+  });
+});
+
+describe('WorkspaceHomeLine while the home starts', () => {
+  it('keeps the entry name and announces "Starting home…" once', () => {
+    render(WorkspaceHomeLine, {
+      view: view({ name: 'E2B · Team', state: 'starting', since: '2026-11-16T02:00:00Z' }),
+    });
+    const statuses = screen.getAllByRole('status');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].textContent).toContain(m.workspaceHome_starting_label());
+    expect(document.body.textContent).toContain('E2B · Team');
+    // No detached or moving marker while it starts.
+    expect(document.querySelector('[data-workspace-home-marker]')).toBeNull();
   });
 });

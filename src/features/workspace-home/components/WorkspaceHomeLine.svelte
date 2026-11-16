@@ -31,8 +31,9 @@
     {#if home.starting}
       <!-- A cloud home's sandbox is starting: its state instead of a marker. -->
       <span class="flex shrink-0 items-center gap-1" data-workspace-home-starting>
-        <IntentMarkLoader size={12} />
-        {m.workspaceHome_starting_label()}
+        <span aria-hidden="true"><IntentMarkLoader size={12} /></span>
+        <!-- The one live announcement while the home starts. -->
+        <span role="status">{m.workspaceHome_starting_label()}</span>
       </span>
     {:else if home.marker}
       <Badge
