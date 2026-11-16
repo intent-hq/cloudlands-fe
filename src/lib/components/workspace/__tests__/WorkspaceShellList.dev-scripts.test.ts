@@ -530,8 +530,11 @@ describe('WorkspaceShellList development script controls', () => {
     mocks.homeView = home('starting');
     render(WorkspaceShellList, { props: { workspaceId: WS } });
 
-    const start = screen.getByRole('button', { name: 'Starting home…' }) as HTMLButtonElement;
+    const start = screen.getByRole('button', { name: 'Start Build' }) as HTMLButtonElement;
     expect(start.disabled).toBe(true);
+    expect(document.getElementById(start.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+      'Starting home…',
+    );
     await fireEvent.click(within(scriptRow('running')).getByRole('button', { name: 'Actions' }));
     const restart = await screen.findByRole('menuitem', { name: 'Restart Dev' });
     expect(restart.getAttribute('aria-disabled') ?? restart.getAttribute('data-disabled')).not.toBe(

@@ -70,6 +70,7 @@
   // Workspace homes: Run waits while the home is detached, moving or starting.
   const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
   const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
+  const runDisabledReasonId = $props.id();
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -154,6 +155,7 @@
 
   function runScript(scriptId: string, action: 'start' | 'stop' | 'restart', event: MouseEvent) {
     event.stopPropagation();
+    if (action !== 'stop' && runDisabledReason) return;
     const operation =
       action === 'start'
         ? startScriptRequested(workspaceId, scriptId)
@@ -174,6 +176,9 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-2 type-caption font-normal" data-workspace-shell-list>
+  {#if runDisabledReason}
+    <span id={runDisabledReasonId} class="sr-only">{runDisabledReason}</span>
+  {/if}
   {#if !$isCollaborator$}
     <section>
       <SidebarGroupHeader
@@ -435,9 +440,7 @@
                   {/if}
                 </Button>
               {:else}
-                {@const startLabel =
-                  runDisabledReason ??
-                  m.workspace_devScripts_start_ariaLabel({ name: script.name })}
+                {@const startLabel = m.workspace_devScripts_start_ariaLabel({ name: script.name })}
                 <Button
                   variant="ghost"
                   size="icon-compact"
@@ -446,7 +449,8 @@
                   disabled={operation?.pending === true || runDisabledReason !== null}
                   aria-busy={operation?.pending || undefined}
                   aria-label={startLabel}
-                  tooltip={startLabel}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
+                  tooltip={runDisabledReason ?? startLabel}
                   tooltipSide="left"
                   onclick={(event) => runScript(script.id, 'start', event)}
                   data-script-action="start"

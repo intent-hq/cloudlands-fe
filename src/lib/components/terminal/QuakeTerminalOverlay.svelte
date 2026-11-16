@@ -142,6 +142,7 @@
   // Workspace homes: Run waits while the home is detached, moving or starting.
   const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
   const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
+  const runDisabledReasonId = $props.id();
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
@@ -1348,6 +1349,9 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
+              {#if runDisabledReason}
+                <span id={runDisabledReasonId} class="sr-only">{runDisabledReason}</span>
+              {/if}
               <Button
                 variant="ghost-light"
                 size="icon-xs"
@@ -1395,8 +1399,8 @@
                   disabled={runDisabledReason !== null}
                   onclick={() => handleScriptAction('restart', selectedScriptId!)}
                   tooltip={runDisabledReason ?? m.terminal_quakeOverlay_restart_label()}
-                  aria-label={runDisabledReason ??
-                    m.terminal_quakeOverlay_restartScript_ariaLabel()}
+                  aria-label={m.terminal_quakeOverlay_restartScript_ariaLabel()}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                 >
                   <Fa icon={faRotateRight} size="xs" />
                 </Button>
@@ -1407,7 +1411,8 @@
                   disabled={runDisabledReason !== null}
                   onclick={() => handleScriptAction('start', selectedScriptId!)}
                   tooltip={runDisabledReason ?? m.terminal_quakeOverlay_start_label()}
-                  aria-label={runDisabledReason ?? m.terminal_quakeOverlay_startScript_ariaLabel()}
+                  aria-label={m.terminal_quakeOverlay_startScript_ariaLabel()}
+                  aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                 >
                   <Fa icon={faPlay} size="xs" />
                 </Button>

@@ -159,17 +159,22 @@
   const fileSaving = $derived($fileSavingStore);
   const fileError = $derived($fileErrorStore);
   const fileErrorKind = $derived(fileError ? classifyFileReadError(fileError) : 'generic');
-  // A read that failed because the home is away shows that reason, and reads
-  // again once the home is attached.
+  // A read that failed because the home is away shows that reason. While the
+  // home is attached, such a read runs again once per attached period: it may
+  // have failed before a reattach, or arrived late from a dropped link.
   const fileHomeError = $derived(fileError ? homeUnavailableError($fileErrorInfoStore) : null);
   let homeReadRetry = $state(0);
-  let homeWasUnavailable = false;
+  let retriedWhileAttached = false;
   $effect(() => {
-    const unavailable = $homeView$?.unavailable === true;
-    if (homeWasUnavailable && !unavailable && untrack(() => fileHomeError)) {
+    const view = $homeView$;
+    if (!view || view.unavailable) {
+      retriedWhileAttached = false;
+      return;
+    }
+    if (fileHomeError && !retriedWhileAttached) {
+      retriedWhileAttached = true;
       untrack(() => homeReadRetry++);
     }
-    homeWasUnavailable = unavailable;
   });
   // Suffix-resolution candidates recorded by the read saga on a not-found
   // error (see files-read-saga); capped for display in the error panel.

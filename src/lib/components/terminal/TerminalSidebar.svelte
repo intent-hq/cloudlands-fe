@@ -83,6 +83,7 @@
   // Workspace homes: Run waits while the home is detached, moving or starting.
   const homeView$ = selectWorkspaceHomeView(workspaceIdStore);
   const runDisabledReason = $derived(homeRunDisabledReason($homeView$));
+  const runDisabledReasonId = $props.id();
   const logger = createLogger('TerminalSidebar');
   const createConsumerId = crypto.randomUUID();
   const removeConsumerId = crypto.randomUUID();
@@ -913,6 +914,9 @@
               class="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1"
               style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
             >
+              {#if runDisabledReason}
+                <span id={runDisabledReasonId} class="sr-only">{runDisabledReason}</span>
+              {/if}
               {#if contextMenuScriptId}
                 {@const script = $scriptEntries$.find((s) => s.id === contextMenuScriptId)}
                 {#if script}
@@ -923,6 +927,8 @@
                       type="button"
                       class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                       disabled={runDisabledReason !== null}
+                      aria-label={m.terminal_sidebar_startAll_label()}
+                      aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                       tooltip={runDisabledReason ?? undefined}
                       onclick={() => handleContextMenuAction('startAll')}
                     >
@@ -952,6 +958,8 @@
                         type="button"
                         class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                         disabled={runDisabledReason !== null}
+                        aria-label={m.terminal_quakeOverlay_restart_label()}
+                        aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                         tooltip={runDisabledReason ?? undefined}
                         onclick={() => handleContextMenuAction('restart')}
                       >
@@ -963,6 +971,8 @@
                         type="button"
                         class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                         disabled={runDisabledReason !== null}
+                        aria-label={m.terminal_quakeOverlay_start_label()}
+                        aria-describedby={runDisabledReason ? runDisabledReasonId : undefined}
                         tooltip={runDisabledReason ?? undefined}
                         onclick={() => handleContextMenuAction('start')}
                       >

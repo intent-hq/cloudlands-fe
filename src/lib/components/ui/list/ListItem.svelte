@@ -292,7 +292,10 @@
               variant="plain"
               size="icon-compact"
               iconOnly
-              aria-label={action.tooltip ?? action.label}
+              aria-label={action.disabled ? action.label : (action.tooltip ?? action.label)}
+              aria-describedby={action.disabled && action.tooltip
+                ? `${uid}-reason-${action.label}`
+                : undefined}
               disabled={disabled || action.disabled === true}
               class={cn(
                 'h-auto w-auto cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground motion-reduce:transition-none',
@@ -305,6 +308,9 @@
             >
               <Fa icon={action.icon} size="10" />
             </Button>
+            {#if action.disabled && action.tooltip}
+              <span id={`${uid}-reason-${action.label}`} class="sr-only">{action.tooltip}</span>
+            {/if}
           </TooltipShortcut>
         {/each}
       </div>

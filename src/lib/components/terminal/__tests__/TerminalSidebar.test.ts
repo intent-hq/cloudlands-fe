@@ -1,5 +1,6 @@
 import { render, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { workspaceHomeView } from '$features/workspace-home/workspace-home';
 
 const {
   mockDispatch,
@@ -23,11 +24,26 @@ const {
   remoteScripts: { supported: false },
 }));
 
-vi.mock('$features/workspace-home/workspace-home-selectors', async () => {
-  const { readable } = await import('svelte/store');
-  // No workspace home: Run is available.
-  return { selectWorkspaceHomeView: () => readable(null) };
+const homeView = vi.hoisted(() => {
+  const subscribers = new Set<(value: unknown) => void>();
+  let value: unknown = null;
+  return {
+    set(next: unknown) {
+      value = next;
+      for (const run of subscribers) run(value);
+    },
+    subscribe(run: (value: unknown) => void) {
+      subscribers.add(run);
+      run(value);
+      return () => subscribers.delete(run);
+    },
+  };
 });
+
+vi.mock('$features/workspace-home/workspace-home-selectors', () => ({
+  // No workspace home unless a test sets one.
+  selectWorkspaceHomeView: () => homeView,
+}));
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
@@ -219,6 +235,69 @@ beforeEach(() => {
   asyncActionHandlers.refuse = null;
   selectorWorkspaceArgs.length = 0;
   remoteScripts.supported = false;
+});
+
+describe('TerminalSidebar while the workspace home is away', () => {
+  const entry = (id: string, status: string) => ({
+    id,
+    workspaceId: 'ws-1',
+    name: id,
+    command: `pnpm ${id}`,
+    mode: 'command',
+    source: 'user',
+    createdAt: '2026-11-03T00:00:00Z',
+    runtime: { status, restartCount: 0 },
+  });
+  const reasonOf = (button: HTMLElement) =>
+    document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent;
+
+  afterEach(() => homeView.set(null));
+
+  it('disables Start and Restart with the home reason and keeps Stop', async () => {
+    homeView.set(
+      workspaceHomeView({
+        home: { homeId: 'h-1', name: 'E2B · Team', state: 'starting', since: '2026-11-16' },
+      }),
+    );
+    scriptEntries.value = [entry('build', 'idle'), entry('dev', 'running')];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const row = (id: string) => container.querySelector<HTMLElement>(`[data-script-id="${id}"]`)!;
+
+    const start = within(row('build')).getByRole('button', { name: 'Start' });
+    const restart = within(row('dev')).getByRole('button', { name: 'Restart' });
+    for (const button of [start, restart]) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(reasonOf(button)).toBe('Starting home…');
+    }
+    expect(
+      (within(row('dev')).getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^build(?:\s|$)/ }));
+    const menuStart = screen.getByText('Start', { exact: true }) as HTMLButtonElement;
+    expect(menuStart.disabled).toBe(true);
+    expect(reasonOf(menuStart)).toBe('Starting home…');
+    await fireEvent.click(menuStart);
+    expect(
+      mockDispatch.mock.calls.filter(([action]) =>
+        ['scripts/startScriptRequested', 'scripts/restartScriptRequested'].includes(action.type),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps Start enabled while the home is attached', () => {
+    homeView.set(
+      workspaceHomeView({
+        home: { homeId: 'h-1', name: 'Mac Studio', state: 'attached', since: '2026-11-16' },
+      }),
+    );
+    scriptEntries.value = [entry('build', 'idle')];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const row = container.querySelector<HTMLElement>('[data-script-id="build"]')!;
+    const start = within(row).getByRole('button', { name: 'Start' }) as HTMLButtonElement;
+    expect(start.disabled).toBe(false);
+    expect(start.getAttribute('aria-describedby')).toBeNull();
+  });
 });
 
 describe('TerminalSidebar remote scripts', () => {
