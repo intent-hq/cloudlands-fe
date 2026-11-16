@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.10](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.9...v2.342.10) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** show ports in linked context labels ([#4693](https://github.com/intent-hq/cloudlands-fe/issues/4693)) ([50896c8](https://github.com/intent-hq/cloudlands-fe/commit/50896c8db1498956c0c6c59c007568d532b41c8d))
+
 ## [2.342.9](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.8...v2.342.9) (2026-11-16)
 
 
