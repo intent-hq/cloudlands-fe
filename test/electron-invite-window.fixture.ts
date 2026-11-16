@@ -1,11 +1,26 @@
 /** Native window selection only: no dock implementation, daemon, or invite redemption. */
 import { expect, type ElectronApplication } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
 import { closeElectronApp, electronTest as test } from './electron-app-close';
+
+function hasWindowManager(): boolean {
+  if (process.platform !== 'linux') return true;
+  try {
+    return /window id # 0x[0-9a-f]+/i.test(
+      execFileSync('xprop', ['-root', '_NET_SUPPORTING_WM_CHECK'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      }),
+    );
+  } catch {
+    return false;
+  }
+}
 
 test('invites select registered app windows and share creation until the first document loads', async ({
   launchElectron,
@@ -14,6 +29,7 @@ test('invites select registered app windows and share creation until the first d
   const root = await mkdtemp(join(tmpdir(), 'intent-invite-window-'));
   const observations: unknown[] = [];
   const protocolObservations: unknown[] = [];
+  const windowManager = hasWindowManager();
   const held: ServerResponse[] = [];
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'text/html');
@@ -322,12 +338,18 @@ test('invites select registered app windows and share creation until the first d
     await focus('second');
     await select('focused normal app window preserved', ids.second);
 
-    await app.evaluate(() => (globalThis as any).inviteFixture.windows.main.minimize());
-    await expect
-      .poll(() => app!.evaluate(() => (globalThis as any).inviteFixture.windows.main.isMinimized()))
-      .toBe(true);
-    await focus('auxiliary');
-    await select('minimized main restored', ids.main);
+    if (windowManager) {
+      await app.evaluate(() => (globalThis as any).inviteFixture.windows.main.minimize());
+      await expect
+        .poll(() =>
+          app!.evaluate(() => (globalThis as any).inviteFixture.windows.main.isMinimized()),
+        )
+        .toBe(true);
+      await focus('auxiliary');
+      await select('minimized main restored', ids.main);
+    } else {
+      observations.push({ label: 'Minimize requires an X11 window manager', skipped: true });
+    }
 
     for (const stale of ['null', 'destroyed']) {
       await app.evaluate((_electron, stale) => {
@@ -426,6 +448,7 @@ test('invites select registered app windows and share creation until the first d
             boundary:
               'Real Electron window selection with production chat identity, state and backend. Window creation and protocol association calls are intercepted; no OS association changes or invite redemption.',
             platform: process.platform,
+            windowManager,
             protocolObservations,
             observations,
           },
