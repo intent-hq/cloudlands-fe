@@ -380,7 +380,11 @@ describe('a pairing link to a saved machine whose mode changed', () => {
   it('never refreshes a record whose pin differs from the link', async () => {
     tested.daemonMode = 'orchestrator';
     tested.modeReported = true;
-    findMatching.mockResolvedValue({ id: 'other', fingerprint: 'cd'.repeat(32), daemonMode: 'node' });
+    findMatching.mockResolvedValue({
+      id: 'other',
+      fingerprint: 'cd'.repeat(32),
+      daemonMode: 'node',
+    });
     await handlePairDeepLink(LINK);
     expect(refreshStoredDaemonMode).not.toHaveBeenCalled();
   });

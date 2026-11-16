@@ -137,7 +137,8 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     if (!daemonMode && !tested.modeReported) throw new Error('Daemon mode unknown');
     const match = await connectionsStore.findMatching({ hosts, port, fingerprint });
     const existing =
-      match?.fingerprint && canonicalFingerprint(match.fingerprint) === canonicalFingerprint(fingerprint)
+      match?.fingerprint &&
+      canonicalFingerprint(match.fingerprint) === canonicalFingerprint(fingerprint)
         ? match
         : null;
     // A saved machine switched modes (node ↔ orchestrator or full daemon): store the
