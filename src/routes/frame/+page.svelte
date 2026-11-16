@@ -7,6 +7,7 @@
    * page stays transparent and each machine paints its own shell.
    */
   import { onMount } from 'svelte';
+  import { Screen } from '$lib/components/patterns/screen';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     MACHINE_RAIL_BACKDROP_CHANGED_EVENT,
@@ -21,6 +22,7 @@
     document.getElementById('app-drag-region')?.remove();
     const api = window.electronAPI;
     if (!api?.on) return;
+    /* eslint-disable intent/no-component-async-data-fetch -- the frame page runs without the app store by design; main owns the backdrop and pushes each change. */
     const listenerId = api.on(
       MACHINE_RAIL_BACKDROP_CHANGED_EVENT,
       (next: MachineRailBackdrop | null) => {
@@ -28,7 +30,6 @@
         backdrop = next;
       },
     );
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- the frame page has no app store; main owns this value and pushes changes.
     void api
       .invoke(IPC_CHANNELS.MACHINE_RAIL.GET_BACKDROP, {})
       .then((initial) => {
@@ -36,15 +37,18 @@
       })
       .catch(() => {});
     return () => api.offById(MACHINE_RAIL_BACKDROP_CHANGED_EVENT, listenerId);
+    /* eslint-enable intent/no-component-async-data-fetch */
   });
 </script>
 
-<div
-  class="frame-backdrop"
-  style:background-color={backdrop?.background ?? 'transparent'}
-  data-reduced-motion={backdrop?.reducedMotion || undefined}
-  data-testid="frame-backdrop"
-  aria-hidden="true"
->
-  <span style:background-color={backdrop?.tint ?? 'transparent'}></span>
-</div>
+<Screen class="h-full bg-transparent">
+  <div
+    class="frame-backdrop"
+    style:background-color={backdrop?.background ?? 'transparent'}
+    data-reduced-motion={backdrop?.reducedMotion || undefined}
+    data-testid="frame-backdrop"
+    aria-hidden="true"
+  >
+    <span style:background-color={backdrop?.tint ?? 'transparent'}></span>
+  </div>
+</Screen>

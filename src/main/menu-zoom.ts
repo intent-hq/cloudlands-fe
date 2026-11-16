@@ -30,6 +30,7 @@ export function handleMenuZoom(
   // publish each window's actual factor, never copy the focused window's factor.
   for (const window of BrowserWindow.getAllWindows()) {
     for (const renderer of getRendererWebContents(window)) {
+      if (renderer.isDestroyed()) continue;
       renderer.send('window:zoom-changed', { zoomFactor: renderer.getZoomFactor() });
     }
   }

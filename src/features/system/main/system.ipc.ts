@@ -113,8 +113,6 @@ import { isDockWindow } from '../../../main/dock-window';
 import { saveMenuBarAutoHidePref } from '../../../main/menu-bar-auto-hide-pref';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
-import { isWebviewPopupWindow } from '../../../main/webview-security';
-import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { isDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';

@@ -22,6 +22,8 @@ export function broadcastToRenderers(channel: string, ...args: unknown[]): void 
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
     if (isTrackedHudWindow(window) || isHudWindow(window)) continue;
-    for (const contents of getRendererWebContents(window)) contents.send(channel, ...args);
+    for (const contents of getRendererWebContents(window)) {
+      if (!contents.isDestroyed()) contents.send(channel, ...args);
+    }
   }
 }

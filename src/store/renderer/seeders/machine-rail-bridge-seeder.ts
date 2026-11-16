@@ -3,7 +3,7 @@
  *
  * The rail needs main-owned views, so it exists in the desktop app only. In
  * bridge-less builds (browser mock) and tests these handlers answer with the
- * lab off and a single machine (with a bridge they forward to main), so a call resolves instead of rejecting with
+ * lab off, a single machine and no frame backdrop (with a bridge they forward to main), so a call resolves instead of rejecting with
  * UnbridgedMockIpcChannelError.
  *
  * Handlers are registered at import time (host-bridge-seeder idiom). Tests
@@ -40,6 +40,8 @@ const FORWARDED_CHANNELS = [
   MACHINE_RAIL.READY,
   MACHINE_RAIL.HEALTH,
   MACHINE_RAIL.FORWARD_TOAST,
+  MACHINE_RAIL.BACKDROP,
+  MACHINE_RAIL.GET_BACKDROP,
 ] as const;
 
 // Main owns the rail: forward verbatim when the desktop bridge exists, so the
@@ -54,10 +56,13 @@ for (const channel of FORWARDED_CHANNELS) {
     if (
       channel === MACHINE_RAIL.SHOWN ||
       channel === MACHINE_RAIL.READY ||
-      channel === MACHINE_RAIL.HEALTH
+      channel === MACHINE_RAIL.HEALTH ||
+      channel === MACHINE_RAIL.BACKDROP
     ) {
       return { ok: true };
     }
+    // No frame page outside the desktop app: there is no backdrop to paint.
+    if (channel === MACHINE_RAIL.GET_BACKDROP) return null;
     if (channel === MACHINE_RAIL.FORWARD_TOAST) return { forwarded: false };
     return railOff();
   });

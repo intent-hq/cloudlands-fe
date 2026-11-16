@@ -178,8 +178,7 @@ function liveMachineViews(window: BrowserWindowType): Electron.WebContents[] {
 export function getRendererWebContents(window: BrowserWindowType): Electron.WebContents[] {
   if (window.isDestroyed()) return [];
   if (frameWindows.has(window)) return liveMachineViews(window);
-  const own = window.webContents.isDestroyed() ? [] : [window.webContents];
-  return [...own, ...liveMachineViews(window)];
+  return [window.webContents, ...liveMachineViews(window)];
 }
 
 /** A renderer to send to, shaped like a window, for helpers typed on windows. */
