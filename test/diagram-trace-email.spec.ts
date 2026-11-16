@@ -112,6 +112,17 @@ function readTraceGeometry(svg: SVGSVGElement) {
       const point = path.getPointAtLength((length * index) / count).matrixTransform(matrix);
       return { x: point.x, y: point.y };
     });
+    const bendStep = 6 / scale;
+    let sharpestBend = 0;
+    for (let at = bendStep; at < length - bendStep; at += bendStep / 2) {
+      const before = path.getPointAtLength(at - bendStep);
+      const current = path.getPointAtLength(at);
+      const after = path.getPointAtLength(at + bendStep);
+      const a = { x: current.x - before.x, y: current.y - before.y };
+      const b = { x: after.x - current.x, y: after.y - current.y };
+      const turn = Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y));
+      sharpestBend = Math.max(sharpestBend, (turn * 180) / Math.PI);
+    }
     const strokeRadius = (parseFloat(getComputedStyle(path).strokeWidth) * scale) / 2;
     const hits = (bounds: DOMRect) =>
       samples.some(
@@ -127,6 +138,7 @@ function readTraceGeometry(svg: SVGSVGElement) {
       visible: visible(path) && getComputedStyle(path).stroke !== 'none',
       length,
       paintedLength: length * scale,
+      sharpestBend,
       samples,
       marker: path.getAttribute('marker-end'),
       clipped: samples.some(
@@ -331,6 +343,10 @@ for (const width of [960, 320]) {
         databaseRoute.paintedLength,
         'database connection stays local after reflow',
       ).toBeLessThan(geometry.frame.width / 2);
+      for (const edge of ['API-->P', 'N-->P', 'E-->N']) {
+        const route = geometry.routes.find((route) => route.edge === edge)!;
+        expect(route.sharpestBend, `${edge} has gradual bends near its ports`).toBeLessThan(35);
+      }
       expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
     });
   }

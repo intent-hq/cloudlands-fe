@@ -140,6 +140,40 @@ function basis(points: Point[]): Curve {
   return { d, points: sampled };
 }
 
+function cubic(start: Point, c1: Point, c2: Point, end: Point): Curve {
+  const steps = Math.max(
+    12,
+    Math.min(256, Math.ceil((distance(start, c1) + distance(c1, c2) + distance(c2, end)) / 5)),
+  );
+  return {
+    d: `M${start.x},${start.y}C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}`,
+    points: Array.from({ length: steps + 1 }, (_, i) => {
+      const t = i / steps,
+        u = 1 - t;
+      return {
+        x: u ** 3 * start.x + 3 * u ** 2 * t * c1.x + 3 * u * t ** 2 * c2.x + t ** 3 * end.x,
+        y: u ** 3 * start.y + 3 * u ** 2 * t * c1.y + 3 * u * t ** 2 * c2.y + t ** 3 * end.y,
+      };
+    }),
+  };
+}
+
+function peakCurvature(curve: Curve) {
+  let peak = 0;
+  for (let i = 1; i < curve.points.length - 1; i++) {
+    const a = curve.points[i - 1],
+      b = curve.points[i],
+      c = curve.points[i + 1];
+    const length = distance(a, b) * distance(b, c) * distance(c, a);
+    if (length < 0.001) continue;
+    peak = Math.max(
+      peak,
+      (2 * Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))) / length,
+    );
+  }
+  return peak;
+}
+
 export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
   if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2' || svg.querySelector('g.cluster'))
     return;
@@ -214,18 +248,21 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
       },
     ];
   });
-  const clear = (route: Route, curve: Curve) =>
+  const clear = (route: Route, curve: Curve, clearance = 8) =>
     ![...nodes].some(([id, node]) =>
       hitsBox(
         curve.points.slice(1, -1),
         node.box,
-        id === route.source || id === route.target ? -0.1 : 8,
+        id === route.source || id === route.target ? -0.1 : clearance,
       ),
     );
-  const labelPlacement = (route: Route, curve: Curve): Box | undefined => {
+  const labelPlacement = (route: Route, curve: Curve, followCurve = false): Box | undefined => {
     if (!route.labelBox) return;
     const current = route.labelBox;
-    const candidates = [center(current), ...curve.points.filter((_, i) => i % 3 === 0)];
+    const candidates = [
+      ...(!followCurve ? [center(current)] : []),
+      ...curve.points.filter((_, i) => i % 3 === 0),
+    ];
     return candidates
       .map((p) => ({ ...current, x: p.x - current.width / 2, y: p.y - current.height / 2 }))
       .filter(
@@ -465,6 +502,57 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
             best = { curve, labelBox, conflicts: count, length };
         }
       }
+    if (best) write(route, best.curve, best.labelBox);
+  }
+
+  // Spread each bend along the connection instead of concentrating it at a port.
+  for (const route of routes) {
+    if (
+      !route.d.includes('C') ||
+      route.source === route.target ||
+      !nodes.get(route.source)?.rect ||
+      !nodes.get(route.target)?.rect
+    )
+      continue;
+    const start = route.points[0],
+      end = last(route.points);
+    const after = route.points.find((p) => distance(p, start) > 1);
+    const before = route.points.findLast((p) => distance(p, end) > 1);
+    if (!after || !before) continue;
+    const span = distance(start, end);
+    const originalLength = curveLength(route);
+    const initial = peakCurvature(route);
+    if (initial < 0.0001) continue;
+    const from = distance(start, after),
+      to = distance(end, before);
+    let best: { curve: Curve; labelBox?: Box; curvature: number } | undefined;
+    for (const outgoing of [0.5, 0.35, 0.23, 0.15, 0.08]) {
+      for (const incoming of [0.5, 0.35, 0.23, 0.15, 0.08]) {
+        const curve = cubic(
+          start,
+          {
+            x: start.x + ((after.x - start.x) * span * outgoing) / from,
+            y: start.y + ((after.y - start.y) * span * outgoing) / from,
+          },
+          {
+            x: end.x + ((before.x - end.x) * span * incoming) / to,
+            y: end.y + ((before.y - end.y) * span * incoming) / to,
+          },
+          end,
+        );
+        const curvature = peakCurvature(curve);
+        if (
+          curvature >= (best?.curvature ?? initial * 0.85) ||
+          curveLength(curve) > originalLength * 1.1 + gap ||
+          !clear(route, curve, gap) ||
+          conflicts(route, curve)
+        )
+          continue;
+        const labelBox = labelPlacement(route, curve, true);
+        if (route.label && !labelBox) continue;
+        best = { curve, labelBox, curvature };
+      }
+    }
     if (best) write(route, best.curve, best.labelBox);
   }
 }
