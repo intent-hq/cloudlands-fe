@@ -37,6 +37,14 @@ const expectedEdges = [
   'E-->N',
 ];
 
+// smooth-curves-final measured 3783–3784px total / 608–609px longest at 960px,
+// and 3075px total / 474px longest at 320px. Require substantial shortening
+// without trading away the clearance, smoothness, or complete-content contracts.
+const wireBudgets = {
+  960: { totalPaintedLength: 2800, longestPaintedLength: 480 },
+  320: { totalPaintedLength: 2300, longestPaintedLength: 375 },
+};
+
 // Screen-space measurements deliberately use the final SVG paths and actual text
 // ranges. Dagre and ELK may change bends, IDs' prefixes, and layout metadata.
 function readTraceGeometry(svg: SVGSVGElement) {
@@ -160,6 +168,12 @@ function readTraceGeometry(svg: SVGSVGElement) {
         .map((label) => label.text),
     };
   });
+  const longestPaintedLength = Math.max(0, ...routes.map((route) => route.paintedLength));
+  const wire = {
+    totalPaintedLength: routes.reduce((total, route) => total + route.paintedLength, 0),
+    longestPaintedLength,
+    longestEdge: routes.find((route) => route.paintedLength === longestPaintedLength)?.edge ?? null,
+  };
   const edgeLabels = labels.filter((label) => label.node === null);
   const crossing = (a: { x: number; y: number }, b: typeof a, c: typeof a, d: typeof a) => {
     const cross = (p: typeof a, q: typeof a) => p.x * q.y - p.y * q.x;
@@ -190,6 +204,7 @@ function readTraceGeometry(svg: SVGSVGElement) {
     nodes,
     labels,
     routes,
+    wire,
     crossings,
     labelNodeHits: edgeLabels.flatMap((label) =>
       nodes
@@ -207,7 +222,7 @@ function readTraceGeometry(svg: SVGSVGElement) {
   };
 }
 
-for (const width of [960, 320]) {
+for (const width of [960, 320] as const) {
   for (const theme of ['light', 'dark']) {
     test(`Trace email labels and return clearance at ${width}px in ${theme}`, async ({
       page,
@@ -338,6 +353,15 @@ for (const width of [960, 320]) {
       ).toEqual([]);
       expect(geometry.nodeOverlaps).toEqual([]);
       expect(geometry.crossings, 'connectors do not cross one another').toEqual([]);
+      const wireBudget = wireBudgets[width];
+      expect(
+        geometry.wire.totalPaintedLength,
+        'compact reflow substantially reduces total painted wire length',
+      ).toBeLessThanOrEqual(wireBudget.totalPaintedLength);
+      expect(
+        geometry.wire.longestPaintedLength,
+        `${geometry.wire.longestEdge} stays within the compact longest-path budget`,
+      ).toBeLessThanOrEqual(wireBudget.longestPaintedLength);
       const databaseRoute = geometry.routes.find((route) => route.edge === 'API-->P')!;
       expect(
         databaseRoute.paintedLength,

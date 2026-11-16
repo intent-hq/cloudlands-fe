@@ -1,3 +1,5 @@
+import { compactFlowchartLayouts } from './mermaid-compact-layout';
+
 type Point = { x: number; y: number };
 type Box = Point & { width: number; height: number };
 type Curve = { d: string; points: Point[] };
@@ -306,6 +308,170 @@ export function repairMermaidCurveCrossings(svg: SVGSVGElement) {
     );
     route.labelBox = labelBox;
   };
+
+  if (
+    routes.length === paths.length &&
+    routes.every((route) => route.d.includes('C')) &&
+    [...nodes.values()].every((node) => node.rect)
+  ) {
+    const originalNodes = new Map(nodes);
+    const originalRoutes = routes.map((route) => ({
+      route,
+      d: route.d,
+      points: route.points,
+      sourceBox: route.sourceBox,
+      targetBox: route.targetBox,
+      labelBox: route.labelBox,
+    }));
+    const originalLength = routes.reduce((sum, route) => sum + curveLength(route), 0);
+    const layouts = compactFlowchartLayouts(
+      new Map([...nodes].map(([id, node]) => [id, node.box])),
+      routes,
+      svg.dataset.flowchartDirection,
+    );
+    let compact:
+      | { boxes: Map<string, Box>; curves: { route: Route; curve: Curve; labelBox?: Box }[] }
+      | undefined;
+    for (const boxes of layouts) {
+      for (const [id, node] of originalNodes)
+        nodes.set(id, { ...node, box: boxes.get(id) ?? node.box });
+      for (const route of routes) {
+        route.sourceBox = boxes.get(route.source) ?? route.sourceBox;
+        route.targetBox = boxes.get(route.target) ?? route.targetBox;
+      }
+      const anchors = new Map<Route, { start?: Point; lead?: Point; end?: Point; tail?: Point }>();
+      for (const [id, box] of boxes) {
+        const groups: Route[][] = [[], [], [], []];
+        for (const route of routes.filter((route) => route.source === id || route.target === id)) {
+          const other = center(route.source === id ? route.targetBox : route.sourceBox);
+          const c = center(box);
+          const dx = other.x - c.x,
+            dy = other.y - c.y;
+          groups[Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : dy > 0 ? 2 : 0].push(route);
+        }
+        groups.forEach((group, side) => {
+          const horizontalSide = side === 0 || side === 2;
+          group.sort((a, b) => {
+            const other = (r: Route) => center(r.source === id ? r.targetBox : r.sourceBox);
+            return (
+              (horizontalSide ? other(a).x - other(b).x : other(a).y - other(b).y) ||
+              routes.indexOf(a) - routes.indexOf(b)
+            );
+          });
+          const spacing =
+            group.length > 1
+              ? Math.min(
+                  gap * 1.5,
+                  ((horizontalSide ? box.width : box.height) - gap * 2) / (group.length - 1),
+                )
+              : 0;
+          group.forEach((route, i) => {
+            const offset = (i - (group.length - 1) / 2) * spacing;
+            const [base, outside] = ports(box)[side];
+            const p = {
+              x: base.x + (horizontalSide ? offset : 0),
+              y: base.y + (horizontalSide ? 0 : offset),
+            };
+            const lead = { x: p.x + outside.x - base.x, y: p.y + outside.y - base.y };
+            const record = anchors.get(route) ?? {};
+            Object.assign(
+              record,
+              route.source === id ? { start: p, lead } : { end: p, tail: lead },
+            );
+            anchors.set(route, record);
+          });
+        });
+      }
+      const planned: { route: Route; curve: Curve; labelBox?: Box }[] = [];
+      const ordered = routes.toSorted(
+        (a, b) =>
+          Number(Boolean(b.label)) - Number(Boolean(a.label)) ||
+          distance(center(a.sourceBox), center(a.targetBox)) -
+            distance(center(b.sourceBox), center(b.targetBox)),
+      );
+      for (const route of ordered) {
+        const anchor = anchors.get(route);
+        if (!anchor) break;
+        const { start, lead, end, tail } = anchor;
+        if (!start || !lead || !end || !tail) break;
+        const span = distance(start, end);
+        let best: { curve: Curve; cost: number } | undefined;
+        for (const from of [0.5, 0.35, 0.23])
+          for (const to of [0.5, 0.35, 0.23]) {
+            const curve = cubic(
+              start,
+              {
+                x: start.x + ((lead.x - start.x) * span * from) / (gap * 2),
+                y: start.y + ((lead.y - start.y) * span * from) / (gap * 2),
+              },
+              {
+                x: end.x + ((tail.x - end.x) * span * to) / (gap * 2),
+                y: end.y + ((tail.y - end.y) * span * to) / (gap * 2),
+              },
+              end,
+            );
+            if (
+              !clear(route, curve, gap) ||
+              planned.some((other) => crosses(curve.points, other.curve.points))
+            )
+              continue;
+            const cost = curveLength(curve) + peakCurvature(curve) * gap ** 2;
+            if (!best || cost < best.cost) best = { curve, cost };
+          }
+        if (!best) break;
+        planned.push({ route, curve: best.curve });
+      }
+      if (planned.length === routes.length) {
+        for (const { route, curve } of planned) Object.assign(route, curve);
+        let valid = true;
+        for (const item of planned) {
+          if (!item.route.label) continue;
+          item.labelBox = labelPlacement(item.route, item.curve, true);
+          if (!item.labelBox) {
+            valid = false;
+            break;
+          }
+          item.route.labelBox = item.labelBox;
+        }
+        if (
+          valid &&
+          planned.reduce((sum, item) => sum + curveLength(item.curve), 0) < originalLength * 0.82
+        )
+          compact = { boxes, curves: planned };
+      }
+      for (const [id, record] of originalNodes) nodes.set(id, record);
+      for (const { route, ...original } of originalRoutes) Object.assign(route, original);
+      if (compact) break;
+    }
+    if (compact) {
+      const moves = [...originalNodes].flatMap(([id, node]) => {
+        const box = compact.boxes.get(id);
+        const transform = node.element.transform.baseVal.consolidate()?.matrix;
+        const parent = (node.element.parentElement as SVGGraphicsElement | null)?.getScreenCTM();
+        return box && transform && parent ? [{ id, box, node, transform, parent }] : [];
+      });
+      if (moves.length === nodes.size) {
+        for (const { id, box, node, transform, parent } of moves) {
+          const origin = new DOMPoint(0, 0)
+            .matrixTransform(reference)
+            .matrixTransform(parent.inverse());
+          const p = new DOMPoint(box.x - node.box.x, box.y - node.box.y)
+            .matrixTransform(reference)
+            .matrixTransform(parent.inverse());
+          node.element.setAttribute(
+            'transform',
+            `matrix(${transform.a},${transform.b},${transform.c},${transform.d},${transform.e + p.x - origin.x},${transform.f + p.y - origin.y})`,
+          );
+          nodes.set(id, { ...node, box });
+        }
+        for (const { route, curve, labelBox } of compact.curves) {
+          route.sourceBox = compact.boxes.get(route.source) ?? route.sourceBox;
+          route.targetBox = compact.boxes.get(route.target) ?? route.targetBox;
+          write(route, curve, labelBox);
+        }
+      }
+    }
+  }
 
   // Reflow distant shared sinks before adding outer detours.
   for (const [id, record] of nodes) {
