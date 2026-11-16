@@ -533,6 +533,8 @@ jobs:
           pnpm run generate:build-config
           pnpm run generate:ipc-channels
           xvfb-run -a pnpm exec playwright test --config test/fixtures/pr-monitor-native/playwright.config.ts
+      - name: Notch dock settings broadcasts
+        run: xvfb-run -a pnpm exec playwright test --config test/fixtures/dock-lab-native/playwright.config.ts
       - name: Record browser outcome
         if: always()
         env:
