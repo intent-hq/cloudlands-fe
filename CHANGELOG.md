@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.0...v2.342.1) (2026-11-16)
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** send notification sounds and circuit-breaker status to the hosting machine view ([#4666](https://github.com/intent-hq/cloudlands-fe/issues/4666)) ([b95859a](https://github.com/intent-hq/cloudlands-fe/commit/b95859a21ecf629474359bfb7eddcbac6d941511))
+* **machine-setup:** reword Install a node description ([#4669](https://github.com/intent-hq/cloudlands-fe/issues/4669)) ([fe166b4](https://github.com/intent-hq/cloudlands-fe/commit/fe166b4a0bf8a12880d7cb0373ea0a07f6e2be4a))
+* **repo-selector:** widen add-codebase popup so tab labels fit on one line ([#4670](https://github.com/intent-hq/cloudlands-fe/issues/4670)) ([05aae53](https://github.com/intent-hq/cloudlands-fe/commit/05aae5343d58bbd9060c93eab85b38adda86d2bb))
+
 ## [2.342.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.341.7...v2.342.0) (2026-11-16)
 
 
