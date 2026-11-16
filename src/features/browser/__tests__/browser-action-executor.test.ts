@@ -22,6 +22,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     findModelTabByRequestedUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
+    input: vi.fn().mockResolvedValue({ x: 1, y: 2 }),
     focusTab: vi.fn().mockResolvedValue(true),
     showTab: vi.fn().mockResolvedValue(undefined),
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
@@ -2161,6 +2162,64 @@ describe('browser-action-executor', () => {
   // =========================================================================
   // closeTab action (intent-hq/monorepo#1931)
   // =========================================================================
+  describe('trusted input actions (intent#9266)', () => {
+    it('runs on the owned tab with the request deadline and returns the result', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+      const deadline = Date.now() + 10_000;
+      const action = { action: 'click', tabId: 'tab-1', selector: '#go', clickCount: 2 } as const;
+
+      const result = await executeActions(
+        { actions: [action] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        undefined,
+        undefined,
+        deadline,
+      );
+
+      expect(result.results[0]).toEqual({ action: 'click', success: true, result: { x: 1, y: 2 } });
+      expect(embeddedBrowserCdp.input).toHaveBeenCalledWith('tab-1', action, { deadline });
+      expect(embeddedBrowserCdp.beginAgentDrawing).toHaveBeenCalledWith('tab-1', 'agent-1');
+    });
+
+    it('surfaces the structured input error code', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.input).mockRejectedValueOnce(
+        Object.assign(new Error('No element matches "#nope"'), { errorCode: 'element-not-found' }),
+      );
+
+      const result = await executeActions({
+        actions: [{ action: 'type', tabId: 'tab-1', selector: '#nope', text: 'x' }],
+      });
+
+      expect(result.results[0]).toMatchObject({
+        action: 'type',
+        success: false,
+        errorCode: 'element-not-found',
+        error: 'No element matches "#nope"',
+      });
+    });
+
+    it.each([
+      { action: 'click', tabId: 'tab-1' },
+      { action: 'click', tabId: 'tab-1', x: 1 },
+      { action: 'click', tabId: 'tab-1', selector: '#a', x: 1, y: 1 },
+      { action: 'click', tabId: 'tab-1', selector: '#a', clickCount: 4 },
+      { action: 'press', tabId: 'tab-1', key: 'a', modifiers: ['Hyper'] },
+      { action: 'selectOption', tabId: 'tab-1', selector: '#s', value: [] },
+      { action: 'type', tabId: 'tab-1', text: 'x', mode: 'paste' },
+    ])('rejects the invalid input action %o before touching the tab', async (action) => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+
+      const result = await executeActions({ actions: [action] } as any);
+
+      expect(result.success).toBe(false);
+      expect(embeddedBrowserCdp.input).not.toHaveBeenCalled();
+    });
+  });
+
   describe('closeTab action', () => {
     it('should close the tab and return the tabId', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
@@ -3863,6 +3922,11 @@ describe('browser-action-executor', () => {
       { action: 'resizeTab', tabId: 'tab-x', width: 1024 },
       { action: 'navigate', tabId: 'tab-x', url: 'https://example.test/' },
       { action: 'closeTab', tabId: 'tab-x' },
+      { action: 'click', tabId: 'tab-x', selector: '#go' },
+      { action: 'hover', tabId: 'tab-x', x: 1, y: 1 },
+      { action: 'type', tabId: 'tab-x', text: 'hi' },
+      { action: 'press', tabId: 'tab-x', key: 'Enter' },
+      { action: 'selectOption', tabId: 'tab-x', selector: '#s', value: 'a' },
     ] as const;
 
     it.each(enforcedActions)(

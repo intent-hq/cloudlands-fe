@@ -26,6 +26,7 @@ import {
 // owning backend id through would let these sends target one host.
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
+import { runInputAction, type InputAction } from './browser-input';
 
 const logger = new Logger('EmbeddedBrowserCdp');
 /** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
@@ -2620,16 +2621,7 @@ class EmbeddedBrowserCdpService {
     expression: string,
     options: CaptureOptions = {},
   ): Promise<unknown> {
-    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
-
-    if (webContentsId === undefined) {
-      throw new Error(
-        tabId
-          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
-          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
-      );
-    }
-
+    const webContentsId = this.resolveActionTarget(tabId);
     const result = (await this.withDeadline(
       this.sendCommand(webContentsId, 'Runtime.evaluate', {
         expression,
@@ -2640,6 +2632,36 @@ class EmbeddedBrowserCdpService {
     )) as { result: { value: unknown } };
 
     return result.result.value;
+  }
+
+  /**
+   * Trusted click / hover / type / press / selectOption through the CDP
+   * Input domain (intent#9266). Each command is bounded by the remaining
+   * request budget.
+   */
+  async input(
+    tabId: string | undefined,
+    action: InputAction,
+    options: CaptureOptions = {},
+  ): Promise<unknown> {
+    const webContentsId = this.resolveActionTarget(tabId);
+    return runInputAction(
+      (method, params) =>
+        this.withDeadline(this.sendCommand(webContentsId, method, params), method, options.deadline),
+      action,
+    );
+  }
+
+  private resolveActionTarget(tabId: string | undefined): number {
+    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
+    if (webContentsId === undefined) {
+      throw new Error(
+        tabId
+          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
+      );
+    }
+    return webContentsId;
   }
 }
 

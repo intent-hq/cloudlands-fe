@@ -20,6 +20,7 @@ import {
   type CaptureErrorCode,
 } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
+import { INPUT_ACTIONS, INPUT_ERROR_CODES, type InputErrorCode } from './browser-input';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
 import {
   rewriteLoopbackUrl,
@@ -86,9 +87,13 @@ function stageBudgetMs(capMs: number, deadline?: number): number {
 }
 
 /** Structured cause carried by a capture-stage error thrown by the CDP service. */
-function captureErrorCode(error: unknown): CaptureErrorCode | undefined {
+function captureErrorCode(error: unknown): CaptureErrorCode | InputErrorCode | undefined {
   const code = (error as { errorCode?: unknown } | null)?.errorCode;
-  return code === 'not-painting' || code === 'deadline-exhausted' ? code : undefined;
+  return code === 'not-painting' ||
+    code === 'deadline-exhausted' ||
+    (INPUT_ERROR_CODES as readonly unknown[]).includes(code)
+    ? (code as CaptureErrorCode | InputErrorCode)
+    : undefined;
 }
 
 // ============================================================================
@@ -326,6 +331,64 @@ const CloseTunnelActionSchema = z
   })
   .strict();
 
+// Trusted input actions (intent#9266). Pointer actions take exactly one
+// target: a CSS selector in the top document, or viewport CSS-pixel x/y.
+const pointTargetFields = {
+  tabId: z.string().optional(),
+  selector: z.string().min(1).optional(),
+  x: z.number().finite().optional(),
+  y: z.number().finite().optional(),
+};
+const hasOnePointTarget = (a: { selector?: string; x?: number; y?: number }) =>
+  a.selector !== undefined
+    ? a.x === undefined && a.y === undefined
+    : a.x !== undefined && a.y !== undefined;
+const POINT_TARGET_MESSAGE = 'Pass either selector or both x and y'; // i18n-ignore (agent-facing protocol error, not user-facing)
+
+const ClickActionSchema = z
+  .object({
+    action: z.literal('click'),
+    ...pointTargetFields,
+    button: z.enum(['left', 'right', 'middle']).optional(),
+    clickCount: z.number().int().min(1).max(3).optional(),
+  })
+  .strict()
+  .refine(hasOnePointTarget, POINT_TARGET_MESSAGE);
+
+const HoverActionSchema = z
+  .object({ action: z.literal('hover'), ...pointTargetFields })
+  .strict()
+  .refine(hasOnePointTarget, POINT_TARGET_MESSAGE);
+
+const TypeActionSchema = z
+  .object({
+    action: z.literal('type'),
+    tabId: z.string().optional(),
+    selector: z.string().min(1).optional(),
+    text: z.string(),
+    clear: z.boolean().optional(),
+    mode: z.enum(['keys', 'insert']).optional(),
+  })
+  .strict();
+
+const PressActionSchema = z
+  .object({
+    action: z.literal('press'),
+    tabId: z.string().optional(),
+    key: z.string().min(1),
+    modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift', 'ControlOrMeta'])).optional(),
+  })
+  .strict();
+
+const SelectOptionActionSchema = z
+  .object({
+    action: z.literal('selectOption'),
+    tabId: z.string().optional(),
+    selector: z.string().min(1),
+    value: z.union([z.string(), z.array(z.string()).min(1)]),
+  })
+  .strict();
+
 // Union of all action schemas
 const BrowserActionSchema = z.discriminatedUnion('action', [
   ListTabsActionSchema,
@@ -354,6 +417,11 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   OpenTunnelActionSchema,
   ListTunnelsActionSchema,
   CloseTunnelActionSchema,
+  ClickActionSchema,
+  HoverActionSchema,
+  TypeActionSchema,
+  PressActionSchema,
+  SelectOptionActionSchema,
 ]);
 
 type BrowserAction = z.infer<typeof BrowserActionSchema>;
@@ -710,7 +778,8 @@ interface ActionResult {
     | 'workspace-not-visible'
     | 'still-loading'
     | 'navigated-away'
-    | CaptureErrorCode;
+    | CaptureErrorCode
+    | InputErrorCode;
   /** Owning agent for ownership errors; null when the tab is unowned. */
   ownerAgentId?: string | null;
   /** Owning agent's display name for ownership errors, when resolvable. */
@@ -746,6 +815,7 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
   'resizeTab',
   'navigate',
   'closeTab',
+  ...INPUT_ACTIONS,
 ]);
 
 /**
@@ -764,6 +834,7 @@ const AGENT_DRAWING_ACTIONS = new Set([
   'snapshot',
   'startSession',
   'navigate',
+  ...INPUT_ACTIONS,
 ]);
 
 /**
@@ -1178,6 +1249,29 @@ async function executeAction(
         const result = await embeddedBrowserCdp.evaluate(tabId, action.expression, { deadline });
         return {
           action: 'evaluate',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
+      }
+
+      case 'click':
+      case 'hover':
+      case 'type':
+      case 'press':
+      case 'selectOption': {
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        if (mount.failure) return mount.failure;
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.input(tabId, action, { deadline });
+        return {
+          action: action.action,
           success: true,
           result,
           ...(mount.warning ? { warning: mount.warning } : {}),
