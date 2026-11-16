@@ -46,6 +46,38 @@ export function queueDeepLinkForRenderer(contents: WebContents, action: DeepLink
   contents.send('deep-link', DEEP_LINK_NUDGE);
 }
 
+/** Where a notification click goes: a workspace, or (chief) the Assistant thread. */
+export interface NotificationNavigation {
+  workspaceId: string;
+  chief?: boolean;
+  agentId?: string;
+}
+
+/**
+ * Deliver a notification click's navigation to `contents`. A renderer that
+ * reported ready gets it pushed; one that did not (still starting past the
+ * wait) gets it queued, and pulls it once its deep-links saga starts.
+ */
+export function deliverNotificationNavigation(
+  contents: WebContents,
+  ready: boolean,
+  navigation: NotificationNavigation,
+): void {
+  if (contents.isDestroyed()) return;
+  if (ready) {
+    contents.send('notification:navigate', navigation);
+    return;
+  }
+  queueDeepLinkForRenderer(contents, {
+    type: 'notification',
+    params: {
+      workspaceId: navigation.workspaceId,
+      ...(navigation.chief ? { chief: 'true' } : {}),
+      ...(navigation.agentId ? { agentId: navigation.agentId } : {}),
+    },
+  });
+}
+
 /**
  * Take and clear the actions queued for the renderer behind `webContentsId`.
  * With `types`, only actions of those types are taken; the rest stay queued

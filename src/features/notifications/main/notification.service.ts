@@ -54,6 +54,10 @@ import {
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { ANY_HOST, type WindowHostScope } from '../../system/main/window-workspace-tracking';
+import {
+  deliverNotificationNavigation,
+  type NotificationNavigation,
+} from '../../deeplink/main/pending-deep-links';
 
 const logger = new Logger('NotificationService');
 
@@ -205,19 +209,20 @@ function pickNotificationClickTarget(
 }
 
 /**
- * Select `machineId` in `frame`, which holds it but shows another machine.
- * Settles with the machine's renderer once it is ready for messages, or null
- * when the frame no longer holds the machine.
+ * Select `machineId` in `frame`, which holds it but shows another machine,
+ * then deliver `navigation` to its renderer: pushed once it is ready, or
+ * queued for it to pull when it does not start in time. Does nothing when the
+ * frame no longer holds the machine.
  */
 async function selectMachineForClick(
   frame: BrowserWindow,
   machineId: string,
-): Promise<Electron.WebContents | null> {
+  navigation: NotificationNavigation,
+): Promise<void> {
   const { selectMachineInFrame } = await import('../../../main/machine-rail');
   const selected = selectMachineInFrame(frame, machineId);
-  if (!selected) return null;
-  await selected.ready;
-  return selected.contents;
+  if (!selected) return;
+  deliverNotificationNavigation(selected.contents, await selected.ready, navigation);
 }
 
 /**
@@ -1040,9 +1045,7 @@ export class NotificationService {
           navigate(rendererFor(target, backendId));
           return;
         }
-        void selectMachineForClick(target, backendId)
-          .then(navigate)
-          .catch((error: unknown) => {
+        void selectMachineForClick(target, backendId, payload).catch((error: unknown) => {
             logger.error('Failed to show the machine for a notification click', error as Error);
           });
       });
@@ -1106,14 +1109,11 @@ export class NotificationService {
           claimActivationFocus(frame);
           activateAppOnMac();
           if (isChief) {
-            const contents = await selectMachineForClick(frame, backendId);
-            if (contents && !contents.isDestroyed()) {
-              contents.send('notification:navigate', {
-                workspaceId,
-                chief: true,
-                ...(agentId ? { agentId } : {}),
-              });
-            }
+            await selectMachineForClick(frame, backendId, {
+              workspaceId: CHIEF_WORKSPACE_ID,
+              chief: true,
+              ...(agentId ? { agentId } : {}),
+            });
           }
           logger.info('Notification click added the machine to the recent frame', {
             workspaceId,

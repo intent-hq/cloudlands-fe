@@ -3,7 +3,14 @@
  * Safe to import from any process (no renderer/main dependencies).
  */
 
-type DeepLinkActionType = 'open' | 'create' | 'clone' | 'settings' | 'node-link' | 'node-invite';
+type DeepLinkActionType =
+  | 'open'
+  | 'create'
+  | 'clone'
+  | 'settings'
+  | 'node-link'
+  | 'node-invite'
+  | 'notification';
 
 export type DeepLinkActionPayload = {
   type: DeepLinkActionType;

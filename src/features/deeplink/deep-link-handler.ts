@@ -10,8 +10,8 @@ import { queueDeepLinkForWindow } from './main/pending-deep-links';
 const mainLogger = new Logger('DeepLinkHandler');
 
 export interface DeepLinkAction {
-  /** `node-link` and `node-invite` are queued by main only, never parsed from a URL. */
-  type: 'open' | 'create' | 'clone' | 'settings' | 'node-link' | 'node-invite';
+  /** `node-link`, `node-invite` and `notification` are queued by main only, never parsed from a URL. */
+  type: 'open' | 'create' | 'clone' | 'settings' | 'node-link' | 'node-invite' | 'notification';
   params: Record<string, string>;
 }
 

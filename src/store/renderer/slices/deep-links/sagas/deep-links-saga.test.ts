@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   notifySuccess: vi.fn(),
   notifyInfo: vi.fn(),
   admission: 'admitted' as string | null,
+  handleNotificationNavigate: vi.fn(async () => undefined),
+}));
+
+vi.mock('$features/notifications/notification-navigation', () => ({
+  handleNotificationNavigate: mocks.handleNotificationNavigate,
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
@@ -284,6 +289,28 @@ describe('node links', () => {
       params: { connectionId: 'gpu-rig', added: 'true' },
     });
     expect(dispatched).toEqual([nodeConnectionOpened('gpu-rig', true)]);
+  });
+});
+
+describe('queued notification clicks', () => {
+  it('opens the workspace of a click queued while the renderer was starting', async () => {
+    await run({ type: 'notification', params: { workspaceId: 'ws-1' } });
+    expect(mocks.handleNotificationNavigate).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+    });
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('opens the Assistant thread of a queued chief click', async () => {
+    await run({
+      type: 'notification',
+      params: { workspaceId: 'chief', chief: 'true', agentId: 'agent-1' },
+    });
+    expect(mocks.handleNotificationNavigate).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'chief',
+      chief: true,
+      agentId: 'agent-1',
+    });
   });
 });
 

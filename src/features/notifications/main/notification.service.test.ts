@@ -14,6 +14,7 @@ import {
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { noteFrameFocused } from '../../../main/frames';
+import { consumePendingDeepLinks } from '../../deeplink/main/pending-deep-links';
 import { setMachineRailEnabledFlag, writeWindowRail } from '../../../main/machine-rail-state';
 import {
   bindMachineViewToBackend,
@@ -3066,8 +3067,10 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
 describe('NotificationService routing by frame (one machine in several frames)', () => {
   const REMOTE_ID = 'remote-1';
 
+  let nextContentsId = 1;
   function makeContents() {
     return {
+      id: nextContentsId++,
       send: vi.fn(),
       isDestroyed: () => false,
       isOffscreen: () => false,
@@ -3406,6 +3409,49 @@ describe('NotificationService routing by frame (one machine in several frames)',
         { workspaceId: 'workspace-1' },
       ]);
       expect(payloads(frame.window.webContents, 'notification:navigate')).toEqual([]);
+    });
+
+    it("queues the navigation for the machine's view when it is not ready in time, so a late renderer still opens it", async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      selectMachineInFrameMock.mockImplementation((window: unknown, id: string) => ({
+        window,
+        contents: frame.renderer(id),
+        ready: Promise.resolve(false),
+      }));
+
+      await clickBanner();
+      await flush();
+
+      const view = frame.renderer(REMOTE_ID);
+      // A renderer still starting has no listener: a push would be dropped.
+      expect(payloads(view, 'notification:navigate')).toEqual([]);
+      expect(consumePendingDeepLinks(view.id).actions).toEqual([
+        { type: 'notification', params: { workspaceId: 'workspace-1' } },
+      ]);
+    });
+
+    it('rail on: queues the Assistant for a joined machine that is not ready in time', async () => {
+      const frame = makeFrame(1, LOCAL_ID);
+      setFrames(frame);
+      const added = makeContents();
+      selectMachineInFrameMock.mockImplementation((window: unknown) => ({
+        window,
+        contents: added,
+        ready: Promise.resolve(false),
+      }));
+
+      await clickBanner(CHIEF_WORKSPACE_ID);
+      await flush();
+
+      expect(payloads(added, 'notification:navigate')).toEqual([]);
+      expect(consumePendingDeepLinks(added.id).actions).toEqual([
+        {
+          type: 'notification',
+          params: { workspaceId: CHIEF_WORKSPACE_ID, chief: 'true', agentId: 'agent-self' },
+        },
+      ]);
     });
 
     it('rail on: adds a machine no frame holds to the most recently focused frame', async () => {
