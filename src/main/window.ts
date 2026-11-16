@@ -24,6 +24,7 @@ import {
 } from '../shared/main/window-appearance';
 import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-icon';
 import { whenRendererWindowsAllowed } from './renderer-window-gate';
+import { loadMenuBarAutoHidePref } from './menu-bar-auto-hide-pref';
 import { isDockRoute, isDockWindow } from './dock-window';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
 import { isDockCaptureEditorWindow } from './dock-capture-editor-identity';
@@ -162,6 +163,7 @@ async function createConfiguredWindow(
   opts: Parameters<typeof buildWindowOptions>[0],
 ): Promise<BrowserWindowType> {
   await whenRendererWindowsAllowed();
+  await loadMenuBarAutoHidePref();
   const window = new BrowserWindow(buildWindowOptions(opts));
   registerWindowTitleListener(window);
   return window;

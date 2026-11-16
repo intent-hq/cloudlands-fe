@@ -21,6 +21,37 @@ export function setWindowTranslucencyEnabled(enabled: boolean): void {
   windowTranslucencyEnabled = enabled;
 }
 
+/**
+ * Main-process mirror of the "Auto-hide menu bar" preference (Linux and
+ * Windows). Seeded from local prefs before the first window opens and kept
+ * current by `window:set-menu-bar-auto-hide`.
+ */
+let menuBarAutoHideEnabled = false;
+
+export function isMenuBarAutoHideEnabled(): boolean {
+  return menuBarAutoHideEnabled;
+}
+
+export function setMenuBarAutoHideEnabled(enabled: boolean): void {
+  menuBarAutoHideEnabled = enabled;
+}
+
+type MenuBarCapableWindow = {
+  setAutoHideMenuBar(hide: boolean): void;
+  setMenuBarVisibility(visible: boolean): void;
+};
+
+/** Applies the auto-hide preference to an open window; the menu bar returns with Alt. */
+export function applyMenuBarAutoHide(
+  window: MenuBarCapableWindow,
+  enabled: boolean,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === 'darwin') return;
+  window.setAutoHideMenuBar(enabled);
+  window.setMenuBarVisibility(!enabled);
+}
+
 function opaqueBackground(isDarkMode: boolean): string {
   return isDarkMode ? DARK_WINDOW_BACKGROUND : LIGHT_WINDOW_BACKGROUND;
 }
@@ -79,7 +110,11 @@ export function getWindowTitleBarOptions(
   platform: NodeJS.Platform = process.platform,
 ): BrowserWindowConstructorOptions {
   if (platform !== 'darwin') {
-    return { titleBarStyle: 'default', frame: true };
+    return {
+      titleBarStyle: 'default',
+      frame: true,
+      ...(menuBarAutoHideEnabled && { autoHideMenuBar: true }),
+    };
   }
 
   return {

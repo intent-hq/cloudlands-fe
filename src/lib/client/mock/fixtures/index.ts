@@ -246,6 +246,7 @@ export const mockUserPreferences: UserPreferencesState = {
   chatContentWidth: 'full',
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
+  menuBarAutoHide: false,
   reduceMotionOnBattery: false,
   pauseAnimationsWhenUnfocused: false,
   labsMultiplayerEnabled: true,

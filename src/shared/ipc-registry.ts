@@ -352,6 +352,9 @@ export const IPC_CHANNELS = {
     // Renderer → main invoke: mirror the "Translucent window" preference onto
     // the native macOS window blur ({ enabled: boolean })
     SET_TRANSLUCENCY: 'window:set-translucency',
+    // Renderer → main invoke: mirror the "Auto-hide menu bar" preference onto
+    // Linux and Windows windows ({ enabled: boolean })
+    SET_MENU_BAR_AUTO_HIDE: 'window:set-menu-bar-auto-hide',
     GET_ZOOM_FACTOR: 'window:get-zoom-factor',
     SET_TITLE: 'window:set-title',
     SET_IN_WORKSPACE: 'window:set-in-workspace',

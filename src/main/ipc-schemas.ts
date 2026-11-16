@@ -652,6 +652,10 @@ export const WindowSetTranslucencySchema = z.object({
   enabled: z.boolean(),
 });
 
+export const WindowSetMenuBarAutoHideSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const WindowSetTitleSchema = z.object({
   title: z.string(),
 });

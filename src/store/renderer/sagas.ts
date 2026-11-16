@@ -140,6 +140,7 @@ import { updateChannelSaga } from './slices/user-preferences/sagas/update-channe
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
 import { windowTranslucencySaga } from './slices/user-preferences/sagas/window-translucency-saga';
+import { menuBarAutoHideSaga } from './slices/user-preferences/sagas/menu-bar-auto-hide-saga';
 import { activeStreamsSaga } from './slices/workspace-agents/sagas/active-streams-saga';
 import { agentCreationSaga } from './slices/workspace-agents/sagas/agent-creation-saga';
 import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
@@ -301,6 +302,7 @@ export const sagas = [
   workspaceInitializerSaga,
   zoomIpcSaga,
   windowTranslucencySaga,
+  menuBarAutoHideSaga,
   menuIpcSaga,
   deepLinksSaga,
   browserIpcSaga,
