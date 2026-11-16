@@ -9091,5 +9091,7 @@
   "workspaceHome_moveError_homeMoving": "主機器已在搬移中。",
   "workspaceHome_moveError_targetUnavailable": "該機器目前不能作為主機器。請選擇其他機器。",
   "workspaceHome_moveError_updateRequired": "請先在該機器上更新 Intent，再將其設為主機器。",
-  "workspaceHome_moveError_failed": "無法搬移主機器：{message}"
+  "workspaceHome_moveError_failed": "無法搬移主機器：{message}",
+  "workspaceHome_starting_label": "正在啟動主機器…",
+  "workspaceHome_moveDialog_cloudStartsSandbox": "啟動一個新沙箱"
 }

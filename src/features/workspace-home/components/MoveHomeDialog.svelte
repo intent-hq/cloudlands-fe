@@ -74,7 +74,12 @@
       option.key === currentKey || (currentNodeId !== null && option.nodeId === currentNodeId)
         ? m.workspaceHome_moveDialog_currentHome()
         : null,
-      option.disabled ? (option.reason ?? null) : option.platform,
+      option.disabled
+        ? (option.reason ?? null)
+        : // A cloud entry has no running machine yet: moving there starts one.
+          option.kind === 'cloud'
+          ? m.workspaceHome_moveDialog_cloudStartsSandbox()
+          : option.platform,
     ].filter((part): part is string => !!part);
     return parts.length ? parts.join(' · ') : undefined;
   }

@@ -9091,5 +9091,7 @@
   "workspaceHome_moveError_homeMoving": "La machine principale est déjà en cours de déplacement.",
   "workspaceHome_moveError_targetUnavailable": "Cette machine ne peut pas être la machine principale pour l'instant. Choisissez-en une autre.",
   "workspaceHome_moveError_updateRequired": "Mettez à jour Intent sur cette machine avant d'en faire la machine principale.",
-  "workspaceHome_moveError_failed": "Impossible de déplacer la machine principale : {message}"
+  "workspaceHome_moveError_failed": "Impossible de déplacer la machine principale : {message}",
+  "workspaceHome_starting_label": "Démarrage de la machine principale…",
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Démarre un nouveau sandbox"
 }

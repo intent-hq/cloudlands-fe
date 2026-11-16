@@ -10,7 +10,11 @@
  * served.
  */
 import { AgentStatus, WorkspaceStatusEnum, type AgentSession, type Workspace } from '$shared/types';
-import type { MoveHomeTarget, WorkspaceHomeState } from '$shared/types/workspace-home';
+import type {
+  KnownWorkspaceHomeState,
+  MoveHomeTarget,
+  WorkspaceHomeState,
+} from '$shared/types/workspace-home';
 import {
   START_ON_BACKEND,
   startOnCloudMachineId,
@@ -22,7 +26,12 @@ type WorkspaceHomeBanner = 'detached' | 'moving' | 'backupWarning';
 
 export interface WorkspaceHomeView {
   name: string;
+  /** As served, including a state this app does not know. */
   state: WorkspaceHomeState;
+  /** A cloud home's sandbox is starting: a calm "Starting home…", no banner or actions. */
+  starting: boolean;
+  /** A state this app does not know: unavailable, shown without backup or loss wording. */
+  unknownState: boolean;
   /** Files, diffs, terminals and scripts fail with `home-unavailable`. */
   unavailable: boolean;
   lastBackupAt: string | null;
@@ -37,27 +46,129 @@ export interface WorkspaceHomeView {
   moveWarning: boolean;
 }
 
+/**
+ * How a served state is presented. A state this app does not know is
+ * `unknown`: unavailable (panels covered, Run disabled) but neutral, with no
+ * banner, marker, Wait or backup-loss warning, since a later backend's state
+ * need not mean the machine is gone.
+ */
+function presentedState(state: WorkspaceHomeState): KnownWorkspaceHomeState | 'unknown' {
+  switch (state) {
+    case 'attached':
+      return 'attached';
+    case 'detached':
+      return 'detached';
+    case 'moving':
+      return 'moving';
+    case 'starting':
+      return 'starting';
+    default:
+      return 'unknown';
+  }
+}
+
 /** The home's view, or null when the workspace has none. */
 export function workspaceHomeView(
   workspace: Pick<Workspace, 'home'> | null | undefined,
 ): WorkspaceHomeView | null {
   const home = workspace?.home;
   if (!home) return null;
-  const { state } = home;
+  const presented = presentedState(home.state);
+  const starting = presented === 'starting';
+  const loud = presented === 'detached' || presented === 'moving';
   const banner: WorkspaceHomeBanner | null =
-    state === 'attached' ? (home.backupWarning === true ? 'backupWarning' : null) : state;
+    presented === 'attached'
+      ? home.backupWarning === true
+        ? 'backupWarning'
+        : null
+      : loud
+        ? presented
+        : null;
   return {
     name: home.name,
-    state,
-    unavailable: state !== 'attached',
+    state: home.state,
+    starting,
+    unknownState: presented === 'unknown',
+    unavailable: presented !== 'attached',
     lastBackupAt: home.lastBackupAt ?? null,
     banner,
-    marker: state === 'attached' ? null : state,
-    canWait: state === 'detached',
-    canMove: state !== 'moving',
+    marker: loud ? presented : null,
+    canWait: presented === 'detached',
+    // Only a running move refuses another (`home-moving`).
+    canMove: presented !== 'moving',
     // When the old home is attached the backend pushes first, so nothing is lost.
-    moveWarning: state === 'detached',
+    moveWarning: presented === 'detached',
   };
+}
+
+/**
+ * How long after a panel mounted on an attached home its own first read can
+ * still be the one that woke a paused cloud home: the backend waits up to
+ * 10 s for it to start, plus a margin.
+ */
+const HOME_WAKE_WINDOW_MS = 12_000;
+
+/** A panel's retry bookkeeping while the home is starting (see `nextHomeRetry`). */
+export interface HomeRetry {
+  /** The workspace the panel shows; another one starts over. */
+  workspaceId: string | null;
+  /** Bumps once to remount the panel, so it re-reads from the now attached home. */
+  generation: number;
+  /** The panel has had a usable home since this time (ms), or null. */
+  usableSince: number | null;
+  /** The panel's reads may have failed while the home was unavailable. */
+  waited: boolean;
+}
+
+export const initialHomeRetry: HomeRetry = {
+  workspaceId: null,
+  generation: 0,
+  usableSince: null,
+  waited: false,
+};
+
+/**
+ * Retry once the home is attached (nodes.md "Cloud homes" 6). A panel
+ * remounts once, to re-read, when its reads may have failed while the home
+ * was unavailable: it opened while the home was starting, or the home went
+ * away within `HOME_WAKE_WINDOW_MS` of the panel opening (its own read woke a
+ * paused cloud home, which reports attached until then). A panel that
+ * reported loaded content (`contentLoaded`, an editor) is never remounted,
+ * nor is one that was usable longer: a remount must not drop undo history or
+ * unsaved work. Nothing is decided until the workspace row is loaded; another
+ * workspace starts over.
+ */
+export function nextHomeRetry(
+  prev: HomeRetry,
+  input: {
+    workspaceId: string;
+    loaded: boolean;
+    unavailable: boolean;
+    /** The panel reported that its content loaded (see `HomePanelContext`). */
+    contentLoaded: boolean;
+    now: number;
+  },
+): HomeRetry {
+  if (!input.loaded) return prev;
+  const base: HomeRetry =
+    prev.workspaceId === input.workspaceId
+      ? prev
+      : { ...initialHomeRetry, workspaceId: input.workspaceId, generation: prev.generation };
+  if (input.unavailable) {
+    if (base.waited) return base;
+    const freshlyMounted =
+      base.usableSince === null || input.now - base.usableSince <= HOME_WAKE_WINDOW_MS;
+    return freshlyMounted ? { ...base, usableSince: null, waited: true } : base;
+  }
+  if (base.waited) {
+    return {
+      ...base,
+      generation: input.contentLoaded ? base.generation : base.generation + 1,
+      usableSince: input.now,
+      waited: false,
+    };
+  }
+  return base.usableSince === null ? { ...base, usableSince: input.now } : base;
 }
 
 const AGENT_PREFIX = 'agent:';
@@ -118,6 +229,7 @@ export function moveHomeTargets({
     kind: 'agent',
     label: agent.name,
     machineName: agent.nodeName?.trim() || undefined,
+    nodeId: agent.nodeId,
     platform: null,
     disabled: false,
   }));

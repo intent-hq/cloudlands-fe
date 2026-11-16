@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
 import { homeMoveTargetKey, workspaceHomeView, type MoveHomeOption } from '../workspace-home';
 import WorkspaceHomeBanner from './WorkspaceHomeBanner.svelte';
 import MoveHomeDialog from './MoveHomeDialog.svelte';
+import WorkspaceHomeLine from './WorkspaceHomeLine.svelte';
 import MoveHomeDialogHost from './MoveHomeDialogHost.svelte';
 import Harness from './WorkspaceHomePanelGateHarness.svelte';
 import { store } from '$store/renderer/store';
@@ -16,6 +17,11 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { moveHomeDialogClosed, moveHomeDialogOpened } from '../workspace-home-slice';
 import { labelWorkspace } from '../../../test/fixtures/workspace-labels-state';
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const HOME: WorkspaceHome = {
   homeId: 'h-1',
@@ -198,7 +204,8 @@ describe('WorkspaceHomePanelGate', () => {
   it('keeps the panel mounted under the notice, so unsaved work survives a detach', async () => {
     store.init();
     store.dispatch(setWorkspaceEntity(labelWorkspace('ws-gate', { home: HOME })));
-    render(Harness, { workspaceId: 'ws-gate' });
+    let nowMs = 0;
+    render(Harness, { workspaceId: 'ws-gate', clock: () => nowMs });
     const child = await vi.waitFor(() => {
       const el = document.querySelector('[data-gated-child]');
       expect(el).toBeTruthy();
@@ -207,6 +214,8 @@ describe('WorkspaceHomePanelGate', () => {
     const setHome = (home: WorkspaceHome) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-gate', { home })]));
 
+    // The panel has been usable for a while (past the wake window) before the detach.
+    nowMs = 60_000;
     setHome({ ...HOME, state: 'detached', since: '2026-11-12T09:42:00Z' });
     await vi.waitFor(() =>
       expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
@@ -218,5 +227,145 @@ describe('WorkspaceHomePanelGate', () => {
       expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
     );
     expect(document.querySelector('[data-gated-child]')).toBe(child);
+  });
+
+  it('keeps a panel that reported loaded content across a brief early disconnect', async () => {
+    store.init();
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-loaded', { home: HOME })));
+    render(Harness, { workspaceId: 'ws-loaded', reportsContent: true });
+    const child = await vi.waitFor(() => {
+      const el = document.querySelector('[data-gated-child]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const setHome = (home: WorkspaceHome) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-loaded', { home })]));
+
+    setHome({ ...HOME, state: 'detached', since: '2026-11-16T02:00:02Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeTruthy(),
+    );
+    setHome({ ...HOME, state: 'attached', since: '2026-11-16T02:00:09Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-gated-child]')).toBe(child);
+  });
+
+  it('retries a panel whose own read woke a paused cloud home', async () => {
+    store.init();
+    // A paused cloud home reports attached until a read wakes it.
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-paused', { home: HOME })));
+    render(Harness, { workspaceId: 'ws-paused' });
+    const before = await vi.waitFor(() => {
+      const el = document.querySelector('[data-gated-child]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const setHome = (home: WorkspaceHome) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-paused', { home })]));
+
+    setHome({ ...HOME, state: 'starting', since: '2026-11-16T02:00:01Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice="starting"]')).toBeTruthy(),
+    );
+    setHome({ ...HOME, state: 'attached', since: '2026-11-16T02:00:15Z' });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-gated-child]')).not.toBe(before);
+  });
+});
+
+describe('WorkspaceHomePanelGate while a cloud home starts', () => {
+  it('shows a calm notice, then remounts the panel once the home is attached', async () => {
+    store.init();
+    const starting: WorkspaceHome = { ...HOME, state: 'starting', since: '2026-11-15T09:00:00Z' };
+    store.dispatch(setWorkspaceEntity(labelWorkspace('ws-start', { home: starting })));
+    render(Harness, { workspaceId: 'ws-start' });
+
+    const notice = await vi.waitFor(() => {
+      const el = document.querySelector('[data-workspace-home-panel-notice="starting"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    // Calm: no Wait or Move home while it starts.
+    expect(notice.querySelectorAll('button')).toHaveLength(0);
+    const before = document.querySelector('[data-gated-child]');
+
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity('ws-start', {
+          home: { ...HOME, state: 'attached', since: '2026-11-15T09:00:20Z' },
+        }),
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-workspace-home-panel-notice]')).toBeNull(),
+    );
+    const after = document.querySelector('[data-gated-child]');
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(before);
+  });
+});
+
+describe('MoveHomeDialog cloud entries', () => {
+  const CLOUD = homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'e2b-4x8' });
+  const CLOUD_OPTIONS: MoveHomeOption[] = [
+    ...OPTIONS,
+    { key: CLOUD, kind: 'cloud', label: 'E2B 4x8', platform: null, disabled: false },
+    {
+      key: homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'northflank' }),
+      kind: 'cloud',
+      label: 'Northflank',
+      platform: null,
+      disabled: true,
+      reason: 'Key rejected',
+    },
+  ];
+
+  it('says a cloud entry starts a new sandbox and moves the home there', async () => {
+    const onSubmit = vi.fn();
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: CLOUD_OPTIONS,
+      onSubmit,
+      onCancel: vi.fn(),
+    });
+    const cloud = screen.getByRole('radio', { name: /E2B 4x8/ });
+    expect(cloud.textContent).toContain(m.workspaceHome_moveDialog_cloudStartsSandbox());
+    await fireEvent.click(cloud);
+    await fireEvent.click(submitButton());
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: 'cloud', cloudMachineId: 'e2b-4x8' });
+  });
+
+  it('shows an unusable cloud entry disabled with its reason instead', () => {
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: CLOUD_OPTIONS,
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    const blocked = screen.getByRole('radio', { name: /Northflank/ }) as HTMLButtonElement;
+    expect(blocked.textContent).toContain('Key rejected');
+    expect(blocked.textContent).not.toContain(m.workspaceHome_moveDialog_cloudStartsSandbox());
+  });
+});
+
+describe('WorkspaceHomeLine while the home starts', () => {
+  it('keeps the entry name and announces "Starting home…" once', () => {
+    render(WorkspaceHomeLine, {
+      view: view({ name: 'E2B · Team', state: 'starting', since: '2026-11-16T02:00:00Z' }),
+    });
+    const statuses = screen.getAllByRole('status');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].textContent).toContain(m.workspaceHome_starting_label());
+    expect(document.body.textContent).toContain('E2B · Team');
+    // No detached or moving marker while it starts.
+    expect(document.querySelector('[data-workspace-home-marker]')).toBeNull();
   });
 });

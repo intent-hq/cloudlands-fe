@@ -1,10 +1,15 @@
 <script lang="ts">
   /** Test harness: a gated panel whose child holds unsaved local state. */
   import WorkspaceHomePanelGate from './WorkspaceHomePanelGate.svelte';
+  import EditableChildHarness from './EditableChildHarness.svelte';
 
-  let { workspaceId }: { workspaceId: string } = $props();
+  let {
+    workspaceId,
+    clock,
+    reportsContent = false,
+  }: { workspaceId: string; clock?: () => number; reportsContent?: boolean } = $props();
 </script>
 
-<WorkspaceHomePanelGate {workspaceId}>
-  <textarea data-gated-child aria-label="draft">unsaved draft</textarea>
+<WorkspaceHomePanelGate {workspaceId} {clock}>
+  <EditableChildHarness {reportsContent} />
 </WorkspaceHomePanelGate>
