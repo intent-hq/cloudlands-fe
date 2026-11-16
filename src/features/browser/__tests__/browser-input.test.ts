@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InputActionError, runInputAction, type CdpSend } from '../main/browser-input';
+import { runInputAction, type CdpSend } from '../main/browser-input';
 
 type Call = { method: string; params?: Record<string, unknown> };
 
@@ -74,9 +74,7 @@ describe('runInputAction', () => {
       const error = await runInputAction(cdp.send, { action: 'click', selector: '#x' }).catch(
         (e: unknown) => e,
       );
-
-      expect(error).toBeInstanceOf(InputActionError);
-      expect((error as InputActionError).errorCode).toBe(code);
+      expect((error as { errorCode?: string }).errorCode).toBe(code);
       expect(cdp.input()).toEqual([]);
     });
 
@@ -210,6 +208,126 @@ describe('runInputAction', () => {
         runInputAction(cdp.send, { action: 'press', key: 'Hyper' }),
       ).rejects.toMatchObject({ errorCode: 'unknown-key' });
       expect(cdp.input()).toEqual([]);
+    });
+  });
+
+  describe('review regressions', () => {
+    it('types \\r\\n as one Enter and \\t as the Tab key', async () => {
+      const cdp = fakeCdp();
+      const result = await runInputAction(cdp.send, { action: 'type', text: 'a\r\nb\tc' }, 'linux');
+
+      expect(
+        keyEvents(cdp.calls)
+          .filter((e) => e.type !== 'keyUp')
+          .map((e) => e.key),
+      ).toEqual(['a', 'Enter', 'b', 'Tab', 'c']);
+      expect(result).toEqual({ length: 5 });
+    });
+
+    it('types shifted characters with their US-layout key, code and Shift bit', async () => {
+      const cdp = fakeCdp();
+      await runInputAction(cdp.send, { action: 'type', text: 'A!' }, 'linux');
+
+      const down = cdp.calls.filter((c) => c.params?.type === 'keyDown').map((c) => c.params);
+      expect(down[0]).toMatchObject({
+        key: 'A',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 8,
+        text: 'A',
+      });
+      expect(down[1]).toMatchObject({
+        key: '!',
+        code: 'Digit1',
+        windowsVirtualKeyCode: 49,
+        modifiers: 8,
+        text: '!',
+      });
+    });
+
+    it('press with Shift reports the shifted key', async () => {
+      const cdp = fakeCdp();
+      await runInputAction(cdp.send, { action: 'press', key: '1', modifiers: ['Shift'] }, 'linux');
+
+      expect(cdp.input()[0].params).toMatchObject({
+        key: '!',
+        code: 'Digit1',
+        text: '!',
+        modifiers: 8,
+      });
+    });
+
+    it.each([
+      [['Shift', 'Meta'], 'z', 'redo'],
+      [['Shift', 'Alt'], 'ArrowLeft', 'moveWordLeftAndModifySelection'],
+      [['Shift', 'Meta'], 'ArrowRight', 'moveToRightEndOfLineAndModifySelection'],
+      [['Shift'], 'Home', 'moveToBeginningOfDocumentAndModifySelection'],
+      [['Alt'], 'Delete', 'deleteWordForward'],
+    ] as const)('maps macOS %s+%s to %s', async (modifiers, key, command) => {
+      const cdp = fakeCdp();
+      await runInputAction(cdp.send, { action: 'press', key, modifiers: [...modifiers] }, 'darwin');
+
+      expect(cdp.input()[0].params).toMatchObject({ commands: [command] });
+    });
+
+    it('releases the mouse button when a click fails after the press', async () => {
+      const calls: string[] = [];
+      let failed = false;
+      const send: CdpSend = async (method, params) => {
+        calls.push(`${method}:${params?.type ?? ''}`);
+        if (params?.type === 'mouseReleased' && !failed) {
+          failed = true;
+          throw new Error('deadline-exhausted');
+        }
+        return {};
+      };
+
+      await expect(runInputAction(send, { action: 'click', x: 1, y: 1 })).rejects.toThrow(
+        'deadline-exhausted',
+      );
+      expect(calls.filter((c) => c.endsWith('mouseReleased'))).toHaveLength(2);
+    });
+
+    it('reports how much text landed when typing stops part-way', async () => {
+      let downs = 0;
+      const send: CdpSend = async (_method, params) => {
+        if (params?.type === 'keyDown' && ++downs === 3) {
+          throw Object.assign(new Error('Input.dispatchKeyEvent timed out'), {
+            errorCode: 'deadline-exhausted',
+          });
+        }
+        return {};
+      };
+
+      const error = await runInputAction(send, { action: 'type', text: 'abcd' }).catch(
+        (e: unknown) => e as Error & { errorCode?: string },
+      );
+      expect(error.message).toContain('2 of 4 characters');
+      expect(error.errorCode).toBe('deadline-exhausted');
+    });
+
+    it('maps CSS-pixel points onto a scaled-to-fit tab', async () => {
+      const cdp = fakeCdp([{ status: 'ok', x: 100, y: 40 }]);
+      const result = await runInputAction(
+        cdp.send,
+        { action: 'click', selector: '#go' },
+        'linux',
+        0.5,
+      );
+
+      expect(result).toEqual({ x: 100, y: 40 });
+      expect(cdp.input().map((c) => [c.params?.x, c.params?.y])).toEqual([
+        [50, 20],
+        [50, 20],
+        [50, 20],
+      ]);
+    });
+
+    it('rejects a disabled select or option', async () => {
+      const cdp = fakeCdp([{ status: 'disabled' }]);
+      await expect(
+        runInputAction(cdp.send, { action: 'selectOption', selector: '#s', value: 'a' }),
+      ).rejects.toMatchObject({ errorCode: 'element-disabled' });
     });
   });
 

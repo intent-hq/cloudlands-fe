@@ -2065,10 +2065,7 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         break;
       case 'selectOption':
         verb = m.chat_toolClassifier_select_label();
-        subject = truncate(
-          [primaryAction.value].flat().map(safeStr).join(', '),
-          30,
-        );
+        subject = truncate([primaryAction.value].flat().map(safeStr).join(', '), 30);
         break;
       default:
         verb = m.chat_toolClassifier_browser_label();

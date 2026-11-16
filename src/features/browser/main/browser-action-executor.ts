@@ -1004,6 +1004,10 @@ async function executeAction(
     }
   }
 
+  // Input mutates the page: pin a tab-less action to the tab checked below so
+  // a tab registering during the mount/settle wait cannot receive it.
+  if (!tabId && INPUT_ACTIONS.has(action.action)) tabId = embeddedBrowserCdp.getFirstTab()?.tabId;
+
   // Ownership enforcement (monorepo#2857): resolve the tab the action will
   // actually hit — including the first-tab fallback the underlying service
   // methods apply — and reject agent calls on tabs the agent does not own.

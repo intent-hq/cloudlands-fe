@@ -2645,10 +2645,33 @@ class EmbeddedBrowserCdpService {
     options: CaptureOptions = {},
   ): Promise<unknown> {
     const webContentsId = this.resolveActionTarget(tabId);
+    // Same rule as the screenshot clip: only an applied override draws scaled.
+    const scale =
+      tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
+        ? this.resolveEmulationGeometry(tabId).scale
+        : 1;
+    const { deadline } = options;
     return runInputAction(
-      (method, params) =>
-        this.withDeadline(this.sendCommand(webContentsId, method, params), method, options.deadline),
+      async (method, params) => {
+        // Releasing a pressed button is cleanup, never new input: it ignores
+        // the deadline so an expired request cannot leave the button held.
+        if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseReleased') {
+          return this.sendCommand(webContentsId, method, params);
+        }
+        await this.withDeadline(this.attachDebugger(webContentsId), method, deadline);
+        // Checked after attaching, so an expired request injects nothing new.
+        if (deadline !== undefined && Date.now() >= deadline) {
+          throw new CaptureStageError(
+            `Request deadline exhausted before ${method}`, // i18n-ignore (agent-facing protocol error, not user-facing)
+            'deadline-exhausted',
+            method,
+          );
+        }
+        return this.withDeadline(this.sendCommand(webContentsId, method, params), method, deadline);
+      },
       action,
+      process.platform,
+      scale,
     );
   }
 

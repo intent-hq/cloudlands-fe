@@ -14,6 +14,10 @@ const PAGE = `<!doctype html><title>input fixture</title>
 <div id="hover" style="width:80px;height:30px">hover</div>
 <select id="select"><option value="a">Alpha</option><option value="b">Beta</option></select>
 <div class="wrap"><button id="covered">Covered</button><div class="overlay" id="overlay"></div></div>
+<div id="host"></div>
+<select id="disabled" disabled><option value="a">A</option></select>
+<button id="tall" style="display:block;width:100px;height:3000px">Tall</button>
+<button id="scaled">Scaled</button>
 <button id="far" style="margin-top:2500px">Far</button>
 <script>
   window.log = [];
@@ -26,6 +30,12 @@ const PAGE = `<!doctype html><title>input fixture</title>
   document.getElementById('hover').addEventListener('mouseenter', rec('mouseenter'));
   document.getElementById('select').addEventListener('change', rec('change'));
   document.getElementById('far').addEventListener('click', rec('far-click'));
+  document.getElementById('tall').addEventListener('click', rec('tall-click'));
+  document.getElementById('scaled').addEventListener('click', rec('scaled-click'));
+  const root = document.getElementById('host').attachShadow({ mode: 'open' });
+  root.innerHTML = '<style>.wrap{position:relative;display:inline-block}.overlay{position:absolute;inset:0}</style>' +
+    '<button id="inner">Inner</button><div class="wrap"><button id="shadowCovered">x</button><div class="overlay" id="shadowOverlay"></div></div>';
+  root.getElementById('inner').addEventListener('click', rec('shadow-click'));
 </script>`;
 
 test('input actions reach an unfocused guest as trusted events', async () => {
@@ -70,9 +80,9 @@ test('input actions reach an unfocused guest as trusted events', async () => {
       wc.debugger.attach('1.3');
       const send = (method: string, params?: Record<string, unknown>) =>
         wc.debugger.sendCommand(method, params);
-      const run = async (action: Record<string, unknown>) => {
+      const run = async (action: Record<string, unknown>, scale = 1) => {
         try {
-          return { ok: true, result: await runInputAction(send, action) };
+          return { ok: true, result: await runInputAction(send, action, process.platform, scale) };
         } catch (error: any) {
           return { ok: false, errorCode: error.errorCode, message: String(error.message) };
         }
@@ -82,9 +92,7 @@ test('input actions reach an unfocused guest as trusted events', async () => {
       await wc.executeJavaScript(
         `document.getElementById('guarded').dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }))`,
       );
-      const syntheticValue = await wc.executeJavaScript(
-        `document.getElementById('guarded').value`,
-      );
+      const syntheticValue = await wc.executeJavaScript(`document.getElementById('guarded').value`);
 
       const steps = {
         type: await run({ action: 'type', selector: '#guarded', text: 'Hello' }),
@@ -97,6 +105,26 @@ test('input actions reach an unfocused guest as trusted events', async () => {
         missing: await run({ action: 'click', selector: '#missing' }),
         notSelect: await run({ action: 'selectOption', selector: '#hover', value: 'a' }),
         unknownKey: await run({ action: 'press', key: 'Hyper' }),
+        shadow: await run({ action: 'click', selector: '#inner' }),
+        shadowCovered: await run({ action: 'click', selector: '#shadowCovered' }),
+        tall: await run({ action: 'click', selector: '#tall' }),
+        disabled: await run({ action: 'selectOption', selector: '#disabled', value: 'a' }),
+        // Scale-to-fit agent tabs draw at scale < 1 (setTabViewport); CSS-px
+        // coordinates must still land on the element.
+        scaled: await (async () => {
+          await send('Emulation.setDeviceMetricsOverride', {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.5,
+          });
+          try {
+            return await run({ action: 'click', selector: '#scaled' }, 0.5);
+          } finally {
+            await send('Emulation.clearDeviceMetricsOverride');
+          }
+        })(),
       };
       const page_ = await wc.executeJavaScript(
         `({ value: document.getElementById('guarded').value,
@@ -133,6 +161,15 @@ test('input actions reach an unfocused guest as trusted events', async () => {
     expect(evidence.steps.missing).toMatchObject({ ok: false, errorCode: 'element-not-found' });
     expect(evidence.steps.notSelect).toMatchObject({ ok: false, errorCode: 'not-a-select' });
     expect(evidence.steps.unknownKey).toMatchObject({ ok: false, errorCode: 'unknown-key' });
+    expect(trusted('shadow-click')).toEqual([{ name: 'shadow-click', trusted: true }]);
+    expect(evidence.steps.shadowCovered).toMatchObject({
+      ok: false,
+      errorCode: 'element-obscured',
+    });
+    expect(evidence.steps.shadowCovered.message).toContain('shadowOverlay');
+    expect(trusted('tall-click')).toEqual([{ name: 'tall-click', trusted: true }]);
+    expect(evidence.steps.disabled).toMatchObject({ ok: false, errorCode: 'element-disabled' });
+    expect(trusted('scaled-click')).toEqual([{ name: 'scaled-click', trusted: true }]);
   } finally {
     await app?.close();
     await rm(root, { recursive: true, force: true });

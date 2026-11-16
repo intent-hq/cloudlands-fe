@@ -2184,6 +2184,28 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.beginAgentDrawing).toHaveBeenCalledWith('tab-1', 'agent-1');
     });
 
+    it('pins a tab-less input action to the tab whose owner was checked', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValueOnce({
+        tabId: 'tab-checked',
+      } as any);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+
+      await executeActions(
+        { actions: [{ action: 'press', key: 'Enter' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.resolveTabOwner).toHaveBeenCalledWith('tab-checked', 'ws-1');
+      expect(embeddedBrowserCdp.input).toHaveBeenCalledWith(
+        'tab-checked',
+        { action: 'press', key: 'Enter' },
+        { deadline: undefined },
+      );
+    });
+
     it('surfaces the structured input error code', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.input).mockRejectedValueOnce(
@@ -2207,6 +2229,8 @@ describe('browser-action-executor', () => {
       { action: 'click', tabId: 'tab-1', x: 1 },
       { action: 'click', tabId: 'tab-1', selector: '#a', x: 1, y: 1 },
       { action: 'click', tabId: 'tab-1', selector: '#a', clickCount: 4 },
+      { action: 'click', tabId: 'tab-1', selector: '#a', clickCount: 0 },
+      { action: 'hover', tabId: 'tab-1', selector: '#a', force: true },
       { action: 'press', tabId: 'tab-1', key: 'a', modifiers: ['Hyper'] },
       { action: 'selectOption', tabId: 'tab-1', selector: '#s', value: [] },
       { action: 'type', tabId: 'tab-1', text: 'x', mode: 'paste' },

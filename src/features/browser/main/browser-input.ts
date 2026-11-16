@@ -17,6 +17,7 @@ export type InputErrorCode =
   | 'not-focusable'
   | 'not-a-select'
   | 'option-not-found'
+  | 'element-disabled'
   | 'unknown-key';
 
 export const INPUT_ERROR_CODES: readonly InputErrorCode[] = [
@@ -27,10 +28,11 @@ export const INPUT_ERROR_CODES: readonly InputErrorCode[] = [
   'not-focusable',
   'not-a-select',
   'option-not-found',
+  'element-disabled',
   'unknown-key',
 ];
 
-export class InputActionError extends Error {
+class InputActionError extends Error {
   constructor(
     message: string,
     readonly errorCode: InputErrorCode,
@@ -40,8 +42,8 @@ export class InputActionError extends Error {
   }
 }
 
-export type InputModifier = 'Alt' | 'Control' | 'Meta' | 'Shift' | 'ControlOrMeta';
-export type MouseButton = 'left' | 'right' | 'middle';
+type InputModifier = 'Alt' | 'Control' | 'Meta' | 'Shift' | 'ControlOrMeta';
+type MouseButton = 'left' | 'right' | 'middle';
 
 interface Target {
   selector?: string;
@@ -65,6 +67,8 @@ interface KeyDefinition {
   code: string;
   keyCode: number;
   text?: string;
+  /** Typed with Shift on a US layout (`A`, `!`). */
+  shifted?: boolean;
 }
 
 const NAMED_KEYS: Record<string, KeyDefinition> = {
@@ -143,7 +147,49 @@ const MAC_EDITING_COMMANDS: Record<string, string> = {
   'Meta+v': 'paste',
   'Meta+z': 'undo',
   'Shift+Meta+z': 'redo',
+  'Shift+Enter': 'insertNewline',
+  'Alt+Enter': 'insertNewlineIgnoringFieldEditor',
+  'Shift+Backspace': 'deleteBackward',
+  'Shift+Delete': 'deleteForward',
+  'Alt+Delete': 'deleteWordForward',
+  'Meta+Delete': 'deleteToEndOfLine',
+  'Shift+Alt+ArrowLeft': 'moveWordLeftAndModifySelection',
+  'Shift+Alt+ArrowRight': 'moveWordRightAndModifySelection',
+  'Shift+Meta+ArrowLeft': 'moveToLeftEndOfLineAndModifySelection',
+  'Shift+Meta+ArrowRight': 'moveToRightEndOfLineAndModifySelection',
+  'Shift+Meta+ArrowUp': 'moveToBeginningOfDocumentAndModifySelection',
+  'Shift+Meta+ArrowDown': 'moveToEndOfDocumentAndModifySelection',
+  'Shift+Home': 'moveToBeginningOfDocumentAndModifySelection',
+  'Shift+End': 'moveToEndOfDocumentAndModifySelection',
+  'Shift+PageUp': 'pageUpAndModifySelection',
+  'Shift+PageDown': 'pageDownAndModifySelection',
 };
+
+/** US-layout shifted characters and the key that produces them. */
+const SHIFTED: Record<string, string> = {
+  '!': '1',
+  '@': '2',
+  '#': '3',
+  $: '4',
+  '%': '5',
+  '^': '6',
+  '&': '7',
+  '*': '8',
+  '(': '9',
+  ')': '0',
+  _: '-',
+  '+': '=',
+  '<': ',',
+  '>': '.',
+  '?': '/',
+  ':': ';',
+  '"': "'",
+  '{': '[',
+  '}': ']',
+  '|': '\\',
+  '~': '`',
+};
+const UNSHIFTED = Object.fromEntries(Object.entries(SHIFTED).map(([up, down]) => [down, up]));
 
 function describeKey(key: string): KeyDefinition | undefined {
   const named = NAMED_KEYS[key];
@@ -151,12 +197,29 @@ function describeKey(key: string): KeyDefinition | undefined {
   if ([...key].length !== 1) return undefined;
   if (/^[a-z]$/i.test(key)) {
     const upper = key.toUpperCase();
-    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0), text: key };
+    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0), text: key, shifted: key === upper };
   }
   if (/^[0-9]$/.test(key)) return { code: `Digit${key}`, keyCode: key.charCodeAt(0), text: key };
-  const punctuation = PUNCTUATION[key];
-  if (punctuation) return { code: punctuation[0], keyCode: punctuation[1], text: key };
+  const base = SHIFTED[key];
+  const known = base === undefined ? PUNCTUATION[key] : undefined;
+  if (known) return { code: known[0], keyCode: known[1], text: key };
+  if (base !== undefined) {
+    const baseKey = describeKey(base);
+    if (baseKey) return { ...baseKey, text: key, shifted: true };
+  }
   return { code: '', keyCode: 0, text: key };
+}
+
+/** The key Shift turns `key` into on a US layout, if any. */
+function shiftedKey(key: string): string {
+  if (/^[a-z]$/.test(key)) return key.toUpperCase();
+  return UNSHIFTED[key] ?? key;
+}
+
+/** The unshifted key, used to look up macOS editing commands. */
+function baseKey(key: string): string {
+  if (/^[A-Z]$/.test(key)) return key.toLowerCase();
+  return SHIFTED[key] ?? key;
 }
 
 function keyDefinition(key: string): KeyDefinition {
@@ -171,7 +234,9 @@ function keyDefinition(key: string): KeyDefinition {
 
 function resolveModifiers(modifiers: InputModifier[], platform: string) {
   const names = new Set(
-    modifiers.map((m) => (m === 'ControlOrMeta' ? (platform === 'darwin' ? 'Meta' : 'Control') : m)),
+    modifiers.map((m) =>
+      m === 'ControlOrMeta' ? (platform === 'darwin' ? 'Meta' : 'Control') : m,
+    ),
   );
   const ordered = (['Shift', 'Control', 'Alt', 'Meta'] as const).filter((m) => names.has(m));
   return { names: ordered, bits: ordered.reduce((sum, m) => sum + MODIFIER_BITS[m], 0) };
@@ -179,17 +244,23 @@ function resolveModifiers(modifiers: InputModifier[], platform: string) {
 
 async function pressKey(
   send: CdpSend,
-  key: string,
+  requestedKey: string,
   modifiers: InputModifier[],
   platform: string,
 ): Promise<void> {
+  const shift = modifiers.includes('Shift');
+  const key = shift ? shiftedKey(requestedKey) : requestedKey;
   const definition = keyDefinition(key);
-  const mods = resolveModifiers(modifiers, platform);
+  const mods = resolveModifiers(
+    definition.shifted && !shift ? [...modifiers, 'Shift'] : modifiers,
+    platform,
+  );
   const shortcut = mods.names.some((m) => m !== 'Shift');
-  let text = shortcut ? undefined : definition.text;
-  if (text && mods.names.includes('Shift') && /^[a-z]$/.test(text)) text = text.toUpperCase();
+  const text = shortcut ? undefined : definition.text;
   const command =
-    platform === 'darwin' ? MAC_EDITING_COMMANDS[[...mods.names, key].join('+')] : undefined;
+    platform === 'darwin'
+      ? MAC_EDITING_COMMANDS[[...mods.names, baseKey(key)].join('+')]
+      : undefined;
   const base = {
     key,
     code: definition.code,
@@ -229,12 +300,32 @@ async function evaluateInPage(send: CdpSend, fn: string, ...args: unknown[]): Pr
   return result.result?.value ?? { status: 'not-found' };
 }
 
+/** Top document first, then open shadow roots (breadth-first). */
 const FIND_ELEMENT = `function find(selector) {
-  try { return { el: document.querySelector(selector) }; }
-  catch (e) { return { error: String(e && e.message || e) }; }
+  try {
+    const top = document.querySelector(selector);
+    if (top) return { el: top };
+    const roots = [document];
+    while (roots.length) {
+      for (const node of roots.shift().querySelectorAll('*')) {
+        if (!node.shadowRoot) continue;
+        const match = node.shadowRoot.querySelector(selector);
+        if (match) return { el: match };
+        roots.push(node.shadowRoot);
+      }
+    }
+    return { el: null };
+  } catch (e) { return { error: String(e && e.message || e) }; }
+}
+function within(node, el) {
+  for (let n = node; n; n = n.parentNode || n.host) if (n === el) return true;
+  return false;
 }`;
 
-/** Scrolls the element into view and returns its center if it would receive the pointer. */
+/**
+ * Scrolls the element into view and picks the center of its first box part
+ * inside the viewport; returns it only if a deep hit test lands on the element.
+ */
 const RESOLVE_POINT = `(selector) => {
   ${FIND_ELEMENT}
   const found = find(selector);
@@ -242,19 +333,25 @@ const RESOLVE_POINT = `(selector) => {
   const el = found.el;
   if (!el) return { status: 'not-found' };
   el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-  const r = el.getBoundingClientRect();
-  if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return { status: 'not-visible' };
-  const x = r.left + r.width / 2;
-  const y = r.top + r.height / 2;
-  const hit = document.elementFromPoint(x, y);
-  let receives = !hit || hit === el || el.contains(hit);
-  for (let node = el.getRootNode(); !receives && node && node.host; node = node.host.getRootNode()) {
-    receives = node.host === hit;
+  if (getComputedStyle(el).visibility === 'hidden') return { status: 'not-visible' };
+  let point;
+  for (const r of el.getClientRects()) {
+    const left = Math.max(r.left, 0), right = Math.min(r.right, innerWidth);
+    const top = Math.max(r.top, 0), bottom = Math.min(r.bottom, innerHeight);
+    if (right - left >= 1 && bottom - top >= 1) { point = { x: (left + right) / 2, y: (top + bottom) / 2 }; break; }
   }
-  if (receives) return { status: 'ok', x, y };
+  if (!point) return { status: 'not-visible' };
+  let hit = document.elementFromPoint(point.x, point.y);
+  while (hit && hit.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(point.x, point.y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  if (!hit) return { status: 'not-visible' };
+  if (within(hit, el)) return { status: 'ok', x: point.x, y: point.y };
   const name = hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') +
     (typeof hit.className === 'string' && hit.className.trim() ? '.' + hit.className.trim().split(/\\s+/).join('.') : '');
-  return { status: 'obscured', x, y, hit: name };
+  return { status: 'obscured', x: point.x, y: point.y, hit: name };
 }`;
 
 const FOCUS_ELEMENT = `(selector) => {
@@ -265,8 +362,9 @@ const FOCUS_ELEMENT = `(selector) => {
   if (!el) return { status: 'not-found' };
   el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   el.focus();
-  const active = document.activeElement;
-  return active === el || el.contains(active) ? { status: 'ok' } : { status: 'not-focusable' };
+  let active = document.activeElement;
+  while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+  return within(active, el) ? { status: 'ok' } : { status: 'not-focusable' };
 }`;
 
 const SELECT_OPTION = `(selector, wanted) => {
@@ -281,6 +379,8 @@ const SELECT_OPTION = `(selector, wanted) => {
   const missing = wanted.filter((_, i) => !picks[i]);
   if (missing.length) return { status: 'option-not-found', missing };
   if (!el.multiple && picks.length > 1) return { status: 'option-not-found', message: 'the select is not multiple' };
+  const disabled = (o) => o.disabled || (o.parentElement instanceof HTMLOptGroupElement && o.parentElement.disabled);
+  if (el.matches(':disabled') || picks.some(disabled)) return { status: 'disabled' };
   el.focus();
   for (const o of options) o.selected = picks.includes(o);
   el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -303,8 +403,13 @@ function failForStatus(page: PageStatus, selector: string): never {
       );
     case 'obscured':
       throw new InputActionError(
-        `"${selector}" is covered by ${page.hit} at (${Math.round(page.x ?? 0)}, ${Math.round(page.y ?? 0)}). Close the overlay, or pass x/y to click that point anyway.`,
+        `"${selector}" is covered by ${page.hit} at (${Math.round(page.x ?? 0)}, ${Math.round(page.y ?? 0)}). Dismiss the covering element first; clicking by x/y would hit it too.`,
         'element-obscured',
+      );
+    case 'disabled':
+      throw new InputActionError(
+        `"${selector}" or the requested option is disabled.`,
+        'element-disabled',
       );
     case 'not-focusable':
       throw new InputActionError(`"${selector}" cannot take focus.`, 'not-focusable');
@@ -322,7 +427,7 @@ function failForStatus(page: PageStatus, selector: string): never {
       );
     default:
       throw new InputActionError(
-        `No element matches "${selector}" in the top document (iframes and closed shadow roots are not searched).`,
+        `No element matches "${selector}" in the page or its open shadow roots (iframes are not searched).`,
         'element-not-found',
       );
   }
@@ -339,11 +444,14 @@ async function resolvePoint(send: CdpSend, target: Target): Promise<{ x: number;
 /**
  * Runs one input action. Focus emulation lets an unfocused or hidden guest
  * behave as focused, so input never needs (or takes) window or panel focus.
+ * `scale` is the tab's scale-to-fit factor: mouse events are hit-tested on
+ * the scaled drawing, so CSS-pixel points are multiplied by it.
  */
 export async function runInputAction(
   send: CdpSend,
   action: InputAction,
   platform: string = process.platform,
+  scale = 1,
 ): Promise<unknown> {
   if (action.action === 'press') keyDefinition(action.key);
   await send('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -351,30 +459,40 @@ export async function runInputAction(
   switch (action.action) {
     case 'click':
     case 'hover': {
-      const { x, y } = await resolvePoint(send, action);
+      const point = await resolvePoint(send, action);
+      const x = point.x * scale;
+      const y = point.y * scale;
       await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
       if (action.action === 'click') {
         const button = action.button ?? 'left';
         for (let clickCount = 1; clickCount <= (action.clickCount ?? 1); clickCount++) {
-          await send('Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x,
-            y,
-            button,
-            buttons: BUTTON_BITS[button],
-            clickCount,
-          });
-          await send('Input.dispatchMouseEvent', {
+          const release = {
             type: 'mouseReleased',
             x,
             y,
             button,
             buttons: 0,
             clickCount,
-          });
+          };
+          try {
+            await send('Input.dispatchMouseEvent', {
+              type: 'mousePressed',
+              x,
+              y,
+              button,
+              buttons: BUTTON_BITS[button],
+              clickCount,
+            });
+            await send('Input.dispatchMouseEvent', release);
+          } catch (error) {
+            // Never leave the page with a button held down (e.g. the request
+            // deadline ran out between press and release).
+            await send('Input.dispatchMouseEvent', release).catch(() => undefined);
+            throw error;
+          }
         }
       }
-      return { x, y };
+      return point;
     }
 
     case 'type': {
@@ -386,12 +504,28 @@ export async function runInputAction(
         await pressKey(send, 'a', ['ControlOrMeta'], platform);
         await pressKey(send, 'Backspace', [], platform);
       }
-      const chars = Array.from(action.text);
+      const text = action.text.replace(/\r\n?/g, '\n');
+      const chars = Array.from(text);
       if (action.mode === 'insert') {
-        await send('Input.insertText', { text: action.text });
+        await send('Input.insertText', { text });
       } else {
-        for (const char of chars) {
-          await pressKey(send, char === '\n' || char === '\r' ? 'Enter' : char, [], platform);
+        for (const [typed, char] of chars.entries()) {
+          try {
+            await pressKey(
+              send,
+              char === '\n' ? 'Enter' : char === '\t' ? 'Tab' : char,
+              [],
+              platform,
+            );
+          } catch (error) {
+            throw Object.assign(
+              new Error(
+                // i18n-ignore (agent-facing protocol error, not user-facing)
+                `Typing stopped after ${typed} of ${chars.length} characters: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+              { errorCode: (error as { errorCode?: unknown }).errorCode },
+            );
+          }
         }
       }
       return { length: chars.length };
@@ -409,4 +543,3 @@ export async function runInputAction(
     }
   }
 }
-
