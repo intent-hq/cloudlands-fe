@@ -41,10 +41,12 @@ import {
   getConnectedDaemonProtocolVersion,
 } from '../../backend/main/backend.ipc';
 import { getFocusedWindowBackendId } from '../../../main/window';
+import { startRailMachineRenderer } from '../../../main/machine-rail-state';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import {
   adoptWorkspaceForBackgroundHosting,
+  hasWorkspaceShellFor,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
@@ -487,7 +489,12 @@ export async function executeBrowserActions(
   deadline?: number,
 ): Promise<ExecutionResult> {
   const resolvedBackendContext = backendContext ?? getFocusedBrowserBackendContext();
-  ensureBrowserWorkspaceHost(actions, workspaceId, resolvedBackendContext.backendId);
+  await ensureBrowserWorkspaceHost(
+    actions,
+    workspaceId,
+    resolvedBackendContext.backendId,
+    deadline,
+  );
   return executeActions(
     { actions, tabId },
     (
@@ -526,6 +533,39 @@ export async function executeBrowserActions(
   );
 }
 
+/** Longest a browser op waits for a rail machine's renderer to start. */
+const RAIL_RENDERER_START_MS = 20_000;
+
+/**
+ * A machine in a window's machine rail that was never opened has no renderer
+ * to host its workspaces: start one, hidden, and wait until it reports its
+ * workspace shell. Half the request budget at most, so the actions keep the
+ * rest.
+ */
+async function startRailMachineShell(backendId: string, deadline?: number): Promise<void> {
+  const budget =
+    deadline === undefined
+      ? RAIL_RENDERER_START_MS
+      : Math.min(RAIL_RENDERER_START_MS, (deadline - Date.now()) / 2);
+  if (budget <= 0) return;
+  const startBy = Date.now() + budget;
+  if (!(await startRailMachineRenderer(backendId, startBy))) return;
+  if (hasWorkspaceShellFor(backendId)) return;
+  const events = app as NodeJS.EventEmitter;
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      events.removeListener('window-workspace-state-changed', check);
+      resolve();
+    };
+    const check = (): void => {
+      if (hasWorkspaceShellFor(backendId)) finish();
+    };
+    const timer = setTimeout(finish, Math.max(0, startBy - Date.now()));
+    events.on('window-workspace-state-changed', check);
+  });
+}
+
 /**
  * Actions that never touch a tab — tunnels, and capture bookkeeping main
  * answers from its own session state and the capture directory — so they
@@ -549,15 +589,18 @@ const TAB_FREE_ACTIONS = new Set([
  * used to fail with "not open in any window"; now one window hosts it in
  * the background — no tab, no navigation, no focus — so its saved layout
  * hydrates and its tabs mount offscreen. The CDP service is told so its
- * first tab-list request waits for that cold hydration. When no window is
- * connected to the backend at all, nothing changes and the ops fail with
- * their existing not-open / workspace-not-visible errors.
+ * first tab-list request waits for that cold hydration. A machine in a
+ * window's machine rail that has no renderer yet (never opened) gets one,
+ * hidden, first. When no window is connected to the backend at all, nothing
+ * changes and the ops fail with their existing not-open /
+ * workspace-not-visible errors.
  */
-function ensureBrowserWorkspaceHost(
+async function ensureBrowserWorkspaceHost(
   actions: unknown[],
   workspaceId: string | undefined,
   backendId: string,
-): void {
+  deadline?: number,
+): Promise<void> {
   const payload = workspaceCommandPayload(workspaceId);
   if (!payload) return;
   // Malformed actions fail validation without touching a tab.
@@ -566,6 +609,7 @@ function ensureBrowserWorkspaceHost(
     return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
   });
   if (!touchesTabs) return;
+  if (!hasWorkspaceShellFor(backendId)) await startRailMachineShell(backendId, deadline);
   const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
   if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
   // Log the hosting state per workspace only when it changes: agents retry

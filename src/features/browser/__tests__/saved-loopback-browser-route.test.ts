@@ -73,6 +73,7 @@ vi.mock('../../system/main/system.ipc', () => ({
   getWindowIdForWorkspace: () => 1,
   getWindowIdsForWorkspace: () => [1],
   adoptWorkspaceForBackgroundHosting: () => ({ windowId: 1, adopted: false }),
+  hasWorkspaceShellFor: () => true,
 }));
 
 import { registerBrowserExecReverseHandler } from '../main/browser-exec-reverse';

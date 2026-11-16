@@ -43,8 +43,11 @@ import {
   readWindowRail,
   setMachineRailEnabledFlag,
   setPendingSelection,
+  setMachineRailRendererStarter,
   setMachineRailRestoreHandler,
+  setMachineRailShower,
   writeWindowRail,
+  type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
@@ -115,6 +118,8 @@ const transitions = new WeakMap<BrowserWindowType, Transition>();
 const readyViews = new WeakSet<Electron.WebContents>();
 /** Callers waiting for a renderer to report ready. */
 const readyWaiters = new WeakMap<Electron.WebContents, Array<() => void>>();
+/** When each machine view started loading. */
+const viewStartedAt = new WeakMap<Electron.WebContents, number>();
 
 function transitionOf(window: BrowserWindowType): Transition {
   let transition = transitions.get(window);
@@ -263,6 +268,7 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
   view.setVisible(false);
   forwardRendererConsoleToMainLog(window, view.webContents);
   views.set(id, view);
+  viewStartedAt.set(view.webContents, Date.now());
   window.contentView.addChildView(view);
   layoutViews(window);
   view.webContents
@@ -380,14 +386,61 @@ function settleReadyWaiters(contents: Electron.WebContents): void {
 function whenReady(contents: Electron.WebContents): Promise<void> {
   if (contents.isDestroyed() || readyViews.has(contents)) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, READY_TIMEOUT_MS);
-    const waiters = readyWaiters.get(contents) ?? [];
-    waiters.push(() => {
+    const settle = (): void => {
       clearTimeout(timer);
       resolve();
-    });
-    readyWaiters.set(contents, waiters);
+    };
+    const timer = setTimeout(() => {
+      const waiters = readyWaiters.get(contents);
+      const index = waiters?.indexOf(settle) ?? -1;
+      if (index >= 0) waiters?.splice(index, 1);
+      resolve();
+    }, READY_TIMEOUT_MS);
+    readyWaiters.set(contents, [...(readyWaiters.get(contents) ?? []), settle]);
   });
+}
+
+/** Live windows whose rail lists `id` as one of its added machines. */
+function railsListing(id: string): BrowserWindowType[] {
+  return getAppWindows().filter(
+    (window) => !window.isDestroyed() && readWindowRail(window).machineIds.indexOf(id) > 0,
+  );
+}
+
+/**
+ * Start `id`'s renderer, hidden, in a window whose rail lists it (the focused
+ * one first) unless one runs already, then wait until it is ready or
+ * `deadline` passes. A renderer still not ready after its startup budget is
+ * not waited for again. Settles with whether a rail lists the machine.
+ */
+async function startRendererFor(id: string, deadline: number): Promise<boolean> {
+  const rails = railsListing(id);
+  if (rails.length === 0) return false;
+  const running = rails
+    .map((window) => viewsOf(window).get(id))
+    .find((view) => view && !view.webContents.isDestroyed());
+  const host = rails.find((window) => window.isFocused()) ?? rails[0];
+  const contents = (running ?? ensureView(host, id)).webContents;
+  const started = viewStartedAt.get(contents) ?? 0;
+  if (readyViews.has(contents) || Date.now() - started >= READY_TIMEOUT_MS) return true;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    whenReady(contents),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
+    }),
+  ]).finally(() => clearTimeout(timer));
+  return true;
+}
+
+/** Pick `id` in a window whose rail lists it (the focused one first). */
+function showRailMachineFor(id: string): ShownRailMachine | null {
+  const rails = railsListing(id);
+  const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
+  if (!window) return null;
+  selectMachine(window, id);
+  const contents = ensureView(window, id).webContents;
+  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
 }
 
 /** Longest the background start waits for a machine that is still connecting. */
@@ -656,6 +709,8 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
   connectedFeed = null;
   for (const wait of [...connectionWaits]) wait.finish(null);
   deps = railDeps;
+  setMachineRailRendererStarter(startRendererFor);
+  setMachineRailShower(showRailMachineFor);
   setMachineRailRestoreHandler((window, session) => {
     void restoreRail(window, session).catch((error: unknown) =>
       logger.warn('Failed to restore a machine rail', {

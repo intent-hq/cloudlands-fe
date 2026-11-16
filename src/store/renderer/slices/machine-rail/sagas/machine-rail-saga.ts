@@ -102,9 +102,9 @@ function toggleRootAttribute(name: string, active: boolean): void {
 }
 
 /**
- * Main tracks one "current workspace" per window for its menus and listens
- * only to the renderer the window shows, so a renderer reports its route
- * again each time it becomes the shown one.
+ * A window's menus follow the workspace of the renderer it shows, so a
+ * renderer reports its route again each time it becomes the shown one, and
+ * main rebuilds the menus for it.
  */
 async function reportShownWorkspace(): Promise<void> {
   const api = getApi();

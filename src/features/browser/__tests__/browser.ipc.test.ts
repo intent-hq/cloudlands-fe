@@ -41,6 +41,7 @@ vi.mock('../../system/main/system.ipc', () => ({
   })),
   // The workspace is open in a window, so no background-hosting adoption.
   adoptWorkspaceForBackgroundHosting: vi.fn(() => ({ windowId: 1, adopted: false })),
+  hasWorkspaceShellFor: vi.fn(() => true),
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({
   BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',

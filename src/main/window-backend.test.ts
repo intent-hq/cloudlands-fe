@@ -10,7 +10,6 @@ import {
   bindMachineViewToBackend,
   getRendererWebContents,
   getWindowForWebContents,
-  getShownBackendIdForWindow,
   getShownRendererWebContents,
   isShownRenderer,
   setShownMachineView,
@@ -151,10 +150,8 @@ describe('machine views inside a window', () => {
     expect(getShownRendererWebContents(host.window)).toBe(host.sender);
     expect(isShownRenderer(host.window, host.sender)).toBe(true);
     expect(isShownRenderer(host.window, view)).toBe(false);
-    expect(getShownBackendIdForWindow(host.window)).toBe('local');
     setShownMachineView(host.window, view);
     expect(getShownRendererWebContents(host.window)).toBe(view);
-    expect(getShownBackendIdForWindow(host.window)).toBe('machine-b');
     expect(isShownRenderer(host.window, view)).toBe(true);
     expect(isShownRenderer(host.window, host.sender)).toBe(false);
     setShownMachineView(host.window, null);

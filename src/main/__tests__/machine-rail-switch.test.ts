@@ -120,8 +120,6 @@ vi.mock('../window-backend', () => ({
     fakes.shown.current = sender;
   },
   getShownRendererWebContents: () => fakes.shown.current ?? fakes.window.webContents,
-  getShownBackendIdForWindow: () =>
-    fakes.shown.current ? fakes.bindings.get(fakes.shown.current) : 'local',
   isShownRenderer: (_window: unknown, sender: unknown) =>
     sender === (fakes.shown.current ?? fakes.window.webContents),
 }));
@@ -133,6 +131,8 @@ import {
   getMachineRailSession,
   restoreMachineRailSession,
   setMachineRailEnabledFlag,
+  showRailMachine,
+  startRailMachineRenderer,
 } from '../machine-rail-state';
 
 const RAIL = IPC_CHANNELS.MACHINE_RAIL;
@@ -481,6 +481,94 @@ describe('machine rail switching', () => {
     await invoke(RAIL.READY, viewOf('c').webContents);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(fakes.views.length).toBe(1);
+  });
+
+  it('starts a rail machine that never loaded, hidden, when work for it arrives', async () => {
+    connection.connected.delete('b');
+    restoreMachineRailSession(fakes.window as never, { machineIds: ['b', 'c'], selectedId: 'c' });
+    await vi.waitFor(() => expect(fakes.views.length).toBe(1));
+    await invoke(RAIL.READY, viewOf('c').webContents);
+    // The background start gave up on the machine that was offline at startup.
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(fakes.views.length).toBe(1);
+    connection.connected.add('b');
+
+    let settled = false;
+    const started = startRailMachineRenderer('b', Date.now() + 30_000).then(() => {
+      settled = true;
+    });
+    expect(viewOf('b').visible).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await started;
+    expect(await state()).toMatchObject({ selectedId: 'c', shownId: 'c', pendingId: '' });
+    expect(viewOf('b').visible).toBe(false);
+
+    // A machine whose renderer runs already settles at once, without a second view.
+    await startRailMachineRenderer('b', Date.now() + 30_000);
+    expect(fakes.views.length).toBe(2);
+  });
+
+  it('starts no renderer for a machine no rail lists, or one the window renders itself', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await startRailMachineRenderer('local', Date.now() + 30_000);
+    await startRailMachineRenderer('c', Date.now() + 30_000);
+    expect(fakes.views.length).toBe(1);
+  });
+
+  it('stops waiting for a starting machine at the deadline', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+
+    let settled = false;
+    void startRailMachineRenderer('c', Date.now() + 5_000).then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+  });
+
+  it('does not wait again for a renderer that never finished starting', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
+
+    let settled = false;
+    void startRailMachineRenderer('c', Date.now() + 5_000).then((listed) => {
+      settled = listed;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    expect(fakes.views).toHaveLength(1);
+  });
+
+  it('reports a rail machine that does not start in time as not ready', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'c' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    const shown = showRailMachine('c');
+    await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
+    expect(await shown?.ready).toBe(false);
+  });
+
+  it('picks a rail machine on request, starting it, and settles once it is ready', async () => {
+    expect(showRailMachine('c')).toBeNull();
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+
+    const shown = showRailMachine('b');
+    expect(shown?.window).toBe(fakes.window);
+    expect(shown?.contents).toBe(viewOf('b').webContents);
+    expect(await state()).toMatchObject({ selectedId: 'local', pendingId: 'b' });
+
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    expect(await shown?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
+    expect(fakes.views).toHaveLength(1);
   });
 
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {

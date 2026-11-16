@@ -15,6 +15,7 @@ const electronMocks = vi.hoisted(() => ({
   fromId: vi.fn(),
   getFocusedWindow: vi.fn(),
   getAllWindows: vi.fn(() => []),
+  contentsById: new Map<number, unknown>(),
 }));
 
 vi.mock('electron', () => ({
@@ -25,6 +26,7 @@ vi.mock('electron', () => ({
     getFocusedWindow: electronMocks.getFocusedWindow,
     fromWebContents: electronMocks.fromWebContents,
   },
+  webContents: { fromId: (id: number) => electronMocks.contentsById.get(id) ?? null },
   clipboard: { writeText: vi.fn() },
   dialog: {},
   ipcMain: { handle: electronMocks.handle, removeHandler: vi.fn() },
@@ -72,7 +74,7 @@ function handlerFor(channel: string): Handler {
 
 describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
   const window = { id: 914 };
-  const event = { sender: {} };
+  const event = { sender: { isDestroyed: () => false } };
 
   beforeEach(() => {
     electronMocks.handle.mockReset();
@@ -108,7 +110,7 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
     id: 915,
     isDestroyed: () => false,
   };
-  const event = { sender: {} };
+  const event = { sender: { isDestroyed: () => false } };
 
   beforeEach(() => {
     electronMocks.handle.mockReset();
@@ -181,14 +183,19 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
 
   it('tracks the workspace of the machine view a window shows, on that view backend', async () => {
     // A window whose own renderer serves `local` and hosts a view for `remote-b`.
-    const home = {};
+    const home = { isDestroyed: () => false };
     const host = Object.assign(new EventEmitter(), {
       id: 916,
       isDestroyed: () => false,
       backendId: 'local',
       webContents: home,
     });
-    const view = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+    const view = Object.assign(new EventEmitter(), {
+      id: 77,
+      mainFrame: {},
+      isDestroyed: () => false,
+    });
+    electronMocks.contentsById.set(view.id, view);
     electronMocks.fromWebContents.mockReturnValue(host);
     electronMocks.fromId.mockImplementation((id: number) => (id === host.id ? host : null));
     electronMocks.getFocusedWindow.mockReturnValue(host);
@@ -205,11 +212,12 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
     await handle({ sender: home }, { inWorkspace: true, workspaceId: 'ws-home' });
     expect(getFocusedWindowWorkspaceId()).toBe('ws-b');
 
-    // Back on the home machine, the view's entry no longer applies until home re-reports.
+    // Back on the home machine, the window speaks for home again, while the
+    // hidden view keeps hosting its own workspace on its own backend.
     setShownMachineView(host as never, null);
-    expect(getFocusedWindowWorkspaceId()).toBeUndefined();
-    await handle({ sender: home }, { inWorkspace: true, workspaceId: 'ws-home' });
     expect(getFocusedWindowWorkspaceId()).toBe('ws-home');
+    expect(getWindowIdForWorkspace('ws-b', ANY_HOST)).toBeUndefined();
+    expect(getWindowIdsForWorkspace('ws-b', 'remote-b')).toEqual([host.id]);
   });
 });
 
