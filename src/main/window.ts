@@ -921,8 +921,13 @@ function showInFrame(
  * take it) its saved frames reopen, or a fresh frame opens on it.
  */
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
+  await openOrFocusMachine(backendId, true);
+}
+
+/** {@link openOrFocusWindowsForBackend}; `mayJoin` false never adds the machine to a live frame. */
+async function openOrFocusMachine(backendId: string, mayJoin: boolean): Promise<void> {
   let shown = showInFrame(backendId)?.window ?? null;
-  if (!shown && isMachineRailEnabled()) {
+  if (!shown && mayJoin && isMachineRailEnabled()) {
     const recent = mostRecentFrame();
     if (recent && (await addMachineToFrame(recent, backendId)) && !recent.isDestroyed())
       shown = recent;
@@ -970,8 +975,9 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
   );
   const closesAnyWindow = liveWindows.some((window) => closesWith(window, backendId));
   const hasSurvivingWindow = liveWindows.some((window) => !closesWith(window, backendId));
+  // Every live frame is about to close: local gets a frame of its own.
   if (closesAnyWindow && !hasSurvivingWindow) {
-    await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
+    await openOrFocusMachine(LOCAL_CONNECTION_ID, false);
   }
 }
 

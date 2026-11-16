@@ -1522,6 +1522,20 @@ describe('multi-backend window sessions', () => {
       expect(showing.isDestroyed()).toBe(false);
     });
 
+    it('rail on: opens local in a new frame, not in the frame about to close, before a forget', async () => {
+      setMachineRailEnabledFlag(true);
+      const closing = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
+      noteFrameFocused(closing as never);
+
+      await ensureLocalWindowBeforeClosingBackend('remote-1');
+      closeWindowsForBackend('remote-1');
+
+      expect(commands.add).not.toHaveBeenCalled();
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(1);
+      expect(live[0].machine).toBe('local');
+    });
+
     it('does not open local before forgetting a machine a mixed frame survives', async () => {
       seedRailFrame('remote-1', ['remote-2']);
 
