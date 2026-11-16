@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.342.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.341.7...v2.342.0) (2026-11-16)
+
+
+### 🚀 Features
+
+* **appearance:** add auto-hide menu bar setting on Linux and Windows ([#4665](https://github.com/intent-hq/cloudlands-fe/issues/4665)) ([9dc7c5f](https://github.com/intent-hq/cloudlands-fe/commit/9dc7c5f758f202b711c0cc268a04a04528e1c158))
+* **machines:** disable Run and explain file errors while the home is away ([#4667](https://github.com/intent-hq/cloudlands-fe/issues/4667)) ([dd0d2ce](https://github.com/intent-hq/cloudlands-fe/commit/dd0d2ceafe39edb15aec95f119b2260a206c6f41))
+* **machines:** show a starting cloud home and cloud entries in Move home ([#4660](https://github.com/intent-hq/cloudlands-fe/issues/4660)) ([d95abc2](https://github.com/intent-hq/cloudlands-fe/commit/d95abc289f404a72778f9f25c1e4d73e799c3c6a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.224 ([#4668](https://github.com/intent-hq/cloudlands-fe/issues/4668)) ([918574d](https://github.com/intent-hq/cloudlands-fe/commit/918574d31b4c47d341c517be2224dd2358797b4e))
+* **machine-rail:** let agents use browser tabs and screen control on any rail machine ([#4661](https://github.com/intent-hq/cloudlands-fe/issues/4661)) ([5953122](https://github.com/intent-hq/cloudlands-fe/commit/5953122877f8127d472eeccdf0c5322e704ac440))
+
 ## [2.341.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.341.6...v2.341.7) (2026-11-16)
 
 
