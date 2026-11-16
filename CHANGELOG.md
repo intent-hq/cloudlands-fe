@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.343.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.11...v2.343.0) (2026-11-16)
+
+
+### 🚀 Features
+
+* refine tab group colors and dropdown typography ([#4696](https://github.com/intent-hq/cloudlands-fe/issues/4696)) ([0cd6d47](https://github.com/intent-hq/cloudlands-fe/commit/0cd6d471874446019303cb0b639db6a0e7f645eb))
+
 ## [2.342.11](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.10...v2.342.11) (2026-11-16)
 
 
