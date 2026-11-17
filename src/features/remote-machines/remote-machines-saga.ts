@@ -27,7 +27,9 @@ import { notify } from '$lib/components/patterns/notify';
 import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
+import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+import { selectRemoteMachinesOn } from './remote-machines-selectors';
 import {
   executorBackendRevoked,
   executorRevokeRequested,
@@ -112,9 +114,23 @@ function unexposeReply(reply: unknown): RemoteMachineUnexposeResult {
   return bridgeFailure(reply) as RemoteMachineFailure;
 }
 
-/** The Labs "Remote agents" flag is the only switch: off, nothing is read or changed. */
+/**
+ * The Labs "Remote agents" flag is the only switch: off, nothing is read or
+ * changed. An orchestrator needs no switch: agents run only on its machines.
+ */
 function labsEnabled(): boolean {
-  return selectLabsRemoteAgentsEnabled.select(store.state);
+  return selectRemoteMachinesOn.select(store.state);
+}
+
+/**
+ * Read the list when the backend first reports it is an orchestrator: the
+ * reconnect refresh may run before the hello says so, and with the Labs flag
+ * off that refresh read nothing.
+ */
+function* refreshOnOrchestrator(): SagaGenerator<void> {
+  if (!selectIsOrchestratorBackend.select(store.state)) return;
+  if (store.state.remoteMachines.supported) return;
+  yield* call(refresh);
 }
 
 function generation(): number {
@@ -455,6 +471,7 @@ export function* remoteMachinesSaga(): SagaGenerator<void> {
     [remoteMachinesRefreshRequested, backendReconnected, setLabsRemoteAgentsEnabled],
     refresh,
   );
+  yield* takeLatest(principalReceived, refreshOnOrchestrator);
   yield* takeEvery(remoteMachineExposeRequested, expose);
   yield* takeEvery(remoteMachineUnexposeRequested, unexpose);
   yield* takeEvery(executorRevokeRequested, revokeExecutor);

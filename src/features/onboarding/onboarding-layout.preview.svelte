@@ -113,6 +113,7 @@
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+  import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkHostRequirementsComplete,
     ghRequirementResolved,
@@ -335,6 +336,7 @@
   const previousRemoteAgentsLabs = appStore.state.userPreferences.labsRemoteAgentsEnabled;
   const previousRemoteMachines = appStore.state.remoteMachines;
   const previousHostRequirements = appStore.state.hostRequirements;
+  const previousEnabledProviders = appStore.state.providerSettings.enabledProviders;
   if (seededOrchestrator) {
     // An orchestrator runs no agents: its ordered machine list (Labs "Remote
     // agents" on) is where they run. Git is found; Node.js is not, and an
@@ -360,6 +362,10 @@
     appStore.dispatch(nodeRequirementResolved(false));
     appStore.dispatch(ghRequirementResolved(true, 'gh version 2.62.0'));
     appStore.dispatch(checkHostRequirementsComplete());
+    // The welcome step enables the picked provider; later steps start from it.
+    appStore.dispatch(
+      loadEnabledProvidersFromStorage({ ...previousEnabledProviders, 'claude-code': true }),
+    );
   }
   const fullCatalog = untrack(() => allProviders);
   const seededCursor = untrack(() => cursor);
@@ -419,6 +425,7 @@
       appStore.dispatch(gitRequirementResolved(git.available, git.version));
       appStore.dispatch(nodeRequirementResolved(node.ok, node.version));
       appStore.dispatch(ghRequirementResolved(gh.available, gh.version));
+      appStore.dispatch(loadEnabledProvidersFromStorage(previousEnabledProviders));
     }
     if (seededForge) {
       applyGitHub(previousGitHub);

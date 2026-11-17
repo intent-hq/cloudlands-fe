@@ -28,13 +28,22 @@ import {
 } from './start-on';
 
 /**
- * Every remote-machine surface shows only while the Labs "Remote agents" flag
- * is on AND the current backend advertises `remoteMachines: 1`. Turning the
- * flag off hides them; it revokes nothing.
+ * Remote machines are switched on: the Labs "Remote agents" flag, or an
+ * orchestrator backend, which runs agents only on its machines (PROTOCOL
+ * `methods/nodes.md` → "Orchestrator mode") and so needs no switch.
+ */
+export const selectRemoteMachinesOn = store.createSelector(
+  (state) =>
+    selectLabsRemoteAgentsEnabled.select(state) || selectIsOrchestratorBackend.select(state),
+);
+
+/**
+ * Every remote-machine surface shows only while remote machines are on (see
+ * `selectRemoteMachinesOn`) AND the current backend advertises
+ * `remoteMachines: 1`. Turning the flag off hides them; it revokes nothing.
  */
 export const selectRemoteMachinesVisible = store.createSelector(
-  (state) =>
-    selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines?.supported === true,
+  (state) => selectRemoteMachinesOn.select(state) && state.remoteMachines?.supported === true,
 );
 
 /**

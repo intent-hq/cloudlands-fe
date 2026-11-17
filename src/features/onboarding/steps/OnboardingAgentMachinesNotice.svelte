@@ -9,6 +9,7 @@
   import Fa from 'svelte-fa';
   import { faCircleInfo, faServer, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { goto } from '$app/navigation';
+  import { getAppUiTargets } from '$shared/app-ui-targets';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
@@ -20,7 +21,9 @@
 
   let { machines }: Props = $props();
 
-  const SETTINGS_MACHINES_ROUTE = '/settings?tab=devices#devices';
+  // The Settings → Machines target the assistant's nav links also use.
+  const SETTINGS_MACHINES_ROUTE =
+    getAppUiTargets().find((target) => target.id === 'devices')?.route ?? '/settings?tab=devices';
 </script>
 
 {#if machines !== 'backend'}

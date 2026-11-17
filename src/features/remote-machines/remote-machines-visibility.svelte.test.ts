@@ -16,6 +16,7 @@ import RemoteMachinesSection from './RemoteMachinesSection.svelte';
 import { remoteMachinesLoaded } from './remote-machines-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectRemoteMachinesVisible } from './remote-machines-selectors';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { parsePrincipalSnapshot } from '$shared/types/principal';
 import {
   principalContextChanged,
@@ -138,4 +139,13 @@ describe('machine too old for remote scripts', () => {
       expect(notice(render(RemoteMachinesSection).container)).toBeNull();
     },
   );
+});
+
+describe('selectRemoteMachinesVisible on an orchestrator', () => {
+  it('shows with the Labs flag off: agents run only on its machines', () => {
+    seed(false, true);
+    expect(selectRemoteMachinesVisible.select(store.state)).toBe(false);
+    admitLegacyPrincipal('owner', {}, 'orchestrator');
+    expect(selectRemoteMachinesVisible.select(store.state)).toBe(true);
+  });
 });
