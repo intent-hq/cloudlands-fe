@@ -9,8 +9,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { runSaga } from 'redux-saga';
-import { openProviderLoginWorker } from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
-import { providerLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+import {
+  openProviderInstallWorker,
+  openProviderLoginWorker,
+} from '$store/renderer/slices/agent-availability/sagas/provider-availability-saga';
+import {
+  providerInstallRequested,
+  providerLoginRequested,
+} from '$store/renderer/slices/agent-availability/agent-availability-slice';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 const mocks = vi.hoisted(() => {
@@ -208,15 +214,19 @@ describe('ProviderCard identity line', () => {
 });
 
 describe('ProviderCard login guidance', () => {
-  const loginHint = (root: HTMLElement) =>
-    root.querySelector('[data-testid="provider-card-login-hint"]');
-
   beforeEach(() => {
     mocks.dispatch.mockImplementation((action) => {
       if (action.type === providerLoginRequested.type) {
         void runSaga(
           { dispatch: mocks.dispatch, getState: () => ({}) },
           openProviderLoginWorker,
+          action,
+        ).toPromise();
+      }
+      if (action.type === providerInstallRequested.type) {
+        void runSaga(
+          { dispatch: mocks.dispatch, getState: () => ({}) },
+          openProviderInstallWorker,
           action,
         ).toPromise();
       }
@@ -237,43 +247,78 @@ describe('ProviderCard login guidance', () => {
     ...overrides,
   });
 
-  it('shows the catalog login command with a copy control when login is needed', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+  const loginButton = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Log in');
 
+  it('offers Log in for any provider whose catalog entry has a login command', async () => {
     const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({ id: 'codex', name: 'Codex', loginCommandHint: 'codex login' }),
+      },
+    });
+    await fireEvent.click(loginButton(container)!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: providerLoginRequested.type, payload: ['codex'] }),
+    );
+  });
+
+  it('shows a plain Log in label when a non-Claude catalog entry has no login command', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: needsLoginProvider({ id: 'codex', name: 'Codex', loginCommandHint: undefined }),
+      },
+    });
+    expect(container.textContent).toContain('Log in');
+    expect(loginButton(container)).toBeUndefined();
+  });
+
+  it('runs the allowlisted install command in the root drawer, never the card string', async () => {
+    const createTerminal = vi.fn().mockResolvedValue({ ok: true, terminalId: 'install-terminal' });
+    registerMockIpcHandler('terminal:createWithCommand', createTerminal);
+    const props = {
+      ...baseProps(),
+      provider: needsLoginProvider({
+        id: 'codex',
+        name: 'Codex',
+        available: false,
+        authenticated: undefined,
+        installCommand: 'rm -rf ~',
+      }),
+    };
+    const { getByRole } = render(ProviderCard, { props });
+    await fireEvent.click(getByRole('button', { name: 'Install', exact: true }));
+
+    await waitFor(() => {
+      expect(createTerminal).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: '__root__',
+        command: 'npm i -g @openai/codex',
+        interactive: true,
+      });
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'terminals/open',
+        payload: ['__root__', 'install-terminal'],
+      });
+    });
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('shows Not installed without an Install button when no install command is known', () => {
+    const { container, queryByRole } = render(ProviderCard, {
       props: {
         ...baseProps(),
         provider: needsLoginProvider({
-          id: 'codex',
-          name: 'Codex',
-          loginCommandHint: 'codex login',
+          id: 'antigravity',
+          name: 'Antigravity',
+          available: false,
+          authenticated: undefined,
+          installCommand: '',
         }),
       },
     });
-
-    const hint = loginHint(container);
-    expect(hint).not.toBeNull();
-
-    await fireEvent.click(hint!.querySelector('button')!);
-    expect(writeText).toHaveBeenCalledWith('codex login');
-  });
-
-  it('falls back to no command hint when the catalog carries none', () => {
-    const { container } = render(ProviderCard, {
-      props: {
-        ...baseProps(),
-        provider: needsLoginProvider({ loginCommandHint: undefined }),
-      },
-    });
-    expect(loginHint(container)).toBeNull();
-  });
-
-  it('hides the login command when the provider does not need login', () => {
-    const { container } = render(ProviderCard, {
-      props: { ...baseProps(), provider: { ...readyProvider(), loginCommandHint: 'x login' } },
-    });
-    expect(loginHint(container)).toBeNull();
+    expect(container.textContent).toContain('Not installed');
+    expect(queryByRole('button', { name: 'Install', exact: true })).toBeNull();
   });
 
   it.each(['claude auth login', undefined])(
