@@ -3,7 +3,7 @@
  * button runs it in the root terminal drawer. Only this renderer-owned
  * allowlist is ever executed, never a caller string.
  */
-export const PROVIDER_INSTALL_COMMANDS: Readonly<Record<string, string>> = {
+const PROVIDER_INSTALL_COMMANDS: Readonly<Record<string, string>> = {
   auggie: 'npm install -g @augmentcode/auggie',
   'claude-code': 'curl -fsSL https://claude.ai/install.sh | bash',
   codex: 'npm i -g @openai/codex',

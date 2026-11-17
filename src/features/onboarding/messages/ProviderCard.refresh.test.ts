@@ -120,7 +120,7 @@ describe('ProviderCard explicit refresh feedback', () => {
     });
 
     // Cached status rendered — statusLoading is false, no Checking… yet.
-    expect(statusText(container)).toContain('Not installed');
+    expect(statusText(container)).toContain('Install');
     expect(statusText(container)).not.toContain('Checking…');
 
     await fireEvent.click(refreshButton(container));
@@ -138,7 +138,7 @@ describe('ProviderCard explicit refresh feedback', () => {
 
     // Probe settled → Checking… clears, cached status text returns.
     await waitFor(() => expect(statusText(container)).not.toContain('Checking…'));
-    expect(statusText(container)).toContain('Not installed');
+    expect(statusText(container)).toContain('Install');
     expect(loader(container)).toBeNull();
   });
 
@@ -152,7 +152,7 @@ describe('ProviderCard explicit refresh feedback', () => {
     await flush();
 
     expect(statusText(container)).not.toContain('Checking…');
-    expect(statusText(container)).toContain('Not installed');
+    expect(statusText(container)).toContain('Install');
 
     appStore.dispatch(checkSingleProviderSuccess('opencode', { available: false }));
     await flush();
