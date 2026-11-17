@@ -53,7 +53,9 @@ const fakes = vi.hoisted(() => {
     on: (event: string, listener: () => void) => {
       (windowListeners[event] ??= []).push(listener);
     },
-    once: () => {},
+    once: (event: string, listener: () => void) => {
+      (windowListeners[event] ??= []).push(listener);
+    },
   };
   const bindings = new Map<unknown, string>();
   const windowListeners: Record<string, Array<() => void>> = {};
@@ -605,6 +607,67 @@ describe('machine rail switching', () => {
     expect(await state()).toMatchObject({ selectedId: 'local', pendingId: '' });
     expect(fakes.views).toHaveLength(1);
   });
+
+  it.each(['b', 'local'])(
+    'waits for an offline %s selection before reporting ready',
+    async (id) => {
+      await invoke(RAIL.ADD, home(), { id: 'b' });
+      await invoke(RAIL.READY, viewOf('b').webContents);
+      if (id === 'b') await invoke(RAIL.SELECT, home(), { id: 'local' });
+      connection.connected.delete(id);
+      let finishRetry!: (connected: boolean) => void;
+      connection.retry.mockReturnValueOnce(new Promise((resolve) => (finishRetry = resolve)));
+
+      const shown = showRailMachine(id);
+      const completed = vi.fn();
+      const ready = shown?.ready.then(completed);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(completed).not.toHaveBeenCalled();
+      expect((await state()).pendingId).toBe(id);
+      finishRetry(false);
+      await ready;
+
+      expect(completed).toHaveBeenCalledExactlyOnceWith(true);
+      expect(await state()).toMatchObject({ selectedId: id, pendingId: '' });
+      expect(shown?.contents).toBe(id === 'local' ? home() : viewOf('b').webContents);
+      expect(fakes.views).toHaveLength(1);
+    },
+  );
+
+  it('cancels the original selection when the user switches away and back during a retry', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    connection.connected.delete('b');
+    let finishRetry!: (connected: boolean) => void;
+    const retry = new Promise<boolean>((resolve) => (finishRetry = resolve));
+    connection.retry.mockReturnValue(retry);
+
+    const original = showRailMachine('b');
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    const current = showRailMachine('b');
+
+    expect(await original?.ready).toBe(false);
+    finishRetry(false);
+    expect(await current?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
+  });
+
+  it.each(['removed', 'disabled', 'closed'])(
+    'cancels a pending notification selection when its rail is %s',
+    async (reason) => {
+      await invoke(RAIL.ADD, home(), { id: 'b' });
+      await invoke(RAIL.SELECT, home(), { id: 'local' });
+      const shown = showRailMachine('b');
+
+      if (reason === 'removed') await invoke(RAIL.REMOVE, home(), { id: 'b' });
+      else if (reason === 'disabled') await invoke(RAIL.SET_ENABLED, home(), { enabled: false });
+      else for (const listener of fakes.windowListeners.closed ?? []) listener();
+
+      expect(await shown?.ready).toBe(false);
+    },
+  );
 
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
     await invoke(RAIL.ADD, home(), { id: 'b' });

@@ -110,6 +110,8 @@ function viewsOf(window: BrowserWindowType): Map<string, WebContentsView> {
 interface Transition {
   shownId: string;
   pendingId: string;
+  pendingShown?: Promise<boolean>;
+  settlePending?: (shown: boolean) => void;
   revealTimer?: NodeJS.Timeout;
   pendingTimer?: NodeJS.Timeout;
 }
@@ -134,6 +136,7 @@ function transitionOf(window: BrowserWindowType): Transition {
 function clearTransition(window: BrowserWindowType): void {
   const transition = transitions.get(window);
   if (!transition) return;
+  transition.settlePending?.(false);
   clearTimeout(transition.revealTimer);
   clearTimeout(transition.pendingTimer);
   transitions.delete(window);
@@ -329,8 +332,11 @@ function applySelection(window: BrowserWindowType): void {
   if (window.isFocused() && !target.isDestroyed()) target.focus();
 }
 
-function clearPending(window: BrowserWindowType): void {
+function clearPending(window: BrowserWindowType, shownId?: string): void {
   const transition = transitionOf(window);
+  transition.settlePending?.(transition.pendingId === shownId);
+  transition.settlePending = undefined;
+  transition.pendingShown = undefined;
   clearTimeout(transition.pendingTimer);
   transition.pendingTimer = undefined;
   transition.pendingId = '';
@@ -340,7 +346,7 @@ function clearPending(window: BrowserWindowType): void {
 /** Show `id` in place of the machine on screen, ready or not. */
 function showMachine(window: BrowserWindowType, id: string): MachineRailState {
   const rail = readWindowRail(window);
-  clearPending(window);
+  clearPending(window, id);
   writeWindowRail(window, { machineIds: rail.machineIds, selectedId: id });
   applySelection(window);
   broadcastState(window);
@@ -355,6 +361,9 @@ function awaitMachine(window: BrowserWindowType, id: string): void {
   clearPending(window);
   const transition = transitionOf(window);
   transition.pendingId = id;
+  transition.pendingShown = new Promise((resolve) => {
+    transition.settlePending = resolve;
+  });
   setPendingSelection(window, id);
   transition.pendingTimer = setTimeout(() => {
     if (window.isDestroyed() || transitions.get(window)?.pendingId !== id) return;
@@ -444,11 +453,25 @@ function showRailMachineFor(id: string): ShownRailMachine | null {
   const window = rails.find((candidate) => candidate.isFocused()) ?? rails[0];
   if (!window) return null;
   selectMachine(window, id);
-  if (id === getBackendIdForWindow(window)) {
-    return { window, contents: window.webContents, ready: Promise.resolve(true) };
-  }
-  const contents = ensureView(window, id).webContents;
-  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
+  const home = id === getBackendIdForWindow(window);
+  const contents = home ? window.webContents : ensureView(window, id).webContents;
+  const selected = transitionOf(window).pendingShown ?? Promise.resolve(true);
+  const rendererReady = home
+    ? Promise.resolve(true)
+    : whenReady(contents).then(() => readyViews.has(contents));
+  return {
+    window,
+    contents,
+    ready: selected
+      .then((shown) => shown && rendererReady)
+      .then(
+        (ready) =>
+          ready &&
+          !window.isDestroyed() &&
+          !contents.isDestroyed() &&
+          getShownRendererWebContents(window) === contents,
+      ),
+  };
 }
 
 /** Longest the background start waits for a machine that is still connecting. */
