@@ -5152,7 +5152,6 @@
   "settings_fonts_systemDefault_label": "시스템 기본값",
   "settings_footer_restartToUpdate_label": "다시 시작하여 업데이트",
   "settings_footer_support": "지원",
-  "settings_footer_upToDate": "최신 상태",
   "settings_gitWorkspace_autoCommit_label": "새 작업 공간에 자동 커밋 사용",
   "settings_gitWorkspace_autoArchiveDays_description": "메시지, 노트 편집, 에이전트 활동이 없을 때 워크스페이스가 보관되기까지의 일수입니다.",
   "settings_gitWorkspace_purge_label": "보관된 워크스페이스의 디스크 공간 확보",
