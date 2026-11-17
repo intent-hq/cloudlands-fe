@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.343.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.1...v2.343.2) (2026-11-17)
+
+
+### 🐛 Bug Fixes
+
+* **diagrams:** shorten flowchart routes and keep labels attached ([#4708](https://github.com/intent-hq/cloudlands-fe/issues/4708)) ([8f0ce52](https://github.com/intent-hq/cloudlands-fe/commit/8f0ce528415d599635167333c515ef1cb975e707))
+* keep device rail interactions scoped correctly ([#4706](https://github.com/intent-hq/cloudlands-fe/issues/4706)) ([1523654](https://github.com/intent-hq/cloudlands-fe/commit/15236541479dad0f5b80775fcb08fba477c39f2c))
+* open invitations in installed Intent app windows ([#4707](https://github.com/intent-hq/cloudlands-fe/issues/4707)) ([798819d](https://github.com/intent-hq/cloudlands-fe/commit/798819dd5fc9a2bf14e930396aeb04ef2b7fd801))
+* **settings:** tighten Notch dock spacing and sync toggles ([#4703](https://github.com/intent-hq/cloudlands-fe/issues/4703)) ([6641365](https://github.com/intent-hq/cloudlands-fe/commit/6641365684245cba9d09296a210e7274a0052f2f))
+
 ## [2.343.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.0...v2.343.1) (2026-11-17)
 
 
