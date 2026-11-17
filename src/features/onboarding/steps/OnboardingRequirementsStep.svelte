@@ -41,6 +41,7 @@
     selectGitRequirement,
     selectHostRequirementsChecking,
     selectHostRequirementsHasCheckedOnce,
+    selectNodeRequired,
     selectNodeRequirement,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import { selectDaemonHealthStats } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
@@ -49,6 +50,8 @@
 
   const git$ = selectGitRequirement();
   const node$ = selectNodeRequirement();
+  // An orchestrator runs no providers, so it never needs Node.js.
+  const nodeRequired$ = selectNodeRequired();
   const gh$ = selectGhRequirement();
   // Labs, no forge connected: Git is needed only for git workspaces.
   const gitOptional$ = selectGitOptional();
@@ -237,70 +240,72 @@
       {/if}
     </div>
 
-    <!-- Node.js -->
-    <div class="requirement-card" data-testid="requirement-node">
-      <div class="flex items-center gap-3">
-        {#if $node$.ok}
-          <span class="status-icon status-ok"><Fa icon={faCheck} size="sm" /></span>
-        {:else}
-          <span class="status-icon status-missing">
-            <Fa icon={faTriangleExclamation} size="sm" />
-          </span>
-        {/if}
-        <div class="flex-1 min-w-0">
-          <p class="font-medium">
-            <!-- i18n-ignore (brand/tool name) -->
-            Node.js
-            {#if $node$.ok && $node$.version}
-              <span class="text-muted-foreground font-normal text-sm">v{$node$.version}</span>
-            {/if}
-          </p>
-          {#if !$node$.ok}
-            <p class="text-sm text-muted-foreground">
-              {#if $node$.version}
-                {m.onboarding_requirementsStep_nodeTooOld_description({
-                  minimum: minimumNodeMajor,
-                  version: $node$.version,
-                })}
-              {:else}
-                {m.onboarding_requirementsStep_nodeMissing_description({
-                  minimum: minimumNodeMajor,
-                })}
+    <!-- Node.js (not on an orchestrator: its machines run the providers) -->
+    {#if $nodeRequired$}
+      <div class="requirement-card" data-testid="requirement-node">
+        <div class="flex items-center gap-3">
+          {#if $node$.ok}
+            <span class="status-icon status-ok"><Fa icon={faCheck} size="sm" /></span>
+          {:else}
+            <span class="status-icon status-missing">
+              <Fa icon={faTriangleExclamation} size="sm" />
+            </span>
+          {/if}
+          <div class="flex-1 min-w-0">
+            <p class="font-medium">
+              <!-- i18n-ignore (brand/tool name) -->
+              Node.js
+              {#if $node$.ok && $node$.version}
+                <span class="text-muted-foreground font-normal text-sm">v{$node$.version}</span>
               {/if}
             </p>
-          {/if}
+            {#if !$node$.ok}
+              <p class="text-sm text-muted-foreground">
+                {#if $node$.version}
+                  {m.onboarding_requirementsStep_nodeTooOld_description({
+                    minimum: minimumNodeMajor,
+                    version: $node$.version,
+                  })}
+                {:else}
+                  {m.onboarding_requirementsStep_nodeMissing_description({
+                    minimum: minimumNodeMajor,
+                  })}
+                {/if}
+              </p>
+            {/if}
+          </div>
         </div>
-      </div>
-      {#if !$node$.ok}
-        <div class="guidance">
-          {#if nodeGuidance.command}
-            {@const command = nodeGuidance.command}
+        {#if !$node$.ok}
+          <div class="guidance">
+            {#if nodeGuidance.command}
+              {@const command = nodeGuidance.command}
+              <Button
+                variant="ghost"
+                type="button"
+                class="install-command-button"
+                onclick={() => copyCommand(command)}
+                title={m.onboarding_requirementsStep_clickToCopy_tooltip()}
+              >
+                <code>{command}</code>
+                <Fa icon={faPaste} class="copy-icon" size="sm" />
+              </Button>
+            {/if}
+            {#if nodeGuidance.note}
+              <p class="text-xs text-muted-foreground">{nodeGuidance.note}</p>
+            {/if}
             <Button
               variant="ghost"
               type="button"
-              class="install-command-button"
-              onclick={() => copyCommand(command)}
-              title={m.onboarding_requirementsStep_clickToCopy_tooltip()}
+              class="docs-link"
+              onclick={() => openDocs(nodeGuidance.docsUrl)}
             >
-              <code>{command}</code>
-              <Fa icon={faPaste} class="copy-icon" size="sm" />
+              <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
+              {m.onboarding_requirementsStep_installNode_label()}
             </Button>
-          {/if}
-          {#if nodeGuidance.note}
-            <p class="text-xs text-muted-foreground">{nodeGuidance.note}</p>
-          {/if}
-          <Button
-            variant="ghost"
-            type="button"
-            class="docs-link"
-            onclick={() => openDocs(nodeGuidance.docsUrl)}
-          >
-            <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
-            {m.onboarding_requirementsStep_installNode_label()}
-          </Button>
-        </div>
-      {/if}
-    </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     <!-- GitHub CLI (gh) — informational only, never blocks continuing. -->
     <div class="requirement-card" data-testid="requirement-gh">

@@ -40,6 +40,7 @@
     ensureProvidersChecked as ensureProvidersCheckedAction,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import { fly } from '$lib/motion';
   import { flip } from 'svelte/animate';
   import { store as appStore } from '$store/renderer/store';
@@ -80,6 +81,9 @@
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const activeProviderId$ = selectActiveProviderId();
   const npxStatus$ = selectNpxStatus();
+  // An orchestrator checks no provider CLI: every enabled provider runs on
+  // its machines (PROTOCOL provider-profiles.md → "Profiles on an orchestrator").
+  const orchestrator$ = selectIsOrchestratorBackend();
 
   /** Brand colors per provider for the card top area.
    *  `color` is the solid brand color; the gradient fades it vertically
@@ -275,6 +279,7 @@
         selected={provider.id === selectedProviderId}
         npxStatus={$npxStatus$}
         onSelect={handleSelectProvider}
+        onMachines={$orchestrator$}
       />
     </div>
   {/each}

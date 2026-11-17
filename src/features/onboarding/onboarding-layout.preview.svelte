@@ -25,7 +25,29 @@
     plainFolder?: 'off' | 'on';
     /** Adds a mocked Cursor catalog row (signed in unless `unsupported`). */
     cursor?: boolean | 'unsupported';
+    /**
+     * An orchestrator backend (agents run on its machines): with one machine
+     * in its ordered list, or with an empty list.
+     */
+    orchestrator?: 'machine' | 'no-machine';
   }
+  const ORCHESTRATOR_STEPS = [
+    'requirements',
+    'welcome',
+    'forge',
+    'project',
+    'configuring',
+  ] as const;
+  /** Each onboarding step on an orchestrator, with and without a machine. */
+  const orchestratorStates = Object.fromEntries(
+    ORCHESTRATOR_STEPS.flatMap((step) => {
+      const name = step === 'configuring' ? 'prompt' : step;
+      return [
+        [`${name}-orchestrator`, { props: { step, orchestrator: 'machine' } }],
+        [`${name}-orchestrator-no-machine`, { props: { step, orchestrator: 'no-machine' } }],
+      ] as const;
+    }),
+  ) as Record<string, { props: Props }>;
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
     title: 'Onboarding layout',
@@ -66,6 +88,7 @@
       'project-plain-folder': { props: { step: 'project', plainFolder: 'off' } },
       'new-workspace-plain-folder': { props: { compact: true, plainFolder: 'off' } },
       'new-workspace-plain-folder-git': { props: { compact: true, plainFolder: 'on' } },
+      ...orchestratorStates,
     },
   });
 </script>
@@ -87,6 +110,16 @@
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/initializer/plain-folder-create';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+  import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import {
+    checkHostRequirementsComplete,
+    ghRequirementResolved,
+    gitRequirementResolved,
+    nodeRequirementResolved,
+  } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import { startOnPreviewMachine } from '$lib/components/workspace/initializer/start-on.preview-fixtures';
   import { selectOnboardingStep } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
@@ -135,6 +168,7 @@
     onOpenExternal,
     plainFolder,
     cursor = false,
+    orchestrator,
   }: Props = $props();
   const restoreOpen = untrack(() =>
     onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
@@ -297,6 +331,41 @@
     safeLocalStorage.setItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY, String(seededPlainFolder === 'on'));
     appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(true));
   }
+  const seededOrchestrator = untrack(() => orchestrator);
+  const previousRemoteAgentsLabs = appStore.state.userPreferences.labsRemoteAgentsEnabled;
+  const previousRemoteMachines = appStore.state.remoteMachines;
+  const previousHostRequirements = appStore.state.hostRequirements;
+  const previousEnabledProviders = appStore.state.providerSettings.enabledProviders;
+  if (seededOrchestrator) {
+    // An orchestrator runs no agents: its ordered machine list (Labs "Remote
+    // agents" on) is where they run. Git is found; Node.js is not, and an
+    // orchestrator never needs it.
+    admitLegacyPrincipal('owner', {}, 'orchestrator');
+    appStore.dispatch(setLabsRemoteAgentsEnabled(true));
+    const studio = startOnPreviewMachine('studio', 'Studio', 'connected');
+    appStore.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        initialAgentPlacement: true,
+        machineOrder: true,
+        order:
+          seededOrchestrator === 'machine'
+            ? [{ kind: 'machine', nodeId: studio.id, name: studio.name }]
+            : [],
+        machines: seededOrchestrator === 'machine' ? [studio] : [],
+        localFingerprint: null,
+        executorBackends: null,
+      }),
+    );
+    appStore.dispatch(gitRequirementResolved(true, 'git version 2.47.0'));
+    appStore.dispatch(nodeRequirementResolved(false));
+    appStore.dispatch(ghRequirementResolved(true, 'gh version 2.62.0'));
+    appStore.dispatch(checkHostRequirementsComplete());
+    // The welcome step enables the picked provider; later steps start from it.
+    appStore.dispatch(
+      loadEnabledProvidersFromStorage({ ...previousEnabledProviders, 'claude-code': true }),
+    );
+  }
   const fullCatalog = untrack(() => allProviders);
   const seededCursor = untrack(() => cursor);
   const seededProviders = [
@@ -338,9 +407,30 @@
         safeLocalStorage.removeItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY);
       else safeLocalStorage.setItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY, previousInitializeGit);
     }
+    if (seededOrchestrator) {
+      appStore.dispatch(setLabsRemoteAgentsEnabled(previousRemoteAgentsLabs));
+      appStore.dispatch(
+        remoteMachinesLoaded({
+          supported: previousRemoteMachines.supported,
+          initialAgentPlacement: previousRemoteMachines.initialAgentPlacement,
+          machineOrder: previousRemoteMachines.machineOrder,
+          order: previousRemoteMachines.order,
+          machines: Object.values(previousRemoteMachines.machines),
+          localFingerprint: previousRemoteMachines.localFingerprint,
+          executorBackends: previousRemoteMachines.executorBackends,
+        }),
+      );
+      const { git, node, gh } = previousHostRequirements;
+      appStore.dispatch(gitRequirementResolved(git.available, git.version));
+      appStore.dispatch(nodeRequirementResolved(node.ok, node.version));
+      appStore.dispatch(ghRequirementResolved(gh.available, gh.version));
+      appStore.dispatch(loadEnabledProvidersFromStorage(previousEnabledProviders));
+    }
     if (seededForge) {
       applyGitHub(previousGitHub);
       applyGitLab(previousGitLab);
+    }
+    if (seededForge || seededOrchestrator) {
       appStore.dispatch(principalContextChanged(previousPrincipal.context));
       if (previousPrincipal.context && previousPrincipal.snapshot) {
         appStore.dispatch(
@@ -358,7 +448,12 @@
   <!-- Hosts the plain-folder in-place warning (mounted by the app layout outside previews). -->
   <ConfirmHost />
 {/if}
-<div class="relative h-[720px] w-full" data-onboarding-layout-fixture>
+<!-- Orchestrator scenes are taller so the welcome step's machines notice shows below the cards. -->
+<div
+  class="relative h-[720px] w-full"
+  style:height={orchestrator ? '1100px' : undefined}
+  data-onboarding-layout-fixture
+>
   {#if settings}
     <div class="p-6"><GitLabAuthConnection /></div>
   {:else if compact}

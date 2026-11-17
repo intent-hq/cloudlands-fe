@@ -19,6 +19,7 @@ import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/w
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { remoteMachinesSaga } from './remote-machines-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import {
   executorRevokeRequested,
   remoteMachineExposeRequested,
@@ -414,5 +415,25 @@ describe('remote machines saga — Labs flag off', () => {
     dispatch(setLabsRemoteAgentsEnabled(true));
     await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
     expect(Object.keys(store.state.remoteMachines.machines)).toEqual(['d-mac']);
+  });
+});
+
+// An orchestrator runs agents only on its machines, so their list is read
+// whatever the Labs switch says (PROTOCOL methods/nodes.md → "Orchestrator mode").
+describe('remote machines saga — orchestrator with the Labs flag off', () => {
+  beforeEach(() => {
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+  });
+
+  it('loads the machines once the backend reports it is an orchestrator', async () => {
+    const mock = backend({ remoteMachines: 1, machineOrder: 1 });
+    mock.onRequest('remoteMachines.order', () => ({ order: [] }));
+    invoke.mockResolvedValue(null);
+    start();
+    admitLegacyPrincipal('owner', {}, 'orchestrator');
+    // The hello that says "orchestrator" is the trigger; no refresh request.
+    channel.put({ type: 'principal/received' });
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
+    expect(store.state.remoteMachines.order).toEqual([]);
   });
 });

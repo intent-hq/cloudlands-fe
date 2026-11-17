@@ -496,3 +496,20 @@ test.describe('welcome provider strip with reduced motion', () => {
     expect((await readStrip(strip)).scrollLeft).toBe(immediate);
   });
 });
+
+// On an orchestrator agents run only on its machines: with none set up the
+// welcome step keeps Let's go disabled (button and ⌘↵) and links to Settings.
+for (const orchestrator of ['machine', 'no-machine'] as const) {
+  test(`welcome step on an orchestrator (${orchestrator})`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1280, height: 1200 });
+    const component = await mount(Preview, { props: { step: 'welcome', orchestrator } });
+    const notice = component.getByTestId('onboarding-agent-machines');
+    await expect(component.getByText('Runs on your machines').first()).toBeVisible();
+    const letsGo = component.getByRole('button', { name: /Let's go/ });
+    await expect(letsGo).toBeEnabled({ enabled: orchestrator === 'machine' });
+    // Only the no-machine warning shows; with a machine there is no note.
+    await expect(notice).toHaveCount(orchestrator === 'machine' ? 0 : 1);
+    if (orchestrator === 'no-machine')
+      await expect(notice.getByRole('button', { name: 'Open Settings → Machines' })).toBeVisible();
+  });
+}

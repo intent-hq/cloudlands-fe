@@ -37,6 +37,11 @@ const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'all', 'p
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
+    pattern: /principal-slice\.ts#principalReceived$/,
+    rationale:
+      "panel layout reconciles the workspace list, and the remote machines saga reads an orchestrator's machine list once the hello says orchestrator; independent",
+  },
+  {
     pattern: /^src\/store\/renderer\/slices\/changes\/changes-slice\.ts#changesEventReceived$/,
     rationale:
       'admitted changes pushes independently update Git status, accept status, and working-file/history projections; only incomplete demanded projections reconcile reads',

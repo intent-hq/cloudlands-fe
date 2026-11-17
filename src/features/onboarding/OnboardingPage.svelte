@@ -72,6 +72,8 @@
   import OnboardingGitRequiredNotice from '$features/onboarding/steps/OnboardingGitRequiredNotice.svelte';
   import { needsGitInstallForProject } from '$lib/components/workspace/initializer/plain-folder-create';
   import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
+  import OnboardingAgentMachinesNotice from '$features/onboarding/steps/OnboardingAgentMachinesNotice.svelte';
+  import { selectOnboardingAgentMachines } from '$features/onboarding/utils/onboarding-agent-machines';
   import {
     selectAllRequirementsMet,
     selectGitRequirement,
@@ -773,6 +775,10 @@
   });
 
   let hasConnectedProvider = $state(false);
+  // On an orchestrator agents run only on its machines: with none set up the
+  // first workspace could not start its agent, so the welcome step waits.
+  const agentMachines$ = selectOnboardingAgentMachines();
+  const canAdvanceFromWelcome = $derived(hasConnectedProvider && $agentMachines$ !== 'none');
   let agentGridRef: AgentGrid | null = $state(null);
   const providerPager = createHorizontalPager({ itemSelector: '[data-provider-id]' });
   let onboardingSkipIsolation = $state(false);
@@ -1178,7 +1184,7 @@
     const active = document.activeElement;
     if (active?.closest('.xterm')) return;
 
-    if (isWelcomeStep && hasConnectedProvider) {
+    if (isWelcomeStep && canAdvanceFromWelcome) {
       e.preventDefault();
       advanceFromWelcomeStep();
     } else if (isForgeStep) {
@@ -1688,8 +1694,8 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!hasConnectedProvider ? 'outline' : 'primary'}
-                              disabled={!hasConnectedProvider}
+                              variant={!canAdvanceFromWelcome ? 'outline' : 'primary'}
+                              disabled={!canAdvanceFromWelcome}
                               loading={onboardingTestPromptRunning}
                               onclick={advanceFromWelcomeStep}
                             >
@@ -1697,7 +1703,7 @@
                                 {m.onboarding_testPrompt_running_label()}
                               {:else}
                                 {m.onboarding_page_letsGo_label()}
-                                {#if hasConnectedProvider}
+                                {#if canAdvanceFromWelcome}
                                   <span class="ml-1 opacity-50">⌘↵</span>
                                 {/if}
                               {/if}
@@ -1731,6 +1737,7 @@
                               </div>
                             {/if}
                           </div>
+                          <OnboardingAgentMachinesNotice machines={$agentMachines$} />
                           {#if !hasConnectedProvider}
                             <p class="text-xs text-muted-foreground">
                               {m.onboarding_page_connectAgent_description()}

@@ -9101,5 +9101,9 @@
   "workspaceHome_moveError_updateRequired": "請先在該機器上更新 Intent，再將其設為主機器。",
   "workspaceHome_moveError_failed": "無法搬移主機器：{message}",
   "workspaceHome_starting_label": "正在啟動主機器…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "啟動一個新沙箱"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "啟動一個新沙箱",
+  "onboarding_agentMachines_none_title": "新增用來執行代理的電腦",
+  "onboarding_agentMachines_none_description": "此 Intent 會把代理送到其他電腦執行，本身不執行任何代理。請在設定 → 電腦中新增一台電腦，然後返回繼續。",
+  "onboarding_agentMachines_openSettings_label": "開啟設定 → 電腦",
+  "onboarding_providerCard_onMachines_label": "在你的電腦上執行"
 }

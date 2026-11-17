@@ -9101,5 +9101,9 @@
   "workspaceHome_moveError_updateRequired": "ホームマシンにする前に、そのマシンの Intent を更新してください。",
   "workspaceHome_moveError_failed": "ホームマシンを移動できませんでした: {message}",
   "workspaceHome_starting_label": "ホームマシンを起動しています…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "新しいサンドボックスを起動します"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "新しいサンドボックスを起動します",
+  "onboarding_agentMachines_none_title": "エージェントを実行するマシンを追加",
+  "onboarding_agentMachines_none_description": "この Intent はエージェントを他のマシンに送り、自身では実行しません。設定 → マシンでマシンを追加してから、戻って続行してください。",
+  "onboarding_agentMachines_openSettings_label": "設定 → マシンを開く",
+  "onboarding_providerCard_onMachines_label": "お使いのマシンで実行"
 }

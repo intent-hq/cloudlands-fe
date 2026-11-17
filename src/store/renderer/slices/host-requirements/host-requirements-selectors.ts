@@ -5,6 +5,7 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { isGitOptionalWithoutForge } from '$lib/components/workspace/initializer/plain-folder-create';
 import { store } from '../../store';
+import { selectIsOrchestratorBackend } from '../principal/principal-selectors';
 import type { StoreState } from '../../types';
 
 export const selectGitRequirement = store.createSelector((state) => state.hostRequirements.git);
@@ -43,10 +44,20 @@ function gitOptional(state: StoreState): boolean {
 
 export const selectGitOptional = store.createSelector(gitOptional);
 
-/** Terminal gate: node meets the minimum version AND git is available (unless optional). */
+/**
+ * Node.js is needed only where providers run. An orchestrator runs none
+ * (agents run on its machines), so there it needs git only (PROTOCOL
+ * `methods/nodes.md` → "Orchestrator mode").
+ */
+export const selectNodeRequired = store.createSelector(
+  (state) => !selectIsOrchestratorBackend.select(state),
+);
+
+/** Terminal gate: node meets the minimum version (where required) AND git is available (unless optional). */
 export const selectAllRequirementsMet = store.createSelector(
   (state) =>
-    state.hostRequirements.node.ok && (state.hostRequirements.git.available || gitOptional(state)),
+    (state.hostRequirements.node.ok || !selectNodeRequired.select(state)) &&
+    (state.hostRequirements.git.available || gitOptional(state)),
 );
 
 export const selectProviderCliRequirements = store.createSelector((state) => {

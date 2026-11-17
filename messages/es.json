@@ -9101,5 +9101,9 @@
   "workspaceHome_moveError_updateRequired": "Actualiza Intent en esa máquina antes de convertirla en la principal.",
   "workspaceHome_moveError_failed": "No se pudo mover la máquina principal: {message}",
   "workspaceHome_starting_label": "Iniciando la máquina principal…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "Inicia un nuevo sandbox"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Inicia un nuevo sandbox",
+  "onboarding_agentMachines_none_title": "Añade un equipo para ejecutar agentes",
+  "onboarding_agentMachines_none_description": "Este Intent envía los agentes a otros equipos y no ejecuta ninguno. Añade un equipo en Configuración → Equipos y vuelve para continuar.",
+  "onboarding_agentMachines_openSettings_label": "Abrir Configuración → Equipos",
+  "onboarding_providerCard_onMachines_label": "Se ejecuta en tus equipos"
 }

@@ -9101,5 +9101,9 @@
   "workspaceHome_moveError_updateRequired": "Update Intent on that machine before you make it a home.",
   "workspaceHome_moveError_failed": "Couldn't move the home: {message}",
   "workspaceHome_starting_label": "Starting home…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "Starts a new sandbox"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Starts a new sandbox",
+  "onboarding_agentMachines_none_title": "Add a machine to run agents",
+  "onboarding_agentMachines_none_description": "This Intent sends agents to other machines and runs none itself. Add a machine in Settings → Machines, then come back to continue.",
+  "onboarding_agentMachines_openSettings_label": "Open Settings → Machines",
+  "onboarding_providerCard_onMachines_label": "Runs on your machines"
 }
