@@ -254,7 +254,11 @@ describe('ProviderCard login guidance', () => {
     const { container } = render(ProviderCard, {
       props: {
         ...baseProps(),
-        provider: needsLoginProvider({ id: 'codex', name: 'Codex', loginCommandHint: 'codex login' }),
+        provider: needsLoginProvider({
+          id: 'codex',
+          name: 'Codex',
+          loginCommandHint: 'codex login',
+        }),
       },
     });
     await fireEvent.click(loginButton(container)!);
