@@ -358,7 +358,8 @@
 
   <div class="grid gap-x-6 gap-y-4 @xl:grid-cols-[10rem_minmax(0,1fr)]">
     {#if askName}
-      <Label for="{uid}-name" class="@xl:pt-2">{m.cloudMachines_form_name_label()}</Label>
+      <Label for="{uid}-name" class="self-start @xl:pt-2">{m.cloudMachines_form_name_label()}</Label
+      >
       <div class="min-w-0 space-y-1">
         <Input
           id="{uid}-name"
@@ -380,7 +381,7 @@
       </div>
     {/if}
 
-    <Label for="{uid}-key" class="@xl:pt-2">{copy.keyLabel}</Label>
+    <Label for="{uid}-key" class="self-start @xl:pt-2">{copy.keyLabel}</Label>
     <div class="min-w-0 space-y-1">
       <div class="flex gap-2">
         {#if apiKeyFromName}
@@ -459,7 +460,7 @@
     </div>
 
     {#if northflank}
-      <Label for="{uid}-project" class="@xl:pt-2"
+      <Label for="{uid}-project" class="self-start @xl:pt-2"
         >{m.cloudMachines_northflank_form_project_label()}</Label
       >
       <Input
@@ -474,7 +475,7 @@
         data-cloud-project
       />
 
-      <Label for="{uid}-region" class="@xl:pt-2"
+      <Label for="{uid}-region" class="self-start @xl:pt-2"
         >{m.cloudMachines_northflank_form_region_label()}</Label
       >
       <p
@@ -487,7 +488,7 @@
     {/if}
 
     {#if agent37}
-      <Label id="{uid}-type-label" class="@xl:pt-2"
+      <Label id="{uid}-type-label" class="self-start @xl:pt-2"
         >{m.cloudMachines_agent37_form_type_label()}</Label
       >
       <div class="min-w-0 space-y-1">
@@ -513,7 +514,7 @@
       </div>
 
       {#if instanceType === 'vm'}
-        <Label id="{uid}-region-label" class="@xl:pt-2"
+        <Label id="{uid}-region-label" class="self-start @xl:pt-2"
           >{m.cloudMachines_agent37_form_region_label()}</Label
         >
         <div class="min-w-0" data-agent37-region>
@@ -535,7 +536,7 @@
       {/if}
     {/if}
 
-    <Label for="{uid}-size" class="@xl:pt-2">{copy.sizeLabel}</Label>
+    <Label for="{uid}-size" class="self-start @xl:pt-2">{copy.sizeLabel}</Label>
     <div class="min-w-0 space-y-1">
       {#if sizeItems.length > 0}
         <Select.Root bind:value={size} items={sizeItems} disabled={busy} onchange={resetTest}>
@@ -574,7 +575,9 @@
       {/if}
     </div>
 
-    <Label for="{uid}-idle" class="@xl:pt-2">{m.cloudMachines_form_idlePause_label()}</Label>
+    <Label for="{uid}-idle" class="self-start @xl:pt-2"
+      >{m.cloudMachines_form_idlePause_label()}</Label
+    >
     <Select.Root bind:value={idlePause} items={idleItems} disabled={busy}>
       <Select.Trigger id="{uid}-idle" class="w-full max-w-sm"><Select.Value /></Select.Trigger>
       <Select.Content>
@@ -584,7 +587,9 @@
       </Select.Content>
     </Select.Root>
 
-    <Label for="{uid}-delete" class="@xl:pt-2">{m.cloudMachines_form_pausedDelete_label()}</Label>
+    <Label for="{uid}-delete" class="self-start @xl:pt-2"
+      >{m.cloudMachines_form_pausedDelete_label()}</Label
+    >
     <Select.Root bind:value={pausedDelete} items={deleteItems} disabled={busy}>
       <Select.Trigger id="{uid}-delete" class="w-full max-w-sm"><Select.Value /></Select.Trigger>
       <Select.Content>
