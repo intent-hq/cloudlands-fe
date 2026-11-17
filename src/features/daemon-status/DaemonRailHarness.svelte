@@ -4,6 +4,7 @@
   import MachineRail from '$features/machine-rail/MachineRail.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { WINDOW_TITLEBAR_HEIGHT_PX } from '$lib/components/layout/titlebar-geometry';
   import DaemonAuditHarness from './DaemonAuditHarness.svelte';
   import DaemonStoppedOverlay from './DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from './DaemonUpdatingOverlay.svelte';
@@ -18,7 +19,10 @@
 
 <DaemonAuditHarness state={scenario}>
   <div class="panel-layout-container flex h-screen flex-col bg-background text-foreground">
-    <header class="flex h-[35px] shrink-0 items-center justify-end px-2">
+    <header
+      class="flex shrink-0 items-center justify-end px-2"
+      style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+    >
       <Button variant="ghost" size="sm" data-testid="window-control">Window control</Button>
     </header>
     <div class="flex min-h-0 flex-1 p-2">
