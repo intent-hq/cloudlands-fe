@@ -21,6 +21,7 @@
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+  import { providerInstallCommand } from '$features/providers/utils/provider-install-commands';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import {
@@ -99,55 +100,18 @@
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
 
-  /**
-   * Install command + docs URL for each provider.
-   * Shown on the card so users can copy/run them without leaving the app.
-   * Only the install command is surfaced — users uninstall via their package
-   * manager directly when they want to remove a provider.
-   */
-  const PROVIDER_METADATA: Record<string, { installCommand: string; docsUrl: string }> = {
-    antigravity: {
-      installCommand: '',
-      docsUrl: 'https://antigravity.google/docs/ide/extensions/zed',
-    },
-    auggie: {
-      installCommand: 'npm install -g @augmentcode/auggie',
-      docsUrl: 'https://docs.augmentcode.com/cli/overview',
-    },
-    'claude-code': {
-      installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
-      docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
-    },
-    codex: {
-      installCommand: 'npm i -g @openai/codex',
-      docsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
-    },
-    opencode: {
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash',
-      docsUrl: 'https://opencode.ai/docs#install',
-    },
-    droid: {
-      installCommand: 'curl -fsSL https://app.factory.ai/cli | sh',
-      docsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
-    },
-    grok: {
-      installCommand: 'npm i -g @xai-official/grok',
-      docsUrl: 'https://docs.x.ai/build/overview',
-    },
-    unsloth: {
-      // Unsloth runs local GGUF models through the opencode runtime — the
-      // daemon manages the local server; only the opencode CLI is needed.
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash',
-      docsUrl: 'https://docs.unsloth.ai',
-    },
-    cursor: {
-      installCommand: 'curl https://cursor.com/install -fsS | bash',
-      docsUrl: 'https://cursor.com/docs/cli/installation',
-    },
-    cortex: {
-      installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
-      docsUrl: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
-    },
+  /** Docs URL for each provider (install commands: PROVIDER_INSTALL_COMMANDS). */
+  const PROVIDER_DOCS_URLS: Record<string, string> = {
+    antigravity: 'https://antigravity.google/docs/ide/extensions/zed',
+    auggie: 'https://docs.augmentcode.com/cli/overview',
+    'claude-code': 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
+    codex: 'https://developers.openai.com/codex/cli#cli-setup',
+    opencode: 'https://opencode.ai/docs#install',
+    droid: 'https://docs.factory.ai/cli/getting-started/overview',
+    grok: 'https://docs.x.ai/build/overview',
+    unsloth: 'https://docs.unsloth.ai',
+    cursor: 'https://cursor.com/docs/cli/installation',
+    cortex: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
   };
 
   const catalogEntries$ = selectProviderCatalogEntries();
@@ -176,7 +140,6 @@
         }),
       )
       .map((p) => {
-        const meta = PROVIDER_METADATA[p.id];
         const status = statusMap[p.id];
         const inFlight = loadingMap[p.id];
         return {
@@ -197,11 +160,11 @@
            * something useful out of the CLI stdout — may be undefined.
            */
           authDetails: status?.authDetails,
-          docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
+          docsUrl: PROVIDER_DOCS_URLS[p.id] ?? p.loginDocsUrl ?? '',
           // A refused CLI (status.unavailableReason) is present: show its warning, not install steps.
-          installCommand: status?.unavailableReason ? '' : (meta?.installCommand ?? ''),
+          installCommand: status?.unavailableReason ? '' : (providerInstallCommand(p.id) ?? ''),
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
-           *  rendered as copyable guidance when the provider needs login. */
+           *  enables the card's Log in button. */
           loginCommandHint: p.loginCommandHint,
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
@@ -271,8 +234,8 @@
     });
   }
 
-  // Users complete install/login in their own terminal (the card links out to
-  // the docs); the focus/visibility listeners below re-run detection when they
+  // Install and login run in the root terminal drawer (or the user's own
+  // terminal); the focus/visibility listeners below re-run detection when they
   // return to the app.
   onMount(() => {
     appStore.dispatch(ensureProvidersCheckedAction());

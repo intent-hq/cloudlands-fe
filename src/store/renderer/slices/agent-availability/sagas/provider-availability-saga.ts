@@ -41,6 +41,8 @@ import {
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,
+  providerInstallRequested,
+  providerInstallStarted,
   providerLoginRequested,
   providerLoginStarted,
   checkSingleProviderFailure,
@@ -60,6 +62,7 @@ import {
 import type { ProviderStatus } from '../agent-availability-types';
 import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import { reloadModelsForProvider } from '../../model/model-slice';
+import { providerInstallCommand } from '$features/providers/utils/provider-install-commands';
 import { providerModelsCacheCleared } from '../../provider-models/provider-models-slice';
 
 const logger = createLogger('ProviderAvailabilitySaga');
@@ -231,11 +234,17 @@ function* resolveLoginCommand(providerId: string) {
   return providerId === 'claude-code' ? 'claude auth login' : undefined;
 }
 
-/** @internal */
-export function* openProviderLoginWorker(action: LoginAction) {
+type InstallAction = ReturnType<typeof providerInstallRequested>;
+type TerminalAction = LoginAction | InstallAction;
+
+/** Run `command` in a new root drawer terminal and open the drawer on it. */
+function* runInRootTerminal(
+  action: TerminalAction,
+  command: string | undefined,
+  started: (providerId: string, terminalId: string) => { type: string },
+) {
   try {
     const [providerId] = action.payload;
-    const command = yield* resolveLoginCommand(providerId);
     if (!command) throw new Error(m.terminal_adapter_openFailed_error());
     const result = yield* call(
       invoke<{ ok: boolean; terminalId?: string; error?: string }>,
@@ -246,7 +255,7 @@ export function* openProviderLoginWorker(action: LoginAction) {
       throw new Error(result.error || m.terminal_adapter_openFailed_error());
     }
     yield* put(openTerminalOverlay(ROOT_WORKSPACE_ID, result.terminalId));
-    yield* put(providerLoginStarted(providerId, result.terminalId));
+    yield* put(started(providerId, result.terminalId));
     yield* put(action.success(undefined));
   } catch (cause) {
     yield* put(
@@ -261,14 +270,30 @@ export function* openProviderLoginWorker(action: LoginAction) {
   }
 }
 
+/** @internal */
+export function* openProviderLoginWorker(action: LoginAction) {
+  const command = yield* resolveLoginCommand(action.payload[0]);
+  yield* call(runInRootTerminal, action, command, providerLoginStarted);
+}
+
+/** @internal Only the renderer-owned install allowlist runs, never a caller string. */
+export function* openProviderInstallWorker(action: InstallAction) {
+  const command = providerInstallCommand(action.payload[0]);
+  yield* call(runInRootTerminal, action, command, providerInstallStarted);
+}
+
 /** Repeat clicks for a provider share its in-flight launch instead of opening more terminals. */
-function* coalesceProviderLoginRequests(pending: Map<string, LoginAction>, action: LoginAction) {
+function* coalesceProviderTerminalRequests<A extends TerminalAction>(
+  worker: (action: A) => Generator<unknown, void, unknown>,
+  pending: Map<string, A>,
+  action: A,
+) {
   const [providerId] = action.payload;
   const leader = pending.get(providerId);
   if (!leader) {
     pending.set(providerId, action);
     try {
-      yield* call(openProviderLoginWorker, action);
+      yield* call(worker, action);
     } finally {
       pending.delete(providerId);
     }
@@ -286,7 +311,15 @@ function* coalesceProviderLoginRequests(pending: Map<string, LoginAction>, actio
   }
 }
 
-function* dismissLoginOnSuccess(action: ReturnType<typeof providerLoginStarted>) {
+/**
+ * While the drawer shows the launched terminal, re-check the provider; once
+ * `done` holds (installed, or logged in) close the drawer so the card's next
+ * step is visible. Leaving or closing the drawer stops the watch.
+ */
+function* dismissOnProviderReady(
+  done: (status: ProviderStatus | undefined) => boolean,
+  action: ReturnType<typeof providerLoginStarted> | ReturnType<typeof providerInstallStarted>,
+) {
   const [providerId, terminalId] = action.payload;
   while (true) {
     yield* delay(2000);
@@ -294,7 +327,7 @@ function* dismissLoginOnSuccess(action: ReturnType<typeof providerLoginStarted>)
     if (!before.isOpen || before.activeTerminalId !== terminalId || before.selectedScriptId) return;
     if ((yield* selectProviderLoadingMap.effect())[providerId]) continue;
     const status = yield* call(checkSingleProviderWorker, providerId);
-    if (status?.available && status.authenticated === true) {
+    if (done(status)) {
       const current = yield* selectWorkspaceTerminalState.effect(ROOT_WORKSPACE_ID);
       if (current.isOpen && current.activeTerminalId === terminalId && !current.selectedScriptId) {
         yield* put(closeTerminalOverlay(ROOT_WORKSPACE_ID));
@@ -310,8 +343,28 @@ export function* providerAvailabilitySaga() {
     // boot-time ensure cannot be missed. This removes the need for setup polling
     // without initiating an extra sweep from provider availability itself.
     yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
-    yield* takeEvery(providerLoginRequested, coalesceProviderLoginRequests, new Map());
-    yield* takeLatest(providerLoginStarted, dismissLoginOnSuccess);
+    yield* takeEvery(
+      providerLoginRequested,
+      coalesceProviderTerminalRequests<LoginAction>,
+      openProviderLoginWorker,
+      new Map(),
+    );
+    yield* takeLatest(
+      providerLoginStarted,
+      dismissOnProviderReady,
+      (status) => status?.available === true && status.authenticated === true,
+    );
+    yield* takeEvery(
+      providerInstallRequested,
+      coalesceProviderTerminalRequests<InstallAction>,
+      openProviderInstallWorker,
+      new Map(),
+    );
+    yield* takeLatest(
+      providerInstallStarted,
+      dismissOnProviderReady,
+      (status) => status?.available === true,
+    );
     yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
     yield* takeSingleFlightInContext(
       checkAllProvidersRequested,

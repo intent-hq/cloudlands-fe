@@ -49,6 +49,16 @@ export const providerLoginStarted = createAction<[providerId: string, terminalId
   'agentAvailability/providerLoginStarted',
 );
 
+/** Run the provider's CLI install command in the root terminal drawer. */
+export const providerInstallRequested = createAsyncAction<[providerId: string], void>(
+  'agentAvailability/providerInstall',
+  'agentAvailability/providerInstallRequested',
+);
+
+export const providerInstallStarted = createAction<[providerId: string, terminalId: string]>(
+  'agentAvailability/providerInstallStarted',
+);
+
 /**
  * `epoch` is the provider's check generation captured when the probe started
  * (see `providerCheckEpochMap`). The reducer drops the result when a newer

@@ -21,8 +21,7 @@
   import { observeOverflow } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import ClaudeLoginButton from './ClaudeLoginButton.svelte';
+  import ProviderTerminalButton from './ProviderTerminalButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -41,9 +40,10 @@
     statusLoading: boolean;
     authDetails: string | undefined;
     docsUrl: string;
+    /** Allowlisted install command; its presence enables the Install button. */
     installCommand: string;
     /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
-     *  rendered as copyable guidance when the provider needs login. */
+     *  its presence enables the Log in button. */
     loginCommandHint?: string;
     hasNpxFallback: boolean;
     /** Status warning from the availability check (e.g. npx missing for claude-code). */
@@ -259,14 +259,16 @@
             </div>
           </div>
         {:else if needsLogin}
-          {#if provider.id === 'claude-code'}
-            <ClaudeLoginButton />
+          {#if provider.id === 'claude-code' || provider.loginCommandHint}
+            <ProviderTerminalButton providerId={provider.id} kind="login" />
           {:else}
             <span
               class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
               >{m.onboarding_providerCard_logIn_label()}</span
             >
           {/if}
+        {:else if provider.installCommand}
+          <ProviderTerminalButton providerId={provider.id} kind="install" />
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
@@ -303,27 +305,6 @@
           {/if}
         </div>
       </div>
-
-      <!-- Actionable login guidance: the catalog's login command with
-           copy-to-clipboard (docs link above stays the secondary action).
-           Clicks must not bubble to the card (which opens docs). -->
-      {#if needsLogin && provider.id !== 'claude-code' && provider.loginCommandHint}
-        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-        <div
-          data-testid="provider-card-login-hint"
-          class="mt-2 text-xs"
-          onclick={(e) => e.stopPropagation()}
-        >
-          <span class="opacity-70">{m.onboarding_providerCard_runToLogIn_label()}</span>
-          <div class="mt-1 flex items-center gap-1">
-            <code
-              class="min-w-0 flex-1 truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-foreground"
-              >{provider.loginCommandHint}</code
-            >
-            <CopyButton text={provider.loginCommandHint} class="hover:bg-background/60" />
-          </div>
-        </div>
-      {/if}
 
       <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
       {#if showNpxMissingHint}
