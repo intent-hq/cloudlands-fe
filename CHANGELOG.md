@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.346.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.2...v2.346.3) (2026-11-17)
+
+
+### 🐛 Bug Fixes
+
+* **model-picker:** show a machine's models on an orchestrator ([#4723](https://github.com/intent-hq/cloudlands-fe/issues/4723)) ([a88fa6e](https://github.com/intent-hq/cloudlands-fe/commit/a88fa6e5048cc9d255a275d668a97fbbf4ecaef8))
+
 ## [2.346.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.1...v2.346.2) (2026-11-17)
 
 
