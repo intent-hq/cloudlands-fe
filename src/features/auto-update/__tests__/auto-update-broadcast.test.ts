@@ -18,15 +18,19 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: electronMocks.getAllWindows },
 }));
 
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, WebContents } from 'electron';
+import { bindMachineViewToBackend } from '../../../main/window-backend';
 import { broadcastToRenderers } from '../main/auto-update-broadcast';
 import { registerHudWindow, _resetHudWindowRefForTests } from '../../../main/hud-window';
 
 interface MockWindow {
   isDestroyed: () => boolean;
   on: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
   webContents: {
     isDestroyed: () => boolean;
+    on: ReturnType<typeof vi.fn>;
+    once: ReturnType<typeof vi.fn>;
     getURL: () => string;
     send: ReturnType<typeof vi.fn>;
   };
@@ -38,8 +42,11 @@ function makeWindow(
   return {
     isDestroyed: () => opts.destroyed ?? false,
     on: vi.fn(),
+    once: vi.fn(),
     webContents: {
       isDestroyed: () => opts.webContentsDestroyed ?? false,
+      on: vi.fn(),
+      once: vi.fn(),
       getURL: () => opts.url ?? 'app://workspaces/workspace/x',
       send: vi.fn(),
     },
@@ -67,6 +74,32 @@ describe('broadcastToRenderers', () => {
       expect(win.webContents.send).toHaveBeenCalledWith('auto-update:status-changed', state);
     }
   });
+
+  it.each(['auto-update:status-changed', 'auto-update:progress', 'auto-update:show-toast'])(
+    'delivers %s to home and every live device view, skipping dead views',
+    (channel) => {
+      const home = makeWindow();
+      const remote = makeWindow().webContents;
+      const hidden = makeWindow().webContents;
+      const dead = makeWindow({ webContentsDestroyed: true }).webContents;
+      for (const [index, view] of [remote, hidden, dead].entries()) {
+        bindMachineViewToBackend(
+          home as unknown as BrowserWindow,
+          view as unknown as WebContents,
+          `device-${index}`,
+        );
+      }
+      electronMocks.getAllWindows.mockReturnValue([home]);
+      const payload = { percent: 42 };
+
+      broadcastToRenderers(channel, payload);
+
+      for (const contents of [home.webContents, remote, hidden]) {
+        expect(contents.send).toHaveBeenCalledExactlyOnceWith(channel, payload);
+      }
+      expect(dead.send).not.toHaveBeenCalled();
+    },
+  );
 
   it('supports data-less events (show-toast)', () => {
     const win = makeWindow();

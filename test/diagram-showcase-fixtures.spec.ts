@@ -87,10 +87,15 @@ function collectUnexpectedConsoleErrors(page: Page) {
   return errors;
 }
 
-async function openShowcase(page: Page, width = 960, theme: 'light' | 'dark' = 'light') {
+async function openShowcase(
+  page: Page,
+  width = 960,
+  theme: 'light' | 'dark' = 'light',
+  target?: (typeof showcaseIds)[number],
+) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=mermaid-nested-routing&theme=${theme}&width=${width}&motion=reduced`,
+    `${baseUrl}/sandbox/diagram-workbench?state=${target ?? 'mermaid-nested-routing'}&theme=${theme}&width=${width}&motion=reduced${target ? '&cases=target' : ''}`,
     { waitUntil: 'domcontentloaded' },
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -107,9 +112,8 @@ test('renders every added showcase with its expected visual contract and no cons
   page,
 }) => {
   const consoleErrors = collectUnexpectedConsoleErrors(page);
-  await openShowcase(page);
-
   for (const id of showcaseIds) {
+    await openShowcase(page, 960, 'light', id);
     const root = page.locator(`#${id}`);
     await expect(root.locator('[data-visual-contract]')).toBeVisible();
     if (id.startsWith('custom-')) {
@@ -363,40 +367,46 @@ for (const appearance of [
   for (const width of [420, 960] as const) {
     test(`${appearance.name} keeps showcase fixtures readable at ${width}px`, async ({ page }) => {
       const consoleErrors = collectUnexpectedConsoleErrors(page);
-      await openShowcase(page, width, appearance.theme);
-      if (appearance.nord) {
-        await page.getByTestId('catalog-color-theme-control').click();
-        await page.getByRole('option', { name: 'Nord', exact: true }).click();
-        await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
-          'data-catalog-color-theme',
-          'nord',
+      for (const id of showcaseIds) {
+        await openShowcase(page, width, appearance.theme, id);
+        if (appearance.nord) {
+          const shell = page.getByTestId('catalog-shell');
+          if ((await shell.getAttribute('data-catalog-color-theme')) !== 'nord') {
+            await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
+            await page.getByTestId('catalog-color-theme-control').click();
+            await page.getByRole('option', { name: 'Nord', exact: true }).click();
+          }
+          await expect(shell).toHaveAttribute('data-catalog-color-theme', 'nord');
+        }
+        await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
+          'data-preview-stable',
+          'true',
         );
-      }
-      const result = await page.evaluate((ids) => {
-        const roots = ids.map((id) => document.getElementById(id)!);
-        const visibleText = roots.flatMap((root) => [
-          ...root.querySelectorAll<HTMLElement>('.node-label, .nodeLabel, .actor, .messageText'),
-        ]);
-        const mermaidScale = roots.flatMap((root) =>
-          [...root.querySelectorAll<SVGSVGElement>('.mermaid-svg > svg')].map(
+        const result = await page.evaluate((id) => {
+          const root = document.getElementById(id)!;
+          const visibleText = [
+            ...root.querySelectorAll<HTMLElement>('.node-label, .nodeLabel, .actor, .messageText'),
+          ];
+          const mermaidScale = [...root.querySelectorAll<SVGSVGElement>('.mermaid-svg > svg')].map(
             (svg) => svg.getBoundingClientRect().height / svg.viewBox.baseVal.height,
-          ),
-        );
-        return {
-          pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          minimumFont: Math.min(
-            ...visibleText.map((text) => {
-              const svg = text.closest<SVGSVGElement>('svg');
-              const scale = svg
-                ? svg.getBoundingClientRect().height / svg.viewBox.baseVal.height
-                : 1;
-              return Number.parseFloat(getComputedStyle(text).fontSize) * scale;
-            }),
-            ...mermaidScale.map((scale) => 13 * scale),
-          ),
-        };
-      }, showcaseIds);
-      expect(result.pageOverflow).toBeLessThanOrEqual(1);
+          );
+          return {
+            pageOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            minimumFont: Math.min(
+              ...visibleText.map((text) => {
+                const svg = text.closest<SVGSVGElement>('svg');
+                const scale = svg
+                  ? svg.getBoundingClientRect().height / svg.viewBox.baseVal.height
+                  : 1;
+                return Number.parseFloat(getComputedStyle(text).fontSize) * scale;
+              }),
+              ...mermaidScale.map((scale) => 13 * scale),
+            ),
+          };
+        }, id);
+        expect(result.pageOverflow, `${id} stays within the page`).toBeLessThanOrEqual(1);
+      }
 
       expect(consoleErrors).toEqual([]);
     });

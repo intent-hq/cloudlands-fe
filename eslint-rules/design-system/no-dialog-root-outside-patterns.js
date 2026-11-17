@@ -51,8 +51,7 @@ export default {
         const specialized = [
           'src/lib/components/CommandPalette.svelte',
           'src/features/stats/StatsOverlay.svelte',
-          'src/features/daemon-status/DaemonStoppedOverlay.svelte',
-          'src/features/daemon-status/DaemonUpdatingOverlay.svelte',
+          'src/features/daemon-status/DaemonRecoveryFrame.svelte',
           // Joining progress owns a cancel-once contract for main-process updates.
           'src/lib/components/modals/InviteProgressModal.svelte',
           // Dual embedded/standalone file-browser surface owns its focus and navigation.

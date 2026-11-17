@@ -210,19 +210,26 @@ function pickNotificationClickTarget(
 
 /**
  * Select `machineId` in `frame`, which holds it but shows another machine,
- * then deliver `navigation` to its renderer: pushed once it is ready, or
- * queued for it to pull when it does not start in time. Does nothing when the
- * frame no longer holds the machine.
+ * then deliver `navigation` to its renderer: pushed once it is on screen and
+ * ready, or queued for it to pull when it is on screen but did not start in
+ * time. Does nothing when the frame no longer holds the machine, when the
+ * user picked another machine before the selection landed, or when
+ * `isLive()` turns false (the machine's connection closed) meanwhile.
  */
 async function selectMachineForClick(
   frame: BrowserWindow,
   machineId: string,
   navigation: NotificationNavigation,
+  isLive: () => boolean = () => true,
 ): Promise<void> {
   const { selectMachineInFrame } = await import('../../../main/machine-rail');
   const selected = selectMachineInFrame(frame, machineId);
   if (!selected) return;
-  deliverNotificationNavigation(selected.contents, await selected.ready, navigation);
+  const { contents } = selected;
+  const ready = await selected.ready;
+  if (frame.isDestroyed() || contents.isDestroyed() || !isLive()) return;
+  if (getShownRendererWebContents(frame) !== contents) return;
+  deliverNotificationNavigation(contents, ready, navigation);
 }
 
 /**
@@ -1045,7 +1052,12 @@ export class NotificationService {
           navigate(rendererFor(target, backendId));
           return;
         }
-        void selectMachineForClick(target, backendId, payload).catch((error: unknown) => {
+        void selectMachineForClick(
+          target,
+          backendId,
+          payload,
+          () => this.clientFor(backendId) !== undefined,
+        ).catch((error: unknown) => {
           logger.error('Failed to show the machine for a notification click', error as Error);
         });
       });

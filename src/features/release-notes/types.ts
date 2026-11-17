@@ -38,6 +38,7 @@ export const RELEASE_NOTES_REPO = 'intent-hq/cloudlands-releases';
 export const RELEASE_NOTES_CHANNELS = {
   // Invoke channels (renderer → main)
   GET: 'release-notes:get',
+  /** One-shot startup claim, granted only to the eligible shown renderer. */
   GET_PENDING: 'release-notes:get-pending',
   /**
    * Renderer tells main the user dismissed the modal: main clears its

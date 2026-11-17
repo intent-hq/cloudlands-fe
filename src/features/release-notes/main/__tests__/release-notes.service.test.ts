@@ -15,6 +15,10 @@ let appVersion = '2.1.0';
 const ipcHandlers = vi.hoisted(
   () => new Map<string, (event: unknown, data: unknown) => Promise<unknown>>(),
 );
+const windowMock = vi.hoisted(() => {
+  const contents = { isDestroyed: () => false };
+  return { window: { webContents: contents, isDestroyed: () => false }, open: false };
+});
 
 vi.mock('electron', () => ({
   app: {
@@ -26,7 +30,12 @@ vi.mock('electron', () => ({
       ipcHandlers.set(channel, handler);
     },
   },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: {
+    getAllWindows: () => (windowMock.open ? [windowMock.window] : []),
+    getFocusedWindow: () => null,
+    fromWebContents: (sender: unknown) =>
+      windowMock.open && sender === windowMock.window.webContents ? windowMock.window : null,
+  },
 }));
 
 const PREF_KEY = 'lastSeenReleaseNotesVersion';
@@ -87,6 +96,7 @@ function mockReleasePages(pages: unknown[][]) {
 
 describe('release-notes service', () => {
   beforeEach(async () => {
+    windowMock.open = false;
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'release-notes-test-'));
     appVersion = '2.1.0';
     vi.resetModules();
@@ -397,7 +407,8 @@ describe('release-notes service', () => {
 
       const getPending = ipcHandlers.get('release-notes:get-pending');
       expect(getPending).toBeDefined();
-      expect(await getPending!({}, undefined)).toEqual({
+      windowMock.open = true;
+      expect(await getPending!({ sender: windowMock.window.webContents }, undefined)).toEqual({
         success: true,
         data: {
           version: '2.1.0',

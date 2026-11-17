@@ -1,24 +1,21 @@
 /**
- * Release Notes IPC Handlers
- *
- * `release-notes:get` lets the renderer fetch the running version's notes on
- * demand (Help ▸ Show Release Notes); `release-notes:show` is the main →
- * renderer push that opens the modal after an update.
- *
- * The startup push goes to *every* open window (one modal per window). It can
- * win the race against a renderer registering its listener (`webContents.send`
- * does not queue for future listeners), so the startup notes are also parked
- * as *pending* and read by each renderer over `release-notes:get-pending` when
- * it initializes. The slot is not cleared on read — late-initializing or
- * newly created windows must see the notes too — and renderers dedup per
- * version. Dismissing in any window invokes `release-notes:dismiss`, which
- * clears the slot and fans `release-notes:close` out to every window.
+ * Release notes belong to the desktop app, not to each machine renderer.
+ * Main reserves startup notes for the machine view one frame shows (never a
+ * frame page) and keeps a one-shot pending read to cover pushes sent before
+ * its listener is ready. Manual opening and dismissal close stale notes in
+ * every other machine view.
  */
-
 import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { getRendererWebContents, getShownRendererWebContents } from '../../../main/window-backend';
+import { mostRecentFrame } from '../../../main/frames';
+import { getAppWindows } from '../../../main/offscreen-window';
+import {
+  getRendererWebContents,
+  getShownRendererWebContents,
+  getWindowForWebContents,
+  isShownRenderer,
+} from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import {
   RELEASE_NOTES_CHANNELS,
@@ -28,51 +25,70 @@ import {
 import { checkForReleaseNotesOnStartup, getCurrentReleaseNotes } from './release-notes.service';
 
 const logger = new Logger('ReleaseNotesIPC');
-
 const EmptySchema = z.object({}).optional();
-
-/**
- * Startup notes not yet dismissed. In-memory only: the pref advances right
- * after these are parked, so a process exit before a renderer reads (or a
- * window receives) them skips that version's notes — an accepted trade-off to
- * keep the modal opening at most once per version.
- */
 let pendingReleaseNotes: ReleaseNotesContent | null = null;
+let startupOwner: Electron.WebContents | null = null;
+let startupSuppressed = false;
 
-/** Send an event to every app renderer of every live window (a frame's machine views). */
-function broadcastToAllWindows(channel: string, payload?: unknown): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    for (const contents of getRendererWebContents(window)) contents.send(channel, payload);
+/** Close stale notes, including in hidden machine views. */
+function closeOtherRenderers(except?: Electron.WebContents): void {
+  for (const window of getAppWindows()) {
+    if (window.isDestroyed()) continue;
+    for (const renderer of getRendererWebContents(window)) {
+      if (renderer !== except && !renderer.isDestroyed()) {
+        renderer.send(RELEASE_NOTES_CHANNELS.CLOSE, undefined);
+      }
+    }
   }
 }
 
-/** Register the release-notes ipcMain handlers. */
+function clearStartupNotes(): void {
+  startupSuppressed = true;
+  pendingReleaseNotes = null;
+  startupOwner = null;
+}
+
+/** A hidden machine may start first, but must never consume the startup slot. */
+function claimPending(sender: Electron.WebContents): ReleaseNotesContent | null {
+  if (!pendingReleaseNotes) return null;
+  const window = getWindowForWebContents(sender);
+  if (!window || !isShownRenderer(window, sender)) return null;
+  if (startupOwner && !startupOwner.isDestroyed() && startupOwner !== sender) return null;
+  startupOwner = sender;
+  const notes = pendingReleaseNotes;
+  pendingReleaseNotes = null;
+  return notes;
+}
+
 export function setupReleaseNotesIPC(): void {
   ipcMain.handle(
     RELEASE_NOTES_CHANNELS.GET,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => ({ success: true, data: await getCurrentReleaseNotes() }),
+      async (event) => {
+        // Settings opens notes through GET directly, without a Help-menu push.
+        clearStartupNotes();
+        closeOtherRenderers(event.sender);
+        return { success: true, data: await getCurrentReleaseNotes() };
+      },
       RELEASE_NOTES_CHANNELS.GET,
     ),
   );
-
   ipcMain.handle(
     RELEASE_NOTES_CHANNELS.GET_PENDING,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => ({ success: true, data: pendingReleaseNotes }),
+      async (event) => ({ success: true, data: claimPending(event.sender) }),
       RELEASE_NOTES_CHANNELS.GET_PENDING,
     ),
   );
-
   ipcMain.handle(
     RELEASE_NOTES_CHANNELS.DISMISS,
     createSafeValidatedHandler(
       EmptySchema,
       async () => {
-        pendingReleaseNotes = null;
-        broadcastToAllWindows(RELEASE_NOTES_CHANNELS.CLOSE);
+        clearStartupNotes();
+        closeOtherRenderers();
         return { success: true };
       },
       RELEASE_NOTES_CHANNELS.DISMISS,
@@ -80,29 +96,44 @@ export function setupReleaseNotesIPC(): void {
   );
 }
 
-/** Push the modal-open event to the renderer a window shows. */
+/**
+ * The machine view `window` shows, or null when it shows none yet (a frame
+ * whose view has not started: its frame page must never get app content).
+ */
+function shownMachineRenderer(window: BrowserWindow): Electron.WebContents | null {
+  const renderer = getShownRendererWebContents(window);
+  return !renderer.isDestroyed() && isShownRenderer(window, renderer) ? renderer : null;
+}
+
+/** Help opens notes in the visible machine view and retires any previous showing. */
 export function sendShowReleaseNotes(
   window: BrowserWindow | null,
   payload: ShowReleaseNotesPayload,
 ): void {
   if (!window || window.isDestroyed()) return;
-  getShownRendererWebContents(window).send(RELEASE_NOTES_CHANNELS.SHOW, payload);
+  const renderer = shownMachineRenderer(window);
+  if (!renderer) return;
+  clearStartupNotes();
+  closeOtherRenderers(renderer);
+  renderer.send(RELEASE_NOTES_CHANNELS.SHOW, payload);
 }
 
 /**
- * Run the startup version-change check and push the notes to every open
- * window when a showing is due. Windows are enumerated at send time — not
- * captured before the async check/fetch — so a window created meanwhile still
- * receives the push (intent-hq/monorepo#3054); when none exists the notes
- * stay parked as pending for the renderer get-pending path. Never throws — a
- * failure here must not affect startup.
+ * Park startup notes and push them to the machine view of one frame (the
+ * focused one, else the most recently focused), chosen after the async fetch.
+ * With no shown view yet, the notes stay parked for the first shown view to
+ * claim over get-pending.
  */
 export async function initializeReleaseNotesOnStartup(): Promise<void> {
   try {
     await checkForReleaseNotesOnStartup((notes) => {
+      if (startupSuppressed) return;
       pendingReleaseNotes = notes;
-      const payload: ShowReleaseNotesPayload = { notes };
-      broadcastToAllWindows(RELEASE_NOTES_CHANNELS.SHOW, payload);
+      const window = mostRecentFrame();
+      const renderer = window ? shownMachineRenderer(window) : null;
+      if (!renderer) return;
+      startupOwner = renderer;
+      renderer.send(RELEASE_NOTES_CHANNELS.SHOW, { notes } satisfies ShowReleaseNotesPayload);
     });
   } catch (error) {
     logger.warn('Release-notes startup check failed', {
@@ -111,10 +142,9 @@ export async function initializeReleaseNotesOnStartup(): Promise<void> {
   }
 }
 
-/**
- * Test-only reset of the pending-notes slot.
- * @internal
- */
+/** @internal Test-only reset of startup ownership. */
 export function __resetPendingReleaseNotesForTests(): void {
   pendingReleaseNotes = null;
+  startupOwner = null;
+  startupSuppressed = false;
 }

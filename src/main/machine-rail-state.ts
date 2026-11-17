@@ -162,10 +162,11 @@ export async function startRailMachineRenderer(
   return rendererStarter(backendId, deadline);
 }
 
-/** A machine a rail now shows; `ready` settles with whether its renderer started in time. */
+/** A requested machine; `ready` requires its selection and renderer startup to finish. */
 export interface ShownRailMachine {
   window: BrowserWindowType;
   contents: Electron.WebContents;
+  /** False if the selection is cancelled or the renderer does not start in time. */
   ready: Promise<boolean>;
 }
 

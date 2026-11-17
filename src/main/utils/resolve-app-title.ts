@@ -1,6 +1,7 @@
 import { resolveDevInstance } from './resolve-dev-instance';
 import type { BrowserWindow } from 'electron';
 import { isIsolatedTestBuild } from '../isolated-test-profile';
+import { isShownRenderer } from '../window-backend';
 
 /**
  * Build the window/app title.
@@ -29,6 +30,9 @@ export function decorateWindowTitle(title: string): string {
 export function registerWindowTitleListener(window: BrowserWindow): void {
   window.on('page-title-updated', (event, title) => {
     event.preventDefault();
+    // Only a window whose own page is what it shows (a HUD) titles itself here;
+    // a frame page never does, and machine views set the title on their own.
+    if (!isShownRenderer(window, window.webContents)) return;
     window.setTitle(decorateWindowTitle(title));
   });
 }

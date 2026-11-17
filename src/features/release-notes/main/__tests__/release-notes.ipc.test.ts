@@ -1,183 +1,134 @@
-/**
- * Release-notes IPC tests — startup broadcast to every window, the
- * pending-notes slot that closes the startup race (`webContents.send` does not
- * queue for listeners registered later, so the notes are also parked and read
- * over `release-notes:get-pending`), and the dismiss → close fan-out.
- */
-
+/** Main-owned release notes: one startup claim and visible-renderer manual routing. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const handlers = new Map<string, (event: unknown, data: unknown) => Promise<unknown>>();
-let allWindows: unknown[] = [];
-
+const handlers = new Map<string, (event: unknown, data: unknown) => Promise<any>>();
+let windows: ReturnType<typeof fakeWindow>[] = [];
+let focused: ReturnType<typeof fakeWindow> | null = null;
 vi.mock('electron', () => ({
-  app: { getVersion: () => '2.1.0' },
-  ipcMain: {
-    handle: (channel: string, handler: (event: unknown, data: unknown) => Promise<unknown>) => {
-      handlers.set(channel, handler);
-    },
-  },
-  BrowserWindow: { getAllWindows: () => allWindows },
+  ipcMain: { handle: (name: string, handler: any) => handlers.set(name, handler) },
+  BrowserWindow: { getAllWindows: () => windows, getFocusedWindow: () => focused },
 }));
-
-const NOTES = {
-  version: '2.1.0',
-  notes: '## What changed',
-  url: 'https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.1.0',
-};
-
+vi.mock('../../../../main/ipc-validation-middleware', () => ({
+  createSafeValidatedHandler: (_schema: unknown, handler: unknown) => handler,
+}));
+vi.mock('../../../../main/window-backend', () => ({
+  getWindowForWebContents: (sender: unknown) =>
+    windows.find((w) => w.renderers.includes(sender as any)) ?? null,
+  getShownRendererWebContents: (window: ReturnType<typeof fakeWindow>) => window.shown,
+  getRendererWebContents: (window: ReturnType<typeof fakeWindow>) => window.renderers,
+  // A frame page is never its window's shown renderer.
+  isShownRenderer: (window: ReturnType<typeof fakeWindow>, sender: unknown) =>
+    window.shown === sender && sender !== window.webContents,
+}));
+vi.mock('../../../../main/frames', () => ({
+  mostRecentFrame: () =>
+    (focused && !focused.isDestroyed() ? focused : null) ??
+    windows.find((w) => !w.isDestroyed()) ??
+    null,
+}));
+const NOTES = { version: '2.1.0', notes: '## What changed', url: 'https://example.com/v2.1.0' };
 vi.mock('../release-notes.service', () => ({
   getCurrentReleaseNotes: vi.fn(async () => NOTES),
-  checkForReleaseNotesOnStartup: vi.fn(async (show: (notes: typeof NOTES) => void) => {
-    show(NOTES);
-    return NOTES;
-  }),
+  checkForReleaseNotesOnStartup: vi.fn(async (show: (notes: typeof NOTES) => void) => show(NOTES)),
 }));
-
-import { RELEASE_NOTES_CHANNELS } from '../../types';
+import { RELEASE_NOTES_CHANNELS as C } from '../../types';
 import {
   __resetPendingReleaseNotesForTests,
   initializeReleaseNotesOnStartup,
   sendShowReleaseNotes,
   setupReleaseNotesIPC,
 } from '../release-notes.ipc';
+import { checkForReleaseNotesOnStartup } from '../release-notes.service';
 
-async function invoke(channel: string, sender: unknown = {}): Promise<any> {
-  const handler = handlers.get(channel);
-  if (!handler) throw new Error(`No handler registered for ${channel}`);
-  return handler({ sender }, undefined);
+function renderer() {
+  return { send: vi.fn(), isDestroyed: () => false };
 }
-
-function fakeWindow(destroyed = false) {
+/** A frame: its page (`webContents`, backdrop only) holds two machine views and shows `child`. */
+function fakeWindow() {
+  const framePage = renderer();
+  const home = renderer();
+  const child = renderer();
   return {
-    isDestroyed: () => destroyed,
-    webContents: { send: vi.fn() },
-  } as unknown as Electron.BrowserWindow & { webContents: { send: ReturnType<typeof vi.fn> } };
+    isDestroyed: () => false,
+    webContents: framePage,
+    renderers: [home, child],
+    shown: child,
+  };
+}
+function invoke(name: string, sender = windows[0]?.shown) {
+  return handlers.get(name)!({ sender }, undefined);
+}
+function push(window: ReturnType<typeof fakeWindow>) {
+  sendShowReleaseNotes(window as unknown as Electron.BrowserWindow, { notes: null });
 }
 
-describe('release-notes IPC', () => {
+describe('release-notes ownership', () => {
   beforeEach(() => {
     handlers.clear();
-    allWindows = [];
+    windows = [fakeWindow(), fakeWindow()];
+    focused = windows[0];
     __resetPendingReleaseNotesForTests();
     setupReleaseNotesIPC();
   });
-
-  it('parks the startup notes and pushes them to every open window', async () => {
-    const windows = [fakeWindow(), fakeWindow(), fakeWindow()];
-    allWindows = windows;
-
+  it('pushes startup to the shown renderer of only the focused window', async () => {
     await initializeReleaseNotesOnStartup();
-
-    for (const window of windows) {
-      expect(window.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.SHOW, {
-        notes: NOTES,
-      });
-    }
-    expect(await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING)).toEqual({
-      success: true,
-      data: NOTES,
-    });
+    expect(windows[0].shown.send).toHaveBeenCalledWith(C.SHOW, { notes: NOTES });
+    expect(windows[0].webContents.send).not.toHaveBeenCalled();
+    expect(windows[1].shown.send).not.toHaveBeenCalled();
   });
-
-  it('parks the notes as pending when no window exists at init time', async () => {
-    // Regression (intent-hq/monorepo#3054): the startup check must run and
-    // park the notes even when the window has not been created yet — the
-    // renderer reads them over get-pending once it initializes.
+  it('reserves the pending startup read for the pushed renderer and consumes it once', async () => {
     await initializeReleaseNotesOnStartup();
-
-    expect(await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING)).toEqual({
-      success: true,
-      data: NOTES,
-    });
+    expect((await invoke(C.GET_PENDING, windows[0].webContents)).data).toBeNull();
+    expect((await invoke(C.GET_PENDING, windows[1].shown)).data).toBeNull();
+    expect((await invoke(C.GET_PENDING)).data).toEqual(NOTES);
+    expect((await invoke(C.GET_PENDING)).data).toBeNull();
   });
-
-  it('enumerates the push targets at send time, not at init time', async () => {
-    // A window created between check start and fetch completion still
-    // receives the push.
-    const window = fakeWindow();
-    const { checkForReleaseNotesOnStartup } = await import('../release-notes.service');
+  it('keeps notes for a later visible renderer when no window existed', async () => {
+    windows = [];
+    focused = null;
+    await initializeReleaseNotesOnStartup();
+    windows = [fakeWindow()];
+    expect((await invoke(C.GET_PENDING, windows[0].webContents)).data).toBeNull();
+    expect((await invoke(C.GET_PENDING)).data).toEqual(NOTES);
+  });
+  it('allows a surviving shown renderer to claim if the reserved owner was destroyed', async () => {
+    await initializeReleaseNotesOnStartup();
+    windows[0].shown.isDestroyed = () => true;
+    expect((await invoke(C.GET_PENDING, windows[1].shown)).data).toEqual(NOTES);
+  });
+  it('clears startup and closes every machine view on dismissal', async () => {
+    await initializeReleaseNotesOnStartup();
+    await invoke(C.DISMISS);
+    for (const w of windows)
+      for (const r of w.renderers) expect(r.send).toHaveBeenCalledWith(C.CLOSE, undefined);
+    expect((await invoke(C.GET_PENDING)).data).toBeNull();
+  });
+  it('routes manual Help to the shown renderer and closes every other renderer', () => {
+    push(windows[0]);
+    expect(windows[0].shown.send).toHaveBeenCalledWith(C.SHOW, { notes: null });
+    for (const w of windows)
+      for (const r of w.renderers)
+        if (r !== windows[0].shown) expect(r.send).toHaveBeenCalledWith(C.CLOSE, undefined);
+    expect(windows[0].shown.send).not.toHaveBeenCalledWith(C.CLOSE, undefined);
+  });
+  it('settings manual fetch also closes hidden notes and clears pending startup', async () => {
+    await initializeReleaseNotesOnStartup();
+    expect((await invoke(C.GET, windows[1].shown)).data).toEqual(NOTES);
+    expect(windows[0].shown.send).toHaveBeenCalledWith(C.CLOSE, undefined);
+    expect((await invoke(C.GET_PENDING)).data).toBeNull();
+  });
+  it('does not reopen startup after manual interaction during a delayed startup check', async () => {
     vi.mocked(checkForReleaseNotesOnStartup).mockImplementationOnce(async (show) => {
-      allWindows = [window]; // window appears while the check is in flight
+      await invoke(C.DISMISS);
       show(NOTES);
-      return NOTES;
     });
-
     await initializeReleaseNotesOnStartup();
-
-    expect(window.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.SHOW, {
-      notes: NOTES,
-    });
+    expect(windows[0].shown.send).not.toHaveBeenCalledWith(C.SHOW, { notes: NOTES });
+    expect((await invoke(C.GET_PENDING)).data).toBeNull();
   });
-
-  it('skips destroyed windows on the startup push', async () => {
-    const live = fakeWindow();
-    const destroyed = fakeWindow(true);
-    allWindows = [destroyed, live];
-
-    await initializeReleaseNotesOnStartup();
-
-    expect(destroyed.webContents.send).not.toHaveBeenCalled();
-    expect(live.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.SHOW, {
-      notes: NOTES,
-    });
-  });
-
-  it('keeps the pending notes readable by every renderer until dismissed', async () => {
-    await initializeReleaseNotesOnStartup();
-
-    const first = await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING, { id: 1 });
-    const second = await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING, { id: 2 });
-
-    expect(first).toEqual({ success: true, data: NOTES });
-    expect(second).toEqual({ success: true, data: NOTES });
-  });
-
-  it('clears the pending notes and closes the modal everywhere on dismiss', async () => {
-    const windows = [fakeWindow(), fakeWindow()];
-    allWindows = windows;
-    await initializeReleaseNotesOnStartup();
-
-    expect(await invoke(RELEASE_NOTES_CHANNELS.DISMISS)).toEqual({ success: true });
-
-    for (const window of windows) {
-      expect(window.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.CLOSE, undefined);
-    }
-    expect(await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING)).toEqual({
-      success: true,
-      data: null,
-    });
-  });
-
-  it('skips destroyed windows on the dismiss fan-out', async () => {
-    const live = fakeWindow();
-    const destroyed = fakeWindow(true);
-    allWindows = [live, destroyed];
-
-    await invoke(RELEASE_NOTES_CHANNELS.DISMISS);
-
-    expect(destroyed.webContents.send).not.toHaveBeenCalled();
-    expect(live.webContents.send).toHaveBeenCalledWith(RELEASE_NOTES_CHANNELS.CLOSE, undefined);
-  });
-
-  it('reports nothing pending when no startup showing was due', async () => {
-    expect(await invoke(RELEASE_NOTES_CHANNELS.GET_PENDING)).toEqual({
-      success: true,
-      data: null,
-    });
-  });
-
-  it('serves the running version notes over release-notes:get', async () => {
-    expect(await invoke(RELEASE_NOTES_CHANNELS.GET)).toEqual({ success: true, data: NOTES });
-  });
-
-  it('drops the push when the target window is destroyed', () => {
-    const send = vi.fn();
-    sendShowReleaseNotes(
-      { isDestroyed: () => true, webContents: { send } } as unknown as Electron.BrowserWindow,
-      { notes: null },
-    );
-
-    expect(send).not.toHaveBeenCalled();
+  it('drops manual pushes to destroyed windows', () => {
+    windows[0].isDestroyed = () => true;
+    push(windows[0]);
+    expect(windows[0].shown.send).not.toHaveBeenCalled();
   });
 });

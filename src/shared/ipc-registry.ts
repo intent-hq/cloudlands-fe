@@ -958,6 +958,7 @@ export const IPC_CHANNELS = {
     CHECK_MANUAL: 'auto-update:check-manual',
     DOWNLOAD: 'auto-update:download',
     INSTALL: 'auto-update:install',
+    DISMISS_DOWNLOADED_TOAST: 'auto-update:dismiss-downloaded-toast',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
     SET_SHARE_STATISTICS: 'auto-update:set-share-statistics',

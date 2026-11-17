@@ -286,6 +286,21 @@ describe('a frame open on the local machine', () => {
     expect(viewOf('local').visible).toBe(true);
   });
 
+  it('hydrates native window focus when a started machine is ready and selected', async () => {
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    const child = viewOf('b').webContents;
+    await invoke(RAIL.READY, child);
+    expect(child.send).toHaveBeenCalledWith('window:focus', false);
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(true);
+    try {
+      child.send.mockClear();
+      await invoke(RAIL.SELECT, local(), { id: 'b' });
+      expect(child.send).toHaveBeenCalledWith('window:focus', true);
+    } finally {
+      focused.mockRestore();
+    }
+  });
+
   it("queues the invited workspace for the new machine's view", async () => {
     expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
     const { consumePendingDeepLinks } =
@@ -601,6 +616,78 @@ describe('a frame open on the local machine', () => {
     expect(await selected?.ready).toBe(true);
     expect(await state()).toMatchObject({ selectedId: 'local' });
   });
+
+  it('returns to a started machine for a notification without creating another renderer', async () => {
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    const shown = showRailMachine('local');
+    expect(shown?.window).toBe(fakes.window);
+    expect(shown?.contents).toBe(local());
+    expect(await shown?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'local', pendingId: '' });
+    expect(fakes.views).toHaveLength(2);
+  });
+
+  it.each(['b', 'local'])(
+    'waits for an offline %s selection before reporting ready',
+    async (id) => {
+      await invoke(RAIL.ADD, local(), { id: 'b' });
+      await invoke(RAIL.READY, viewOf('b').webContents);
+      if (id === 'b') await invoke(RAIL.SELECT, local(), { id: 'local' });
+      connection.connected.delete(id);
+      let finishRetry!: (connected: boolean) => void;
+      connection.retry.mockReturnValueOnce(new Promise((resolve) => (finishRetry = resolve)));
+
+      const shown = showRailMachine(id);
+      const completed = vi.fn();
+      const ready = shown?.ready.then(completed);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(completed).not.toHaveBeenCalled();
+      expect((await state()).pendingId).toBe(id);
+      finishRetry(false);
+      await ready;
+
+      expect(completed).toHaveBeenCalledExactlyOnceWith(true);
+      expect(await state()).toMatchObject({ selectedId: id, pendingId: '' });
+      expect(shown?.contents).toBe(viewOf(id).webContents);
+      expect(fakes.views).toHaveLength(2);
+    },
+  );
+
+  it('cancels the original selection when the user switches away and back during a retry', async () => {
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SELECT, local(), { id: 'local' });
+    connection.connected.delete('b');
+    let finishRetry!: (connected: boolean) => void;
+    const retry = new Promise<boolean>((resolve) => (finishRetry = resolve));
+    connection.retry.mockReturnValue(retry);
+
+    const original = showRailMachine('b');
+    await invoke(RAIL.SELECT, local(), { id: 'local' });
+    const current = showRailMachine('b');
+
+    expect(await original?.ready).toBe(false);
+    finishRetry(false);
+    expect(await current?.ready).toBe(true);
+    expect(await state()).toMatchObject({ selectedId: 'b', pendingId: '' });
+  });
+
+  it.each(['removed', 'disabled', 'closed'])(
+    'cancels a pending notification selection when its frame is %s',
+    async (reason) => {
+      await invoke(RAIL.ADD, local(), { id: 'b' });
+      await invoke(RAIL.SELECT, local(), { id: 'local' });
+      const shown = showRailMachine('b');
+
+      if (reason === 'removed') await invoke(RAIL.REMOVE, local(), { id: 'b' });
+      else if (reason === 'disabled') await invoke(RAIL.SET_ENABLED, local(), { enabled: false });
+      else for (const listener of fakes.windowListeners.closed ?? []) listener();
+
+      expect(await shown?.ready).toBe(false);
+    },
+  );
 
   it('gives keyboard focus to the machine on screen when the window regains focus', async () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });

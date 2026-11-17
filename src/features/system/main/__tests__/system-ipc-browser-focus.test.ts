@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { app } from 'electron';
 import { runSaga } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -19,7 +20,7 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
-  app: { on: vi.fn(), getAppPath: vi.fn(), getVersion: vi.fn(), getName: vi.fn() },
+  app: { on: vi.fn(), emit: vi.fn(), getAppPath: vi.fn(), getVersion: vi.fn(), getName: vi.fn() },
   BrowserWindow: {
     getAllWindows: electronMocks.getAllWindows,
     fromId: electronMocks.fromId,
@@ -73,7 +74,7 @@ function handlerFor(channel: string): Handler {
 }
 
 describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
-  const window = { id: 914 };
+  const window = { id: 914, isDestroyed: () => false };
   const event = { sender: { isDestroyed: () => false } };
 
   beforeEach(() => {
@@ -100,6 +101,37 @@ describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
 
     await handle(event, { browserFocused: false, focusOwnerId: 'current-panel' });
 
+    expect(isFocusedWindowBrowserActive()).toBe(false);
+  });
+
+  it('keeps browser zoom ownership with each device while switching and clears a destroyed child', async () => {
+    const home = { isDestroyed: () => false };
+    const host = Object.assign(new EventEmitter(), {
+      id: 929,
+      isDestroyed: () => false,
+      webContents: home,
+    });
+    const child = Object.assign(new EventEmitter(), {
+      id: 9290,
+      isDestroyed: () => false,
+      mainFrame: {},
+    });
+    electronMocks.fromWebContents.mockImplementation((sender) => (sender === home ? host : null));
+    electronMocks.getFocusedWindow.mockReturnValue(host);
+    bindMachineViewToBackend(host as never, child as never, 'browser-remote');
+    const handle = handlerFor(WINDOW_CHANNELS.SET_BROWSER_FOCUSED);
+    await handle({ sender: home }, { browserFocused: true, focusOwnerId: 'home-browser' });
+    setShownMachineView(host as never, child as never);
+    expect(isFocusedWindowBrowserActive()).toBe(false);
+    await handle({ sender: child }, { browserFocused: true, focusOwnerId: 'child-browser' });
+    expect(isFocusedWindowBrowserActive()).toBe(true);
+    await handle({ sender: home }, { browserFocused: false, focusOwnerId: 'home-browser' });
+    expect(isFocusedWindowBrowserActive()).toBe(true);
+    setShownMachineView(host as never, null);
+    expect(isFocusedWindowBrowserActive()).toBe(false);
+    setShownMachineView(host as never, child as never);
+    expect(isFocusedWindowBrowserActive()).toBe(true);
+    child.emit('destroyed');
     expect(isFocusedWindowBrowserActive()).toBe(false);
   });
 });
@@ -244,6 +276,84 @@ describe('app menu zoom IPC', () => {
     electronMocks.handle.mockReset();
     electronMocks.getAllWindows.mockReturnValue([]);
     setupSystemIPC();
+  });
+
+  it('accepts the shown child’s native title and ignores a hidden device’s title', async () => {
+    const home = createZoomWindow(930);
+    const child = Object.assign(new EventEmitter(), createZoomWindow(931).webContents, {
+      mainFrame: {},
+    });
+    const host = Object.assign(new EventEmitter(), home, { setTitle: vi.fn() });
+    bindMachineViewToBackend(host as never, child as never, 'title-remote');
+    setShownMachineView(host as never, child as never);
+    electronMocks.fromWebContents.mockImplementation((sender) =>
+      sender === home.webContents ? host : null,
+    );
+    const handle = handlerFor(WINDOW_CHANNELS.SET_TITLE);
+    expect(await handle({ sender: child }, { title: 'Remote workspace' })).toEqual({
+      success: true,
+    });
+    expect(host.setTitle).toHaveBeenCalledExactlyOnceWith('Remote workspace');
+    await handle({ sender: home.webContents }, { title: 'Hidden home' });
+    expect(host.setTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates a shown machine view and hydrates that sender’s zoom independently of its home', async () => {
+    const home = createZoomWindow(925);
+    const child = Object.assign(new EventEmitter(), createZoomWindow(926).webContents, {
+      mainFrame: {},
+    });
+    const host = Object.assign(new EventEmitter(), home);
+    bindMachineViewToBackend(host as never, child as never, 'zoom-remote');
+    setShownMachineView(host as never, child as never);
+    electronMocks.getFocusedWindow.mockReturnValue(host);
+    electronMocks.fromWebContents.mockImplementation((sender) =>
+      sender === home.webContents ? host : null,
+    );
+    electronMocks.getAllWindows.mockReturnValue([host] as never);
+
+    handleMenuZoom('menu:zoom-in', vi.fn());
+
+    expect(child.setZoomLevel).toHaveBeenCalledExactlyOnceWith(0.5);
+    expect(child.send).toHaveBeenCalledWith('window:zoom-changed', { zoomFactor: 1.2 ** 0.5 });
+    expect(home.webContents.send).toHaveBeenCalledWith('window:zoom-changed', { zoomFactor: 1 });
+    expect(await handlerFor(WINDOW_CHANNELS.GET_ZOOM_FACTOR)({ sender: child }, {})).toEqual({
+      success: true,
+      data: 1.2 ** 0.5,
+    });
+  });
+
+  it('shares native focus and full-screen changes with child renderers', () => {
+    const home = Object.assign(new EventEmitter(), createZoomWindow(927).webContents);
+    const child = Object.assign(new EventEmitter(), createZoomWindow(928).webContents, {
+      mainFrame: {},
+    });
+    const host = Object.assign(new EventEmitter(), {
+      id: 927,
+      isDestroyed: () => false,
+      webContents: home,
+    });
+    bindMachineViewToBackend(host as never, child as never, 'focus-remote');
+    const created = vi
+      .mocked(app.on)
+      .mock.calls.find(([event]) => event === 'browser-window-created')?.[1] as
+      ((event: unknown, window: unknown) => void) | undefined;
+    expect(created).toBeDefined();
+    created!({}, host);
+    for (const [event, channel, state] of [
+      ['focus', 'window:focus', true],
+      ['blur', 'window:focus', false],
+      ['enter-full-screen', 'window:fullscreen', true],
+      ['leave-full-screen', 'window:fullscreen', false],
+    ] as const) {
+      host.emit(event);
+      expect(home.send).toHaveBeenLastCalledWith(channel, state);
+      expect(child.send).toHaveBeenLastCalledWith(channel, state);
+    }
+    child.isDestroyed.mockReturnValue(true);
+    child.send.mockClear();
+    host.emit('focus');
+    expect(child.send).not.toHaveBeenCalled();
   });
 
   it('delivers menu out/in/reset to renderer state, then hydrates a reload through the real query handler', async () => {

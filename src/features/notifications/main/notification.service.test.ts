@@ -3062,6 +3062,153 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     // A click on another host's window must not navigate it to this workspace.
     expect(payloads[0]).not.toHaveProperty('navigateTarget');
   });
+
+  let childIds = 9_000;
+  /**
+   * Add `backendId` to `window`'s frame as a second machine view (the frame
+   * keeps showing its own machine, whose view is `window.webContents`).
+   */
+  function childRenderer(window: MockWindow, backendId = REMOTE_ID) {
+    const contents = {
+      id: childIds++,
+      send: vi.fn(),
+      isDestroyed: () => false,
+      on: vi.fn(),
+      once: vi.fn(),
+    };
+    Object.assign(window, { once: vi.fn() });
+    const own = (window as { backendId?: string }).backendId ?? LOCAL_ID;
+    writeWindowRail(window as never, { machineIds: [own, backendId], selectedId: own });
+    bindMachineViewToBackend(window as never, contents as never, backendId);
+    return contents;
+  }
+
+  afterEach(() => {
+    setMachineRailEnabledFlag(false);
+  });
+
+  it('suppresses the banner while the shown child views its own Assistant', async () => {
+    const window = makeWindow(81);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(CHIEF_WORKSPACE_ID);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([child as never]);
+    entries = [{ windowId: window.id, backendId: REMOTE_ID, workspaceId: CHIEF_WORKSPACE_ID }];
+    vi.mocked(sendToWorkspaceWindows).mockImplementation((_workspace, channel, payload) => {
+      child.send(channel, payload);
+      return { windowCount: 1, browserClientsNotified: false, delivered: true };
+    });
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+
+    expect(mockNotificationInstances).toHaveLength(0);
+    expect(child.send.mock.calls.every(([, payload]) => !payload.navigateTarget)).toBe(true);
+    expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('does not suppress a home Assistant completion while the child Assistant is shown', async () => {
+    const window = makeWindow(82);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(CHIEF_WORKSPACE_ID);
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), LOCAL_ID);
+
+    expect(mockNotificationInstances).toHaveLength(1);
+    // Frame model: the local machine's own (hidden) view plays the sound; it
+    // stands in as `window.webContents` here. No view gets a clickable toast.
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      'notification:show',
+      expect.not.objectContaining({
+        navigateTarget: expect.anything(),
+      }),
+    );
+    expect(
+      child.send.mock.calls.every(
+        ([, payload]: unknown[]) => !(payload as { navigateTarget?: unknown }).navigateTarget,
+      ),
+    ).toBe(true);
+  });
+
+  it('sends the clickable toast once to the shown child, with no hidden home toast', async () => {
+    const window = makeWindow(83);
+    const child = childRenderer(window);
+    setShownMachineView(window as never, child as never);
+    setLiveWindows([window]);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(window as never);
+    vi.mocked(getRendererWebContentsForWorkspace).mockReturnValue([child as never]);
+
+    await new NotificationService().handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
+
+    expect(mockNotificationInstances).toHaveLength(0);
+    expect(child.send).toHaveBeenCalledExactlyOnceWith(
+      'notification:show',
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1' },
+      }),
+    );
+    expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'selects a rail device on banner click and navigates only when ready=%s',
+    async (ready) => {
+      const window = makeWindow(84);
+      const child = childRenderer(window);
+      setLiveWindows([window]);
+      vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null);
+      let finish!: (value: boolean) => void;
+      const started = new Promise<boolean>((resolve) => {
+        finish = resolve;
+      });
+      setMachineRailEnabledFlag(true);
+      // Frame model: the frame holds the device without showing it, so the
+      // click selects it there. `ready` false means the selection was
+      // cancelled (the user picked another machine), so it never lands.
+      selectMachineInFrameMock.mockImplementation(() => ({
+        window,
+        contents: child,
+        ready: started.then((value) => {
+          if (value) setShownMachineView(window as never, child as never);
+          return value;
+        }),
+      }));
+      await new NotificationService().handleAgentIdle(
+        buildIdleEvent(CHIEF_WORKSPACE_ID),
+        REMOTE_ID,
+      );
+      child.send.mockClear();
+
+      mockNotificationInstances[0].handlers['click']();
+      // The click loads the rail module before it selects the machine.
+      await flush();
+
+      expect(selectMachineInFrameMock).toHaveBeenCalledWith(window, REMOTE_ID);
+      expect(window.focus).toHaveBeenCalled();
+      expect(child.send).not.toHaveBeenCalled();
+      finish(ready);
+      await flush();
+      if (ready) {
+        expect(child.send).toHaveBeenCalledWith('notification:navigate', {
+          workspaceId: CHIEF_WORKSPACE_ID,
+          chief: true,
+          agentId: 'agent-self',
+        });
+      } else {
+        expect(child.send).not.toHaveBeenCalled();
+        expect(consumePendingDeepLinks(child.id).actions).toEqual([]);
+      }
+      expect(
+        window.webContents.send.mock.calls.filter(
+          ([channel]) => channel === 'notification:navigate',
+        ),
+      ).toEqual([]);
+    },
+  );
 });
 
 describe('NotificationService routing by frame (one machine in several frames)', () => {
@@ -3117,6 +3264,12 @@ describe('NotificationService routing by frame (one machine in several frames)',
     return { window, views, renderer, show };
   }
   type Frame = ReturnType<typeof makeFrame>;
+
+  /** `contents` is the view of REMOTE_ID that just joined `window`, now on screen. */
+  function showJoined(window: unknown, contents: MockContents): void {
+    bindMachineViewToBackend(window as never, contents as never, REMOTE_ID);
+    setShownMachineView(window as never, contents as never);
+  }
 
   /** Per-renderer workspace registry behind the system.ipc fakes. */
   type Entry = { contents: MockContents; backendId: string; workspaceId: string; viewing: boolean };
@@ -3394,7 +3547,10 @@ describe('NotificationService routing by frame (one machine in several frames)',
         window,
         contents: frame.renderer(id),
         ready: new Promise<boolean>((resolve) => {
-          markReady = resolve;
+          markReady = (ready) => {
+            frame.show(id);
+            resolve(ready);
+          };
         }),
       }));
 
@@ -3411,7 +3567,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       expect(payloads(frame.window.webContents, 'notification:navigate')).toEqual([]);
     });
 
-    it("queues the navigation for the machine's view when it is not ready in time, so a late renderer still opens it", async () => {
+    it('drops the navigation when the user picks another machine before the selection lands', async () => {
       const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
       setFrames(frame);
       frame.show(LOCAL_ID);
@@ -3420,6 +3576,24 @@ describe('NotificationService routing by frame (one machine in several frames)',
         contents: frame.renderer(id),
         ready: Promise.resolve(false),
       }));
+
+      await clickBanner();
+      await flush();
+
+      const view = frame.renderer(REMOTE_ID);
+      expect(payloads(view, 'notification:navigate')).toEqual([]);
+      expect(consumePendingDeepLinks(view.id).actions).toEqual([]);
+    });
+
+    it("queues the navigation for the machine's view when it is not ready in time, so a late renderer still opens it", async () => {
+      const frame = makeFrame(1, LOCAL_ID, [REMOTE_ID]);
+      setFrames(frame);
+      frame.show(LOCAL_ID);
+      // Past the startup budget the frame shows the machine anyway, not ready.
+      selectMachineInFrameMock.mockImplementation((window: unknown, id: string) => {
+        frame.show(id);
+        return { window, contents: frame.renderer(id), ready: Promise.resolve(false) };
+      });
 
       await clickBanner();
       await flush();
@@ -3436,11 +3610,10 @@ describe('NotificationService routing by frame (one machine in several frames)',
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
       const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => ({
-        window,
-        contents: added,
-        ready: Promise.resolve(false),
-      }));
+      selectMachineInFrameMock.mockImplementation((window: unknown) => {
+        showJoined(window, added);
+        return { window, contents: added, ready: Promise.resolve(false) };
+      });
 
       await clickBanner(CHIEF_WORKSPACE_ID);
       await flush();
@@ -3476,11 +3649,10 @@ describe('NotificationService routing by frame (one machine in several frames)',
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
       const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => ({
-        window,
-        contents: added,
-        ready: Promise.resolve(true),
-      }));
+      selectMachineInFrameMock.mockImplementation((window: unknown) => {
+        showJoined(window, added);
+        return { window, contents: added, ready: Promise.resolve(true) };
+      });
 
       await clickBanner(CHIEF_WORKSPACE_ID);
 

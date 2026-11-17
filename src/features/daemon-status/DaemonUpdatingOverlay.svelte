@@ -9,7 +9,7 @@
 
 <script lang="ts">
   /**
-   * DaemonUpdatingOverlay — calm full-screen blocking overlay shown when the
+   * DaemonUpdatingOverlay — device recovery overlay shown when the
    * daemon connection dropped because the user requested an intentd update.
    *
    * Driven by the daemon-health slice: visible while health === 'down' and
@@ -27,7 +27,8 @@
     selectDaemonUpdateDisconnectedAt,
     selectDaemonStartup,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import Portal from '$lib/components/ui/Portal.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import DaemonRecoveryFrame from './DaemonRecoveryFrame.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
@@ -88,39 +89,24 @@
 </script>
 
 {#if visible && !$daemonStartup$ && !startupShown}
-  <Portal target="body" zIndex="var(--layer-connection-overlay)">
-    <div
-      class="fixed inset-0 z-[var(--layer-connection-overlay)] flex items-center justify-center bg-black/70 backdrop-blur-md"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="daemon-updating-title"
-      aria-describedby="daemon-updating-description"
-      tabindex="-1"
-      data-testid="daemon-updating-overlay"
-    >
-      <div
-        class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl"
-      >
-        <h2 id="daemon-updating-title" class="text-lg font-semibold text-foreground">
-          {m.daemonStatus_updatingOverlay_title_label()}
-        </h2>
+  <DaemonRecoveryFrame
+    titleId="daemon-updating-title"
+    descriptionId="daemon-updating-description"
+    testId="daemon-updating-overlay"
+  >
+    <h2 id="daemon-updating-title" class="type-title text-foreground">
+      {m.daemonStatus_updatingOverlay_title_label()}
+    </h2>
 
-        <p id="daemon-updating-description" class="mt-2 text-sm text-muted-foreground">
-          {m.daemonStatus_updatingOverlay_restarting_description()}
-        </p>
+    <p id="daemon-updating-description" class="mt-2 text-sm text-muted-foreground">
+      {m.daemonStatus_updatingOverlay_restarting_description()}
+    </p>
 
-        <p class="mt-3 text-sm text-muted-foreground">
-          <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500 align-middle"
-          ></span>
-          <span
-            class="ml-1.5 align-middle"
-            data-testid="daemon-updating-countdown"
-            data-seconds={seconds}
-          >
-            {m.daemonStatus_updatingOverlay_countdown_label({ seconds })}
-          </span>
-        </p>
-      </div>
-    </div>
-  </Portal>
+    <p class="mt-3 flex items-start gap-2 text-sm text-muted-foreground">
+      <span class="first-line-icon"><IntentMarkLoader size={14} /></span>
+      <span data-testid="daemon-updating-countdown" data-seconds={seconds}>
+        {m.daemonStatus_updatingOverlay_countdown_label({ seconds })}
+      </span>
+    </p>
+  </DaemonRecoveryFrame>
 {/if}

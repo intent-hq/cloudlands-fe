@@ -125,6 +125,8 @@ function viewsOf(window: BrowserWindowType): Map<string, WebContentsView> {
 interface Transition {
   shownId: string;
   pendingId: string;
+  pendingShown?: Promise<boolean>;
+  settlePending?: (shown: boolean) => void;
   revealTimer?: NodeJS.Timeout;
   pendingTimer?: NodeJS.Timeout;
 }
@@ -149,6 +151,7 @@ function transitionOf(window: BrowserWindowType): Transition {
 function clearTransition(window: BrowserWindowType): void {
   const transition = transitions.get(window);
   if (!transition) return;
+  transition.settlePending?.(false);
   clearTimeout(transition.revealTimer);
   clearTimeout(transition.pendingTimer);
   transitions.delete(window);
@@ -400,11 +403,19 @@ function applySelection(window: BrowserWindowType): void {
   transition.revealTimer = undefined;
   if (transition.shownId === selectedId) finishReveal(window);
   else transition.revealTimer = setTimeout(() => finishReveal(window), REVEAL_TIMEOUT_MS);
+  // A view coming on screen learns the frame's focus state now; it may have
+  // missed the last focus change while hidden.
+  if (!selected.webContents.isDestroyed()) {
+    selected.webContents.send('window:focus', window.isFocused());
+  }
   if (window.isFocused() && !selected.webContents.isDestroyed()) selected.webContents.focus();
 }
 
-function clearPending(window: BrowserWindowType): void {
+function clearPending(window: BrowserWindowType, shownId?: string): void {
   const transition = transitionOf(window);
+  transition.settlePending?.(transition.pendingId === shownId);
+  transition.settlePending = undefined;
+  transition.pendingShown = undefined;
   clearTimeout(transition.pendingTimer);
   transition.pendingTimer = undefined;
   transition.pendingId = '';
@@ -414,7 +425,7 @@ function clearPending(window: BrowserWindowType): void {
 /** Show `id` in place of the machine on screen, ready or not. */
 function showMachine(window: BrowserWindowType, id: string): MachineRailState {
   const rail = readWindowRail(window);
-  clearPending(window);
+  clearPending(window, id);
   writeWindowRail(window, { machineIds: rail.machineIds, selectedId: id });
   applySelection(window);
   broadcastState(window);
@@ -429,6 +440,9 @@ function awaitMachine(window: BrowserWindowType, id: string): void {
   clearPending(window);
   const transition = transitionOf(window);
   transition.pendingId = id;
+  transition.pendingShown = new Promise((resolve) => {
+    transition.settlePending = resolve;
+  });
   setPendingSelection(window, id);
   transition.pendingTimer = setTimeout(() => {
     if (window.isDestroyed() || transitions.get(window)?.pendingId !== id) return;
@@ -445,6 +459,7 @@ function isMachineReady(window: BrowserWindowType, id: string): boolean {
 function markReady(window: BrowserWindowType, sender: Electron.WebContents): void {
   const entry = [...viewsOf(window)].find(([, view]) => view.webContents === sender);
   if (!entry) return;
+  sender.send('window:focus', window.isFocused());
   readyViews.add(sender);
   settleReadyWaiters(sender);
   if (isMachineRailEnabled() && transitions.get(window)?.pendingId === entry[0]) {
@@ -520,7 +535,22 @@ export function selectMachineInFrame(
   if (!readWindowRail(window).machineIds.includes(id)) return null;
   selectMachine(window, id);
   const contents = ensureView(window, id).webContents;
-  return { window, contents, ready: whenReady(contents).then(() => readyViews.has(contents)) };
+  // A pending selection settles false when another pick replaces it.
+  const selected = transitionOf(window).pendingShown ?? Promise.resolve(true);
+  const rendererReady = whenReady(contents).then(() => readyViews.has(contents));
+  return {
+    window,
+    contents,
+    ready: selected
+      .then((shown) => shown && rendererReady)
+      .then(
+        (ready) =>
+          ready &&
+          !window.isDestroyed() &&
+          !contents.isDestroyed() &&
+          getShownRendererWebContents(window) === contents,
+      ),
+  };
 }
 
 /** Longest the background start waits for a machine that is still connecting. */
