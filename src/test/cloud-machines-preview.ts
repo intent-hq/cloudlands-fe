@@ -51,7 +51,21 @@ export type CloudMachinesPreviewState =
   | 'northflank-setup'
   | 'northflank-setup-filled'
   | 'northflank-setup-error'
-  | 'providers';
+  | 'providers'
+  | 'agent37-add-menu'
+  | 'agent37-setup'
+  | 'agent37-setup-vm'
+  | 'agent37-setup-error'
+  | 'agent37-providers';
+
+/** Scenes of a backend that offers Agent37 too. */
+const AGENT37_SCENES: readonly CloudMachinesPreviewState[] = [
+  'agent37-add-menu',
+  'agent37-setup',
+  'agent37-setup-vm',
+  'agent37-setup-error',
+  'agent37-providers',
+];
 
 /** Scenes of a backend that offers Northflank as well as E2B. */
 const NORTHFLANK_SCENES: readonly CloudMachinesPreviewState[] = [
@@ -60,6 +74,7 @@ const NORTHFLANK_SCENES: readonly CloudMachinesPreviewState[] = [
   'northflank-setup-filled',
   'northflank-setup-error',
   'providers',
+  ...AGENT37_SCENES,
 ];
 
 /** Scenes where the backend keeps named entries (`cloudMachineEntries: 1`). */
@@ -133,6 +148,29 @@ export const NORTHFLANK_ENTRY: CloudMachineProvider = {
   },
 };
 
+/** An Agent37 entry: full VMs in Mumbai; one template for every size, so no plan per size. */
+export const AGENT37_ENTRY: CloudMachineProvider = {
+  id: 'agent37-4b8d2e6f1a90',
+  provider: 'agent37',
+  name: 'Mumbai VMs',
+  state: 'ready',
+  template: 'intent-node-0-212-0',
+  templateProject: '',
+  agentProviders: ['claude-code', 'codex'],
+  sizes: [
+    { id: '2x4', vcpu: 2, memoryMiB: 4096 },
+    { id: '4x8', vcpu: 4, memoryMiB: 8192 },
+    { id: '4x16', vcpu: 4, memoryMiB: 16384 },
+    { id: '4x32', vcpu: 4, memoryMiB: 32768 },
+  ],
+  size: '4x16',
+  idlePauseMinutes: 10,
+  pausedDeleteDays: 7,
+  configuredAt: '2026-11-09T08:00:00.000Z',
+  checkedAt: '2026-11-09T09:00:00.000Z',
+  agent37: { instanceType: 'vm', region: 'ap-south', diskGiB: 40 },
+};
+
 const WORKSPACES = [
   { id: 'ws-ci', title: 'Fix flaky CI' },
   { id: 'ws-docs', title: 'Protocol docs' },
@@ -185,6 +223,11 @@ export const E2B_SANDBOXES: RemoteMachine[] = [
 export const NORTHFLANK_SANDBOXES: RemoteMachine[] = [
   sandbox('nf-1', 'Migration runner', 'ws-perf', 'Clément', 'running', 25 * 60, NORTHFLANK_ENTRY),
   sandbox('nf-2', 'Flaky test hunter', 'ws-ci', 'Sam', 'paused', 9 * 60, NORTHFLANK_ENTRY),
+];
+
+export const AGENT37_SANDBOXES: RemoteMachine[] = [
+  sandbox('a37-1', 'Docker image builder', 'ws-ci', 'Clément', 'running', 14 * 60, AGENT37_ENTRY),
+  sandbox('a37-2', 'Benchmark runner', 'ws-perf', 'Sam', 'paused', 31 * 60, AGENT37_ENTRY),
 ];
 
 export const TEAM_SANDBOXES: RemoteMachine[] = [
@@ -259,14 +302,25 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   const team =
     state === 'entries-key-rejected' ? { ...TEAM_ENTRY, state: 'key-rejected' } : TEAM_ENTRY;
   const northflank = NORTHFLANK_SCENES.includes(state);
-  // The menu and setup scenes start from E2B alone, so Northflank is the one added.
+  const agent37 = AGENT37_SCENES.includes(state);
+  // The menu and setup scenes start from E2B alone, so Northflank (or Agent37) is the one added.
   const northflankProviders =
-    state === 'providers' ? [E2B_PROVIDER, NORTHFLANK_ENTRY] : [E2B_PROVIDER];
+    state === 'providers'
+      ? [E2B_PROVIDER, NORTHFLANK_ENTRY]
+      : state === 'agent37-providers'
+        ? [E2B_PROVIDER, NORTHFLANK_ENTRY, AGENT37_ENTRY]
+        : [E2B_PROVIDER];
   store.dispatch(
     cloudMachinesLoaded({
       supported: state !== 'unsupported',
       entries,
-      ...(northflank ? { providerKinds: ['e2b', 'northflank'] satisfies CloudProviderKind[] } : {}),
+      ...(northflank
+        ? {
+            providerKinds: (agent37
+              ? ['e2b', 'northflank', 'agent37']
+              : ['e2b', 'northflank']) satisfies CloudProviderKind[],
+          }
+        : {}),
       providers: northflank
         ? northflankProviders
         : entries
@@ -279,7 +333,9 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
       machines: northflank
         ? state === 'providers'
           ? [...E2B_SANDBOXES.slice(0, 1), ...NORTHFLANK_SANDBOXES]
-          : []
+          : state === 'agent37-providers'
+            ? [...E2B_SANDBOXES.slice(0, 1), ...NORTHFLANK_SANDBOXES, ...AGENT37_SANDBOXES]
+            : []
         : entries
           ? state === 'entries-single' || state === 'entries-edit'
             ? E2B_SANDBOXES
@@ -316,6 +372,22 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
           reason: 'key-rejected',
           retryable: false,
           provider: 'northflank',
+        },
+      }),
+    );
+  }
+  if (state === 'agent37-setup-error') {
+    store.dispatch(cloudMachineOperationStarted(cloudValidateKey(NEW_CLOUD_ENTRY), 'testing'));
+    store.dispatch(
+      cloudMachineOperationSettled(cloudValidateKey(NEW_CLOUD_ENTRY), {
+        message: 'Agent37 refused GET /templates/intent-node-0-212-0 (403)',
+        cloud: {
+          code: 'cloud-machine-unavailable',
+          reason: 'permission-denied',
+          retryable: false,
+          status: 403,
+          provider: 'agent37',
+          action: 'read-template',
         },
       }),
     );
