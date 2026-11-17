@@ -1,7 +1,9 @@
 /**
  * Install command per provider. The onboarding card shows it and its Install
  * button runs it in the root terminal drawer. Only this renderer-owned
- * allowlist is ever executed, never a caller string.
+ * allowlist is ever executed, never a caller string. List a provider only
+ * when its one command makes the card ready (Unsloth also needs its own CLI,
+ * so it has no entry and keeps the docs link).
  */
 const PROVIDER_INSTALL_COMMANDS: Readonly<Record<string, string>> = {
   auggie: 'npm install -g @augmentcode/auggie',
@@ -10,9 +12,6 @@ const PROVIDER_INSTALL_COMMANDS: Readonly<Record<string, string>> = {
   opencode: 'curl -fsSL https://opencode.ai/install | bash',
   droid: 'curl -fsSL https://app.factory.ai/cli | sh',
   grok: 'npm i -g @xai-official/grok',
-  // Unsloth runs local GGUF models through the opencode runtime — the daemon
-  // manages the local server; only the opencode CLI is needed.
-  unsloth: 'curl -fsSL https://opencode.ai/install | bash',
   cursor: 'curl https://cursor.com/install -fsS | bash',
   cortex: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
 };
