@@ -631,7 +631,7 @@ describe('Agent37 form', () => {
     const regions = [...form.querySelectorAll('[data-agent37-region-option]')].map((item) =>
       item.textContent?.trim(),
     );
-    expect(regions).toEqual(['US', 'EU (France)', 'Mumbai']);
+    expect(regions).toEqual(['US', 'Europe (France or UK)', 'Mumbai']);
     await fireEvent.click(form.querySelector('[data-agent37-region-option="ap-south"]')!);
     await fireEvent.submit(form);
     expect(configured()).toMatchObject({ instanceType: 'vm', region: 'ap-south' });

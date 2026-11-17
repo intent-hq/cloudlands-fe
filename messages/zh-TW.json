@@ -8780,7 +8780,7 @@
   "cloudMachines_agent37_form_type_vm_note": "擁有自己的核心和 Docker，可用區域更多。費用為 2.5 倍，啟動較慢。",
   "cloudMachines_agent37_form_region_label": "區域",
   "cloudMachines_agent37_region_us": "美國",
-  "cloudMachines_agent37_region_eu": "歐盟（法國）",
+  "cloudMachines_agent37_region_eu": "歐洲（法國或英國）",
   "cloudMachines_agent37_region_apSouth": "孟買",
   "cloudMachines_agent37_form_size_label": "執行個體規格",
   "cloudMachines_agent37_form_privacy": "Agent37 上的代理在 Agent37 的伺服器上執行：你的程式碼、提供者金鑰和代理輸出都會傳送到那裡。任何能在 {backend} 上執行代理的人都可以用此金鑰在 Agent37 上啟動代理。",

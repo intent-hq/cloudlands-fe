@@ -8780,7 +8780,7 @@
   "cloudMachines_agent37_form_type_vm_note": "Su propio kernel y Docker, en más regiones. Cuesta 2,5 veces más y tarda más en iniciarse.",
   "cloudMachines_agent37_form_region_label": "Región",
   "cloudMachines_agent37_region_us": "EE. UU.",
-  "cloudMachines_agent37_region_eu": "UE (Francia)",
+  "cloudMachines_agent37_region_eu": "Europa (Francia o Reino Unido)",
   "cloudMachines_agent37_region_apSouth": "Bombay",
   "cloudMachines_agent37_form_size_label": "Tamaño de la instancia",
   "cloudMachines_agent37_form_privacy": "Los agentes en Agent37 se ejecutan en los servidores de Agent37: tu código, tus claves de proveedor y la salida de los agentes van allí. Cualquiera que pueda ejecutar agentes en {backend} puede iniciarlos en Agent37 con esta clave.",

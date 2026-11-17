@@ -8780,7 +8780,7 @@
   "cloudMachines_agent37_form_type_vm_note": "자체 커널과 Docker를 갖추고 더 많은 리전에서 사용할 수 있습니다. 비용이 2.5배이며 시작이 더 느립니다.",
   "cloudMachines_agent37_form_region_label": "리전",
   "cloudMachines_agent37_region_us": "미국",
-  "cloudMachines_agent37_region_eu": "EU(프랑스)",
+  "cloudMachines_agent37_region_eu": "유럽(프랑스 또는 영국)",
   "cloudMachines_agent37_region_apSouth": "뭄바이",
   "cloudMachines_agent37_form_size_label": "인스턴스 크기",
   "cloudMachines_agent37_form_privacy": "Agent37의 에이전트는 Agent37 서버에서 실행됩니다. 코드, 공급자 키, 에이전트 출력이 그곳으로 전송됩니다. {backend}에서 에이전트를 실행할 수 있는 사람은 누구나 이 키로 Agent37에서 에이전트를 시작할 수 있습니다.",
