@@ -28,7 +28,11 @@ import {
 } from './running-agents';
 import { getMainWindow } from './state';
 import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from './machine-rail-state';
-import { getShownRendererWebContents } from './window-backend';
+import {
+  getRendererWebContents,
+  getShownRendererWebContents,
+  isFrameWindow,
+} from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
 const appEvents: NodeJS.EventEmitter = app;
@@ -226,13 +230,14 @@ async function defaultConfirmViaRenderer(
   parent: BrowserWindow | null,
   payload: QuitConfirmationShowPayload,
 ): Promise<boolean | null> {
-  if (!parent || parent.isDestroyed()) {
+  if (!parent || parent.isDestroyed()) return null;
+  // The modal lives in the renderer the window shows (a frame's machine view,
+  // never its frame page). Keep this exact recipient for the entire request:
+  // if the frame switches machines meanwhile, the request is retired below.
+  const contents = getShownRendererWebContents(parent);
+  if (contents.isDestroyed() || (contents === parent.webContents && isFrameWindow(parent))) {
     return null;
   }
-  // Keep this exact recipient for the entire request. The window's home
-  // renderer may be hidden beneath the device the user is actually viewing.
-  const contents = getShownRendererWebContents(parent);
-  if (contents.isDestroyed()) return null;
   registerRendererHandlers();
 
   let ackReceived!: () => void;
@@ -407,10 +412,11 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
         const seen = new Set<string>();
         const targets: QuitBackendTarget[] = [];
         for (const window of BrowserWindow.getAllWindows()) {
-          if (window.isDestroyed()) continue;
-          const id = backendIpc.getBackendIdForIpcSender(window.webContents);
-          if (seen.has(id)) continue;
-          seen.add(id);
+          for (const renderer of getRendererWebContents(window)) {
+            seen.add(backendIpc.getBackendIdForIpcSender(renderer));
+          }
+        }
+        for (const id of seen) {
           const pooledClient = backendIpc.getBackendClientForConnection(id);
           if (pooledClient) targets.push({ id, client: pooledClient });
         }

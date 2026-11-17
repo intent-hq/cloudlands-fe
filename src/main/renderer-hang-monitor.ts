@@ -30,7 +30,7 @@ import {
 
 import { Logger } from '../shared/logger';
 import { m } from '../shared/paraglide/messages.js';
-import { getBackendIdForWindow } from './window-backend';
+import { getBackendIdForWebContents, getBackendIdForWindow } from './window-backend';
 
 const logger = new Logger('RendererHangMonitor');
 
@@ -57,10 +57,14 @@ interface RendererHangLogPayload {
   url: string;
 }
 
+/** The renderer whose stack is captured: a window's own web contents, or a machine view's. */
+type StackTarget = Pick<BrowserWindow, 'webContents'>;
+
 /** Dependency seams for tests; production uses the defaults. */
 export interface RendererHangMonitorDeps {
-  resolveWorkspaceId(windowId: number): Promise<string | undefined>;
-  captureStack(window: BrowserWindow): Promise<RendererHangFrame[] | null>;
+  /** The workspace `contents` (a window's own page or a machine view) last showed. */
+  resolveWorkspaceId(windowId: number, contents: Electron.WebContents): Promise<string | undefined>;
+  captureStack(target: StackTarget): Promise<RendererHangFrame[] | null>;
   showMessageBox(parent: BrowserWindow, options: MessageBoxOptions): Promise<MessageBoxReturnValue>;
   now(): number;
 }
@@ -69,9 +73,12 @@ export interface RendererHangMonitorDeps {
  * Lazy import keeps this module dependency-light — system.ipc registers
  * ipcMain handlers on load, which real main already did.
  */
-async function defaultResolveWorkspaceId(windowId: number): Promise<string | undefined> {
-  const { getWorkspaceIdForWindow } = await import('../features/system/main/system.ipc');
-  return getWorkspaceIdForWindow(windowId);
+async function defaultResolveWorkspaceId(
+  _windowId: number,
+  contents: Electron.WebContents,
+): Promise<string | undefined> {
+  const { getLastKnownWorkspaceIdForRenderer } = await import('../features/system/main/system.ipc');
+  return getLastKnownWorkspaceIdForRenderer(contents);
 }
 
 interface DebuggerPausedParams {
@@ -108,10 +115,10 @@ type DebuggerMessageListener = (event: Electron.Event, method: string, params: u
  * in try/catch.
  */
 export async function captureRendererStack(
-  window: BrowserWindow,
+  target: StackTarget,
   timeoutMs: number = STACK_CAPTURE_TIMEOUT_MS,
 ): Promise<RendererHangFrame[] | null> {
-  const contents = window.webContents;
+  const contents = target.webContents;
   const dbg = contents.debugger;
   if (contents.isDevToolsOpened() || dbg.isAttached()) return null;
 
@@ -201,12 +208,14 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Attach the hang monitor to `window`. The shared `browser-window-created`
- * hook calls this exactly once per window.
+ * Attach the hang monitor to a renderer of `window`: its own web contents
+ * (the shared `browser-window-created` hook, once per window) or one of its
+ * machine views (the rail owner, once per view).
  */
 export function attachRendererHangMonitor(
   window: BrowserWindow,
   overrides: Partial<RendererHangMonitorDeps> = {},
+  contents: Electron.WebContents = window.webContents,
 ): void {
   const deps: RendererHangMonitorDeps = {
     resolveWorkspaceId: defaultResolveWorkspaceId,
@@ -215,7 +224,6 @@ export function attachRendererHangMonitor(
     now: Date.now,
     ...overrides,
   };
-  const contents = window.webContents;
   const windowId = window.id;
   let lastResponsiveAt = deps.now();
   /** Non-null while an unresponsive episode is in progress (dialog pending or shown). */
@@ -227,10 +235,13 @@ export function attachRendererHangMonitor(
 
   const handleUnresponsive = async (abort: AbortController): Promise<void> => {
     const unresponsiveAt = deps.now();
-    const backendId = getBackendIdForWindow(window);
+    const backendId =
+      contents === window.webContents
+        ? getBackendIdForWindow(window)
+        : getBackendIdForWebContents(contents);
     let workspaceId: string | undefined;
     try {
-      workspaceId = await deps.resolveWorkspaceId(windowId);
+      workspaceId = await deps.resolveWorkspaceId(windowId, contents);
     } catch (error) {
       logger.warn('Failed to resolve workspace for unresponsive window', {
         windowId,
@@ -249,7 +260,7 @@ export function attachRendererHangMonitor(
 
     let frames: RendererHangFrame[] | null = null;
     try {
-      frames = await deps.captureStack(window);
+      frames = await deps.captureStack({ webContents: contents });
     } catch (error) {
       logger.warn('Renderer hang stack capture failed', { windowId, error: errorMessage(error) });
     }
@@ -309,4 +320,5 @@ export function attachRendererHangMonitor(
   contents.on('unresponsive', onUnresponsive);
   contents.on('responsive', onResponsive);
   window.once('closed', onClosed);
+  if (contents !== window.webContents) contents.once('destroyed', onClosed);
 }

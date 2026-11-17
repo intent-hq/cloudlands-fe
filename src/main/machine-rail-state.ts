@@ -1,21 +1,29 @@
 /**
- * Machine rail (Labs) — per-window state, main process.
+ * Machine rail — per-frame state, main process.
  *
- * Holds which machines a window keeps in its rail and which one it shows.
- * Dependency-light on purpose: window.ts reads it to save and restore window
- * sessions, and machine-rail.ts (views and IPC) writes it, without either
- * importing the other.
+ * Holds which machines a frame (app window) holds, in rail order, and which
+ * one it shows. With the rail lab off a frame holds one machine. Dependency-
+ * light on purpose: window.ts reads it to save and open frames, and
+ * machine-rail.ts (views and IPC) writes it, without either importing the
+ * other.
  */
 
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import type { MachineRailSession } from '../shared/types/machine-rail';
-import { getBackendIdForWindow } from './window-backend';
+import type { FrameMachineSession, MachineRailSession } from '../shared/types/machine-rail';
 
 export interface WindowRail {
-  /** Home machine first, then the machines added to the window. */
+  /** The frame's machines in rail order; empty only before it opens or once it closed. */
   machineIds: string[];
   selectedId: string;
 }
+
+const EMPTY_RAIL: WindowRail = Object.freeze({ machineIds: [], selectedId: '' }) as WindowRail;
+
+/**
+ * `app` event, with the window: a frame's saved layout changed (a machine
+ * view navigated, or its machines or selection changed).
+ */
+export const FRAME_LAYOUT_CHANGED_EVENT = 'frame-layout-changed';
 
 /** `app` event, with the window: it now shows another machine's renderer. */
 export const MACHINE_RAIL_SHOWN_CHANGED_EVENT = 'machine-rail-shown-changed';
@@ -25,8 +33,13 @@ const rails = new WeakMap<BrowserWindowType, WindowRail>();
 const pendingSelections = new WeakMap<BrowserWindowType, string>();
 let enabled = false;
 
-type RestoreHandler = (window: BrowserWindowType, session: unknown) => void;
-let restoreHandler: RestoreHandler | null = null;
+/** Opens `machines` in a new frame and returns the shown machine's renderer. */
+type FrameOpener = (
+  window: BrowserWindowType,
+  machines: FrameMachineSession[],
+  selectedId: string,
+) => Electron.WebContents | null;
+let frameOpener: FrameOpener | null = null;
 
 export function isMachineRailEnabled(): boolean {
   return enabled;
@@ -36,12 +49,9 @@ export function setMachineRailEnabledFlag(next: boolean): void {
   enabled = next;
 }
 
-/** The window's rail; a window without one shows only its own machine. */
+/** The frame's machines and the one it shows; empty for a window that is not an open frame. */
 export function readWindowRail(window: BrowserWindowType): WindowRail {
-  const homeId = getBackendIdForWindow(window);
-  const rail = rails.get(window);
-  if (!rail || rail.machineIds[0] !== homeId) return { machineIds: [homeId], selectedId: homeId };
-  return rail;
+  return rails.get(window) ?? EMPTY_RAIL;
 }
 
 export function writeWindowRail(window: BrowserWindowType, rail: WindowRail): void {
@@ -51,6 +61,46 @@ export function writeWindowRail(window: BrowserWindowType, rail: WindowRail): vo
 export function clearWindowRail(window: BrowserWindowType): void {
   rails.delete(window);
   pendingSelections.delete(window);
+  machinesAside.delete(window);
+}
+
+/**
+ * A frame's whole machine list, in rail order, while the rail is off and the
+ * frame holds only the machine it shows. Saved in its place, so a launch with
+ * the rail off does not lose the frame's other machines.
+ */
+const machinesAside = new WeakMap<BrowserWindowType, string[]>();
+
+/** Keep `machineIds` (the shown one among them) aside for `window`; null forgets them. */
+export function setFrameMachinesAside(
+  window: BrowserWindowType,
+  machineIds: readonly string[] | null,
+): void {
+  if (machineIds && machineIds.length > 1) machinesAside.set(window, [...machineIds]);
+  else machinesAside.delete(window);
+}
+
+/** The machine list kept aside for `window`, if any. */
+export function getFrameMachinesAside(window: BrowserWindowType): string[] | undefined {
+  const aside = machinesAside.get(window);
+  return aside ? [...aside] : undefined;
+}
+
+const emptiedFrames = new WeakSet<BrowserWindowType>();
+
+/**
+ * The user removed the frame's last machine and it is about to close: empty
+ * its rail so no save keeps the removed machine, and mark it so the closing
+ * save drops the frame even when it is the last window.
+ */
+export function emptyFrameForClose(window: BrowserWindowType): void {
+  clearWindowRail(window);
+  emptiedFrames.add(window);
+}
+
+/** Whether `window` is closing because its last machine was removed. */
+export function isFrameEmptied(window: BrowserWindowType): boolean {
+  return emptiedFrames.has(window);
 }
 
 /** Record the machine the window waits to show (`''` when none). */
@@ -59,18 +109,35 @@ export function setPendingSelection(window: BrowserWindowType, id: string): void
   else pendingSelections.delete(window);
 }
 
-/** What to save with the window's session; nothing while the rail holds only home. */
+/**
+ * What the frame's saved layout keeps: every machine in rail order and the
+ * one it shows, or waits to show. Nothing for a window that holds no machine.
+ */
 export function getMachineRailSession(window: BrowserWindowType): MachineRailSession | undefined {
-  if (!enabled) return undefined;
   const rail = readWindowRail(window);
-  if (rail.machineIds.length < 2) return undefined;
+  if (rail.machineIds.length === 0) return undefined;
   const pending = pendingSelections.get(window);
   const selectedId = pending && rail.machineIds.includes(pending) ? pending : rail.selectedId;
-  return { machineIds: rail.machineIds.slice(1), selectedId };
+  const aside = machinesAside.get(window);
+  if (aside?.includes(selectedId)) return { machineIds: [...aside], selectedId };
+  return { machineIds: [...rail.machineIds], selectedId };
 }
 
-export function setMachineRailRestoreHandler(handler: RestoreHandler | null): void {
-  restoreHandler = handler;
+export function setFrameOpener(opener: FrameOpener | null): void {
+  frameOpener = opener;
+}
+
+/**
+ * Open `machines` (each on its saved page) in `window`, a new frame, showing
+ * `selectedId`. Returns the shown machine's renderer, or null before the rail
+ * owner registered (startup) or when no machine is left to open.
+ */
+export function openFrameMachines(
+  window: BrowserWindowType,
+  machines: FrameMachineSession[],
+  selectedId: string,
+): Electron.WebContents | null {
+  return frameOpener?.(window, machines, selectedId) ?? null;
 }
 
 type RendererStarter = (backendId: string, deadline: number) => Promise<boolean>;
@@ -119,8 +186,35 @@ export function showRailMachine(backendId: string): ShownRailMachine | null {
   return machineShower(backendId);
 }
 
-/** Hand a saved rail to the rail owner; ignored while the lab is off. */
-export function restoreMachineRailSession(window: BrowserWindowType, session: unknown): void {
-  if (!enabled || session === undefined || session === null) return;
-  restoreHandler?.(window, session);
+/**
+ * What the rail owner does for window-level commands (open a machine, show a
+ * workspace) so main/window.ts never imports machine-rail.ts.
+ */
+export interface FrameMachineCommands {
+  /** Show `backendId` in `window`, which holds it; null when it does not. */
+  select(window: BrowserWindowType, backendId: string): ShownRailMachine | null;
+  /** Add `backendId` to `window` and show it; false when the window cannot take it. */
+  add(window: BrowserWindowType, backendId: string): Promise<boolean>;
+}
+let frameMachineCommands: FrameMachineCommands | null = null;
+
+export function setFrameMachineCommands(commands: FrameMachineCommands | null): void {
+  frameMachineCommands = commands;
+}
+
+/** Show `backendId` in `window`, which holds it. Null before the rail owner registered. */
+export function selectFrameMachine(
+  window: BrowserWindowType,
+  backendId: string,
+): ShownRailMachine | null {
+  return frameMachineCommands?.select(window, backendId) ?? null;
+}
+
+/** Add `backendId` to `window` (rail on) and show it; false when it cannot join. */
+export async function addMachineToFrame(
+  window: BrowserWindowType,
+  backendId: string,
+): Promise<boolean> {
+  if (!enabled || !frameMachineCommands) return false;
+  return frameMachineCommands.add(window, backendId);
 }

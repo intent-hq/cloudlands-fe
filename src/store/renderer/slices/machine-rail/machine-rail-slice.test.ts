@@ -56,7 +56,6 @@ describe('machineRailReducer', () => {
   it('starts with the lab off and no machines', () => {
     expect(machineRailReducer(undefined, { type: '@@INIT' })).toEqual({
       enabled: false,
-      homeId: '',
       machineIds: [],
       selectedId: '',
       shownId: '',
@@ -68,7 +67,6 @@ describe('machineRailReducer', () => {
   it('replaces the state with what main sent', () => {
     const next = {
       enabled: true,
-      homeId: 'local',
       machineIds: ['local', 'b'],
       selectedId: 'b',
       shownId: 'local',
@@ -80,9 +78,9 @@ describe('machineRailReducer', () => {
 });
 
 describe('machine rail selectors', () => {
-  const rail = { enabled: true, homeId: 'local', machineIds: ['local', 'b', 'c'], selectedId: 'b' };
+  const rail = { enabled: true, machineIds: ['local', 'b', 'c'], selectedId: 'b' };
 
-  it('lists machines in rail order with selection, home and offline state; still connecting is offline', () => {
+  it('lists machines in rail order with selection and offline state; still connecting is offline', () => {
     const items = selectMachineRailItems.select(
       stateWith(
         rail,
@@ -94,12 +92,10 @@ describe('machine rail selectors', () => {
         'b',
       ),
     );
-    expect(
-      items.map(({ id, selected, home, offline }) => ({ id, selected, home, offline })),
-    ).toEqual([
-      { id: 'local', selected: false, home: true, offline: false },
-      { id: 'b', selected: true, home: false, offline: true },
-      { id: 'c', selected: false, home: false, offline: true },
+    expect(items.map(({ id, selected, offline }) => ({ id, selected, offline }))).toEqual([
+      { id: 'local', selected: false, offline: false },
+      { id: 'b', selected: true, offline: true },
+      { id: 'c', selected: false, offline: true },
     ]);
   });
 

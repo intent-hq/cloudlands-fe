@@ -17,16 +17,17 @@
    * button follows the last machine. Hosts joined as a guest come after the
    * user's own machines, below a separator.
    *
-   * A machine other than the window's own can be dragged to another place in
-   * its group (the others move aside to make room), or moved with Alt+Up/Down.
+   * Any machine can be dragged to another place in its group (the others move
+   * aside to make room), or moved with Alt+Up/Down, and any can be removed;
+   * removing the window's last machine closes the window.
    *
    * A context click opens the machine's menu where it is, without switching:
    * its status, an update when its daemon can be updated, removal from the
    * rail and machine settings. The shown
    * machine's status comes from its own renderer, with full health details.
    *
-   * The window's own renderer, under every other machine's, also paints the
-   * shell backdrop with the shown machine's tint, so the tint cross-fades.
+   * The frame page under every machine's view paints the shell backdrop with
+   * the shown machine's tint, so the tint cross-fades (see routes/frame).
    */
   import { faPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -43,7 +44,6 @@
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
-    connectionShellTintColor,
     resolveConnectionAccent,
   } from '$lib/utils/connection-accents';
   import {
@@ -58,14 +58,12 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
   import {
-    selectIsRailHomeRenderer,
     selectIsRailMachineShown,
     selectMachineRailCandidates,
     selectMachineRailEnabled,
     selectMachineRailGuestCandidates,
     railUpdateConsumerId,
     selectMachineRailItems,
-    selectRailSelectedRecord,
     type MachineRailItem,
     type MachineRailItemStatus,
   } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
@@ -75,7 +73,6 @@
     reorderRailMachinesRequested,
     selectRailMachineRequested,
   } from '$store/renderer/slices/machine-rail/machine-rail-slice';
-  import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { moveItem, railDropIndex, railShift } from './rail-reorder';
 
@@ -83,21 +80,7 @@
   const items$ = selectMachineRailItems();
   const candidates$ = selectMachineRailCandidates();
   const guestCandidates$ = selectMachineRailGuestCandidates();
-  const isHomeRenderer$ = selectIsRailHomeRenderer();
   const isShown$ = selectIsRailMachineShown();
-  const selectedRecord$ = selectRailSelectedRecord();
-  const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
-
-  const shellTint = $derived(
-    connectionShellTintColor($selectedRecord$?.accent, $selectedRecord$?.isLocal ?? true),
-  );
-
-  // The backdrop must be a direct child of <body>: the window's own renderer
-  // hides everything else there while another machine is on screen.
-  function moveToBody(node: HTMLElement) {
-    document.body.prepend(node);
-    return { destroy: () => node.remove() };
-  }
 
   // The first name shows after a short rest on a button; see `namesWarm` for the rest.
   const RAIL_TOOLTIP_DELAY_MS = 300;
@@ -124,8 +107,6 @@
     dy: number;
     /** Layout centres of the group's slots (transforms ignored). */
     centers: number[];
-    /** First slot a machine may move to: the window's own machine stays first. */
-    min: number;
     active: boolean;
     pointerId: number;
     entry: HTMLElement;
@@ -155,8 +136,6 @@
   export function getMachineIds(): string[] {
     return orderedItems.map((item) => item.id);
   }
-  // Everything but the window's own machine can leave the rail.
-  const removableItems = $derived(orderedItems.filter((item) => !item.home));
   const guestItems = $derived(orderedItems.filter((item) => item.guest));
 
   // Main's reply carries the new order: the local one is no longer needed.
@@ -187,23 +166,20 @@
       group === 'own'
         ? [...moveItem(own, from, target), ...guests]
         : [...own, ...moveItem(guests, from, target)];
-    const homeId = $items$.find((item) => item.home)?.id;
-    const order = homeId ? [homeId, ...moved.filter((machineId) => machineId !== homeId)] : moved;
     clearTimeout(pendingOrderTimer);
-    pendingOrder = order;
+    pendingOrder = moved;
     pendingOrderTimer = setTimeout(() => (pendingOrder = null), PENDING_ORDER_MS);
-    appStore.dispatch(reorderRailMachinesRequested(order));
+    appStore.dispatch(reorderRailMachinesRequested(moved));
     return true;
   }
 
   function startDrag(event: PointerEvent, item: MachineRailItem, group: RailGroup, index: number) {
     suppressClick = false;
     drag = null;
-    if (event.button !== 0 || item.home) return;
+    if (event.button !== 0) return;
     const entry = event.currentTarget as HTMLElement;
     const slots = railList?.querySelectorAll<HTMLElement>(`[data-rail-group="${group}"]`);
     const centers = [...(slots ?? [])].map((slot) => slot.offsetTop + slot.offsetHeight / 2);
-    const list = groupItems(group);
     drag = {
       id: item.id,
       group,
@@ -212,7 +188,6 @@
       startY: event.clientY,
       dy: 0,
       centers,
-      min: list[0]?.home ? 1 : 0,
       active: false,
       pointerId: event.pointerId,
       entry,
@@ -245,7 +220,7 @@
       drag.entry.setPointerCapture(event.pointerId);
     }
     drag.dy = dy;
-    drag.to = railDropIndex(drag.centers, drag.from, dy, drag.min);
+    drag.to = railDropIndex(drag.centers, drag.from, dy);
   }
 
   function endDrag(commit: boolean) {
@@ -296,13 +271,12 @@
     group: RailGroup,
     index: number,
   ) {
-    if (!event.altKey || item.home) return;
+    if (!event.altKey) return;
     const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
     if (!delta) return;
     event.preventDefault();
     const list = groupItems(group);
-    const min = list[0]?.home ? 1 : 0;
-    const to = Math.min(list.length - 1, Math.max(min, index + delta));
+    const to = Math.min(list.length - 1, Math.max(0, index + delta));
     if (to === index || !commitOrder(group, item.id, to)) return;
     // Moving a focused element in the DOM drops its focus: keep it on the machine.
     await tick();
@@ -471,15 +445,13 @@
       {item.updating ? m.settings_devices_updating_label() : m.layout_daemonStatus_update_action()}
     </Menu.Item>
   {/if}
-  {#if !item.home}
-    <Menu.Item
-      class="w-full cursor-pointer text-xs px-2 py-1.5"
-      data-testid="machine-rail-menu-remove"
-      onSelect={() => removeFromRail(item.id)}
-    >
-      {m.machineRail_remove_header()}
-    </Menu.Item>
-  {/if}
+  <Menu.Item
+    class="w-full cursor-pointer text-xs px-2 py-1.5"
+    data-testid="machine-rail-menu-remove"
+    onSelect={() => removeFromRail(item.id)}
+  >
+    {m.machineRail_remove_header()}
+  </Menu.Item>
   <Menu.Item
     class="w-full cursor-pointer text-xs px-2 py-1.5"
     data-testid="machine-rail-menu-manage"
@@ -700,10 +672,10 @@
           {/snippet}
           {m.settings_devices_add_label()}
         </Menu.Item>
-        {#if removableItems.length > 0}
+        {#if orderedItems.length > 0}
           <Menu.Separator />
           <Header class="px-2 pt-1.5 pb-0.5" size={6}>{m.machineRail_remove_header()}</Header>
-          {#each removableItems as item (item.id)}
+          {#each orderedItems as item (item.id)}
             <Menu.Item
               data-testid="machine-rail-remove-item"
               data-machine-id={item.id}
@@ -744,16 +716,4 @@
       </Menu.Content>
     </Menu.Root>
   </nav>
-
-  {#if $isHomeRenderer$}
-    <div
-      use:moveToBody
-      class="machine-rail-backdrop"
-      data-shell-opaque={!$shellTransparencyEnabled$ || undefined}
-      data-testid="machine-rail-backdrop"
-      aria-hidden="true"
-    >
-      <span style:background-color={shellTint}></span>
-    </div>
-  {/if}
 {/if}

@@ -10,11 +10,11 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => mocks.windows },
   screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 }));
-vi.mock('../../../main/window-backend', () => ({
-  getBackendIdForWindow: (window: any) => window.backend,
-}));
-vi.mock('../../../main/hud-window', () => ({
-  isHudWindow: (window: any) => window.url.includes('/hud'),
+// A frame shows `backend`; its view of that machine is `webContents`. A HUD is no frame.
+vi.mock('../../../main/frames', () => ({
+  isFrame: (window: any) => !window.url.includes('/hud'),
+  shownMachine: (window: any) => window.backend,
+  rendererFor: (window: any, id: string) => (window.backend === id ? window.webContents : null),
 }));
 vi.mock('../../../main/window', () => ({ createWindowForSession: mocks.create }));
 vi.mock('../../../main/machine-rail-state', () => ({ showRailMachine: mocks.showRailMachine }));
@@ -34,6 +34,7 @@ function window(backend: string, path: string) {
     focus: vi.fn(),
     webContents: {
       getURL: () => `app://workspaces${path}`,
+      isDestroyed: () => false,
       isLoadingMainFrame: () => false,
       send: vi.fn(),
     },

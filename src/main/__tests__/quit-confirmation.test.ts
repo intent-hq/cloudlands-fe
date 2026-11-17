@@ -33,6 +33,9 @@ import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../machine-rail-state';
 
 vi.mock('../window-backend', () => ({
   getShownRendererWebContents: vi.fn((window: BrowserWindow) => window.webContents),
+  // These fakes are not frames: a window's own page is what it shows.
+  isFrameWindow: vi.fn(() => false),
+  getRendererWebContents: vi.fn((window: BrowserWindow) => [window.webContents]),
 }));
 
 /**

@@ -20,6 +20,7 @@
  *   name only): Settings → Machines, the prompt, then the backend claims it.
  */
 
+import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { notify } from '$lib/components/patterns/notify';
@@ -193,6 +194,16 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
       if (params.pendingId) {
         yield* put(nodeInviteReceived({ pendingId: params.pendingId, label: params.label ?? '' }));
         return;
+      }
+      break;
+    case 'notification':
+      // A notification click queued by main while this renderer was starting.
+      if (params.workspaceId) {
+        return yield* call(handleNotificationNavigate, {
+          workspaceId: params.workspaceId,
+          ...(params.chief === 'true' ? { chief: true } : {}),
+          ...(params.agentId ? { agentId: params.agentId } : {}),
+        });
       }
       break;
   }

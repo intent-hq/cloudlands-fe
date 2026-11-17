@@ -16,6 +16,15 @@ vi.mock('../../../../main/window-backend', () => ({
     windows.find((w) => w.renderers.includes(sender as any)) ?? null,
   getShownRendererWebContents: (window: ReturnType<typeof fakeWindow>) => window.shown,
   getRendererWebContents: (window: ReturnType<typeof fakeWindow>) => window.renderers,
+  // A frame page is never its window's shown renderer.
+  isShownRenderer: (window: ReturnType<typeof fakeWindow>, sender: unknown) =>
+    window.shown === sender && sender !== window.webContents,
+}));
+vi.mock('../../../../main/frames', () => ({
+  mostRecentFrame: () =>
+    (focused && !focused.isDestroyed() ? focused : null) ??
+    windows.find((w) => !w.isDestroyed()) ??
+    null,
 }));
 const NOTES = { version: '2.1.0', notes: '## What changed', url: 'https://example.com/v2.1.0' };
 vi.mock('../release-notes.service', () => ({
@@ -34,10 +43,17 @@ import { checkForReleaseNotesOnStartup } from '../release-notes.service';
 function renderer() {
   return { send: vi.fn(), isDestroyed: () => false };
 }
+/** A frame: its page (`webContents`, backdrop only) holds two machine views and shows `child`. */
 function fakeWindow() {
-  const root = renderer();
+  const framePage = renderer();
+  const home = renderer();
   const child = renderer();
-  return { isDestroyed: () => false, webContents: root, renderers: [root, child], shown: child };
+  return {
+    isDestroyed: () => false,
+    webContents: framePage,
+    renderers: [home, child],
+    shown: child,
+  };
 }
 function invoke(name: string, sender = windows[0]?.shown) {
   return handlers.get(name)!({ sender }, undefined);
@@ -80,7 +96,7 @@ describe('release-notes ownership', () => {
     windows[0].shown.isDestroyed = () => true;
     expect((await invoke(C.GET_PENDING, windows[1].shown)).data).toEqual(NOTES);
   });
-  it('clears startup and closes root and child renderers on dismissal', async () => {
+  it('clears startup and closes every machine view on dismissal', async () => {
     await initializeReleaseNotesOnStartup();
     await invoke(C.DISMISS);
     for (const w of windows)

@@ -323,8 +323,9 @@ display it re-runs under `xvfb-run -a` (install the `xvfb` package if missing). 
 launches the production build with a throwaway `--user-data-dir` profile, connects to the
 existing daemon (`--socket`, else `INTENTD_SOCKET` or the platform default; no sidecar is
 spawned), prints `screenshot: <path>` and exits 0. `--wait-for <css>` gates the capture,
-and `--check <module>` runs a default-exported `async ({ app, page, route })` against the
-live app (a throw exits 1); `--help` lists the rest. The renderer talks to the real daemon,
+and `--check <module>` runs a default-exported `async ({ app, page, route, userDataDir })`
+against the live app (a throw exits 1); `--seed-profile <dir>` copies saved state (e.g. an
+older client's window layout) into the profile before launch; `--help` lists the rest. The renderer talks to the real daemon,
 so actions in a check change real daemon state. This found three main-process bugs that
 unit tests missed during the Browser access work (cloudlands-fe#4017).
 

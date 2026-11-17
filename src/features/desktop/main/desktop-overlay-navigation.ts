@@ -1,7 +1,6 @@
 import { app, BrowserWindow, screen } from 'electron';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import { isFrame, rendererFor, shownMachine } from '../../../main/frames';
 import { showRailMachine } from '../../../main/machine-rail-state';
-import { isHudWindow } from '../../../main/hud-window';
 import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../../../shared/desktop-overlay';
 
@@ -10,29 +9,37 @@ interface OwningIdentity {
   workspaceId: string;
 }
 
-/** The owning backend's workspace window, else any ordinary window of that backend. */
-function findDesktopOwningWindow(identity: OwningIdentity): BrowserWindow | undefined {
-  const windows = BrowserWindow.getAllWindows().filter((window) => {
-    if (window.isDestroyed() || isHudWindow(window) || window.webContents.isLoadingMainFrame())
-      return false;
-    if (getBackendIdForWindow(window) !== identity.backendId) return false;
+interface OwningRenderer {
+  window: BrowserWindow;
+  contents: Electron.WebContents;
+}
+
+/**
+ * The owning backend's workspace view in a frame that shows that backend,
+ * else any such frame's view of it.
+ */
+function findDesktopOwningWindow(identity: OwningIdentity): OwningRenderer | undefined {
+  const renderers = BrowserWindow.getAllWindows().flatMap((window): OwningRenderer[] => {
+    if (!isFrame(window) || shownMachine(window) !== identity.backendId) return [];
+    const contents = rendererFor(window, identity.backendId);
+    if (!contents || contents.isDestroyed() || contents.isLoadingMainFrame()) return [];
     try {
-      const { pathname, protocol } = new URL(window.webContents.getURL());
-      return (
+      const { pathname, protocol } = new URL(contents.getURL());
+      const page =
         (protocol === 'app:' || protocol === 'http:') &&
         !isDevConsoleRoute(pathname) &&
-        !isDesktopOverlayRoute(pathname)
-      );
+        !isDesktopOverlayRoute(pathname);
+      return page ? [{ window, contents }] : [];
     } catch {
-      return false;
+      return [];
     }
   });
   return (
-    windows.find(
-      (window) =>
-        new URL(window.webContents.getURL()).pathname ===
+    renderers.find(
+      ({ contents }) =>
+        new URL(contents.getURL()).pathname ===
         `/workspace/${encodeURIComponent(identity.workspaceId)}`,
-    ) ?? windows[0]
+    ) ?? renderers[0]
   );
 }
 
@@ -48,14 +55,13 @@ export async function openDesktopControllingAgent(identity: {
   })}`;
   const target = findDesktopOwningWindow(identity);
   if (target) {
-    if (target.isMinimized()) target.restore();
-    target.show();
-    target.focus();
-    target.webContents.send('navigate', route);
+    if (target.window.isMinimized()) target.window.restore();
+    target.window.show();
+    target.window.focus();
+    target.contents.send('navigate', route);
     return;
   }
-  // No window of its own: a window that keeps the machine in its rail shows
-  // it. A renderer that did not start in time could drop the route, so the
+  // No frame shows the machine: a frame that holds it shows it. A renderer that did not start in time could drop the route, so the
   // agent then opens in a window of its own.
   const rail = showRailMachine(identity.backendId);
   if (rail) {
@@ -84,7 +90,8 @@ export function focusDesktopOwningWindow(
   identity: OwningIdentity,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  const target = findDesktopOwningWindow(identity) ?? showRailMachine(identity.backendId)?.window;
+  const target =
+    findDesktopOwningWindow(identity)?.window ?? showRailMachine(identity.backendId)?.window;
   if (!target) return false;
   if (target.isMinimized()) target.restore();
   // Another app is frontmost after desktop control; a plain focus() only

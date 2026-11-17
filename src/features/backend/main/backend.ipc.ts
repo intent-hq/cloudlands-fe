@@ -224,7 +224,7 @@ import {
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
 import { getRendererWebContents } from '../../../main/window-backend';
-import { readWindowRail } from '../../../main/machine-rail-state';
+import { windowMachines } from '../../../main/frames';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -3596,7 +3596,7 @@ function projectLiveConnectionRecords(connections: ConnectionRecord[]): {
   const referencedIds = new Set<string>();
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
-    for (const id of readWindowRail(window).machineIds) referencedIds.add(id);
+    for (const id of windowMachines(window)) referencedIds.add(id);
   }
   for (const id of liveConnectionRecords.keys()) {
     if (!referencedIds.has(id)) liveConnectionRecords.delete(id);
@@ -4734,6 +4734,21 @@ export async function retryBackendConnection(id: string): Promise<boolean> {
  * connection except nodes, which never open a window, then every host joined
  * as a guest.
  */
+/**
+ * Every saved machine: connection records (self records and nodes included)
+ * and guest sessions. Restored frames drop machines that are not listed.
+ */
+export async function listSavedMachineIds(): Promise<string[]> {
+  const [connections, guests] = await Promise.all([
+    connectionsStore.list(),
+    guestSessionsStore.list(),
+  ]);
+  return [
+    ...connections.map((connection) => connection.id),
+    ...guests.map((session) => session.id),
+  ];
+}
+
 export async function listMachineRailCandidateIds(): Promise<string[]> {
   // Eligibility must use the actual store, never the presentation snapshots
   // retained for live renderers. Self records remain unavailable for new rails.

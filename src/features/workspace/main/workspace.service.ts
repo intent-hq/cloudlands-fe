@@ -28,6 +28,7 @@ import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '../../../shared/types/bran
 import { isValidWorkspaceIdFormat } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { DaemonWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
+import { getRendererWebContents } from '../../../main/window-backend';
 
 const logger = new Logger('WorkspaceService');
 
@@ -608,8 +609,8 @@ export class WorkspaceService {
     try {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('workspace:background-enrichment-complete', {
+        for (const contents of getRendererWebContents(win)) {
+          contents.send('workspace:background-enrichment-complete', {
             workspaceId,
             updates,
           });

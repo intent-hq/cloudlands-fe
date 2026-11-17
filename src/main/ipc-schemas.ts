@@ -785,6 +785,16 @@ export const MachineRailSetEnabledSchema = z.object({ enabled: z.boolean() }).st
 
 export const MachineRailHealthSchema = z.object({ degraded: z.boolean() }).strict();
 
+/** CSS colour values (resolved by the renderer); bounded, never markup. */
+const CssColorSchema = z
+  .string()
+  .max(256)
+  .regex(/^[\w\s().,%#/-]*$/);
+
+export const MachineRailBackdropSchema = z
+  .object({ background: CssColorSchema, tint: CssColorSchema, reducedMotion: z.boolean() })
+  .strict();
+
 export const MachineRailReorderSchema = z
   .object({ machineIds: z.array(z.string().min(1).max(256)).min(1).max(9) })
   .strict();

@@ -114,7 +114,6 @@ export function createMachineRailPreview(onSelect: (id: string) => void) {
       appStore.dispatch(
         machineRailStateReceived({
           enabled: true,
-          homeId: 'home-machine',
           machineIds: [
             'home-machine',
             'cloud-machine',

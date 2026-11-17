@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { Logger } from '$shared/logger';
 import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
 import { getRendererWebContentsForWorkspace } from '../../system/main/system.ipc';
+import { getRendererWebContents } from '../../../main/window-backend';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -30,7 +31,7 @@ let circuitBreakerBroadcastUnsubscribe: (() => void) | null = null;
  * affected workspace, so the UI can surface (or clear) a notice. A machine
  * view the window does not show gets it on the view, not on the window's own
  * renderer (another host). When no renderer hosts the workspace, every
- * window gets it.
+ * app renderer gets it (a frame's machine views, never its frame page).
  */
 function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatus): void {
   // ANY_HOST: the circuit breaker is keyed by workspace id alone and carries
@@ -39,9 +40,7 @@ function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatu
   const targets =
     hosting.length > 0
       ? hosting
-      : BrowserWindow.getAllWindows()
-          .filter((win) => !win.isDestroyed())
-          .map((win) => win.webContents);
+      : BrowserWindow.getAllWindows().flatMap((win) => getRendererWebContents(win));
 
   for (const contents of targets) {
     if (contents.isDestroyed()) continue;

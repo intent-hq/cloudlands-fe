@@ -104,6 +104,19 @@ vi.mock('../../../../main/window', () => ({
   stampWindowWithBackend: vi.fn((window: { backendId?: string }, backendId: string) => {
     window.backendId = backendId;
   }),
+  // A frame on one machine. The mock window's web contents stands in for the
+  // machine's view; creation settles once that view has loaded its page.
+  openMachineFrame: vi.fn(async (opts: { machineId: string; route?: string; show?: boolean }) => {
+    const window = new electronMocks.MockBrowserWindow({ show: opts.show });
+    (window as unknown as { backendId: string }).backendId = opts.machineId;
+    try {
+      await window.loadURL(`app://workspaces${opts.route ?? '/'}`);
+    } catch (error) {
+      window.destroy();
+      throw error;
+    }
+    return { window, contents: window.webContents };
+  }),
 }));
 
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
@@ -289,15 +302,15 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     );
   });
 
-  it('registers the page-title listener on HUD and workspace windows', async () => {
+  it('registers the page-title listener on the HUD window', async () => {
     const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
     await openNew({ sender: {} }, { route: '/hud' });
-    await openNew({ sender: {} }, { route: '/workspace/ws-1' });
 
-    expect(electronMocks.constructed).toHaveLength(2);
-    for (const window of electronMocks.constructed) {
-      expect(window.on).toHaveBeenCalledWith('page-title-updated', expect.any(Function));
-    }
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(electronMocks.constructed[0].on).toHaveBeenCalledWith(
+      'page-title-updated',
+      expect.any(Function),
+    );
   });
 
   it('accepts one BrowserWindow creation when two renderers handle the same app event', async () => {

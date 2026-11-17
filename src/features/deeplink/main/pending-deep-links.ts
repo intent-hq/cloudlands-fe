@@ -12,6 +12,7 @@
 
 import type { BrowserWindow, WebContents } from 'electron';
 import type { DeepLinkAction } from '../deep-link-handler';
+import { getShownRendererWebContents } from '../../../main/window-backend';
 
 /** Payload of the `deep-link` nudge: "your window has queued actions". */
 const DEEP_LINK_NUDGE = Object.freeze({ pending: true });
@@ -29,9 +30,12 @@ function queueFor(webContents: WebContents): DeepLinkAction[] {
   return queue;
 }
 
-/** Queue `action` for `window` and nudge its renderer. Does not focus. */
+/**
+ * Queue `action` for the renderer `window` shows (a frame's shown machine
+ * view) and nudge it. Does not focus.
+ */
 export function queueDeepLinkForWindow(window: BrowserWindow, action: DeepLinkAction): void {
-  queueDeepLinkForRenderer(window.webContents, action);
+  queueDeepLinkForRenderer(getShownRendererWebContents(window), action);
 }
 
 /** Queue for the exact backend renderer, including machine views. Does not focus. */
@@ -40,6 +44,38 @@ export function queueDeepLinkForRenderer(contents: WebContents, action: DeepLink
   // A renderer that is not listening yet ignores the nudge; it drains the
   // queue on startup instead.
   contents.send('deep-link', DEEP_LINK_NUDGE);
+}
+
+/** Where a notification click goes: a workspace, or (chief) the Assistant thread. */
+export interface NotificationNavigation {
+  workspaceId: string;
+  chief?: boolean;
+  agentId?: string;
+}
+
+/**
+ * Deliver a notification click's navigation to `contents`. A renderer that
+ * reported ready gets it pushed; one that did not (still starting past the
+ * wait) gets it queued, and pulls it once its deep-links saga starts.
+ */
+export function deliverNotificationNavigation(
+  contents: WebContents,
+  ready: boolean,
+  navigation: NotificationNavigation,
+): void {
+  if (contents.isDestroyed()) return;
+  if (ready) {
+    contents.send('notification:navigate', navigation);
+    return;
+  }
+  queueDeepLinkForRenderer(contents, {
+    type: 'notification',
+    params: {
+      workspaceId: navigation.workspaceId,
+      ...(navigation.chief ? { chief: 'true' } : {}),
+      ...(navigation.agentId ? { agentId: navigation.agentId } : {}),
+    },
+  });
 }
 
 /**

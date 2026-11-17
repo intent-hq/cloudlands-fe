@@ -12,8 +12,8 @@ import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { getRendererWebContents } from '../../../main/window-backend';
 
 /**
- * Send an auto-update event to all live (non-destroyed) windows,
- * skipping HUD windows (any backend).
+ * Send an auto-update event to every app renderer of every live window (a
+ * frame's machine views), skipping HUD windows (any backend).
  */
 export function broadcastToRenderers(channel: string, ...args: unknown[]): void {
   // isHudWindow() is URL-based and misses a newly registered HUD that is

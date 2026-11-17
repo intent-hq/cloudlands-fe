@@ -48,7 +48,6 @@ export function createDaemonRailFixture(rail: boolean, onSelect: (id: string) =>
   store.dispatch(
     machineRailStateReceived({
       enabled: rail,
-      homeId: 'local',
       machineIds: ['local', 'audit-host'],
       selectedId: 'audit-host',
       shownId: 'audit-host',

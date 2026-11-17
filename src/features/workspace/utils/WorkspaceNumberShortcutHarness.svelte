@@ -84,7 +84,6 @@
     appStore.dispatch(
       machineRailStateReceived({
         enabled: true,
-        homeId: 'local',
         machineIds: ['local', 'guest', 'build'],
         selectedId: 'local',
         shownId: 'local',

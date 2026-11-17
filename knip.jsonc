@@ -25,6 +25,8 @@
     "src/preload/index.template.ts!",
     // Narrow desktop indicator bridge loaded by BrowserWindow's preload path.
     "src/preload/desktop-overlay.ts!",
+    // Backdrop-only bridge for a frame window's own page (main/window.ts).
+    "src/preload/frame.ts!",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts!",
     // @intent-hq/web CLI entry, bundled by scripts/build-intent-web-package.mjs

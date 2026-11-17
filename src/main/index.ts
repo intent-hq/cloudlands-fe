@@ -349,6 +349,7 @@ import {
 } from './dock-lab';
 import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
 import { loadMachineRailEnabled, registerMachineRailHandlers } from './machine-rail';
+import { FRAME_LAYOUT_CHANGED_EVENT, MACHINE_RAIL_SHOWN_CHANGED_EVENT } from './machine-rail-state';
 import {
   setupBrowserAccess,
   shutdownBrowserAccess,
@@ -369,6 +370,7 @@ import {
   disconnectBackendClient,
   isBackendClientConnected,
   listMachineRailCandidateIds,
+  listSavedMachineIds,
   onAnyBackendStatus,
   retryBackendConnection,
   disposeAllBackendClients,
@@ -387,7 +389,7 @@ import {
   getActiveId,
   list as listConnections,
 } from '../features/backend/main/desktop-connections-store';
-import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+import { resolveBootWindowBackendId } from './boot-window-backend';
 import {
   probeDaemonVersion,
   resolveSocketPath,
@@ -455,20 +457,21 @@ import {
   disposeDevConsole,
 } from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
-import { getBackendIdForWindow, getShownRendererWebContents } from './window-backend.js';
+import { getRendererTargets, getShownRendererWebContents } from './window-backend.js';
+import { shownMachine, trackFrameFocus } from './frames.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
 import { getMainWindow } from './state';
 import {
   captureWindowSessionsSnapshot,
-  clearWindowSessionsSnapshot,
   createWindow,
   createWindowForDeepLink,
-  getWindowSessionsPath,
+  discardSavedWindowFrames,
   markWindowSessionTeardown,
   restoreAllBackendWindowSessions,
   saveAllWindowSessions,
+  setSavedMachineIds,
   setOnLastWindowClosedForBackend,
   stampWindowWithBackend,
 } from './window.js';
@@ -518,10 +521,9 @@ async function gracefulShutdown(options: GracefulShutdownOptions = {}) {
         if (isShuttingDown) return false;
         isShuttingDown = true;
         // Quit-time window closes (performGracefulShutdown's
-        // mainWindow.close()) are not deliberate per-backend closes: without
-        // this mark, closing the last window of one backend while another
-        // backend's windows survive would tombstone + prune the bucket that
-        // before-quit just saved. Every quit path (before-quit,
+        // mainWindow.close()) are not deliberate closes: without this mark,
+        // closing one frame while others survive would drop it from the
+        // frames that before-quit just saved. Every quit path (before-quit,
         // window-all-closed, SIGTERM/SIGINT) funnels through here before any
         // window is closed.
         markWindowSessionTeardown();
@@ -529,7 +531,7 @@ async function gracefulShutdown(options: GracefulShutdownOptions = {}) {
       },
       persistWindowSessions: saveOpenWindowSessions,
       onPersistError: (error) => {
-        logger.warn('Failed to save window sessions during shutdown:', error);
+        logger.warn('Failed to save window frames during shutdown:', error);
       },
       cleanup: performGracefulShutdown,
       onHardExit: () => {
@@ -557,7 +559,10 @@ async function performGracefulShutdown() {
     // (750ms overall ack timeout) and fail-soft — never throws, never delays
     // shutdown beyond the timeout, and stays well within the hard-exit
     // watchdog above.
-    await requestHardwareConsoleLightingClear(BrowserWindow.getAllWindows(), ipcMain);
+    await requestHardwareConsoleLightingClear(
+      getRendererTargets(BrowserWindow.getAllWindows()),
+      ipcMain,
+    );
 
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
@@ -661,8 +666,8 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
 }
 
 /**
- * Persist every open backend's window sessions. Persisted activeId chooses the
- * first backend restored at boot; it is not the identity of every live window.
+ * Persist every open frame to window-frames.json. Persisted activeId chooses
+ * which frames restore first at boot; it is not the identity of every frame.
  */
 async function saveOpenWindowSessions(): Promise<void> {
   await saveAllWindowSessions();
@@ -711,10 +716,11 @@ const bootFlow = app.whenReady().then(async () => {
   // first boot window becomes the initial owner.
   setupConsoleOwnerTracking();
 
-  // Keep window sessions file up-to-date so it's always available on quit/crash.
-  // This debounced saver fires on window move/resize/navigate to ensure the sessions
-  // file reflects the latest state even when before-quit can't capture windows (e.g.,
-  // on Windows/Linux when closing the last window triggers app.quit()).
+  // Keep window-frames.json up to date so it's always available on quit/crash.
+  // This debounced saver fires on window move/resize, on a machine view's
+  // navigation and on a frame's machine changes, so the file reflects the
+  // latest state even when before-quit can't capture windows (e.g., on
+  // Windows/Linux when closing the last window triggers app.quit()).
   let sessionSaveTimeout: NodeJS.Timeout | null = null;
   const debouncedSaveWindowSessions = () => {
     if (sessionSaveTimeout) clearTimeout(sessionSaveTimeout);
@@ -730,6 +736,7 @@ const bootFlow = app.whenReady().then(async () => {
     disconnectBackendClient(backendId);
   });
 
+  app.on(FRAME_LAYOUT_CHANGED_EVENT, debouncedSaveWindowSessions);
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
     if (isOffscreenWindow(window)) return;
     stampWindowWithBackend(window);
@@ -738,10 +745,10 @@ const bootFlow = app.whenReady().then(async () => {
     window.webContents.on('did-navigate', debouncedSaveWindowSessions);
     window.webContents.on('did-navigate-in-page', debouncedSaveWindowSessions);
     // Capture a synchronous snapshot right before the window is destroyed so
-    // the in-memory cache inside saveWindowSessions() holds the final layout.
-    // Needed for the non-macOS window-all-closed path, where the handler runs
-    // after BrowserWindow.getAllWindows() has already emptied and an async
-    // saveWindowSessions() call would otherwise serialize nothing.
+    // the in-memory cache inside saveAllWindowSessions() holds the final
+    // layout. Needed for the non-macOS window-all-closed path, where the
+    // handler runs after BrowserWindow.getAllWindows() has already emptied and
+    // an async saveAllWindowSessions() call would otherwise serialize nothing.
     window.on('close', captureWindowSessionsSnapshot);
     // Windows: forward mouse X-button app-commands to the renderer as
     // app:history-navigate IPC events (see src/main/app-command-navigation.ts).
@@ -876,7 +883,10 @@ const bootFlow = app.whenReady().then(async () => {
             click: () => {
               const mainWindow = getMainWindow();
               if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('navigate', `/workspace/${workspace.id}`);
+                getShownRendererWebContents(mainWindow).send(
+                  'navigate',
+                  `/workspace/${workspace.id}`,
+                );
               }
             },
           });
@@ -1159,7 +1169,7 @@ const bootFlow = app.whenReady().then(async () => {
         liveWindows.map((w) => ({
           windowId: w.id,
           isHud: isHudWindow(w) || isTrackedHudWindow(w),
-          backendId: getBackendIdForWindow(w),
+          backendId: shownMachine(w),
           isFocused: w.isFocused(),
         })),
         connections,
@@ -1538,6 +1548,11 @@ const bootFlow = app.whenReady().then(async () => {
     void rebuildMenu();
   });
 
+  // A frame switched the machine it shows: its Window menu entry is labeled by it.
+  app.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, () => {
+    void rebuildMenu();
+  });
+
   // Rebuild menu when connection records change (add/forget/rename/hostname
   // capture) so window entries pick up fresh backend labels
   app.on('connections-changed', () => {
@@ -1706,6 +1721,8 @@ const bootFlow = app.whenReady().then(async () => {
   });
   // The machine rail lab is main-owned and off by default.
   await loadMachineRailEnabled();
+  // Notification clicks and new machines go to the frame focused last.
+  trackFrameFocus();
   registerMachineRailHandlers({
     listMachineIds: listMachineRailCandidateIds,
     connect: connectBackendClient,
@@ -1866,46 +1883,47 @@ const bootFlow = app.whenReady().then(async () => {
       await deepLinkHandler.handleDeepLink(intentUrlArg, null);
     }
 
-    // Try to restore saved window sessions (unless we have a deep link to
+    // Try to restore the saved frames (unless we have a deep link to
     // process, which keeps its single-window bypass — pair links are exempt:
-    // they embed nothing in a window, so a pair cold start restores sessions
+    // they embed nothing in a window, so a pair cold start restores frames
     // normally and then connects/foregrounds the linked backend on top).
-    // EVERY backend with a saved session bucket is restored, each bucket's
-    // windows stamped with its own backend id and backed by its own pooled
-    // client (fail-soft — an
-    // unreachable backend still gets its windows behind the stopped overlay).
-    // The last-used bucket (persisted activeId, legacy field) restores first
-    // and provides the main window; each backend's own pooled client connects
-    // on demand, so no boot-time reconciliation of the field is needed.
+    // Each frame reopens with the machines whose pooled client can be built
+    // (fail-soft — an unreachable machine still gets its view behind the
+    // stopped overlay). Frames showing the last-used machine (persisted
+    // activeId, legacy field) restore first and provide the main window.
     const bootBackendId = await getActiveId();
+    // Saved frames drop machines that are no longer saved (fail-soft: a
+    // failed listing keeps every machine).
+    try {
+      setSavedMachineIds(await listSavedMachineIds());
+    } catch (error) {
+      logger.warn('Could not list saved machines; keeping every machine of the saved frames', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     const restored =
       intentUrlArg && !isPairLinkArg
         ? false
         : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
     if (!restored) {
-      // No saved sessions anywhere (or has deep link) — create a single default
-      // window. A remote boot backend needs its pooled client connected first
-      // (only the local client is created lazily); if its client cannot be
-      // built (deleted record, missing token), fall back to a local window
-      // rather than one whose every RPC fails closed.
-      // An `open` link (the `intent` CLI's folder, or a workspace id) refers
-      // to this machine's daemon, so its boot window is always local.
+      // Nothing saved (or a deep link): one frame on the persisted active
+      // machine, or the local one for an `open` link (the `intent` CLI's
+      // folder, or a workspace id) or when the active client cannot be built.
       const coldStartWantsLocal =
         intentUrlArg !== undefined &&
         !isPairLinkArg &&
         deepLinkHandler.parseDeepLink(intentUrlArg)?.type === 'open';
-      let windowBackendId = coldStartWantsLocal ? LOCAL_CONNECTION_ID : bootBackendId;
-      if (windowBackendId !== LOCAL_CONNECTION_ID) {
-        try {
-          await connectBackendClient(bootBackendId);
-        } catch (error) {
+      const windowBackendId = await resolveBootWindowBackendId({
+        activeId: bootBackendId,
+        wantsLocal: coldStartWantsLocal,
+        connect: connectBackendClient,
+        onFallback: (backendId, error) => {
           logger.warn('Boot backend has no connectable client; opening a local window', {
-            backendId: bootBackendId,
+            backendId,
             error: error instanceof Error ? error.message : String(error),
           });
-          windowBackendId = LOCAL_CONNECTION_ID;
-        }
-      }
+        },
+      });
       await createWindow(windowBackendId);
     }
 
@@ -2026,9 +2044,10 @@ app.on('before-quit', async (event: Electron.Event) => {
   if (!isShuttingDown) {
     event.preventDefault();
 
-    // Save window sessions now that quit is prevented.
-    // Must be called AFTER event.preventDefault() because saveWindowSessions is async
-    // and preventDefault must be called synchronously within the event handler.
+    // Save the frames now that quit is prevented.
+    // Must be called AFTER event.preventDefault() because saveOpenWindowSessions
+    // is async and preventDefault must be called synchronously within the event
+    // handler.
     await saveOpenWindowSessions();
 
     // Skip the prompt when quitting to install an update: installUpdate()
@@ -2047,24 +2066,15 @@ app.on('before-quit', async (event: Electron.Event) => {
 
 app.on('window-all-closed', async () => {
   // On macOS the app stays alive after all windows are closed.
-  // Clear the saved sessions file so that clicking the dock icon opens a single
+  // Clear the saved frames so that clicking the dock icon opens a single
   // fresh window instead of restoring every window the user just closed.
   // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
-  // already saved sessions in before-quit — doesn't lose them.
+  // already saved the frames in before-quit — doesn't lose them.
   if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate) {
-    try {
-      const sessionsPath = getWindowSessionsPath();
-      if (fs.existsSync(sessionsPath)) {
-        fs.unlinkSync(sessionsPath);
-        logger.info('Cleared window sessions (all windows manually closed on macOS)');
-      }
-    } catch (err) {
-      logger.warn('Failed to clear sessions file on window-all-closed:', err);
-    }
-    // Also wipe the in-memory fallback snapshot so a pending debounced saver,
-    // or any later saveWindowSessions() trigger, can't resurrect the file we
-    // just deleted from the last-known-sessions cache.
-    clearWindowSessionsSnapshot();
+    // Also wipes the in-memory last-known frames, so a pending debounced
+    // saver cannot resurrect the layout just discarded.
+    discardSavedWindowFrames();
+    logger.info('Cleared saved frames (all windows manually closed on macOS)');
   }
 
   // On non-macOS this handler runs the full backend teardown (persist, kill
@@ -2090,9 +2100,9 @@ app.on('window-all-closed', async () => {
       }
       return;
     }
-    // Persist window sessions before handing off to gracefulShutdown().
+    // Persist the frames before handing off to gracefulShutdown().
     // gracefulShutdown() calls app.exit(0), which skips `before-quit` entirely,
-    // so the saveWindowSessions() call inside the before-quit handler never
+    // so the saveOpenWindowSessions() call inside the before-quit handler never
     // fires on this non-macOS last-window-close path. Without this explicit
     // save, window positions/state for the just-closed windows would be lost
     // on next launch. The debounced background saver (1s) is best-effort and
@@ -2102,7 +2112,7 @@ app.on('window-all-closed', async () => {
     } catch (err) {
       logger.error(
         // i18n-ignore (developer log message)
-        'Failed to save window sessions on window-all-closed',
+        'Failed to save window frames on window-all-closed',
         err instanceof Error ? err : new Error(String(err)),
       );
     }

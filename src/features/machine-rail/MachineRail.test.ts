@@ -48,7 +48,6 @@ function setState(rail: Partial<MachineRailState>) {
   mocks.state = {
     machineRail: {
       enabled: true,
-      homeId: 'local',
       machineIds: ['local', 'g1', 'b'],
       selectedId: 'local',
       shownId: 'local',
@@ -279,7 +278,7 @@ it('marks a machine whose daemon can be updated, except while it starts', () => 
   ).toEqual(['local']);
 });
 
-it("moves a machine with Alt+arrow keys, keeping the window's own machine first", async () => {
+it('moves any machine with Alt+arrow keys, into the first place too', async () => {
   setState({ machineIds: ['local', 'b', 'c', 'g1'] });
   mocks.state = {
     ...mocks.state,
@@ -293,7 +292,7 @@ it("moves a machine with Alt+arrow keys, keeping the window's own machine first"
     },
   };
   render(MachineRail);
-  const [local, , c] = railItems();
+  const [, , c] = railItems();
   c.focus();
   await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
   // The moved machine keeps keyboard focus, so it can be moved again.
@@ -307,10 +306,18 @@ it("moves a machine with Alt+arrow keys, keeping the window's own machine first"
     }),
   );
   mocks.dispatch.mockClear();
-  // The new order shows at once: `c` is now right below the window's own machine.
+  // The new order shows at once, and `c` can move above the local machine.
   expect(railItems().map((item) => item.dataset.machineId)).toEqual(['local', 'c', 'b', 'g1']);
   await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
-  await fireEvent.keyDown(local, { key: 'ArrowDown', altKey: true });
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      type: 'machineRail/reorderRequested',
+      payload: [['c', 'local', 'b', 'g1']],
+    }),
+  );
+  mocks.dispatch.mockClear();
+  // Already first: nowhere further up to go.
+  await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
   expect(mocks.dispatch).not.toHaveBeenCalledWith(
     expect.objectContaining({ type: 'machineRail/reorderRequested' }),
   );
@@ -324,24 +331,26 @@ it('offers guest hosts that are not in the rail in the add menu', async () => {
   expect(candidates.map((item) => item.dataset.machineId)).toEqual(['g2']);
 });
 
-it("lists every machine but the window's own for removal in the add menu, and removes the picked one", async () => {
+it('lists every machine for removal in the add menu, the local one included, and removes the picked one', async () => {
   render(MachineRail);
   await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
   await fireEvent.click(screen.getByTestId('machine-rail-add'));
   const removable = await screen.findAllByTestId('machine-rail-remove-item');
-  expect(removable.map((item) => item.dataset.machineId)).toEqual(['b', 'g1']);
+  expect(removable.map((item) => item.dataset.machineId)).toEqual(['local', 'b', 'g1']);
 
   await fireEvent.click(removable[0]);
   expect(mocks.dispatch).toHaveBeenCalledWith(
-    expect.objectContaining({ type: 'machineRail/removeRequested', payload: ['b'] }),
+    expect.objectContaining({ type: 'machineRail/removeRequested', payload: ['local'] }),
   );
 });
 
-it('offers nothing to remove when the rail holds only the window machine', async () => {
+it('offers the only machine for removal too (main then closes the window)', async () => {
   setState({ machineIds: ['local'] });
   render(MachineRail);
   await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
   await fireEvent.click(screen.getByTestId('machine-rail-add'));
   await screen.findByTestId('machine-rail-add-new');
-  expect(screen.queryAllByTestId('machine-rail-remove-item')).toEqual([]);
+  expect(
+    screen.getAllByTestId('machine-rail-remove-item').map((item) => item.dataset.machineId),
+  ).toEqual(['local']);
 });

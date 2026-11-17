@@ -5,6 +5,7 @@ import type { ConnectionRecord, ConnectionWorkflow } from '../connections/connec
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import { nextRailMachine } from '$shared/types/machine-rail';
 import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
+import { connectionShellTintColor } from '$lib/utils/connection-accents';
 
 export type MachineRailItemStatus = 'connected' | 'connecting' | 'disconnected';
 
@@ -15,8 +16,6 @@ export interface MachineRailItem {
   /** The host this window joined as a guest, when the item is one. */
   guest: GuestSessionRecord | null;
   selected: boolean;
-  /** The machine the window itself is bound to; it cannot be removed. */
-  home: boolean;
   /** The machine this renderer serves; its status menu opens from this item. */
   own: boolean;
   status: MachineRailItemStatus;
@@ -56,7 +55,7 @@ export const selectMachineRailEnabled = store.createSelector(
  * user's own machines first, then the hosts joined as a guest.
  */
 export const selectMachineRailItems = store.createSelector((state): MachineRailItem[] => {
-  const { machineIds, selectedId, homeId, pendingId, degradedIds } = state.machineRail;
+  const { machineIds, selectedId, pendingId, degradedIds } = state.machineRail;
   const own = state.connections.windowBackendId;
   const items = machineIds.map((id): MachineRailItem => {
     const record = getItem(state.connections.connections, id) ?? null;
@@ -80,7 +79,6 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
       // is drawn that way even while hidden: no stale selection or spinner
       // flashes when it comes on screen.
       selected: own ? id === own : id === selectedId,
-      home: id === homeId,
       own: id === own,
       status,
       // Dimmed until connected: a machine that cannot be reached can stay
@@ -139,29 +137,38 @@ export const selectIsRailMachineShown = store.createSelector((state): boolean =>
   return !enabled || selectedId === '' || selectedId === state.connections.windowBackendId;
 });
 
-/**
- * Whether this is the window's own renderer, which sits under every other
- * machine's and paints the shell background they all share.
- */
-export const selectIsRailHomeRenderer = store.createSelector((state): boolean => {
-  const { enabled, homeId } = state.machineRail;
-  return enabled && homeId !== '' && homeId === state.connections.windowBackendId;
-});
+/** What this renderer's machine paints under it as the frame's backdrop while it is shown. */
+export interface RailBackdropInputs {
+  enabled: boolean;
+  /** This machine's accent tint (`transparent` when it has none). */
+  tint: string;
+  /** Shell transparency is off: the backdrop is the opaque shell colour. */
+  opaque: boolean;
+  /** Changes whenever the theme does, so the colours are resolved again. */
+  theme: string;
+}
 
-/**
- * Whether the window's own renderer hides its page because another machine
- * is on screen; otherwise it would show through that machine's translucent
- * shell. Other machines' renderers never hide: main hides their views, and
- * one that is about to be shown must already have its page painted.
- */
-export const selectIsRailPageHidden = store.createSelector((state): boolean => {
-  const { enabled, homeId, selectedId, shownId } = state.machineRail;
-  const own = state.connections.windowBackendId;
-  return enabled && homeId === own && selectedId !== own && shownId !== own;
-});
+let lastBackdropInputs: RailBackdropInputs | null = null;
 
-/** The machine the window shows, for its accent tint. */
-export const selectRailSelectedRecord = store.createSelector(
-  (state): ConnectionRecord | null =>
-    getItem(state.connections.connections, state.machineRail.selectedId) ?? null,
-);
+/** {@link RailBackdropInputs}, the same object until one of them changes. */
+export const selectRailBackdropInputs = store.createSelector((state): RailBackdropInputs => {
+  const record = getItem(state.connections.connections, state.connections.windowBackendId);
+  const next: RailBackdropInputs = {
+    enabled: state.machineRail?.enabled ?? false,
+    tint: connectionShellTintColor(record?.accent, record?.isLocal ?? true),
+    opaque: !(state.userPreferences?.shellTransparencyEnabled ?? true),
+    theme: `${state.theme?.name}:${state.theme?.activePresetId}:${state.theme?.hasCustomTheme}`,
+  };
+  const last = lastBackdropInputs;
+  if (
+    last &&
+    last.enabled === next.enabled &&
+    last.tint === next.tint &&
+    last.opaque === next.opaque &&
+    last.theme === next.theme
+  ) {
+    return last;
+  }
+  lastBackdropInputs = next;
+  return next;
+});

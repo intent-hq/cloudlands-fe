@@ -11,20 +11,14 @@ export function handleMenuZoom(
   sendWorkspaceCommand: (channel: ZoomCommand) => void,
 ): void {
   const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (
-    !focusedWindow ||
-    focusedWindow.isDestroyed() ||
-    focusedWindow.webContents.isDestroyed() ||
-    hasFixedZoom(focusedWindow.webContents)
-  ) {
-    return;
-  }
+  if (!focusedWindow || focusedWindow.isDestroyed()) return;
+  const contents = getShownRendererWebContents(focusedWindow);
+  if (contents.isDestroyed() || hasFixedZoom(contents)) return;
   if (isFocusedWindowBrowserActive()) {
     sendWorkspaceCommand(command);
     return;
   }
 
-  const contents = getShownRendererWebContents(focusedWindow);
   contents.setZoomLevel(
     command === 'menu:reset-zoom'
       ? 0

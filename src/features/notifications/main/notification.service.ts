@@ -22,13 +22,15 @@
 
 import { app, BrowserWindow, Notification, screen } from 'electron';
 import { claimActivationFocus } from '../../../main/activation-focus-claim';
-import { isHudWindow } from '../../../main/hud-window';
 import {
-  getBackendIdForWebContents,
-  getBackendIdForWindow,
-  getShownRendererWebContents,
-} from '../../../main/window-backend';
-import { showRailMachine } from '../../../main/machine-rail-state';
+  framesByRecentFocus,
+  framesHolding,
+  isFrame,
+  rendererFor,
+  shownMachine,
+} from '../../../main/frames';
+import { isMachineRailEnabled } from '../../../main/machine-rail-state';
+import { getShownRendererWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -48,11 +50,14 @@ import {
 import {
   getFocusedWindowWorkspaceId,
   getRendererWebContentsForWorkspace,
-  getViewedWorkspaceIdForWindow,
-  getWindowIdsForWorkspace,
+  getViewedWorkspaceIdForRenderer,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { ANY_HOST, type WindowHostScope } from '../../system/main/window-workspace-tracking';
+import {
+  deliverNotificationNavigation,
+  type NotificationNavigation,
+} from '../../deeplink/main/pending-deep-links';
 
 const logger = new Logger('NotificationService');
 
@@ -150,53 +155,81 @@ interface NotificationContent {
   structured?: NotificationStructuredContent;
 }
 
-/** Resolve host scope from the renderer on screen, including rail children. */
-function getShownBackendId(window: BrowserWindow): string {
-  const contents = getShownRendererWebContents(window);
-  return contents === window.webContents
-    ? getBackendIdForWindow(window)
-    : getBackendIdForWebContents(contents);
+/** A live frame the user can be sent to (never a HUD, dock or console window). */
+function isTargetFrame(window: BrowserWindow): boolean {
+  return isFrame(window);
+}
+
+/** The focused window when it is a frame a notification may use, else null. */
+function focusedTargetFrame(): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && isTargetFrame(focused) ? focused : null;
 }
 
 /**
- * Pick the window a notification click should focus/navigate. Resolved at
- * CLICK time — a banner can sit in Notification Center while the user moves
- * the workspace between windows — in this order:
- *   1. a window actively viewing the workspace,
- *   2. a window holding the workspace in a background tab,
- *   3. the focused window,
- *   4. any window.
- * When `backendId` is given, only windows showing that daemon connection
- * qualify at every tier: a window on another host
- * must never be asked to open the workspace, and workspace ids are not unique
- * across hosts (the Assistant's virtual workspace id is the same constant on
- * every daemon), so the workspace lookup itself is scoped to that host.
- * Without `backendId` (test notifications) any window qualifies. The HUD pop-out is never a target (shared `isHudWindow`
- * helper). Returns undefined when no window qualifies.
+ * Pick the frame a notification click should focus. Resolved at CLICK time
+ * (a banner can sit in Notification Center while the user moves the workspace
+ * between frames). With `backendId`, only frames that hold that machine
+ * qualify, because the same machine can be in several frames and a frame
+ * without it cannot open its workspace. Workspace ids are only unique per
+ * machine (the Assistant id is the same on every daemon), so each frame is
+ * judged by its own renderer of that machine:
+ *   1. a frame whose view of the machine shows the workspace,
+ *   2. a frame whose view of the machine has the workspace open,
+ *   3. the focused frame,
+ *   4. the most recently focused frame.
+ * Without `backendId` (test notifications) any frame qualifies, the focused
+ * one first. Returns undefined when no frame qualifies.
  */
 function pickNotificationClickTarget(
   workspaceId: string | undefined,
   backendId: string | undefined,
 ): BrowserWindow | undefined {
-  const usable = (w: BrowserWindow): boolean =>
-    !w.isDestroyed() &&
-    !isHudWindow(w) &&
-    (backendId === undefined || getShownBackendId(w) === backendId);
+  const byRecency = framesByRecentFocus().filter(isTargetFrame);
+  if (backendId === undefined) return focusedTargetFrame() ?? byRecency[0];
 
+  const holding = framesHolding(backendId).filter(isTargetFrame);
+  if (holding.length === 0) return undefined;
   if (workspaceId) {
-    const workspaceWindows = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST)
-      .map((id) => BrowserWindow.fromId(id))
-      .filter((w): w is BrowserWindow => w !== null && usable(w));
-    const viewing = workspaceWindows.find(
-      (w) => getViewedWorkspaceIdForWindow(w.id) === workspaceId,
+    const views = holding.flatMap((frame) => {
+      const contents = rendererFor(frame, backendId);
+      return contents && !contents.isDestroyed() ? [{ frame, contents }] : [];
+    });
+    const viewing = views.find(
+      ({ contents }) => getViewedWorkspaceIdForRenderer(contents) === workspaceId,
     );
-    const holding = viewing ?? workspaceWindows[0];
-    if (holding) return holding;
+    if (viewing) return viewing.frame;
+    const open = new Set(getRendererWebContentsForWorkspace(workspaceId, backendId));
+    const having = views.find(({ contents }) => open.has(contents));
+    if (having) return having.frame;
   }
+  const focused = focusedTargetFrame();
+  if (focused && holding.includes(focused)) return focused;
+  return byRecency.find((frame) => holding.includes(frame)) ?? holding[0];
+}
 
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && usable(focused)) return focused;
-  return BrowserWindow.getAllWindows().find(usable);
+/**
+ * Select `machineId` in `frame`, which holds it but shows another machine,
+ * then deliver `navigation` to its renderer: pushed once it is on screen and
+ * ready, or queued for it to pull when it is on screen but did not start in
+ * time. Does nothing when the frame no longer holds the machine, when the
+ * user picked another machine before the selection landed, or when
+ * `isLive()` turns false (the machine's connection closed) meanwhile.
+ */
+async function selectMachineForClick(
+  frame: BrowserWindow,
+  machineId: string,
+  navigation: NotificationNavigation,
+  isLive: () => boolean = () => true,
+): Promise<void> {
+  const { selectMachineInFrame } = await import('../../../main/machine-rail');
+  const selected = selectMachineInFrame(frame, machineId);
+  if (!selected) return;
+  const { contents } = selected;
+  const ready = await selected.ready;
+  if (frame.isDestroyed() || contents.isDestroyed() || !isLive()) return;
+  if (getShownRendererWebContents(frame) !== contents) return;
+  deliverNotificationNavigation(contents, ready, navigation);
 }
 
 /**
@@ -654,20 +687,23 @@ export class NotificationService {
         backendId,
       );
 
-      // Viewing gate: while the focused window is VIEWING the event's own
-      // workspace, show neither an OS banner nor an in-app toast — the user is
-      // already looking at it, matching the attention/failure toasts. This
-      // holds whatever `soundOnlyWhenUnfocused` says: that preference governs
-      // only sound. The `notification:show` renderer event is ALWAYS sent so
-      // the renderer sound gate decides on its own.
-      // The focused window must be on the emitting host: workspace ids are
-      // only unique per host (the Assistant id is shared), so a local window
-      // viewing the local Assistant is not viewing a remote one.
+      // Viewing gate: while the focused frame SHOWS the event's machine and
+      // that machine's view is on the event's workspace, show neither an OS
+      // banner nor an in-app toast — the user is already looking at it,
+      // matching the attention/failure toasts. This holds whatever
+      // `soundOnlyWhenUnfocused` says: that preference governs only sound.
+      // The `notification:show` renderer event is ALWAYS sent so the
+      // renderer sound gate decides on its own.
+      // A frame can hold the machine without showing it, and workspace ids
+      // are only unique per machine (the Assistant id is shared), so a frame
+      // showing the local Assistant is not viewing a remote one.
       const focusedWindow = BrowserWindow.getFocusedWindow();
-      const focusedViewingWorkspace =
+      const focusedShowsMachine =
         focusedWindow !== null &&
-        getShownBackendId(focusedWindow) === backendId &&
-        getFocusedWindowWorkspaceId() === workspaceId;
+        !focusedWindow.isDestroyed() &&
+        shownMachine(focusedWindow) === backendId;
+      const focusedViewingWorkspace =
+        focusedShowsMachine && getFocusedWindowWorkspaceId() === workspaceId;
       if (focusedViewingWorkspace) {
         logger.debug('Focused window is viewing the workspace, sound only', {
           workspaceId,
@@ -685,15 +721,15 @@ export class NotificationService {
       // pop-out does NOT count as frontmost: the HUD renders no toast UI and
       // is never a notification target, so HUD-focused delivery stays on the
       // OS-banner path (whose click goes through the HUD-excluding picker).
-      // The focused window must also be on the emitting host: a toast is only
-      // useful in the window the user is looking at, and a window on another
-      // host cannot open this workspace. Otherwise the OS banner is shown
+      // The focused frame must also SHOW the event's machine: a toast is only
+      // useful in the view the user is looking at, and another machine's
+      // view cannot open this workspace. Otherwise the OS banner is shown
       // (visible even if, on macOS while frontmost, its click may not fire).
-      const appFrontmostOnHost =
-        focusedWindow !== null &&
-        !isHudWindow(focusedWindow) &&
-        getShownBackendId(focusedWindow) === backendId;
-      if (appFrontmostOnHost) {
+      const toastRenderer =
+        focusedShowsMachine && isFrame(focusedWindow)
+          ? getShownRendererWebContents(focusedWindow)
+          : null;
+      if (toastRenderer) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,
           agentName: event.data.agentName,
@@ -706,7 +742,7 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, toastRenderer);
         return;
       }
 
@@ -818,29 +854,30 @@ export class NotificationService {
   /**
    * Send the `notification:show` renderer event so the renderer can play the
    * notification sound. Sent regardless of window focus or banner suppression.
-   * `scope` is the emitting host (or `ANY_HOST` for test notifications).
-   * Delivered to that host's windows with the event's workspace open; when
-   * none exist it falls back to the focused (or any) non-HUD window on that
-   * host. `navigateTarget` is present only when the OS banner was skipped
-   * because the app was frontmost (electron#51885) — the renderer then shows
-   * a clickable in-app toast. When no window is connected to the emitting
-   * host at all, the sound still plays on the focused (or any) window but
-   * WITHOUT `navigateTarget`: a click there would navigate a window on
-   * another host, which cannot show this workspace.
+   * `scope` is the emitting machine (or `ANY_HOST` for test notifications).
+   * Delivered per renderer (a frame's own page or a machine view), to every
+   * renderer of that machine with the event's workspace open; when none
+   * exists it falls back to that machine's renderer in the focused frame,
+   * else in another frame holding the machine. `navigateTarget` is present
+   * only when the OS banner was skipped because the app was frontmost
+   * (electron#51885) — the renderer then shows a clickable in-app toast. When
+   * no renderer of the machine is live at all, the sound still plays in the
+   * focused (or any) frame but WITHOUT `navigateTarget`: a click there would
+   * navigate another machine's view, which cannot show this workspace.
    *
-   * `toastWindow` (the focused on-host window, frontmost gate only) is the
-   * one window that receives `navigateTarget`, so the toast appears where the
-   * user is looking — not in background windows that merely have the
-   * workspace open or host it offscreen. Those still get the sound-only
-   * payload on each hosting renderer: a machine view the window does not
-   * show gets it on the view, not on the window's own (other-host) renderer.
+   * `toastRenderer` (the focused frame's view of the machine, frontmost gate
+   * only) is the one renderer that receives `navigateTarget`, so the toast
+   * appears where the user is looking — not in background renderers that
+   * merely have the workspace open or host it offscreen. Those still get the
+   * sound-only payload, each on its own renderer (a machine view the frame
+   * does not show included).
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
-    toastWindow?: BrowserWindow,
+    toastRenderer?: Electron.WebContents,
   ): void {
     const payload = {
       title: content.title,
@@ -849,49 +886,40 @@ export class NotificationService {
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
     };
-    if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
-      const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
-      const toastContents = getShownRendererWebContents(toastWindow);
-      if (!toastContents.isDestroyed()) {
-        toastContents.send('notification:show', payload);
-      }
-      // Per hosting renderer: a hidden machine view hosting the workspace gets
-      // the sound itself, not its window's own renderer (another host).
+    const { navigateTarget: _toastOnly, ...soundOnly } = payload;
+    const send = (contents: Electron.WebContents | null | undefined, data: unknown): boolean => {
+      if (!contents || contents.isDestroyed()) return false;
+      contents.send('notification:show', data);
+      return true;
+    };
+    if (navigateTarget && toastRenderer && !toastRenderer.isDestroyed()) {
+      send(toastRenderer, payload);
       for (const contents of workspaceId
         ? getRendererWebContentsForWorkspace(workspaceId, scope)
         : []) {
-        if (contents === toastContents || contents.isDestroyed()) continue;
-        contents.send('notification:show', soundOnlyPayload);
+        if (contents !== toastRenderer) send(contents, soundOnly);
       }
       return;
     }
-    if (workspaceId && getWindowIdsForWorkspace(workspaceId, scope).length > 0) {
+    if (workspaceId && getRendererWebContentsForWorkspace(workspaceId, scope).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload, scope);
       return;
     }
-    const send = (window: BrowserWindow | null | undefined, data: unknown): void => {
-      if (window && !window.isDestroyed()) {
-        const contents = getShownRendererWebContents(window);
-        if (!contents.isDestroyed()) contents.send('notification:show', data);
-      }
-    };
-    const onHost = (w: BrowserWindow): boolean =>
-      !w.isDestroyed() && !isHudWindow(w) && (scope === ANY_HOST || getShownBackendId(w) === scope);
-    const focused = BrowserWindow.getFocusedWindow();
-    const hostWindow =
-      focused && onHost(focused) ? focused : BrowserWindow.getAllWindows().find(onHost);
-    if (hostWindow) {
-      send(hostWindow, payload);
+    const focused = focusedTargetFrame();
+    if (scope === ANY_HOST) {
+      const frame = focused ?? framesByRecentFocus().find(isTargetFrame);
+      send(frame ? getShownRendererWebContents(frame) : null, payload);
       return;
     }
-    // No window is connected to the emitting host: keep the sound, drop the
+    const holding = framesHolding(scope).filter(isTargetFrame);
+    const ordered = focused && holding.includes(focused) ? [focused, ...holding] : holding;
+    for (const frame of ordered) {
+      if (send(rendererFor(frame, scope), payload)) return;
+    }
+    // No renderer of the emitting machine is live: keep the sound, drop the
     // click target (see the doc comment).
-    const { navigateTarget: _dropped, ...soundOnly } = payload;
-    const usable = (w: BrowserWindow): boolean => !w.isDestroyed() && !isHudWindow(w);
-    send(
-      focused && usable(focused) ? focused : BrowserWindow.getAllWindows().find(usable),
-      soundOnly,
-    );
+    const frame = focused ?? framesByRecentFocus().find(isTargetFrame);
+    send(frame ? getShownRendererWebContents(frame) : null, soundOnly);
   }
 
   /**
@@ -960,18 +988,13 @@ export class NotificationService {
         // closed host: just bring Intent forward on any regular window.
         const hostLive = backendId === undefined || this.clientFor(backendId) !== undefined;
 
-        // Resolve the target NOW, not when the banner appeared: windows may
+        // Resolve the target NOW, not when the banner appeared: frames may
         // have closed, navigated to /hud, or moved the workspace while the
         // notification sat in Notification Center. The picker never returns
-        // the HUD or a window on another backend.
-        const shownTarget = hostLive
+        // the HUD or a frame that does not hold the emitting machine.
+        const target = hostLive
           ? pickNotificationClickTarget(workspaceId, backendId)
           : pickNotificationClickTarget(undefined, undefined);
-        // A rail can own this backend without currently showing it. Select
-        // it before routing, and wait for a cold renderer's listeners.
-        const rail =
-          !shownTarget && hostLive && backendId !== undefined ? showRailMachine(backendId) : null;
-        const target = shownTarget ?? rail?.window;
 
         if (!target) {
           if (!hostLive) {
@@ -981,11 +1004,12 @@ export class NotificationService {
             });
             return;
           }
-          // No suitable window is live (e.g. only the HUD pop-out, no window
-          // on the emitting host, or no windows at all): open a fresh app
-          // window on that backend, directly on the workspace route (no IPC
-          // race against a still-loading renderer).
-          this.openWindowForNotificationClick(workspaceId, backendId);
+          // No frame holds the emitting machine (e.g. only the HUD pop-out,
+          // or no frames at all): with the machine rail on, add the machine
+          // to the most recently focused frame; otherwise open a fresh frame
+          // on that machine, directly on the workspace route (no IPC race
+          // against a still-loading renderer).
+          this.openMachineForNotificationClick(workspaceId, backendId, agentId);
           return;
         }
 
@@ -1005,38 +1029,37 @@ export class NotificationService {
           });
           return;
         }
-        if (workspaceId) {
-          // Chief completions route to the sidebar Assistant panel (the
-          // chief workspace page is hidden); everything else keeps the
-          // bare `{ workspaceId }` payload.
-          const payload =
-            workspaceId === CHIEF_WORKSPACE_ID
-              ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
-              : { workspaceId };
-          const contents = rail?.contents ?? getShownRendererWebContents(target);
-          const navigate = (): void => {
-            if (
-              target.isDestroyed() ||
-              contents.isDestroyed() ||
-              getShownRendererWebContents(target) !== contents ||
-              (backendId !== undefined && this.clientFor(backendId) === undefined)
-            ) {
-              return;
-            }
+        if (!workspaceId) return;
+        // Chief completions route to the sidebar Assistant panel (the chief
+        // workspace page is hidden); everything else keeps the bare
+        // `{ workspaceId }` payload.
+        const payload =
+          workspaceId === CHIEF_WORKSPACE_ID
+            ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
+            : { workspaceId };
+        const navigate = (contents: Electron.WebContents | null): void => {
+          if (contents && !contents.isDestroyed()) {
             contents.send('notification:navigate', payload);
-          };
-          if (rail) {
-            void rail.ready
-              .then((ready) => {
-                if (ready) navigate();
-              })
-              .catch((error: unknown) => {
-                logger.warn('Notification target renderer failed to start', { error });
-              });
-          } else {
-            navigate();
           }
+        };
+        if (backendId === undefined) {
+          navigate(getShownRendererWebContents(target));
+          return;
         }
+        // A frame already showing the machine navigates its view at once;
+        // otherwise select the machine first, then navigate once it is ready.
+        if (shownMachine(target) === backendId) {
+          navigate(rendererFor(target, backendId));
+          return;
+        }
+        void selectMachineForClick(
+          target,
+          backendId,
+          payload,
+          () => this.clientFor(backendId) !== undefined,
+        ).catch((error: unknown) => {
+          logger.error('Failed to show the machine for a notification click', error as Error);
+        });
       });
 
       notification.on('close', () => {
@@ -1068,6 +1091,56 @@ export class NotificationService {
     } catch (error) {
       logger.error('Failed to show notification', error as Error);
     }
+  }
+
+  /**
+   * Notification-click fallback when no frame holds the emitting machine.
+   * With the machine rail on, the machine joins the most recently focused
+   * frame, opening the workspace in its view; a frame that cannot take it (a
+   * full rail, or this app's own daemon) leaves it to a new frame, as with
+   * the rail off.
+   */
+  private openMachineForNotificationClick(
+    workspaceId?: string,
+    backendId: string = LOCAL_CONNECTION_ID,
+    agentId?: string,
+  ): void {
+    const frame = isMachineRailEnabled() ? framesByRecentFocus().find(isTargetFrame) : undefined;
+    if (!frame) {
+      this.openWindowForNotificationClick(workspaceId, backendId);
+      return;
+    }
+    void (async () => {
+      try {
+        const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
+        // The Assistant has no workspace page to open: once the machine is
+        // ready its view opens the Assistant panel instead.
+        const isChief = workspaceId === CHIEF_WORKSPACE_ID;
+        const route = isChief ? undefined : workspaceId;
+        if (await openInvitedMachineInWindow(frame, backendId, route)) {
+          claimActivationFocus(frame);
+          activateAppOnMac();
+          if (isChief) {
+            await selectMachineForClick(frame, backendId, {
+              workspaceId: CHIEF_WORKSPACE_ID,
+              chief: true,
+              ...(agentId ? { agentId } : {}),
+            });
+          }
+          logger.info('Notification click added the machine to the recent frame', {
+            workspaceId,
+            backendId,
+          });
+          return;
+        }
+      } catch (error) {
+        logger.warn('Could not add the machine to a frame for a notification click', {
+          backendId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      this.openWindowForNotificationClick(workspaceId, backendId);
+    })();
   }
 
   /**

@@ -52,7 +52,7 @@ test('device rail native release notes and menu zoom use the shown renderer', as
   const root = await mkdtemp(join(tmpdir(), 'intent-rail-routing-'));
   const evidence: Record<string, unknown> = {
     boundary:
-      'Real BrowserWindows, WebContentsViews, IPC transport, production window-backend, release-notes IPC/validation and menu-zoom. Synthetic documents/fetch, app-window enumeration and browser-panel-focus seam. Does not exercise product components, rail transitions, system IPC or native focus fanout.',
+      'Real BrowserWindows as frames (backdrop page plus one view per machine), WebContentsViews, IPC transport, production window-backend and frames registry, release-notes IPC/validation and menu-zoom. Synthetic documents/fetch, app-window enumeration and browser-panel-focus seam. Does not exercise product components, rail transitions, system IPC or native focus fanout.',
     phases: [],
   };
   const server = createServer((_req, response) => {
@@ -126,20 +126,25 @@ test('device rail native release notes and menu zoom use the shown renderer', as
         const api=require('./routing.cjs');
         api.setupReleaseNotesIPC();
         const preferences={nodeIntegration:true,contextIsolation:false,sandbox:false,backgroundThrottling:false};
-        const windows={},contents={};
+        // Each window is a frame: its own page is the backdrop (bound to no
+        // machine) and both of its machines are views inside it.
+        const windows={},contents={},views={},framePages={};
         for(const [home,child] of [['home','remote'],['peer','peerRemote']]){
           const window=new BrowserWindow({width:760,height:600,show:false,webPreferences:preferences});
-          windows[home]=window; contents[home]=window.webContents;
-          api.stampWindowWithBackend(window,home);
-          await window.loadURL(${JSON.stringify(url)}+'/'+home);
-          const view=new WebContentsView({webPreferences:preferences});
-          api.bindMachineViewToBackend(window,view.webContents,child);
-          window.contentView.addChildView(view); view.setBounds({x:0,y:0,width:760,height:600});
-          await view.webContents.loadURL(${JSON.stringify(url)}+'/'+child);
-          contents[child]=view.webContents; windows[child]=view;
-          api.setShownMachineView(window,view.webContents);
+          windows[home]=window; framePages[home]=window.webContents;
+          api.markFrameWindow(window);
+          await window.loadURL(${JSON.stringify(url)}+'/frame-'+home);
+          for(const id of [home,child]){
+            const view=new WebContentsView({webPreferences:preferences});
+            api.bindMachineViewToBackend(window,view.webContents,id);
+            window.contentView.addChildView(view); view.setBounds({x:0,y:0,width:760,height:600});
+            await view.webContents.loadURL(${JSON.stringify(url)}+'/'+id);
+            contents[id]=view.webContents; views[id]=view;
+          }
+          windows[child]=views[child];
+          api.setShownMachineView(window,views[child].webContents);
         }
-        globalThis.railFixture={api,windows,contents};
+        globalThis.railFixture={api,windows,contents,views,framePages};
         windows.home.show(); windows.home.focus(); contents.remote.focus();
       }).catch(error=>{globalThis.railStartupError=String(error.stack||error);});
     `,
@@ -220,8 +225,9 @@ test('device rail native release notes and menu zoom use the shown renderer', as
     // Switch through the production ownership helper. This does not claim rail transition coverage.
     await application.evaluate(() => {
       const { api, windows } = (globalThis as any).railFixture;
+      const { views } = (globalThis as any).railFixture;
       windows.remote.setVisible(false);
-      api.setShownMachineView(windows.home, null);
+      api.setShownMachineView(windows.home, views.home.webContents);
       api.sendShowReleaseNotes(windows.home, { notes: null });
     });
     await opens(['home']);
@@ -303,6 +309,17 @@ test('device rail native release notes and menu zoom use the shown renderer', as
       const after = await state(name);
       expect(after.identity).toBe(original[name].identity);
       expect(after.draft).toBe(original[name].draft);
+    }
+    // A frame page paints the backdrop only: no app message ever reaches it.
+    for (const frame of ['home', 'peer']) {
+      const events = await application.evaluate(
+        (_electron, frame) =>
+          (globalThis as any).railFixture.framePages[frame].executeJavaScript(
+            'window.readState().events',
+          ),
+        frame,
+      );
+      expect(events).toEqual([]);
     }
     evidence.result = 'passed';
   } finally {

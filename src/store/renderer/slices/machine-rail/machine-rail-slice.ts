@@ -16,7 +16,6 @@ export type MachineRailSliceState = MachineRailState;
 
 const initialState: MachineRailSliceState = {
   enabled: false,
-  homeId: '',
   machineIds: [],
   selectedId: '',
   shownId: '',
@@ -32,7 +31,7 @@ export const machineRailStateReceived = createAction<[state: MachineRailState]>(
 export const selectRailMachineRequested = createAction<[id: string]>('machineRail/selectRequested');
 export const addRailMachineRequested = createAction<[id: string]>('machineRail/addRequested');
 export const removeRailMachineRequested = createAction<[id: string]>('machineRail/removeRequested');
-/** A new rail order (home first), from a drag or the keyboard. */
+/** A new rail order, from a drag or the keyboard. */
 export const reorderRailMachinesRequested = createAction<[machineIds: string[]]>(
   'machineRail/reorderRequested',
 );
@@ -43,7 +42,6 @@ export const setMachineRailEnabledRequested = createAction<[enabled: boolean]>(
 export const machineRailReducer = createReducer<MachineRailSliceState>(initialState);
 machineRailReducer.with(machineRailStateReceived, (_state, { payload: [next] }) => ({
   enabled: next.enabled,
-  homeId: next.homeId,
   machineIds: [...next.machineIds],
   selectedId: next.selectedId,
   shownId: next.shownId,
