@@ -2,7 +2,7 @@
  * Renderer side of the quit-confirmation round-trip.
  *
  * The main process (`src/main/quit-confirmation.ts`) sends
- * `quit-confirmation:show` to the focused/main window instead of opening a
+ * `quit-confirmation:show` to the shown device in the focused/main window instead of opening a
  * native message box. This service (installed once in the app shell, so any
  * window can answer):
  *

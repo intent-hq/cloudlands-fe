@@ -18,6 +18,7 @@ const readable = <T>(value: T) => ({
 });
 
 const guestSession = writable<{ hostname: string | null; label: string } | null>(null);
+const railShown = writable(true);
 vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
   selectWindowGuestSession: () => guestSession,
 }));
@@ -54,6 +55,7 @@ vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/machine-rail/machine-rail-selectors', () => ({
   selectMachineRailEnabled: () => readable(false),
+  selectIsRailMachineShown: () => railShown,
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateBackFromSettings: vi.fn(),
@@ -71,6 +73,7 @@ describe('WindowTitleBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     guestSession.set(null);
+    railShown.set(true);
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -78,6 +81,19 @@ describe('WindowTitleBar', () => {
         disconnect() {}
       },
     );
+  });
+
+  it('holds hidden-device titles and publishes the latest title when the device returns', async () => {
+    railShown.set(false);
+    const view = render(WindowTitleBar, { workspaceId: 'ws-1' });
+    await tick();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await view.rerender({ workspaceId: 'ws-2' });
+    await tick();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    railShown.set(true);
+    await tick();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, { title: 'Two' });
   });
 
   it('does not issue unused line-stat reads on mount or workspace changes', async () => {

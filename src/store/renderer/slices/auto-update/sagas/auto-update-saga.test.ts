@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setShareStatistics: vi.fn(),
   download: vi.fn(),
   install: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock('$features/auto-update/auto-update.client', () => ({
   autoUpdateClient: {
@@ -15,6 +16,7 @@ vi.mock('$features/auto-update/auto-update.client', () => ({
     setShareStatistics: mocks.setShareStatistics,
     downloadUpdate: mocks.download,
     installUpdate: mocks.install,
+    dismissDownloadedToast: mocks.dismiss,
     onShowToast: (callback: () => void) => {
       mocks.callbacks.toast = callback;
       return mocks.disposers[0];
@@ -40,6 +42,7 @@ vi.mock('$features/auto-update/auto-update.client', () => ({
 
 import {
   downloadUpdate,
+  dismissDownloadedToast,
   initAutoUpdate,
   installUpdate,
   setCheckTimedOut,
@@ -496,5 +499,30 @@ describe('autoUpdateSaga', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('shared downloaded dismissal', () => {
+  it('sends user dismissal to main, while incoming state only mirrors the cooldown', async () => {
+    mocks.dismiss.mockResolvedValue(undefined);
+    mocks.getState.mockResolvedValue({
+      ...state('initial'),
+      status: 'downloaded',
+      downloadedToastDismissedAt: 10,
+    });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, autoUpdateSaga);
+    channel.put(initAutoUpdate());
+    await settle();
+    expect(dispatch).toHaveBeenCalledWith(
+      setUpdateState(expect.objectContaining({ downloadedToastDismissedAt: 10 })),
+    );
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    channel.put(dismissDownloadedToast(20));
+    await settle();
+    expect(mocks.dismiss).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
   });
 });

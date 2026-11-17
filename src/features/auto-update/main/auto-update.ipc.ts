@@ -77,6 +77,18 @@ export function setupAutoUpdateIPC(): void {
     ),
   );
 
+  ipcMain.handle(
+    AUTO_UPDATE_CHANNELS.DISMISS_DOWNLOADED_TOAST,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        autoUpdateService.dismissDownloadedToast();
+        return { success: true };
+      },
+      AUTO_UPDATE_CHANNELS.DISMISS_DOWNLOADED_TOAST,
+    ),
+  );
+
   // Install update (quit and install)
   ipcMain.handle(
     AUTO_UPDATE_CHANNELS.INSTALL,

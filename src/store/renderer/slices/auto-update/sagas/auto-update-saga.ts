@@ -7,6 +7,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { selectAutoUpdateStatus } from '../auto-update-selectors';
 import {
+  dismissDownloadedToast,
   downloadUpdate,
   initAutoUpdate,
   installUpdate,
@@ -65,6 +66,9 @@ function mapUpdateState(state: UpdateState): UpdateState {
     error: state.error,
     channel: state.channel,
     shareStatistics: state.shareStatistics,
+    ...(state.downloadedToastDismissedAt !== undefined
+      ? { downloadedToastDismissedAt: state.downloadedToastDismissedAt }
+      : {}),
   };
 }
 
@@ -206,7 +210,16 @@ function* handleShareStatisticsWrite(action: ReturnType<typeof setShareUpdateSta
   }
 }
 
+function* handleDownloadedDismissal() {
+  try {
+    yield* call([autoUpdateClient, autoUpdateClient.dismissDownloadedToast]);
+  } catch (error) {
+    logger.warn('Failed to share update notice dismissal', { error });
+  }
+}
+
 export function* autoUpdateSaga() {
+  yield* takeEvery(dismissDownloadedToast, handleDownloadedDismissal);
   yield* takeEvery(setShareUpdateStatistics, handleShareStatisticsWrite);
   yield* takeEvery(downloadUpdate, handleDownload);
   yield* takeEvery(installUpdate, handleInstall);

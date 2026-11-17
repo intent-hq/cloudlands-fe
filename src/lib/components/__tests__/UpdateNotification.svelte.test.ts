@@ -76,6 +76,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => storeHolder.getState?.() ?? {},
+    dedupeEmits: true,
     dispatch: (action: unknown) => storeHolder.onDispatch?.(action),
   });
 });
@@ -97,7 +98,19 @@ const DISMISS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 let autoUpdateState: AutoUpdateState;
 let dispatched: Array<{ type: string }>;
 
-storeHolder.getState = () => ({ autoUpdate: autoUpdateState });
+let shownId = 'local';
+let selectedId = 'local';
+storeHolder.getState = () => ({
+  autoUpdate: autoUpdateState,
+  machineRail: { enabled: true, selectedId, shownId },
+  connections: { windowBackendId: 'local' },
+});
+function showDevice(id: string, selected = id) {
+  shownId = id;
+  selectedId = selected;
+  (appStore as any).emitState();
+  flushSync();
+}
 storeHolder.onDispatch = (action) => {
   dispatched.push(action as { type: string });
   autoUpdateState = autoUpdateReducer(autoUpdateState, action as any);
@@ -131,6 +144,7 @@ describe('UpdateNotification downloaded-toast persistence', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     sonner.reset();
+    shownId = selectedId = 'local';
   });
 
   afterEach(() => {
@@ -274,5 +288,103 @@ describe('UpdateNotification downloaded-toast persistence', () => {
     expect(sonner.dismiss).toHaveBeenCalledTimes(1);
     expect(dispatchedTypes()).not.toContain(dismissDownloadedToast.type);
     expect(autoUpdateState.downloadedToastDismissedAt).toBeNull();
+  });
+});
+
+// Ownership is independent of status: switching must not depend on a new update event.
+describe('UpdateNotification device ownership', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sonner.reset();
+    shownId = selectedId = 'local';
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each(['downloading', 'downloaded'] as const)(
+    'restores unchanged %s on return without duplicate notices',
+    (status) => {
+      mount(downloadedState({ status }));
+      expect(sonner.toasts.size).toBe(1);
+      showDevice('remote');
+      expect(sonner.toasts.size).toBe(0);
+      expect(dispatchedTypes()).not.toContain(dismissDownloadedToast.type);
+      showDevice('local');
+      expect(sonner.toasts.size).toBe(1);
+      (appStore as any).emitState();
+      flushSync();
+      expect(sonner.toasts.size).toBe(1);
+    },
+  );
+
+  it('does not show hidden manual checks or completed downloads until shown', () => {
+    shownId = selectedId = 'remote';
+    mount(downloadedState({ status: 'idle' }));
+    (appStore as any).dispatch(showToastChecking());
+    flushSync();
+    expect(sonner.toasts.size).toBe(0);
+    (appStore as any).dispatch(setUpdateState(downloadedState() as any));
+    flushSync();
+    expect(sonner.toasts.size).toBe(0);
+    showDevice('local');
+    expect(sonner.toasts.size).toBe(1);
+  });
+
+  it('keeps ownership on the shown device while another device is still loading', () => {
+    mount(downloadedState());
+    showDevice('local', 'remote');
+    expect(sonner.toasts.size).toBe(1);
+    showDevice('remote');
+    expect(sonner.toasts.size).toBe(0);
+  });
+
+  it('mirrors dismissal from another device without re-showing unchanged downloaded state', () => {
+    mount(downloadedState());
+    (appStore as any).dispatch(
+      setUpdateState(downloadedState({ downloadedToastDismissedAt: Date.now() }) as any),
+    );
+    flushSync();
+    expect(sonner.toasts.size).toBe(0);
+    expect(dispatchedTypes()).not.toContain(dismissDownloadedToast.type);
+    showDevice('remote');
+    showDevice('local');
+    expect(sonner.toasts.size).toBe(0);
+  });
+
+  it('does not let a hidden terminal timer hide a later downloaded notice', () => {
+    mount(downloadedState({ status: 'error', error: 'offline', toastVisible: true }));
+    showDevice('remote');
+    vi.advanceTimersByTime(1000);
+    (appStore as any).dispatch(setUpdateState(downloadedState() as any));
+    flushSync();
+    showDevice('local');
+    vi.advanceTimersByTime(6000);
+    flushSync();
+    expect(sonner.toasts.size).toBe(1);
+    expect(autoUpdateState.toastVisible).toBe(true);
+  });
+
+  it('never recreates hidden notices when the cooldown expires', () => {
+    mount(downloadedState({ downloadedToastDismissedAt: Date.now() - DISMISS_COOLDOWN_MS + 1000 }));
+    showDevice('remote');
+    vi.advanceTimersByTime(1000);
+    flushSync();
+    expect(sonner.toasts.size).toBe(0);
+    showDevice('local');
+    expect(sonner.toasts.size).toBe(1);
+  });
+
+  it('ignores stale close and auto-dismiss callbacks after handing ownership away and back', () => {
+    mount(downloadedState());
+    const old = sonner.toasts.get(1);
+    sonner.deferDismiss = true;
+    showDevice('remote');
+    showDevice('local');
+    old.componentProps.onDismiss();
+    old.componentProps.onAutoDismiss();
+    sonner.flushDismissals();
+    flushSync();
+    expect(sonner.toasts.size).toBe(1);
+    expect(autoUpdateState.downloadedToastDismissedAt).toBeNull();
+    expect(autoUpdateState.toastVisible).toBe(true);
   });
 });

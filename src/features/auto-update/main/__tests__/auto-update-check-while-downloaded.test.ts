@@ -358,3 +358,37 @@ describe('feed rollback while an update is downloaded', () => {
     expect(updater.autoInstallOnAppQuit).toBe(true);
   });
 });
+
+describe('app-wide downloaded notice cooldown', () => {
+  it('broadcasts a main-owned dismissal and includes it in later state reads', async () => {
+    const { service, mockWindow } = await setupService();
+    landDownloaded('3.0.0');
+    mockWindow.webContents.send.mockClear();
+    service.dismissDownloadedToast();
+    expect(service.getState().downloadedToastDismissedAt).toBe(Date.now());
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith(
+      'auto-update:status-changed',
+      expect.objectContaining({ downloadedToastDismissedAt: Date.now() }),
+    );
+  });
+
+  it('clears dismissal for manual checks and newer artifacts but keeps same-artifact automatic checks dismissed', async () => {
+    const { service, checkMock } = await setupService();
+    landDownloaded('3.0.0');
+    service.dismissDownloadedToast();
+    updaterHandlers['update-available']({ version: '3.0.0' });
+    expect(service.getState().downloadedToastDismissedAt).toBe(Date.now());
+    feedResolvesTo(checkMock, '3.0.0');
+    await service.checkForUpdatesManual();
+    expect(service.getState().downloadedToastDismissedAt).toBeNull();
+    service.dismissDownloadedToast();
+    updaterHandlers['update-available']({ version: '4.0.0' });
+    expect(service.getState().downloadedToastDismissedAt).toBeNull();
+  });
+
+  it('does not record a delayed dismissal after leaving downloaded state', async () => {
+    const { service } = await setupService();
+    service.dismissDownloadedToast();
+    expect(service.getState().downloadedToastDismissedAt).toBeNull();
+  });
+});

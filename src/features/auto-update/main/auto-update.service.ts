@@ -109,6 +109,7 @@ class AutoUpdateService {
     error: null,
     channel: 'stable',
     shareStatistics: true,
+    downloadedToastDismissedAt: null,
   };
 
   private initialized = false;
@@ -637,6 +638,7 @@ class AutoUpdateService {
         this.maybeRunQueuedChannelSwitchRecheck('available');
         return;
       }
+      this.state.downloadedToastDismissedAt = null;
       this.state.updateInfo = {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -975,6 +977,7 @@ class AutoUpdateService {
    */
   async checkForUpdatesManual(trigger: UpdateCheckTrigger = 'manual'): Promise<UpdateState> {
     assertNormalAppOperation();
+    this.state.downloadedToastDismissedAt = null;
     // A 'downloaded' state does not early-return: a manual check must still
     // query the feed so a newer version can supersede the pending artifact.
     // A same-version answer keeps the 'downloaded' UI (no "up to date" toast,
@@ -1013,7 +1016,9 @@ class AutoUpdateService {
 
     logger.info('Manual update check initiated', { trigger });
     this.isManualCheck = true;
-    return this.checkForUpdates(trigger);
+    const state = await this.checkForUpdates(trigger);
+    this.sendToRenderer('auto-update:status-changed', this.state);
+    return state;
   }
 
   /**
@@ -1200,6 +1205,13 @@ class AutoUpdateService {
     } finally {
       this.isConfirmingInstall = false;
     }
+  }
+
+  /** A user dismissal belongs to the app, including renderers created later. */
+  dismissDownloadedToast(): void {
+    if (this.state.status !== 'downloaded') return;
+    this.state.downloadedToastDismissedAt = Date.now();
+    this.sendToRenderer('auto-update:status-changed', this.state);
   }
 
   getState(): UpdateState {

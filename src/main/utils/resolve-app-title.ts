@@ -1,6 +1,7 @@
 import { resolveDevInstance } from './resolve-dev-instance';
 import type { BrowserWindow } from 'electron';
 import { isIsolatedTestBuild } from '../isolated-test-profile';
+import { getShownRendererWebContents } from '../window-backend';
 
 /**
  * Build the window/app title.
@@ -29,6 +30,7 @@ export function decorateWindowTitle(title: string): string {
 export function registerWindowTitleListener(window: BrowserWindow): void {
   window.on('page-title-updated', (event, title) => {
     event.preventDefault();
+    if (getShownRendererWebContents(window) !== window.webContents) return;
     window.setTitle(decorateWindowTitle(title));
   });
 }

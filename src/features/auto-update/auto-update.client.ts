@@ -62,6 +62,16 @@ export const autoUpdateClient = {
     }
   },
 
+  /** Dismiss the downloaded notice across all app renderers. */
+  async dismissDownloadedToast(): Promise<void> {
+    const response = await invokeIpc<AutoUpdateResponse>(
+      AUTO_UPDATE_CHANNELS.DISMISS_DOWNLOADED_TOAST,
+    );
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Could not dismiss the update notice');
+    }
+  },
+
   /**
    * Get the current update state
    */

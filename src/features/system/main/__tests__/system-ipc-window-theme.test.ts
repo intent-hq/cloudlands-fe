@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 
 type Handler = (...args: unknown[]) => unknown;
 
@@ -43,6 +44,7 @@ import { getWindowBackgroundColor } from '../../../../shared/main/window-appeara
 import * as windowAppearance from '../../../../shared/main/window-appearance';
 import { registerDockAnnotationWindow } from '../../../../main/dock-annotation-identity';
 import { registerDesktopOverlayWindow } from '../../../../shared/main/desktop-overlay-window';
+import { bindMachineViewToBackend } from '../../../../main/window-backend';
 import type { BrowserWindow } from 'electron';
 
 function handlerFor(channel: string): Handler {
@@ -61,17 +63,35 @@ beforeEach(() => {
 });
 
 describe('WINDOW_CHANNELS.SET_THEME', () => {
+  it('applies native appearance changes requested by a child device', async () => {
+    const parent = { isDestroyed: () => false, once: vi.fn(), setBackgroundColor: vi.fn() };
+    const child = Object.assign(new EventEmitter(), { isDestroyed: () => false });
+    bindMachineViewToBackend(parent as never, child as never, 'theme-remote');
+    electronMocks.fromWebContents.mockReturnValue(null);
+    electronMocks.nativeTheme.shouldUseDarkColors = true;
+    expect(
+      await handlerFor(WINDOW_CHANNELS.SET_THEME)({ sender: child }, { theme: 'dark' }),
+    ).toEqual({ success: true });
+    expect(electronMocks.nativeTheme.themeSource).toBe('dark');
+    expect(parent.setBackgroundColor).toHaveBeenCalledWith(
+      getWindowBackgroundColor(true, process.platform),
+    );
+  });
+
   it.each([
     { theme: 'dark', isDark: true },
     { theme: 'light', isDark: false },
   ] as const)(
     'applies app $theme while the system uses the opposite appearance',
     async ({ theme, isDark }) => {
-      const window = { setBackgroundColor: vi.fn() };
+      const window = { isDestroyed: () => false, setBackgroundColor: vi.fn() };
       electronMocks.fromWebContents.mockReturnValue(window);
       electronMocks.nativeTheme.shouldUseDarkColors = isDark;
 
-      const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)({ sender: {} }, { theme });
+      const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)(
+        { sender: { isDestroyed: () => false } },
+        { theme },
+      );
 
       expect(electronMocks.nativeTheme.themeSource).toBe(theme);
       expect(window.setBackgroundColor).toHaveBeenCalledWith(
@@ -82,11 +102,14 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
   );
 
   it('uses the current system appearance in system mode', async () => {
-    const window = { setBackgroundColor: vi.fn() };
+    const window = { isDestroyed: () => false, setBackgroundColor: vi.fn() };
     electronMocks.fromWebContents.mockReturnValue(window);
     electronMocks.nativeTheme.shouldUseDarkColors = true;
 
-    const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)({ sender: {} }, { theme: 'system' });
+    const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)(
+      { sender: { isDestroyed: () => false } },
+      { theme: 'system' },
+    );
 
     expect(electronMocks.nativeTheme.themeSource).toBe('system');
     expect(window.setBackgroundColor).toHaveBeenCalledWith(

@@ -85,6 +85,17 @@ autoUpdateReducer.with(setUpdateState, (state, { payload: [updateState] }) => ({
   error: updateState.error,
   channel: updateState.channel,
   shareStatistics: updateState.shareStatistics,
+  ...(updateState.downloadedToastDismissedAt !== undefined
+    ? {
+        downloadedToastDismissedAt: updateState.downloadedToastDismissedAt,
+        // Only a new dismissal hides the notice. Repeated state broadcasts
+        // must preserve a reminder that has returned after the cooldown.
+        ...(updateState.downloadedToastDismissedAt !== null &&
+        updateState.downloadedToastDismissedAt !== state.downloadedToastDismissedAt
+          ? { toastVisible: false }
+          : {}),
+      }
+    : {}),
 }));
 autoUpdateReducer.with(setShareUpdateStatistics, (state, { payload: [enabled] }) => ({
   ...state,

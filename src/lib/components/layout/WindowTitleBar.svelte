@@ -52,7 +52,10 @@
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
+  import {
+    selectMachineRailEnabled,
+    selectIsRailMachineShown,
+  } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
@@ -71,6 +74,7 @@
   const onboardingActive$ = selectOnboardingActive();
   // Machine rail (Labs): the status menu moves to the machine's rail item.
   const machineRailEnabled$ = selectMachineRailEnabled();
+  const isMachineShown$ = selectIsRailMachineShown();
 
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
   let fixedControlsTrailingInset = $state(0);
@@ -154,6 +158,7 @@
 
   // Update the native window title when displayText changes
   $effect(() => {
+    if (!$isMachineShown$) return;
     const workspaceTitle = displayText || 'Intent';
     const title = $windowGuestSession$
       ? `${workspaceTitle} [${formatGuestSessionLabel($windowGuestSession$)}]`

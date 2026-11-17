@@ -201,7 +201,7 @@ describe('window close cleanup', () => {
     const window = {
       id: 42,
       isDestroyed: vi.fn(() => false),
-      webContents: { send: vi.fn(), on: vi.fn() },
+      webContents: { send: vi.fn(), on: vi.fn(), isDestroyed: () => false },
       on: vi.fn((event: string, cb: () => void) => {
         handlers[event] = cb;
       }),

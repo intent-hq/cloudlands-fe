@@ -1,4 +1,5 @@
 import { END, eventChannel, type EventChannel } from 'redux-saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import {
   call,
   fork,
@@ -22,6 +23,8 @@ import {
   showReleaseNotesSuccess,
   showReleaseNotesUnavailable,
 } from '../release-notes-slice';
+
+import { selectReleaseNotesRendererShown } from '../release-notes-selectors';
 
 const logger = createLogger('ReleaseNotesSaga');
 
@@ -61,14 +64,17 @@ function* fetchReleaseNotes(): SagaGenerator<void> {
 }
 
 /**
- * Read the startup notes main parked (kept until dismissed in any window).
- * The read does not clear them, so dedup per version here — the `show` push
- * may deliver the same notes.
+ * Main grants startup notes to one shown renderer. The push can overlap its
+ * one-shot pending claim, so dedup locally too. A close or manual open wins
+ * over a delayed claim response.
  */
 function* claimPending(surfaced: Set<string>): SagaGenerator<void> {
   try {
-    const notes = yield* call([releaseNotesClient, releaseNotesClient.claimPendingReleaseNotes]);
-    if (notes && !surfaced.has(notes.version)) {
+    const { notes, superseded } = yield* race({
+      notes: call([releaseNotesClient, releaseNotesClient.claimPendingReleaseNotes]),
+      superseded: take([dismissReleaseNotes, closeReleaseNotesModal, showReleaseNotes]),
+    });
+    if (!superseded && notes && !surfaced.has(notes.version)) {
       surfaced.add(notes.version);
       yield* put(showReleaseNotesSuccess(notes));
     }
@@ -128,9 +134,16 @@ export function* releaseNotesSaga(): SagaGenerator<void> {
   const channel = createReleaseNotesChannel();
   const closeChannel = createCloseChannel();
   yield* put(setInitialized());
-  yield* fork(claimPending, surfaced);
   yield* fork(watchShowEvents, channel, surfaced);
   yield* fork(watchCloseEvents, closeChannel);
   yield* takeEvery(dismissReleaseNotes, notifyDismiss);
   yield* takeLatest(showReleaseNotes, fetchReleaseNotes);
+  // Hidden renderers may mount first. Retry when main actually shows this
+  // machine, rather than when a switch is merely requested.
+  yield* takeLatestFromSelector(
+    selectReleaseNotesRendererShown,
+    function* ({ payload: shown }: SelectorChannelPayload<boolean>) {
+      if (shown) yield* call(claimPending, surfaced);
+    },
+  );
 }
