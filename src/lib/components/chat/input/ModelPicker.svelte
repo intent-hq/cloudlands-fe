@@ -746,8 +746,10 @@
       const entry = $providerCatalogs$[pid];
       if (!entry) continue;
       models[pid] = toDropdownOptions(entry.models);
-      // An orchestrator's own catalog is always empty: its machines' models stand in.
-      if (entry.models.length === 0 && $orchestratorBackend$)
+      // An orchestrator's own catalog is always empty: its machines' models
+      // stand in, but only for a picker not tied to one machine (a machine's
+      // picker lists that machine's models only).
+      if (entry.models.length === 0 && $orchestratorBackend$ && !remoteScoped)
         models[pid] = orchestratorCatalogModels($remoteMachines$, pid, now).map((value) => ({
           value,
           label: value,

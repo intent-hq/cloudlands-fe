@@ -1063,6 +1063,49 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(screen.getByRole('option', { name: /sonnet/ })).toBeTruthy();
     });
 
+    it("never lists another machine's models in a machine's own picker", async () => {
+      // On an orchestrator, an API-key Default on Mac mini whose list isn't in
+      // yet must not borrow the models another machine reports.
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [
+              { id: 'codex', status: 'ready', models: ['gpt-5'] },
+              { id: 'claude-code', status: 'signed-out', models: [], modelsStale: true },
+            ],
+          },
+        }),
+      );
+      withDefaultEnv([{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: '********' }]);
+      const remote = (mockRoleState.current as unknown as { remoteMachines: { machines: object } })
+        .remoteMachines;
+      remote.machines = {
+        ...remote.machines,
+        'node-other': machineRow({
+          id: 'node-other',
+          name: 'Other box',
+          capabilities: {
+            providers: [{ id: 'claude-code', status: 'signed-in', models: ['opus-elsewhere'] }],
+          },
+        }),
+      };
+      const principal = (mockRoleState.current as unknown as { principal: { snapshot: object } })
+        .principal;
+      principal.snapshot = { ...principal.snapshot, daemonMode: 'orchestrator' };
+      // An orchestrator offers its enabled providers; their catalogs are empty.
+      availableProviderOverride$.set(['auggie', 'codex', 'claude-code']);
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async () => ({
+        models: [],
+      }));
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
+      expect(
+        await screen.findByRole('option', { name: /Mac mini hasn't listed these models yet/ }),
+      ).toBeTruthy();
+      expect(screen.queryByRole('option', { name: /opus-elsewhere/ })).toBeNull();
+    });
+
     it("keeps a tab saying the machine hasn't listed a provider's models yet", async () => {
       // The machine's first report after joining: models not listed yet.
       withMachine(
