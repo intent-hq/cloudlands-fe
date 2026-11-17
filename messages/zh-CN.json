@@ -9104,8 +9104,6 @@
   "workspaceHome_moveDialog_cloudStartsSandbox": "启动一个新沙盒",
   "onboarding_agentMachines_none_title": "添加用于运行代理的计算机",
   "onboarding_agentMachines_none_description": "此 Intent 会把代理发送到其他计算机运行，自身不运行任何代理。请在设置 → 计算机中添加一台计算机，然后返回继续。",
-  "onboarding_agentMachines_onMachines_title": "代理在你的计算机上运行",
-  "onboarding_agentMachines_onMachines_description": "选择要使用的 AI 编程 CLI。每台计算机各自登录；在设置 → 计算机中可查看每台计算机能运行哪些 CLI。",
   "onboarding_agentMachines_openSettings_label": "打开设置 → 计算机",
   "onboarding_providerCard_onMachines_label": "在你的计算机上运行"
 }

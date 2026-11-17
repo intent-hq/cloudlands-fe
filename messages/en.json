@@ -9104,8 +9104,6 @@
   "workspaceHome_moveDialog_cloudStartsSandbox": "Starts a new sandbox",
   "onboarding_agentMachines_none_title": "Add a machine to run agents",
   "onboarding_agentMachines_none_description": "This Intent sends agents to other machines and runs none itself. Add a machine in Settings → Machines, then come back to continue.",
-  "onboarding_agentMachines_onMachines_title": "Agents run on your machines",
-  "onboarding_agentMachines_onMachines_description": "Pick the AI coding CLI to use. Each machine signs in to it; Settings → Machines shows which ones a machine can run.",
   "onboarding_agentMachines_openSettings_label": "Open Settings → Machines",
   "onboarding_providerCard_onMachines_label": "Runs on your machines"
 }

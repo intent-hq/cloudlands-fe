@@ -30,22 +30,8 @@ describe('OnboardingAgentMachinesNotice', () => {
     expect(mocks.goto).toHaveBeenCalledWith('/settings?tab=devices#devices');
   });
 
-  it('explains where agents run once a machine is set up', () => {
-    const { container } = render(OnboardingAgentMachinesNotice, {
-      props: { machines: 'machines' },
-    });
-    expect(container.textContent).toContain('Agents run on your machines');
-    expect(openButton(container)).toBeUndefined();
-  });
-
-  it('keeps the link when the machine list could not be read', () => {
-    const { container } = render(OnboardingAgentMachinesNotice, { props: { machines: 'unknown' } });
-    expect(container.textContent).toContain('Agents run on your machines');
-    expect(openButton(container)).toBeTruthy();
-  });
-
-  it('renders nothing on a Full daemon', () => {
-    const { container } = render(OnboardingAgentMachinesNotice, { props: { machines: 'backend' } });
+  it.each(['machines', 'unknown', 'backend'] as const)('renders nothing for %s', (machines) => {
+    const { container } = render(OnboardingAgentMachinesNotice, { props: { machines } });
     expect(container.textContent?.trim()).toBe('');
   });
 });
