@@ -83,7 +83,7 @@ function fakeCdpWebview(
   cdpResponses: Record<string, unknown | 'hang' | Error>,
   capturePageImage: { width: number; height: number } | 'hang' = { width: 320, height: 240 },
 ) {
-  const sendCommand = vi.fn((method: string) => {
+  const sendCommand = vi.fn((method: string, _params?: Record<string, unknown>) => {
     const response = cdpResponses[method];
     if (response === 'hang') return new Promise(() => {});
     if (response instanceof Error) return Promise.reject(response);
@@ -562,6 +562,68 @@ describe('findModelTabByRequestedUrl (#2787, per-agent #2857)', () => {
     await expect(
       service.findModelTabByRequestedUrl(REQUESTED, 'agent-1', 'ws-1'),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('trusted input (intent#9266)', () => {
+  const inputCalls = (wc: ReturnType<typeof fakeCdpWebview>) =>
+    wc.debugger.sendCommand.mock.calls.filter(([method]) => String(method).startsWith('Input.'));
+
+  it('sends no input once the request deadline has passed', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(70, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-input', 70);
+    wc.debugger.sendCommand.mockClear();
+
+    await expect(
+      service.input('tab-input', { action: 'type', text: 'abc' }, { deadline: Date.now() - 1 }),
+    ).rejects.toMatchObject({ errorCode: 'deadline-exhausted' });
+    expect(inputCalls(wc)).toEqual([]);
+  });
+
+  it('bounds a mouse release that the guest never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      const wc = fakeCdpWebview(72, {});
+      wc.debugger.sendCommand.mockImplementation((_method, params) =>
+        params?.type === 'mouseReleased' ? new Promise(() => {}) : Promise.resolve({}),
+      );
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-hung', 72);
+
+      const click = service.input('tab-hung', { action: 'click', x: 1, y: 1 });
+      const outcome = expect(click).rejects.toThrow(/mouseReleased|timed out/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('scales pointer coordinates on a tab drawn scaled to fit its panel', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(71, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-scaled', 71);
+    service.setTabOwner('tab-scaled', 'agent-1');
+    service.setTabViewport('tab-scaled', { mode: 'custom', width: 1280, height: 800 });
+    service.reportTabViewBounds('tab-scaled', 640, 400);
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ scale: 0.5 }),
+      );
+    });
+
+    await service.input('tab-scaled', { action: 'click', x: 100, y: 40 });
+
+    expect(inputCalls(wc).map(([, params]) => [params?.x, params?.y])).toEqual([
+      [50, 20],
+      [50, 20],
+      [50, 20],
+    ]);
   });
 });
 

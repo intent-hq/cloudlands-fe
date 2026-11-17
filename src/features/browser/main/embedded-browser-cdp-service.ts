@@ -26,6 +26,7 @@ import {
 // owning backend id through would let these sends target one host.
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
+import { runInputAction, type InputAction } from './browser-input';
 
 const logger = new Logger('EmbeddedBrowserCdp');
 /** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
@@ -66,6 +67,9 @@ const TAB_REGISTRATION_TIMEOUT_MS = 15_000;
  * until the caller's budget kills it (intent-hq/monorepo#3154).
  */
 const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
+
+/** Cap for the mouse-release cleanup of an input action (intent#9266). */
+const INPUT_RELEASE_TIMEOUT_MS = 2_000;
 
 /**
  * How long (ms) to wait for the webContents.capturePage() fallback. On a
@@ -2620,16 +2624,7 @@ class EmbeddedBrowserCdpService {
     expression: string,
     options: CaptureOptions = {},
   ): Promise<unknown> {
-    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
-
-    if (webContentsId === undefined) {
-      throw new Error(
-        tabId
-          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
-          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
-      );
-    }
-
+    const webContentsId = this.resolveActionTarget(tabId);
     const result = (await this.withDeadline(
       this.sendCommand(webContentsId, 'Runtime.evaluate', {
         expression,
@@ -2640,6 +2635,65 @@ class EmbeddedBrowserCdpService {
     )) as { result: { value: unknown } };
 
     return result.result.value;
+  }
+
+  /**
+   * Trusted click / hover / type / press / selectOption through the CDP
+   * Input domain (intent#9266). Each command is bounded by the remaining
+   * request budget.
+   */
+  async input(
+    tabId: string | undefined,
+    action: InputAction,
+    options: CaptureOptions = {},
+  ): Promise<unknown> {
+    const webContentsId = this.resolveActionTarget(tabId);
+    // Same rule as the screenshot clip: only an applied override draws scaled.
+    const scale =
+      tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
+        ? this.resolveEmulationGeometry(tabId).scale
+        : 1;
+    const { deadline } = options;
+    return runInputAction(
+      async (method, params) => {
+        // Releasing a pressed button is cleanup, never new input: it ignores
+        // the deadline so an expired request cannot leave the button held,
+        // but has its own cap so an unresponsive guest cannot hang the action.
+        if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseReleased') {
+          return this.withStageTimeout(
+            this.sendCommand(webContentsId, method, params),
+            // i18n-ignore (CDP method label in an agent-facing diagnostic)
+            'Input.dispatchMouseEvent mouseReleased',
+            { timeoutMs: INPUT_RELEASE_TIMEOUT_MS, deadlineBound: false },
+          );
+        }
+        await this.withDeadline(this.attachDebugger(webContentsId), method, deadline);
+        // Checked after attaching, so an expired request injects nothing new.
+        if (deadline !== undefined && Date.now() >= deadline) {
+          throw new CaptureStageError(
+            `Request deadline exhausted before ${method}`, // i18n-ignore (agent-facing protocol error, not user-facing)
+            'deadline-exhausted',
+            method,
+          );
+        }
+        return this.withDeadline(this.sendCommand(webContentsId, method, params), method, deadline);
+      },
+      action,
+      process.platform,
+      scale,
+    );
+  }
+
+  private resolveActionTarget(tabId: string | undefined): number {
+    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
+    if (webContentsId === undefined) {
+      throw new Error(
+        tabId
+          ? `Tab ${tabId} is not mounted. If it exists (check { action: "listTabs" }), { action: "focusTab", tabId: "${tabId}" } will remount it; if focusTab also fails, no tab with this id exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
+      );
+    }
+    return webContentsId;
   }
 }
 

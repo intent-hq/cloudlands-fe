@@ -2044,6 +2044,29 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         verb = m.chat_toolClassifier_get_label();
         subject = 'session summary';
         break;
+      case 'click':
+      case 'hover': {
+        verb =
+          actionType === 'click'
+            ? m.chat_toolClassifier_click_label()
+            : m.chat_toolClassifier_hover_label();
+        subject = primaryAction.selector
+          ? truncate(safeStr(primaryAction.selector), 40)
+          : `${primaryAction.x}, ${primaryAction.y}`;
+        break;
+      }
+      case 'type':
+        verb = m.chat_toolClassifier_type_label();
+        subject = truncate(safeStr(primaryAction.text), 30);
+        break;
+      case 'press':
+        verb = m.chat_toolClassifier_press_label();
+        subject = [...(primaryAction.modifiers ?? []), primaryAction.key].join('+');
+        break;
+      case 'selectOption':
+        verb = m.chat_toolClassifier_select_label();
+        subject = truncate([primaryAction.value].flat().map(safeStr).join(', '), 30);
+        break;
       default:
         verb = m.chat_toolClassifier_browser_label();
         subject = actionType ? safeStr(actionType) : null;
