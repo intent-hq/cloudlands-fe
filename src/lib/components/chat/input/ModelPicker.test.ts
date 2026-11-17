@@ -1032,6 +1032,85 @@ describe('ModelPicker guest / collaborator lock', () => {
       );
     });
 
+    it("lists the machines' models on an orchestrator, whose own catalog is empty", async () => {
+      // Settings default model on intent-cache: no machine scope, and the
+      // orchestrator answers models.list with nothing.
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [{ id: 'claude-code', status: 'signed-in', models: ['opus', 'sonnet'] }],
+          },
+        }),
+      );
+      const principal = (mockRoleState.current as unknown as { principal: { snapshot: object } })
+        .principal;
+      principal.snapshot = { ...principal.snapshot, daemonMode: 'orchestrator' };
+      availableProviderOverride$.set(['claude-code']);
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async () => ({
+        models: [],
+      }));
+      render(ModelPicker, {
+        props: {
+          selectedModel: null,
+          providerId: 'claude-code',
+          showDefaultOption: false,
+          updateGlobalStore: false,
+          updateGlobalDefault: false,
+        },
+      });
+      await fireEvent.click(screen.getByRole('button'));
+      expect(await screen.findByRole('option', { name: /opus/ })).toBeTruthy();
+      expect(screen.getByRole('option', { name: /sonnet/ })).toBeTruthy();
+    });
+
+    it("keeps a tab saying the machine hasn't listed a provider's models yet", async () => {
+      // The machine's first report after joining: models not listed yet.
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [
+              { id: 'codex', status: 'unknown', models: [], modelsStale: true },
+              { id: 'claude-code', status: 'ready', models: ['opus'] },
+            ],
+          },
+        }),
+      );
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      // The agent's own provider (Codex) is the open tab.
+      const pending = await screen.findByRole('option', {
+        name: /Mac mini hasn't listed these models yet/,
+      });
+      expect(pending.hasAttribute('data-disabled')).toBe(true);
+      expect(screen.queryByTestId('model-picker-remote-empty')).toBeNull();
+    });
+
+    it('explains a report with nothing this agent can use, and asks again', async () => {
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [
+              { id: 'codex', status: 'cli-missing', models: [] },
+              { id: 'claude-code', status: 'cli-missing', models: [] },
+            ],
+          },
+        }),
+      );
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+
+      const empty = await screen.findByTestId('model-picker-remote-empty');
+      expect(empty.textContent).toContain('Nothing to choose on Mac mini');
+      expect(empty.textContent).not.toContain('No models available');
+      await fireEvent.click(within(empty).getByRole('button', { name: /Check again/ }));
+      expect(mockSvelteDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'remoteMachines/machineRefreshRequested',
+          payload: ['node-mac'],
+        }),
+      );
+    });
+
     const CLOUD_SESSION = {
       ...REMOTE_SESSION,
       nodeName: 'Personal E2B',

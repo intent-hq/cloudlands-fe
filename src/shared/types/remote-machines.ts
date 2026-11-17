@@ -34,6 +34,12 @@ interface RemoteMachineProvider {
   visible?: false;
   status: string;
   models: string[];
+  /**
+   * Present only when true: the list is not the machine's real one yet (its
+   * cheap first report, before model listing lands) or a cached one it could
+   * not refresh.
+   */
+  modelsStale?: true;
 }
 
 interface RemoteMachineCapabilities {
@@ -163,6 +169,7 @@ function parseCapabilities(value: unknown): RemoteMachineCapabilities | undefine
                 models: Array.isArray(provider.models)
                   ? provider.models.filter((model): model is string => text(model))
                   : [],
+                ...(provider.modelsStale === true ? { modelsStale: true as const } : {}),
               },
             ]
           : [],

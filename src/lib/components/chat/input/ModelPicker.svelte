@@ -2,7 +2,10 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
-  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectCanAdministerHost,
+    selectIsOrchestratorBackend,
+  } from '$store/renderer/slices/principal/principal-selectors';
   const canAdministerHost$ = selectCanAdministerHost();
   import { onDestroy, onMount, untrack } from 'svelte';
   import { writable, derived } from 'svelte/store';
@@ -158,6 +161,7 @@
   import {
     selectDefaultHasOverrides,
     selectRemoteMachine,
+    selectRemoteMachines,
     selectRemoteMachineOperations,
     selectRemoteMachinesVisible,
     selectRemoteModelSwitchSupport,
@@ -170,6 +174,7 @@
     isRemoteRefSignedOut,
     remoteAutoPickProfile,
     machineReportFreshness,
+    orchestratorCatalogModels,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
   import {
@@ -665,6 +670,13 @@
         description: m.chat_modelPicker_cloudWaiting_description(),
       };
     const machine = remoteLocation?.name ?? '';
+    // A report that offers nothing this agent can use (every provider signed
+    // out or not installed there).
+    if (remoteFreshness !== 'missing')
+      return {
+        title: m.chat_modelPicker_remoteEmpty_title({ machine }),
+        description: m.chat_modelPicker_remoteEmpty_description({ machine }),
+      };
     return {
       title: m.chat_modelPicker_remoteMissing_title({ machine }),
       description: m.chat_modelPicker_remoteMissing_description({ machine }),
@@ -725,11 +737,21 @@
   const catalogProviderIds = $derived(
     $modelFetchProviderIds$.filter((id) => canUseProviderModels(id)).map(normalizeProviderId),
   );
+  const orchestratorBackend$ = selectIsOrchestratorBackend();
+  const remoteMachines$ = selectRemoteMachines();
   const allProviderModels = $derived.by(() => {
     const models: Record<string, DropdownOption[]> = {};
+    const now = Date.now();
     for (const pid of catalogProviderIds) {
       const entry = $providerCatalogs$[pid];
-      if (entry) models[pid] = toDropdownOptions(entry.models);
+      if (!entry) continue;
+      models[pid] = toDropdownOptions(entry.models);
+      // An orchestrator's own catalog is always empty: its machines' models stand in.
+      if (entry.models.length === 0 && $orchestratorBackend$)
+        models[pid] = orchestratorCatalogModels($remoteMachines$, pid, now).map((value) => ({
+          value,
+          label: value,
+        }));
     }
     return models;
   });
@@ -3170,10 +3192,18 @@
     {#snippet item({ option, selected }: DropdownItemProps)}
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
+      {@const machineModelsPending = option.data?.machineModelsPending as boolean | undefined}
 
       <div class={cn('flex items-center w-full min-w-0', rowLabel ? 'gap-2' : 'gap-2.5 py-1')}>
         {#if providerLoading}
           <span class={cn('text-muted-foreground', !rowLabel && 'text-sm')}>{option.label}</span>
+        {:else if machineModelsPending}
+          <div class="min-w-0 flex-1 whitespace-normal" data-testid="model-picker-remote-pending">
+            <span class={cn('block text-muted-foreground', !rowLabel && 'text-sm')}>
+              {option.label}
+            </span>
+            <span class="mt-0.5 block text-xs text-subtle">{option.description}</span>
+          </div>
         {:else if providerLoadError}
           <ModelProviderErrorItem
             providerId={providerLoadError.providerId}
@@ -3210,11 +3240,13 @@
     {/snippet}
 
     {#snippet empty()}
-      {#if remoteScoped && remoteLocation && remoteFreshness === 'missing'}
+      {#if remoteScoped && remoteLocation && (remoteFreshness === 'missing' || !remoteLocation.cloud)}
         <div
           class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-6 text-center"
           role="status"
-          data-testid="model-picker-remote-missing"
+          data-testid={remoteFreshness === 'missing'
+            ? 'model-picker-remote-missing'
+            : 'model-picker-remote-empty'}
         >
           <Fa icon={faCircleInfo} class="size-4! text-muted-foreground" />
           <div class="text-sm font-medium text-foreground">

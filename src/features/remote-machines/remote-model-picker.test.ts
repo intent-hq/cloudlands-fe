@@ -7,6 +7,7 @@ import {
   machineReportFreshness,
   machineReportedModels,
   MACHINE_REPORT_STALE_MS,
+  orchestratorCatalogModels,
   defaultRemoteSends,
   remoteAutoPickProfile,
   remoteIncompatibilityFor,
@@ -162,6 +163,48 @@ describe('machineReportedModels', () => {
     expect(machineReportedModels(old, 'claude-code', now)).toBeUndefined();
     expect(machineReportedModels(machine(), 'grok', now)).toBeUndefined();
     expect(machineReportedModels(machine(), 'opencode', now)).toBeUndefined();
+  });
+});
+
+describe('orchestratorCatalogModels', () => {
+  // An orchestrator runs no provider CLI, so its own catalog is empty: its
+  // pickers that aren't tied to one machine list what its machines report.
+  const now = Date.parse('2026-11-02T13:00:00Z');
+  const intent1 = machine({
+    id: 'node-intent1',
+    name: 'intent1',
+    capabilities: {
+      providers: [
+        { id: 'claude-code', status: 'signed-in', models: ['opus', 'sonnet'] },
+        { id: 'codex', status: 'cli-missing', models: ['gpt-6'] },
+      ],
+    },
+  });
+  const mac = machine({
+    capabilities: {
+      providers: [{ id: 'claude-code', status: 'unknown', models: ['sonnet', 'haiku'] }],
+    },
+  });
+
+  it("lists every machine's models for a provider once, in machine order", () => {
+    expect(orchestratorCatalogModels([intent1, mac], 'claude-code', now)).toEqual([
+      'opus',
+      'sonnet',
+      'haiku',
+    ]);
+    // A profile reads its base provider's models.
+    expect(orchestratorCatalogModels([intent1], 'claude-code@p-work', now)).toEqual([
+      'opus',
+      'sonnet',
+    ]);
+  });
+
+  it('skips a revoked machine, an old or missing report, and a provider not installed there', () => {
+    const revoked = machine({ state: 'revoked' });
+    const old = machine({ observedAt: '2026-10-01T00:00:00Z' });
+    const noReport = machine({ capabilities: undefined });
+    expect(orchestratorCatalogModels([revoked, old, noReport], 'claude-code', now)).toEqual([]);
+    expect(orchestratorCatalogModels([intent1], 'codex', now)).toEqual([]);
   });
 });
 
@@ -393,6 +436,75 @@ describe('buildMachineModelGroups', () => {
       expect(build(['claude-code@p-personal'], undefined, reporting)).toEqual({
         'claude-code@p-personal': [{ value: 'haiku', label: 'haiku' }],
       });
+    });
+  });
+
+  describe('on an orchestrator, a machine whose first report has no models yet', () => {
+    // intent1 right after it was given to intent-cache: the cheap first report
+    // lists each installed provider as unknown, with no models, marked stale,
+    // until the machine's full listing lands. The orchestrator runs no
+    // provider CLI, so it has no catalog to stand in, and its Defaults have
+    // no overrides (they run with the machine's own sign-in).
+    const primed = machine({
+      name: 'intent1',
+      platform: { os: 'linux', arch: 'x86_64' },
+      capabilities: {
+        providers: [
+          { id: 'claude-code', status: 'unknown', models: [], modelsStale: true },
+          { id: 'codex', status: 'unknown', models: [], modelsStale: true },
+          { id: 'opencode', status: 'cli-missing', models: [] },
+        ],
+      },
+    });
+    const build = (target: RemoteMachine) =>
+      buildMachineModelGroups({
+        machine: target,
+        providerRefs: ['claude-code', 'codex', 'opencode'],
+        groupLabel: (ref) => ref,
+        catalogModels: {},
+        catalogProfiles: [],
+        defaultRemoteLaunch: { 'claude-code': 'send', codex: 'send' },
+        defaultHasOverrides: { 'claude-code': false, codex: false },
+      });
+
+    it('keeps a tab per usable provider that says the machine is still listing its models', () => {
+      const groups = build(primed);
+      expect(groups.map((group) => group.key)).toEqual(['claude-code', 'codex']);
+      for (const group of groups) {
+        expect(group.options).toHaveLength(1);
+        const [row] = group.options;
+        expect(row.disabled).toBe(true);
+        expect(row.label).toContain('intent1');
+        expect(row.data?.machineModelsPending).toBe(true);
+      }
+    });
+
+    it("lists the machine's models once its full report lands", () => {
+      const listed = machine({
+        name: 'intent1',
+        capabilities: {
+          providers: [{ id: 'claude-code', status: 'signed-in', models: ['opus', 'sonnet'] }],
+        },
+      });
+      expect(build(listed).map((group) => [group.key, group.options])).toEqual([
+        [
+          'claude-code',
+          [
+            { value: 'opus', label: 'opus' },
+            { value: 'sonnet', label: 'sonnet' },
+          ],
+        ],
+      ]);
+    });
+
+    it('gives no pending tab to a provider the machine cannot run', () => {
+      const signedOut = machine({
+        name: 'intent1',
+        capabilities: {
+          providers: [{ id: 'codex', status: 'signed-out', models: [], modelsStale: true }],
+        },
+      });
+      expect(build(signedOut)).toEqual([]);
     });
   });
 

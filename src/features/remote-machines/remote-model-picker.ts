@@ -90,6 +90,30 @@ export function machineReportedModels(
   return reported && reported.models.length > 0 ? reported.models : undefined;
 }
 
+/**
+ * The models an orchestrator's machines report for `providerRef` (its base
+ * provider), each once, in machine order. An orchestrator runs no provider
+ * CLI, so its own catalog is empty (PROTOCOL `models-providers.md`); its
+ * pickers that aren't tied to one machine list these instead. Revoked
+ * machines, old or missing reports and providers not installed there count
+ * for nothing.
+ */
+export function orchestratorCatalogModels(
+  machines: readonly RemoteMachine[],
+  providerRef: string,
+  now: number,
+): string[] {
+  const base = providerRefBaseId(providerRef);
+  const models = new Set<string>();
+  for (const machine of machines) {
+    if (machine.state === 'revoked' || machineReportFreshness(machine, now) !== 'fresh') continue;
+    const reported = machine.capabilities?.providers.find((provider) => provider.id === base);
+    if (!reported || !isMachineProviderOffered(reported)) continue;
+    for (const model of reported.models) models.add(model);
+  }
+  return [...models];
+}
+
 /** Placement treats these as not installed. */
 const MACHINE_PROVIDER_NOT_INSTALLED = new Set(['cli-missing', 'prerequisite-missing']);
 

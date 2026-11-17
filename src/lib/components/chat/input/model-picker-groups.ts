@@ -271,7 +271,10 @@ interface BuildMachineModelGroupsParams {
  * sandbox has no sign-in of its own, so only (b) applies.
  * When the machine lists no models for a configuration that brings its own
  * credentials, the backend catalog's models stand in. A configuration with
- * no models is left out.
+ * no models is left out, unless the machine has not listed them yet
+ * (`modelsStale`, as in its first report after joining a backend): its tab
+ * then holds one disabled row saying so, since an orchestrator has no catalog
+ * of its own to stand in.
  */
 export function buildMachineModelGroups({
   machine,
@@ -325,8 +328,25 @@ export function buildMachineModelGroups({
       const known = labelled.get(modelId);
       return known ? { ...known, value: modelId } : { value: modelId, label: modelId };
     });
-    // Nothing to pick: no tab.
-    if (options.length === 0) continue;
+    if (options.length === 0) {
+      // Nothing to pick: no tab, unless the machine's list isn't in yet.
+      if (provider.modelsStale !== true) continue;
+      groups.push({
+        key: ref,
+        label: groupLabel(ref),
+        options: [
+          {
+            value: `machine-models-pending:${ref}`,
+            label: m.chat_modelPicker_remoteModelsPending_label({ machine: machine.name }),
+            description: m.chat_modelPicker_remoteModelsPending_hint(),
+            disabled: true,
+            class: 'cursor-default disabled:opacity-100',
+            data: { machineModelsPending: true },
+          },
+        ],
+      });
+      continue;
+    }
     groups.push({ key: ref, label: groupLabel(ref), options });
   }
   return groups;
