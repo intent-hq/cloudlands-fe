@@ -47,6 +47,10 @@ vi.mock('electron', () => ({
   dialog: { showMessageBox: mocks.dialog },
 }));
 vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
+vi.mock('../../../../main/invite-window', () => ({
+  getInviteWindow: () => null,
+  focusInviteWindow: async () => null,
+}));
 // Controlled enabled-policy/local-lease fixture exercises the native dialog/log boundary.
 // Real parentless launch is fail-closed and covered by invite-attempt.test.ts; this is not native acceptance.
 vi.mock('../invite-attempt', () => ({

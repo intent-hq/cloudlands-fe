@@ -127,6 +127,7 @@ vi.mock('../window-backend', () => ({
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
 import { openInvitedMachineInWindow, registerMachineRailHandlers } from '../machine-rail';
+import { registerChatWindow } from '../chat-window-identity';
 import {
   getMachineRailSession,
   restoreMachineRailSession,
@@ -155,6 +156,13 @@ const state = () => invoke(RAIL.GET_STATE, home());
 const topView = () => fakes.children[fakes.children.length - 1];
 
 describe('machine rail switching', () => {
+  it('leaves an auxiliary window untouched when opening an invited workspace', async () => {
+    const auxiliary = { ...fakes.window, id: 2 };
+    expect(await openInvitedMachineInWindow(auxiliary as never, 'b', 'shared-ws')).toBe(false);
+    expect(fakes.views).toHaveLength(0);
+    expect(auxiliary.show).not.toHaveBeenCalled();
+  });
+
   it('queues the invited workspace for the new view without replacing home', async () => {
     expect(await openInvitedMachineInWindow(fakes.window as never, 'b', 'shared-ws')).toBe(true);
     const view = viewOf('b');
@@ -199,6 +207,7 @@ describe('machine rail switching', () => {
   };
 
   beforeEach(() => {
+    registerChatWindow(fakes.window as never);
     vi.useFakeTimers();
     setMachineRailEnabledFlag(true);
     connection.connected = new Set(['local', 'b', 'c']);

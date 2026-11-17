@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   token: vi.fn(),
   remoteIdentity: vi.fn(),
   consent: vi.fn(),
+  focusWindow: vi.fn(),
 }));
 vi.mock('electron', () => ({
   app: { isReady: () => true },
@@ -32,6 +33,10 @@ vi.mock('electron', () => ({
   dialog: { showMessageBox: vi.fn() },
 }));
 vi.mock('../../../../main/state', () => ({ getMainWindow: () => state.parent }));
+vi.mock('../../../../main/invite-window', () => ({
+  getInviteWindow: () => state.parent,
+  focusInviteWindow: () => state.focusWindow(),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({ electronAPI: () => state.api }));
 vi.mock('../../../backend/main/backend.ipc', () => ({
   captureLocalIdentityConnection: () => ({
@@ -154,6 +159,7 @@ beforeEach(() => {
   state.listeners.clear();
   state.parent = windowFixture(41);
   state.focused = state.parent;
+  state.focusWindow.mockReset().mockImplementation(async () => state.parent);
   modal = null;
   state.api = {
     on: (channel: string, handler: any) => {
@@ -192,6 +198,25 @@ afterEach(async () => {
 });
 
 describe('invitation lifetime across the actual main and renderer modules', () => {
+  it('only joins the latest link when window preparation completes out of order', async () => {
+    const flow = await load();
+    const first = Promise.withResolvers<unknown>();
+    const second = Promise.withResolvers<unknown>();
+    state.focusWindow.mockImplementationOnce(() => first.promise);
+    state.focusWindow.mockImplementationOnce(() => second.promise);
+    const remote = connection();
+    state.dial.mockResolvedValue(remote);
+    const older = flow.handleInviteDeepLink(uri('older'));
+    const latest = flow.handleInviteDeepLink(uri('latest'));
+    second.resolve(state.parent);
+    await latest;
+    first.resolve(state.parent);
+    await older;
+    expect(state.dial).toHaveBeenCalledOnce();
+    expect(remote.prove).toHaveBeenCalledWith('latest', 'private-invite-secret', expect.anything());
+    expect(state.open).toHaveBeenCalledOnce();
+  });
+
   it('joins directly when the original window has already published readiness', async () => {
     const flow = await load();
     state.dial.mockReturnValue(never);
@@ -293,6 +318,7 @@ describe('invitation lifetime across the actual main and renderer modules', () =
     unpublish();
     state.dial.mockReturnValue(never);
     const joining = flow.handleInviteDeepLink(uri('original'));
+    await flush();
     await policy(true);
     expect(state.dial).not.toHaveBeenCalled();
     expect(modal).toBeNull();

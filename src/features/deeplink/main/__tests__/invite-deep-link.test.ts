@@ -147,6 +147,10 @@ vi.mock('../invite-attempt', () => ({
     };
   },
 }));
+vi.mock('../../../../main/invite-window', () => ({
+  getInviteWindow: () => null,
+  focusInviteWindow: async () => null,
+}));
 const remoteIdentity = vi.fn();
 vi.mock('../../../backend/main/invited-principal', () => ({
   inspectPersonalCredential: (...args: unknown[]) => remoteIdentity(...args),

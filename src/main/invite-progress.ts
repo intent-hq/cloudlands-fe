@@ -20,7 +20,7 @@
  * labels only — never the invite secret, the token, or a URL.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { type BrowserWindow, ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 
 import { INVITE_PROGRESS_CHANNELS } from '../shared/ipc/channels';
@@ -35,7 +35,7 @@ import type {
 import { Logger } from '../shared/logger';
 import { InviteProgressAckSchema, InviteProgressResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { getMainWindow } from './state';
+import { getInviteWindow } from './invite-window';
 import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteProgress');
@@ -67,20 +67,12 @@ export interface InviteProgressHandle {
 
 /** Injectable collaborators (defaults wire up the real main-process ones). */
 export interface InviteProgressDeps {
-  /** Window to show the dialog in (focused window, else main window). */
+  /** Normal app window to show the dialog in. */
   getParentWindow(): BrowserWindow | null;
   /** Original renderer for the attempt, retained across machine or focus changes. */
   getRendererWebContents?(): WebContents | null;
   /** Explicit recovery action; only admission requests may receive it. */
   onRetry?(): void;
-}
-
-function defaultGetParentWindow(): BrowserWindow | null {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed()) return focused;
-  const main = getMainWindow();
-  if (main && !main.isDestroyed()) return main;
-  return null;
 }
 
 /** The renderer request main is currently showing. */
@@ -155,7 +147,7 @@ const UNAVAILABLE_HANDLE: InviteProgressHandle = {
 };
 
 /**
- * Show the invite progress dialog in the focused/main window. Returns
+ * Show the invite progress dialog in a normal app window. Returns
  * immediately with the request handle. On every unavailable-renderer path —
  * no window, `send` throwing, no ack within {@link RENDERER_ACK_TIMEOUT_MS}
  * (a dismiss is sent so a late-mounting modal does not linger), or the
@@ -168,7 +160,7 @@ export function showInviteProgress(
   payload: InviteProgressShowPayload,
   overrides: Partial<InviteProgressDeps> = {},
 ): InviteProgressHandle {
-  const deps: InviteProgressDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
+  const deps: InviteProgressDeps = { getParentWindow: getInviteWindow, ...overrides };
   const parent = deps.getParentWindow();
   const contents = deps.getRendererWebContents
     ? deps.getRendererWebContents()
