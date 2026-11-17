@@ -1,5 +1,5 @@
 <!--
-  Settings → one E2B or Northflank entry; the meta line names its provider. Before setup it holds the inline setup form; after,
+  Settings → one E2B, Northflank or Agent37 entry; the meta line names its provider. Before setup it holds the inline setup form; after,
   it names the template and size, and lists the entry's live sandboxes under
   it. With named entries (Nodes), the name renames in place. Editing reopens
   the form; Remove deletes the entry's key and every sandbox it started.
@@ -36,7 +36,13 @@
     cloudMachinesRemoveRequested,
     cloudRemoveKey,
   } from './cloud-machines-slice';
-  import { cloudEntryNameError, cloudErrorText } from './cloud-machines-format';
+  import {
+    agent37RegionLabel,
+    agent37TypeLabel,
+    cloudEntryNameError,
+    cloudErrorText,
+    cloudProviderCopy,
+  } from './cloud-machines-format';
   import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
   import { machinePlatform } from '$features/remote-machines/machine-facts';
   import CloudMachineSetupForm from './CloudMachineSetupForm.svelte';
@@ -118,19 +124,13 @@
         };
       case 'key-rejected':
         return {
-          label:
-            kind === 'northflank'
-              ? m.cloudMachines_northflank_state_tokenRejected_label()
-              : m.cloudMachines_state_keyRejected_label(),
+          label: cloudProviderCopy(kind).keyRejected,
           color: 'red',
           dot: 'bg-danger',
         };
       default:
         return {
-          label:
-            kind === 'northflank'
-              ? m.cloudMachines_northflank_state_unreachable_label()
-              : m.cloudMachines_state_unreachable_label(),
+          label: cloudProviderCopy(kind).unreachable,
           color: 'amber',
           dot: 'bg-warning',
         };
@@ -171,10 +171,7 @@
   }
 
   function failureText(failure: NonNullable<typeof removeFailure>) {
-    if (failure.forbidden)
-      return kind === 'northflank'
-        ? m.cloudMachines_northflank_error_ownerOnly()
-        : m.cloudMachines_error_ownerOnly();
+    if (failure.forbidden) return cloudProviderCopy(kind).ownerOnly;
     return failure.cloud ? cloudErrorText(failure.cloud, kind).description : failure.message;
   }
 </script>
@@ -227,6 +224,11 @@
           {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
           {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
               >{entry.northflank.region}</span
+            >{/if}
+          {#if entry?.agent37}<span aria-hidden="true">·</span><span data-agent37-placement
+              >{agent37TypeLabel(entry.agent37.instanceType)}
+              <span aria-hidden="true">·</span>
+              {agent37RegionLabel(entry.agent37.region)}</span
             >{/if}
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>

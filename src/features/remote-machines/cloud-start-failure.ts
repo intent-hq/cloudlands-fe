@@ -6,7 +6,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type { CloudMachineErrorData, CloudProviderKind } from '$shared/types/cloud-machines';
-import { cloudErrorText } from '$features/cloud-machines/cloud-machines-format';
+import { cloudErrorText, cloudProviderCopy } from '$features/cloud-machines/cloud-machines-format';
 import type { PlacementFailure } from './agent-location';
 
 export type CloudStartFailureAction = 'retry' | 'settings';
@@ -134,24 +134,24 @@ function details(
 }
 
 /**
- * Northflank's words on the same tone and actions: its errors name services,
- * tokens and projects, never E2B sandboxes.
+ * Northflank's and Agent37's words on the same tone and actions: their errors
+ * name services or instances, tokens, projects and wallets, never E2B sandboxes.
  */
-function northflankCopy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
+function providerCopy(
+  failure: PlacementFailure,
+  cloud: CloudMachineErrorData,
+  provider: Exclude<CloudProviderKind, 'e2b'>,
+): Copy {
   const e2b = copy(failure, cloud);
+  const words = cloudProviderCopy(provider);
   if (cloud.code === 'cloud-machine-unavailable' && !failure.cloudDetailKnown)
-    return {
-      ...e2b,
-      title: m.cloudMachines_northflank_startFailure_title(),
-      cause: m.cloudMachines_northflank_startFailure_unknown_cause(),
-    };
-  const text = cloudErrorText(cloud, 'northflank');
-  const generic = e2b.title === m.cloudMachines_startFailure_title();
-  return {
-    ...e2b,
-    title: generic ? m.cloudMachines_northflank_startFailure_title() : text.title,
-    cause: text.description,
-  };
+    return { ...e2b, title: words.startFailed, cause: words.startUnknown };
+  const text = cloudErrorText(cloud, provider);
+  // No room (Agent37) is worth its own title; other generic failures keep "Couldn't start".
+  const generic =
+    e2b.title === m.cloudMachines_startFailure_title() &&
+    !(cloud.code === 'cloud-machine-unavailable' && cloud.reason === 'no-capacity');
+  return { ...e2b, title: generic ? words.startFailed : text.title, cause: text.description };
 }
 
 /** Null when the failure carries no cloud error. */
@@ -161,8 +161,8 @@ export function cloudStartFailureView(
 ): CloudStartFailureView | null {
   const cloud = failure.cloud;
   if (!cloud) return null;
-  const provider = cloud.provider === 'northflank' ? 'northflank' : 'e2b';
-  const view = provider === 'northflank' ? northflankCopy(failure, cloud) : copy(failure, cloud);
+  const provider = cloud.provider ?? 'e2b';
+  const view = provider === 'e2b' ? copy(failure, cloud) : providerCopy(failure, cloud, provider);
   return {
     ...view,
     provider,

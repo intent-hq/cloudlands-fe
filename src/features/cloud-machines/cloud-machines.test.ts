@@ -696,7 +696,12 @@ describe('Agent37 entries', () => {
       ...agent37,
     });
     expect(capacity.description).toBe(m.cloudMachines_agent37_error_noCapacity_description());
-    const wallet = cloudErrorText({ code: 'cloud-quota', limit: 'plan', retryable: false, ...agent37 });
+    const wallet = cloudErrorText({
+      code: 'cloud-quota',
+      limit: 'plan',
+      retryable: false,
+      ...agent37,
+    });
     expect(wallet.description).toBe(m.cloudMachines_agent37_error_quotaPlan_description());
     const memory = cloudErrorText({
       code: 'cloud-quota',
@@ -706,7 +711,10 @@ describe('Agent37 entries', () => {
     });
     expect(memory.description).toBe(m.cloudMachines_agent37_error_quotaConcurrency_description());
     for (const reason of ['key-rejected', 'permission-denied', 'template-missing', 'api-error']) {
-      const text = cloudErrorText({ code: 'cloud-machine-unavailable', reason, retryable: false }, 'agent37');
+      const text = cloudErrorText(
+        { code: 'cloud-machine-unavailable', reason, retryable: false },
+        'agent37',
+      );
       expect(text.title + text.description).not.toMatch(/E2B|Northflank|sandbox lost/u);
     }
     expect(
@@ -722,7 +730,10 @@ describe('Agent37 entries', () => {
   it('offers Retry on no capacity, and only Settings and the dashboard on an empty wallet', () => {
     const fail = (data: object) =>
       cloudStartFailureView(
-        placementFailure({ code: 'remote-launch-failed', detail: `x ${JSON.stringify(data)}` }, 'Agent37'),
+        placementFailure(
+          { code: 'remote-launch-failed', detail: `x ${JSON.stringify(data)}` },
+          'Agent37',
+        ),
         { canRetry: true },
       );
     const capacity = fail({
@@ -734,7 +745,12 @@ describe('Agent37 entries', () => {
     expect(capacity).toMatchObject({ provider: 'agent37', tone: 'danger' });
     expect(capacity?.actions[0]).toBe('retry');
     expect(capacity?.title).toBe(m.cloudMachines_agent37_error_noCapacity_title());
-    const wallet = fail({ code: 'cloud-quota', limit: 'plan', retryable: false, provider: 'agent37' });
+    const wallet = fail({
+      code: 'cloud-quota',
+      limit: 'plan',
+      retryable: false,
+      provider: 'agent37',
+    });
     expect(wallet).toMatchObject({ provider: 'agent37', tone: 'warning', dashboard: true });
     expect(wallet?.actions).toEqual(['settings']);
     expect(wallet?.cause).toBe(m.cloudMachines_agent37_error_quotaPlan_description());

@@ -1,25 +1,31 @@
 /**
- * Cloud machines on E2B or Northflank (PROTOCOL `methods/nodes.md` → "Cloud machines").
+ * Cloud machines on E2B, Northflank or Agent37 (PROTOCOL `methods/nodes.md` → "Cloud machines").
  *
  * The backend owner saves one or more named entries, each with its own API key
- * (E2B) or token (Northflank); the backend then starts one machine per agent
+ * (E2B, Agent37) or token (Northflank); the backend then starts one machine per agent
  * placed on an entry. The secret is a write-only `cloudMachines.configure`
  * param: no type below carries it, so it never lands in Redux.
  */
 
 /** Cloud providers an entry can use. */
-export type CloudProviderKind = 'e2b' | 'northflank';
-const CLOUD_PROVIDER_KINDS: readonly CloudProviderKind[] = ['e2b', 'northflank'];
+export type CloudProviderKind = 'e2b' | 'northflank' | 'agent37';
+const CLOUD_PROVIDER_KINDS: readonly CloudProviderKind[] = ['e2b', 'northflank', 'agent37'];
 export function isCloudProviderKind(value: unknown): value is CloudProviderKind {
   return CLOUD_PROVIDER_KINDS.includes(value as CloudProviderKind);
 }
-/** The provider an entry id names: Northflank ids are always "northflank-<12 hex>". */
+/** The provider an entry id names: "northflank-<12 hex>", "agent37-<12 hex>", else E2B. */
 export function cloudProviderOfEntryId(cloudMachineId: string | undefined): CloudProviderKind {
-  return cloudMachineId?.startsWith('northflank-') ? 'northflank' : 'e2b';
+  if (cloudMachineId?.startsWith('northflank-')) return 'northflank';
+  return cloudMachineId?.startsWith('agent37-') ? 'agent37' : 'e2b';
 }
+const CLOUD_PROVIDER_NAMES: Record<CloudProviderKind, string> = {
+  e2b: 'E2B', // i18n-ignore (product name)
+  northflank: 'Northflank', // i18n-ignore (product name)
+  agent37: 'Agent37', // i18n-ignore (product name)
+};
 /** The product name, for labels and default entry names. */
 export function cloudProviderName(provider: CloudProviderKind): string {
-  return provider === 'northflank' ? 'Northflank' : 'E2B'; // i18n-ignore (product names)
+  return CLOUD_PROVIDER_NAMES[provider];
 }
 
 /** The entry an older backend keeps, and the one every migrated setup becomes. */
@@ -29,8 +35,16 @@ export const CLOUD_ENTRY_NAME_MAX_BYTES = 64;
 /** At most this many entries per backend. */
 export const CLOUD_ENTRY_LIMIT = 16;
 
-export type CloudMachineSize = '2x4' | '4x8' | '8x16' | '16x32';
-const CLOUD_MACHINE_SIZES: readonly CloudMachineSize[] = ['2x4', '4x8', '8x16', '16x32'];
+/** `4x16` and `4x32` are Agent37 only; Agent37 has no `8x16` or `16x32`. */
+export type CloudMachineSize = '2x4' | '4x8' | '8x16' | '16x32' | '4x16' | '4x32';
+const CLOUD_MACHINE_SIZES: readonly CloudMachineSize[] = [
+  '2x4',
+  '4x8',
+  '8x16',
+  '16x32',
+  '4x16',
+  '4x32',
+];
 export const DEFAULT_CLOUD_MACHINE_SIZE: CloudMachineSize = '4x8';
 export const DEFAULT_IDLE_PAUSE_MINUTES = 10;
 export const DEFAULT_PAUSED_DELETE_DAYS = 7;
@@ -56,17 +70,37 @@ interface NorthflankEntrySettings {
   diskGiB: number;
 }
 
+export type Agent37InstanceType = 'default' | 'vm';
+export type Agent37Region = 'us' | 'eu' | 'ap-south';
+export const AGENT37_REGIONS: readonly Agent37Region[] = ['us', 'eu', 'ap-south'];
+
+/** An Agent37 entry's own settings (`CloudMachineProvider.agent37`). */
+interface Agent37EntrySettings {
+  /** `default` is a gVisor sandbox in the US only; `vm` a full VM in any region. */
+  instanceType: Agent37InstanceType;
+  region: Agent37Region;
+  diskGiB: number;
+}
+
+/** Agent37 always offers these four sizes, on both types, so a new entry knows them before a test. */
+export const AGENT37_SIZES: readonly CloudMachineSizeInfo[] = [
+  { id: '2x4', vcpu: 2, memoryMiB: 4096 },
+  { id: '4x8', vcpu: 4, memoryMiB: 8192 },
+  { id: '4x16', vcpu: 4, memoryMiB: 16384 },
+  { id: '4x32', vcpu: 4, memoryMiB: 32768 },
+];
+
 type CloudProviderState = 'ready' | 'key-rejected' | 'unreachable';
 
 /** One named entry (`CloudMachineProvider` on the wire). */
 export interface CloudMachineProvider {
-  /** The `cloudMachineId`: "e2b", "e2b-<12 hex>" or "northflank-<12 hex>"; "" on a `validateOnly` create. */
+  /** The `cloudMachineId`: "e2b", "e2b-<12 hex>", "northflank-<12 hex>" or "agent37-<12 hex>"; "" on a `validateOnly` create. */
   id: string;
   provider: CloudProviderKind;
   name: string;
   state: CloudProviderState | string;
   template: string;
-  /** E2B only; "" on Northflank. */
+  /** E2B only; "" on Northflank and Agent37. */
   templateProject: string;
   agentProviders: string[];
   /** Published sizes for this backend's version, smallest first. */
@@ -77,6 +111,7 @@ export interface CloudMachineProvider {
   configuredAt: string;
   checkedAt?: string;
   northflank?: NorthflankEntrySettings;
+  agent37?: Agent37EntrySettings;
 }
 
 type CloudSandboxState = 'running' | 'pausing' | 'paused' | 'resuming' | 'stopping';
@@ -86,7 +121,7 @@ export interface CloudMachineState {
   provider: CloudProviderKind;
   /** The entry the sandbox started from; "e2b" from an older backend. */
   cloudMachineId: string;
-  /** E2B's sandbox id, or the Northflank service id. */
+  /** E2B's sandbox id, the Northflank service id, or the Agent37 instance id. */
   sandboxId: string;
   state: CloudSandboxState | string;
   template: string;
@@ -108,10 +143,14 @@ export interface CloudMachineConfigureInput {
   name?: string;
   /** Copy another entry's saved key (or token) instead of sending one. */
   apiKeyFrom?: string;
-  /** Secret, the E2B key or Northflank token: sent once, never stored in state. */
+  /** Secret, the E2B or Agent37 key or Northflank token: sent once, never stored in state. */
   apiKey?: string;
   /** Northflank only; required to create. */
   projectId?: string;
+  /** Agent37 only. */
+  instanceType?: Agent37InstanceType;
+  /** Agent37 only; `eu` and `ap-south` need `instanceType: "vm"`. */
+  region?: Agent37Region;
   size?: CloudMachineSize;
   idlePauseMinutes?: number;
   pausedDeleteDays?: number;
@@ -125,7 +164,7 @@ export type CloudMachineErrorData =
       retryable: boolean;
       status?: number;
       provider?: CloudProviderKind;
-      /** Only with `permission-denied`: the refused Northflank call. */
+      /** Only with `permission-denied`: the refused Northflank or Agent37 call. */
       action?: string;
     }
   | { code: 'cloud-profile-required'; providerRef?: string; provider?: CloudProviderKind }
@@ -147,11 +186,13 @@ export function isCloudMachineSize(value: unknown): value is CloudMachineSize {
   return CLOUD_MACHINE_SIZES.includes(value as CloudMachineSize);
 }
 
-function parseSize(value: unknown): CloudMachineSizeInfo | null {
+function parseSize(value: unknown, provider: CloudProviderKind): CloudMachineSizeInfo | null {
   if (!record(value) || !isCloudMachineSize(value.id)) return null;
   const vcpu = positiveInt(value.vcpu);
   const memoryMiB = positiveInt(value.memoryMiB);
   if (!vcpu || !memoryMiB) return null;
+  // Agent37 starts one template at every size: no plan of either kind.
+  if (provider === 'agent37') return { id: value.id, vcpu, memoryMiB };
   return {
     id: value.id,
     vcpu,
@@ -192,13 +233,26 @@ export function parseCloudMachineProvider(value: unknown): CloudMachineProvider 
     agentProviders: Array.isArray(value.agentProviders)
       ? value.agentProviders.filter((id): id is string => text(id))
       : [],
-    sizes: Array.isArray(value.sizes) ? value.sizes.flatMap((size) => parseSize(size) ?? []) : [],
+    sizes: Array.isArray(value.sizes)
+      ? value.sizes.flatMap((size) => parseSize(size, provider) ?? [])
+      : [],
     size: isCloudMachineSize(value.size) ? value.size : DEFAULT_CLOUD_MACHINE_SIZE,
     idlePauseMinutes: positiveInt(value.idlePauseMinutes) ?? DEFAULT_IDLE_PAUSE_MINUTES,
     pausedDeleteDays: positiveInt(value.pausedDeleteDays) ?? DEFAULT_PAUSED_DELETE_DAYS,
     configuredAt: value.configuredAt,
     ...(text(value.checkedAt) ? { checkedAt: value.checkedAt } : {}),
     ...(provider === 'northflank' ? { northflank: parseNorthflankSettings(value.northflank) } : {}),
+    ...(provider === 'agent37' ? { agent37: parseAgent37Settings(value.agent37) } : {}),
+  };
+}
+
+function parseAgent37Settings(value: unknown): Agent37EntrySettings {
+  const settings = record(value) ? value : {};
+  const region = AGENT37_REGIONS.find((id) => id === settings.region) ?? 'us';
+  return {
+    instanceType: settings.instanceType === 'vm' ? 'vm' : 'default',
+    region,
+    diskGiB: positiveInt(settings.diskGiB) ?? 20,
   };
 }
 
