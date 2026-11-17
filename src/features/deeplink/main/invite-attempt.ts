@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { getShownRendererWebContents } from '../../../main/window-backend';
-import { getMainWindow } from '../../../main/state';
+import { getInviteWindow } from '../../../main/invite-window';
 import {
   captureCollaborationPolicy,
   onCollaborationPolicyChanged,
@@ -25,8 +25,9 @@ export interface InviteAttempt extends CollaborationAttempt {
   cancelled: Promise<void>;
 }
 
-export function captureInviteAttempt(): InviteAttempt {
-  const parent = BrowserWindow.getFocusedWindow() ?? getMainWindow();
+export function captureInviteAttempt(
+  parent: BrowserWindow | null = getInviteWindow(),
+): InviteAttempt {
   const contents = parent && !parent.isDestroyed() ? getShownRendererWebContents(parent) : null;
   let policy = captureCollaborationPolicy(contents?.id ?? null);
   let admitted = policy();

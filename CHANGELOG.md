@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.343.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.0...v2.343.1) (2026-11-17)
+
+
+### 🐛 Bug Fixes
+
+* add breathing room above queued messages ([#4704](https://github.com/intent-hq/cloudlands-fe/issues/4704)) ([94534b9](https://github.com/intent-hq/cloudlands-fe/commit/94534b9f05b7c81587d82c5c65d2f7da5b206aee))
+
 ## [2.343.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.342.11...v2.343.0) (2026-11-16)
 
 

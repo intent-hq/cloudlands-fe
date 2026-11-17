@@ -17,7 +17,7 @@
  * the payload carries a bounded kind/reason and display labels only.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { type BrowserWindow, ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 
 import { INVITE_NOTICE_CHANNELS } from '../shared/ipc/channels';
@@ -30,7 +30,7 @@ import type {
 import { Logger } from '../shared/logger';
 import { InviteNoticeAckSchema, InviteNoticeResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { getMainWindow } from './state';
+import { getInviteWindow } from './invite-window';
 import { getShownRendererWebContents } from './window-backend';
 
 const logger = new Logger('InviteNotice');
@@ -44,18 +44,10 @@ const RENDERER_ACK_TIMEOUT_MS = 3_000;
 
 /** Injectable collaborators (defaults wire up the real main-process ones). */
 export interface InviteNoticeDeps {
-  /** Window to show the modal in (focused window, else main window). */
+  /** Normal app window to show the modal in. */
   getParentWindow(): BrowserWindow | null;
   /** Original renderer for the attempt, retained across machine or focus changes. */
   getRendererWebContents?(): WebContents | null;
-}
-
-function defaultGetParentWindow(): BrowserWindow | null {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed()) return focused;
-  const main = getMainWindow();
-  if (main && !main.isDestroyed()) return main;
-  return null;
 }
 
 /** The renderer request main is currently waiting on. */
@@ -121,7 +113,7 @@ export function resetInviteNoticeStateForTests(): void {
 }
 
 /**
- * Show the invite notice modal in the focused/main window. The show message
+ * Show the invite notice modal in a normal app window. The show message
  * is sent synchronously (before this returns its promise), so a caller can
  * dismiss a modal that is still up afterwards without a frame in between.
  * Resolves `true` once the user acknowledged the renderer modal, and `false`
@@ -134,7 +126,7 @@ export function showInviteNotice(
   payload: InviteNoticeShowPayload,
   overrides: Partial<InviteNoticeDeps> = {},
 ): Promise<boolean> {
-  const deps: InviteNoticeDeps = { getParentWindow: defaultGetParentWindow, ...overrides };
+  const deps: InviteNoticeDeps = { getParentWindow: getInviteWindow, ...overrides };
   const parent = deps.getParentWindow();
   const contents = deps.getRendererWebContents
     ? deps.getRendererWebContents()

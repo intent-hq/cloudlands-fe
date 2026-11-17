@@ -31,6 +31,7 @@ import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invit
 import { showInviteNotice } from '../../../main/invite-notice';
 import { showInviteProgress, type InviteProgressHandle } from '../../../main/invite-progress';
 import { getMainWindow } from '../../../main/state';
+import { focusInviteWindow } from '../../../main/invite-window';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
   getConnectedDaemonProtocolVersion,
@@ -303,6 +304,7 @@ function createConsentPrompts(
  * while all UI and window work stays bound to the current original attempt.
  */
 let activeInviteAttempt: InviteAttempt | null = null;
+let inviteRequestGeneration = 0;
 
 /** Keep the URL exclusively in main while the original window offers explicit recovery. */
 async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
@@ -356,8 +358,36 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     });
     return;
   }
+  const parsed = parseInviteUri(url);
+  if (!parsed) {
+    logger.warn('Ignoring deep link that is not an invite URI');
+    return;
+  }
+  const { scope, hosts, port, fingerprint, inviteId, secret, tcAddress } = parsed;
+  const displayHost = hosts[0] ?? tcAddress;
+  if (displayHost == null || port === null || fingerprint === null || !inviteId || !secret) {
+    logger.warn('Ignoring invite link with missing required fields', {
+      hasHost: hosts.length > 0,
+      hasTunnel: tcAddress !== null,
+      hasPort: port !== null,
+      hasFingerprint: fingerprint !== null,
+      hasInviteId: !!inviteId,
+      hasSecret: !!secret,
+    });
+    return;
+  }
+  const generation = ++inviteRequestGeneration;
   activeInviteAttempt?.release();
-  const attempt = captureInviteAttempt();
+  activeInviteAttempt = null;
+  let parent: InviteAttempt['parent'];
+  try {
+    parent = await focusInviteWindow();
+  } catch (error) {
+    logger.warn('Could not prepare an app window for the invite', describeErrorForLog(error));
+    return;
+  }
+  if (generation !== inviteRequestGeneration) return;
+  const attempt = captureInviteAttempt(parent);
   activeInviteAttempt = attempt;
   let connection: InviteConnection | null = null;
   let connecting: ConnectingProgress | null = null;
@@ -365,29 +395,6 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   // Display labels for the notices, filled in as the flow learns them.
   const labels: NoticeLabels = {};
   try {
-    const parsed = parseInviteUri(url);
-    if (!parsed) {
-      logger.warn('Ignoring deep link that is not an invite URI');
-      return;
-    }
-    const { scope, hosts, port, fingerprint, inviteId, secret, tcAddress } = parsed;
-    // The daemon's default (loopback-bound) invite carries no direct host at
-    // all — `host=` empty, `tc=` set — so a tunnel address satisfies the
-    // "somewhere to dial" requirement on its own.
-    const displayHost = hosts[0] ?? tcAddress;
-    if (displayHost == null || port === null || fingerprint === null || !inviteId || !secret) {
-      // Presence booleans only — never the values (the secret must not leak).
-      logger.warn('Ignoring invite link with missing required fields', {
-        hasHost: hosts.length > 0,
-        hasTunnel: tcAddress !== null,
-        hasPort: port !== null,
-        hasFingerprint: fingerprint !== null,
-        hasInviteId: !!inviteId,
-        hasSecret: !!secret,
-      });
-      return;
-    }
-
     if (!attempt.current() && !(await admitInvite(attempt))) return;
     if (!attempt.current()) return;
     const envelope: InviteEnvelope = {

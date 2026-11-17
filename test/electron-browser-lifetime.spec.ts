@@ -7,6 +7,7 @@ import './electron-browser-capture.fixture';
 import './electron-inline-html-preview.fixture';
 import './electron-browser-lifetime-media.fixture';
 import './electron-machine-rail-drag-region.fixture';
+import './electron-invite-window.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,

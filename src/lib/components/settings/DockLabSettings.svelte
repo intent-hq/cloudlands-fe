@@ -19,6 +19,7 @@
               size: 'sm',
               label: m.settings_dockLab_label(),
               description: m.settings_dockLab_description(),
+              class: 'py-0 first:pt-0 last:pb-0',
               get: () => $dockLabEnabled,
               set: setDockLabEnabled,
             },
@@ -36,10 +37,12 @@
     data-highlight-id="notch-dock"
     use:highlightTarget
     data-slot="settings-section-body"
-    class="px-6 py-4"
+    class="@container/dock-settings px-6 py-4"
   >
     <div class="flex items-center gap-4">
-      <DockLabIllustration />
+      <div class="hidden shrink-0 @min-[32rem]/dock-settings:block">
+        <DockLabIllustration />
+      </div>
       <div class="min-w-0 flex-1">
         <SettingsForm {schema} embedded compact={false} />
         <p class="mt-2 type-caption text-muted-foreground">{m.settings_dockLab_moveHint()}</p>

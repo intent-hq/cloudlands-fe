@@ -171,6 +171,7 @@ vi.mock('../window-backend', () => ({
 
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
+import { registerChatWindow } from '../chat-window-identity';
 import {
   openInvitedMachineInWindow,
   registerMachineRailHandlers,
@@ -232,6 +233,7 @@ const disconnect = vi.fn();
 beforeEach(() => {
   vi.useFakeTimers();
   fakes.window = fakes.makeWindow();
+  registerChatWindow(fakes.window as never);
   setMachineRailEnabledFlag(true);
   connection.connected = new Set(['local', 'b', 'c']);
   connection.retry.mockReset();
@@ -257,6 +259,13 @@ afterEach(() => {
   fakes.bindings.clear();
   fakes.shown.current = null;
   vi.useRealTimers();
+});
+
+it('leaves an auxiliary window untouched when opening an invited workspace', async () => {
+  const auxiliary = { ...fakes.window, id: 2 };
+  expect(await openInvitedMachineInWindow(auxiliary as never, 'b', 'shared-ws')).toBe(false);
+  expect(fakes.views).toHaveLength(0);
+  expect(auxiliary.show).not.toHaveBeenCalled();
 });
 
 describe('a frame open on the local machine', () => {

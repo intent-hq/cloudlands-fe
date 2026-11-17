@@ -60,6 +60,7 @@ import {
   type ShownRailMachine,
 } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
+import { isChatWindow } from './chat-window-identity';
 import { framesHolding, frameToShow, isMachineInUse, isMachineRendered } from './frames';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { decorateWindowTitle } from './utils/resolve-app-title';
@@ -656,7 +657,7 @@ export async function openInvitedMachineInWindow(
   workspaceId?: string,
   mayOpen: () => boolean = () => true,
 ): Promise<boolean> {
-  if (!isMachineRailEnabled() || window.isDestroyed() || !mayOpen()) return false;
+  if (!isMachineRailEnabled() || !isChatWindow(window) || !mayOpen()) return false;
   // A frame that holds the machine already (this one first) shows it there.
   const holder = frameToShow(id, window);
   if (holder) {
