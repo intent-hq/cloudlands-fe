@@ -32,7 +32,7 @@ let menuBarAutoHideEnabled = menuBarHiddenByEnvironment();
  * `INTENT_HIDE_MENU_BAR=1` keeps the menu bar auto-hidden regardless of the
  * preference, for kiosk-style hosts such as Intent OS. Alt still shows it.
  */
-export function menuBarHiddenByEnvironment(env: NodeJS.ProcessEnv = process.env): boolean {
+function menuBarHiddenByEnvironment(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.INTENT_HIDE_MENU_BAR === '1';
 }
 
