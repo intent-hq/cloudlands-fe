@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.346.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.0...v2.346.1) (2026-11-17)
+
+
+### 🐛 Bug Fixes
+
+* **onboarding:** make the first-run wizard work on an orchestrator ([#4716](https://github.com/intent-hq/cloudlands-fe/issues/4716)) ([5a58412](https://github.com/intent-hq/cloudlands-fe/commit/5a58412a0545bd16dac56af0d9a6300b92043452))
+
 ## [2.346.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.345.1...v2.346.0) (2026-11-17)
 
 
