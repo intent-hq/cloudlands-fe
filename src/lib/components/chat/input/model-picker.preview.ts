@@ -2,6 +2,7 @@
 // timestamps/check flags/epochs may advance; new cache keys are cleared on teardown.
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
+import { catalogNow } from '$lib/component-catalog/catalog-clock';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { mockInvoke } from '$shared/ipc-mock-router';
@@ -41,6 +42,9 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
 import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+import type { RemoteMachine } from '$shared/types/remote-machines';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
 import type { ModelWarningKind } from '$shared/models/wire-model-info';
 
@@ -246,6 +250,98 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
     };
   };
 }
+
+const REMOTE_MACHINE_ID = 'node-intent1';
+
+/**
+ * The picker of a new agent on intent1 as an orchestrator shows it: the
+ * backend runs no provider CLI (empty catalogs), its Defaults run with the
+ * machine's own sign-in, and intent1's report is `listed` (its full report),
+ * `pending` (the cheap first report: no models yet, marked stale) or `empty`
+ * (nothing this agent can use there).
+ */
+function setupRemoteMachine(report: 'listed' | 'pending' | 'empty') {
+  return () => {
+    const cleanupModels = setupModels(false)();
+    const previousCatalog = selectProviderCatalogEntries.select(appStore.state);
+    const previousLabs = appStore.state.userPreferences?.labsRemoteAgentsEnabled === true;
+    const previousMachines = appStore.state.remoteMachines;
+    appStore.dispatch(
+      providerCatalogLoaded({
+        providers: previousCatalog,
+        defaultRemoteLaunch: { codex: 'send', 'claude-code': 'send' },
+      }),
+    );
+    appStore.dispatch(setLabsRemoteAgentsEnabled(true));
+    const providers: NonNullable<RemoteMachine['capabilities']>['providers'] = {
+      listed: [
+        {
+          id: 'claude-code',
+          status: 'signed-in',
+          models: ['opus', 'sonnet', 'haiku', 'claude-fable-5-1[1m]'],
+        },
+        { id: 'codex', status: 'signed-in', models: ['gpt-6', 'gpt-6-mini'] },
+      ],
+      pending: [
+        { id: 'claude-code', status: 'unknown', models: [], modelsStale: true as const },
+        { id: 'codex', status: 'unknown', models: [], modelsStale: true as const },
+      ],
+      empty: [
+        { id: 'claude-code', status: 'cli-missing', models: [] },
+        { id: 'codex', status: 'cli-missing', models: [] },
+      ],
+    }[report];
+    appStore.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machines: [
+          {
+            id: REMOTE_MACHINE_ID,
+            name: 'intent1',
+            platform: { os: 'linux', arch: 'x86_64' },
+            hosts: ['192.0.2.21'],
+            port: 5179,
+            fingerprint: 'AA:21',
+            state: 'connected',
+            runningAgents: 2,
+            capabilities: { providers },
+            observedAt: new Date(catalogNow() - 3 * 60_000).toISOString(),
+            addedAt: '2026-11-17T00:00:00Z',
+          },
+        ],
+        localFingerprint: null,
+        executorBackends: null,
+      }),
+    );
+    return () => {
+      appStore.dispatch(
+        remoteMachinesLoaded({
+          supported: previousMachines?.supported === true,
+          machines: Object.values(previousMachines?.machines ?? {}),
+          localFingerprint: previousMachines?.localFingerprint ?? null,
+          executorBackends: previousMachines?.executorBackends ?? null,
+        }),
+      );
+      appStore.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
+      appStore.dispatch(providerCatalogLoaded({ providers: previousCatalog }));
+      cleanupModels();
+    };
+  };
+}
+
+// Open the trigger to see the machine's models: these states keep the menu
+// closed on load, like `empty`.
+const remoteMachineProps = {
+  captureMenu: true,
+  portal: false,
+  collisionBoundary: 'body',
+  machineId: REMOTE_MACHINE_ID,
+  selectedModel: null,
+  showDefaultOption: false,
+  updateGlobalStore: false,
+  updateGlobalDefault: false,
+  showManageLink: false,
+} as const;
 
 export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>({
   id: 'model-picker',
@@ -457,6 +553,12 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         },
       }),
     },
+    'remote-machine-listed': { props: remoteMachineProps, setup: setupRemoteMachine('listed') },
+    // The machine's first report: each provider keeps its tab and says the
+    // list isn't in yet, instead of an empty picker.
+    'remote-machine-pending': { props: remoteMachineProps, setup: setupRemoteMachine('pending') },
+    // Nothing usable on the machine: its own empty state, with Check again.
+    'remote-machine-empty': { props: remoteMachineProps, setup: setupRemoteMachine('empty') },
     // Open the “Default model” trigger to reveal the empty state and Retry button.
     // No search is needed: both available providers return an empty model catalog.
     empty: {
