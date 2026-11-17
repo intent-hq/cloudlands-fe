@@ -20,6 +20,7 @@ import {
 
 export type OnboardingAgentMachines = 'backend' | 'machines' | 'none' | 'unknown';
 
+/** @internal Pure core of `selectOnboardingAgentMachines`, exported for tests. */
 export function onboardingAgentMachines(input: {
   orchestrator: boolean;
   /** The ordered machine list; null when it was not read. */

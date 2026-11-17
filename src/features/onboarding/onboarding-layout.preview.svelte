@@ -96,7 +96,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import OnboardingPage from './OnboardingPage.svelte';
-  import { cn } from '$lib/utils';
   import { ConfirmHost } from '$lib/components/patterns/confirm';
   import GitLabAuthConnection from '$lib/components/settings/GitLabAuthConnection.svelte';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
@@ -451,7 +450,8 @@
 {/if}
 <!-- Orchestrator scenes are taller so the welcome step's machines notice shows below the cards. -->
 <div
-  class={cn('relative w-full', orchestrator ? 'h-[1100px]' : 'h-[720px]')}
+  class="relative h-[720px] w-full"
+  style:height={orchestrator ? '1100px' : undefined}
   data-onboarding-layout-fixture
 >
   {#if settings}
