@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.345.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.344.0...v2.345.0) (2026-11-17)
+
+
+### 🚀 Features
+
+* run agent install and login from onboarding cards ([#4712](https://github.com/intent-hq/cloudlands-fe/issues/4712)) ([0c84af6](https://github.com/intent-hq/cloudlands-fe/commit/0c84af6a2179b4b7ce4933d62e6b719b8be07508))
+
 ## [2.344.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.2...v2.344.0) (2026-11-17)
 
 
