@@ -71,9 +71,19 @@
     npxStatus: NpxStatus | null | undefined;
     /** Called when a ready provider is selected */
     onSelect: (providerId: string) => void;
+    /** On an orchestrator: the provider runs on the user's machines, which
+     *  sign in to it, so the ready state says so instead of "Connected". */
+    onMachines?: boolean;
   }
 
-  let { provider, brand, selected = false, npxStatus, onSelect }: Props = $props();
+  let {
+    provider,
+    brand,
+    selected = false,
+    npxStatus,
+    onSelect,
+    onMachines = false,
+  }: Props = $props();
 
   // Explicit-refresh feedback: AgentGrid suppresses `statusLoading` once a
   // status is cached (background rechecks stay silent), so a user-initiated
@@ -238,8 +248,10 @@
               <Fa icon={faPlug} class="mr-1.5 translate-y-[0.5px] transform rotate-45" size={12} />
             </div>
             <div class="flex items-center whitespace-nowrap truncate font-medium">
-              {m.onboarding_providerCard_connected_label()}
-              {#if provider.authDetails}
+              {onMachines
+                ? m.onboarding_providerCard_onMachines_label()
+                : m.onboarding_providerCard_connected_label()}
+              {#if provider.authDetails && !onMachines}
                 <Tooltip
                   side="top"
                   content={provider.authDetails}

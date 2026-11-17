@@ -46,6 +46,19 @@ vi.mock('$features/navigation/link-handler', () => ({
 }));
 
 import OnboardingRequirementsStep from './OnboardingRequirementsStep.svelte';
+import { withBackendDaemonMode, withLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import type { StoreState } from '$store/renderer/types';
+
+/** An admitted orchestrator backend, keeping the scene's daemon-host stats. */
+function orchestratorState(): Partial<StoreState> {
+  const state = withBackendDaemonMode(withLegacyPrincipal({}), 'orchestrator');
+  return {
+    principal: state.principal,
+    connections: state.connections,
+    workspaceEvents: state.workspaceEvents,
+    daemonHealth: { ...state.daemonHealth, stats: mocks.daemonHealthStats.value },
+  } as Partial<StoreState>;
+}
 
 const uncheckedState = (): HostRequirementsState => ({
   git: { checked: false, available: false },
@@ -256,6 +269,18 @@ describe('OnboardingRequirementsStep', () => {
       const { container } = render(OnboardingRequirementsStep);
       const gitCard = container.querySelector('[data-testid="requirement-git"]')!;
       expect(gitCard.textContent).toContain('Git is required');
+    });
+  });
+
+  // An orchestrator runs no providers, so it never needs Node.js (machine-facts.ts).
+  describe('on an orchestrator', () => {
+    it('asks for git only', async () => {
+      mocks.extraState.value = orchestratorState();
+      const { container } = render(OnboardingRequirementsStep);
+
+      expect(container.querySelector('[data-testid="requirement-git"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="requirement-node"]')).toBeNull();
+      expect(findButton(container, 'Install Node.js')).toBeUndefined();
     });
   });
 });

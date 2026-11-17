@@ -9101,5 +9101,11 @@
   "workspaceHome_moveError_updateRequired": "Aktualisiere Intent auf diesem Rechner, bevor du ihn zum Home-Rechner machst.",
   "workspaceHome_moveError_failed": "Home-Rechner konnte nicht verschoben werden: {message}",
   "workspaceHome_starting_label": "Home-Rechner wird gestartet…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "Startet eine neue Sandbox"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Startet eine neue Sandbox",
+  "onboarding_agentMachines_none_title": "Rechner zum Ausführen von Agents hinzufügen",
+  "onboarding_agentMachines_none_description": "Dieses Intent schickt Agents an andere Rechner und führt selbst keine aus. Fügen Sie unter Einstellungen → Rechner einen Rechner hinzu und kehren Sie dann zurück, um fortzufahren.",
+  "onboarding_agentMachines_onMachines_title": "Agents laufen auf Ihren Rechnern",
+  "onboarding_agentMachines_onMachines_description": "Wählen Sie die KI-Coding-CLI aus. Jeder Rechner meldet sich selbst bei ihr an; unter Einstellungen → Rechner sehen Sie, welche ein Rechner ausführen kann.",
+  "onboarding_agentMachines_openSettings_label": "Einstellungen → Rechner öffnen",
+  "onboarding_providerCard_onMachines_label": "Läuft auf Ihren Rechnern"
 }

@@ -8,6 +8,11 @@
  * provider (specialist codingAgent, active provider, default) is not
  * available, we fall back to the first usable provider.
  *
+ * On an orchestrator the backend runs and checks no provider CLI, so the raw
+ * probe reports none; every enabled catalog provider counts as usable there
+ * and its machines decide whether it runs (PROTOCOL provider-profiles.md →
+ * "Profiles on an orchestrator"), as everywhere else in the app.
+ *
  * Provider priority (highest → lowest), restricted to usable providers:
  *   1. provider encoded in a specialist user model override (e.g. 'opencode:x')
  *   2. specialist.codingAgent (if the specialist pins one)
@@ -22,7 +27,12 @@
  * provider CLI default) at creation time.
  */
 
-import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import {
+  selectActiveProviderId,
+  selectAvailableEnabledProviderIds,
+} from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
@@ -89,6 +99,9 @@ function getProviderForModel(model: string, fallbackProvider: string): string {
   return splitLegacyCompoundId(model).providerId || fallbackProvider;
 }
 
+/** The status fields the resolver gates on. */
+type ProviderReadinessStatus = Pick<ProviderStatus, 'available' | 'authenticated'>;
+
 /** A provider is usable if it is installed AND authenticated. */
 function isProviderUsable(availability: ProviderAvailabilityResult, providerId: string): boolean {
   const status = getProviderStatusFromResult(availability, providerId);
@@ -103,7 +116,7 @@ function isProviderUsable(availability: ProviderAvailabilityResult, providerId: 
  * the auto-pick fallback chain.
  */
 function isProviderUserExplicitUsable(
-  status: ProviderStatus | undefined,
+  status: ProviderReadinessStatus | undefined,
   providerId: string,
 ): boolean {
   return (
@@ -116,6 +129,32 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   return Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter(
     (providerId) => providerId !== 'mock' && isProviderUsable(availability, providerId),
   );
+}
+
+/** Per-provider status, and the auto-pick candidates in priority order. */
+interface ProviderReadiness {
+  status: (providerId: string) => ProviderReadinessStatus | undefined;
+  usable: string[];
+}
+
+async function readProviderReadiness(state: StoreState): Promise<ProviderReadiness> {
+  if (selectIsOrchestratorBackend.select(state)) {
+    // No local probe: it reports nothing on an orchestrator. Every catalog
+    // provider is available with no sign-in verdict; the enabled ones are
+    // the auto-pick candidates.
+    const statusMap = selectProviderStatusMap.select(state);
+    return {
+      status: (providerId) => statusMap[providerId],
+      usable: selectAvailableEnabledProviderIds
+        .select(state)
+        .filter((providerId) => providerId !== 'mock'),
+    };
+  }
+  const availability = await getProviderAvailability();
+  return {
+    status: (providerId) => getProviderStatusFromResult(availability, providerId),
+    usable: getUsableProviderIds(availability),
+  };
 }
 
 /**
@@ -157,7 +196,7 @@ function resolveUsableProvider(
  * Given the current Redux state, resolve the provider, behavior prompt, and
  * any explicit model override for the initial onboarding Developer agent.
  * Returns a provider that is guaranteed to be available + authenticated on
- * the user's machine.
+ * the user's machine (on an orchestrator: enabled, for its machines to run).
  *
  * `userPick` is an explicit pick from the onboarding prompt-step model
  * picker: it wins outright under the same user-explicit gate as a
@@ -192,7 +231,7 @@ export async function resolveOnboardingModel(
     logger.info('Developer specialist absent from the resolved list; falling back to General');
   }
 
-  const availability = await getProviderAvailability();
+  const readiness = await readProviderReadiness(state);
 
   if (userPick?.model) {
     // Normalize a legacy compound pick at this boundary: the bare model leg
@@ -201,7 +240,7 @@ export async function resolveOnboardingModel(
     const pickedModel = splitLegacyCompoundId(userPick.model).modelId || userPick.model;
     const pickedProvider =
       userPick.provider || getProviderForModel(userPick.model, defaultProviderId);
-    const pickedStatus = getProviderStatusFromResult(availability, pickedProvider);
+    const pickedStatus = readiness.status(pickedProvider);
     if (!isProviderUserExplicitUsable(pickedStatus, pickedProvider)) {
       throw new Error(
         m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
@@ -221,7 +260,7 @@ export async function resolveOnboardingModel(
     };
   }
 
-  const usable = getUsableProviderIds(availability);
+  const usable = readiness.usable;
 
   const overrideProvider = specialistOverride
     ? getProviderForModel(specialistOverride, defaultProviderId)
@@ -240,7 +279,7 @@ export async function resolveOnboardingModel(
   let provider: string | undefined;
 
   if (userExplicit) {
-    const activeStatus = getProviderStatusFromResult(availability, activeProvider);
+    const activeStatus = readiness.status(activeProvider);
     if (isProviderUserExplicitUsable(activeStatus, activeProvider)) {
       provider = activeProvider;
       logger.info('Honoring user-explicit provider selection', {

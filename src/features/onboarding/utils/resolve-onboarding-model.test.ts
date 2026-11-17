@@ -63,9 +63,13 @@ function makeSelector<R, A extends unknown[]>(fn: (...args: A) => R) {
   return s;
 }
 
-vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
-  selectActiveProviderId: makeSelector(() => mockState.activeProviderId),
-}));
+vi.mock(
+  '$store/renderer/slices/provider-settings/provider-settings-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<object>()),
+    selectActiveProviderId: makeSelector(() => mockState.activeProviderId),
+  }),
+);
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: makeSelector(() => mockState.specialists),
@@ -120,6 +124,8 @@ import {
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
+import { getProviderAvailability } from '$features/providers/provider-availability.client';
+import { withBackendDaemonMode, withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 // The resolver reads the default provider + tier tables straight off
 // state.providerCatalog (real selectors, not mocked) — hydrate it. The
@@ -569,6 +575,68 @@ describe('resolveOnboardingModel', () => {
       await expect(
         resolveOnboardingModel(fakeState, { model: 'anthropic/claude-opus-4.7', provider: 'pi' }),
       ).rejects.toThrow(/'pi'/);
+    });
+  });
+
+  // PROTOCOL provider-profiles.md → "Profiles on an orchestrator": the backend
+  // checks no provider CLI (discovery reports none), yet every enabled provider
+  // can be used — its machines run it. Onboarding must not read the raw probe.
+  describe('on an orchestrator', () => {
+    function orchestratorState(enabledProviders: Record<string, boolean>): StoreState {
+      return withBackendDaemonMode(
+        withLegacyPrincipal({
+          providerCatalog: fakeState.providerCatalog,
+          providerSettings: { enabledProviders },
+          model: { defaultProviderId: '' },
+          agentAvailability: { providerStatusMap: {}, hiddenProviders: [] },
+        }),
+        'orchestrator',
+      );
+    }
+
+    beforeEach(() => {
+      // The raw backend probe on an orchestrator: nothing installed.
+      setAvailability({});
+    });
+
+    it('honors the provider picked on the welcome step without a local probe', async () => {
+      mockState.activeProviderId = 'claude-code';
+
+      const result = await resolveOnboardingModel(orchestratorState({ 'claude-code': true }));
+
+      expect(result.provider).toBe('claude-code');
+      expect(getProviderAvailability).not.toHaveBeenCalled();
+    });
+
+    it('auto-picks an enabled provider when none was picked', async () => {
+      mockState.activeProviderId = '';
+
+      const result = await resolveOnboardingModel(
+        orchestratorState({ codex: true, 'claude-code': false }),
+      );
+
+      expect(result.provider).toBe('codex');
+      expect(getProviderAvailability).not.toHaveBeenCalled();
+    });
+
+    it('accepts a prompt-step model pick for a catalog provider', async () => {
+      mockState.activeProviderId = 'codex';
+
+      const result = await resolveOnboardingModel(orchestratorState({ codex: true }), {
+        model: 'gpt-5',
+        provider: 'codex',
+      });
+
+      expect(result).toMatchObject({ provider: 'codex', model: 'gpt-5' });
+      expect(getProviderAvailability).not.toHaveBeenCalled();
+    });
+
+    it('still rejects a provider the catalog does not have', async () => {
+      mockState.activeProviderId = 'not-a-provider';
+
+      await expect(resolveOnboardingModel(orchestratorState({}))).rejects.toThrow(
+        /'not-a-provider'/,
+      );
     });
   });
 });

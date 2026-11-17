@@ -9101,5 +9101,11 @@
   "workspaceHome_moveError_updateRequired": "Mettez à jour Intent sur cette machine avant d'en faire la machine principale.",
   "workspaceHome_moveError_failed": "Impossible de déplacer la machine principale : {message}",
   "workspaceHome_starting_label": "Démarrage de la machine principale…",
-  "workspaceHome_moveDialog_cloudStartsSandbox": "Démarre un nouveau sandbox"
+  "workspaceHome_moveDialog_cloudStartsSandbox": "Démarre un nouveau sandbox",
+  "onboarding_agentMachines_none_title": "Ajoutez un ordinateur pour exécuter les agents",
+  "onboarding_agentMachines_none_description": "Cet Intent envoie les agents vers d'autres ordinateurs et n'en exécute aucun lui-même. Ajoutez un ordinateur dans Paramètres → Ordinateurs, puis revenez pour continuer.",
+  "onboarding_agentMachines_onMachines_title": "Les agents s'exécutent sur vos ordinateurs",
+  "onboarding_agentMachines_onMachines_description": "Choisissez la CLI de codage IA à utiliser. Chaque ordinateur s'y connecte ; Paramètres → Ordinateurs indique celles qu'un ordinateur peut exécuter.",
+  "onboarding_agentMachines_openSettings_label": "Ouvrir Paramètres → Ordinateurs",
+  "onboarding_providerCard_onMachines_label": "S'exécute sur vos ordinateurs"
 }

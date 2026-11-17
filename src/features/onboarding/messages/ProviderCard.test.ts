@@ -542,3 +542,21 @@ describe('ProviderCard auggie link-out click behavior', () => {
     expect(openExternal).not.toHaveBeenCalled();
   });
 });
+
+// On an orchestrator the backend checks no provider: each machine runs and
+// signs in to its own (PROTOCOL provider-profiles.md → "Profiles on an orchestrator").
+describe('ProviderCard on an orchestrator', () => {
+  it('says the provider runs on the machines instead of "Connected"', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authenticated: undefined, authDetails: undefined },
+        selected: true,
+        onMachines: true,
+      },
+    });
+    expect(container.textContent).toContain('Runs on your machines');
+    expect(container.textContent).not.toContain('Connected');
+    expect(banner(container)).toBeTruthy();
+  });
+});
