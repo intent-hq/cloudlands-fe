@@ -287,11 +287,17 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       { specialist: 'planner' },
     );
 
+    // A name derived from the specialist is a placeholder the agent replaces.
     expect(fromPayload.initialAgent).toMatchObject({
       name: 'Coordinator',
+      nameExplicitlySet: false,
       specialist: 'coordinator',
     });
-    expect(fromEdit.initialAgent).toMatchObject({ name: 'Planner', specialist: 'planner' });
+    expect(fromEdit.initialAgent).toMatchObject({
+      name: 'Planner',
+      nameExplicitlySet: false,
+      specialist: 'planner',
+    });
   });
 
   it('keeps an explicit payload agent name when the specialist is unchanged', () => {
@@ -315,6 +321,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       name: 'Named by producer',
       specialist: 'coordinator',
     });
+    expect(fromPayload.initialAgent?.nameExplicitlySet).toBeUndefined();
     expect(resolve).not.toHaveBeenCalled();
   });
 
@@ -337,6 +344,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
 
     expect(fromEdit.initialAgent).toMatchObject({ name: 'Implementor', specialist: 'implementor' });
     expect(toGeneral.initialAgent?.name).toBe('Agent');
+    expect(toGeneral.initialAgent?.nameExplicitlySet).toBe(false);
     expect(toGeneral.initialAgent?.specialist).toBeUndefined();
     expect(fromUnnamedPayload.initialAgent).toMatchObject({
       name: 'Planner',
@@ -464,6 +472,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       isNewRepo: false,
       initialAgent: {
         name: 'Implementor',
+        nameExplicitlySet: false,
         prompt: 'Edited prompt',
         specialist: 'implementor',
         agentType: 'workspace',
