@@ -111,6 +111,29 @@ describe('parseRemoteMachine', () => {
     expect(providers?.[1]).not.toHaveProperty('visible');
   });
 
+  it("keeps a provider's modelsStale flag only when it is set", () => {
+    const providers = parseRemoteMachine({
+      id: 'd-intent1',
+      name: 'intent1',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'connected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+      capabilities: {
+        providers: [
+          { id: 'claude-code', status: 'unknown', models: [], modelsStale: true },
+          { id: 'codex', status: 'signed-in', models: ['gpt-6'], modelsStale: false },
+          { id: 'droid', status: 'unknown', models: [], modelsStale: 'yes' },
+        ],
+      },
+    })?.capabilities?.providers;
+    expect(providers?.[0]).toMatchObject({ id: 'claude-code', modelsStale: true });
+    expect(providers?.[1]).not.toHaveProperty('modelsStale');
+    expect(providers?.[2]).not.toHaveProperty('modelsStale');
+  });
+
   it('keeps a tailcat-only machine (no LAN hosts)', () => {
     expect(
       parseRemoteMachine({
