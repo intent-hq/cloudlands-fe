@@ -20,7 +20,7 @@ const E2B_DASHBOARD_URL = 'https://e2b.dev/dashboard';
 /** The Northflank dashboard, where the owner manages projects, tokens and limits. */
 const NORTHFLANK_DASHBOARD_URL = 'https://app.northflank.com';
 /** The Agent37 dashboard: keys, wallet, instances and templates. */
-const AGENT37_DASHBOARD_URL = 'https://www.agent37.com/dashboard';
+const AGENT37_DASHBOARD_URL = 'https://www.agent37.com/dashboard/cloud';
 
 export function cloudDashboardUrl(provider: CloudProviderKind = 'e2b'): string {
   return provider === 'northflank'
