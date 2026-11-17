@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.346.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.345.1...v2.346.0) (2026-11-17)
+
+
+### 🚀 Features
+
+* INTENT_HIDE_MENU_BAR=1 keeps the Linux/Windows menu bar auto-hidden ([#4717](https://github.com/intent-hq/cloudlands-fe/issues/4717)) ([a740d7d](https://github.com/intent-hq/cloudlands-fe/commit/a740d7d7d5a0404368065a97d50f0162b4c9abbc))
+* **machine-rail:** make windows frames with no home machine ([#4691](https://github.com/intent-hq/cloudlands-fe/issues/4691)) ([773a03f](https://github.com/intent-hq/cloudlands-fe/commit/773a03f1da5202da8f5221b7a8a82cd3c9aa913c))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.234 ([#4719](https://github.com/intent-hq/cloudlands-fe/issues/4719)) ([7b9db17](https://github.com/intent-hq/cloudlands-fe/commit/7b9db17c3e714ceabc6d53802e4cb3e56391e292))
+
 ## [2.345.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.345.0...v2.345.1) (2026-11-17)
 
 
