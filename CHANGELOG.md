@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.344.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.2...v2.344.0) (2026-11-17)
+
+
+### 🚀 Features
+
+* **browser:** add trusted input actions to browser.exec ([#4702](https://github.com/intent-hq/cloudlands-fe/issues/4702)) ([e1c0cb0](https://github.com/intent-hq/cloudlands-fe/commit/e1c0cb06a0d5a39784d50f14c1a857af8578050f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.232 ([#4710](https://github.com/intent-hq/cloudlands-fe/issues/4710)) ([b735a84](https://github.com/intent-hq/cloudlands-fe/commit/b735a84dc72a7a89b1ba09b48ce3b44a0dcd8376))
+
 ## [2.343.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.343.1...v2.343.2) (2026-11-17)
 
 
