@@ -715,6 +715,8 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
           sentryIssue: undefined,
           initialAgent: {
             name: 'Developer',
+            // The specialist's placeholder: the agent renames itself on its first turn.
+            nameExplicitlySet: false,
             model: 'sonnet',
             prompt: 'hello onboarding',
             agentType: 'workspace',
@@ -1671,6 +1673,8 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
           plainFolder: true,
           initialAgent: {
             name: 'Developer',
+            // The specialist's placeholder: the agent renames itself on its first turn.
+            nameExplicitlySet: false,
             model: 'sonnet',
             prompt: 'hello onboarding',
             agentType: 'workspace',

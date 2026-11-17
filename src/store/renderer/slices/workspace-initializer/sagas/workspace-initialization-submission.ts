@@ -563,6 +563,8 @@ export function* prepareOnboardingWorkspaceInitialization(
   const initialAgent: NonNullable<WorkspaceInitializationRequest['createRequest']>['initialAgent'] =
     {
       name: agentName,
+      // A placeholder like the new-workspace form's, so the agent names itself.
+      nameExplicitlySet: false,
       model,
       prompt: hasStagedFiles ? undefined : prompt,
       agentType: createAgentTypeId('workspace'),
