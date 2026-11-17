@@ -26,10 +26,18 @@ export function setWindowTranslucencyEnabled(enabled: boolean): void {
  * Windows). Seeded from local prefs before the first window opens and kept
  * current by `window:set-menu-bar-auto-hide`.
  */
-let menuBarAutoHideEnabled = false;
+let menuBarAutoHideEnabled = menuBarHiddenByEnvironment();
+
+/**
+ * `INTENT_HIDE_MENU_BAR=1` keeps the menu bar auto-hidden regardless of the
+ * preference, for kiosk-style hosts such as Intent OS. Alt still shows it.
+ */
+export function menuBarHiddenByEnvironment(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.INTENT_HIDE_MENU_BAR === '1';
+}
 
 export function setMenuBarAutoHideEnabled(enabled: boolean): void {
-  menuBarAutoHideEnabled = enabled;
+  menuBarAutoHideEnabled = enabled || menuBarHiddenByEnvironment();
 }
 
 type MenuBarCapableWindow = {
@@ -44,8 +52,9 @@ export function applyMenuBarAutoHide(
   platform: NodeJS.Platform = process.platform,
 ): void {
   if (platform === 'darwin') return;
-  window.setAutoHideMenuBar(enabled);
-  window.setMenuBarVisibility(!enabled);
+  const hide = enabled || menuBarHiddenByEnvironment();
+  window.setAutoHideMenuBar(hide);
+  window.setMenuBarVisibility(!hide);
 }
 
 function opaqueBackground(isDarkMode: boolean): string {
