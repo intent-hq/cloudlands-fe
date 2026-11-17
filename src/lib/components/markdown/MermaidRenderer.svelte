@@ -34,6 +34,7 @@
   import { addMermaidLabelKnockouts, insertLabelKnockout } from './mermaid-label-knockouts';
   import { loadMermaidTextFont } from './mermaid-font-loading';
   import { ensureMermaidLabelContrast } from './mermaid-label-contrast';
+  import { repairMermaidCurveCrossings } from './mermaid-curved-routing';
   import {
     alignMermaidOpenArrowheads,
     applyMermaidTerminalGaps,
@@ -1390,6 +1391,7 @@ ${source}`;
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
     // Keep native ranks and routes together; source-order stacking separates branches from joins.
     if (flowchart) {
+      repairMermaidCurveCrossings(svg);
       const bounds = svg.getBBox();
       const padding = 16;
       const width = Math.ceil(bounds.width + padding * 2);
@@ -1403,6 +1405,28 @@ ${source}`;
         await new Promise<void>((resolve) => setTimeout(resolve, 64));
       }
       if (generation !== renderGeneration || fit !== fitGeneration) return false;
+      // Arrow trimming can move a cubic control point outside the first fit.
+      const painted = measureFinalFlowchartBounds(svg);
+      const view = svg.viewBox.baseVal;
+      if (
+        painted.x < view.x ||
+        painted.y < view.y ||
+        painted.x + painted.width > view.x + view.width ||
+        painted.y + painted.height > view.y + view.height
+      ) {
+        const left = Math.min(view.x, painted.x - padding);
+        const top = Math.min(view.y, painted.y - padding);
+        const finalWidth = Math.ceil(
+          Math.max(view.x + view.width, painted.x + painted.width + padding) - left,
+        );
+        const finalHeight = Math.ceil(
+          Math.max(view.y + view.height, painted.y + painted.height + padding) - top,
+        );
+        svg.setAttribute('viewBox', `${left} ${top} ${finalWidth} ${finalHeight}`);
+        svg.setAttribute('width', String(finalWidth));
+        svg.setAttribute('height', String(finalHeight));
+        setReadableMermaidWidth(svg, finalWidth);
+      }
       svg.dataset.layoutGeneration = String(generation);
       svg.dataset.layoutSettled = 'true';
       return true;
@@ -1684,6 +1708,8 @@ ${source}`;
       // they followed the flowchart width, which the layout branches above tune.
       config.state = { ...config.state, wrappingWidth: config.flowchart?.wrappingWidth };
       await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
+      if (usesHtmlLabels)
+        await document.fonts?.load(`500 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
       if (!isCurrent()) return;
       const renderResult = await runSerializedMermaidRender(
         async () => {
@@ -2102,10 +2128,21 @@ ${source}`;
     transition-property: fill, stroke, opacity;
   }
 
-  /* Layout reads must see the new transforms synchronously. The global reduced-motion
-     duration otherwise creates transitions on these groups' default `all` property. */
+  /* Measure the final node outlines and routes synchronously. Reduced motion's
+     nonzero duration otherwise animates native path/shape transforms and d too. */
   .mermaid-presentation
-    :global(svg[aria-roledescription='flowchart-v2'] :is(g.node, .edgeLabels > .edgeLabel)) {
+    :global(
+      svg[aria-roledescription='flowchart-v2']
+        :is(
+          g.node,
+          g.node > .label-container,
+          g.node > .flowchart-node-outline,
+          g.cluster > rect,
+          g.cluster > .cluster-label,
+          .edgePaths path,
+          .edgeLabels > .edgeLabel
+        )
+    ) {
     transition-property: fill, stroke, opacity;
   }
 

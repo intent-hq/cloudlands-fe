@@ -580,6 +580,29 @@ const invitationFlow = `flowchart TD
     L -- Workspace guest --> N[Access only invited workspaces]`;
 
 const layoutEdgeCases = {
+  'mermaid-trace-email': {
+    kind: 'mermaid',
+    title: 'Trace email delivery and recurring cases',
+    description: 'The reported email flow, including the queue cycle and long notifier return.',
+    visualContract:
+      'Keep every label complete and the recurring-case return clear of Mailgun and Recipient inbox.',
+    source: `flowchart LR
+  U["Customer"] --> UI["Console: existing Settings page"]
+  ST["Trace staff"] --> WUI["Console: staff Waitlist"]
+  UI --> API["Trace API"]
+  WUI --> API
+  R["Cluster review stores: saved visible cases"] --> N["Case notifier inside Trace API"]
+  API --> P["PostgreSQL: preferences, waitlist, notification records"]
+  N --> P
+  API --> C["Typed email client"]
+  N --> C
+  C --> E["trace-email: Rust service"]
+  E --> Q["PostgreSQL: outgoing message queue"]
+  Q --> E
+  E --> M["Mailgun"]
+  M --> I["Recipient inbox"]
+  E -->|"Recheck recurring case messages"| N`,
+  },
   'mermaid-invitation': {
     kind: 'mermaid',
     title: 'Invitation and returning session',
