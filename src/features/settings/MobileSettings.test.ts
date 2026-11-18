@@ -226,7 +226,9 @@ it('keeps a single owner pairing flow with collaboration capabilities enabled', 
     await fireEvent.click(qrButton());
     await screen.findByRole('dialog');
     expect(screen.getAllByRole('button', { name: m.settings_wsApi_showQrCode() })).toHaveLength(1);
-    expect(screen.getByRole('switch')).toBeTruthy();
+    expect(screen.getAllByRole('switch', { name: m.settings_wsApi_enable_label() })).toHaveLength(
+      1,
+    );
     expect(invoke.mock.calls.map(([, payload]) => payload.method)).toEqual([
       'settings.list',
       'pairing.getSelfInfo',

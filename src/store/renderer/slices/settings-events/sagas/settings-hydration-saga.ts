@@ -5,6 +5,7 @@ import { settingsFormSaga } from './settings-form-saga';
 import { settingsMigrationsSaga } from './settings-migrations-saga';
 import { websocketApiSaga } from '../../websocket-api/sagas/websocket-api-saga';
 import { rtkSettingsSaga } from '../../rtk-settings/sagas/rtk-settings-saga';
+import { pushSettingsSaga } from '../../push-settings/sagas/push-settings-saga';
 
 import { readSettingsSnapshot } from './read-settings-snapshot';
 import type { AppliedSettingChange } from '$lib/client/app-client';
@@ -176,6 +177,7 @@ export function* settingsHydrationSaga() {
         call(settingsFormSaga),
         call(websocketApiSaga),
         call(rtkSettingsSaga),
+        call(pushSettingsSaga),
       ]);
     },
   );

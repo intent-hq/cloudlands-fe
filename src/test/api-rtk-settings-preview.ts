@@ -1,6 +1,7 @@
 import { store } from '$store/renderer/store';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { rtkSettingsSaga } from '$store/renderer/slices/rtk-settings/sagas/rtk-settings-saga';
+import { pushSettingsSaga } from '$store/renderer/slices/push-settings/sagas/push-settings-saga';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
 import { connectionTunnelSaga } from '$store/renderer/slices/connections/sagas/connection-tunnel-saga';
 
@@ -16,3 +17,4 @@ export const setupRtkSettingsPreview = () => {
     stopForms();
   };
 };
+export const setupPushSettingsPreview = () => store.runSaga(pushSettingsSaga);
