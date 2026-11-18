@@ -8,6 +8,7 @@ type ClipboardInput = Pick<
 const ACTIONS = { c: 'copy', x: 'cut', v: 'paste' } as const;
 
 /**
+ * @internal
  * The edit command for Super+C/X/V on Linux, so Mac-keyboard users (Intent OS,
  * Asahi) can copy, cut and paste with Cmd as well as Ctrl. In the terminal
  * Ctrl+C stays an interrupt; Cmd+C copies the selection.
