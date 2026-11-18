@@ -33,7 +33,7 @@
     <Accordion.Header>
       <Accordion.Trigger
         class={cn(
-          'type-body font-medium data-[state=open]:font-medium',
+          'type-body w-auto flex-none font-medium data-[state=open]:font-medium',
           flush && '-ml-2',
           muted &&
             'font-normal text-muted-foreground data-[state=open]:font-normal data-[state=open]:text-muted-foreground',
