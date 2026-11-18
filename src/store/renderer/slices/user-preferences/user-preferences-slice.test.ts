@@ -576,21 +576,21 @@ describe('userPreferencesReducer', () => {
       expect(enabled.chatAuroraEnabled).toBe(true);
     });
 
-    it('defaults collapseToolRuns to off, then sets and toggles it', () => {
-      expect(initialState.collapseToolRuns).toBe(false);
-      const enabled = userPreferencesReducer(initialState, setCollapseToolRuns(true));
-      const disabled = userPreferencesReducer(enabled, toggleCollapseToolRuns());
-      expect(enabled.collapseToolRuns).toBe(true);
+    it('defaults collapseToolRuns to on, then sets and toggles it', () => {
+      expect(initialState.collapseToolRuns).toBe(true);
+      const disabled = userPreferencesReducer(initialState, setCollapseToolRuns(false));
+      const enabled = userPreferencesReducer(disabled, toggleCollapseToolRuns());
       expect(disabled.collapseToolRuns).toBe(false);
+      expect(enabled.collapseToolRuns).toBe(true);
     });
 
-    it('selects collapseToolRuns with an off fallback when the slice is missing', () => {
+    it('selects collapseToolRuns with an on fallback when the slice is missing', () => {
       expect(
         selectCollapseToolRuns.select({
-          userPreferences: { ...initialState, collapseToolRuns: true },
+          userPreferences: { ...initialState, collapseToolRuns: false },
         } as any),
-      ).toBe(true);
-      expect(selectCollapseToolRuns.select({} as any)).toBe(false);
+      ).toBe(false);
+      expect(selectCollapseToolRuns.select({} as any)).toBe(true);
     });
 
     it('sets and toggles shellTransparencyEnabled', () => {

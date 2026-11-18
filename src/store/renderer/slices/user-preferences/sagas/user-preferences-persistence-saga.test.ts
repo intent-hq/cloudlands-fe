@@ -224,7 +224,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
       'chat:contentWidth': '800',
-      'chat:collapseToolRuns': true,
+      'chat:collapseToolRuns': false,
       'appearance:shellTransparencyEnabled': false,
       'appearance:menuBarAutoHide': true,
       'appearance:reduceMotionOnBattery': false,
@@ -259,7 +259,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
       [setChatContentWidth('800')],
-      [setCollapseToolRuns(true)],
+      [setCollapseToolRuns(false)],
       [setShellTransparencyEnabled(false)],
       [setMenuBarAutoHide(true)],
       [setReduceMotionOnBattery(false)],
@@ -280,6 +280,23 @@ describe('userPreferencesPersistenceSaga', () => {
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
+
+  it.each([true, false])(
+    'hydrates a persisted chat:collapseToolRuns = %s over the on default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'chat:collapseToolRuns' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [setCollapseToolRuns(stored)],
+        [userPreferencesHydrated()],
+      ]);
+    },
+  );
 
   it.each([true, false])(
     'hydrates a persisted appearance:reduceMotionOnBattery = %s over the default',
