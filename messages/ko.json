@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "글꼴",
   "settings_font_notes_description": "노트, 사양서, 문서에 사용되는 글꼴입니다. 고정폭 글꼴은 기술 문서 작성에 더 집중하기 좋을 수 있습니다.",
   "settings_font_notes_label": "노트",
+  "settings_fonts_search_placeholder": "글꼴 검색",
+  "settings_fonts_noResults_message": "글꼴을 찾을 수 없습니다",
   "settings_fonts_systemDefault_label": "시스템 기본값",
   "settings_footer_restartToUpdate_label": "다시 시작하여 업데이트",
   "settings_footer_support": "지원",

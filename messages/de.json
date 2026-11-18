@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "Schriftart",
   "settings_font_notes_description": "Die Schriftart für Ihre Notizen, Spezifikationen und Dokumente. Monospace kann sich beim technischen Schreiben fokussierter anfühlen.",
   "settings_font_notes_label": "Notizen",
+  "settings_fonts_search_placeholder": "Schriftarten suchen",
+  "settings_fonts_noResults_message": "Keine Schriftarten gefunden",
   "settings_fonts_systemDefault_label": "Systemstandard",
   "settings_footer_restartToUpdate_label": "Zum Aktualisieren neu starten",
   "settings_footer_support": "Support",

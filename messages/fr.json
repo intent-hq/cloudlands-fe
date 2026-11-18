@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "Police",
   "settings_font_notes_description": "La police utilisée pour vos notes, spécifications et documents. La police à chasse fixe peut sembler plus adaptée à l'écriture technique.",
   "settings_font_notes_label": "Notes",
+  "settings_fonts_search_placeholder": "Rechercher des polices",
+  "settings_fonts_noResults_message": "Aucune police trouvée",
   "settings_fonts_systemDefault_label": "Valeur par défaut du système",
   "settings_footer_restartToUpdate_label": "Redémarrer pour mettre à jour",
   "settings_footer_support": "Assistance",

@@ -133,13 +133,15 @@ describe('Fonts & Colors settings migration', () => {
         within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
       );
 
-      const codeFont = within(document.getElementById('code-font')!).getByRole('combobox', {
+      const codeFont = within(document.getElementById('code-font')!).getByRole('button', {
         name: 'Font',
       });
-      await fireEvent.keyDown(codeFont, { key: 'Enter' });
+      await fireEvent.click(codeFont);
+      const fontSearch = await screen.findByRole('combobox', { name: 'Search fonts' });
+      await fireEvent.input(fontSearch, { target: { value: 'Editorial' } });
       expect(await screen.findByRole('option', { name: LONG_FONT_NAME })).toBeTruthy();
-      await fireEvent.keyDown(codeFont, { key: 'ArrowDown' });
-      await fireEvent.keyDown(codeFont, { key: 'Enter' });
+      await fireEvent.keyDown(fontSearch, { key: 'ArrowDown' });
+      await fireEvent.keyDown(fontSearch, { key: 'Enter' });
       await waitFor(() => expect(codeFont.textContent).toContain(LONG_FONT_NAME));
 
       const relevantTypes = new Set([

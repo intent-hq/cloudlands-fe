@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "Fuente",
   "settings_font_notes_description": "El tipo de letra usado para sus notas, especificaciones y documentos. La monoespaciada puede resultar más enfocada para la escritura técnica.",
   "settings_font_notes_label": "Notas",
+  "settings_fonts_search_placeholder": "Buscar fuentes",
+  "settings_fonts_noResults_message": "No se encontraron fuentes",
   "settings_fonts_systemDefault_label": "Predeterminado del sistema",
   "settings_footer_restartToUpdate_label": "Reiniciar para actualizar",
   "settings_footer_support": "Soporte",
