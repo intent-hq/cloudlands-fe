@@ -25,6 +25,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { store as appStore } from '$store/renderer/store';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { isTerminalPassthroughChord } from './terminal-app-chords';
 import {
   closeActiveTerminalRequested,
@@ -1860,16 +1861,16 @@ export class TerminalAdapter {
 
   /**
    * Handle link clicks - open URLs in browser panel instead of popup.
-   * GitHub URLs are always opened in the external browser. Loopback URLs are
+   * GitHub URLs and root-terminal links open in the external browser. Loopback URLs are
    * resolved through browser:resolve-url (rewrite → probe → tunnel) BEFORE
    * the browser panel opens, so remote-mode links land on the daemon host or
    * a tunnel port (the embedded browser never resolves).
    */
   private handleLinkClick(uri: string): void {
     try {
-      // GitHub URLs always open in external browser
-      if (isGitHubUrl(uri)) {
-        logger.debug('GitHub URL detected in terminal, opening in external browser', {
+      // GitHub URLs, and links in root terminals (no workspace browser panel), open externally
+      if (isGitHubUrl(uri) || this.workspaceId === ROOT_WORKSPACE_ID) {
+        logger.debug('Opening terminal link in external browser', {
           uri,
           workspaceId: this.workspaceId,
         });

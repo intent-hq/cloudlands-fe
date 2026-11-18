@@ -440,6 +440,7 @@ import {
 import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/main/pair-deep-link';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { findOpenUrlArg, openSignInWindow } from '../features/browser/main/sign-in-window';
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
@@ -2211,6 +2212,13 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', async (_event: Electron.Event, commandLine: string[]) => {
     logger.info('Received second-instance event:', { commandLine: commandLine.map(scrubToken) });
+
+    // A web page sent from the OS (Intent OS routes xdg-open here).
+    const webUrl = findOpenUrlArg(commandLine);
+    if (webUrl) {
+      openSignInWindow(webUrl);
+      return;
+    }
 
     // Look for intent:// URL in command line arguments
     const deepLinkUrl = findIntentUrl(commandLine);
