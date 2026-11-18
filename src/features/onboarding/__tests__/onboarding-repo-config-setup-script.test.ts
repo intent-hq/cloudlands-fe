@@ -1511,7 +1511,8 @@ describe('onboarding model picker (initial Developer agent)', () => {
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
     const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
       initialAgent: {
-        name: string;
+        name?: string;
+        nameExplicitlySet?: boolean;
         specialist?: string;
         behaviorPrompt?: string;
         metadata: { specialist?: string };
@@ -1520,8 +1521,9 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.specialist).toBeUndefined();
     expect(createRequest.initialAgent.metadata.specialist).toBeUndefined();
     expect(createRequest.initialAgent.behaviorPrompt).toBeUndefined();
-    expect(createRequest.initialAgent.name).toBeTruthy();
-    expect(createRequest.initialAgent.name).not.toBe('Developer');
+    // General takes the daemon's placeholder name and renames itself.
+    expect(createRequest.initialAgent.name).toBeUndefined();
+    expect(createRequest.initialAgent.nameExplicitlySet).toBe(false);
 
     // The remembered modal choice is single-agent General.
     await expect(initializationResult()).resolves.toMatchObject({ workspaceId: 'ws-1' });
