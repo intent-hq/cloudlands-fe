@@ -17,6 +17,9 @@ test('header activation and native menu hold, cancel, and device selection', asy
   await header.dispatchEvent('dblclick', { button: 0 });
   await expect.poll(activationCount).toBe('1');
   await page.getByTestId('dock-drag-handle').click();
+  await expect(page.getByRole('menu', { name: 'Notch menu' })).toBeVisible();
+  await expect.poll(activationCount).toBe('1');
+  await page.getByRole('menuitem', { name: 'Open Intent', exact: true }).click();
   await expect.poll(activationCount).toBe('2');
   await header.dispatchEvent('contextmenu', { button: 2 });
   await expect(shell).toHaveAttribute('data-expanded', 'true');
@@ -67,4 +70,45 @@ test('conversation header activates Intent and opens devices while body keeps it
   const editor = surface.getByRole('textbox').first();
   await editor.dispatchEvent('contextmenu', { button: 2 });
   await expect(harness).toHaveAttribute('data-request', 'null');
+});
+
+test('notch menu turns off the Appearance setting and keeps failed saves retryable', async ({
+  mount,
+  page,
+}, info) => {
+  const harness = await mount(Harness, {
+    props: { failTurnOffOnce: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  const logo = page.getByRole('button', { name: 'Notch menu', exact: true });
+  await logo.click();
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
+  await expect(menu).toBeVisible();
+  await page.screenshot({ path: info.outputPath('notch-controls.png') });
+  const turnOff = menu.getByRole('menuitem', { name: 'Turn off notch', exact: true });
+  await turnOff.click();
+  await expect(harness).toHaveAttribute('data-turn-off-requests', '[{"enabled":false}]');
+  await expect(harness).toHaveAttribute('data-enabled', 'true');
+  await expect(menu).toBeVisible();
+  await turnOff.click();
+  await expect(harness).toHaveAttribute(
+    'data-turn-off-requests',
+    '[{"enabled":false},{"enabled":false}]',
+  );
+  await expect(harness).toHaveAttribute('data-enabled', 'false');
+  await expect(menu).toHaveCount(0);
+  await expect(logo).toBeFocused();
+  await expect(harness).toHaveAttribute('data-activations', '0');
+});
+
+test('notch menu cannot turn off an active recording', async ({ mount, page }) => {
+  const harness = await mount(Harness, {
+    props: { recording: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  await page.getByRole('button', { name: 'Notch menu', exact: true }).click();
+  const turnOff = page.getByRole('menuitem', { name: 'Turn off notch', exact: true });
+  await expect(turnOff).toHaveAttribute('aria-disabled', 'true');
+  await turnOff.press('Enter');
+  await expect(harness).toHaveAttribute('data-turn-off-requests', '[]');
 });

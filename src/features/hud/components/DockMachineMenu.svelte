@@ -5,6 +5,8 @@
   import { createDockConversationPopupOwner } from './dock-conversation-popup-owner';
   import type { DockPointerRect } from '$shared/dock-layout';
   import type { DockMachineOption } from './dock-machine-types';
+  import { activateIntentFromDock } from '$features/hud/dock-context-menu';
+  import { requestDockLabEnabled } from '$lib/dock-lab';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -14,6 +16,7 @@
     currentId,
     pending = null,
     error = false,
+    canTurnOff = true,
     side = 'bottom',
     onSwitch,
     onRegionsChange,
@@ -24,6 +27,7 @@
     currentId: string;
     pending?: string | null;
     error?: boolean;
+    canTurnOff?: boolean;
     side?: 'bottom' | 'top' | 'left' | 'right';
     onSwitch: (id: string) => void;
     onRegionsChange: (regions: DockPointerRect[]) => void;
@@ -31,6 +35,7 @@
   let target = $state<HTMLDivElement>();
   let owner: ReturnType<typeof createDockConversationPopupOwner> | undefined;
   let disposed = false;
+  let turningOff = $state(false);
   let anchorPosition = $state({ x: 0, y: 0 });
   let anchorFrame: number | undefined;
   function followAnchor(): void {
@@ -73,22 +78,34 @@
   });
   const actions = $derived(
     defineActions([
+      { id: 'open-intent', label: m.dock_logo_open_label() },
+      ...(machines.length
+        ? ([
+            {
+              id: 'machines',
+              kind: 'radio-group',
+              label: m.dock_machines_label(),
+              value: currentId,
+              children: machines.map((machine) => ({
+                id: machine.id,
+                kind: 'radio' as const,
+                value: machine.id,
+                label:
+                  pending === machine.id
+                    ? m.dock_machineConnecting_label({ machine: machine.label })
+                    : machine.label,
+                disabled: pending !== null || machine.id === currentId,
+                closeOnSelect: false,
+              })),
+            },
+          ] as const)
+        : []),
       {
-        id: 'machines',
-        kind: 'radio-group',
-        label: m.dock_machines_label(),
-        value: currentId,
-        children: machines.map((machine) => ({
-          id: machine.id,
-          kind: 'radio' as const,
-          value: machine.id,
-          label:
-            pending === machine.id
-              ? m.dock_machineConnecting_label({ machine: machine.label })
-              : machine.label,
-          disabled: pending !== null || machine.id === currentId,
-          closeOnSelect: false,
-        })),
+        id: 'turn-off',
+        group: 'controls',
+        label: m.dock_menu_turnOff_label(),
+        disabled: !canTurnOff || pending !== null || turningOff,
+        closeOnSelect: false,
       },
       ...(error
         ? [{ id: 'error', kind: 'label' as const, label: m.dock_machineSwitchFailed_error() }]
@@ -108,15 +125,25 @@
     {contextMenu}
     {side}
     align="start"
-    ariaLabel={m.dock_machines_label()}
+    ariaLabel={m.dock_logo_menu_label()}
     class="dock-machine-menu-content min-w-56 max-w-80 shadow-none animate-none! transition-none!"
     onInteractOutside={(event) => {
       // The visible logo owns the toggle. Let its click close the menu once,
       // rather than closing on pointer-up and reopening on the following click.
       if (event.target instanceof Node && anchor.contains(event.target)) event.preventDefault();
     }}
-    onAction={(id) => {
-      if (!pending && id !== currentId) onSwitch(id);
+    onAction={async (id) => {
+      if (id === 'open-intent') {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- activates the existing app window; no domain data is fetched
+        activateIntentFromDock();
+      } else if (id === 'turn-off') {
+        if (!canTurnOff || pending || turningOff) return;
+        turningOff = true;
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- writes the same main-owned setting as Appearance; no domain data is fetched
+        const disabled = await requestDockLabEnabled(false);
+        turningOff = false;
+        if (disabled) open = false;
+      } else if (!pending && id !== currentId) onSwitch(id);
     }}
   />
   {#if error}

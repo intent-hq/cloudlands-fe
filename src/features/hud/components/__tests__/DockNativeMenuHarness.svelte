@@ -7,7 +7,17 @@
   import { Button } from '$lib/components/ui/button';
   import Preview from '../dock-rail.preview.svelte';
   import { dockRailPreview } from '../dock-rail.preview-fixtures';
-  let { conversationFixture = false }: { conversationFixture?: boolean } = $props();
+  let {
+    conversationFixture = false,
+    failTurnOffOnce = false,
+    recording = false,
+  }: {
+    conversationFixture?: boolean;
+    failTurnOffOnce?: boolean;
+    recording?: boolean;
+  } = $props();
+  let turnOffRequests = $state<unknown[]>([]);
+  let enabled = $state(true);
   let reactiveMachines = $state([
     { id: 'local', label: 'This Mac' },
     { id: 'remote-build', label: 'Build server' },
@@ -16,6 +26,11 @@
   let request = $state<DockContextMenuRequest | null>(null);
   let finish: ((result: DockContextMenuResult) => void) | undefined;
   const restores = [
+    overrideMockIpcHandler(WINDOW_CHANNELS.SET_DOCK_LAB, (payload) => {
+      turnOffRequests = [...turnOffRequests, structuredClone(payload)];
+      if (!failTurnOffOnce || turnOffRequests.length > 1) enabled = false;
+      return { enabled };
+    }),
     overrideMockIpcHandler(WINDOW_CHANNELS.ACTIVATE_APP, () => {
       activations += 1;
       return { activated: true };
@@ -37,6 +52,8 @@
 <div
   data-testid="native-menu-harness"
   data-activations={activations}
+  data-turn-off-requests={JSON.stringify(turnOffRequests)}
+  data-enabled={enabled}
   data-request={JSON.stringify(request)}
 >
   <Preview
@@ -44,6 +61,7 @@
     machineFixture
     controlledPlacement
     {conversationFixture}
+    recordingFixture={recording ? 'running' : undefined}
   />
   <Button
     onclick={() => {
