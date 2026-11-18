@@ -6949,7 +6949,6 @@
   "workspace_compactInitializer_progressSubmodules_label": "サブモジュールをクローンしています…",
   "workspace_compactInitializer_progressWithPercent_label": "{label}{percent}",
   "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
-  "workspace_compactInitializer_progressTransferTimeLeft_label": "{received} · {rate} · 残り{duration}",
   "workspace_compactInitializer_progressWorktree_label": "ワークツリーを作成しています…",
   "workspace_compactInitializer_promptEnhanced_toast": "プロンプトを強化しました",
   "workspace_compactInitializer_repository_label": "コードベース",

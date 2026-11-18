@@ -48,46 +48,12 @@ describe('parseCreateProgressTransfer', () => {
   });
 });
 
-describe('createProgressTransferLabel time left', () => {
-  it('projects the remaining objects at the average object size so far', () => {
-    // 25% of objects in 10 MB → about 30 MB left at 5 MB/s → 6 s → "5s".
-    expect(
-      createProgressTransferLabel({
-        receivedObjects: 250,
-        totalObjects: 1000,
-        receivedBytes: 10 * MB,
-        bytesPerSecond: 5 * MB,
-      }),
-    ).toBe('10 MB · 5 MB/s · 5s left');
-  });
-
-  it.each([
-    [
-      'a stalled rate',
-      { receivedObjects: 500, totalObjects: 1000, receivedBytes: MB, bytesPerSecond: 0 },
-      '1 MB · 0 kB/s',
-    ],
-    [
-      'too few objects to extrapolate',
-      { receivedObjects: 10, totalObjects: 1000, receivedBytes: MB, bytesPerSecond: MB },
-      '1 MB · 1 MB/s',
-    ],
-    [
-      'a finished download',
-      { receivedObjects: 1000, totalObjects: 1000, receivedBytes: MB, bytesPerSecond: MB },
-      '1 MB · 1 MB/s',
-    ],
-  ])('omits it with %s', (_name, transfer, label) => {
-    expect(createProgressTransferLabel(transfer)).toBe(label);
-  });
-});
-
 describe('createProgressTransferLabel', () => {
   it('is null until git reports bytes', () => {
     expect(createProgressTransferLabel({ receivedObjects: 1, totalObjects: 20 })).toBeNull();
   });
 
-  it('shows size and rate without a time when the estimate is not ready', () => {
+  it('shows size and rate', () => {
     expect(
       createProgressTransferLabel({
         receivedObjects: 1,
@@ -98,25 +64,15 @@ describe('createProgressTransferLabel', () => {
     ).toBe('12.3 MB · 5.7 MB/s');
   });
 
-  it('adds a rounded time left once the estimate is ready', () => {
-    // 50% in 120 MB → 120 MB left at 1 MB/s → 120 s → "2m".
+  it('never adds a time left, even late in the download', () => {
     expect(
       createProgressTransferLabel({
-        receivedObjects: 500,
+        receivedObjects: 900,
         totalObjects: 1000,
         receivedBytes: 120 * MB,
         bytesPerSecond: MB,
       }),
-    ).toBe('120 MB · 1 MB/s · 2m left');
-    // Under a minute rounds to 5 s steps: 13 s → "15s".
-    expect(
-      createProgressTransferLabel({
-        receivedObjects: 500,
-        totalObjects: 1000,
-        receivedBytes: 13 * MB,
-        bytesPerSecond: MB,
-      }),
-    ).toBe('13 MB · 1 MB/s · 15s left');
+    ).toBe('120 MB · 1 MB/s');
   });
 
   it('switches to kB and GB at the edges', () => {

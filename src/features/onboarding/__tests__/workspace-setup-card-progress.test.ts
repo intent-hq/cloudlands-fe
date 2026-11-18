@@ -171,7 +171,7 @@ describe('WorkspaceSetupCard live clone progress', () => {
     expect(result.container.textContent).not.toContain('Creating an isolated copy of');
   });
 
-  it('shows download size, rate and time left while receiving, and hides them after', async () => {
+  it('shows download size and rate while receiving, and hides them after', async () => {
     renderCard(PID);
 
     dispatchToSlice(
@@ -201,7 +201,7 @@ describe('WorkspaceSetupCard live clone progress', () => {
     );
     await waitFor(() => {
       expect(screen.getByTestId('setup-card-progress-transfer').textContent).toBe(
-        '120 MB · 1 MB/s · 2m left',
+        '120 MB · 1 MB/s',
       );
     });
 
