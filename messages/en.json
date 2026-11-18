@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "System Default",
   "settings_footer_restartToUpdate_label": "Restart to update",
   "settings_footer_support": "Support",
-  "settings_footer_upToDate": "Up to date",
   "settings_gitWorkspace_autoCommit_label": "Enable auto-commit for new workspaces",
   "settings_gitWorkspace_autoArchiveDays_description": "Days without messages, note edits or agent activity before a workspace is archived.",
   "settings_gitWorkspace_purge_label": "Free disk space for archived workspaces",

@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "系统默认",
   "settings_footer_restartToUpdate_label": "重启以更新",
   "settings_footer_support": "支持",
-  "settings_footer_upToDate": "已是最新",
   "settings_gitWorkspace_autoCommit_label": "为新工作区启用自动提交",
   "settings_gitWorkspace_autoArchiveDays_description": "在没有消息、笔记编辑或代理活动的情况下，工作区被归档前的天数。",
   "settings_gitWorkspace_purge_label": "为已归档的工作区释放磁盘空间",

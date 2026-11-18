@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "システムデフォルト",
   "settings_footer_restartToUpdate_label": "再起動してアップデート",
   "settings_footer_support": "サポート",
-  "settings_footer_upToDate": "最新の状態です",
   "settings_gitWorkspace_autoCommit_label": "新しいワークスペースで自動コミットを有効にする",
   "settings_gitWorkspace_autoArchiveDays_description": "メッセージ、ノートの編集、エージェントのアクティビティがない状態で、ワークスペースがアーカイブされるまでの日数。",
   "settings_gitWorkspace_purge_label": "アーカイブ済みワークスペースのディスク容量を解放する",

@@ -4,7 +4,6 @@
   import { page } from '$app/state';
   import {
     selectIsReadyToInstall,
-    selectAutoUpdateStatus,
     selectShareUpdateStatistics,
   } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
@@ -97,7 +96,6 @@
   import { store as appStore } from '$store/renderer/store';
 
   const isReadyToInstall$ = selectIsReadyToInstall();
-  const autoUpdateStatus$ = selectAutoUpdateStatus();
   const updateChannel$ = selectUpdateChannel();
   const shareUpdateStatistics$ = selectShareUpdateStatistics();
   const noteFontStyle = selectNoteFontStyle();
@@ -554,25 +552,23 @@
         <strong class="text-foreground">Intent</strong><!-- i18n-ignore (brand name) -->
         <span>v{appVersion || '...'}</span>
       </Button>
-      {#if $isReadyToInstall$}
-        <Button
-          variant="plain"
-          class="type-body cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
-          onclick={() => appStore.dispatch(installUpdate())}
-        >
-          {m.settings_footer_restartToUpdate_label()}
-        </Button>
-      {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
-        <span>{m.settings_footer_upToDate()}</span>
-      {/if}
+      <a
+        href="https://www.intentapp.dev/docs"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+        >{m.settings_footer_support()}</a
+      >
     </div>
-    <a
-      href="https://www.intentapp.dev/docs"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-      >{m.settings_footer_support()}</a
-    >
+    {#if $isReadyToInstall$}
+      <Button
+        variant="plain"
+        class="type-caption mt-1.5 h-auto cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
+        onclick={() => appStore.dispatch(installUpdate())}
+      >
+        {m.settings_footer_restartToUpdate_label()}
+      </Button>
+    {/if}
   </div>
 {/snippet}
 

@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "Predeterminado del sistema",
   "settings_footer_restartToUpdate_label": "Reiniciar para actualizar",
   "settings_footer_support": "Soporte",
-  "settings_footer_upToDate": "Actualizado",
   "settings_gitWorkspace_autoCommit_label": "Activar la confirmación automática para nuevos espacios de trabajo",
   "settings_gitWorkspace_autoArchiveDays_description": "Días sin mensajes, ediciones de notas ni actividad de agentes antes de archivar un espacio de trabajo.",
   "settings_gitWorkspace_purge_label": "Liberar espacio en disco de los espacios de trabajo archivados",

@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "Valeur par défaut du système",
   "settings_footer_restartToUpdate_label": "Redémarrer pour mettre à jour",
   "settings_footer_support": "Assistance",
-  "settings_footer_upToDate": "À jour",
   "settings_gitWorkspace_autoCommit_label": "Activer le commit automatique pour les nouveaux espaces de travail",
   "settings_gitWorkspace_autoArchiveDays_description": "Jours sans message, modification de note ni activité d'agent avant l'archivage d'un espace de travail.",
   "settings_gitWorkspace_purge_label": "Libérer de l'espace disque pour les espaces de travail archivés",

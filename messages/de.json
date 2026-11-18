@@ -5137,7 +5137,6 @@
   "settings_fonts_systemDefault_label": "Systemstandard",
   "settings_footer_restartToUpdate_label": "Zum Aktualisieren neu starten",
   "settings_footer_support": "Support",
-  "settings_footer_upToDate": "Auf dem neuesten Stand",
   "settings_gitWorkspace_autoCommit_label": "Auto-Commit für neue Arbeitsbereiche aktivieren",
   "settings_gitWorkspace_autoArchiveDays_description": "Tage ohne Nachrichten, Notizänderungen oder Agentenaktivität, bevor ein Arbeitsbereich archiviert wird.",
   "settings_gitWorkspace_purge_label": "Speicherplatz für archivierte Arbeitsbereiche freigeben",
