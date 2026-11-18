@@ -137,9 +137,37 @@ describe('local-prefs', () => {
   });
 
   it('leaves the file untouched when no retired key is present', async () => {
-    const { deleteRetiredLocalPrefs } = await import('../local-prefs');
+    let renames = 0;
+    await mockFsRename(async (actual, from, to) => {
+      renames += 1;
+      return actual(from, to);
+    });
+    const { deleteRetiredLocalPrefs, setLocalPref } = await import('../local-prefs');
     await deleteRetiredLocalPrefs();
     await expect(fs.access(path.join(tmpDir, 'local-prefs.json'))).rejects.toThrow();
+
+    await setLocalPref('dockLabEnabled', true);
+    const writes = renames;
+    await deleteRetiredLocalPrefs();
+    expect(renames).toBe(writes);
+    expect(await readDocumentOnDisk()).toEqual({ dockLabEnabled: true });
+  });
+
+  it('keeps later writes working after a failed retired-key cleanup', async () => {
+    let failRename = false;
+    await mockFsRename(async (actual, from, to) => {
+      if (failRename) throw new Error('disk unavailable');
+      return actual(from, to);
+    });
+    const { deleteRetiredLocalPrefs, setLocalPref, getLocalPref } = await import('../local-prefs');
+    await setLocalPref('browserAccess.accessKey', 'k'.repeat(43));
+    failRename = true;
+    await expect(deleteRetiredLocalPrefs()).resolves.toBeUndefined();
+    expect(await getLocalPref('browserAccess.accessKey')).toBe('k'.repeat(43));
+    failRename = false;
+    await setLocalPref('dockLabEnabled', true);
+    await deleteRetiredLocalPrefs();
+    expect(await readDocumentOnDisk()).toEqual({ dockLabEnabled: true });
   });
 
   it('writes are serialized (no torn file with concurrent setters)', async () => {
