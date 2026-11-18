@@ -68,6 +68,7 @@
     header?: string;
     headerAction?: Snippet;
     footer?: Snippet;
+    optionLabel?: Snippet<[ComboboxOption]>;
     optionDescription?: Snippet<[ComboboxOption]>;
     optionIcon?: Snippet<[ComboboxOption]>;
     /** Classes for every option row, including a synthesized custom option. */
@@ -128,6 +129,7 @@
     header = '',
     headerAction,
     footer,
+    optionLabel,
     optionDescription,
     optionIcon,
     rowClass = '',
@@ -680,9 +682,13 @@
                             >
                           {/if}
                           <span class="min-w-0 flex-1 truncate">
-                            {option === customOption
-                              ? m.ui_combobox_useCustom_label({ value: option.label })
-                              : option.label}
+                            {#if option === customOption}
+                              {m.ui_combobox_useCustom_label({ value: option.label })}
+                            {:else if optionLabel}
+                              {@render optionLabel(option)}
+                            {:else}
+                              {option.label}
+                            {/if}
                           </span>
                           {#if optionDescription}
                             {@render optionDescription(option)}

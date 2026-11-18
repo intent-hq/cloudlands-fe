@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "フォント",
   "settings_font_notes_description": "ノート、仕様書、ドキュメントに使用される書体です。等幅フォントは技術文書の執筆に集中しやすいことがあります。",
   "settings_font_notes_label": "ノート",
+  "settings_fonts_search_placeholder": "フォントを検索",
+  "settings_fonts_noResults_message": "フォントが見つかりません",
   "settings_fonts_systemDefault_label": "システムデフォルト",
   "settings_footer_restartToUpdate_label": "再起動してアップデート",
   "settings_footer_support": "サポート",

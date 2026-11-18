@@ -20,6 +20,7 @@
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
+  import FontPicker from '$features/settings/FontPicker.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
@@ -840,24 +841,15 @@
                   description={m.settings_font_code_description()}
                 >
                   {#snippet control({ labelId, descriptionId })}
-                    <div class="w-[180px] flex-shrink-0">
-                      <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
-                          <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                            {$codeFontOptions.find((option) => option.value === $codeFontFamily)
-                              ?.label ?? $codeFontFamily}
-                          </span>
-                        </Select.Trigger>
-                        <Select.Content portal class="max-h-[300px] w-[180px]">
-                          {#each $codeFontOptions as option}
-                            <Select.Item value={option.value}>
-                              <span class="truncate" style:font-family={option.fontFamily}>
-                                {option.label}
-                              </span>
-                            </Select.Item>
-                          {/each}
-                        </Select.Content>
-                      </Select.Root>
+                    <div class="w-45 max-w-full flex-shrink-0">
+                      <FontPicker
+                        value={$codeFontFamily}
+                        options={$codeFontOptions}
+                        fontFamily={$codeFontFamilyCSS}
+                        ariaLabelledby={labelId}
+                        ariaDescribedby={descriptionId}
+                        onchange={handleCodeFontChange}
+                      />
                     </div>
                   {/snippet}
                 </SettingsFieldRow>

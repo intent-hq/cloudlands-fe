@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "字体",
   "settings_font_notes_description": "用于笔记、规范和文档的字体。等宽字体在技术写作时可能更专注。",
   "settings_font_notes_label": "笔记",
+  "settings_fonts_search_placeholder": "搜索字体",
+  "settings_fonts_noResults_message": "未找到字体",
   "settings_fonts_systemDefault_label": "系统默认",
   "settings_footer_restartToUpdate_label": "重启以更新",
   "settings_footer_support": "支持",
