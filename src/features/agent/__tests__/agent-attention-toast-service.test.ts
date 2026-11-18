@@ -84,6 +84,7 @@ vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', ()
   selectWorkspaceResolvedKeySlot: { select: resolvedKeySlotSelectMock },
 }));
 
+import { MACHINE_HIDDEN_ATTRIBUTE } from '$shared/types/machine-rail';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
@@ -322,6 +323,26 @@ describe('agent-attention-toast-service', () => {
       await showAgentAttentionToast(request);
 
       expect(toastCustomMock).not.toHaveBeenCalled();
+    });
+
+    it('shows and forwards the toast for the current workspace when its machine is hidden', async () => {
+      const invoke = vi.fn(async () => ({ forwarded: true }));
+      (window as unknown as { electronAPI?: unknown }).electronAPI = { invoke };
+      document.documentElement.setAttribute(MACHINE_HIDDEN_ATTRIBUTE, '');
+      try {
+        seedViewingState([panel('p1', [agentTab], agentTab.id)]);
+
+        await showAgentAttentionToast({ ...request, kind: 'blocker' });
+
+        expect(toastCustomMock).toHaveBeenCalledTimes(1);
+        expect(invoke).toHaveBeenCalledWith('machine-rail:forward-toast', {
+          kind: 'warning',
+          message: 'Implementor reports a blocker',
+        });
+      } finally {
+        document.documentElement.removeAttribute(MACHINE_HIDDEN_ATTRIBUTE);
+        delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+      }
     });
 
     it('shows the toast when a different workspace tab is current', async () => {
