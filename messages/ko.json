@@ -2777,7 +2777,7 @@
   "settings_push_description": "Intent가 닫혀 있어도 iPhone의 실시간 현황과 에이전트 알림을 최신 상태로 유지합니다.",
   "settings_push_label": "푸시 알림",
   "settings_push_notLinked": "아직 연결된 휴대폰이 없습니다. iPhone의 Intent 앱에서 실시간 현황을 켜세요.",
-  "settings_push_paused": "일시 중지됨 — 연결된 휴대폰 없음",
+  "settings_push_paused": "지금은 보내지 않고 있습니다. Intent가 계속 다시 시도합니다.",
   "settings_push_saveError": "푸시 설정을 저장하지 못했습니다.",
   "settings_push_sending": "휴대폰으로 업데이트를 보내는 중",
   "settings_push_sendingCount_many": "휴대폰 {count}대로 업데이트를 보내는 중",

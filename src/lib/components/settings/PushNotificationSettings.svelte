@@ -30,7 +30,6 @@
       ? undefined
       : (pushStatusLine({
           enabled: values.enabled === true,
-          linked: values.linked === true,
           linkedDevices: typeof values.linkedDevices === 'number' ? values.linkedDevices : null,
           publishing: values.publishing === true,
         }) ?? undefined),

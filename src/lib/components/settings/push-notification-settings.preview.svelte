@@ -82,8 +82,8 @@
       linkedDevices: 2,
       publishing: true,
     },
-    'not-linked': { ...off, enabled: true, daemonId: 'preview' },
-    paused: { ...off, enabled: true, daemonId: 'preview', linked: true, linkedDevices: 0 },
+    'not-linked': { ...off, enabled: true, daemonId: 'preview', linkedDevices: 0 },
+    paused: { ...off, enabled: true, daemonId: 'preview', linked: true, linkedDevices: 2 },
     error: off,
   };
   const previous = {

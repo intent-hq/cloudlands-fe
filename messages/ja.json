@@ -2777,7 +2777,7 @@
   "settings_push_description": "Intent を閉じていても、iPhone のライブアクティビティとエージェントの通知を最新に保ちます。",
   "settings_push_label": "プッシュ通知",
   "settings_push_notLinked": "まだスマートフォンがリンクされていません。iPhone の Intent アプリでライブアクティビティをオンにしてください。",
-  "settings_push_paused": "一時停止中 — リンクされたスマートフォンがありません",
+  "settings_push_paused": "現在は送信していません。Intent が再試行を続けます。",
   "settings_push_saveError": "プッシュ通知の設定を保存できませんでした。",
   "settings_push_sending": "スマートフォンに更新を送信中",
   "settings_push_sendingCount_many": "{count} 台のスマートフォンに更新を送信中",

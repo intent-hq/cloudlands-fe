@@ -3,6 +3,7 @@ import {
   actionChannel,
   call,
   cancelled,
+  delay,
   put,
   race,
   take,
@@ -11,10 +12,12 @@ import {
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  settingsChanged,
   settingsFormClosed,
   settingsFormRequestStarted,
   settingsFormRequestSettled,
 } from '../../settings-events/settings-events-slice';
+import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectSettingsForm,
   selectSettingsFormRequestCurrent,
@@ -27,6 +30,10 @@ import { pushSettingsRequested } from '../push-settings-slice';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 
 type RequestAction = ReturnType<typeof pushSettingsRequested>;
+
+/** Phones link and the relay recovers without any action on this page. */
+/** @internal */
+export const PUSH_STATUS_REFRESH_MS = 30_000;
 
 function* waitForClose(request: SettingsFormRequest): SagaGenerator<void> {
   while (true) {
@@ -61,6 +68,30 @@ function* loadStatus(request: SettingsFormRequest): SagaGenerator<void> {
       }),
     );
   }
+}
+
+function relayEnabledChanged(action: { type: string; payload?: unknown }): boolean {
+  if (action.type !== settingsChanged.type) return false;
+  const [changes] = (action as ReturnType<typeof settingsChanged>).payload;
+  return changes.some((change) => change.path === 'push.relayEnabled');
+}
+
+/**
+ * Loads status, then asks for a fresh load on the next tick, relay setting
+ * change or reconnect. The new request replaces this one, so a refresh ends
+ * with the form.
+ */
+function* loadAndWatch(request: SettingsFormRequest): SagaGenerator<void> {
+  yield* call(loadStatus, request);
+  const { closed } = yield* race({
+    tick: delay(PUSH_STATUS_REFRESH_MS),
+    setting: take(relayEnabledChanged),
+    reconnect: take(backendReconnected),
+    closed: call(waitForClose, request),
+  });
+  if (closed) return;
+  const refresh = { ...request, requestId: crypto.randomUUID() };
+  yield* put(pushSettingsRequested(refresh, { kind: 'load' }));
 }
 
 function* saveEnabled(request: SettingsFormRequest, enabled: boolean): SagaGenerator<void> {
@@ -109,7 +140,7 @@ export function* pushSettingsSaga(): SagaGenerator<void> {
       reads,
       ({ payload: [request] }) => `${request.formId}:${request.sessionId}`,
       function* ({ payload: [request] }) {
-        yield* race({ work: call(loadStatus, request), closed: call(waitForClose, request) });
+        yield* race({ work: call(loadAndWatch, request), closed: call(waitForClose, request) });
       },
     );
     while (true) {

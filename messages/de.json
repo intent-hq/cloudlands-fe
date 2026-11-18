@@ -2777,7 +2777,7 @@
   "settings_push_description": "Hält Live-Aktivitäten und Agent-Hinweise auf deinem iPhone aktuell, auch wenn Intent geschlossen ist.",
   "settings_push_label": "Push-Benachrichtigungen",
   "settings_push_notLinked": "Noch kein Telefon verknüpft – aktiviere Live-Aktivitäten in der Intent-App auf deinem iPhone.",
-  "settings_push_paused": "Pausiert – kein Telefon verknüpft",
+  "settings_push_paused": "Derzeit keine Übertragung – Intent versucht es weiter.",
   "settings_push_saveError": "Push-Einstellung konnte nicht gespeichert werden.",
   "settings_push_sending": "Updates werden an deine Telefone gesendet",
   "settings_push_sendingCount_many": "Updates werden an {count} Telefone gesendet",

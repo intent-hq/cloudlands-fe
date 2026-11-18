@@ -2777,7 +2777,7 @@
   "settings_push_description": "Gardez les Activités en direct et les alertes d'agents à jour sur votre iPhone quand Intent est fermé.",
   "settings_push_label": "Notifications push",
   "settings_push_notLinked": "Aucun téléphone lié pour l'instant : activez les Activités en direct dans l'app Intent sur votre iPhone.",
-  "settings_push_paused": "En pause : aucun téléphone lié",
+  "settings_push_paused": "Aucun envoi pour le moment — Intent continuera de réessayer.",
   "settings_push_saveError": "Impossible d'enregistrer le paramètre de notifications push.",
   "settings_push_sending": "Envoi des mises à jour vers vos téléphones",
   "settings_push_sendingCount_many": "Envoi des mises à jour vers {count} téléphones",
