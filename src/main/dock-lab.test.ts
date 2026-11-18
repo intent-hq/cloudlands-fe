@@ -66,7 +66,7 @@ describe('loadDockLabEnabled', () => {
     expect(isDockLabEnabled()).toBe(true);
   });
 
-  it('stays off when the preference reads as off (opt-out or never chose)', async () => {
+  it('stays off when the preference reads as off (opt-out)', async () => {
     mocks.read.mockResolvedValue(false);
     await expect(loadDockLabEnabled()).resolves.toBe(false);
     expect(isDockLabEnabled()).toBe(false);

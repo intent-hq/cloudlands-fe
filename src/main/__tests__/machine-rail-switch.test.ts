@@ -141,8 +141,10 @@ vi.mock('../offscreen-window', () => ({
   getAppWindows: () => [fakes.window, ...fakes.otherWindows],
 }));
 
+const railPref = vi.hoisted(() => ({ value: true as unknown }));
+
 vi.mock('../local-prefs', () => ({
-  getLocalPref: async () => true,
+  getLocalPref: async () => railPref.value,
   setLocalPref: async () => {},
 }));
 
@@ -173,6 +175,7 @@ import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
 import { registerChatWindow } from '../chat-window-identity';
 import {
+  loadMachineRailEnabled,
   openInvitedMachineInWindow,
   registerMachineRailHandlers,
   removeMachineFromAllRails,
@@ -185,6 +188,7 @@ import {
   readWindowRail,
   selectFrameMachine,
   writeWindowRail,
+  isMachineRailEnabled,
   setMachineRailEnabledFlag,
   showRailMachine,
   startRailMachineRenderer,
@@ -266,6 +270,19 @@ it('leaves an auxiliary window untouched when opening an invited workspace', asy
   expect(await openInvitedMachineInWindow(auxiliary as never, 'b', 'shared-ws')).toBe(false);
   expect(fakes.views).toHaveLength(0);
   expect(auxiliary.show).not.toHaveBeenCalled();
+});
+
+it('loads the rail on unless the user turned it off', async () => {
+  for (const [saved, expected] of [
+    [undefined, true],
+    [true, true],
+    [false, false],
+  ] as const) {
+    railPref.value = saved;
+    await loadMachineRailEnabled();
+    expect(isMachineRailEnabled(), String(saved)).toBe(expected);
+  }
+  railPref.value = true;
 });
 
 describe('a frame open on the local machine', () => {

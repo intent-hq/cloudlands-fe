@@ -1705,7 +1705,7 @@ const bootFlow = app.whenReady().then(async () => {
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
-  // The dock lab is main-owned and off by default; the dock restores only while it is on.
+  // The dock lab is main-owned and on by default; the dock restores only while it is on.
   await initializeDockShortcutSettings();
   initializeDockContextFeed();
   await loadDockLabEnabled();
@@ -1719,7 +1719,7 @@ const bootFlow = app.whenReady().then(async () => {
     restore: () => dockMenuController.restore(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
-  // The machine rail lab is main-owned and off by default.
+  // The machine rail lab is main-owned and on by default.
   await loadMachineRailEnabled();
   // Notification clicks and new machines go to the frame focused last.
   trackFrameFocus();
