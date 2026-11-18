@@ -89,6 +89,8 @@
   const sessionRequests$ = selectProviderSettingsSessionRequests(sessionId);
   let selecting = $state<{ requestId: string; providerRef: string } | null>(null);
   let unselectedRef = $state<string | null>(null);
+  /** Continue retries only the failed default write until a new value is pasted or kind chosen. */
+  const retriesDefault = $derived(unselectedRef !== null && secret.trim() === '');
 
   onMount(() => {
     appStore.dispatch(providerSettingsSessionOpened(sessionId));
@@ -143,7 +145,7 @@
     busy = saving;
   });
   const canContinue = $derived(
-    (unselectedRef !== null && !saving) ||
+    (retriesDefault && !saving) ||
       canContinueConnect({ saved: showsSaved, replacing, issue, busy: saving }),
   );
   const secretError = $derived(issue === 'shape' ? secretShapeError(provider, kind) : undefined);
@@ -197,11 +199,12 @@
     secret = '';
     replacing = false;
     saveFailed = false;
+    unselectedRef = null;
   }
 
   /** Continue: keep the saved profile, or save the pasted secret first. */
   export function submit() {
-    if (unselectedRef && !saving) {
+    if (retriesDefault && unselectedRef && !saving) {
       saveFailed = false;
       selectProfile(unselectedRef);
       return;
