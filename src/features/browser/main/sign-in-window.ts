@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 
 import { isLoopbackHost } from '../../../shared/loopback-host';
 import { getMainWindow } from '../../../main/state';
+import { allowWebNavigationInWindow } from '../../../main/webview-security';
 
 /** The flag a second launch passes to open a web page in Intent (`--open-url=<url>`). */
 const OPEN_URL_FLAG = '--open-url=';
@@ -69,6 +70,7 @@ export function openSignInWindow(url: string): void {
     },
   });
   signInWindow = window;
+  allowWebNavigationInWindow(window);
   window.removeMenu();
   window.on('closed', () => {
     if (signInWindow === window) signInWindow = null;

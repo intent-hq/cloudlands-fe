@@ -230,6 +230,15 @@ function trackWebviewPopup(popupWindow: Electron.BrowserWindow): void {
 }
 
 /**
+ * Let an Intent-owned web window (the sign-in window) follow http(s)
+ * navigations and redirects itself, like a webview popup, instead of the
+ * app-window policy that sends them to the system browser. Call before loadURL.
+ */
+export function allowWebNavigationInWindow(window: Electron.BrowserWindow): void {
+  trackWebviewPopup(window);
+}
+
+/**
  * Setup webview security handlers
  * Should be called early in app initialization, before any windows are created
  */
