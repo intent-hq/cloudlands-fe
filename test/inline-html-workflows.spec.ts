@@ -415,12 +415,66 @@ test('appends computed inputs and results to the existing draft without sending'
 }, info) => {
   await open(page);
   const editor = page.getByTestId('message-input').locator('.tiptap-editor');
+  const suggestion = page.getByRole('button', {
+    name: 'Add configuration to message',
+    exact: true,
+  });
+  await expect.poll(async () => (await savedState(page))?.current.state.thickness).toBe(28);
+  await expect(suggestion).toHaveCount(0);
+  await capture(page, info, 'configuration-untouched');
+  await frame(page)
+    .locator('body')
+    .evaluate(() => {
+      const host = (window as any).intentVisual;
+      host.publish({
+        state: { ...host.state, hovered: true },
+        title: 'Desk clamp dimensions',
+        inputs: {
+          'Rear clearance (mm)': 40,
+          'Clamp opening (mm)': 60,
+          'Desk thickness (mm)': 28,
+        },
+        results: { 'Opening clearance (mm)': 32, Fit: 'Result refreshed' },
+      });
+    });
+  await expect
+    .poll(async () => (await savedState(page))?.current.results.Fit)
+    .toBe('Result refreshed');
+  await expect(suggestion).toHaveCount(0);
   await expect(editor).toHaveText('Please compare this with the other arm.');
   await editor.press('ControlOrMeta+a');
   await page.keyboard.insertText('Keep my question and compare these dimensions.');
   await edit(page, 'thickness', '74');
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('14 mm over');
-  await page.getByRole('button', { name: 'Add configuration to message', exact: true }).click();
+  await expect(suggestion).toBeVisible();
+  await visualMenu(page, 'Reload');
+  await expect(number(page, 'thickness')).toHaveValue('74');
+  await expect(suggestion).toBeVisible();
+  await visualMenu(page, 'Source');
+  await visualMenu(page, 'Preview');
+  await expect(suggestion).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 900 });
+  await page.evaluate(() =>
+    (window as any).workflowHost.update({ theme: 'dark', width: 360, height: 880 }),
+  );
+  await expect(suggestion).toBeVisible();
+  await capture(page, info, 'configuration-edited-narrow-dark');
+  await edit(page, 'thickness', '28');
+  await expect(suggestion).toHaveCount(0);
+  await visualMenu(page, 'Save scenario');
+  await edit(page, 'thickness', '74');
+  await expect(suggestion).toBeVisible();
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(number(page, 'thickness')).toHaveValue('28');
+  await expect(suggestion).toHaveCount(0);
+  await capture(page, info, 'configuration-restored-narrow-dark');
+  await page.setViewportSize({ width: 1024, height: 1100 });
+  await page.evaluate(() =>
+    (window as any).workflowHost.update({ theme: 'light', width: 1024, height: 1080 }),
+  );
+  await edit(page, 'thickness', '74');
+  await expect(suggestion).toBeVisible();
+  await suggestion.click();
   await expect(editor).toContainText('Keep my question and compare these dimensions.');
   await expect(editor).toContainText('"inputs"');
   await expect(editor).toContainText('"results"');
@@ -826,11 +880,15 @@ test('keeps seasons edits through keyboard, presets, theme, resize, reopening an
   const editor = view.getByTestId('message-input').locator('.tiptap-editor');
   await editor.press('ControlOrMeta+a');
   await page.keyboard.insertText('Why does London get dark so early in December?');
+  await expect(
+    view.getByRole('button', { name: 'Add configuration to message', exact: true }),
+  ).toHaveCount(0);
+  const tweaked = await setSeasons(page, { latitude: 51.7 });
   await view.getByRole('button', { name: 'Add configuration to message', exact: true }).click();
   await expect(editor).toContainText('Why does London get dark so early in December?');
   await expect
     .poll(() => draftConfiguration(view))
-    .toEqual({ inputs: saved.inputs, results: saved.results });
+    .toEqual({ inputs: tweaked.inputs, results: tweaked.results });
   const messages = JSON.parse((await page.getByTestId('stored-messages').textContent()) ?? '[]');
   expect(messages).toHaveLength(1);
   expect(messages[0].role).toBe('assistant');

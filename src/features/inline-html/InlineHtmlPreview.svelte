@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { deepEqual } from 'fast-equals';
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Input } from '$lib/components/ui/input';
@@ -78,10 +79,16 @@
   let layoutWarning = $state('');
   let localRecord = $state.raw<InlineVisualRecord>(emptyInlineVisualRecord());
   let currentSnapshot = $state.raw<InlineVisualSnapshot | undefined>();
+  let initialInputs = $state.raw<InlineVisualSnapshot['inputs'] | undefined>();
   let previousSource: string | undefined;
   let pendingRestore = $state.raw<InlineVisualSnapshot | undefined>();
   let compare = $state(false);
   const saved = $derived(record ?? localRecord);
+  const configurationChanged = $derived(
+    initialInputs !== undefined &&
+      currentSnapshot !== undefined &&
+      !deepEqual(initialInputs, currentSnapshot.inputs),
+  );
   const storageAvailable = $derived(
     storageStatus !== 'loading' && (storageStatus !== 'error' || Boolean(saved.current)),
   );
@@ -237,6 +244,7 @@
       if (previousSource !== currentSource) {
         localRecord = emptyInlineVisualRecord();
         currentSnapshot = undefined;
+        initialInputs = undefined;
         compare = false;
         pendingRestore = undefined;
         previousSource = currentSource;
@@ -293,6 +301,7 @@
         layoutWarning = data.message.slice(0, 300);
       } else if (data.type === 'snapshot' && runnable && isInlineVisualSnapshot(data.snapshot)) {
         const snapshot = data.snapshot;
+        initialInputs ??= structuredClone(snapshot.inputs);
         currentSnapshot = snapshot;
         updateRecord({ ...saved, current: snapshot });
       } else if (
@@ -408,7 +417,7 @@
     class="flex min-w-0 items-center justify-between gap-2 px-4 pt-1 pb-3"
     data-inline-visual-actions
   >
-    {#if currentSnapshot && runnable && onUseConfiguration && !showSource}
+    {#if currentSnapshot && configurationChanged && runnable && onUseConfiguration && !showSource}
       <Button
         variant="plain"
         size="sm"
