@@ -30,9 +30,15 @@ vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
   default: (await import('./mocks/MarkdownViewerStub.svelte')).default,
 }));
 
+// These cases cover the ungrouped layout, so tool runs stay uncollapsed.
+const baseState = () => ({
+  theme: { name: 'light' },
+  userPreferences: { collapseToolRuns: false },
+});
 const storeState = vi.hoisted(() => ({
-  current: { theme: { name: 'light' } } as Record<string, unknown>,
+  current: {} as Record<string, unknown>,
 }));
+storeState.current = baseState();
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -41,7 +47,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 afterEach(() => {
-  storeState.current = { theme: { name: 'light' } };
+  storeState.current = baseState();
   cleanup();
 });
 
