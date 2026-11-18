@@ -81,6 +81,7 @@
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
   import { resolveHashToTarget } from '$shared/app-ui-targets';
+  import { isSettingsTab, resolveHashTab } from './settings-hash-tab';
 
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
@@ -125,88 +126,6 @@
       ? $daemonTransport$.target
       : null,
   );
-
-  const validTabs: SettingsTab[] = [
-    'display',
-    'app-behavior',
-    'agent-behavior',
-    'providers',
-    'connections',
-    'devices',
-    'mobile',
-    'collaboration',
-    'setup',
-    'advanced',
-    'input',
-    'specialists',
-  ];
-
-  function isSettingsTab(tab: string): tab is SettingsTab {
-    return validTabs.includes(tab as SettingsTab);
-  }
-
-  const hashToTab: Record<string, SettingsTab> = {
-    'default-model': 'providers',
-    'global-instructions': 'agent-behavior',
-    specialists: 'agent-behavior',
-    agents: 'agent-behavior',
-    'all-agents': 'agent-behavior',
-    'create-specialist': 'specialists',
-    'quickActions.defaultModel': 'providers',
-    'backgroundAgents.defaultModel': 'providers',
-    providers: 'providers',
-    integrations: 'connections',
-    devices: 'devices',
-    machines: 'devices',
-    'backend-sync': 'devices',
-    mobile: 'mobile',
-    'websocket-api': 'mobile',
-    'remote-access': 'mobile',
-    collaboration: 'collaboration',
-    'guest-sessions': 'collaboration',
-    sharing: 'collaboration',
-    voice: 'input',
-    'keyboard-shortcuts': 'input',
-    'git-workspace': 'setup',
-    git: 'setup',
-    shell: 'setup',
-    workspace: 'setup',
-    notifications: 'app-behavior',
-    licenses: 'app-behavior',
-    updates: 'app-behavior',
-    language: 'display',
-    theme: 'display',
-    appearance: 'display',
-    'chat-aurora': 'display',
-    'collapse-tool-runs': 'display',
-    'translucent-window': 'display',
-    'pause-animations-when-unfocused': 'display',
-    'font-style': 'display',
-    'color-theme': 'display',
-    'note-font': 'display',
-    'agent-chat-font': 'display',
-    'code-font': 'display',
-    'open-in': 'app-behavior',
-    'github-link-action': 'app-behavior',
-    'mcp-servers': 'connections',
-    'cli-optimization': 'setup',
-    'workspace-api': 'advanced',
-    'agent-features': 'agent-behavior',
-    'agent-backend': 'advanced',
-    'notch-dock': 'display',
-    'machine-rail': 'display',
-    'utility-default-model': 'providers',
-    hardware: 'advanced',
-    connection: 'advanced',
-    reset: 'advanced',
-    general: 'advanced',
-    developer: 'advanced',
-  };
-
-  function resolveHashTab(targetId: string): SettingsTab | undefined {
-    const targetTab = hashToTab[targetId] ?? resolveHashToTarget(targetId)?.tab;
-    return targetTab && isSettingsTab(targetTab) ? targetTab : undefined;
-  }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
     if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
