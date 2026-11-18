@@ -14,9 +14,9 @@ for (const side of ['left', 'right'] as const) {
         controlledPlacement: true,
       },
     });
-    const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
-    await logo.press('ArrowDown');
-    const menu = page.getByRole('menu', { name: 'Machines' });
+    const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
+    await logo.click();
+    const menu = page.getByRole('menu', { name: 'Notch menu' });
     await expect(menu).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`machine-picker-${side}.png`) });
     await menu.getByRole('menuitemradio', { name: 'Build server', exact: true }).click();
@@ -45,9 +45,9 @@ test('logo machine picker preserves current selection on failure and retries wit
       theme: 'dark',
     },
   });
-  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
-  await logo.press('ArrowDown');
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
+  await logo.click();
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitemradio', { name: 'This Mac', exact: true })).toHaveAttribute(
     'aria-checked',
@@ -85,10 +85,10 @@ test('keyboard opens machine picker and Escape restores the logo without dismiss
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
+  const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
   await logo.focus();
   await page.keyboard.press('ArrowDown');
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
@@ -110,8 +110,8 @@ test('keyboard reopens the machine picker after Escape restores logo focus', asy
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await logo.press('ArrowDown');
   await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
@@ -134,8 +134,8 @@ test('Escape closes the machine picker when focus has returned to the logo', asy
       controlledPlacement: true,
     },
   });
-  const logo = component.getByRole('button', { name: 'Open Intent', exact: true });
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await logo.press('ArrowDown');
   await expect(menu).toBeVisible();
   await logo.focus();
@@ -168,8 +168,8 @@ test('machine list remains operable inside an empty notch native envelope', asyn
       },
     },
   });
-  await component.getByRole('button', { name: 'Open Intent', exact: true }).press('ArrowDown');
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  await component.getByRole('button', { name: 'Notch menu', exact: true }).press('ArrowDown');
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await expect(menu).toBeVisible();
   await expect
     .poll(async () => {
@@ -214,8 +214,8 @@ test('notch machine menu stays fully visible and reachable', async ({ mount, pag
   });
   const shell = component.getByTestId('dock-shell');
   await expect(shell).toHaveAttribute('data-expanded', 'false');
-  await component.getByRole('button', { name: 'Open Intent', exact: true }).press('ArrowDown');
-  const menu = page.getByRole('menu', { name: 'Machines' });
+  await component.getByRole('button', { name: 'Notch menu', exact: true }).press('ArrowDown');
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
   await expect(menu).toBeVisible();
   // The shell opens with the menu (never held compact waiting on a later event).
   await expect(shell).toHaveAttribute('data-expanded', 'true');
@@ -237,4 +237,27 @@ test('notch machine menu stays fully visible and reachable', async ({ mount, pag
     });
   });
   expect(corners).toEqual([true, true, true, true]);
+});
+
+test('logo click toggles controls without a machine list and keyboard restores focus', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DockRailPreview, {
+    props: { ...dockRailPreview.states.notch.props, controlledPlacement: true },
+  });
+  const logo = component.getByRole('button', { name: 'Notch menu', exact: true });
+  const menu = page.getByRole('menu', { name: 'Notch menu' });
+  await logo.click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitemradio')).toHaveCount(0);
+  await logo.click();
+  await expect(menu).toHaveCount(0);
+  await expect(logo).toHaveAttribute('aria-expanded', 'false');
+  await logo.press('Enter');
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(logo).toBeFocused();
+  expect(JSON.parse((await component.getAttribute('data-preview-actions'))!)).toEqual([]);
 });

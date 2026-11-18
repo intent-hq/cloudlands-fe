@@ -311,7 +311,13 @@
     const surface = placement.surface;
     return () => dockViewportRect(visible, surface, surfaceElement?.getBoundingClientRect());
   });
-  const headerWingLeft = $derived(shown.x + 6);
+  // Expanded rows center their avatars at 12 + 6 + 16px; the 28px grip starts at 20px.
+  // Follow the reveal so the compact wing keeps its existing 6px inset.
+  const headerWingLeft = $derived(
+    shown.x +
+      6 +
+      (notch || (placement.shape === 'top-pill' && !dragging) ? 14 * shellMotion.reveal : 0),
+  );
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
   let recordingSeen: string | null = null;
   $effect(() => {
@@ -648,15 +654,16 @@
   const reveal = $derived(shellMotion.reveal);
 </script>
 
-{#if machineMenuOpen && machines && onMachine && gripElement && (edge || shellMotion.contentVisible)}
+{#if machineMenuOpen && gripElement && (edge || shellMotion.contentVisible)}
   <DockMachineMenu
     bind:open={machineMenuOpen}
     anchor={gripElement}
-    {machines}
+    machines={machines ?? []}
     currentId={machineId}
     pending={machineSwitching}
     error={machineError}
-    onSwitch={onMachine}
+    onSwitch={(id) => onMachine?.(id)}
+    canTurnOff={!recording && !inputLive && machineSwitching === null}
     side={edge ? (side === 'left' ? 'right' : 'left') : floatingUp ? 'top' : 'bottom'}
     onRegionsChange={(regions) => {
       machineRegions = regions;
@@ -826,9 +833,10 @@
             variant="ghost"
             size="icon-sm"
             class="dock-grip"
-            aria-label={m.dock_logo_open_label()}
-            aria-haspopup={machines && onMachine ? 'menu' : undefined}
-            aria-expanded={machines && onMachine ? machineMenuOpen : undefined}
+            aria-label={m.dock_logo_menu_label()}
+            title={m.dock_logo_menu_hint()}
+            aria-haspopup="menu"
+            aria-expanded={machineMenuOpen}
             data-testid="dock-drag-handle"
             wrapContent={false}
             onpointerdown={shellDrag.pointerDown}
@@ -839,27 +847,13 @@
               if (shellDrag.gesture) shellDrag.pointerEnd(true);
             }}
             oncontextmenu={(event) => {
-              if (
-                !machines ||
-                !onMachine ||
-                dragging ||
-                placement.captureHidden ||
-                shellDrag.gesture
-              )
-                return;
+              if (dragging || placement.captureHidden || shellDrag.gesture) return;
               event.preventDefault();
               event.stopPropagation();
               machineMenuOpen = true;
             }}
             onkeydown={(event) => {
-              if (
-                !machines ||
-                !onMachine ||
-                dragging ||
-                placement.captureHidden ||
-                shellDrag.gesture
-              )
-                return;
+              if (dragging || placement.captureHidden || shellDrag.gesture) return;
               if (
                 event.key === 'ArrowDown' ||
                 event.key === 'ContextMenu' ||
@@ -871,7 +865,7 @@
               }
             }}
             onclick={(event) => {
-              // The logo is an app action; the surrounding header keeps its own click behavior.
+              // The logo opens controls; dragging keeps its own gesture and suppresses this click.
               event.stopPropagation();
               if (shellDrag.suppressClick) {
                 event.preventDefault();
@@ -885,9 +879,7 @@
                 placement.captureHidden
               )
                 return;
-              machineMenuOpen = false;
-              // eslint-disable-next-line intent/no-component-async-data-fetch -- request main to show its own window, without fetching domain data
-              activateIntentFromDock();
+              machineMenuOpen = !machineMenuOpen;
             }}
           >
             <span class="grip-mark"><Logo width={16} /></span>

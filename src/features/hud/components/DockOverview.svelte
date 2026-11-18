@@ -5,6 +5,7 @@
   import { Input } from '$lib/components/ui/input';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
@@ -320,7 +321,10 @@
               <DockWorkspaceAvatar {item} variant="emphasized" />
             {/if}
             <span class="row-copy">
-              <span class="type-body font-medium truncate" {title}>{title}</span>
+              <span class="row-heading">
+                <WorkspaceStatusIcon status={state} size={12} decorative />
+                <span class="type-body font-medium truncate" {title}>{title}</span>
+              </span>
               <!-- The repo identifies the row; rows without one keep their status line. -->
               <span class="row-status type-caption" id="dock-status-{id}">
                 {#if repo}<span class="row-repo truncate" title={repo} data-dock-row-repo
@@ -552,6 +556,12 @@
   }
   .row-copy > span {
     max-width: 100%;
+  }
+  .row-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
   .row-status {
     display: flex;
