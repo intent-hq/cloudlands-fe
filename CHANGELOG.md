@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.352.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.352.0...v2.352.1) (2026-11-18)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** expose notch controls and workspace status ([#4759](https://github.com/intent-hq/cloudlands-fe/issues/4759)) ([8d748e1](https://github.com/intent-hq/cloudlands-fe/commit/8d748e175183d1ccc5476cb4ec9a867269e6f7c0))
+
 ## [2.352.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.351.0...v2.352.0) (2026-11-18)
 
 
