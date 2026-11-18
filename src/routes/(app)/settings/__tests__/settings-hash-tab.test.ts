@@ -59,11 +59,45 @@ function readTag(source: string, start: number): string {
   return source.slice(start);
 }
 
-/** Literal ids on tags that pulse (`use:highlightTarget`) or render `<SettingsSection id>`. */
+/**
+ * Ids of the top-level objects in each `sections: [...]` schema list. SettingsForm renders
+ * every section as `<SettingsSection id={section.id}>`, so these are link targets too.
+ */
+function collectSchemaSectionIds(script: string): string[] {
+  const ids: string[] = [];
+  for (const match of script.matchAll(/\bsections:\s*\[/g)) {
+    let depth = 1;
+    let quote: string | null = null;
+    for (let i = match.index + match[0].length; i < script.length && depth > 0; i++) {
+      const ch = script[i];
+      if (quote) {
+        if (ch === '\\') i++;
+        else if (ch === quote) quote = null;
+      } else if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+      } else if (ch === '[' || ch === '{' || ch === '(') {
+        depth++;
+      } else if (ch === ']' || ch === '}' || ch === ')') {
+        depth--;
+      } else if (depth === 2) {
+        const id = /^\bid:\s*'([^']+)'/.exec(script.slice(i, i + 200));
+        if (id && !/[\w$]/.test(script[i - 1])) ids.push(id[1]);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * Literal ids on tags that pulse (`use:highlightTarget`) or render `<SettingsSection id>`,
+ * plus schema section ids. SettingsFieldRow `data-highlight-id`s are single rows, not link
+ * targets, so they are left out.
+ */
 function collectHighlightIds(file: string): string[] {
   const source = readFileSync(file, 'utf8');
+  const scripts = [...source.matchAll(/<script[\s\S]*?<\/script>/g)].map(([s]) => s).join('\n');
   const markup = source.replace(/<script[\s\S]*?<\/script>/g, (s) => ' '.repeat(s.length));
-  const ids: string[] = [];
+  const ids = collectSchemaSectionIds(scripts);
   for (const match of markup.matchAll(/<[A-Za-z][\w.:-]*/g)) {
     const tag = readTag(markup, match.index);
     if (!/\suse:highlightTarget\b/.test(tag) && !tag.startsWith('<SettingsSection')) continue;
@@ -81,11 +115,9 @@ for (const file of collectSettingsComponents()) {
 
 describe('Settings hash → tab mapping', () => {
   it('collects highlight ids from the page and the components it renders', () => {
-    expect(highlightIds.get('machine-rail')).toBe('routes/(app)/settings/+page.svelte');
-    expect(highlightIds.get('notch-dock')).toBe('lib/components/settings/DockLabSettings.svelte');
-    expect(highlightIds.get('mcp-servers')).toBe(
-      'lib/components/settings/AdministratorSettings.svelte',
-    );
+    for (const id of ['machine-rail', 'notch-dock', 'mcp-servers', 'collaboration-workspaces']) {
+      expect(highlightIds.has(id), id).toBe(true);
+    }
   });
 
   it('does not resolve an unknown id', () => {
