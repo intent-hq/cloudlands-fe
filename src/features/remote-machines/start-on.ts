@@ -226,13 +226,14 @@ export function initialAgentPlacement(
     providerOf,
   }: {
     cloudEntries?: boolean;
-    /** The provider of a saved entry; a Northflank entry takes the provider-neutral target. */
+    /** The provider of a saved entry; any but E2B takes the provider-neutral target. */
     providerOf?: (cloudMachineId: string) => CloudProviderKind | undefined;
   } = {},
 ): StartOnPlacement | undefined {
   const cloudMachineId = startOnCloudMachineId(machineId);
   if (cloudMachineId) {
-    if (cloudEntries && providerOf?.(cloudMachineId) === 'northflank')
+    const provider = providerOf?.(cloudMachineId);
+    if (cloudEntries && provider && provider !== 'e2b')
       return { target: 'cloud', checkout: 'isolated', cloudMachineId };
     return cloudEntries
       ? { target: 'e2b', checkout: 'isolated', cloudMachineId }

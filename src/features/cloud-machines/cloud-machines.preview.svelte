@@ -21,7 +21,8 @@
   });
   export const preview = definePreview<Props>({
     id: 'cloud-machines',
-    title: 'Cloud machines (E2B, Northflank) in Settings (Machines, or Nodes with named entries)',
+    title:
+      'Cloud machines (E2B, Northflank, Agent37) in Settings (Machines, or Nodes with named entries)',
     defaultState: 'connected',
     states: {
       'add-menu': sceneState('add-menu'),
@@ -47,6 +48,11 @@
       'northflank-setup-filled': sceneState('northflank-setup-filled'),
       'northflank-setup-error': sceneState('northflank-setup-error'),
       providers: sceneState('providers'),
+      'agent37-add-menu': sceneState('agent37-add-menu'),
+      'agent37-setup': sceneState('agent37-setup'),
+      'agent37-setup-vm': sceneState('agent37-setup-vm'),
+      'agent37-setup-error': sceneState('agent37-setup-error'),
+      'agent37-providers': sceneState('agent37-providers'),
       'start-on-providers': {
         props: { scene: 'start-on-providers' },
         setup: () => setup('providers'),
@@ -164,18 +170,32 @@
     <DevicesSettings
       initialCloudSetup={scene.startsWith('setup') ||
         scene === 'entries-add' ||
-        scene.startsWith('northflank-setup')}
-      initialCloudProvider={scene.startsWith('northflank-setup') ? 'northflank' : 'e2b'}
+        scene.startsWith('northflank-setup') ||
+        scene.startsWith('agent37-setup')}
+      initialCloudProvider={scene.startsWith('northflank-setup')
+        ? 'northflank'
+        : scene.startsWith('agent37-setup')
+          ? 'agent37'
+          : 'e2b'}
       initialCloudDraft={scene === 'northflank-setup-filled' || scene === 'northflank-setup-error'
         ? {
             name: 'Agents EU',
             apiKey: 'preview-token-not-real',
             projectId: 'intent-agents',
           }
-        : undefined}
+        : scene === 'agent37-setup-vm' || scene === 'agent37-setup-error'
+          ? {
+              name: 'Mumbai VMs',
+              apiKey: 'preview-key-not-real',
+              instanceType: 'vm',
+              region: 'ap-south',
+            }
+          : undefined}
       initialCloudEdit={scene === 'entries-edit' ? 'e2b' : undefined}
-      initialAddMenuOpen={scene === 'add-menu' || scene === 'add-cloud-menu'}
-      initialAddCloudOpen={scene === 'add-cloud-menu'}
+      initialAddMenuOpen={scene === 'add-menu' ||
+        scene === 'add-cloud-menu' ||
+        scene === 'agent37-add-menu'}
+      initialAddCloudOpen={scene === 'add-cloud-menu' || scene === 'agent37-add-menu'}
     />
   {/if}
 </div>

@@ -8,6 +8,8 @@ import {
   cloudSizeResources,
   estimateCloudCost,
   utf8Length,
+  type Agent37InstanceType,
+  type Agent37Region,
   type CloudMachineErrorData,
   type CloudProviderKind,
 } from '$shared/types/cloud-machines';
@@ -17,9 +19,86 @@ import type { RemoteMachine } from '$shared/types/remote-machines';
 const E2B_DASHBOARD_URL = 'https://e2b.dev/dashboard';
 /** The Northflank dashboard, where the owner manages projects, tokens and limits. */
 const NORTHFLANK_DASHBOARD_URL = 'https://app.northflank.com';
+/** The Agent37 dashboard: keys, wallet, instances and templates. */
+const AGENT37_DASHBOARD_URL = 'https://www.agent37.com/dashboard/cloud';
 
 export function cloudDashboardUrl(provider: CloudProviderKind = 'e2b'): string {
-  return provider === 'northflank' ? NORTHFLANK_DASHBOARD_URL : E2B_DASHBOARD_URL;
+  return provider === 'northflank'
+    ? NORTHFLANK_DASHBOARD_URL
+    : provider === 'agent37'
+      ? AGENT37_DASHBOARD_URL
+      : E2B_DASHBOARD_URL;
+}
+
+/**
+ * A provider's own words for its machines: E2B runs sandboxes, Northflank
+ * services, Agent37 instances.
+ */
+export function cloudProviderCopy(provider: CloudProviderKind) {
+  switch (provider) {
+    case 'northflank':
+      return {
+        keyRejected: m.cloudMachines_northflank_state_tokenRejected_label(),
+        unreachable: m.cloudMachines_northflank_state_unreachable_label(),
+        ownerOnly: m.cloudMachines_northflank_error_ownerOnly(),
+        saved: m.cloudMachines_northflank_saved_toast(),
+        listTitle: m.cloudMachines_northflank_services_title(),
+        listSummary: m.cloudMachines_northflank_services_summary,
+        dashboard: m.cloudMachines_northflank_dashboard_label(),
+        dashboardOpen: m.cloudMachines_northflank_dashboardOpen_label(),
+        deleteTitle: m.cloudMachines_northflank_delete_confirmTitle,
+        deleteDescription: m.cloudMachines_northflank_delete_confirm_description(),
+        creating: m.cloudMachines_northflank_start_creating(),
+        startFailed: m.cloudMachines_northflank_startFailure_title(),
+        startUnknown: m.cloudMachines_northflank_startFailure_unknown_cause(),
+      };
+    case 'agent37':
+      return {
+        keyRejected: m.cloudMachines_state_keyRejected_label(),
+        unreachable: m.cloudMachines_agent37_state_unreachable_label(),
+        ownerOnly: m.cloudMachines_agent37_error_ownerOnly(),
+        saved: m.cloudMachines_agent37_saved_toast(),
+        listTitle: m.cloudMachines_agent37_instances_title(),
+        listSummary: m.cloudMachines_agent37_instances_summary,
+        dashboard: m.cloudMachines_agent37_dashboard_label(),
+        dashboardOpen: m.cloudMachines_agent37_dashboardOpen_label(),
+        deleteTitle: m.cloudMachines_agent37_delete_confirmTitle,
+        deleteDescription: m.cloudMachines_agent37_delete_confirm_description(),
+        creating: m.cloudMachines_agent37_start_creating(),
+        startFailed: m.cloudMachines_agent37_startFailure_title(),
+        startUnknown: m.cloudMachines_agent37_startFailure_unknown_cause(),
+      };
+    default:
+      return {
+        keyRejected: m.cloudMachines_state_keyRejected_label(),
+        unreachable: m.cloudMachines_state_unreachable_label(),
+        ownerOnly: m.cloudMachines_error_ownerOnly(),
+        saved: m.cloudMachines_saved_toast(),
+        listTitle: m.cloudMachines_sandboxes_title(),
+        listSummary: m.cloudMachines_sandboxes_summary,
+        dashboard: m.cloudMachines_dashboard_label(),
+        dashboardOpen: m.cloudMachines_dashboardOpen_label(),
+        deleteTitle: m.cloudMachines_delete_confirmTitle,
+        deleteDescription: m.cloudMachines_delete_confirm_description(),
+        creating: m.cloudMachines_start_creating(),
+        startFailed: m.cloudMachines_startFailure_title(),
+        startUnknown: m.cloudMachines_startFailure_unknown_cause(),
+      };
+  }
+}
+
+export function agent37TypeLabel(type: Agent37InstanceType): string {
+  return type === 'vm'
+    ? m.cloudMachines_agent37_form_type_vm()
+    : m.cloudMachines_agent37_form_type_default();
+}
+
+export function agent37RegionLabel(region: Agent37Region): string {
+  return region === 'eu'
+    ? m.cloudMachines_agent37_region_eu()
+    : region === 'ap-south'
+      ? m.cloudMachines_agent37_region_apSouth()
+      : m.cloudMachines_agent37_region_us();
 }
 
 const NAME_PREFIX = /^E2B\s*·\s*/u; // i18n-ignore (backend row name prefix)
@@ -178,6 +257,63 @@ function northflankErrorText(error: CloudMachineErrorData): { title: string; des
   }
 }
 
+/** An Agent37 error in its own words: instances, its API key, its wallet. */
+function agent37ErrorText(error: CloudMachineErrorData): { title: string; description: string } {
+  switch (error.code) {
+    case 'cloud-profile-required':
+      return {
+        title: m.cloudMachines_agent37_error_profileRequired_title(),
+        description: m.cloudMachines_agent37_error_profileRequired_description(),
+      };
+    case 'cloud-quota':
+      return {
+        title: m.cloudMachines_agent37_error_quota_title(),
+        description:
+          error.limit === 'plan'
+            ? m.cloudMachines_agent37_error_quotaPlan_description()
+            : error.limit === 'rate'
+              ? m.cloudMachines_agent37_error_quotaRate_description()
+              : m.cloudMachines_agent37_error_quotaConcurrency_description(),
+      };
+    case 'cloud-machine-unavailable': {
+      const unavailable = (description: string) => ({
+        title: m.cloudMachines_agent37_error_unavailable_title(),
+        description,
+      });
+      switch (error.reason) {
+        case 'not-configured':
+          return unavailable(m.cloudMachines_agent37_error_notConfigured_description());
+        case 'key-rejected':
+          return {
+            title: m.cloudMachines_agent37_error_keyRejected_title(),
+            description: m.cloudMachines_agent37_error_keyRejected_description(),
+          };
+        case 'permission-denied':
+          return {
+            title: m.cloudMachines_agent37_error_permissionDenied_title(),
+            description: m.cloudMachines_agent37_error_permissionDenied_description(),
+          };
+        case 'no-capacity':
+          return {
+            title: m.cloudMachines_agent37_error_noCapacity_title(),
+            description: m.cloudMachines_agent37_error_noCapacity_description(),
+          };
+        case 'template-missing':
+          return unavailable(m.cloudMachines_agent37_error_templateMissing_description());
+        case 'sandbox-lost':
+          return {
+            title: m.cloudMachines_agent37_error_instanceLost_title(),
+            description: m.cloudMachines_agent37_error_instanceLost_description(),
+          };
+        case 'bootstrap-failed':
+          return unavailable(m.cloudMachines_agent37_error_bootstrapFailed_description());
+        default:
+          return unavailable(m.cloudMachines_agent37_error_apiError_description());
+      }
+    }
+  }
+}
+
 /**
  * Title and description of a cloud error, for notices and form errors. The
  * error's own `provider` wins; else `provider`, the entry the caller shows.
@@ -191,6 +327,7 @@ export function cloudErrorText(
 } {
   const kind = error.provider ?? provider;
   if (kind === 'northflank') return northflankErrorText(error);
+  if (kind === 'agent37') return agent37ErrorText(error);
   switch (error.code) {
     case 'cloud-profile-required':
       return {

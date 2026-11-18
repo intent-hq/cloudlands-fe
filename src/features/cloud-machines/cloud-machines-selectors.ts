@@ -15,6 +15,7 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
+import { cloudProviderCopy } from './cloud-machines-format';
 import { defaultRemoteSends } from '$features/remote-machines/remote-model-picker';
 import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -38,7 +39,7 @@ export const selectCloudMachinesVisible = store.createSelector(
     state.cloudMachines?.supported === true,
 );
 
-/** The providers a new entry can use; Northflank needs named entries. */
+/** The providers a new entry can use; Northflank and Agent37 need named entries. */
 export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
   const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
   return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
@@ -144,19 +145,17 @@ export function startOnCloud(state: State): StartOnCloud | null {
     cloudMachineId: entry.id,
     // One entry still called "E2B" needs no name; otherwise "<provider> · <name>".
     label:
-      entry.provider === 'northflank'
-        ? entry.name.trim().toLowerCase() === 'northflank'
-          ? cloudProviderName('northflank')
-          : m.cloudMachines_startOn_northflank_label({ name: entry.name })
-        : named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
+      entry.provider === 'e2b'
+        ? named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
           ? m.cloudMachines_startOn_entry_label({ name: entry.name })
-          : m.cloudMachines_startOn_label(),
+          : m.cloudMachines_startOn_label()
+        : entry.name.trim().toLowerCase() === cloudProviderName(entry.provider).toLowerCase()
+          ? cloudProviderName(entry.provider)
+          : entry.provider === 'northflank'
+            ? m.cloudMachines_startOn_northflank_label({ name: entry.name })
+            : m.cloudMachines_startOn_agent37_label({ name: entry.name }),
     unavailableReason:
-      entry.state !== 'key-rejected'
-        ? null
-        : entry.provider === 'northflank'
-          ? m.cloudMachines_northflank_state_tokenRejected_label()
-          : m.cloudMachines_state_keyRejected_label(),
+      entry.state === 'key-rejected' ? cloudProviderCopy(entry.provider).keyRejected : null,
     needsProfile: !cloudEntrySendsConfig(state, entry),
   }));
 }

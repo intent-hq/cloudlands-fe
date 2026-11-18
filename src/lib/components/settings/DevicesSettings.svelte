@@ -433,7 +433,9 @@
                       <span class="type-caption text-muted-foreground"
                         >{kind === 'northflank'
                           ? m.cloudMachines_addMenu_northflank_description()
-                          : m.cloudMachines_addMenu_e2b_description()}</span
+                          : kind === 'agent37'
+                            ? m.cloudMachines_addMenu_agent37_description()
+                            : m.cloudMachines_addMenu_e2b_description()}</span
                       >
                     </span>
                   </Menu.Item>

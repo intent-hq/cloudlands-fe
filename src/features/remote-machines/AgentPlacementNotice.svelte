@@ -36,6 +36,7 @@
   import RemoteSetupLog from './RemoteSetupLog.svelte';
   import CloudStartFailureCard from './CloudStartFailureCard.svelte';
   import { selectCloudEntries } from '$features/cloud-machines/cloud-machines-selectors';
+  import { cloudProviderCopy } from '$features/cloud-machines/cloud-machines-format';
   import { cloudStartFailureView } from './cloud-start-failure';
   import {
     selectCurrentBackendLabel,
@@ -117,17 +118,15 @@
         })
       : null,
   );
-  // Northflank starts a service, not a sandbox.
+  // Northflank starts a service and Agent37 an instance, not a sandbox.
   const cloudEntries$ = selectCloudEntries();
-  const northflankStart = $derived(
-    $cloudEntries$.find((entry) => entry.id === $agent$?.placement?.cloudMachineId)?.provider ===
-      'northflank',
+  const startProvider = $derived(
+    $cloudEntries$.find((entry) => entry.id === $agent$?.placement?.cloudMachineId)?.provider ??
+      'e2b',
   );
   const startingStep = $derived(
     cloudStep === 'creating-sandbox'
-      ? northflankStart
-        ? m.cloudMachines_northflank_start_creating()
-        : m.cloudMachines_start_creating()
+      ? cloudProviderCopy(startProvider).creating
       : cloudStep === 'starting-daemon'
         ? m.cloudMachines_start_daemon()
         : cloudStep === 'connecting'

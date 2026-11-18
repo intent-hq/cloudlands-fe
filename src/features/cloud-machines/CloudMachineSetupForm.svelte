@@ -1,10 +1,12 @@
 <!--
-  Settings → an E2B or Northflank entry: the inline setup and edit form. The
-  API key (E2B) or token (Northflank) is kept only in this component's local
-  state until it is sent in one `cloudMachines.configure` request; the field
-  is cleared afterwards. A new named entry asks for a name, and can copy the
-  saved secret of another entry of the same provider. Northflank also takes
-  the project its services run in; the region is the project's, read-only.
+  Settings → an E2B, Northflank or Agent37 entry: the inline setup and edit
+  form. The API key (E2B, Agent37) or token (Northflank) is kept only in this
+  component's local state until it is sent in one `cloudMachines.configure`
+  request; the field is cleared afterwards. A new named entry asks for a name,
+  and can copy the saved secret of another entry of the same provider.
+  Northflank also takes the project its services run in; the region is the
+  project's, read-only. Agent37 takes the instance type, and a region for a
+  full VM (a standard sandbox runs in the US only).
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
@@ -15,15 +17,20 @@
     Label,
     Menu,
     Select,
+    ToggleGroup,
   } from '$lib/components/patterns/settings/custom-controls';
   import { faCircleCheck, faCloud, faKey } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
+    AGENT37_REGIONS,
+    AGENT37_SIZES,
     DEFAULT_CLOUD_MACHINE_SIZE,
     DEFAULT_IDLE_PAUSE_MINUTES,
     DEFAULT_PAUSED_DELETE_DAYS,
     isCloudMachineSize,
     nextCloudEntryName,
+    type Agent37InstanceType,
+    type Agent37Region,
     type CloudMachineProvider,
     type CloudMachineSize,
     type CloudMachineSizeInfo,
@@ -47,8 +54,10 @@
     cloudMachineFailureDismissed,
   } from './cloud-machines-slice';
   import {
+    agent37RegionLabel,
     cloudEntryNameError,
     cloudErrorText,
+    cloudProviderCopy,
     cloudSizeLabel,
     hourlyCostLabel,
   } from './cloud-machines-format';
@@ -69,39 +78,51 @@
   // The provider is fixed for the form's life, like the entry.
   const kind = untrack(() => entry?.provider ?? newProvider);
   const northflank = kind === 'northflank';
-  const copy = northflank
+  const agent37 = kind === 'agent37';
+  const e2bCopy = {
+    ariaLabel: m.cloudMachines_form_ariaLabel(),
+    intro: m.cloudMachines_form_intro,
+    keyLabel: m.cloudMachines_form_apiKey_label(),
+    keyPlaceholder: m.cloudMachines_form_apiKey_placeholder(),
+    keySavedPlaceholder: m.cloudMachines_form_apiKeySaved_placeholder(),
+    keyNote: m.cloudMachines_form_apiKey_note,
+    test: m.cloudMachines_form_test_label(),
+    works: m.cloudMachines_form_keyWorks(),
+    keyFrom: m.cloudMachines_form_keyFrom,
+    keyFromLabel: m.cloudMachines_form_keyFrom_label(),
+    keyFromClear: m.cloudMachines_form_keyFrom_clear(),
+    sizeLabel: m.cloudMachines_form_size_label(),
+    sizeUnknown: m.cloudMachines_form_sizeUnknown(),
+    privacy: m.cloudMachines_form_privacy,
+  };
+  const copy = agent37
     ? {
-        ariaLabel: m.cloudMachines_northflank_form_ariaLabel(),
-        intro: m.cloudMachines_northflank_form_intro,
-        keyLabel: m.cloudMachines_northflank_form_token_label(),
-        keyPlaceholder: m.cloudMachines_northflank_form_token_placeholder(),
-        keySavedPlaceholder: m.cloudMachines_northflank_form_tokenSaved_placeholder(),
-        keyNote: m.cloudMachines_northflank_form_token_note,
-        test: m.cloudMachines_northflank_form_test_label(),
-        works: m.cloudMachines_northflank_form_tokenWorks(),
-        keyFrom: m.cloudMachines_northflank_form_keyFrom,
-        keyFromLabel: m.cloudMachines_northflank_form_keyFrom_label(),
-        keyFromClear: m.cloudMachines_northflank_form_keyFrom_clear(),
-        sizeLabel: m.cloudMachines_northflank_form_size_label(),
-        sizeUnknown: m.cloudMachines_northflank_form_sizeUnknown(),
-        privacy: m.cloudMachines_northflank_form_privacy,
+        ...e2bCopy,
+        ariaLabel: m.cloudMachines_agent37_form_ariaLabel(),
+        intro: m.cloudMachines_agent37_form_intro,
+        keyPlaceholder: m.cloudMachines_agent37_form_apiKey_placeholder(),
+        keyNote: m.cloudMachines_agent37_form_apiKey_note,
+        sizeLabel: m.cloudMachines_agent37_form_size_label(),
+        privacy: m.cloudMachines_agent37_form_privacy,
       }
-    : {
-        ariaLabel: m.cloudMachines_form_ariaLabel(),
-        intro: m.cloudMachines_form_intro,
-        keyLabel: m.cloudMachines_form_apiKey_label(),
-        keyPlaceholder: m.cloudMachines_form_apiKey_placeholder(),
-        keySavedPlaceholder: m.cloudMachines_form_apiKeySaved_placeholder(),
-        keyNote: m.cloudMachines_form_apiKey_note,
-        test: m.cloudMachines_form_test_label(),
-        works: m.cloudMachines_form_keyWorks(),
-        keyFrom: m.cloudMachines_form_keyFrom,
-        keyFromLabel: m.cloudMachines_form_keyFrom_label(),
-        keyFromClear: m.cloudMachines_form_keyFrom_clear(),
-        sizeLabel: m.cloudMachines_form_size_label(),
-        sizeUnknown: m.cloudMachines_form_sizeUnknown(),
-        privacy: m.cloudMachines_form_privacy,
-      };
+    : northflank
+      ? {
+          ariaLabel: m.cloudMachines_northflank_form_ariaLabel(),
+          intro: m.cloudMachines_northflank_form_intro,
+          keyLabel: m.cloudMachines_northflank_form_token_label(),
+          keyPlaceholder: m.cloudMachines_northflank_form_token_placeholder(),
+          keySavedPlaceholder: m.cloudMachines_northflank_form_tokenSaved_placeholder(),
+          keyNote: m.cloudMachines_northflank_form_token_note,
+          test: m.cloudMachines_northflank_form_test_label(),
+          works: m.cloudMachines_northflank_form_tokenWorks(),
+          keyFrom: m.cloudMachines_northflank_form_keyFrom,
+          keyFromLabel: m.cloudMachines_northflank_form_keyFrom_label(),
+          keyFromClear: m.cloudMachines_northflank_form_keyFrom_clear(),
+          sizeLabel: m.cloudMachines_northflank_form_size_label(),
+          sizeUnknown: m.cloudMachines_northflank_form_sizeUnknown(),
+          privacy: m.cloudMachines_northflank_form_privacy,
+        }
+      : e2bCopy;
   // The form edits one entry (or one new entry) for its whole life.
   const formKey = untrack(() => entry?.id ?? NEW_CLOUD_ENTRY);
   const configureKey = cloudConfigureKey(formKey);
@@ -144,6 +165,17 @@
     untrack(() => initialDraft?.projectId ?? entry?.northflank?.projectId ?? ''),
   );
   const placeMissing = $derived(northflank && !projectId.trim());
+  let instanceType = $state<Agent37InstanceType>(
+    untrack(() => initialDraft?.instanceType ?? entry?.agent37?.instanceType ?? 'default'),
+  );
+  let region = $state<Agent37Region>(
+    untrack(() => initialDraft?.region ?? entry?.agent37?.region ?? 'us'),
+  );
+  const typeNote = $derived(
+    instanceType === 'vm'
+      ? m.cloudMachines_agent37_form_type_vm_note()
+      : m.cloudMachines_agent37_form_type_default_note(),
+  );
   let size = $state<string>(untrack(() => provider?.size ?? DEFAULT_CLOUD_MACHINE_SIZE));
   let idlePause = $state(
     untrack(() => String(provider?.idlePauseMinutes ?? DEFAULT_IDLE_PAUSE_MINUTES)),
@@ -164,12 +196,17 @@
     const tested = validated?.sizes;
     if (tested) untrack(() => (testedSizes = tested));
   });
-  const sizes = $derived<CloudMachineSizeInfo[]>(testedSizes ?? provider?.sizes ?? []);
+  // Agent37's sizes never depend on the key, so a new entry shows them before a test.
+  const sizes = $derived<readonly CloudMachineSizeInfo[]>(
+    testedSizes ?? (provider?.sizes.length ? provider.sizes : agent37 ? AGENT37_SIZES : []),
+  );
   const keyRequired = $derived(!provider && !apiKey.trim() && !apiKeyFrom);
   // The project's region: from the last test, else the saved entry.
-  const region = $derived(validated?.northflank?.region || provider?.northflank?.region || '');
-  // Northflank bills by plan; the E2B estimate does not apply.
-  const hourly = $derived(northflank ? null : hourlyCostLabel(size));
+  const projectRegion = $derived(
+    validated?.northflank?.region || provider?.northflank?.region || '',
+  );
+  // Northflank and Agent37 bill by their own rates; the E2B estimate does not apply.
+  const hourly = $derived(kind === 'e2b' ? hourlyCostLabel(size) : null);
 
   const IDLE_OPTIONS = [5, 10, 15, 30, 60, 120, 240];
   const DELETE_OPTIONS = [1, 3, 7, 14, 30];
@@ -204,10 +241,7 @@
     cloud?: Parameters<typeof cloudErrorText>[0];
     forbidden?: boolean;
   }) {
-    if (failure.forbidden)
-      return northflank
-        ? m.cloudMachines_northflank_error_ownerOnly()
-        : m.cloudMachines_error_ownerOnly();
+    if (failure.forbidden) return cloudProviderCopy(kind).ownerOnly;
     return failure.cloud ? cloudErrorText(failure.cloud, kind).description : failure.message;
   }
 
@@ -217,11 +251,35 @@
     return !provider || size !== provider.size || apiKey.trim() || apiKeyFrom ? { size } : {};
   }
 
-  /** Northflank: the project, when new or changed. */
-  function placeParams(): { projectId?: string } {
+  /** Northflank: the project; Agent37: the type and region; each when new or changed. */
+  function placeParams(): {
+    projectId?: string;
+    instanceType?: Agent37InstanceType;
+    region?: Agent37Region;
+  } {
+    if (agent37)
+      return {
+        ...(instanceType !== provider?.agent37?.instanceType ? { instanceType } : {}),
+        ...(region !== provider?.agent37?.region ? { region } : {}),
+      };
     if (!northflank) return {};
     const project = projectId.trim();
     return project && project !== provider?.northflank?.projectId ? { projectId: project } : {};
+  }
+
+  function setInstanceType(next: string) {
+    if (next !== 'default' && next !== 'vm') return;
+    instanceType = next;
+    // A standard sandbox runs only in the US.
+    if (next === 'default') region = 'us';
+    resetTest();
+  }
+
+  function setRegion(next: string) {
+    const picked = AGENT37_REGIONS.find((id) => id === next);
+    if (!picked) return;
+    region = picked;
+    resetTest();
   }
 
   /** Which entry, its name when new, and its key: pasted or copied. */
@@ -300,7 +358,8 @@
 
   <div class="grid gap-x-6 gap-y-4 @xl:grid-cols-[10rem_minmax(0,1fr)]">
     {#if askName}
-      <Label for="{uid}-name" class="@xl:pt-2">{m.cloudMachines_form_name_label()}</Label>
+      <Label for="{uid}-name" class="self-start @xl:pt-2">{m.cloudMachines_form_name_label()}</Label
+      >
       <div class="min-w-0 space-y-1">
         <Input
           id="{uid}-name"
@@ -322,7 +381,7 @@
       </div>
     {/if}
 
-    <Label for="{uid}-key" class="@xl:pt-2">{copy.keyLabel}</Label>
+    <Label for="{uid}-key" class="self-start @xl:pt-2">{copy.keyLabel}</Label>
     <div class="min-w-0 space-y-1">
       <div class="flex gap-2">
         {#if apiKeyFromName}
@@ -401,7 +460,7 @@
     </div>
 
     {#if northflank}
-      <Label for="{uid}-project" class="@xl:pt-2"
+      <Label for="{uid}-project" class="self-start @xl:pt-2"
         >{m.cloudMachines_northflank_form_project_label()}</Label
       >
       <Input
@@ -416,19 +475,68 @@
         data-cloud-project
       />
 
-      <Label for="{uid}-region" class="@xl:pt-2"
+      <Label for="{uid}-region" class="self-start @xl:pt-2"
         >{m.cloudMachines_northflank_form_region_label()}</Label
       >
       <p
         id="{uid}-region"
-        class="pt-2 type-body {region ? 'text-foreground' : 'text-muted-foreground'}"
+        class="pt-2 type-body {projectRegion ? 'text-foreground' : 'text-muted-foreground'}"
         data-cloud-region
       >
-        {region || m.cloudMachines_northflank_form_regionUnknown()}
+        {projectRegion || m.cloudMachines_northflank_form_regionUnknown()}
       </p>
     {/if}
 
-    <Label for="{uid}-size" class="@xl:pt-2">{copy.sizeLabel}</Label>
+    {#if agent37}
+      <Label id="{uid}-type-label" class="self-start @xl:pt-2"
+        >{m.cloudMachines_agent37_form_type_label()}</Label
+      >
+      <div class="min-w-0 space-y-1">
+        <ToggleGroup.Root
+          type="single"
+          value={instanceType}
+          onValueChange={setInstanceType}
+          variant="flat"
+          disabled={busy}
+          aria-labelledby="{uid}-type-label"
+          aria-describedby="{uid}-type-note"
+        >
+          <ToggleGroup.Item value="default" data-agent37-type="default"
+            >{m.cloudMachines_agent37_form_type_default()}</ToggleGroup.Item
+          >
+          <ToggleGroup.Item value="vm" data-agent37-type="vm"
+            >{m.cloudMachines_agent37_form_type_vm()}</ToggleGroup.Item
+          >
+        </ToggleGroup.Root>
+        <p id="{uid}-type-note" class="type-body text-muted-foreground" data-agent37-type-note>
+          {typeNote}
+        </p>
+      </div>
+
+      {#if instanceType === 'vm'}
+        <Label id="{uid}-region-label" class="self-start @xl:pt-2"
+          >{m.cloudMachines_agent37_form_region_label()}</Label
+        >
+        <div class="min-w-0" data-agent37-region>
+          <ToggleGroup.Root
+            type="single"
+            value={region}
+            onValueChange={setRegion}
+            variant="flat"
+            disabled={busy}
+            aria-labelledby="{uid}-region-label"
+          >
+            {#each AGENT37_REGIONS as id (id)}
+              <ToggleGroup.Item value={id} data-agent37-region-option={id}
+                >{agent37RegionLabel(id)}</ToggleGroup.Item
+              >
+            {/each}
+          </ToggleGroup.Root>
+        </div>
+      {/if}
+    {/if}
+
+    <Label for="{uid}-size" class="self-start @xl:pt-2">{copy.sizeLabel}</Label>
     <div class="min-w-0 space-y-1">
       {#if sizeItems.length > 0}
         <Select.Root bind:value={size} items={sizeItems} disabled={busy} onchange={resetTest}>
@@ -442,7 +550,7 @@
                   <span>{cloudSizeLabel(info.id)}</span>
                   {#if northflank}
                     <span class="type-caption text-muted-foreground">{info.deploymentPlan}</span>
-                  {:else if info.plan !== 'hobby'}
+                  {:else if kind === 'e2b' && info.plan !== 'hobby'}
                     <span class="type-caption text-muted-foreground"
                       >{m.cloudMachines_form_sizePro()}</span
                     >
@@ -467,7 +575,9 @@
       {/if}
     </div>
 
-    <Label for="{uid}-idle" class="@xl:pt-2">{m.cloudMachines_form_idlePause_label()}</Label>
+    <Label for="{uid}-idle" class="self-start @xl:pt-2"
+      >{m.cloudMachines_form_idlePause_label()}</Label
+    >
     <Select.Root bind:value={idlePause} items={idleItems} disabled={busy}>
       <Select.Trigger id="{uid}-idle" class="w-full max-w-sm"><Select.Value /></Select.Trigger>
       <Select.Content>
@@ -477,7 +587,9 @@
       </Select.Content>
     </Select.Root>
 
-    <Label for="{uid}-delete" class="@xl:pt-2">{m.cloudMachines_form_pausedDelete_label()}</Label>
+    <Label for="{uid}-delete" class="self-start @xl:pt-2"
+      >{m.cloudMachines_form_pausedDelete_label()}</Label
+    >
     <Select.Root bind:value={pausedDelete} items={deleteItems} disabled={busy}>
       <Select.Trigger id="{uid}-delete" class="w-full max-w-sm"><Select.Value /></Select.Trigger>
       <Select.Content>

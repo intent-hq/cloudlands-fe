@@ -71,9 +71,9 @@
   function missingLabelFor(id: string): string {
     const entryId = startOnCloudMachineId(id);
     return entryId
-      ? cloudProviderOfEntryId(entryId) === 'northflank'
-        ? cloudProviderName('northflank')
-        : m.cloudMachines_startOn_label()
+      ? cloudProviderOfEntryId(entryId) === 'e2b'
+        ? m.cloudMachines_startOn_label()
+        : cloudProviderName(cloudProviderOfEntryId(entryId))
       : (id === proposer?.nodeId && proposer?.nodeName?.trim()) ||
           m.remoteAgent_location_unknownMachine();
   }

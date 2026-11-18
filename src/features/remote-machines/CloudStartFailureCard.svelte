@@ -12,7 +12,10 @@
   import FailureDetails from '$lib/components/chat/FailureDetails.svelte';
   import { faArrowUpRightFromSquare } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import { cloudDashboardUrl } from '$features/cloud-machines/cloud-machines-format';
+  import {
+    cloudDashboardUrl,
+    cloudProviderCopy,
+  } from '$features/cloud-machines/cloud-machines-format';
   import type { CloudStartFailureAction, CloudStartFailureView } from './cloud-start-failure';
 
   let {
@@ -95,9 +98,7 @@
         href={cloudDashboardUrl(view.provider)}
         target="_blank"
         rel="noopener noreferrer"
-        >{view.provider === 'northflank'
-          ? m.cloudMachines_northflank_dashboardOpen_label()
-          : m.cloudMachines_dashboardOpen_label()}
+        >{cloudProviderCopy(view.provider).dashboardOpen}
         <Fa icon={faArrowUpRightFromSquare} class="size-2.5" /></a
       >
     {/if}

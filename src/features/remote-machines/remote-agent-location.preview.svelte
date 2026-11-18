@@ -33,6 +33,8 @@
     | 'e2b-sandbox-lost'
     | 'e2b-template-missing'
     | 'e2b-key-rejected'
+    | 'agent37-no-capacity'
+    | 'agent37-wallet'
     | 'e2b-starting-turn'
     | 'e2b-setup-turn'
     | 'e2b-started-turn'
@@ -82,6 +84,9 @@
       'e2b-sandbox-lost': sceneState('e2b-sandbox-lost'),
       'e2b-template-missing': sceneState('e2b-template-missing'),
       'e2b-key-rejected': sceneState('e2b-key-rejected'),
+      // An agent on an Agent37 entry: no room in its region, then an empty wallet.
+      'agent37-no-capacity': sceneState('agent37-no-capacity'),
+      'agent37-wallet': sceneState('agent37-wallet'),
       'e2b-starting-turn': sceneState('e2b-starting-turn'),
       'e2b-setup-turn': sceneState('e2b-setup-turn'),
       'e2b-started-turn': sceneState('e2b-started-turn'),
@@ -314,7 +319,8 @@
 
   // Agents on E2B: a sandbox row while it runs or is paused; start fields and errors otherwise.
   const E2B_NODE = 'd-e2b-sandbox-1';
-  const isE2bScene = (s: Scene) => s.startsWith('e2b-');
+  const isE2bScene = (s: Scene) => s.startsWith('e2b-') || isAgent37Scene(s);
+  const isAgent37Scene = (s: Scene) => s.startsWith('agent37-');
   const E2B_BOOTSTRAP_DETAIL =
     [
       "the sandbox's intentd did not mint a credential (exit 3): intentd or its tunnel did not start in the sandbox.",
@@ -363,6 +369,16 @@
       detail:
         'template intent/intent-node-4x8:0.240.0 not found in project intent. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"template-missing","retryable":false}',
     },
+    'agent37-no-capacity': {
+      code: 'remote-launch-failed',
+      detail:
+        'Agent37 has no capacity for a vm 4x16 instance in ap-south (503). {"code":"cloud-machine-unavailable","provider":"agent37","reason":"no-capacity","retryable":true,"status":503}',
+    },
+    'agent37-wallet': {
+      code: 'cloud-quota',
+      detail:
+        'Agent37 refused a new instance: insufficient_balance (402). Top up the Agent37 wallet. {"code":"cloud-quota","provider":"agent37","limit":"plan","retryable":false}',
+    },
     'e2b-key-rejected': {
       code: 'remote-launch-failed',
       detail:
@@ -371,8 +387,19 @@
   };
   const e2bAgent = (s: Scene): AgentSession =>
     agent('ral-e2b', 'Docs sweeper', {
-      nodeName: 'E2B',
-      placement: { target: 'e2b', checkout: 'isolated' },
+      ...(isAgent37Scene(s)
+        ? {
+            nodeName: 'Agent37',
+            placement: {
+              target: 'cloud' as const,
+              checkout: 'isolated' as const,
+              cloudMachineId: 'agent37-4b8d2e6f1a90',
+            },
+          }
+        : {
+            nodeName: 'E2B',
+            placement: { target: 'e2b' as const, checkout: 'isolated' as const },
+          }),
       ...(s === 'e2b-running' ||
       s === 'e2b-paused' ||
       s === 'e2b-picker-paused' ||
