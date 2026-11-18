@@ -8,7 +8,7 @@
     states: {
       default: { props: {} },
       mixed: { props: { enabled: ['remoteAgents', 'tabGroups'] } },
-      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'browserAccess'] } },
+      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'tabGroups'] } },
     },
   });
 </script>
@@ -18,14 +18,13 @@
   import { store as appStore } from '$store/renderer/store';
   import { machineRailStateReceived } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import {
-    setLabsBrowserAccessEnabled,
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
     setLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import LabsSettings from './LabsSettings.svelte';
 
-  type Lab = 'remoteAgents' | 'plainFolders' | 'tabGroups' | 'browserAccess';
+  type Lab = 'remoteAgents' | 'plainFolders' | 'tabGroups';
 
   let { enabled = [], desktop = false }: { enabled?: Lab[]; desktop?: boolean } = $props();
 
@@ -33,7 +32,6 @@
     remoteAgents: setLabsRemoteAgentsEnabled,
     plainFolders: setLabsPlainFolderWorkspacesEnabled,
     tabGroups: setLabsTabGroupsEnabled,
-    browserAccess: setLabsBrowserAccessEnabled,
   } as const;
   const previousPreferences = appStore.state.userPreferences;
   const previousRail = appStore.state.machineRail;
@@ -60,7 +58,6 @@
       setLabsPlainFolderWorkspacesEnabled(previousPreferences.labsPlainFolderWorkspacesEnabled),
     );
     appStore.dispatch(setLabsTabGroupsEnabled(previousPreferences.labsTabGroupsEnabled));
-    appStore.dispatch(setLabsBrowserAccessEnabled(previousPreferences.labsBrowserAccessEnabled));
     if (desktop) {
       appStore.dispatch(machineRailStateReceived(previousRail));
       window.electronAPI = previousApi;

@@ -2,6 +2,8 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   DEFAULT_CLOUD_MACHINE_ID,
+  type Agent37InstanceType,
+  type Agent37Region,
   type CloudMachineConfigureInput,
   type CloudMachineErrorData,
   type CloudMachineProvider,
@@ -18,6 +20,8 @@ export interface CloudFormDraft {
   name?: string;
   apiKey?: string;
   projectId?: string;
+  instanceType?: Agent37InstanceType;
+  region?: Agent37Region;
 }
 
 /** The form key of an entry that is not saved yet. */

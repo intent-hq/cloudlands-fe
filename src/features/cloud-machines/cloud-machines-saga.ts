@@ -42,18 +42,21 @@ import {
   cloudProviderRemoved,
   type CloudMachineFailure,
 } from './cloud-machines-slice';
-import { sandboxLabel } from './cloud-machines-format';
+import { cloudProviderCopy, sandboxLabel } from './cloud-machines-format';
 
-/** The key (E2B) or token (Northflank), pasted or copied, and Northflank's project. */
+/** The key (E2B, Agent37) or token (Northflank), pasted or copied, and the provider's own members. */
 function secretParams(
   provider: CloudProviderKind,
   input: CloudMachineConfigureInput,
   entries: boolean,
 ): Record<string, string> {
+  // Only the entry's own provider takes these; any other is `invalid-params`.
   return {
     ...(entries && input.apiKeyFrom && !input.apiKey ? { apiKeyFrom: input.apiKeyFrom } : {}),
     ...(input.apiKey ? { apiKey: input.apiKey } : {}),
     ...(provider === 'northflank' && input.projectId ? { projectId: input.projectId } : {}),
+    ...(provider === 'agent37' && input.instanceType ? { instanceType: input.instanceType } : {}),
+    ...(provider === 'agent37' && input.region ? { region: input.region } : {}),
   };
 }
 
@@ -191,13 +194,7 @@ function* configure(
     if (validateOnly) yield* put(cloudMachineValidated(formKey, provider));
     else if (provider) yield* put(cloudProviderChanged(provider));
     yield* put(cloudMachineOperationSettled(key, null));
-    if (!validateOnly)
-      yield* call(
-        notify.success,
-        kind === 'northflank'
-          ? m.cloudMachines_northflank_saved_toast()
-          : m.cloudMachines_saved_toast(),
-      );
+    if (!validateOnly) yield* call(notify.success, cloudProviderCopy(kind).saved);
   } catch (error) {
     if (started !== generation()) return;
     yield* put(cloudMachineOperationSettled(key, cloudFailure(error)));
@@ -218,23 +215,28 @@ function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaG
   const { entries, providers } = store.state.cloudMachines;
   const sandboxes = entrySandboxIds(cloudMachineId).length;
   const name = providers[cloudMachineId]?.name;
-  const northflank = providers[cloudMachineId]?.provider === 'northflank';
+  const kind = providers[cloudMachineId]?.provider;
   const accepted = yield* call(confirm, {
     title:
       entries && name
         ? m.cloudMachines_remove_entry_confirmTitle({ name })
         : m.cloudMachines_remove_confirmTitle(),
-    description: northflank
-      ? sandboxes > 0
-        ? m.cloudMachines_northflank_remove_entryWithServices_description()
-        : m.cloudMachines_northflank_remove_entry_description()
-      : entries
+    description:
+      kind === 'northflank'
         ? sandboxes > 0
-          ? m.cloudMachines_remove_entryWithSandboxes_description()
-          : m.cloudMachines_remove_entry_description()
-        : sandboxes > 0
-          ? m.cloudMachines_remove_confirmWithSandboxes_description()
-          : m.cloudMachines_remove_confirm_description(),
+          ? m.cloudMachines_northflank_remove_entryWithServices_description()
+          : m.cloudMachines_northflank_remove_entry_description()
+        : kind === 'agent37'
+          ? sandboxes > 0
+            ? m.cloudMachines_agent37_remove_entryWithInstances_description()
+            : m.cloudMachines_agent37_remove_entry_description()
+          : entries
+            ? sandboxes > 0
+              ? m.cloudMachines_remove_entryWithSandboxes_description()
+              : m.cloudMachines_remove_entry_description()
+            : sandboxes > 0
+              ? m.cloudMachines_remove_confirmWithSandboxes_description()
+              : m.cloudMachines_remove_confirm_description(),
     confirmLabel: m.cloudMachines_remove_label(),
     destructive: true,
   });
@@ -296,14 +298,10 @@ function* deleteSandbox(
   if (!machine) return;
   const entryName = store.state.cloudMachines.providers[machine.cloud?.cloudMachineId ?? '']?.name;
   const agent = sandboxLabel(machine, entryName);
-  const northflank = machine.cloud?.provider === 'northflank';
+  const copy = cloudProviderCopy(machine.cloud?.provider ?? 'e2b');
   const accepted = yield* call(confirm, {
-    title: northflank
-      ? m.cloudMachines_northflank_delete_confirmTitle({ agent })
-      : m.cloudMachines_delete_confirmTitle({ agent }),
-    description: northflank
-      ? m.cloudMachines_northflank_delete_confirm_description()
-      : m.cloudMachines_delete_confirm_description(),
+    title: copy.deleteTitle({ agent }),
+    description: copy.deleteDescription,
     confirmLabel: m.cloudMachines_delete_label(),
     destructive: true,
   });

@@ -1,5 +1,5 @@
 /**
- * Request checks for Browser access (the desktop app serving the web UI to a
+ * Request checks for Browser access (`intent-web` serving the web UI to a
  * browser through a front-end such as `tailscale serve`).
  *
  * The server listens on a loopback port, so every local process and every
@@ -79,8 +79,8 @@ export function parseCookies(header: string | string[] | undefined): Map<string,
 
 /**
  * This server's session cookie name. It is derived from the access key, so two
- * servers on one host name (different ports, or the desktop app and
- * intent-web) never overwrite each other's sessions.
+ * servers on one host name (different ports) never overwrite each other's
+ * sessions.
  */
 export function sessionCookieName(accessKey: string): string {
   const id = crypto

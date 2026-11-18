@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { afterEach, expect, it, vi } from 'vitest';
-import { deriveSessionToken, SESSION_COOKIE } from '../../browser-access/main/browser-access-auth';
+import { deriveSessionToken, SESSION_COOKIE } from './browser-access-auth';
 
 const { WebSocket } = createRequire(import.meta.url)('ws') as typeof import('ws');
 

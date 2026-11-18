@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  cloudProviderOfEntryId,
   estimateCloudCost,
   nextCloudEntryName,
   parseCloudMachineError,
@@ -33,7 +34,10 @@ import {
   agentPlacementNoticeKind,
   placementFailure,
 } from '$features/remote-machines/agent-location';
+import { cloudStartFailureView } from '$features/remote-machines/cloud-start-failure';
 import {
+  AGENT37_ENTRY,
+  AGENT37_SANDBOXES,
   E2B_PROVIDER,
   E2B_SANDBOXES,
   NORTHFLANK_ENTRY,
@@ -632,5 +636,128 @@ describe('Northflank entries', () => {
     expect(nextCloudEntryName(['E2B'], 'northflank')).toBe('Northflank');
     expect(nextCloudEntryName(['northflank'], 'northflank')).toBe('Northflank 2');
     expect(nextCloudEntryName(['Northflank'])).toBe('E2B');
+  });
+});
+
+describe('Agent37 entries', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('reads an Agent37 entry with its type, region and disk, no plan per size, never the key', () => {
+    const parsed = parseCloudMachineProvider({ ...AGENT37_ENTRY, apiKey: 'sk_live_secret' });
+    expect(parsed).toEqual(AGENT37_ENTRY);
+    expect(JSON.stringify(parsed)).not.toContain('sk_live_secret');
+    expect(parsed?.sizes.map((size) => size.id)).toEqual(['2x4', '4x8', '4x16', '4x32']);
+    expect(parsed?.sizes.every((size) => size.plan === undefined)).toBe(true);
+    expect(parseRemoteMachine(AGENT37_SANDBOXES[0])?.cloud?.provider).toBe('agent37');
+    expect(cloudProviderOfEntryId(AGENT37_ENTRY.id)).toBe('agent37');
+  });
+
+  it('reads unknown Agent37 settings as a standard sandbox in the US', () => {
+    const parsed = parseCloudMachineProvider({
+      ...AGENT37_ENTRY,
+      agent37: { instanceType: 'gpu', region: 'mars', diskGiB: -1 },
+    });
+    expect(parsed?.agent37).toEqual({ instanceType: 'default', region: 'us', diskGiB: 20 });
+  });
+
+  it('places an Agent37 entry with the provider-neutral target', () => {
+    const providerOf = (id: string) => (id === AGENT37_ENTRY.id ? 'agent37' : 'e2b');
+    expect(
+      initialAgentPlacement(startOnCloudId(AGENT37_ENTRY.id), { cloudEntries: true, providerOf }),
+    ).toEqual({ target: 'cloud', checkout: 'isolated', cloudMachineId: AGENT37_ENTRY.id });
+  });
+
+  it('lists an Agent37 entry in Start On by provider and name', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('agent37-providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const cloud = selectStartOnOptions.select(store.state).filter((o) => o.kind === 'cloud');
+    expect(cloud.at(-1)?.label).toBe(
+      m.cloudMachines_startOn_agent37_label({ name: AGENT37_ENTRY.name }),
+    );
+  });
+
+  it('names a starting Agent37 agent by its provider', () => {
+    const location = agentMachineLocation({
+      id: 'a-37',
+      placement: { target: 'cloud', checkout: 'isolated', cloudMachineId: AGENT37_ENTRY.id },
+      cloudStart: { step: 'creating-sandbox' },
+    } as AgentSession);
+    expect(location?.name).toBe('Agent37');
+  });
+
+  it('explains Agent37 errors in its own words', () => {
+    const agent37 = { provider: 'agent37' as const };
+    const capacity = cloudErrorText({
+      code: 'cloud-machine-unavailable',
+      reason: 'no-capacity',
+      retryable: true,
+      ...agent37,
+    });
+    expect(capacity.description).toBe(m.cloudMachines_agent37_error_noCapacity_description());
+    const wallet = cloudErrorText({
+      code: 'cloud-quota',
+      limit: 'plan',
+      retryable: false,
+      ...agent37,
+    });
+    expect(wallet.description).toBe(m.cloudMachines_agent37_error_quotaPlan_description());
+    const memory = cloudErrorText({
+      code: 'cloud-quota',
+      limit: 'concurrency',
+      retryable: true,
+      ...agent37,
+    });
+    expect(memory.description).toBe(m.cloudMachines_agent37_error_quotaConcurrency_description());
+    for (const reason of ['key-rejected', 'permission-denied', 'template-missing', 'api-error']) {
+      const text = cloudErrorText(
+        { code: 'cloud-machine-unavailable', reason, retryable: false },
+        'agent37',
+      );
+      expect(text.title + text.description).not.toMatch(/E2B|Northflank|sandbox lost/u);
+    }
+    expect(
+      parseCloudMachineError({
+        code: 'cloud-machine-unavailable',
+        reason: 'no-capacity',
+        retryable: true,
+        provider: 'agent37',
+      }),
+    ).toMatchObject({ provider: 'agent37', reason: 'no-capacity' });
+  });
+
+  it('offers Retry on no capacity, and only Settings and the dashboard on an empty wallet', () => {
+    const fail = (data: object) =>
+      cloudStartFailureView(
+        placementFailure(
+          { code: 'remote-launch-failed', detail: `x ${JSON.stringify(data)}` },
+          'Agent37',
+        ),
+        { canRetry: true },
+      );
+    const capacity = fail({
+      code: 'cloud-machine-unavailable',
+      reason: 'no-capacity',
+      retryable: true,
+      provider: 'agent37',
+    });
+    expect(capacity).toMatchObject({ provider: 'agent37', tone: 'danger' });
+    expect(capacity?.actions[0]).toBe('retry');
+    expect(capacity?.title).toBe(m.cloudMachines_agent37_error_noCapacity_title());
+    const wallet = fail({
+      code: 'cloud-quota',
+      limit: 'plan',
+      retryable: false,
+      provider: 'agent37',
+    });
+    expect(wallet).toMatchObject({ provider: 'agent37', tone: 'warning', dashboard: true });
+    expect(wallet?.actions).toEqual(['settings']);
+    expect(wallet?.cause).toBe(m.cloudMachines_agent37_error_quotaPlan_description());
+  });
+
+  it('picks the next free default name for Agent37', () => {
+    expect(nextCloudEntryName(['E2B', 'Northflank'], 'agent37')).toBe('Agent37');
+    expect(nextCloudEntryName(['agent37'], 'agent37')).toBe('Agent37 2');
   });
 });

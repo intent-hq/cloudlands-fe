@@ -1,10 +1,9 @@
 /**
- * Browser access host: when a host server (the desktop app's Settings →
- * Devices → Browser access, or the standalone `intent-web` server) serves this
- * page to a browser, its `/runtime-config.js` names the backend this tab is
- * bound to and where to list the host's connections. The host keeps every
- * token; this tab only sees token-free records and reaches each backend
- * through the host's `/intentd/ws/<id>` bridge.
+ * Browser access host: when a host server (the standalone `intent-web`
+ * server) serves this page to a browser, its `/runtime-config.js` names the
+ * backend this tab is bound to and where to list the host's connections. The
+ * host keeps every token; this tab only sees token-free records and reaches
+ * each backend through the host's `/intentd/ws/<id>` bridge.
  *
  * A host that advertises the `connections.manage` capability (intent-web)
  * also accepts add/update/test/capture/rotate/tunnel/forget over HTTP at the

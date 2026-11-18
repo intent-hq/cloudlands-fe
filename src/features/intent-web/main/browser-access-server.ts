@@ -1,17 +1,16 @@
 /**
- * Browser access HTTP server (Electron main).
+ * Browser access HTTP server, the core of `intent-web` (intent-web-server.ts).
  *
- * Serves the bundled web build (`dist/web`) to a browser that reaches this
- * machine through a front-end such as `tailscale serve`, plus:
+ * Serves the web build to a browser that reaches this machine through a
+ * front-end such as `tailscale serve`, plus:
  * - `/runtime-config.js`: picks the backend for this tab (`?backend=<id>`,
  *   remembered in sessionStorage) and points the app at its bridge.
  * - `/__browser-access/connections`: the token-free connections list.
- * - `/intentd/ws/<connectionId>`: a WebSocket bridged to that backend through
- *   the same transport desktop windows use (UDS for the local daemon; pinned
- *   TLS, bearer token, host race and tunnel for remotes). Tokens stay here.
+ * - `/intentd/ws/<connectionId>`: a WebSocket bridged to that backend
+ *   through the host's `openUpstream`. Tokens stay here.
  *
  * Every request needs the access-key session cookie (see browser-access-auth).
- * Dependencies are injected so the server runs in tests without Electron.
+ * Dependencies are injected so hosts and tests supply their own backends.
  */
 import fs from 'node:fs';
 import http from 'node:http';

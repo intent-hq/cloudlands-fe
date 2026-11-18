@@ -97,8 +97,7 @@ The access key is a random 256-bit secret. Entering it once sets an
 HttpOnly session cookie (Secure behind HTTPS). The session survives closing the
 browser and lasts 400 days from the last visit: each day you use Intent, the
 server renews it. Each server gets its own cookie name, so several servers on
-one host name (different ports, or the desktop app's Browser access) keep
-separate sessions.
+one host name (different ports) keep separate sessions.
 
 | Task                       | Command                          |
 | -------------------------- | -------------------------------- |

@@ -1048,7 +1048,7 @@
 
   <Toast />
   <AppDialogHosts />
-  <!-- Web build only: experimental notice at each start (Browser access hosts). -->
+  <!-- Web build only: experimental notice at each start (intent-web). -->
   <WebExperimentalNoticeHost />
 
   <!-- Session-scoped daemon-host tool warnings (render nothing themselves) -->

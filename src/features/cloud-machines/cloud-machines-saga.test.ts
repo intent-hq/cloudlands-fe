@@ -24,6 +24,7 @@ import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-
 import {
   E2B_PROVIDER,
   E2B_SANDBOXES,
+  AGENT37_ENTRY,
   NORTHFLANK_ENTRY,
   NORTHFLANK_SANDBOXES,
   TEAM_ENTRY,
@@ -534,6 +535,98 @@ describe('cloud machines saga — Northflank', () => {
       provider: 'northflank',
       cloudMachineId: NORTHFLANK_ENTRY.id,
       stopAgents: true,
+    });
+  });
+});
+
+describe('cloud machines saga — Agent37', () => {
+  const CAPS = {
+    remoteMachines: 1,
+    cloudMachines: 1,
+    cloudMachineEntries: 1,
+    cloudMachineProviders: 1,
+  };
+  const KEY = 'sk_live_do-not-store-me';
+
+  function seedProviders() {
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'northflank', 'agent37'],
+        providers: [E2B_PROVIDER, AGENT37_ENTRY],
+        machines: [],
+        readAt: 1,
+      }),
+    );
+  }
+
+  it('reads Agent37 from the provider kinds', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [AGENT37_ENTRY],
+      machines: [],
+      providerKinds: ['e2b', 'northflank', 'agent37'],
+    }));
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.providerKinds).toEqual(['e2b', 'northflank', 'agent37']);
+    expect(store.state.cloudMachines.providers[AGENT37_ENTRY.id]).toEqual(AGENT37_ENTRY);
+  });
+
+  it('creates an Agent37 entry with its key, type and region, and keeps no key', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: AGENT37_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({
+        provider: 'agent37',
+        name: 'Mumbai VMs',
+        apiKey: KEY,
+        instanceType: 'vm',
+        region: 'ap-south',
+        size: '4x16',
+        projectId: 'ignored',
+      }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'agent37',
+      name: 'Mumbai VMs',
+      apiKey: KEY,
+      instanceType: 'vm',
+      region: 'ap-south',
+      size: '4x16',
+    });
+    expect(JSON.stringify(store.state)).not.toContain(KEY);
+  });
+
+  it('sends no Agent37 members to another provider', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: E2B_PROVIDER }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({ cloudMachineId: 'e2b', instanceType: 'vm', region: 'eu' }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({ provider: 'e2b', cloudMachineId: 'e2b' });
+  });
+
+  it('removes an Agent37 entry with its own provider', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.remove', () => ({ ok: true, unconfirmedStops: [] }));
+    seedProviders();
+    start();
+    dispatch(cloudMachinesRemoveRequested(AGENT37_ENTRY.id));
+    await vi.waitFor(() =>
+      expect(store.state.cloudMachines.providers[AGENT37_ENTRY.id]).toBeUndefined(),
+    );
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'agent37',
+      cloudMachineId: AGENT37_ENTRY.id,
     });
   });
 });

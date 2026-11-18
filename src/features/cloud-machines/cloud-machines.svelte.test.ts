@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import {
+  AGENT37_ENTRY,
   E2B_PROVIDER,
   GROUPED_SANDBOXES,
   TEAM_ENTRY,
@@ -489,6 +490,21 @@ describe('Add cloud', () => {
     expect(view.queryByTestId('add-cloud-northflank')).toBeNull();
   });
 
+  it('offers Agent37 only when the backend lists it', async () => {
+    seed('agent37-add-menu');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
+    expect((await view.findByTestId('add-cloud-agent37')).textContent).toContain('Agent37');
+    restore?.();
+    view.unmount();
+    seed('add-cloud-menu');
+    const without = render(DevicesSettings, {
+      initialAddMenuOpen: true,
+      initialAddCloudOpen: true,
+    });
+    expect(await without.findByTestId('add-cloud-northflank')).toBeTruthy();
+    expect(without.queryByTestId('add-cloud-agent37')).toBeNull();
+  });
+
   it('opens the Northflank form from the menu', async () => {
     seed('add-cloud-menu');
     const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
@@ -558,5 +574,127 @@ describe('Northflank form', () => {
       'northflank',
     ]);
     expect(rows[1]?.textContent).toContain('Northflank');
+  });
+});
+
+describe('Agent37 form', () => {
+  function renderForm(initialDraft?: Record<string, string>) {
+    seed('agent37-setup');
+    return render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'agent37',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+      ...(initialDraft ? { initialDraft } : {}),
+    });
+  }
+  const formOf = (view: ReturnType<typeof render>) =>
+    view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+  const configured = () =>
+    dispatched().find((action) => action.type === 'cloudMachines/configureRequested')
+      ?.payload[0] as Record<string, unknown> | undefined;
+
+  it('starts on a standard sandbox in the US, with sizes before any test', async () => {
+    const view = renderForm();
+    const form = formOf(view);
+    expect(form.getAttribute('data-cloud-provider')).toBe('agent37');
+    expect(form.querySelector('[data-agent37-type="default"]')?.getAttribute('data-state')).toBe(
+      'on',
+    );
+    expect(form.querySelector('[data-agent37-region]')).toBeNull();
+    expect(form.querySelector('[data-cloud-sizes-unknown]')).toBeNull();
+    expect(form.querySelector('[data-agent37-type-note]')?.textContent?.trim()).toBeTruthy();
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(form.querySelector('input[type="password"]')!, {
+      target: { value: 'sk_live_test' },
+    });
+    expect(save.disabled).toBe(false);
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({
+      provider: 'agent37',
+      apiKey: 'sk_live_test',
+      instanceType: 'default',
+      region: 'us',
+      size: '4x8',
+    });
+  });
+
+  it('asks for a region only for a full VM, and sends the one picked', async () => {
+    const view = renderForm({ apiKey: 'sk_live_test' });
+    const form = formOf(view);
+    const standardNote = form.querySelector('[data-agent37-type-note]')?.textContent;
+    await fireEvent.click(form.querySelector('[data-agent37-type="vm"]')!);
+    await vi.waitFor(() => expect(form.querySelector('[data-agent37-region]')).not.toBeNull());
+    expect(form.querySelector('[data-agent37-type-note]')?.textContent).not.toBe(standardNote);
+    const regions = [...form.querySelectorAll('[data-agent37-region-option]')].map((item) =>
+      item.textContent?.trim(),
+    );
+    expect(regions).toEqual(['US', 'Europe (France or UK)', 'Mumbai']);
+    await fireEvent.click(form.querySelector('[data-agent37-region-option="ap-south"]')!);
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ instanceType: 'vm', region: 'ap-south' });
+  });
+
+  it('goes back to the US when a full VM in another region becomes a standard sandbox', async () => {
+    const view = renderForm({ apiKey: 'sk_live_test', instanceType: 'vm', region: 'eu' });
+    const form = formOf(view);
+    expect(
+      form.querySelector('[data-agent37-region-option="eu"]')?.getAttribute('data-state'),
+    ).toBe('on');
+    await fireEvent.click(form.querySelector('[data-agent37-type="default"]')!);
+    await vi.waitFor(() => expect(form.querySelector('[data-agent37-region]')).toBeNull());
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ instanceType: 'default', region: 'us' });
+  });
+
+  it('sends no type or region from the edit form when they are unchanged', async () => {
+    seed('agent37-providers');
+    const view = render(CloudMachineRow, {
+      entry: AGENT37_ENTRY,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = formOf(view);
+    expect(
+      form.querySelector('[data-agent37-region-option="ap-south"]')?.getAttribute('data-state'),
+    ).toBe('on');
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ cloudMachineId: AGENT37_ENTRY.id });
+    expect(configured()).not.toHaveProperty('instanceType');
+    expect(configured()).not.toHaveProperty('region');
+  });
+
+  it("explains a refused key in plain words, naming Agent37's IP allowlist", () => {
+    seed('agent37-setup-error');
+    const view = render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'agent37',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const error = view.container.querySelector('[data-cloud-key-error]')?.textContent ?? '';
+    expect(error).toContain('Agent37');
+    expect(error).toContain('IP allowlist');
+    expect(error).not.toContain('403');
+  });
+
+  it('shows the type and region of an Agent37 entry and lists its instances', () => {
+    seed('agent37-providers');
+    const view = render(DevicesSettings);
+    const row = view.container.querySelector(
+      `[data-cloud-machine-row="${AGENT37_ENTRY.id}"]`,
+    ) as HTMLElement;
+    expect(row.getAttribute('data-cloud-provider')).toBe('agent37');
+    expect(row.textContent).toContain('Agent37');
+    expect(row.textContent).toContain('Full VM');
+    expect(row.textContent).toContain('Mumbai');
+    const list = row.querySelector('[data-cloud-sandboxes]');
+    expect(list?.getAttribute('aria-label')).toBe('Agent37 instances');
+    expect(list?.textContent).toContain('Docker image builder');
+    expect(list?.textContent).not.toContain('E2B');
   });
 });

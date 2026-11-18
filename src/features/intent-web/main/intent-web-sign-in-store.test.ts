@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { createSignInCodes } from '../../browser-access/main/browser-access-sign-in-codes';
+import { createSignInCodes } from './browser-access-sign-in-codes';
 import { SIGN_IN_FILE, createFileSignInStore } from './intent-web-sign-in-store';
 
 const KEY = 'access-key-0123456789abcdefghijklmnopqrstuvwxyz';

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { once } from 'node:events';
 import { expect, it } from 'vitest';
 import { createIntentWebServer } from './intent-web-server';
-import { deriveSessionToken, SESSION_COOKIE } from '../../browser-access/main/browser-access-auth';
+import { deriveSessionToken, SESSION_COOKIE } from './browser-access-auth';
 const { WebSocket, WebSocketServer } = createRequire(import.meta.url)('ws') as typeof import('ws');
 async function browsersClosed(ws: { close(): void; readyState: number }) {
   const closing = once(ws as never, 'close');

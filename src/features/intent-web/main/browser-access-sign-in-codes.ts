@@ -1,5 +1,5 @@
 /**
- * Single-use sign-in codes for Browser access and intent-web: a short code a
+ * Single-use sign-in codes for intent-web: a short code a
  * person types (or opens as a link) instead of the long access key.
  *
  * - 6 characters from an alphabet without look-alikes (no 0/O, 1/I/L), drawn
@@ -210,23 +210,5 @@ export function createSignInCodes(options: {
         state: { ...state, pageOrigin: origin },
         result: undefined,
       })),
-  };
-}
-
-/** A store kept in memory (the desktop app: codes live only while it runs). */
-export function createMemorySignInStore(initial: SignInState = EMPTY_SIGN_IN_STATE): SignInStore {
-  let state = initial;
-  let chain: Promise<unknown> = Promise.resolve();
-  return {
-    read: async () => state,
-    update: <T>(change: (current: SignInState) => { state: SignInState; result: T }) => {
-      const run = chain.then(() => {
-        const next = change(state);
-        state = next.state;
-        return next.result;
-      });
-      chain = run.catch(() => {});
-      return run;
-    },
   };
 }

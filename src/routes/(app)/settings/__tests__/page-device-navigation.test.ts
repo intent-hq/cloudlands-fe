@@ -159,8 +159,3 @@ it('keeps the Mobile tab in the desktop app', () => {
   bootLikeAppShell(undefined);
   expect(mobileTabOnFirstRender()).not.toBeNull();
 });
-
-it('keeps the Mobile tab for desktop Browser access, which does not manage connections', () => {
-  bootLikeAppShell({ backendId: 'local', connectionsUrl: '/__browser-access/connections' });
-  expect(mobileTabOnFirstRender()).not.toBeNull();
-});

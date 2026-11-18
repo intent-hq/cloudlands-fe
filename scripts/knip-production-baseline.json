@@ -173,30 +173,6 @@
     "src/features/backend/splash-gate.ts": [
       "SPLASH_FALLBACK_TIMEOUT_MS"
     ],
-    "src/features/browser-access/main/browser-access-auth.ts": [
-      "SESSION_COOKIE",
-      "SESSION_MAX_AGE_SECONDS",
-      "deriveSessionToken",
-      "isLoopbackHost",
-      "parseCookies",
-      "sessionCookieName",
-      "sessionCookieValue"
-    ],
-    "src/features/browser-access/main/browser-access-controller.ts": [
-      "PREF_ACCESS_KEY",
-      "PREF_ENABLED",
-      "PREF_PAGE_ORIGIN",
-      "PREF_PORT"
-    ],
-    "src/features/browser-access/main/browser-access-server.ts": [
-      "CONNECTIONS_PATH",
-      "runtimeConfigSource"
-    ],
-    "src/features/browser-access/main/browser-access-sign-in-codes.ts": [
-      "SIGN_IN_CODE_ALPHABET",
-      "SIGN_IN_CODE_MAX_ACTIVE",
-      "generateSignInCode"
-    ],
     "src/features/browser/main/browser-exec-reverse.ts": [
       "BROWSER_EXEC_METHOD"
     ],
@@ -520,6 +496,24 @@
     "src/features/ide/main/diff-temp-files.service.ts": [
       "cleanupDiffTempFiles",
       "createDiffTempFiles"
+    ],
+    "src/features/intent-web/main/browser-access-auth.ts": [
+      "SESSION_COOKIE",
+      "SESSION_MAX_AGE_SECONDS",
+      "deriveSessionToken",
+      "isLoopbackHost",
+      "parseCookies",
+      "sessionCookieName",
+      "sessionCookieValue"
+    ],
+    "src/features/intent-web/main/browser-access-server.ts": [
+      "CONNECTIONS_PATH",
+      "runtimeConfigSource"
+    ],
+    "src/features/intent-web/main/browser-access-sign-in-codes.ts": [
+      "SIGN_IN_CODE_ALPHABET",
+      "SIGN_IN_CODE_MAX_ACTIVE",
+      "generateSignInCode"
     ],
     "src/features/intent-web/main/intent-web-sign-in-store.ts": [
       "SIGN_IN_FILE"
@@ -1879,12 +1873,6 @@
     "src/store/renderer/slices/background-hooks/background-hooks-slice.ts": [
       "initialState"
     ],
-    "src/store/renderer/slices/browser-access/browser-access-slice.ts": [
-      "initialState"
-    ],
-    "src/store/renderer/slices/browser-access/sagas/browser-access-saga.ts": [
-      "enforceBrowserAccessLabsGate"
-    ],
     "src/store/renderer/slices/browser-clients/browser-clients-selectors.ts": [
       "selectLiveClient",
       "selectLiveClients"
@@ -2691,9 +2679,6 @@
     "src/features/backend/main/remote-machine-relay.ts": [
       "RemoteMachineRpcClient"
     ],
-    "src/features/browser-access/main/browser-access-server.ts": [
-      "LoginPageText"
-    ],
     "src/features/browser/main/browser-exec-reverse.ts": [
       "ExecuteBrowserActionsFn"
     ],
@@ -2765,6 +2750,9 @@
     ],
     "src/features/hud/takeover/hud-takeover-routing.ts": [
       "HudTakeoverEdgeRoute"
+    ],
+    "src/features/intent-web/main/browser-access-server.ts": [
+      "LoginPageText"
     ],
     "src/features/layout/main/panel-layout-history.repository.ts": [
       "LayoutSnapshot",
