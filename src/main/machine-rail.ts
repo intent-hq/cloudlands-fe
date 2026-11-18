@@ -40,7 +40,7 @@ import {
   MachineRailSetEnabledSchema,
 } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { getLocalPref, setLocalPref } from './local-prefs';
+import { getStrictLocalPref, setLocalPref } from './local-prefs';
 import {
   clearWindowRail,
   emptyFrameForClose,
@@ -876,10 +876,10 @@ function restoreMachinesAside(window: BrowserWindowType): void {
   );
 }
 
-/** Reads the persisted Labs setting once at startup; a failed read keeps it off. */
+/** Reads the persisted setting once at startup: on unless turned off; a failed read keeps it off. */
 export async function loadMachineRailEnabled(): Promise<void> {
   try {
-    setMachineRailEnabledFlag((await getLocalPref(ENABLED_PREF)) === true);
+    setMachineRailEnabledFlag((await getStrictLocalPref(ENABLED_PREF)) !== false);
   } catch {
     setMachineRailEnabledFlag(false);
   }

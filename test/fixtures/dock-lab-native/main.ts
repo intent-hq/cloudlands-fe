@@ -1,6 +1,6 @@
 /** Real IPC, registry and disk writes; native dock side effects are counters only. */
 import { app, BrowserWindow, WebContentsView, ipcMain, type WebContents } from 'electron';
-import { mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WINDOW_CHANNELS } from '../../../src/shared/ipc/channels';
 import { bindMachineViewToBackend, stampWindowWithBackend } from '../../../src/main/window-backend';
@@ -38,6 +38,8 @@ async function run() {
   });
   ipcMain.handle = handle;
   ipcMain.on('fixture:barrier', (event) => event.sender.send('fixture:barrier'));
+  // Start from an opt-out: the dock is on by default.
+  await writeFile(join(profile, 'local-prefs.json'), JSON.stringify({ dockLabEnabled: false }));
   await dock.loadDockLabEnabled();
   const webPreferences = { nodeIntegration: true, contextIsolation: false, sandbox: false };
   const window = new BrowserWindow({ show: false, webPreferences });

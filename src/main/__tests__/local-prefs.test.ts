@@ -53,18 +53,18 @@ async function readDocumentOnDisk(): Promise<unknown> {
 }
 
 describe('local-prefs', () => {
-  it('reads the dock setting as off until opted in, and rejects an unreadable file', async () => {
+  it('reads the dock setting as on until opted out, and rejects an unreadable file', async () => {
     const { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref, setLocalPref } =
       await import('../local-prefs');
     const file = path.join(tmpDir, 'local-prefs.json');
-    // Missing file or missing key: the profile never chose, so the dock stays off.
-    expect(await getDockLabEnabledLocalPref()).toBe(false);
+    // Missing file or missing key: the profile never chose, so the dock is on.
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
     await setLocalPref('unrelated', 1);
-    expect(await getDockLabEnabledLocalPref()).toBe(false);
-    await setDockLabEnabledLocalPref(true);
     expect(await getDockLabEnabledLocalPref()).toBe(true);
     await setDockLabEnabledLocalPref(false);
     expect(await getDockLabEnabledLocalPref()).toBe(false);
+    await setDockLabEnabledLocalPref(true);
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
     // Corrupt or non-object contents are errors, not "unset".
     for (const contents of ['{"dockLabEnabled": fal', '[]', 'null', '']) {
       await fs.writeFile(file, contents);
@@ -84,8 +84,7 @@ describe('local-prefs', () => {
     });
     const { setDockLabEnabledLocalPref, getDockLabEnabledLocalPref } =
       await import('../local-prefs');
-    expect(await getDockLabEnabledLocalPref()).toBe(false);
-    await setDockLabEnabledLocalPref(true);
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
     fail = true;
     await expect(setDockLabEnabledLocalPref(false)).rejects.toThrow('disk unavailable');
     expect(await getDockLabEnabledLocalPref()).toBe(true);
