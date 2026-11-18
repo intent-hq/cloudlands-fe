@@ -116,6 +116,30 @@ export async function deleteLocalPref(key: string): Promise<void> {
   return writeChain;
 }
 
+/** Keys of removed features. Browser access stored an access key here. */
+const RETIRED_KEYS = [
+  'browserAccess.enabled',
+  'browserAccess.port',
+  'browserAccess.accessKey',
+  'browserAccess.pageOrigin',
+] as const;
+
+/** Drop preferences of removed features in one write; no write when none is present. */
+export async function deleteRetiredLocalPrefs(): Promise<void> {
+  writeChain = writeChain
+    .then(async () => {
+      const all = await readAll();
+      const present = RETIRED_KEYS.filter((key) => Object.prototype.hasOwnProperty.call(all, key));
+      if (present.length === 0) return;
+      for (const key of present) delete all[key];
+      await writeAll(all);
+    })
+    .catch((error) => {
+      logger.error('Failed to delete retired local-prefs keys', error as Error);
+    });
+  return writeChain;
+}
+
 /**
  * Test-only: reset the internal write chain so tests are isolated.
  * @internal

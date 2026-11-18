@@ -339,7 +339,11 @@ import {
 import { createDockMenuController } from './dock-menu-controller';
 import { dockWindowMenuItems } from './dock-window-menu';
 import { registerDockActivateAppHandler } from './dock-placement-ipc';
-import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
+import {
+  deleteRetiredLocalPrefs,
+  getDockEnabledLocalPref,
+  setDockEnabledLocalPref,
+} from './local-prefs';
 import {
   changeDockLabEnabled,
   isDockLabEnabled,
@@ -1745,6 +1749,7 @@ const bootFlow = app.whenReady().then(async () => {
     startupMetrics.start('secondaryIPC');
     logger.info('Setting up secondary IPC handlers in background');
 
+    void deleteRetiredLocalPrefs();
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();

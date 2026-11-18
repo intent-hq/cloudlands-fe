@@ -7,7 +7,6 @@
     defaultState: 'intent-web',
     states: {
       'intent-web': { props: { static: true, hostManagesConnections: true } },
-      'browser-access': { props: { static: true, hostManagesConnections: false } },
     },
   });
 </script>

@@ -8,7 +8,7 @@
     states: {
       default: { props: {} },
       mixed: { props: { enabled: ['remoteAgents', 'tabGroups'] } },
-      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'tabGroups'] } },
+      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'plainFolders'] } },
     },
   });
 </script>

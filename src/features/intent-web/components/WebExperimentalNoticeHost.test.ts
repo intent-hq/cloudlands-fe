@@ -18,7 +18,7 @@ const INTENT_WEB = {
   connectionsUrl: '/__intent-web/connections',
   hostCapabilities: ['connections.manage'],
 };
-const BROWSER_ACCESS = { backendId: 'local', connectionsUrl: '/__browser-access/connections' };
+const UNMANAGED_HOST = { backendId: 'local', connectionsUrl: '/__browser-access/connections' };
 
 let disposeStore: (() => void) | undefined;
 
@@ -65,7 +65,7 @@ describe('WebExperimentalNoticeHost', () => {
   });
 
   it('shows on a host that does not manage connections, without the intent-web extras', async () => {
-    start(BROWSER_ACCESS);
+    start(UNMANAGED_HOST);
     await waitFor(() => expect(notice()).toBeTruthy());
     expect(within(screen.getByRole('list')).getAllByRole('listitem').length).toBeGreaterThanOrEqual(
       5,
@@ -99,14 +99,14 @@ describe('WebExperimentalNoticeHost', () => {
   });
 
   it('dismisses with Escape', async () => {
-    start(BROWSER_ACCESS);
+    start(UNMANAGED_HOST);
     await waitFor(() => expect(notice()).toBeTruthy());
     await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     await waitFor(() => expect(notice()).toBeNull());
   });
 
   it('dismisses with the close control', async () => {
-    start(BROWSER_ACCESS);
+    start(UNMANAGED_HOST);
     await waitFor(() => expect(notice()).toBeTruthy());
     await fireEvent.click(
       screen.getByRole('button', { name: m.intentWeb_experimentalNotice_close_ariaLabel() }),
