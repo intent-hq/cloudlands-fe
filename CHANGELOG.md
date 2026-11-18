@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.353.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.1...v2.353.2) (2026-11-18)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** simplify inline visual configuration actions ([#4764](https://github.com/intent-hq/cloudlands-fe/issues/4764)) ([58f847f](https://github.com/intent-hq/cloudlands-fe/commit/58f847f07254145dfb29bf627bd39232f4925fbe))
+
 ## [2.353.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.0...v2.353.1) (2026-11-18)
 
 
