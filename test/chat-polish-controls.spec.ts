@@ -52,12 +52,12 @@ async function sectionBoundary(page: Page) {
   await showOperationalRows(page);
   const section = page.locator('[data-operational-window="fixture-streaming"]');
   await section.scrollIntoViewIfNeeded();
-  await expect(section.locator('[data-tool-use-id="fixture-context-streaming"]')).toBeVisible();
+  await expect(section.getByTestId('response-group-summary')).toBeVisible();
   await expect(section.locator('.content-block--text')).toBeVisible();
   return section.evaluate((section) => {
     const operational = section
-      .querySelector<HTMLElement>('[data-tool-use-id="fixture-context-streaming"]')
-      ?.closest<HTMLElement>('.content-block--tool_use');
+      .querySelector<HTMLElement>('[data-testid="response-group"]')
+      ?.closest<HTMLElement>('.content-block--group');
     const row = operational?.closest('[data-operational-window-key]');
     const text = row?.nextElementSibling?.querySelector<HTMLElement>('.content-block--text');
     return operational && text
@@ -114,15 +114,21 @@ test('keeps grouped, streaming, hidden-result, and expanded-detail paths on the 
   const slider = page.getByRole('slider', { name: 'Operational row gap' });
   await slider.fill('18');
   await showOperationalRows(page);
+  await page.locator('[data-operational-window="fixture-failed-tool"]').scrollIntoViewIfNeeded();
   const detail = page.locator(
     '[data-tool-use-id="fixture-command-failed"] [data-testid="tool-call-disclosure"]',
   );
-  await detail.evaluate((element: HTMLButtonElement) => element.click());
+  await detail.click();
   await expect(detail).toHaveAttribute('aria-expanded', 'true');
   const margins = await operationalMargins(page);
   expect(margins.length).toBeGreaterThan(0);
   expect(margins.every((margin) => margin === 18)).toBe(true);
-  await expect(page.locator('[data-tool-executing]').first()).toBeVisible();
+  const streaming = page.locator('[data-operational-window="fixture-streaming"]');
+  await streaming.scrollIntoViewIfNeeded();
+  const group = streaming.getByTestId('response-group-disclosure');
+  await group.click();
+  await expect(group).toHaveAttribute('aria-expanded', 'true');
+  await expect(streaming.locator('[data-tool-executing]').first()).toBeVisible();
   expect(
     await page.locator('[data-testid="response-group-summary"]').count(),
   ).toBeGreaterThanOrEqual(4);
