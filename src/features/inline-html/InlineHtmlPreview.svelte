@@ -3,6 +3,9 @@
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Input } from '$lib/components/ui/input';
+  import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import { faComment, faEllipsis } from '$lib/icons/phosphor-icons';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { formatNumber } from '$lib/i18n/format';
   import * as m from '$shared/paraglide/messages.js';
@@ -98,6 +101,46 @@
   const loading = $derived(
     isStreaming || storageStatus === 'loading' || (runnable && !ready && !runtimeError),
   );
+  const actions = $derived(
+    defineActions([
+      {
+        id: 'source',
+        label: showSource
+          ? m.inlineHtml_preview_preview_label()
+          : m.inlineHtml_preview_source_label(),
+      },
+      { id: 'reload', label: m.inlineHtml_preview_reload_label(), disabled: !runnable },
+      {
+        id: 'save',
+        label: m.inlineHtml_preview_saveScenario_label(),
+        when: Boolean(currentSnapshot && runnable),
+        disabled:
+          !ready || Boolean(runtimeError) || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS,
+        group: 'configuration',
+      },
+      {
+        id: 'compare',
+        label: m.inlineHtml_preview_compare_label(),
+        when: Boolean(currentSnapshot && runnable && saved.scenarios.length),
+        group: 'configuration',
+      },
+      {
+        id: 'export',
+        label: m.inlineHtml_preview_export_label(),
+        when: Boolean(currentSnapshot && runnable && onExport),
+        disabled: !ready || exportStatus === 'saving',
+        group: 'configuration',
+      },
+    ]),
+  );
+
+  function runAction(id: string) {
+    if (id === 'source') showSource = !showSource;
+    else if (id === 'reload') reload += 1;
+    else if (id === 'save') saveScenario();
+    else if (id === 'compare') compare = !compare;
+    else if (id === 'export') onExport?.({ ...saved, current: currentSnapshot ?? null });
+  }
 
   function updateRecord(next: InlineVisualRecord) {
     const nextRecord = { ...next, current: currentSnapshot ?? next.current };
@@ -293,29 +336,6 @@
   aria-busy={loading}
   class="my-3 min-w-0 overflow-hidden rounded-lg bg-background text-foreground"
 >
-  <div class="flex min-w-0 items-center justify-end gap-1 p-1">
-    <Button
-      variant="ghost"
-      size="sm"
-      active={showSource}
-      aria-pressed={showSource}
-      onclick={() => {
-        showSource = !showSource;
-      }}
-    >
-      {showSource ? m.inlineHtml_preview_preview_label() : m.inlineHtml_preview_source_label()}
-    </Button>
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={!runnable}
-      onclick={() => {
-        reload += 1;
-      }}
-    >
-      {m.inlineHtml_preview_reload_label()}
-    </Button>
-  </div>
   {#if storageStatus === 'error'}
     <div class="type-body flex items-center justify-between gap-3 px-4 py-2" role="status">
       <span class="text-danger">{m.inlineHtml_preview_state_error()}</span>
@@ -378,58 +398,45 @@
       </div>
     {/if}
   </div>
-  {#if currentSnapshot && runnable}
-    <div class="flex flex-wrap items-center gap-1 px-4 py-2" data-inline-visual-actions>
-      {#if onUseConfiguration}
-        <Button
-          size="sm"
-          disabled={!ready || Boolean(runtimeError)}
-          onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
-        >
-          {m.inlineHtml_preview_useConfiguration_label()}
-        </Button>
-      {/if}
+  <div
+    class="flex min-w-0 items-center justify-between gap-2 px-4 pt-1 pb-3"
+    data-inline-visual-actions
+  >
+    {#if currentSnapshot && runnable && onUseConfiguration && !showSource}
       <Button
         variant="ghost"
         size="sm"
-        disabled={!ready ||
-          Boolean(runtimeError) ||
-          saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS}
-        onclick={saveScenario}
+        class="h-auto min-h-(--control-height-small) min-w-0 shrink py-1 text-muted-foreground hover:text-foreground"
+        truncateLabel={false}
+        labelClass="whitespace-normal text-left"
+        disabled={!ready || Boolean(runtimeError)}
+        onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
       >
-        {m.inlineHtml_preview_saveScenario_label()}
+        {#snippet leadingIcon()}<Fa icon={faComment} size={14} />{/snippet}
+        {m.inlineHtml_preview_useConfiguration_label()}
       </Button>
-      {#if saved.scenarios.length}
+    {/if}
+    <ActionMenu
+      {actions}
+      ariaLabel={m.ui_menu_actions_ariaLabel()}
+      align="end"
+      side="top"
+      onAction={runAction}
+    >
+      {#snippet trigger({ props })}
         <Button
+          {...props}
           variant="ghost"
-          size="sm"
-          active={compare}
-          aria-expanded={compare}
-          onclick={() => (compare = !compare)}
+          size="icon-sm"
+          class="ml-auto text-muted-foreground"
+          aria-label={m.ui_menu_actions_ariaLabel()}
         >
-          {m.inlineHtml_preview_compare_label()}
+          <Fa icon={faEllipsis} size={16} />
         </Button>
-      {/if}
-      {#if onExport}
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!ready || exportStatus === 'saving'}
-          onclick={() => onExport({ ...saved, current: currentSnapshot ?? null })}
-        >
-          {m.inlineHtml_preview_export_label()}
-        </Button>
-      {/if}
-      {#if onRecordChange}
-        <span class="type-caption ml-auto text-muted-foreground" role="status">
-          {storageStatus === 'saving'
-            ? m.inlineHtml_preview_saving_label()
-            : storageStatus === 'ready'
-              ? m.inlineHtml_preview_saved_label()
-              : ''}
-        </span>
-      {/if}
-    </div>
+      {/snippet}
+    </ActionMenu>
+  </div>
+  {#if currentSnapshot && runnable}
     {#if exportStatus}
       <p class="type-caption m-0 break-words px-4 pb-2 text-muted-foreground" role="status">
         {exportStatus === 'saving'

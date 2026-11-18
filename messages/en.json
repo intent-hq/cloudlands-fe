@@ -8299,7 +8299,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "Scenario name",
   "inlineHtml_preview_state_error": "Could not load or save this configuration.",
   "inlineHtml_preview_retry_label": "Retry",
-  "inlineHtml_preview_useConfiguration_label": "Use this configuration",
+  "inlineHtml_preview_useConfiguration_label": "Add configuration to message",
   "inlineHtml_preview_saveScenario_label": "Save scenario",
   "inlineHtml_preview_compare_label": "Compare",
   "inlineHtml_preview_export_label": "Export JSON",

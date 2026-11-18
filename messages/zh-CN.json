@@ -8299,7 +8299,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "方案名称",
   "inlineHtml_preview_state_error": "无法加载或保存此配置。",
   "inlineHtml_preview_retry_label": "重试",
-  "inlineHtml_preview_useConfiguration_label": "使用此配置",
+  "inlineHtml_preview_useConfiguration_label": "将配置添加到消息",
   "inlineHtml_preview_saveScenario_label": "保存方案",
   "inlineHtml_preview_compare_label": "比较",
   "inlineHtml_preview_export_label": "导出 JSON",

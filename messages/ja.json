@@ -8299,7 +8299,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "シナリオ名",
   "inlineHtml_preview_state_error": "この設定を読み込むか保存できませんでした。",
   "inlineHtml_preview_retry_label": "再試行",
-  "inlineHtml_preview_useConfiguration_label": "この設定を使用",
+  "inlineHtml_preview_useConfiguration_label": "設定をメッセージに追加",
   "inlineHtml_preview_saveScenario_label": "シナリオを保存",
   "inlineHtml_preview_compare_label": "比較",
   "inlineHtml_preview_export_label": "JSONを書き出す",

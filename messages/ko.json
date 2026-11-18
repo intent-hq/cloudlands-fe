@@ -8299,7 +8299,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "시나리오 이름",
   "inlineHtml_preview_state_error": "이 구성을 불러오거나 저장하지 못했습니다.",
   "inlineHtml_preview_retry_label": "다시 시도",
-  "inlineHtml_preview_useConfiguration_label": "이 구성 사용",
+  "inlineHtml_preview_useConfiguration_label": "메시지에 설정 추가",
   "inlineHtml_preview_saveScenario_label": "시나리오 저장",
   "inlineHtml_preview_compare_label": "비교",
   "inlineHtml_preview_export_label": "JSON 내보내기",
