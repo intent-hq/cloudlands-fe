@@ -88,6 +88,7 @@ describe('ChatPolishCatalogPreview', async () => {
   });
 
   it('keeps long labels accessible while their visible row can truncate', async () => {
+    const previous = appStore.state.userPreferences.collapseToolRuns;
     appStore.dispatch(setCollapseToolRuns(false));
     try {
       const view = render(ChatPolishCatalogPreview, { props: { fixture } });
@@ -97,7 +98,7 @@ describe('ChatPolishCatalogPreview', async () => {
       );
       expect(longLabel?.getAttribute('aria-label')).toContain('ThisIsAnIntentionallyLong');
     } finally {
-      appStore.dispatch(setCollapseToolRuns(true));
+      appStore.dispatch(setCollapseToolRuns(previous));
     }
   });
 });

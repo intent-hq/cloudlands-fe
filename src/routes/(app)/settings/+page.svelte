@@ -195,6 +195,7 @@
     'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
     'notch-dock': 'display',
+    'machine-rail': 'display',
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
