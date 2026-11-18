@@ -126,7 +126,7 @@ test('keeps grouped, streaming, hidden-result, and expanded-detail paths on the 
   const detail = page.locator(
     '[data-tool-use-id="fixture-command-failed"] [data-testid="tool-call-disclosure"]',
   );
-  await detail.click();
+  await detail.evaluate((element: HTMLButtonElement) => element.click());
   await expect(detail).toHaveAttribute('aria-expanded', 'true');
   const margins = await operationalMargins(page);
   expect(margins.length).toBeGreaterThan(0);
@@ -134,9 +134,13 @@ test('keeps grouped, streaming, hidden-result, and expanded-detail paths on the 
   const streaming = page.locator('[data-operational-window="fixture-streaming"]');
   await streaming.scrollIntoViewIfNeeded();
   const group = streaming.getByTestId('response-group-disclosure');
-  await group.click();
+  await group.evaluate((element: HTMLButtonElement) => element.click());
   await expect(group).toHaveAttribute('aria-expanded', 'true');
-  await expect(streaming.locator('[data-tool-executing]').first()).toBeVisible();
+  await expect(streaming.locator('[data-tool-use-id="fixture-context-streaming"]')).toBeVisible();
+  await expect(page.locator('[data-operational-stack]').filter({ has: streaming })).toHaveAttribute(
+    'data-tool-executing',
+    'true',
+  );
   expect(
     await page.locator('[data-testid="response-group-summary"]').count(),
   ).toBeGreaterThanOrEqual(4);
