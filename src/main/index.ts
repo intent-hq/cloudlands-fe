@@ -458,6 +458,7 @@ import { getRendererTargets, getShownRendererWebContents } from './window-backen
 import { shownMachine, trackFrameFocus } from './frames.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
+import { setupMetaClipboardShortcuts } from './meta-clipboard-shortcuts.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
 import { getMainWindow } from './state';
 import {
@@ -698,6 +699,7 @@ const bootFlow = app.whenReady().then(async () => {
 
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
+  setupMetaClipboardShortcuts();
 
   // WebHID handlers for the hardware console (silent grant for supported
   // Work Louder devices) — must be registered before any windows exist.
