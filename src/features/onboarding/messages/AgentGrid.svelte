@@ -284,4 +284,8 @@
       />
     </div>
   {/each}
+  <!-- Fewer than three cards (an orchestrator offers two) keep the three-card width, left-aligned. -->
+  {#each Array.from({ length: Math.max(0, 3 - visibleProviders.length) }) as _, index (index)}
+    <div class="flex-1 w-66 min-w-66" aria-hidden="true"></div>
+  {/each}
 </div>
