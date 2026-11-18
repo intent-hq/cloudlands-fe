@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { generateAccessKey } from '../../browser-access/main/browser-access-auth';
+import { generateAccessKey } from './browser-access-auth';
 
 interface WebConfig {
   accessKey: string;

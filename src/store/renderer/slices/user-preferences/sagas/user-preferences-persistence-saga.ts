@@ -31,7 +31,6 @@ import {
   selectLabsSettingsVisible,
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
-  selectLabsBrowserAccessEnabled,
   selectLabsTabGroupsEnabled,
   selectLabsCloudMachinesEnabled,
   selectLabsSshMachineSetupEnabled,
@@ -68,7 +67,6 @@ import {
   setLabsSettingsVisible,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
-  setLabsBrowserAccessEnabled,
   setLabsTabGroupsEnabled,
   setLabsCloudMachinesEnabled,
   setLabsSshMachineSetupEnabled,
@@ -90,7 +88,6 @@ import {
   toggleLabsSettingsVisibility,
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
-  toggleLabsBrowserAccess,
   toggleLabsTabGroups,
   toggleLabsCloudMachines,
   toggleLabsSshMachineSetup,
@@ -121,7 +118,6 @@ const PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY = 'appearance:pauseAnimationsW
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
-const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
 const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
 const LABS_CLOUD_MACHINES_STORAGE_KEY = 'labs:cloudMachinesEnabled';
 const LABS_SSH_MACHINE_SETUP_STORAGE_KEY = 'labs:sshMachineSetupEnabled';
@@ -280,13 +276,6 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof labsPlainFolderWorkspacesEnabled === 'boolean') {
     yield* put(setLabsPlainFolderWorkspacesEnabled(labsPlainFolderWorkspacesEnabled));
-  }
-
-  const labsBrowserAccessEnabled = yield* getLocalStorageJSON<boolean>(
-    LABS_BROWSER_ACCESS_STORAGE_KEY,
-  );
-  if (typeof labsBrowserAccessEnabled === 'boolean') {
-    yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
   }
 
   const labsTabGroupsEnabled = yield* getLocalStorageJSON<boolean>(LABS_TAB_GROUPS_STORAGE_KEY);
@@ -457,13 +446,6 @@ function* persistLabsRemoteAgentsWorker() {
   );
 }
 
-function* persistLabsBrowserAccessWorker() {
-  yield* setLocalStorageJSON(
-    LABS_BROWSER_ACCESS_STORAGE_KEY,
-    yield* selectLabsBrowserAccessEnabled.effect(),
-  );
-}
-
 function* persistLabsCloudMachinesWorker() {
   yield* setLocalStorageJSON(
     LABS_CLOUD_MACHINES_STORAGE_KEY,
@@ -610,10 +592,6 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsPlainFolderWorkspacesEnabled, toggleLabsPlainFolderWorkspaces],
     persistLabsPlainFolderWorkspacesWorker,
-  );
-  yield* takeEvery(
-    [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
-    persistLabsBrowserAccessWorker,
   );
   yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
   yield* takeEvery(

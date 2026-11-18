@@ -64,7 +64,7 @@ describe('WebExperimentalNoticeHost', () => {
     expect(mobileAndSyncItem()).toBeTruthy();
   });
 
-  it('shows on desktop Browser access without the intent-web extras', async () => {
+  it('shows on a host that does not manage connections, without the intent-web extras', async () => {
     start(BROWSER_ACCESS);
     await waitFor(() => expect(notice()).toBeTruthy());
     expect(within(screen.getByRole('list')).getAllByRole('listitem').length).toBeGreaterThanOrEqual(

@@ -291,7 +291,7 @@ async function invokeConnectionsList(): Promise<ConnectionsListResult> {
   // must still wait for its real per-window connections:list response.
   if (!expectsElectronPreloadBridge() && !isElectronPlatform()) {
     resolveBackendTransport();
-    // Served by a desktop app's Browser access: list its connections (token-free).
+    // Served by a Browser access host: list its connections (token-free).
     const browserAccessHost = getBrowserAccessHost();
     if (browserAccessHost) return fetchBrowserAccessConnections(browserAccessHost);
     const browserBackend = getWebDaemonStatusSource();

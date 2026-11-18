@@ -60,8 +60,7 @@ it.skipIf(process.platform === 'win32')(
   'revokes an existing HTTP session when another CLI invocation resets the key',
   async () => {
     const { default: http } = await import('node:http');
-    const { SESSION_COOKIE, deriveSessionToken } =
-      await import('../../browser-access/main/browser-access-auth');
+    const { SESSION_COOKIE, deriveSessionToken } = await import('./browser-access-auth');
     const { loadWebConfig } = await import('./intent-web-config');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-reset-'));
     dirs.push(dir);
@@ -207,8 +206,7 @@ it('invalidates outstanding codes when the key is reset', async () => {
   const created = await runIntentWeb(['link', '--data-dir', dir], { log: vi.fn() });
   await runIntentWeb(['key', '--reset', '--data-dir', dir], { log: vi.fn() });
   const { loadWebConfig } = await import('./intent-web-config');
-  const { createSignInCodes } =
-    await import('../../browser-access/main/browser-access-sign-in-codes');
+  const { createSignInCodes } = await import('./browser-access-sign-in-codes');
   const { createFileSignInStore } = await import('./intent-web-sign-in-store');
   const codes = createSignInCodes({
     store: createFileSignInStore(dir),

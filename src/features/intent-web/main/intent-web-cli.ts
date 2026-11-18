@@ -6,12 +6,8 @@ import { loadWebConfig, resetWebKey } from './intent-web-config';
 import { findWebTailcat, checkTailcatVersion } from './intent-web-tailcat';
 import { createIntentWebServer } from './intent-web-server';
 import { createFileSignInStore } from './intent-web-sign-in-store';
-import { LOGIN_PATH } from '../../browser-access/main/browser-access-server';
-import {
-  SIGN_IN_CODE_TTL_MS,
-  createSignInCodes,
-  signInLink,
-} from '../../browser-access/main/browser-access-sign-in-codes';
+import { LOGIN_PATH } from './browser-access-server';
+import { SIGN_IN_CODE_TTL_MS, createSignInCodes, signInLink } from './browser-access-sign-in-codes';
 
 const INTENT_WEB_USAGE = `Usage:
   intent-web [serve] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>]

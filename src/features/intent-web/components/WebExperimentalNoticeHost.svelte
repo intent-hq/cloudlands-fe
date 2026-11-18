@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Mounts the experimental notice at each start of the web build served by a
-   * Browser access host (intent-web or the desktop's Browser access). Never
+   * Browser access host (intent-web). Never
    * in Electron or without a host runtime config: the host record is only
    * seeded from a valid page host outside Electron.
    */

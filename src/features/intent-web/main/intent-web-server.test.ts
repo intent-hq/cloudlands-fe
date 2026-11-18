@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, expect, it, vi } from 'vitest';
-import { SESSION_COOKIE, deriveSessionToken } from '../../browser-access/main/browser-access-auth';
+import { SESSION_COOKIE, deriveSessionToken } from './browser-access-auth';
 import { createIntentWebServer } from './intent-web-server';
 
 const cleanups: Array<() => unknown> = [];

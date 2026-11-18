@@ -5,7 +5,6 @@ import {
   SIGN_IN_CODE_ALPHABET,
   SIGN_IN_CODE_MAX_ACTIVE,
   SIGN_IN_CODE_TTL_MS,
-  createMemorySignInStore,
   createSignInCodes,
   formatSignInCode,
   generateSignInCode,
@@ -13,6 +12,7 @@ import {
   parseSignInState,
   signInLink,
 } from './browser-access-sign-in-codes';
+import { createMemorySignInStore } from './sign-in-store.fixture';
 
 const KEY = 'access-key-0123456789abcdefghijklmnopqrstuvwxyz';
 

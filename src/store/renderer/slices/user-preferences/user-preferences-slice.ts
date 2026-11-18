@@ -86,8 +86,6 @@ export type UserPreferencesState = {
   labsRemoteAgentsEnabled: boolean;
   /** Offers plain-folder (git-optional) creation only; existing plain-folder workspaces keep working when off. */
   labsPlainFolderWorkspacesEnabled: boolean;
-  /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
-  labsBrowserAccessEnabled: boolean;
   labsTabGroupsEnabled: boolean;
   /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
   labsCloudMachinesEnabled: boolean;
@@ -177,7 +175,6 @@ export const initialState: UserPreferencesStoreState = {
   labsMultiplayerEnabled: true,
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
-  labsBrowserAccessEnabled: false,
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
   labsSshMachineSetupEnabled: false,
@@ -500,17 +497,6 @@ export const setLabsPlainFolderWorkspacesEnabled = labsPlainFolderWorkspacesPref
 
 export const toggleLabsPlainFolderWorkspaces = labsPlainFolderWorkspacesPreference.toggleAction;
 
-const labsBrowserAccessPreference = createBooleanPreference<UserPreferencesStoreState>({
-  sliceName: 'userPreferences',
-  field: 'labsBrowserAccessEnabled',
-  setActionName: 'setLabsBrowserAccessEnabled',
-  toggleActionName: 'toggleLabsBrowserAccess',
-});
-
-export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction;
-
-export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
-
 const labsTabGroupsPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsTabGroupsEnabled',
@@ -678,7 +664,6 @@ labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
-labsBrowserAccessPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
 labsCloudMachinesPreference.register(userPreferencesReducer);
 labsSshMachineSetupPreference.register(userPreferencesReducer);

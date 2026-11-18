@@ -12,7 +12,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket as WsWebSocket } from 'ws';
 
 import { LoginRateLimiter, SESSION_COOKIE, deriveSessionToken } from './browser-access-auth';
-import { createMemorySignInStore, createSignInCodes } from './browser-access-sign-in-codes';
+import { createSignInCodes } from './browser-access-sign-in-codes';
+import { createMemorySignInStore } from './sign-in-store.fixture';
 import {
   CONNECTIONS_PATH,
   LOGIN_PATH,

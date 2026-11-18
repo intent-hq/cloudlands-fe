@@ -122,11 +122,6 @@ export const selectLabsPlainFolderWorkspacesEnabled = store.createSelector((stat
   return state.userPreferences?.labsPlainFolderWorkspacesEnabled === true;
 });
 
-/** Experimental Browser access (Settings > Mobile) is shown only when this Labs flag is on. */
-export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsBrowserAccessEnabled === true;
-});
-
 export const selectLabsTabGroupsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsTabGroupsEnabled === true;
 });

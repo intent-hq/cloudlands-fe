@@ -23,7 +23,6 @@
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
-  import BrowserAccessSection from '$lib/components/settings/BrowserAccessSection.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
@@ -160,7 +159,6 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
-    'browser-access': 'mobile',
     mobile: 'mobile',
     'websocket-api': 'mobile',
     'remote-access': 'mobile',
@@ -619,7 +617,6 @@
               <MobileSettings />
             </div>
           </div>
-          <BrowserAccessSection />
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
