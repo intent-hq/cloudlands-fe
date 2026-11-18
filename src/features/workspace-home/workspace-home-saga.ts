@@ -11,8 +11,19 @@
  *   workspace so the banner shows the served state; the link coming back
  *   later still arrives as `workspace:updated`. One retry per workspace at a
  *   time.
+ * - Setup output: while the home's output log is open, read it from the
+ *   workspace's detail read (`workspace.get`, nodes.md "Opening the home");
+ *   rows and events carry no output. The latest request wins.
  */
-import { all, call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  put,
+  takeEvery,
+  takeLatest,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';
@@ -30,6 +41,8 @@ import type { Workspace } from '$shared/types';
 import type { WorkspaceHome } from '$shared/types/workspace-home';
 import { setHomeErrorCode, workspaceHomeView } from './workspace-home';
 import {
+  homeSetupOutputLoaded,
+  homeSetupOutputRequested,
   homeWaitRequested,
   homeWaitSettled,
   moveHomeRequested,
@@ -126,10 +139,29 @@ function* waitForHome(
   }
 }
 
+function* readSetupOutput(
+  action: ReturnType<typeof homeSetupOutputRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  try {
+    const served = yield* call([appClient.workspaces, appClient.workspaces.get], workspaceId);
+    const setup = served?.home?.setup;
+    yield* put(
+      homeSetupOutputLoaded(workspaceId, {
+        text: setup?.output,
+        truncated: setup?.outputTruncated === true,
+      }),
+    );
+  } catch (error) {
+    logger.warn('could not read the home setup output', { workspaceId, error });
+  }
+}
+
 export function* workspaceHomeSaga(): SagaGenerator<void> {
   const waitsInFlight = new Set<string>();
   yield* all([
     takeLeading(moveHomeRequested, moveHome),
     takeEvery(homeWaitRequested, waitForHome, waitsInFlight),
+    takeLatest(homeSetupOutputRequested, readSetupOutput),
   ]);
 }

@@ -34,7 +34,7 @@ type WorkspaceHomeBanner = 'detached' | 'moving' | 'opening' | 'setupFailed' | '
  * again when the machine reconnects). `setupFailed`: the checkout exists but
  * the workspace setup script failed.
  */
-export type WorkspaceHomeSetupView =
+type WorkspaceHomeSetupView =
   | { phase: 'preparing' }
   | { phase: 'runningSetup' }
   | { phase: 'openFailed'; error: string | null }

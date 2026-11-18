@@ -23,6 +23,14 @@ export interface WorkspaceHomeUiState {
   waiting: Record<string, true>;
   /** Homes (by `homeId`) whose failed opening banner was dismissed this session. */
   dismissedSetupFailures: Record<string, true>;
+  /** The home's checkout and setup output, by workspace, read while its log is open. */
+  setupOutputs: Record<string, HomeSetupOutput>;
+}
+
+/** `home.setup.output` and `outputTruncated` from the workspace's detail read. */
+export interface HomeSetupOutput {
+  text?: string;
+  truncated: boolean;
 }
 
 const initialWorkspaceHomeState: WorkspaceHomeUiState = {
@@ -31,6 +39,7 @@ const initialWorkspaceHomeState: WorkspaceHomeUiState = {
   moveFailure: null,
   waiting: {},
   dismissedSetupFailures: {},
+  setupOutputs: {},
 };
 
 /** Open the Move home dialog for a workspace (banner, header menu, panels). */
@@ -49,6 +58,14 @@ export const moveHomeSettled = createAction<[workspaceId: string, failure: MoveH
 /** Wait: ask the backend to reconnect the home, then re-read the workspace. */
 export const homeWaitRequested = createAction<[workspaceId: string]>('workspaceHome/waitRequested');
 export const homeWaitSettled = createAction<[workspaceId: string]>('workspaceHome/waitSettled');
+/** The home's output log is open or its home changed: read the output again. */
+export const homeSetupOutputRequested = createAction<[workspaceId: string]>(
+  'workspaceHome/setupOutputRequested',
+);
+/** Saga: the detail read's output. */
+export const homeSetupOutputLoaded = createAction<[workspaceId: string, output: HomeSetupOutput]>(
+  'workspaceHome/setupOutputLoaded',
+);
 /** Hide a home's failed opening banner (nodes.md "Opening the home"). */
 export const homeSetupFailureDismissed = createAction<[homeId: string]>(
   'workspaceHome/setupFailureDismissed',
@@ -93,3 +110,7 @@ workspaceHomeReducer.with(homeSetupFailureDismissed, (state, { payload: [homeId]
     ? state
     : { ...state, dismissedSetupFailures: { ...state.dismissedSetupFailures, [homeId]: true } },
 );
+workspaceHomeReducer.with(homeSetupOutputLoaded, (state, { payload: [workspaceId, output] }) => ({
+  ...state,
+  setupOutputs: { ...state.setupOutputs, [workspaceId]: output },
+}));

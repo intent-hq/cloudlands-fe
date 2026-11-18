@@ -58,6 +58,11 @@ export const selectHomeSetupFailureDismissed = store.createSelector(
   },
 );
 
+/** The home's checkout and setup output last read for the workspace, or null. */
+export const selectHomeSetupOutput = store.createSelector(
+  (state, workspaceId: string) => state.workspaceHome.setupOutputs[workspaceId] ?? null,
+);
+
 /** A Wait retry is in flight for the workspace. */
 export const selectHomeWaiting = store.createSelector(
   (state, workspaceId: string) => state.workspaceHome.waiting[workspaceId] === true,
