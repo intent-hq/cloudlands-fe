@@ -47,12 +47,11 @@ interface KindKeys {
 
 /**
  * The brief's "Edit opens the matching screen" and "Unset rows" tables.
- * Codex has no API-key kind.
+ * Codex's API key is `CODEX_API_KEY`: the Codex adapter reads it first, and
+ * other tools that read `OPENAI_API_KEY` do not pick it up. The daemon signs
+ * Codex in with it at launch (Codex ignores a key that is only in the env).
  */
-const PROFILE_KIND_TABLE: Record<
-  ProfileProvider,
-  Partial<Record<SpecializedProfileKind, KindKeys>>
-> = {
+const PROFILE_KIND_TABLE: Record<ProfileProvider, Record<SpecializedProfileKind, KindKeys>> = {
   claude: {
     differentLogin: {
       set: ['CLAUDE_CONFIG_DIR'],
@@ -76,6 +75,11 @@ const PROFILE_KIND_TABLE: Record<
       optionalSet: [],
       unset: ['CODEX_ACCESS_TOKEN', 'CODEX_API_KEY', 'OPENAI_API_KEY'],
     },
+    apiKey: {
+      set: ['CODEX_API_KEY'],
+      optionalSet: [],
+      unset: ['CODEX_ACCESS_TOKEN', 'OPENAI_API_KEY'],
+    },
     token: {
       set: ['CODEX_ACCESS_TOKEN'],
       optionalSet: [],
@@ -86,12 +90,12 @@ const PROFILE_KIND_TABLE: Record<
 
 const DETECTION_ORDER: readonly SpecializedProfileKind[] = ['differentLogin', 'apiKey', 'token'];
 
-/** The table row a kind saves with; throws for a kind the provider lacks (Codex API key). */
 function kindKeys(provider: ProfileProvider, kind: SpecializedProfileKind): KindKeys {
-  const keys = PROFILE_KIND_TABLE[provider][kind];
-  if (!keys) throw new Error(`No ${kind} kind for ${provider}`);
-  return keys;
+  return PROFILE_KIND_TABLE[provider][kind];
 }
+
+/** The variable of Claude's optional Custom endpoint (Codex API keys have none). */
+const CLAUDE_BASE_URL = 'ANTHROPIC_BASE_URL';
 
 /** `providers.profiles.*` `baseProviderId` for a provider. */
 export function baseProviderIdFor(provider: ProfileProvider): string {
@@ -103,6 +107,18 @@ export function profileProviderFromBaseId(baseProviderId: string): ProfileProvid
   if (baseProviderId === 'claude-code') return 'claude';
   if (baseProviderId === 'codex') return 'codex';
   return undefined;
+}
+
+/**
+ * A catalog row with profile kinds (key and token screens): Claude Code and
+ * Codex, when the daemon offers profiles for them.
+ */
+export function hasProfileKinds(entry: { id?: string; supportsProfiles?: boolean }): boolean {
+  return (
+    entry.supportsProfiles === true &&
+    entry.id !== undefined &&
+    profileProviderFromBaseId(entry.id) !== undefined
+  );
 }
 
 /** The variable an API key / Token profile saves its secret in. */
@@ -141,8 +157,7 @@ export function detectProfileKind(
     (entry.kind === 'set' ? setKeys : unsetKeys).add(key);
   }
   for (const kind of DETECTION_ORDER) {
-    const keys = PROFILE_KIND_TABLE[provider][kind];
-    if (!keys || !matches(keys, setKeys, unsetKeys)) continue;
+    if (!matches(PROFILE_KIND_TABLE[provider][kind], setKeys, unsetKeys)) continue;
     if (kind === 'differentLogin' && !hasUsableFolder(provider, env)) return 'advanced';
     return kind;
   }
@@ -244,9 +259,9 @@ export interface ProfileKindForm {
   backup?: boolean;
   /** Different login: the `~/…` path from `pickUnusedFolder`. */
   folder?: string;
-  /** Claude API key. */
+  /** Claude or Codex API key. */
   apiKey?: string;
-  /** Claude API key's optional Custom endpoint; sent only when filled in. */
+  /** Claude API key's optional Custom endpoint; sent only when filled in. Codex ignores it. */
   baseUrl?: string;
   /** Claude OAuth token or Codex access token. */
   token?: string;
@@ -281,13 +296,11 @@ export function buildCreatePayload(
       value: requireValue(form.folder, 'folder'),
     });
   } else if (kind === 'apiKey') {
-    set.push({
-      key: 'ANTHROPIC_API_KEY',
-      kind: 'set',
-      value: requireValue(form.apiKey, 'API key'),
-    });
+    set.push({ key: keys.set[0], kind: 'set', value: requireValue(form.apiKey, 'API key') });
     const baseUrl = form.baseUrl?.trim();
-    if (baseUrl) set.push({ key: 'ANTHROPIC_BASE_URL', kind: 'set', value: baseUrl });
+    if (baseUrl && provider === 'claude') {
+      set.push({ key: CLAUDE_BASE_URL, kind: 'set', value: baseUrl });
+    }
   } else {
     set.push({ key: keys.set[0], kind: 'set', value: requireValue(form.token, 'token') });
   }
@@ -339,11 +352,11 @@ export function buildUpdateEnv(
   if (kind === 'differentLogin') {
     env.push(secret(folderVariableFor(provider), undefined));
   } else if (kind === 'apiKey') {
-    env.push(secret('ANTHROPIC_API_KEY', edits.apiKey));
-    const savedBaseUrl = savedKey('ANTHROPIC_BASE_URL', 'set');
-    const baseUrl = edits.baseUrl;
+    env.push(secret(keys.set[0], edits.apiKey));
+    const savedBaseUrl = provider === 'claude' ? savedKey(CLAUDE_BASE_URL, 'set') : undefined;
+    const baseUrl = provider === 'claude' ? edits.baseUrl : undefined;
     if (typeof baseUrl === 'string' && baseUrl.trim()) {
-      env.push({ key: savedBaseUrl ?? 'ANTHROPIC_BASE_URL', kind: 'set', value: baseUrl.trim() });
+      env.push({ key: savedBaseUrl ?? CLAUDE_BASE_URL, kind: 'set', value: baseUrl.trim() });
     } else if (baseUrl === undefined && savedBaseUrl) {
       env.push({ key: savedBaseUrl, kind: 'keep' });
     }
@@ -360,6 +373,36 @@ const JWT_SHAPE = new RegExp(`^${BASE64URL_PART}\\.${BASE64URL_PART}\\.${BASE64U
 /** Three dot-separated, non-empty base64url parts (the Codex access-token check). */
 export function isJwtShaped(value: string): boolean {
   return JWT_SHAPE.test(value.trim());
+}
+
+const SECRET_SHAPES: Record<ProfileProvider, Record<'apiKey' | 'token', RegExp>> = {
+  claude: {
+    apiKey: /^sk-ant-api\d*-[A-Za-z0-9_-]{16,}$/,
+    token: /^sk-ant-oat\d*-[A-Za-z0-9_-]{16,}$/,
+  },
+  codex: {
+    apiKey: /^sk-(?!ant-)[A-Za-z0-9_-]{20,}$/,
+    token: JWT_SHAPE,
+  },
+};
+
+/**
+ * Whether a pasted key or token has its provider's shape. On an orchestrator
+ * this is the whole check: it runs no provider, so no test prompt can run.
+ * A Claude key for a Custom endpoint may come from any gateway, so it only
+ * needs to be one word.
+ */
+export function isSecretWellFormed(
+  provider: ProfileProvider,
+  kind: 'apiKey' | 'token',
+  value: string,
+  options: { customEndpoint?: boolean } = {},
+): boolean {
+  const trimmed = value.trim();
+  if (provider === 'claude' && kind === 'apiKey' && options.customEndpoint) {
+    return /^\S+$/.test(trimmed);
+  }
+  return SECRET_SHAPES[provider][kind].test(trimmed);
 }
 
 /**

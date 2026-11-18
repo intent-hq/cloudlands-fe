@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
-   * Body of the secret-based screens: Claude API key (add + edit, with the
-   * optional Custom endpoint) and Token (add + edit, both providers). A saved
+   * Body of the secret-based screens: API key (add + edit, both providers;
+   * Claude's has the optional Custom endpoint) and Token (add + edit, both
+   * providers). Onboarding reuses it without the last "paste it" step. A saved
    * key or token is never shown: edit reads "Saved ••••" with Replace.
    * Presentational only; the dialog owns validation and the key check.
    */
@@ -30,6 +31,15 @@
     disabled?: boolean;
     /** The secret field stays editable after "Key was rejected". */
     secretDisabled?: boolean;
+    /**
+     * The backend checks the key with a test prompt after Create. An
+     * orchestrator runs no provider, so it only checks the key's format.
+     */
+    keyCheck?: boolean;
+    /** Show the last "Paste it below and choose Create" step (off in onboarding). */
+    pasteStep?: boolean;
+    /** Offer Claude's Custom endpoint (off in onboarding). */
+    customEndpoint?: boolean;
   }
 
   let {
@@ -46,14 +56,26 @@
     customEndpointOpen = $bindable(false),
     disabled = false,
     secretDisabled = disabled,
+    keyCheck = true,
+    pasteStep = true,
+    customEndpoint = true,
   }: Props = $props();
 
   const ANTHROPIC_CONSOLE_KEYS_URL = 'https://console.anthropic.com/settings/keys'; // i18n-ignore (URL)
   const OPENAI_ACCESS_TOKENS_URL = 'https://developers.openai.com/codex/enterprise/access-tokens'; // i18n-ignore (URL)
+  const OPENAI_API_KEYS_URL = 'https://platform.openai.com/api-keys'; // i18n-ignore (URL)
   const SETUP_TOKEN_COMMAND = 'claude setup-token'; // i18n-ignore (CLI command)
   const BASE_URL_PLACEHOLDER = 'https://'; // i18n-ignore (URL prefix)
 
   const claudeApiKey = $derived(provider === 'claude' && kind === 'apiKey');
+  const codexApiKey = $derived(provider === 'codex' && kind === 'apiKey');
+  const pasteStepLabel = $derived.by(() => {
+    if (!keyCheck) return m.settings_providerProfileKinds_pasteNoCheck_label();
+    if (kind === 'apiKey') return m.settings_providerProfileKinds_apiKeyClaudeStep3_label();
+    return provider === 'claude'
+      ? m.settings_providerProfileKinds_tokenClaudeStep3_label()
+      : m.settings_providerProfileKinds_tokenCodexStep2_label();
+  });
   const showSecretField = $derived(mode === 'add' || !secretSaved || replacing);
   const fieldLabel = $derived(
     kind === 'apiKey'
@@ -61,12 +83,18 @@
       : m.settings_providerProfileKinds_token_label(),
   );
 
-  /** Steps link: Anthropic Console (Claude API key) or OpenAI's token guide (Codex token). */
+  /** Steps link: the provider's API keys page, or OpenAI's token guide (Codex token). */
   const stepsLink = $derived.by(() => {
     if (claudeApiKey) {
       return {
         href: ANTHROPIC_CONSOLE_KEYS_URL,
         label: m.settings_providerProfileKinds_anthropicConsole_link(),
+      };
+    }
+    if (codexApiKey) {
+      return {
+        href: OPENAI_API_KEYS_URL,
+        label: m.settings_providerProfileKinds_openAiApiKeys_link(),
       };
     }
     if (provider === 'codex') {
@@ -94,7 +122,7 @@
   {#if mode === 'add' || replacing}
     <section class="space-y-2" data-testid="provider-profile-secret-steps">
       <h3 class="type-body font-medium! text-foreground">
-        {claudeApiKey
+        {kind === 'apiKey'
           ? m.settings_providerProfileKinds_apiKeyClaudeSteps_label()
           : m.settings_providerProfileKinds_tokenSteps_label()}
       </h3>
@@ -103,7 +131,9 @@
         {#if claudeApiKey}
           <li>{m.settings_providerProfileKinds_apiKeyClaudeStep1_label()}</li>
           <li>{m.settings_providerProfileKinds_apiKeyClaudeStep2_label()}</li>
-          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep3_label()}</li>
+        {:else if codexApiKey}
+          <li>{m.settings_providerProfileKinds_apiKeyCodexStep1_label()}</li>
+          <li>{m.settings_providerProfileKinds_apiKeyCodexStep2_label()}</li>
         {:else if provider === 'claude'}
           <li>
             {m.settings_providerProfileKinds_tokenClaudeStep1_label()}
@@ -116,10 +146,11 @@
             </span>
           </li>
           <li>{m.settings_providerProfileKinds_tokenClaudeStep2_label()}</li>
-          <li>{m.settings_providerProfileKinds_tokenClaudeStep3_label()}</li>
         {:else}
           <li>{m.settings_providerProfileKinds_tokenCodexStep1_label()}</li>
-          <li>{m.settings_providerProfileKinds_tokenCodexStep2_label()}</li>
+        {/if}
+        {#if pasteStep}
+          <li>{pasteStepLabel}</li>
         {/if}
       </ol>
       {#if stepsLink}
@@ -177,7 +208,7 @@
     </div>
   {/if}
 
-  {#if claudeApiKey}
+  {#if claudeApiKey && customEndpoint}
     <details
       class="group rounded-md border border-border"
       bind:open={customEndpointOpen}

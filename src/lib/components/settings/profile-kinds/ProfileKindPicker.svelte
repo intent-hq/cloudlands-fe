@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Step 1 of Add profile: large cards for Different login, API key (Claude
-   * only), Token and Advanced. Presentational: picking a card only calls `onPick`.
+   * Step 1 of Add profile: large cards for Different login, API key, Token
+   * and Advanced. Presentational: picking a card only calls `onPick`.
    * With `remoteMarks`, API key and Token read "Works on remote machines" and
    * Different login "This machine only" (Advanced has its own toggle).
    */
@@ -55,16 +55,15 @@
           },
         ]
       : []),
-    ...(provider === 'claude'
-      ? [
-          {
-            kind: 'apiKey' as const,
-            icon: faKey,
-            title: m.settings_providerProfileKinds_apiKey_label(),
-            description: m.settings_providerProfileKinds_apiKeyClaude_description(),
-          },
-        ]
-      : []),
+    {
+      kind: 'apiKey',
+      icon: faKey,
+      title: m.settings_providerProfileKinds_apiKey_label(),
+      description:
+        provider === 'codex'
+          ? m.settings_providerProfileKinds_apiKeyCodex_description()
+          : m.settings_providerProfileKinds_apiKeyClaude_description(),
+    },
     {
       kind: 'token',
       icon: faTicket,

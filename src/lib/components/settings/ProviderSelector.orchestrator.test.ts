@@ -63,7 +63,7 @@ async function buildState(daemonMode: 'orchestrator' | 'regular') {
   const catalog = {
     ...MOCK_PROVIDER_CATALOG,
     providers: MOCK_PROVIDER_CATALOG.providers.map((entry) =>
-      entry.id === 'claude-code'
+      entry.id === 'claude-code' || entry.id === 'codex'
         ? { ...entry, supportsProfiles: true, supportsTestPrompt: daemonMode !== 'orchestrator' }
         : entry,
     ),
@@ -132,6 +132,22 @@ describe('ProviderSelector on an orchestrator', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
     );
+  });
+
+  it('offers only the providers with profiles, plus one that is still enabled', async () => {
+    mocks.state.current = await buildState('orchestrator');
+    mocks.state.current.providerSettings.enabledProviders = { opencode: true };
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+
+    const rows = result
+      .getAllByRole('button', { name: /^Provider actions for / })
+      .map((button) => button.getAttribute('aria-label'));
+    expect(rows.sort()).toEqual([
+      'Provider actions for Anthropic Claude Code',
+      'Provider actions for OpenAI Codex',
+      'Provider actions for OpenCode',
+    ]);
   });
 
   it('keeps profiles and drops install, path, sign-in and recheck actions', async () => {

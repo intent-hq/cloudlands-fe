@@ -8,6 +8,7 @@ import {
   detectProfileKind,
   folderVariableFor,
   isJwtShaped,
+  isSecretWellFormed,
   loginCommand,
   pickUnusedFolder,
   profileFoldersParent,
@@ -87,6 +88,19 @@ describe('detectProfileKind', () => {
       'codex',
       [set('CODEX_ACCESS_TOKEN'), unset('CODEX_API_KEY'), unset('OPENAI_API_KEY')],
       'token',
+    ],
+    [
+      'codex api key',
+      'codex',
+      [set('CODEX_API_KEY'), unset('CODEX_ACCESS_TOKEN'), unset('OPENAI_API_KEY')],
+      'apiKey',
+    ],
+    ['codex api key without unsets', 'codex', [set('CODEX_API_KEY')], 'apiKey'],
+    [
+      'codex api key + base url',
+      'codex',
+      [set('CODEX_API_KEY'), set('ANTHROPIC_BASE_URL')],
+      'advanced',
     ],
     ['codex OPENAI_API_KEY set', 'codex', [set('OPENAI_API_KEY')], 'advanced'],
     ['codex no variables', 'codex', [], 'advanced'],
@@ -302,14 +316,18 @@ describe('buildCreatePayload', () => {
     expect(payload.env).toEqual(codexFolderEnv);
   });
 
-  it('has no Codex API-key kind', () => {
-    expect(() =>
+  it('Codex API key: CODEX_API_KEY + the other two credentials unset, never a base URL', () => {
+    expect(
       buildCreatePayload('apiKey', 'codex', {
         name: 'W',
-        folder: '~/intent/profiles/codex/w-aaaa',
-        apiKey: 'sk',
-      }),
-    ).toThrow(/No apiKey kind for codex/);
+        apiKey: ' sk-proj-1 ',
+        baseUrl: 'https://ignored',
+      }).env,
+    ).toEqual([
+      { key: 'CODEX_API_KEY', kind: 'set', value: 'sk-proj-1' },
+      { key: 'CODEX_ACCESS_TOKEN', kind: 'unset' },
+      { key: 'OPENAI_API_KEY', kind: 'unset' },
+    ]);
   });
 
   it('Codex Token', () => {
@@ -326,6 +344,7 @@ describe('buildCreatePayload', () => {
       ['claude', 'apiKey'],
       ['claude', 'token'],
       ['codex', 'differentLogin'],
+      ['codex', 'apiKey'],
       ['codex', 'token'],
     ];
     for (const [provider, kind] of cases) {
@@ -407,10 +426,17 @@ describe('buildUpdateEnv', () => {
     ]);
   });
 
-  it('has no Codex API-key edit', () => {
-    expect(() => buildUpdateEnv('apiKey', 'codex', [set('CODEX_HOME', '~/c')])).toThrow(
-      /No apiKey kind for codex/,
-    );
+  it('keeps or replaces a Codex API key and never adds a base URL', () => {
+    expect(
+      buildUpdateEnv('apiKey', 'codex', [set('CODEX_API_KEY')], { baseUrl: 'https://x' }),
+    ).toEqual([
+      { key: 'CODEX_API_KEY', kind: 'keep' },
+      { key: 'CODEX_ACCESS_TOKEN', kind: 'unset' },
+      { key: 'OPENAI_API_KEY', kind: 'unset' },
+    ]);
+    expect(
+      buildUpdateEnv('apiKey', 'codex', [set('CODEX_API_KEY')], { apiKey: 'sk-new' })[0],
+    ).toEqual({ key: 'CODEX_API_KEY', kind: 'set', value: 'sk-new' });
   });
 
   it('throws when a kept secret was never saved', () => {
@@ -452,5 +478,38 @@ describe('provider lookups', () => {
     expect(folderVariableFor('claude')).toBe('CLAUDE_CONFIG_DIR');
     expect(folderVariableFor('codex')).toBe('CODEX_HOME');
     expect(profileFoldersParent('codex')).toBe('~/intent/profiles/codex');
+  });
+});
+
+describe('isSecretWellFormed', () => {
+  const pad = 'A1b2C3d4E5f6G7h8I9j0K1l2';
+  const rows: [string, ProfileProvider, 'apiKey' | 'token', string, boolean][] = [
+    ['claude api key', 'claude', 'apiKey', `sk-ant-api03-${pad}`, true],
+    ['claude api key, padded', 'claude', 'apiKey', `  sk-ant-api03-${pad}\n`, true],
+    ['claude setup token as api key', 'claude', 'apiKey', `sk-ant-oat01-${pad}`, false],
+    ['claude api key, too short', 'claude', 'apiKey', 'sk-ant-api03-x', false],
+    ['openai key as claude key', 'claude', 'apiKey', `sk-proj-${pad}`, false],
+    ['claude token', 'claude', 'token', `sk-ant-oat01-${pad}`, true],
+    ['claude api key as token', 'claude', 'token', `sk-ant-api03-${pad}`, false],
+    ['claude token with a space', 'claude', 'token', `sk-ant-oat01-${pad} x`, false],
+    ['codex api key', 'codex', 'apiKey', `sk-proj-${pad}`, true],
+    ['codex legacy api key', 'codex', 'apiKey', `sk-${pad}`, true],
+    ['claude key as codex key', 'codex', 'apiKey', `sk-ant-api03-${pad}`, false],
+    ['codex api key, no prefix', 'codex', 'apiKey', pad, false],
+    ['codex token', 'codex', 'token', 'eyJh.eyJz.c2ln', true],
+    ['codex token, two parts', 'codex', 'token', 'eyJh.eyJz', false],
+    ['empty', 'codex', 'apiKey', '   ', false],
+  ];
+  it.each(rows)('%s', (_label, provider, kind, value, expected) => {
+    expect(isSecretWellFormed(provider, kind, value)).toBe(expected);
+  });
+
+  it('accepts any key without spaces for a Claude Custom endpoint', () => {
+    expect(
+      isSecretWellFormed('claude', 'apiKey', 'gateway-key-123', { customEndpoint: true }),
+    ).toBe(true);
+    expect(isSecretWellFormed('claude', 'apiKey', 'gateway key', { customEndpoint: true })).toBe(
+      false,
+    );
   });
 });
