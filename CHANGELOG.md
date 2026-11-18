@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.348.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.347.0...v2.348.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **cloud-machines:** add Agent37 as a cloud machine provider ([#4724](https://github.com/intent-hq/cloudlands-fe/issues/4724)) ([b416154](https://github.com/intent-hq/cloudlands-fe/commit/b41615489f3a43779e4d46bc82163aacbc1435b6))
+
 ## [2.347.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.7...v2.347.0) (2026-11-18)
 
 
