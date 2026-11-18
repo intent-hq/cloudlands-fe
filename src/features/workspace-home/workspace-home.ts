@@ -13,6 +13,7 @@ import { AgentStatus, WorkspaceStatusEnum, type AgentSession, type Workspace } f
 import type {
   KnownWorkspaceHomeState,
   MoveHomeTarget,
+  WorkspaceHome,
   WorkspaceHomeState,
 } from '$shared/types/workspace-home';
 import {
@@ -21,8 +22,23 @@ import {
   type StartOnOption,
 } from '$features/remote-machines/start-on';
 
-/** Which banner the workspace shows; detached wins over a backup warning. */
-type WorkspaceHomeBanner = 'detached' | 'moving' | 'backupWarning';
+/**
+ * Which banner the workspace shows: detached or moving first, then the
+ * home's opening (nodes.md "Opening the home"), then a backup warning.
+ */
+type WorkspaceHomeBanner = 'detached' | 'moving' | 'opening' | 'setupFailed' | 'backupWarning';
+
+/**
+ * How far the home's opening on its machine has got, or why it failed.
+ * `openFailed`: the machine could not fetch or make the checkout (it is tried
+ * again when the machine reconnects). `setupFailed`: the checkout exists but
+ * the workspace setup script failed.
+ */
+export type WorkspaceHomeSetupView =
+  | { phase: 'preparing' }
+  | { phase: 'runningSetup' }
+  | { phase: 'openFailed'; error: string | null }
+  | { phase: 'setupFailed'; exitCode: number | null; timedOut: boolean };
 
 export interface WorkspaceHomeView {
   name: string;
@@ -44,6 +60,28 @@ export interface WorkspaceHomeView {
   canMove: boolean;
   /** The Move home dialog warns that changes after the last backup stay behind. */
   moveWarning: boolean;
+  /** The home's opening while it runs or after it failed; null once ready or unknown. */
+  setup: WorkspaceHomeSetupView | null;
+}
+
+/** The served `home.setup` as the banner shows it; null when there is nothing to show. */
+function homeSetupView(setup: WorkspaceHome['setup']): WorkspaceHomeSetupView | null {
+  switch (setup?.state) {
+    case 'pending':
+      return { phase: 'preparing' };
+    case 'running':
+      return { phase: 'runningSetup' };
+    case 'failed': {
+      const timedOut = setup.error?.startsWith('node-setup-timeout') === true;
+      // Without an exit code or a start, the setup script never ran: the open failed.
+      if (setup.exitCode === undefined && !setup.startedAt && !timedOut) {
+        return { phase: 'openFailed', error: setup.error?.trim() || null };
+      }
+      return { phase: 'setupFailed', exitCode: setup.exitCode ?? null, timedOut };
+    }
+    default:
+      return null;
+  }
 }
 
 /**
@@ -76,11 +114,15 @@ export function workspaceHomeView(
   const presented = presentedState(home.state);
   const starting = presented === 'starting';
   const loud = presented === 'detached' || presented === 'moving';
+  const setup = presented === 'attached' ? homeSetupView(home.setup) : null;
+  const setupBanner: WorkspaceHomeBanner | null = !setup
+    ? null
+    : setup.phase === 'openFailed' || setup.phase === 'setupFailed'
+      ? 'setupFailed'
+      : 'opening';
   const banner: WorkspaceHomeBanner | null =
     presented === 'attached'
-      ? home.backupWarning === true
-        ? 'backupWarning'
-        : null
+      ? (setupBanner ?? (home.backupWarning === true ? 'backupWarning' : null))
       : loud
         ? presented
         : null;
@@ -98,6 +140,7 @@ export function workspaceHomeView(
     canMove: presented !== 'moving',
     // When the old home is attached the backend pushes first, so nothing is lost.
     moveWarning: presented === 'detached',
+    setup,
   };
 }
 

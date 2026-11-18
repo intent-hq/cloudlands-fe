@@ -5,6 +5,7 @@
  * `workspace:updated { changes: { home } }`.
  */
 import { z } from 'zod';
+import { RemoteSetupStatusSchema } from './agent-node';
 
 /**
  * The documented states. `starting`: a cloud home's sandbox is starting,
@@ -31,6 +32,12 @@ const WorkspaceHomeSchema = z.object({
   lastBackupAt: z.string().optional(),
   /** True once backups have failed for 15 minutes. */
   backupWarning: z.boolean().optional(),
+  /**
+   * Opening the home checkout on its machine ("Opening the home"): fetch and
+   * checkout, then the setup script. Output only on `workspace.get`. An
+   * unknown shape drops only `setup`.
+   */
+  setup: RemoteSetupStatusSchema.optional().catch(undefined),
 });
 
 export type WorkspaceHome = z.infer<typeof WorkspaceHomeSchema>;

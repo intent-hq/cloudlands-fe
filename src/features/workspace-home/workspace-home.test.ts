@@ -147,6 +147,72 @@ describe('workspaceHomeView', () => {
   });
 });
 
+describe('workspaceHomeView: opening the home (nodes.md "Opening the home")', () => {
+  const withSetup = (setup: WorkspaceHome['setup'], fields: Partial<WorkspaceHome> = {}) =>
+    workspaceHomeView({ home: { ...ATTACHED, lastBackupAt: undefined, ...fields, setup } });
+
+  it('parses a served setup, and drops only setup when it is outside the contract', () => {
+    const setup = { state: 'running', startedAt: '2026-11-12T09:00:05Z' } as const;
+    expect(parseWorkspaceHome({ ...ATTACHED, setup })).toEqual({ ...ATTACHED, setup });
+    expect(parseWorkspaceHome({ ...ATTACHED, setup: { state: 'warming' } })).toEqual(ATTACHED);
+  });
+
+  it('pending: "Setting up home" while the machine prepares the checkout', () => {
+    const view = withSetup({ state: 'pending' });
+    expect(view).toMatchObject({
+      banner: 'opening',
+      setup: { phase: 'preparing' },
+      unavailable: false,
+      marker: null,
+    });
+  });
+
+  it('running: the setup script step', () => {
+    expect(withSetup({ state: 'running' })).toMatchObject({
+      banner: 'opening',
+      setup: { phase: 'runningSetup' },
+    });
+  });
+
+  it('starting -> ready: completed or skipped leaves no setup and no banner', () => {
+    for (const state of ['completed', 'skipped'] as const) {
+      const view = withSetup({ state });
+      expect(view?.setup).toBeNull();
+      expect(view?.banner).toBeNull();
+    }
+    expect(withSetup(undefined)?.setup).toBeNull();
+  });
+
+  it('starting -> failed: an open that failed keeps its reason', () => {
+    const view = withSetup({ state: 'failed', error: 'node-checkout-failed: fetch failed' });
+    expect(view).toMatchObject({
+      banner: 'setupFailed',
+      setup: { phase: 'openFailed', error: 'node-checkout-failed: fetch failed' },
+    });
+  });
+
+  it('starting -> failed: a setup script that failed keeps its exit code or timeout', () => {
+    expect(withSetup({ state: 'failed', exitCode: 2, startedAt: 't' })?.setup).toEqual({
+      phase: 'setupFailed',
+      exitCode: 2,
+      timedOut: false,
+    });
+    expect(
+      withSetup({ state: 'failed', error: 'node-setup-timeout: 30 minutes', startedAt: 't' })
+        ?.setup,
+    ).toEqual({ phase: 'setupFailed', exitCode: null, timedOut: true });
+  });
+
+  it('a detached or moving home shows its own banner, not the setup', () => {
+    expect(withSetup({ state: 'pending' }, { state: 'detached' })?.banner).toBe('detached');
+    expect(withSetup({ state: 'failed', error: 'x' }, { state: 'moving' })?.banner).toBe('moving');
+  });
+
+  it('opening wins over a backup warning', () => {
+    expect(withSetup({ state: 'pending' }, { backupWarning: true })?.banner).toBe('opening');
+  });
+});
+
 function agent(id: string, fields: Partial<AgentSession>): AgentSession {
   return {
     id,

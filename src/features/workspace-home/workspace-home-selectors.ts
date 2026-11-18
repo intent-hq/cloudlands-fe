@@ -43,6 +43,21 @@ export const selectCanMoveWorkspaceHome = store.createSelector((state, workspace
   ),
 );
 
+/** The workspace's home id, '' without a home. */
+export const selectWorkspaceHomeId = store.createSelector(
+  (state, workspaceId: string) =>
+    getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.home?.homeId ?? '',
+);
+
+/** The workspace home's failed opening banner was dismissed. */
+export const selectHomeSetupFailureDismissed = store.createSelector(
+  (state, workspaceId: string) => {
+    const homeId = getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.home
+      ?.homeId;
+    return !!homeId && state.workspaceHome.dismissedSetupFailures[homeId] === true;
+  },
+);
+
 /** A Wait retry is in flight for the workspace. */
 export const selectHomeWaiting = store.createSelector(
   (state, workspaceId: string) => state.workspaceHome.waiting[workspaceId] === true,

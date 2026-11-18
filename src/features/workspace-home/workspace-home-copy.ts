@@ -40,6 +40,53 @@ export function homeBannerText(view: WorkspaceHomeView): string {
     : m.workspaceHome_banner_backupWarningNoBackup({ name: view.name });
 }
 
+/** The opening banner's title: "Setting up home on Mac Studio…", or why it failed. */
+export function homeSetupTitle(view: WorkspaceHomeView): string {
+  switch (view.setup?.phase) {
+    case 'preparing':
+    case 'runningSetup':
+      return m.workspaceHome_opening_title({ name: view.name });
+    case 'openFailed':
+      return m.workspaceHome_openFailed_title({ name: view.name });
+    case 'setupFailed':
+      return m.remoteAgent_notice_setupFailed_title({ machine: view.name });
+    default:
+      return '';
+  }
+}
+
+/** The opening's step, or what follows a failure; null when there is none. */
+export function homeSetupDetail(view: WorkspaceHomeView): string | null {
+  const setup = view.setup;
+  switch (setup?.phase) {
+    case 'preparing':
+      return m.remoteAgent_status_preparingCheckout();
+    case 'runningSetup':
+      return m.remoteAgent_status_runningSetup();
+    case 'openFailed':
+      return m.workspaceHome_openFailed_hint({ name: view.name });
+    case 'setupFailed':
+      if (setup.exitCode !== null) {
+        return m.workspaceHome_setupFailed_exitCode({ code: String(setup.exitCode) });
+      }
+      return setup.timedOut
+        ? m.workspaceHome_setupFailed_timeout()
+        : m.workspaceHome_setupFailed_generic();
+    default:
+      return null;
+  }
+}
+
+/**
+ * Why the open failed, as the machine said it, without its error code
+ * ("node-checkout-failed: fetch failed" → "fetch failed"); null without one.
+ */
+export function homeOpenFailureReason(view: WorkspaceHomeView): string | null {
+  if (view.setup?.phase !== 'openFailed' || !view.setup.error) return null;
+  const reason = view.setup.error.replace(/^[a-z][a-z0-9-]*:\s*/, '').trim();
+  return reason || null;
+}
+
 /** The card marker's label. */
 export function homeMarkerLabel(marker: 'detached' | 'moving'): string {
   return marker === 'detached'

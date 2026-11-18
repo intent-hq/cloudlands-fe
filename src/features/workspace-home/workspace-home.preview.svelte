@@ -15,36 +15,60 @@
     | 'startingToAttached'
     | 'dialogCloud'
     | 'dialogCloudSelected'
-    | 'dialogCloudWarning';
+    | 'dialogCloudWarning'
+    | 'openingPreparing'
+    | 'openingRunning'
+    | 'openingOutput'
+    | 'openingReady'
+    | 'openFailed'
+    | 'setupFailed'
+    | 'setupFailedOutput'
+    | 'setupTimedOut';
 
-  const state = (scenario: Scenario) => ({ props: { scenario } });
+  const scenarioState = (scenario: Scenario) => ({ props: { scenario } });
   export const preview = definePreview<{ scenario: Scenario }>({
     id: 'workspace-home',
     title: 'Workspace home: header line, banner, card marker, panels and Move home',
     defaultState: 'detached',
     states: {
-      attached: state('attached'),
-      detached: state('detached'),
+      attached: scenarioState('attached'),
+      detached: scenarioState('detached'),
       // Collaborators can wait but not move the home.
-      detachedCollaborator: state('detachedCollaborator'),
-      moving: state('moving'),
-      backupWarning: state('backupWarning'),
-      dialog: state('dialog'),
+      detachedCollaborator: scenarioState('detachedCollaborator'),
+      moving: scenarioState('moving'),
+      backupWarning: scenarioState('backupWarning'),
+      dialog: scenarioState('dialog'),
       // The old home is detached: warn with the last backup time first.
-      dialogWarning: state('dialogWarning'),
-      dialogRefused: state('dialogRefused'),
+      dialogWarning: scenarioState('dialogWarning'),
+      dialogRefused: scenarioState('dialogRefused'),
       // A cloud home's sandbox is starting: calm notice, no banner or actions.
-      starting: state('starting'),
+      starting: scenarioState('starting'),
       // A shell terminal waits; a saved script's output stays readable, Run waits.
-      startingTerminal: state('startingTerminal'),
+      startingTerminal: scenarioState('startingTerminal'),
       // The same panel before and after the home is attached (it retries).
-      startingToAttached: state('startingToAttached'),
+      startingToAttached: scenarioState('startingToAttached'),
       // Machines and cloud entries together; an unusable entry shows its reason.
-      dialogCloud: state('dialogCloud'),
+      dialogCloud: scenarioState('dialogCloud'),
       // A cloud entry chosen: Move home is enabled.
-      dialogCloudSelected: state('dialogCloudSelected'),
+      dialogCloudSelected: scenarioState('dialogCloudSelected'),
       // The old home is unavailable and the target is a cloud entry.
-      dialogCloudWarning: state('dialogCloudWarning'),
+      dialogCloudWarning: scenarioState('dialogCloudWarning'),
+      // nodes.md "Opening the home": the machine fetches and checks out.
+      openingPreparing: scenarioState('openingPreparing'),
+      // The workspace setup script runs in the new home checkout.
+      openingRunning: scenarioState('openingRunning'),
+      // The same, with its output open.
+      openingOutput: scenarioState('openingOutput'),
+      // Setup completed: the banner is gone.
+      openingReady: scenarioState('openingReady'),
+      // The machine could not make the checkout: reason, Move home, output.
+      openFailed: scenarioState('openFailed'),
+      // The setup script exited non-zero; the home still works.
+      setupFailed: scenarioState('setupFailed'),
+      // The same, with its output open.
+      setupFailedOutput: scenarioState('setupFailedOutput'),
+      // The setup script timed out.
+      setupTimedOut: scenarioState('setupTimedOut'),
     },
   });
 </script>
@@ -82,6 +106,12 @@
     since: '2026-11-15T09:00:00Z',
     lastBackupAt: '2026-11-15T08:41:00Z',
   };
+  const OPENING: WorkspaceHome = { ...BASE, lastBackupAt: undefined };
+  const SETUP_OUTPUT =
+    'Fetching refs/intent/ws/ws-1/home/head\nChecking out 3f9c2ab (main)\n$ ./scripts/setup.sh\npnpm install --frozen-lockfile\nLockfile is up to date, resolution step is skipped\nPackages: +1342\n';
+  const SETUP_FAILED_OUTPUT =
+    SETUP_OUTPUT +
+    'ERR_PNPM_FETCH_404  GET https://registry.npmjs.org/@acme%2Fimporter: Not Found - 404\n';
   const HOMES: Record<Scenario, WorkspaceHome> = {
     attached: BASE,
     detached: { ...BASE, state: 'detached', since: '2026-11-12T09:42:00Z' },
@@ -104,6 +134,60 @@
     dialogCloud: BASE,
     dialogCloudSelected: BASE,
     dialogCloudWarning: { ...BASE, state: 'detached', since: '2026-11-12T09:42:00Z' },
+    openingPreparing: { ...OPENING, setup: { state: 'pending' } },
+    openingRunning: {
+      ...OPENING,
+      setup: { state: 'running', startedAt: '2026-11-12T09:00:12Z' },
+    },
+    openingOutput: {
+      ...OPENING,
+      setup: { state: 'running', startedAt: '2026-11-12T09:00:12Z' },
+    },
+    openingReady: {
+      ...OPENING,
+      setup: {
+        state: 'completed',
+        exitCode: 0,
+        startedAt: '2026-11-12T09:00:12Z',
+        finishedAt: '2026-11-12T09:01:40Z',
+      },
+    },
+    openFailed: {
+      ...OPENING,
+      setup: {
+        state: 'failed',
+        error:
+          "node-checkout-failed: fetch refs/intent/ws/ws-1/home/head: could not reach the orchestrator's git endpoint",
+        finishedAt: '2026-11-12T09:05:30Z',
+      },
+    },
+    setupFailed: {
+      ...OPENING,
+      setup: {
+        state: 'failed',
+        exitCode: 1,
+        startedAt: '2026-11-12T09:00:12Z',
+        finishedAt: '2026-11-12T09:00:51Z',
+      },
+    },
+    setupFailedOutput: {
+      ...OPENING,
+      setup: {
+        state: 'failed',
+        exitCode: 1,
+        startedAt: '2026-11-12T09:00:12Z',
+        finishedAt: '2026-11-12T09:00:51Z',
+      },
+    },
+    setupTimedOut: {
+      ...OPENING,
+      setup: {
+        state: 'failed',
+        error: 'node-setup-timeout: the setup script ran longer than 30 minutes',
+        startedAt: '2026-11-12T09:00:12Z',
+        finishedAt: '2026-11-12T09:30:12Z',
+      },
+    },
   };
   const OPTIONS: MoveHomeOption[] = [
     {
@@ -198,6 +282,10 @@
     },
   ];
   const cloudDialog = $derived(scenario.startsWith('dialogCloud'));
+  let outputOpen = $state(false);
+  $effect(() => {
+    outputOpen = scenario === 'openingOutput' || scenario === 'setupFailedOutput';
+  });
   const home = $derived(HOMES[scenario]);
   const view = $derived(workspaceHomeView({ home }));
   const canMove = $derived(scenario !== 'detachedCollaborator' && view?.canMove === true);
@@ -243,7 +331,14 @@
         <p class="type-title">Ship the importer</p>
         <WorkspaceHomeLine {view} />
       </div>
-      <WorkspaceHomeBanner {view} {canMove} />
+      <WorkspaceHomeBanner
+        {view}
+        {canMove}
+        {outputOpen}
+        output={scenario === 'setupFailedOutput' ? SETUP_FAILED_OUTPUT : SETUP_OUTPUT}
+        onToggleOutput={() => (outputOpen = !outputOpen)}
+        onDismiss={() => {}}
+      />
       <div class="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-2">
         <div class="flex flex-col gap-3 border-border p-4 sm:border-r">
           <p class="type-caption text-muted-foreground">Coordinator</p>

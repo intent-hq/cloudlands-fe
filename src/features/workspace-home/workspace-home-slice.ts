@@ -21,6 +21,8 @@ export interface WorkspaceHomeUiState {
   moveFailure: MoveHomeFailure | null;
   /** Workspaces whose Wait retry is in flight. */
   waiting: Record<string, true>;
+  /** Homes (by `homeId`) whose failed opening banner was dismissed this session. */
+  dismissedSetupFailures: Record<string, true>;
 }
 
 const initialWorkspaceHomeState: WorkspaceHomeUiState = {
@@ -28,6 +30,7 @@ const initialWorkspaceHomeState: WorkspaceHomeUiState = {
   moveStatus: 'idle',
   moveFailure: null,
   waiting: {},
+  dismissedSetupFailures: {},
 };
 
 /** Open the Move home dialog for a workspace (banner, header menu, panels). */
@@ -46,6 +49,10 @@ export const moveHomeSettled = createAction<[workspaceId: string, failure: MoveH
 /** Wait: ask the backend to reconnect the home, then re-read the workspace. */
 export const homeWaitRequested = createAction<[workspaceId: string]>('workspaceHome/waitRequested');
 export const homeWaitSettled = createAction<[workspaceId: string]>('workspaceHome/waitSettled');
+/** Hide a home's failed opening banner (nodes.md "Opening the home"). */
+export const homeSetupFailureDismissed = createAction<[homeId: string]>(
+  'workspaceHome/setupFailureDismissed',
+);
 
 export const workspaceHomeReducer = createReducer<WorkspaceHomeUiState>(initialWorkspaceHomeState);
 workspaceHomeReducer.with(moveHomeDialogOpened, (state, { payload: [workspaceId] }) => ({
@@ -81,3 +88,8 @@ workspaceHomeReducer.with(homeWaitSettled, (state, { payload: [workspaceId] }) =
   const { [workspaceId]: _settled, ...waiting } = state.waiting;
   return { ...state, waiting };
 });
+workspaceHomeReducer.with(homeSetupFailureDismissed, (state, { payload: [homeId] }) =>
+  state.dismissedSetupFailures[homeId]
+    ? state
+    : { ...state, dismissedSetupFailures: { ...state.dismissedSetupFailures, [homeId]: true } },
+);
