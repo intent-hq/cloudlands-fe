@@ -631,6 +631,14 @@ describe('resolveOnboardingModel', () => {
       expect(getProviderAvailability).not.toHaveBeenCalled();
     });
 
+    it('starts with the profile saved on the connect step', async () => {
+      mockState.activeProviderId = 'codex@p1';
+
+      const result = await resolveOnboardingModel(orchestratorState({ codex: true }));
+
+      expect(result.provider).toBe('codex@p1');
+    });
+
     it('still rejects a provider the catalog does not have', async () => {
       mockState.activeProviderId = 'not-a-provider';
 

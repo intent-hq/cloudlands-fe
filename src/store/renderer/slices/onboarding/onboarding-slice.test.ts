@@ -19,10 +19,11 @@ import {
 import { STEP_ORDER, type OnboardingStep } from './onboarding-types';
 
 describe('onboarding step ordering', () => {
-  it('places requirements before welcome and forge between welcome and project', () => {
+  it('places requirements before welcome, then connect, then forge before project', () => {
     expect(STEP_ORDER).toEqual([
       'requirements',
       'welcome',
+      'connect',
       'forge',
       'project',
       'configuring',

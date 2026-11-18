@@ -8,6 +8,7 @@
  * advance) — never on mere render/detection — so the caller decides when to
  * call it.
  */
+import { providerRefBaseId } from '$shared/provider-profiles';
 import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 import {
   setActiveProvider,
@@ -44,11 +45,17 @@ export function commitOnboardingProviderSelection(
 ): string | undefined {
   const { selectedProviderId, activeProviderId, recommitActive, dispatch } = input;
   if (!selectedProviderId) return undefined;
+  // An active profile of the selected provider (saved on the connect step)
+  // stays the selection.
+  const active =
+    activeProviderId && providerRefBaseId(activeProviderId) === selectedProviderId
+      ? activeProviderId
+      : selectedProviderId;
   // The resolver only returns the active provider when it is ready, so a
   // match means the selection is already committed — don't double-dispatch.
-  if (!recommitActive && selectedProviderId === activeProviderId) return undefined;
+  if (!recommitActive && active === activeProviderId) return undefined;
   dispatch(setProviderEnabled({ providerId: selectedProviderId, enabled: true }));
-  dispatch(setActiveProvider(selectedProviderId));
+  dispatch(setActiveProvider(active));
   dispatch(reloadModelsForProvider());
   return selectedProviderId;
 }

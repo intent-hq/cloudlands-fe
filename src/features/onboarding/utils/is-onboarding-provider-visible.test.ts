@@ -131,4 +131,19 @@ describe('isOnboardingProviderVisible', () => {
       }),
     ).toBe(false);
   });
+
+  it('offers only providers with profiles on an orchestrator', () => {
+    const visible = (provider: { id?: string; supportsProfiles?: boolean }) =>
+      isOnboardingProviderVisible({
+        provider,
+        isFeatureEnabled: featureEnabled,
+        status: { available: true },
+        orchestrator: true,
+      });
+    expect(visible({ id: 'claude-code', supportsProfiles: true })).toBe(true);
+    expect(visible({ id: 'codex', supportsProfiles: true })).toBe(true);
+    expect(visible({ id: 'codex' })).toBe(false);
+    expect(visible({ id: 'opencode', supportsProfiles: true })).toBe(false);
+    expect(visible({ id: 'cursor' })).toBe(false);
+  });
 });

@@ -74,4 +74,14 @@ describe('resolveOnboardingSelectedProvider', () => {
       }),
     ).toBe('claude-code');
   });
+
+  it('selects the card of an active profile', () => {
+    expect(
+      resolveOnboardingSelectedProvider({
+        activeProviderId: 'codex@p1',
+        defaultProviderId: 'claude-code',
+        readyProviderIds: ['claude-code', 'codex'],
+      }),
+    ).toBe('codex');
+  });
 });

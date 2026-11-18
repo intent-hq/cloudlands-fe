@@ -141,6 +141,7 @@
           isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
           status: statusMap[p.id],
           enabled: $enabledProviders$[p.id] === true,
+          orchestrator: $orchestrator$,
         }),
       )
       .map((p) => {
