@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.349.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.348.0...v2.349.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* copy, cut and paste with Super+C/X/V on Linux ([#4743](https://github.com/intent-hq/cloudlands-fe/issues/4743)) ([da54014](https://github.com/intent-hq/cloudlands-fe/commit/da540144462d9766eb209ca062495234ee5d3886))
+* open web pages from a second launch in a sign-in window ([#4733](https://github.com/intent-hq/cloudlands-fe/issues/4733)) ([5667d41](https://github.com/intent-hq/cloudlands-fe/commit/5667d416d7b400295e417303d4b5f6db0077b1a5))
+* **settings:** add push notifications switch to Settings → Mobile ([#4738](https://github.com/intent-hq/cloudlands-fe/issues/4738)) ([67251f3](https://github.com/intent-hq/cloudlands-fe/commit/67251f32e85a45d34821b4fe4f55bd9fe4ee0e18))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.241 ([#4747](https://github.com/intent-hq/cloudlands-fe/issues/4747)) ([658d343](https://github.com/intent-hq/cloudlands-fe/commit/658d343442e64d65cc698dfd642f6fdd80f261be))
+
 ## [2.348.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.347.0...v2.348.0) (2026-11-18)
 
 
