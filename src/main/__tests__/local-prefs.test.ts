@@ -125,6 +125,23 @@ describe('local-prefs', () => {
     expect(await getLocalPref('b')).toBe(2);
   });
 
+  it('removes the retired Browser access keys, including its saved access key', async () => {
+    const { setLocalPref, deleteRetiredLocalPrefs } = await import('../local-prefs');
+    await setLocalPref('browserAccess.enabled', true);
+    await setLocalPref('browserAccess.port', 47120);
+    await setLocalPref('browserAccess.accessKey', 'k'.repeat(43));
+    await setLocalPref('browserAccess.pageOrigin', 'https://box.example.ts.net');
+    await setLocalPref('dockLabEnabled', true);
+    await deleteRetiredLocalPrefs();
+    expect(await readDocumentOnDisk()).toEqual({ dockLabEnabled: true });
+  });
+
+  it('leaves the file untouched when no retired key is present', async () => {
+    const { deleteRetiredLocalPrefs } = await import('../local-prefs');
+    await deleteRetiredLocalPrefs();
+    await expect(fs.access(path.join(tmpDir, 'local-prefs.json'))).rejects.toThrow();
+  });
+
   it('writes are serialized (no torn file with concurrent setters)', async () => {
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
     await Promise.all([setLocalPref('x', 1), setLocalPref('y', 2), setLocalPref('z', 3)]);
