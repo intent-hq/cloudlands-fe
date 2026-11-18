@@ -7,75 +7,102 @@
   import { Button } from '$lib/components/ui/button';
   import Preview from '../dock-rail.preview.svelte';
   import { dockRailPreview } from '../dock-rail.preview-fixtures';
+
   let {
     conversationFixture = false,
-    failTurnOffOnce = false,
     recording = false,
+    failMachineOnce = false,
+    placement = 'notch',
+    machines = true,
   }: {
     conversationFixture?: boolean;
-    failTurnOffOnce?: boolean;
     recording?: boolean;
+    failMachineOnce?: boolean;
+    placement?: 'notch' | 'side-left' | 'side-right';
+    machines?: boolean;
   } = $props();
-  let turnOffRequests = $state<unknown[]>([]);
-  let enabled = $state(true);
+  let activations = $state(0);
+  let requests = $state<DockContextMenuRequest[]>([]);
+  let request = $state<DockContextMenuRequest | null>(null);
   let reactiveMachines = $state([
     { id: 'local', label: 'This Mac' },
     { id: 'remote-build', label: 'Build server' },
   ]);
-  let activations = $state(0);
-  let request = $state<DockContextMenuRequest | null>(null);
   let finish: ((result: DockContextMenuResult) => void) | undefined;
   const restores = [
-    overrideMockIpcHandler(WINDOW_CHANNELS.SET_DOCK_LAB, (payload) => {
-      turnOffRequests = [...turnOffRequests, structuredClone(payload)];
-      if (!failTurnOffOnce || turnOffRequests.length > 1) enabled = false;
-      return { enabled };
-    }),
     overrideMockIpcHandler(WINDOW_CHANNELS.ACTIVATE_APP, () => {
       activations += 1;
       return { activated: true };
     }),
-    overrideMockIpcHandler(WINDOW_CHANNELS.SHOW_DOCK_MENU, (state) => {
-      request = structuredClone(state as DockContextMenuRequest);
+    overrideMockIpcHandler(WINDOW_CHANNELS.SHOW_DOCK_MENU, (payload) => {
+      request = structuredClone(payload as DockContextMenuRequest);
+      requests = [...requests, request];
       return new Promise<DockContextMenuResult>((resolve) => {
         finish = resolve;
       });
     }),
   ];
-  onDestroy(() => restores.forEach((restore) => restore()));
-  function close(backendId?: string) {
-    finish?.({ shown: true, backendId });
+  onDestroy(() => {
+    finish?.({ shown: false });
+    restores.forEach((restore) => restore());
+  });
+  function close(result: DockContextMenuResult = { shown: true }) {
+    const resolve = finish;
+    finish = undefined;
     request = null;
+    resolve?.(result);
   }
 </script>
 
 <div
   data-testid="native-menu-harness"
   data-activations={activations}
-  data-turn-off-requests={JSON.stringify(turnOffRequests)}
-  data-enabled={enabled}
+  data-requests={JSON.stringify(requests)}
   data-request={JSON.stringify(request)}
 >
   <Preview
-    {...dockRailPreview.states.notch.props}
-    machineFixture
+    {...dockRailPreview.states[placement].props}
+    machineFixture={machines}
     controlledPlacement
+    {failMachineOnce}
     {conversationFixture}
     recordingFixture={recording ? 'running' : undefined}
   />
   <Button
     onclick={() => {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Exercise the native-menu bridge against the synthetic handlers installed above.
-      void showDockContextMenu({ machines: reactiveMachines, currentId: 'local' });
-    }}
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- Exercise structured cloning of Svelte proxies at the synthetic IPC boundary.
+      void showDockContextMenu({
+        machines: reactiveMachines,
+        currentId: 'local',
+        canTurnOff: true,
+      });
+    }}>Open menu with reactive devices</Button
   >
-    Open menu with reactive devices
-  </Button>
   {#if request}
-    <aside style="position:fixed;right:20px;bottom:20px" aria-label="Native menu stand-in">
-      <p>Native menu IPC is pending; no native app is connected.</p>
+    <aside class="stand-in" aria-label="Native menu IPC stand-in">
+      <p><strong>Native menu IPC stand-in</strong></p>
+      <p>Browser fixture only. This is not the operating system menu.</p>
       <Button onclick={() => close()}>Cancel native menu</Button>
-      <Button onclick={() => close('remote-build')}>Choose build server</Button>
+      <Button onclick={() => close({ shown: true, backendId: 'remote-build' })}
+        >Choose build server</Button
+      >
+      <Button onclick={() => close({ shown: true, action: 'open-intent' })}
+        >Return Open Intent</Button
+      >
     </aside>
   {/if}
 </div>
+
+<style>
+  .stand-in {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    max-width: 360px;
+    padding: 16px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+  }
+</style>

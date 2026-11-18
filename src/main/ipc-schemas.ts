@@ -1304,5 +1304,6 @@ export const WindowShowDockMenuSchema = z
     currentId: z.string().max(256).optional(),
     pending: z.string().max(256).nullable().optional(),
     error: z.boolean().optional(),
+    canTurnOff: z.boolean().optional(),
   })
   .strict();
