@@ -1,7 +1,7 @@
 import { expect, test } from '../../../test/ct-test';
 import Harness from './__tests__/DockNativeMenuHarness.svelte';
 
-test.use({ video: 'on', trace: 'on', viewport: { width: 1280, height: 800 } });
+test.use({ video: 'retain-on-failure', trace: 'on', viewport: { width: 1280, height: 800 } });
 
 test('header activation and native menu hold, cancel, and device selection', async ({
   mount,
