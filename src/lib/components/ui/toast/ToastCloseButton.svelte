@@ -45,8 +45,10 @@
     box-shadow: none;
   }
 
+  /* Relative, not static: Button's hover surface is absolutely positioned. */
   :global(.toast-close-btn.toast-close-inline) {
-    position: static;
+    position: relative;
+    inset: auto;
     flex-shrink: 0;
   }
 </style>
