@@ -144,7 +144,10 @@ vi.mock('../offscreen-window', () => ({
 const railPref = vi.hoisted(() => ({ value: true as unknown }));
 
 vi.mock('../local-prefs', () => ({
-  getLocalPref: async () => railPref.value,
+  getStrictLocalPref: async () => {
+    if (railPref.value instanceof Error) throw railPref.value;
+    return railPref.value;
+  },
   setLocalPref: async () => {},
 }));
 
@@ -272,11 +275,12 @@ it('leaves an auxiliary window untouched when opening an invited workspace', asy
   expect(auxiliary.show).not.toHaveBeenCalled();
 });
 
-it('loads the rail on unless the user turned it off', async () => {
+it('loads the rail on unless the user turned it off or the preference cannot be read', async () => {
   for (const [saved, expected] of [
     [undefined, true],
     [true, true],
     [false, false],
+    [new Error('unreadable'), false],
   ] as const) {
     railPref.value = saved;
     await loadMachineRailEnabled();

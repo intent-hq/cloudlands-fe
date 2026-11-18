@@ -141,17 +141,15 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
  * startup caller keeps the dock off when this rejects.
  */
 export async function getDockLabEnabledLocalPref(): Promise<boolean> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath(), 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
-    throw error;
-  }
-  const parsed = JSON.parse(raw) as unknown;
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-    throw new Error('local-prefs is not a JSON object');
-  return (parsed as Record<string, unknown>).dockLabEnabled !== false;
+  return (await getStrictLocalPref('dockLabEnabled')) !== false;
+}
+
+/**
+ * Like `getLocalPref`, but rejects an unreadable or malformed file instead of
+ * reading it as unset, so a caller can tell "never chose" from "cannot know".
+ */
+export async function getStrictLocalPref(key: string): Promise<unknown> {
+  return (await readStrictPrefsDocument())[key];
 }
 
 export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void> {
@@ -192,10 +190,10 @@ export async function setDockPlacementLocalPref(
 
 /** Native shortcut changes must surface read/write failures, rather than invent defaults. */
 export async function getDockShortcutOverridesLocalPref(): Promise<unknown> {
-  const all = await readShortcutPrefsDocument();
+  const all = await readStrictPrefsDocument();
   return all.dockShortcutOverrides;
 }
-async function readShortcutPrefsDocument(): Promise<Record<string, unknown>> {
+async function readStrictPrefsDocument(): Promise<Record<string, unknown>> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath(), 'utf8');
@@ -212,7 +210,7 @@ export async function setDockShortcutOverridesLocalPref(
   overrides: import('../shared/dock-shortcut-settings').DockShortcutOverrides,
 ): Promise<void> {
   const write = writeChain.then(async () => {
-    const all = await readShortcutPrefsDocument();
+    const all = await readStrictPrefsDocument();
     all.dockShortcutOverrides = overrides;
     await writeAll(all);
   });
@@ -227,7 +225,7 @@ export async function getDockMediaChoiceLocalPref(): Promise<
   import('../shared/dock-media-edit').DockMediaChoice | null
 > {
   const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
-  const document = await readShortcutPrefsDocument();
+  const document = await readStrictPrefsDocument();
   const result = DockMediaChoiceSchema.safeParse(document.dockMediaLastSavedChoice);
   return result.success ? result.data : null;
 }
@@ -237,7 +235,7 @@ export async function setDockMediaChoiceLocalPref(
   const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
   const accepted = DockMediaChoiceSchema.parse(choice);
   const write = writeChain.then(async () => {
-    const document = await readShortcutPrefsDocument();
+    const document = await readStrictPrefsDocument();
     document.dockMediaLastSavedChoice = accepted;
     await writeAll(document);
   });
