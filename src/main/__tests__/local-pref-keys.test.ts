@@ -101,24 +101,63 @@ function createProgram(overrides = new Map<string, string>()): ts.Program {
   return ts.createProgram({ rootNames, options, host });
 }
 
-function stringLiterals(type: ts.Type): string[] | null {
-  const parts = type.isUnion() ? type.types : [type];
-  const out: string[] = [];
-  for (const part of parts) {
-    if (!part.isStringLiteral()) return null;
-    out.push(part.value);
-  }
-  return out;
+/**
+ * The key a read names, or null. A union (such as `LocalPrefKey` itself, from
+ * a wrapper or a cast) would count as a read of every key it contains.
+ */
+function singleLiteral(type: ts.Type): string | null {
+  return type.isStringLiteral() ? type.value : null;
 }
 
+/** Assigned to or deleted: the helper writes the key, it does not read it. */
 function isWriteTarget(node: ts.Node): boolean {
   const parent = node.parent;
+  if (ts.isDeleteExpression(parent)) return true;
   return (
     ts.isBinaryExpression(parent) &&
     parent.left === node &&
     parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
     parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment
   );
+}
+
+function isInTypePosition(node: ts.Node): boolean {
+  for (let current = node.parent; current; current = current.parent) {
+    if (ts.isTypeNode(current)) return true;
+    if (ts.isStatement(current) || ts.isSourceFile(current)) return false;
+  }
+  return false;
+}
+
+function isExported(node: ts.Node): boolean {
+  return (
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+  );
+}
+
+/** Exported functions of local-prefs.ts, declared as functions or as function-valued consts. */
+function exportedFunctions(file: ts.SourceFile): Array<[string, ts.Declaration]> {
+  const out: Array<[string, ts.Declaration]> = [];
+  for (const statement of file.statements) {
+    if (!isExported(statement)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      out.push([statement.name.text, statement]);
+    }
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const init = declaration.initializer;
+        if (
+          ts.isIdentifier(declaration.name) &&
+          init &&
+          (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+        ) {
+          out.push([declaration.name.text, declaration]);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function analyze(program: ts.Program): Analysis {
@@ -142,31 +181,35 @@ function analyze(program: ts.Program): Analysis {
     return `${path.relative(ROOT, sf.fileName)}:${line + 1}`;
   };
 
-  for (const statement of prefsFile.statements) {
-    if (!ts.isFunctionDeclaration(statement) || !statement.name) continue;
-    const exported = statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
-    if (!exported || statement.name.text.startsWith('__')) continue;
-    if (GENERIC_READERS.has(statement.name.text)) genericReaders.add(statement);
-    else if (statement.name.text === 'deleteRetiredLocalPrefs') retiredCleanup = statement;
-    else helpers.set(statement, []);
+  for (const [name, declaration] of exportedFunctions(prefsFile)) {
+    if (name.startsWith('__')) continue;
+    if (GENERIC_READERS.has(name)) genericReaders.add(declaration);
+    else if (name === 'deleteRetiredLocalPrefs') retiredCleanup = declaration;
+    else helpers.set(declaration, []);
   }
   if (genericReaders.size !== GENERIC_READERS.size || !retiredCleanup) {
     throw new Error('local-prefs.ts no longer exports the readers this test looks for');
   }
 
-  const genericReadKeys = (call: ts.CallExpression): string[] | null | undefined => {
+  /** undefined: not a generic read; null: a read whose key is not one literal. */
+  const genericReadKey = (call: ts.CallExpression): string | null | undefined => {
     const declaration = checker.getResolvedSignature(call)?.declaration;
     if (!declaration || !genericReaders.has(declaration as ts.Declaration)) return undefined;
     const [keyArg] = call.arguments;
-    return keyArg ? stringLiterals(checker.getTypeAtLocation(keyArg)) : null;
+    return keyArg ? singleLiteral(checker.getTypeAtLocation(keyArg)) : null;
   };
 
   // Keys each exported helper of local-prefs.ts reads, directly or via a generic reader.
   for (const [helper, keys] of helpers) {
     const visit = (node: ts.Node) => {
       if (ts.isCallExpression(node)) {
-        const read = genericReadKeys(node);
-        if (read) keys.push(...read);
+        const read = genericReadKey(node);
+        if (read === null) unresolved.push(`${where(node)} ${node.getText()}`);
+        else if (read) keys.push(read);
+      }
+      if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const property = node.propertyName ?? node.name;
+        if (ts.isIdentifier(property) && REGISTERED.has(property.text)) keys.push(property.text);
       }
       if (ts.isPropertyAccessExpression(node) && REGISTERED.has(node.name.text)) {
         if (!isWriteTarget(node)) keys.push(node.name.text);
@@ -211,15 +254,21 @@ function analyze(program: ts.Program): Analysis {
     if (file === LOCAL_PREFS || !isProductionFile(file)) continue;
     const visit = (node: ts.Node) => {
       if (ts.isCallExpression(node)) {
-        const read = genericReadKeys(node);
+        const read = genericReadKey(node);
         if (read === null) unresolved.push(`${where(node)} ${node.getText()}`);
-        else if (read) for (const key of read) record(key, node);
+        else if (read) record(read, node);
+        if (
+          ts.isIdentifier(node.expression) &&
+          resolveReference(node.expression) === retiredCleanup
+        ) {
+          retiredCleanupCallers.push(file);
+        }
       }
-      if (ts.isIdentifier(node)) {
+      // A value reference (call or callback) to a reading helper; `typeof` does not run it.
+      if (ts.isIdentifier(node) && !isInTypePosition(node)) {
         const declaration = resolveReference(node);
         const keys = declaration && helpers.get(declaration);
         if (keys) for (const key of keys) record(key, node);
-        if (declaration && declaration === retiredCleanup) retiredCleanupCallers.push(file);
       }
       ts.forEachChild(node, visit);
     };
@@ -228,8 +277,15 @@ function analyze(program: ts.Program): Analysis {
   return { readers, unresolved, retiredCleanupCallers };
 }
 
-/** The program with every read site of `keys` blanked out, as if their features were deleted. */
-function withoutReadersOf(keys: string[], analysis: Analysis): ts.Program {
+/**
+ * The program with every read site of `keys` blanked out, as if their features
+ * were deleted, plus `extra` files and text appended to local-prefs.ts.
+ */
+function withoutReadersOf(
+  keys: string[],
+  analysis: Analysis,
+  extra: { files?: Map<string, string>; appendToLocalPrefs?: string } = {},
+): ts.Program {
   const byFile = new Map<string, ReadSite[]>();
   for (const read of keys.flatMap((key) => analysis.readers.get(key) ?? [])) {
     byFile.set(read.file, [...(byFile.get(read.file) ?? []), read]);
@@ -242,6 +298,11 @@ function withoutReadersOf(keys: string[], analysis: Analysis): ts.Program {
     }
     overrides.set(file, text);
   }
+  if (extra.appendToLocalPrefs) {
+    const base = overrides.get(LOCAL_PREFS) ?? program.getSourceFile(LOCAL_PREFS)!.getFullText();
+    overrides.set(LOCAL_PREFS, `${base}\n${extra.appendToLocalPrefs}`);
+  }
+  for (const [file, text] of extra.files ?? []) overrides.set(file, text);
   return createProgram(overrides);
 }
 
@@ -259,12 +320,20 @@ describe('local-prefs key registry', () => {
     expect(
       orphaned,
       'These keys have no production reader. Keep a reader, or move them to ' +
-        'RETIRED_LOCAL_PREF_KEYS in src/main/local-pref-keys.ts so startup deletes them.',
+        'RETIRED_LOCAL_PREF_KEYS in src/main/local-pref-keys.ts so startup deletes them. ' +
+        'Reads are found in getLocalPref / getStrictLocalPref / hasLocalPref calls with a ' +
+        'literal key (or a const holding one), and in references to an exported ' +
+        'local-prefs.ts function that reads the key itself; a read hidden behind an ' +
+        'unexported local-prefs.ts function is not followed.',
     ).toEqual([]);
   });
 
   it('resolves the key of every read to registered literals', () => {
-    expect(analysis.unresolved, 'reads whose key type is not a string literal union').toEqual([]);
+    expect(
+      analysis.unresolved,
+      'reads whose key is not one string literal: pass a literal or a const holding one, ' +
+        'not a LocalPrefKey variable, so the reader of each key stays visible',
+    ).toEqual([]);
     const unknown = [...analysis.readers.keys()].filter((key) => !REGISTERED.has(key));
     expect(unknown).toEqual([]);
   });
@@ -307,5 +376,50 @@ describe('local-prefs key registry', () => {
     for (const key of deleted) expect(analysis.readers.get(key)?.length, key).toBeGreaterThan(0);
     const mutated = analyze(withoutReadersOf(deleted, analysis));
     expect(LOCAL_PREF_KEYS.filter((key) => !mutated.readers.has(key))).toEqual(deleted);
+  });
+
+  it('does not count wrappers, deletes or type references as reads', () => {
+    const probe = path.join(ROOT, 'src', 'main', '__local-pref-keys-false-readers__.ts');
+    const appendToLocalPrefs = [
+      'export async function clearDockPlacementForProbe(): Promise<void> {',
+      '  const all = await readAll();',
+      '  delete all.dockPlacement;',
+      '  await writeAll(all);',
+      '}',
+      'export const readDockShortcutsForProbe = async (): Promise<unknown> => {',
+      '  const { dockShortcutOverrides } = await readStrictPrefsDocument();',
+      '  return dockShortcutOverrides;',
+      '};',
+    ].join('\n');
+    const probeText = [
+      `import type { LocalPrefKey } from './local-pref-keys';`,
+      `import { clearDockPlacementForProbe, getDockMediaChoiceLocalPref, getLocalPref, readDockShortcutsForProbe } from './local-prefs';`,
+      `export function readPref(key: LocalPrefKey) { return getLocalPref(key); }`,
+      `export const clear = clearDockPlacementForProbe;`,
+      `export type MediaReader = typeof getDockMediaChoiceLocalPref;`,
+      `export const shortcuts = readDockShortcutsForProbe;`,
+    ].join('\n');
+    const deleted = [
+      'dockPlacement',
+      'dockShortcutOverrides',
+      'dockMediaLastSavedChoice',
+      'menuBarAutoHide',
+    ];
+    const mutated = analyze(
+      withoutReadersOf(deleted, analysis, {
+        files: new Map([[probe, probeText]]),
+        appendToLocalPrefs,
+      }),
+    );
+    // The arrow helper's destructured read keeps dockShortcutOverrides alive;
+    // the wrapper, the delete and the `typeof` keep nothing alive.
+    expect(LOCAL_PREF_KEYS.filter((key) => !mutated.readers.has(key))).toEqual([
+      'dockPlacement',
+      'dockMediaLastSavedChoice',
+      'menuBarAutoHide',
+    ]);
+    expect(mutated.unresolved).toEqual([
+      expect.stringContaining('__local-pref-keys-false-readers__.ts:3 getLocalPref(key)'),
+    ]);
   });
 });
