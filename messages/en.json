@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "Font",
   "settings_font_notes_description": "The typeface used for your notes, specs, and documents. Monospace can feel more focused for technical writing.",
   "settings_font_notes_label": "Notes",
+  "settings_fonts_search_placeholder": "Search fonts",
+  "settings_fonts_noResults_message": "No fonts found",
   "settings_fonts_systemDefault_label": "System Default",
   "settings_footer_restartToUpdate_label": "Restart to update",
   "settings_footer_support": "Support",

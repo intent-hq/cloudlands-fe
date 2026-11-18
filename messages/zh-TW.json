@@ -5148,6 +5148,8 @@
   "settings_font_code_label": "字型",
   "settings_font_notes_description": "用於筆記、規範和文件的字型。等寬字型在技術寫作時可能更專注。",
   "settings_font_notes_label": "筆記",
+  "settings_fonts_search_placeholder": "搜尋字型",
+  "settings_fonts_noResults_message": "找不到字型",
   "settings_fonts_systemDefault_label": "系統預設",
   "settings_footer_restartToUpdate_label": "重新啟動以更新",
   "settings_footer_support": "支援",

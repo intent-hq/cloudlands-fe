@@ -6,7 +6,7 @@ interface DockMenuBridge {
 }
 
 /**
- * Right-click on the dock: ask main for its native menu (move, hide). Main owns
+ * Logo activation or a right-click on dock chrome opens the same native controls. Main owns
  * the dock window, so this talks to the preload bridge directly; without one
  * (web build, component tests) it does nothing.
  */
@@ -21,6 +21,7 @@ export async function showDockContextMenu(
       currentId: state.currentId,
       pending: state.pending,
       error: state.error,
+      canTurnOff: state.canTurnOff,
     };
     const result = await bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, request);
     if (result && typeof result === 'object' && 'shown' in result)

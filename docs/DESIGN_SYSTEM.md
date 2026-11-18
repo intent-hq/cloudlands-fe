@@ -138,6 +138,7 @@ result. Status messages and retry controls live outside the option collection. C
 clearing, or selecting invalidates pending searches; selected labels survive filtering.
 Single selection closes, multiple selection stays open. Preserve each option's stable
 `value` and optional metadata, rather than looking up a selected option in filtered results.
+Use `optionLabel` to render a label with custom typography while keeping `option.label` searchable and accessible.
 `onchange(value, option?)` reports value changes; `oncommit(value, option)` reports accepted
 user activation, including explicit reselection of the current single value. Reselection
 does not clear that value. Use `oncommit` instead of a second `onchange` handler when a

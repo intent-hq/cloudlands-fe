@@ -54,6 +54,7 @@ vi.mock('./dock-window', () => ({
   switchDockBackend: vi.fn(),
 }));
 
+import { WindowShowDockMenuSchema } from './ipc-schemas';
 import { registerDockPlacementHandlers } from './dock-placement-ipc';
 import { buildDockContextMenuTemplate, showDockContextMenu } from './dock-context-menu';
 
@@ -102,8 +103,8 @@ describe('window:show-dock-menu', () => {
     await Promise.resolve();
     expect(closed).toBe(false);
     const template = mocks.buildFromTemplate.mock.calls[0]![0];
-    expect(template[0].submenu[0]).toMatchObject({ checked: true, enabled: false });
-    template[0].submenu[1].click();
+    expect(template[2].submenu[0]).toMatchObject({ checked: true, enabled: false });
+    template[2].submenu[1].click();
     mocks.popup.mock.calls[0]![0].callback();
     await expect(pending).resolves.toEqual({ shown: true, backendId: 'remote' });
     expect(mocks.buildFromTemplate).toHaveBeenCalledTimes(1);
@@ -129,19 +130,52 @@ describe('window:show-dock-menu', () => {
   });
 });
 
+describe('native menu result ownership', () => {
+  it('returns Open Intent only after the menu closes and refuses an overlapping request', async () => {
+    const dock = fakeWindow();
+    const pending = showDockContextMenu(dock as never);
+    await expect(showDockContextMenu(dock as never)).resolves.toEqual({ shown: false });
+    expect(mocks.buildFromTemplate).toHaveBeenCalledTimes(1);
+    const template = mocks.buildFromTemplate.mock.calls[0]![0];
+    template[0].click();
+    mocks.popup.mock.calls[0]![0].callback();
+    await expect(pending).resolves.toEqual({ shown: true, action: 'open-intent' });
+    expect(mocks.updateDockPlacement).not.toHaveBeenCalled();
+    const reopened = showDockContextMenu(dock as never);
+    mocks.popup.mock.calls[1]![0].callback();
+    await expect(reopened).resolves.toEqual({ shown: true });
+  });
+
+  it('discards Open Intent when the requesting frame changes before completion', async () => {
+    const dock = fakeWindow();
+    mocks.dockWindow = dock;
+    const pending = mocks.handlers.get(WINDOW_CHANNELS.SHOW_DOCK_MENU)!(
+      { sender: dock.webContents, senderFrame: dock.webContents.mainFrame },
+      {},
+    );
+    mocks.buildFromTemplate.mock.calls[0]![0][0].click();
+    dock.webContents.mainFrame = {};
+    mocks.popup.mock.calls[0]![0].callback();
+    await expect(pending).resolves.toEqual({ shown: false });
+  });
+});
+
 describe('dock context menu items', () => {
-  it('maps each item to its placement command, with hide last', () => {
+  it('includes Open Intent first, every placement, and Turn off notch last', () => {
     const run = vi.fn();
-    const template = buildDockContextMenuTemplate(run);
+    const action = vi.fn();
+    const template = buildDockContextMenuTemplate(run, {}, undefined, action);
     const items = template.filter((item) => item.type !== 'separator');
     expect(items.map((item) => item.label)).toEqual([
+      m.dock_logo_open_label(),
       m.dock_moveNotch_label(),
       m.dock_moveLeft_label(),
       m.dock_moveRight_label(),
       m.dock_moveFloating_label(),
-      m.dock_contextMenu_hide_label(),
+      m.dock_menu_turnOff_label(),
     ]);
     for (const item of items) (item.click as () => void)();
+    expect(action).toHaveBeenCalledExactlyOnceWith('open-intent');
     expect(run.mock.calls.map(([command]) => command)).toEqual([
       { action: 'move', target: 'notch' },
       { action: 'move', target: 'left' },
@@ -165,9 +199,38 @@ describe('dock context menu items', () => {
     expect(mocks.updateDockPlacement).toHaveBeenCalledWith(dock, { action: 'dismiss' });
     mocks.updateDockPlacement.mockClear();
     dock.isDestroyed = () => true;
-    template[2]!.click!();
+    template.find((item) => item.click && item !== template[0])!.click!();
     expect(mocks.updateDockPlacement).not.toHaveBeenCalled();
     dock.emit('closed');
     await expect(pending).resolves.toEqual({ shown: true });
+  });
+});
+
+describe('Turn off notch availability', () => {
+  it.each([{ canTurnOff: false }, { pending: 'remote' }, { canTurnOff: true, pending: 'remote' }])(
+    'blocks dismissal for %j',
+    (state) => {
+      const run = vi.fn();
+      const off = buildDockContextMenuTemplate(run, state).at(-1)!;
+      expect(off).toMatchObject({ label: m.dock_menu_turnOff_label(), enabled: false });
+      (off.click as () => void)();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{}, { canTurnOff: true }, { pending: null }])('allows dismissal for %j', (state) => {
+    const run = vi.fn();
+    const off = buildDockContextMenuTemplate(run, state).at(-1)!;
+    expect(off.enabled).toBe(true);
+    (off.click as () => void)();
+    expect(run).toHaveBeenCalledExactlyOnceWith({ action: 'dismiss' });
+  });
+
+  it('validates optional canTurnOff without accepting unknown request fields', () => {
+    expect(WindowShowDockMenuSchema.safeParse({ canTurnOff: false }).success).toBe(true);
+    expect(WindowShowDockMenuSchema.safeParse({ canTurnOff: 'false' }).success).toBe(false);
+    expect(WindowShowDockMenuSchema.safeParse({ canTurnOff: true, extra: true }).success).toBe(
+      false,
+    );
   });
 });

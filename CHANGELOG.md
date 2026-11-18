@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.353.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.0...v2.353.1) (2026-11-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.246 ([#4765](https://github.com/intent-hq/cloudlands-fe/issues/4765)) ([51b8825](https://github.com/intent-hq/cloudlands-fe/commit/51b882531c7722fff9d3f99f6f2462c2768e03e5))
+
+## [2.353.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.352.1...v2.353.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **settings:** add search to the font picker ([#4761](https://github.com/intent-hq/cloudlands-fe/issues/4761)) ([90242ac](https://github.com/intent-hq/cloudlands-fe/commit/90242ac9b9b3f669c6dbec3d067ca33d16869b25))
+
+
+### 🐛 Bug Fixes
+
+* **dock:** unify logo and context menu controls ([#4762](https://github.com/intent-hq/cloudlands-fe/issues/4762)) ([7c44f95](https://github.com/intent-hq/cloudlands-fe/commit/7c44f95cd171d2ed7d777511d5b2c528c02e9a53))
+
 ## [2.352.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.352.0...v2.352.1) (2026-11-18)
 
 

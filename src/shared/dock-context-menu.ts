@@ -4,8 +4,10 @@ export interface DockContextMenuRequest {
   currentId?: string;
   pending?: string | null;
   error?: boolean;
+  canTurnOff?: boolean;
 }
 export interface DockContextMenuResult {
   shown: boolean;
   backendId?: string;
+  action?: 'open-intent';
 }
