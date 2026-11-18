@@ -8301,7 +8301,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "方案名稱",
   "inlineHtml_preview_state_error": "無法載入或儲存此設定。",
   "inlineHtml_preview_retry_label": "重試",
-  "inlineHtml_preview_useConfiguration_label": "使用此設定",
+  "inlineHtml_preview_useConfiguration_label": "將設定加入訊息",
   "inlineHtml_preview_saveScenario_label": "儲存方案",
   "inlineHtml_preview_compare_label": "比較",
   "inlineHtml_preview_export_label": "匯出 JSON",

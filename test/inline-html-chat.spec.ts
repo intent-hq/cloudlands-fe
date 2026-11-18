@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
 import { createServer, type ViteDevServer } from 'vite';
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -108,6 +108,20 @@ function preview(page: Page) {
 
 function frame(page: Page) {
   return preview(page).locator('iframe').contentFrame().locator('iframe').contentFrame();
+}
+
+async function visualMenu(view: Page | Locator, action?: string) {
+  const trigger = view.getByRole('button', { name: 'Actions', exact: true });
+  await trigger.click();
+  // ActionMenu portals its content outside the viewer; follow this trigger's menu.
+  const menu = trigger.page().locator(`[id="${await trigger.getAttribute('aria-controls')}"]`);
+  await expect(menu).toBeVisible();
+  if (action)
+    await menu
+      .getByRole('menuitem', { name: action, exact: true })
+      .or(menu.getByRole('menuitemcheckbox', { name: action, exact: true }))
+      .click();
+  return menu;
 }
 
 async function capture(
@@ -430,14 +444,10 @@ test('shows source and follows themes without resetting input or later streaming
   const beforeColor = await frame(page)
     .locator('body')
     .evaluate((body) => getComputedStyle(body).color);
-  await preview(page)
-    .getByRole('button', { name: /source/i })
-    .click();
+  await visualMenu(preview(page), 'Source');
   await expect(preview(page).locator('pre')).toContainText('updateFit');
   await capture(page, testInfo, 'source');
-  await preview(page)
-    .getByRole('button', { name: /preview|hide source/i })
-    .click();
+  await visualMenu(preview(page), 'Preview');
   await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
   await page.evaluate(() => (document.documentElement.className = 'dark'));
   await expect
@@ -454,9 +464,7 @@ test('shows source and follows themes without resetting input or later streaming
   await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
   await updateHost(page, { isStreaming: false });
   await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
-  await preview(page)
-    .getByRole('button', { name: /reload|restart/i })
-    .click();
+  await visualMenu(preview(page), 'Reload');
   await expect(frame(page).locator('#thickness-value')).toHaveText('28 mm');
   await capture(page, testInfo, 'after-dark');
 });
@@ -469,6 +477,10 @@ test('keeps polished clamp controls usable through themes, narrow layouts, and s
   const slider = frame(page).getByRole('slider', { name: 'Desk thickness' });
   await expect(slider).toBeVisible();
   await capture(page, testInfo, 'clamp-light', polishDirectory);
+  const menuClampLight = await visualMenu(preview(page));
+  await capture(page, testInfo, 'clamp-light-actions', polishDirectory);
+  await menuClampLight.press('Escape');
+  await expect(preview(page).getByRole('button', { name: 'Actions', exact: true })).toBeFocused();
   await slider.focus();
   await page.keyboard.press('End');
   await expect(frame(page).locator('#fit')).toHaveText('Opening too small');
@@ -483,30 +495,36 @@ test('keeps polished clamp controls usable through themes, narrow layouts, and s
   await page.keyboard.press('ArrowRight');
   await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
   await capture(page, testInfo, 'clamp-dark', polishDirectory);
+  const menuClampDark = await visualMenu(preview(page));
+  await capture(page, testInfo, 'clamp-dark-actions', polishDirectory);
+  await menuClampDark.press('Escape');
+  await expect(preview(page).getByRole('button', { name: 'Actions', exact: true })).toBeFocused();
   await page.setViewportSize({ width: 360, height: 640 });
   await expect(slider).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
   ).toBeLessThanOrEqual(1);
   await capture(page, testInfo, 'clamp-narrow-dark', polishDirectory);
-  await preview(page)
-    .getByRole('button', { name: /source/i })
-    .click();
+  const menuClampNarrowDark = await visualMenu(preview(page));
+  await capture(page, testInfo, 'clamp-narrow-dark-actions', polishDirectory);
+  await menuClampNarrowDark.press('Escape');
+  await expect(preview(page).getByRole('button', { name: 'Actions', exact: true })).toBeFocused();
+  await visualMenu(preview(page), 'Source');
   await expect(preview(page).locator('pre')).toContainText('updateFit');
-  await preview(page)
-    .getByRole('button', { name: /preview|hide source/i })
-    .click();
+  await visualMenu(preview(page), 'Preview');
   await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
   await updateHost(page, { message: `${message}\n\nMore explanation.`, isStreaming: true });
   await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
   await updateHost(page, { isStreaming: false });
-  await preview(page)
-    .getByRole('button', { name: /reload|restart/i })
-    .click();
+  await visualMenu(preview(page), 'Reload');
   await expect(frame(page).locator('#thickness-value')).toHaveText('28 mm');
   await page.evaluate(() => (document.documentElement.className = 'light'));
   await expect(frame(page).locator('html')).not.toHaveClass(/dark/);
   await capture(page, testInfo, 'clamp-narrow-light', polishDirectory);
+  const menuClampNarrowLight = await visualMenu(preview(page));
+  await capture(page, testInfo, 'clamp-narrow-light-actions', polishDirectory);
+  await menuClampNarrowLight.press('Escape');
+  await expect(preview(page).getByRole('button', { name: 'Actions', exact: true })).toBeFocused();
   await testInfo.attach('clamp-interaction.json', {
     body: JSON.stringify({
       keyboard: ['End', 'Home', 'ArrowRight'],
@@ -591,14 +609,10 @@ test('keeps unfinished and empty blocks inert and renders after a matching close
   await expect(preview(page)).toHaveAttribute('aria-busy', 'true');
   await expect(preview(page).locator('iframe')).toHaveCount(0);
   await capture(page, testInfo, 'loading-light');
-  await preview(page)
-    .getByRole('button', { name: /source/i })
-    .click();
+  await visualMenu(preview(page), 'Source');
   await expect(preview(page).locator('pre')).toContainText('updateFit');
   await capture(page, testInfo, 'loading-source');
-  await preview(page)
-    .getByRole('button', { name: /preview|hide source/i })
-    .click();
+  await visualMenu(preview(page), 'Preview');
   await expect(preview(page).locator('iframe')).toHaveCount(0);
   await page.evaluate(() => (document.documentElement.className = 'dark'));
   await capture(page, testInfo, 'loading-dark');
@@ -833,12 +847,12 @@ test('reports a missing sandbox and reloads successfully after it recovers', asy
   await expect(preview(page)).toHaveAttribute('aria-busy', 'false');
   await expect(preview(page)).toContainText('The preview could not start. Try Reload.');
   await expect(preview(page).locator('iframe')).not.toBeVisible();
-  await preview(page).getByRole('button', { name: 'Source', exact: true }).click();
+  await visualMenu(preview(page), 'Source');
   await expect(preview(page).locator('pre')).toContainText('updateFit');
-  await preview(page).getByRole('button', { name: 'Preview', exact: true }).click();
+  await visualMenu(preview(page), 'Preview');
   await capture(page, testInfo, 'sandbox-startup-error');
   await page.unroute('**/inline-html-sandbox.html*');
-  await preview(page).getByRole('button', { name: 'Reload', exact: true }).click();
+  await visualMenu(preview(page), 'Reload');
   await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
   await expect(frame(page).getByRole('slider')).toBeVisible();
   await capture(page, testInfo, 'sandbox-recovered');
@@ -852,9 +866,7 @@ test('contains runtime failures and retains readable source', async ({ page }, t
   });
   await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'error');
   await expect(preview(page)).toContainText('Demo failure');
-  await preview(page)
-    .getByRole('button', { name: /source/i })
-    .click();
+  await visualMenu(preview(page), 'Source');
   await expect(preview(page).locator('pre')).toContainText('Demo failure');
   await capture(page, testInfo, 'runtime-error');
 });

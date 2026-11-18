@@ -31,11 +31,13 @@ export const INLINE_HTML_STYLES = `
     line-height: var(--text-body-line-height);
     font-weight: var(--text-body-weight);
     letter-spacing: var(--text-body-tracking);
+    -webkit-font-smoothing: antialiased;
     color: hsl(var(--foreground));
     background: hsl(var(--background));
   }
   :where(*), :where(*)::before, :where(*)::after { box-sizing: border-box; }
-  :where(img, svg, canvas) { max-width: 100%; }
+  :where(img, svg, canvas) { max-width: 100%; vertical-align: middle; }
+  :where(figure) { margin: 0; }
   /* SVG text defaults to black; follow the theme unless a fill is authored or inherited. */
   :where(svg text:not([fill])) { fill: currentColor; }
   :where(svg [fill] text:not([fill])) { fill: inherit; }
@@ -60,31 +62,50 @@ export const INLINE_HTML_STYLES = `
     input[type="email"], input[type="url"], input[type="tel"], input[type="password"]) {
     min-width: 0;
     max-width: 100%;
-    min-height: var(--control-height-medium);
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--diagram-node-outline);
-    border-radius: var(--radius-small);
+    min-height: var(--control-height-small);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-medium);
     background: hsl(var(--background));
   }
   :where(button) {
-    background: var(--diagram-node-surface);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
+    line-height: var(--text-body-line-height);
+    text-align: center;
     cursor: pointer;
-    transition: background-color var(--motion-fast) var(--ease-standard);
+    transition: background-color var(--motion-fast) var(--ease-standard),
+      border-color var(--motion-fast) var(--ease-standard),
+      color var(--motion-fast) var(--ease-standard);
   }
-  :where(button:hover:not(:disabled)) { background: var(--diagram-node-hover-surface); }
-  :where(button[aria-pressed="true"]) { background: hsl(var(--secondary)); }
+  :where(button:hover:not(:disabled), select:hover:not(:disabled)) {
+    background: hsl(var(--secondary));
+  }
+  :where(button[aria-pressed="true"], button[aria-selected="true"]) {
+    background: hsl(var(--secondary));
+    border-color: hsl(var(--foreground) / 0.25);
+  }
+  :where(input[type="number"], output) { font-variant-numeric: tabular-nums; }
+  :where(textarea) { width: 100%; resize: vertical; }
   :where(button:disabled, input:disabled, select:disabled, textarea:disabled) {
     opacity: 0.5;
     cursor: not-allowed;
   }
   :where(input[type="checkbox"], input[type="radio"]) {
+    width: var(--space-4);
+    height: var(--space-4);
+    margin: 0;
+    vertical-align: middle;
     accent-color: hsl(var(--foreground));
   }
   :where(input[type="range"]) {
     appearance: none;
     width: 100%;
     min-width: 0;
-    min-height: var(--control-height-medium);
+    min-height: var(--control-height-small);
     margin: 0;
     background: transparent;
     accent-color: hsl(var(--foreground));
@@ -93,25 +114,25 @@ export const INLINE_HTML_STYLES = `
   :where(input[type="range"])::-webkit-slider-runnable-track {
     height: var(--space-1);
     border-radius: var(--radius-full);
-    background: var(--diagram-connector-muted);
+    background: hsl(var(--foreground) / 0.14);
   }
   :where(input[type="range"])::-moz-range-track {
     height: var(--space-1);
     border-radius: var(--radius-full);
-    background: var(--diagram-connector-muted);
+    background: hsl(var(--foreground) / 0.14);
   }
   :where(input[type="range"])::-webkit-slider-thumb {
     appearance: none;
-    width: var(--space-4);
-    height: var(--space-4);
-    margin-top: calc((var(--space-1) - var(--space-4)) / 2);
+    width: var(--space-3);
+    height: var(--space-3);
+    margin-top: calc((var(--space-1) - var(--space-3)) / 2);
     border: 0;
     border-radius: var(--radius-full);
     background: hsl(var(--foreground));
   }
   :where(input[type="range"])::-moz-range-thumb {
-    width: var(--space-4);
-    height: var(--space-4);
+    width: var(--space-3);
+    height: var(--space-3);
     border: 0;
     border-radius: var(--radius-full);
     background: hsl(var(--foreground));
@@ -130,7 +151,12 @@ export const INLINE_HTML_STYLES = `
     min-width: 0;
   }
   :where(.visual-controls > *) { min-width: 0; max-width: 100%; }
-  :where(.visual-controls > input[type="range"]) { flex: 1 1 0; width: 0; }
+  :where(.visual-controls > input[type="range"]) { flex: 1 1 8rem; width: 0; }
+  :where(.visual-controls > label) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
   :where(.visual-controls > output) {
     min-width: 5ch;
     text-align: end;
@@ -153,6 +179,14 @@ export const INLINE_HTML_STYLES = `
     grid-column: 1 / -1;
     width: 100%;
   }
+  :where(.visual-grid) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    align-items: start;
+    gap: var(--space-4);
+  }
+  :where(.visual-grid > *) { min-width: 0; margin: 0; }
+  :where(.visual-note, figcaption) { color: hsl(var(--muted-foreground)); }
   /* Optional legacy drawing classes: light neutral strokes that let chart colors lead. */
   :where(.diagram-surface) {
     display: grid;

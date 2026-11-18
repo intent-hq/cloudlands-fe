@@ -8301,7 +8301,7 @@
   "inlineHtml_preview_scenarioName_ariaLabel": "Nom du scénario",
   "inlineHtml_preview_state_error": "Impossible de charger ou d’enregistrer cette configuration.",
   "inlineHtml_preview_retry_label": "Réessayer",
-  "inlineHtml_preview_useConfiguration_label": "Utiliser cette configuration",
+  "inlineHtml_preview_useConfiguration_label": "Ajouter la configuration au message",
   "inlineHtml_preview_saveScenario_label": "Enregistrer le scénario",
   "inlineHtml_preview_compare_label": "Comparer",
   "inlineHtml_preview_export_label": "Exporter en JSON",

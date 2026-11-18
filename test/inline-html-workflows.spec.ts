@@ -120,6 +120,22 @@ async function capture(page: Page, info: TestInfo, name: string, directory = art
   await info.attach(name, { path, contentType: 'image/png' });
 }
 
+async function visualMenu(view: Page | Locator, action?: string) {
+  const trigger = view
+    .locator('[data-inline-html]')
+    .getByRole('button', { name: 'Actions', exact: true });
+  await trigger.click();
+  // ActionMenu portals its content outside the viewer; follow this trigger's menu.
+  const menu = trigger.page().locator(`[id="${await trigger.getAttribute('aria-controls')}"]`);
+  await expect(menu).toBeVisible();
+  if (action)
+    await menu
+      .getByRole('menuitem', { name: action, exact: true })
+      .or(menu.getByRole('menuitemcheckbox', { name: action, exact: true }))
+      .click();
+  return menu;
+}
+
 type Dimensions = { thickness: number; opening: number; rearClearance: number };
 async function visibleConfiguration(view: Locator, dimensions: Dimensions, clearance: string) {
   for (const [field, value] of Object.entries(dimensions))
@@ -154,7 +170,7 @@ for (const mode of ['local-only', 'remote-root'] as const) {
       { thickness: 74, opening: 60, rearClearance: 40 },
       '14 mm over',
     );
-    await view.getByRole('button', { name: 'Save scenario', exact: true }).click();
+    await visualMenu(view, 'Save scenario');
     const name = view.getByRole('textbox', { name: 'Scenario name' });
     await name.fill('Thick desk');
     await name.press('Tab');
@@ -173,9 +189,11 @@ for (const mode of ['local-only', 'remote-root'] as const) {
       '14 mm over',
     );
     await expect(name).toHaveValue('Thick desk');
-    await expect(view.getByRole('button', { name: 'Export JSON', exact: true })).toHaveCount(0);
+    const menu = await visualMenu(view);
+    await expect(menu.getByRole('menuitem', { name: 'Export JSON', exact: true })).toHaveCount(0);
+    await menu.press('Escape');
     if (mode === 'remote-root') {
-      await view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+      await view.getByRole('button', { name: 'Add configuration to message', exact: true }).click();
       await expect
         .poll(() => draftConfiguration(view))
         .toEqual({
@@ -224,7 +242,7 @@ test('uses each simultaneous viewer’s visible configuration for save, draft ha
   };
   await stableInputs();
   await capture(page, info, 'simultaneous-viewers-divergence');
-  await primary.getByRole('button', { name: 'Reload', exact: true }).click();
+  await visualMenu(primary, 'Reload');
 
   const expected = [
     {
@@ -241,7 +259,7 @@ test('uses each simultaneous viewer’s visible configuration for save, draft ha
     },
   ];
   for (const [index, config] of expected.entries()) {
-    await config.view.getByRole('button', { name: 'Save scenario', exact: true }).click();
+    await visualMenu(config.view, 'Save scenario');
     await expect
       .poll(async () => (await savedState(page))?.scenarios[index]?.snapshot)
       .toMatchObject({
@@ -255,7 +273,33 @@ test('uses each simultaneous viewer’s visible configuration for save, draft ha
     await editor.press('ControlOrMeta+a');
     await page.keyboard.insertText(`Keep viewer ${index + 1}'s question.`);
     const peerDraft = await peer.textContent();
-    await config.view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+    const draft = await editor.textContent();
+    const menu = await visualMenu(config.view);
+    await capture(page, info, `simultaneous-viewer-${index + 1}-actions`);
+    await menu.press('Escape');
+    await expect(
+      config.view
+        .locator('[data-inline-html]')
+        .getByRole('button', { name: 'Actions', exact: true }),
+    ).toBeFocused();
+    await expect(editor).toHaveText(draft ?? '');
+    await expect(peer).toHaveText(peerDraft ?? '');
+    await stableInputs();
+    await visualMenu(config.view, 'Source');
+    await expect(config.view.locator('[data-inline-html] pre')).toContainText(
+      'data-workflow-number',
+    );
+    await visualMenu(config.view, 'Preview');
+    await visualMenu(config.view, 'Compare');
+    await expect(config.view.getByRole('textbox', { name: 'Scenario name' })).toHaveCount(0);
+    await visualMenu(config.view, 'Compare');
+    await expect(config.view.getByRole('textbox', { name: 'Scenario name' }).first()).toBeVisible();
+    await stableInputs();
+    await expect(editor).toHaveText(draft ?? '');
+    await expect(peer).toHaveText(peerDraft ?? '');
+    await config.view
+      .getByRole('button', { name: 'Add configuration to message', exact: true })
+      .click();
     await expect(editor).toContainText(`Keep viewer ${index + 1}'s question.`);
     await expect
       .poll(() => draftConfiguration(config.view))
@@ -266,7 +310,7 @@ test('uses each simultaneous viewer’s visible configuration for save, draft ha
       (request) =>
         request.method === 'write' && request.path.startsWith('.intent/artifacts/visuals/'),
     ).length;
-    await config.view.getByRole('button', { name: 'Export JSON', exact: true }).click();
+    await visualMenu(config.view, 'Export JSON');
     await expect
       .poll(
         async () =>
@@ -310,11 +354,11 @@ test('restores edited inputs and named alternatives after reopening, then export
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('32 mm clearance');
   await edit(page, 'thickness', '42');
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('18 mm clearance');
-  await page.getByRole('button', { name: 'Save scenario', exact: true }).click();
+  await visualMenu(page, 'Save scenario');
   await page.getByRole('textbox', { name: 'Scenario name' }).first().fill('Desk A');
   await page.getByRole('textbox', { name: 'Scenario name' }).first().press('Tab');
   await edit(page, 'opening', '80');
-  await page.getByRole('button', { name: 'Save scenario', exact: true }).click();
+  await visualMenu(page, 'Save scenario');
   await page.getByRole('textbox', { name: 'Scenario name' }).nth(1).fill('Arm B');
   await page.getByRole('textbox', { name: 'Scenario name' }).nth(1).press('Tab');
   await expect
@@ -326,12 +370,12 @@ test('restores edited inputs and named alternatives after reopening, then export
   await expect(number(page, 'thickness')).toHaveValue('42');
   await expect(number(page, 'opening')).toHaveValue('80');
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('38 mm clearance');
-  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  await visualMenu(page, 'Compare');
   await expect(page.getByRole('textbox', { name: 'Scenario name' }).first()).toHaveValue('Desk A');
   await page.getByRole('button', { name: 'Restore', exact: true }).first().click();
   await expect(number(page, 'opening')).toHaveValue('60');
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('18 mm clearance');
-  await page.getByRole('button', { name: 'Export JSON', exact: true }).click();
+  await visualMenu(page, 'Export JSON');
   await expect
     .poll(
       async () =>
@@ -371,12 +415,66 @@ test('appends computed inputs and results to the existing draft without sending'
 }, info) => {
   await open(page);
   const editor = page.getByTestId('message-input').locator('.tiptap-editor');
+  const suggestion = page.getByRole('button', {
+    name: 'Add configuration to message',
+    exact: true,
+  });
+  await expect.poll(async () => (await savedState(page))?.current.state.thickness).toBe(28);
+  await expect(suggestion).toHaveCount(0);
+  await capture(page, info, 'configuration-untouched');
+  await frame(page)
+    .locator('body')
+    .evaluate(() => {
+      const host = (window as any).intentVisual;
+      host.publish({
+        state: { ...host.state, hovered: true },
+        title: 'Desk clamp dimensions',
+        inputs: {
+          'Rear clearance (mm)': 40,
+          'Clamp opening (mm)': 60,
+          'Desk thickness (mm)': 28,
+        },
+        results: { 'Opening clearance (mm)': 32, Fit: 'Result refreshed' },
+      });
+    });
+  await expect
+    .poll(async () => (await savedState(page))?.current.results.Fit)
+    .toBe('Result refreshed');
+  await expect(suggestion).toHaveCount(0);
   await expect(editor).toHaveText('Please compare this with the other arm.');
   await editor.press('ControlOrMeta+a');
   await page.keyboard.insertText('Keep my question and compare these dimensions.');
   await edit(page, 'thickness', '74');
   await expect(frame(page).locator('[data-workflow-clearance]')).toHaveText('14 mm over');
-  await page.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+  await expect(suggestion).toBeVisible();
+  await visualMenu(page, 'Reload');
+  await expect(number(page, 'thickness')).toHaveValue('74');
+  await expect(suggestion).toBeVisible();
+  await visualMenu(page, 'Source');
+  await visualMenu(page, 'Preview');
+  await expect(suggestion).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 900 });
+  await page.evaluate(() =>
+    (window as any).workflowHost.update({ theme: 'dark', width: 360, height: 880 }),
+  );
+  await expect(suggestion).toBeVisible();
+  await capture(page, info, 'configuration-edited-narrow-dark');
+  await edit(page, 'thickness', '28');
+  await expect(suggestion).toHaveCount(0);
+  await visualMenu(page, 'Save scenario');
+  await edit(page, 'thickness', '74');
+  await expect(suggestion).toBeVisible();
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(number(page, 'thickness')).toHaveValue('28');
+  await expect(suggestion).toHaveCount(0);
+  await capture(page, info, 'configuration-restored-narrow-dark');
+  await page.setViewportSize({ width: 1024, height: 1100 });
+  await page.evaluate(() =>
+    (window as any).workflowHost.update({ theme: 'light', width: 1024, height: 1080 }),
+  );
+  await edit(page, 'thickness', '74');
+  await expect(suggestion).toBeVisible();
+  await suggestion.click();
   await expect(editor).toContainText('Keep my question and compare these dimensions.');
   await expect(editor).toContainText('"inputs"');
   await expect(editor).toContainText('"results"');
@@ -426,9 +524,16 @@ test('supports keyboard editing and explicit validated CSV import', async ({ pag
     .poll(async () => (await savedState(page))?.current.state)
     .toEqual({ thickness: 40, opening: 90, rearClearance: 30 });
   await capture(page, info, 'dark-direct-editing');
+  const darkMenu = await visualMenu(page);
+  await capture(page, info, 'dark-actions');
+  await darkMenu.press('Escape');
   await page.setViewportSize({ width: 360, height: 900 });
   await page.evaluate(() => (window as any).workflowHost.update({ width: 360, height: 880 }));
   await capture(page, info, 'narrow-direct-editing');
+  const narrowMenu = await visualMenu(page);
+  await capture(page, info, 'narrow-actions');
+  await narrowMenu.press('Escape');
+  await expect(number(page, 'thickness')).toHaveValue('40');
 });
 
 test('rejects malformed and oversized authored data and forged frame messages', async ({
@@ -485,10 +590,10 @@ test('retries failed reads, saves and exports while retaining current edits', as
   await fault(page, false, false);
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect.poll(async () => (await savedState(page))?.current.state.thickness).toBe(36);
-  await page.getByRole('button', { name: 'Reload', exact: true }).click();
+  await visualMenu(page, 'Reload');
   await expect(number(page, 'thickness')).toHaveValue('36');
   await fault(page, false, true);
-  await page.getByRole('button', { name: 'Export JSON', exact: true }).click();
+  await visualMenu(page, 'Export JSON');
   await expect(page.locator('[data-inline-html]')).toContainText('Could not export');
   expect(
     (await inspect(page)).files.some((file) =>
@@ -496,7 +601,7 @@ test('retries failed reads, saves and exports while retaining current edits', as
     ),
   ).toBe(false);
   await fault(page, false, false);
-  await page.getByRole('button', { name: 'Export JSON', exact: true }).click();
+  await visualMenu(page, 'Export JSON');
   await expect
     .poll(
       async () =>
@@ -775,11 +880,15 @@ test('keeps seasons edits through keyboard, presets, theme, resize, reopening an
   const editor = view.getByTestId('message-input').locator('.tiptap-editor');
   await editor.press('ControlOrMeta+a');
   await page.keyboard.insertText('Why does London get dark so early in December?');
-  await view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+  await expect(
+    view.getByRole('button', { name: 'Add configuration to message', exact: true }),
+  ).toHaveCount(0);
+  const tweaked = await setSeasons(page, { latitude: 51.7 });
+  await view.getByRole('button', { name: 'Add configuration to message', exact: true }).click();
   await expect(editor).toContainText('Why does London get dark so early in December?');
   await expect
     .poll(() => draftConfiguration(view))
-    .toEqual({ inputs: saved.inputs, results: saved.results });
+    .toEqual({ inputs: tweaked.inputs, results: tweaked.results });
   const messages = JSON.parse((await page.getByTestId('stored-messages').textContent()) ?? '[]');
   expect(messages).toHaveLength(1);
   expect(messages[0].role).toBe('assistant');

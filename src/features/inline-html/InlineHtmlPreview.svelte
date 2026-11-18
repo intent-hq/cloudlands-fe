@@ -1,8 +1,18 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { deepEqual } from 'fast-equals';
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Input } from '$lib/components/ui/input';
+  import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import { faArrowRight, faEllipsis } from '$lib/icons/phosphor-icons';
+  import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
+    OPERATIONAL_ROW_TONE_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { formatNumber } from '$lib/i18n/format';
   import * as m from '$shared/paraglide/messages.js';
@@ -69,10 +79,16 @@
   let layoutWarning = $state('');
   let localRecord = $state.raw<InlineVisualRecord>(emptyInlineVisualRecord());
   let currentSnapshot = $state.raw<InlineVisualSnapshot | undefined>();
+  let initialInputs = $state.raw<InlineVisualSnapshot['inputs'] | undefined>();
   let previousSource: string | undefined;
   let pendingRestore = $state.raw<InlineVisualSnapshot | undefined>();
   let compare = $state(false);
   const saved = $derived(record ?? localRecord);
+  const configurationChanged = $derived(
+    initialInputs !== undefined &&
+      currentSnapshot !== undefined &&
+      !deepEqual(initialInputs, currentSnapshot.inputs),
+  );
   const storageAvailable = $derived(
     storageStatus !== 'loading' && (storageStatus !== 'error' || Boolean(saved.current)),
   );
@@ -98,6 +114,46 @@
   const loading = $derived(
     isStreaming || storageStatus === 'loading' || (runnable && !ready && !runtimeError),
   );
+  const actions = $derived(
+    defineActions([
+      {
+        id: 'source',
+        label: showSource
+          ? m.inlineHtml_preview_preview_label()
+          : m.inlineHtml_preview_source_label(),
+      },
+      { id: 'reload', label: m.inlineHtml_preview_reload_label(), disabled: !runnable },
+      {
+        id: 'save',
+        label: m.inlineHtml_preview_saveScenario_label(),
+        when: Boolean(currentSnapshot && runnable),
+        disabled:
+          !ready || Boolean(runtimeError) || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS,
+        group: 'configuration',
+      },
+      {
+        id: 'compare',
+        label: m.inlineHtml_preview_compare_label(),
+        when: Boolean(currentSnapshot && runnable && saved.scenarios.length),
+        group: 'configuration',
+      },
+      {
+        id: 'export',
+        label: m.inlineHtml_preview_export_label(),
+        when: Boolean(currentSnapshot && runnable && onExport),
+        disabled: !ready || exportStatus === 'saving',
+        group: 'configuration',
+      },
+    ]),
+  );
+
+  function runAction(id: string) {
+    if (id === 'source') showSource = !showSource;
+    else if (id === 'reload') reload += 1;
+    else if (id === 'save') saveScenario();
+    else if (id === 'compare') compare = !compare;
+    else if (id === 'export') onExport?.({ ...saved, current: currentSnapshot ?? null });
+  }
 
   function updateRecord(next: InlineVisualRecord) {
     const nextRecord = { ...next, current: currentSnapshot ?? next.current };
@@ -188,6 +244,7 @@
       if (previousSource !== currentSource) {
         localRecord = emptyInlineVisualRecord();
         currentSnapshot = undefined;
+        initialInputs = undefined;
         compare = false;
         pendingRestore = undefined;
         previousSource = currentSource;
@@ -244,6 +301,7 @@
         layoutWarning = data.message.slice(0, 300);
       } else if (data.type === 'snapshot' && runnable && isInlineVisualSnapshot(data.snapshot)) {
         const snapshot = data.snapshot;
+        initialInputs ??= structuredClone(snapshot.inputs);
         currentSnapshot = snapshot;
         updateRecord({ ...saved, current: snapshot });
       } else if (
@@ -293,29 +351,6 @@
   aria-busy={loading}
   class="my-3 min-w-0 overflow-hidden rounded-lg bg-background text-foreground"
 >
-  <div class="flex min-w-0 items-center justify-end gap-1 p-1">
-    <Button
-      variant="ghost"
-      size="sm"
-      active={showSource}
-      aria-pressed={showSource}
-      onclick={() => {
-        showSource = !showSource;
-      }}
-    >
-      {showSource ? m.inlineHtml_preview_preview_label() : m.inlineHtml_preview_source_label()}
-    </Button>
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={!runnable}
-      onclick={() => {
-        reload += 1;
-      }}
-    >
-      {m.inlineHtml_preview_reload_label()}
-    </Button>
-  </div>
   {#if storageStatus === 'error'}
     <div class="type-body flex items-center justify-between gap-3 px-4 py-2" role="status">
       <span class="text-danger">{m.inlineHtml_preview_state_error()}</span>
@@ -378,58 +413,50 @@
       </div>
     {/if}
   </div>
-  {#if currentSnapshot && runnable}
-    <div class="flex flex-wrap items-center gap-1 px-4 py-2" data-inline-visual-actions>
-      {#if onUseConfiguration}
-        <Button
-          size="sm"
-          disabled={!ready || Boolean(runtimeError)}
-          onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
-        >
-          {m.inlineHtml_preview_useConfiguration_label()}
-        </Button>
-      {/if}
+  <div
+    class="flex min-w-0 items-center justify-between gap-2 px-4 pt-1 pb-3"
+    data-inline-visual-actions
+  >
+    {#if currentSnapshot && configurationChanged && runnable && onUseConfiguration && !showSource}
       <Button
-        variant="ghost"
+        variant="plain"
         size="sm"
-        disabled={!ready ||
-          Boolean(runtimeError) ||
-          saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS}
-        onclick={saveScenario}
+        wrapContent={false}
+        class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} h-auto min-w-0 shrink justify-start rounded-sm border border-transparent px-1.5 py-0.5 text-left hover:text-foreground"
+        style="gap: var(--operational-leading-gap)"
+        data-typography-role="body"
+        disabled={!ready || Boolean(runtimeError)}
+        onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
       >
-        {m.inlineHtml_preview_saveScenario_label()}
-      </Button>
-      {#if saved.scenarios.length}
-        <Button
-          variant="ghost"
-          size="sm"
-          active={compare}
-          aria-expanded={compare}
-          onclick={() => (compare = !compare)}
-        >
-          {m.inlineHtml_preview_compare_label()}
-        </Button>
-      {/if}
-      {#if onExport}
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!ready || exportStatus === 'saving'}
-          onclick={() => onExport({ ...saved, current: currentSnapshot ?? null })}
-        >
-          {m.inlineHtml_preview_export_label()}
-        </Button>
-      {/if}
-      {#if onRecordChange}
-        <span class="type-caption ml-auto text-muted-foreground" role="status">
-          {storageStatus === 'saving'
-            ? m.inlineHtml_preview_saving_label()
-            : storageStatus === 'ready'
-              ? m.inlineHtml_preview_saved_label()
-              : ''}
+        <span class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start" aria-hidden="true">
+          <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
         </span>
-      {/if}
-    </div>
+        <span class="min-w-0 flex-1 whitespace-normal text-pretty">
+          {m.inlineHtml_preview_useConfiguration_label()}
+        </span>
+      </Button>
+    {/if}
+    <ActionMenu
+      {actions}
+      ariaLabel={m.ui_menu_actions_ariaLabel()}
+      align="end"
+      side="top"
+      onAction={runAction}
+    >
+      {#snippet trigger({ props })}
+        <Button
+          {...props}
+          variant="ghost"
+          size="icon-sm"
+          class="ml-auto text-muted-foreground"
+          aria-label={m.ui_menu_actions_ariaLabel()}
+        >
+          <Fa icon={faEllipsis} size={16} />
+        </Button>
+      {/snippet}
+    </ActionMenu>
+  </div>
+  {#if currentSnapshot && runnable}
     {#if exportStatus}
       <p class="type-caption m-0 break-words px-4 pb-2 text-muted-foreground" role="status">
         {exportStatus === 'saving'
