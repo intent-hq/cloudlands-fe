@@ -78,12 +78,15 @@ export function homeSetupDetail(view: WorkspaceHomeView): string | null {
 }
 
 /**
- * Why the open failed, as the machine said it, without its error code
- * ("node-checkout-failed: fetch failed" → "fetch failed"); null without one.
+ * Why the open or setup failed, as the machine said it, without its error
+ * code ("node-checkout-failed: fetch failed" → "fetch failed"); null without one.
  */
 export function homeOpenFailureReason(view: WorkspaceHomeView): string | null {
-  if (view.setup?.phase !== 'openFailed' || !view.setup.error) return null;
-  const reason = view.setup.error.replace(/^[a-z][a-z0-9-]*:\s*/, '').trim();
+  const setup = view.setup;
+  const error =
+    setup?.phase === 'openFailed' || setup?.phase === 'setupFailed' ? setup.error : null;
+  if (!error) return null;
+  const reason = error.replace(/^[a-z][a-z0-9-]*:\s*/, '').trim();
   return reason || null;
 }
 

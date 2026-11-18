@@ -196,11 +196,22 @@ describe('workspaceHomeView: opening the home (nodes.md "Opening the home")', ()
       phase: 'setupFailed',
       exitCode: 2,
       timedOut: false,
+      error: null,
     });
     expect(
       withSetup({ state: 'failed', error: 'node-setup-timeout: 30 minutes', startedAt: 't' })
         ?.setup,
-    ).toEqual({ phase: 'setupFailed', exitCode: null, timedOut: true });
+    ).toEqual({ phase: 'setupFailed', exitCode: null, timedOut: true, error: null });
+    // Any other failure of a started setup keeps its reason.
+    expect(
+      withSetup({ state: 'failed', error: 'node-setup-failed: no main checkout', startedAt: 't' })
+        ?.setup,
+    ).toEqual({
+      phase: 'setupFailed',
+      exitCode: null,
+      timedOut: false,
+      error: 'node-setup-failed: no main checkout',
+    });
   });
 
   it('a detached or moving home shows its own banner, not the setup', () => {

@@ -38,7 +38,7 @@ type WorkspaceHomeSetupView =
   | { phase: 'preparing' }
   | { phase: 'runningSetup' }
   | { phase: 'openFailed'; error: string | null }
-  | { phase: 'setupFailed'; exitCode: number | null; timedOut: boolean };
+  | { phase: 'setupFailed'; exitCode: number | null; timedOut: boolean; error: string | null };
 
 export interface WorkspaceHomeView {
   name: string;
@@ -77,7 +77,12 @@ function homeSetupView(setup: WorkspaceHome['setup']): WorkspaceHomeSetupView | 
       if (setup.exitCode === undefined && !setup.startedAt && !timedOut) {
         return { phase: 'openFailed', error: setup.error?.trim() || null };
       }
-      return { phase: 'setupFailed', exitCode: setup.exitCode ?? null, timedOut };
+      return {
+        phase: 'setupFailed',
+        exitCode: setup.exitCode ?? null,
+        timedOut,
+        error: setup.exitCode === undefined && !timedOut ? setup.error?.trim() || null : null,
+      };
     }
     default:
       return null;

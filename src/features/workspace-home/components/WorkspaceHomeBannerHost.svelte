@@ -10,11 +10,10 @@
   import WorkspaceHomeBanner from './WorkspaceHomeBanner.svelte';
   import {
     selectCanMoveWorkspaceHome,
-    selectHomeSetupFailureDismissed,
+    selectHomeSetupFailureKey,
     selectHomeSetupOutput,
     selectHomeWaiting,
-    selectWorkspaceHomeId,
-    selectWorkspaceHomeView,
+    selectWorkspaceHomeBannerView,
   } from '../workspace-home-selectors';
   import {
     homeSetupFailureDismissed,
@@ -29,19 +28,16 @@
   $effect(() => {
     workspaceId$.set(workspaceId);
   });
-  const view$ = selectWorkspaceHomeView(workspaceId$);
+  const view$ = selectWorkspaceHomeBannerView(workspaceId$);
   const canMove$ = selectCanMoveWorkspaceHome(workspaceId$);
   const waiting$ = selectHomeWaiting(workspaceId$);
-  const dismissed$ = selectHomeSetupFailureDismissed(workspaceId$);
-  const homeId$ = selectWorkspaceHomeId(workspaceId$);
+  const failureKey$ = selectHomeSetupFailureKey(workspaceId$);
 
   const output$ = selectHomeSetupOutput(workspaceId$);
 
   let outputOpen = $state(false);
 
-  const view = $derived(
-    $view$?.banner === 'setupFailed' && $dismissed$ ? { ...$view$, banner: null } : $view$,
-  );
+  const view = $derived($view$);
 
   // A new workspace or a finished opening closes the log.
   $effect(() => {
@@ -71,6 +67,6 @@
   outputTruncated={$output$?.truncated === true}
   onToggleOutput={() => (outputOpen = !outputOpen)}
   onDismiss={() => {
-    if ($homeId$) appStore.dispatch(homeSetupFailureDismissed($homeId$));
+    if ($failureKey$) appStore.dispatch(homeSetupFailureDismissed($failureKey$));
   }}
 />

@@ -32,8 +32,9 @@ import {
   moveHomeRequested,
 } from './workspace-home-slice';
 import {
-  selectHomeSetupFailureDismissed,
+  selectHomeSetupFailureKey,
   selectHomeSetupOutput,
+  selectWorkspaceHomeBannerView,
   selectHomeWaiting,
   selectMoveHomeDialogWorkspaceId,
   selectMoveHomeFailure,
@@ -272,6 +273,7 @@ describe('Opening the home: setup output (nodes.md "Opening the home")', () => {
 
     await vi.waitFor(() =>
       expect(selectHomeSetupOutput.select(appStore.state, WS)).toEqual({
+        homeId: OPENING.homeId,
         text: '$ ./setup.sh\nok\n',
         truncated: true,
       }),
@@ -288,10 +290,41 @@ describe('Opening the home: setup output (nodes.md "Opening the home")', () => {
     expect(selectHomeSetupOutput.select(appStore.state, WS)).toBeNull();
   });
 
-  it('dismisses a failed opening for that home only', () => {
-    appStore.dispatch(homeSetupFailureDismissed(DETACHED.homeId));
-    expect(selectHomeSetupFailureDismissed.select(appStore.state, WS)).toBe(true);
+  it('shows no output read for another home of the workspace', async () => {
+    appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: OPENING })]));
+    mocks.request.mockResolvedValueOnce({
+      workspace: {
+        id: WS,
+        title: WS,
+        branch: 'main',
+        status: 'Active',
+        home: { ...OPENING, setup: { state: 'running', output: 'old home\n' } },
+      },
+    });
+    appStore.dispatch(homeSetupOutputRequested(WS));
+    await vi.waitFor(() => expect(selectHomeSetupOutput.select(appStore.state, WS)).not.toBeNull());
+    // The home moved: the old home's output is not the new one's.
     appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: MOVING })]));
-    expect(selectHomeSetupFailureDismissed.select(appStore.state, WS)).toBe(false);
+    expect(selectHomeSetupOutput.select(appStore.state, WS)).toBeNull();
+  });
+
+  it('dismisses one failed opening; a later failure of the same home shows again', () => {
+    const failedAt = (finishedAt: string): WorkspaceHome => ({
+      ...OPENING,
+      setup: { state: 'failed', error: 'node-checkout-failed: fetch', finishedAt },
+    });
+    appStore.dispatch(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: failedAt('t1') })]),
+    );
+    expect(selectWorkspaceHomeBannerView.select(appStore.state, WS)?.banner).toBe('setupFailed');
+    appStore.dispatch(
+      homeSetupFailureDismissed(selectHomeSetupFailureKey.select(appStore.state, WS)),
+    );
+    expect(selectWorkspaceHomeBannerView.select(appStore.state, WS)?.banner).toBeNull();
+    // The retry at the next bind fails again.
+    appStore.dispatch(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: failedAt('t2') })]),
+    );
+    expect(selectWorkspaceHomeBannerView.select(appStore.state, WS)?.banner).toBe('setupFailed');
   });
 });

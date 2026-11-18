@@ -63,10 +63,11 @@
         ? faLinkSlash
         : faCircleExclamation,
   );
+  const logId = $props.id();
   const setupBanner = $derived(banner === 'opening' || banner === 'setupFailed');
   const reason = $derived(view ? homeOpenFailureReason(view) : null);
-  // The log is there once the checkout has started; a preparing home shows
-  // its fetch and checkout lines too.
+  // Every opening and failure has a log: a preparing home shows its fetch
+  // and checkout lines.
   const canShowOutput = $derived(setupBanner && !!onToggleOutput);
 </script>
 
@@ -77,6 +78,7 @@
       size="compact"
       class="shrink-0"
       aria-expanded={outputOpen}
+      aria-controls={logId}
       onclick={() => onToggleOutput?.()}
     >
       {outputOpen ? m.remoteAgent_setup_hideOutput() : m.remoteAgent_setup_showOutput()}
@@ -99,12 +101,14 @@
     {:else}
       <span class="mt-0.5 shrink-0" aria-hidden="true"><IntentMarkLoader size={16} /></span>
     {/if}
-    <!-- One live region: the step change and a failure are announced. -->
-    <div class="min-w-48 flex-1 space-y-0.5" role="status">
-      <p class="type-body text-foreground">{homeSetupTitle(view)}</p>
-      {#if detail}
-        <p class="type-caption text-muted-foreground">{detail}</p>
-      {/if}
+    <div class="min-w-48 flex-1 space-y-0.5">
+      <!-- The live region: a step change is announced politely, a failure at once. -->
+      <div role={failed ? 'alert' : 'status'}>
+        <p class="type-body text-foreground">{homeSetupTitle(view)}</p>
+        {#if detail}
+          <p class="type-caption text-muted-foreground">{detail}</p>
+        {/if}
+      </div>
       {#if reason}
         <p class="type-caption break-words font-mono text-subtle">{reason}</p>
       {/if}
@@ -128,7 +132,7 @@
       {/if}
     </div>
     {#if outputOpen}
-      <div class="min-w-0 basis-full">
+      <div class="min-w-0 basis-full" id={logId}>
         <RemoteSetupLog machine={view.name} {output} truncated={outputTruncated} />
       </div>
     {/if}

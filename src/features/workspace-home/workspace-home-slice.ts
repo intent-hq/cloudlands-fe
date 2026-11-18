@@ -21,7 +21,10 @@ export interface WorkspaceHomeUiState {
   moveFailure: MoveHomeFailure | null;
   /** Workspaces whose Wait retry is in flight. */
   waiting: Record<string, true>;
-  /** Homes (by `homeId`) whose failed opening banner was dismissed this session. */
+  /**
+   * Failed openings dismissed this session, by `homeSetupFailureKey` (the
+   * home and that failure's time), so a later failure of the same home shows.
+   */
   dismissedSetupFailures: Record<string, true>;
   /** The home's checkout and setup output, by workspace, read while its log is open. */
   setupOutputs: Record<string, HomeSetupOutput>;
@@ -29,8 +32,15 @@ export interface WorkspaceHomeUiState {
 
 /** `home.setup.output` and `outputTruncated` from the workspace's detail read. */
 export interface HomeSetupOutput {
+  /** The home the output belongs to; another home's output is not shown. */
+  homeId: string;
   text?: string;
   truncated: boolean;
+}
+
+/** One failed opening of a home: the home and when that attempt failed. */
+export function homeSetupFailureKey(homeId: string, finishedAt: string | undefined): string {
+  return `${homeId}|${finishedAt ?? ''}`;
 }
 
 const initialWorkspaceHomeState: WorkspaceHomeUiState = {
@@ -67,7 +77,7 @@ export const homeSetupOutputLoaded = createAction<[workspaceId: string, output: 
   'workspaceHome/setupOutputLoaded',
 );
 /** Hide a home's failed opening banner (nodes.md "Opening the home"). */
-export const homeSetupFailureDismissed = createAction<[homeId: string]>(
+export const homeSetupFailureDismissed = createAction<[failureKey: string]>(
   'workspaceHome/setupFailureDismissed',
 );
 
@@ -105,10 +115,10 @@ workspaceHomeReducer.with(homeWaitSettled, (state, { payload: [workspaceId] }) =
   const { [workspaceId]: _settled, ...waiting } = state.waiting;
   return { ...state, waiting };
 });
-workspaceHomeReducer.with(homeSetupFailureDismissed, (state, { payload: [homeId] }) =>
-  state.dismissedSetupFailures[homeId]
+workspaceHomeReducer.with(homeSetupFailureDismissed, (state, { payload: [key] }) =>
+  state.dismissedSetupFailures[key]
     ? state
-    : { ...state, dismissedSetupFailures: { ...state.dismissedSetupFailures, [homeId]: true } },
+    : { ...state, dismissedSetupFailures: { ...state.dismissedSetupFailures, [key]: true } },
 );
 workspaceHomeReducer.with(homeSetupOutputLoaded, (state, { payload: [workspaceId, output] }) => ({
   ...state,

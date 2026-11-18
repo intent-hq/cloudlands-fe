@@ -145,11 +145,13 @@ function* readSetupOutput(
   const [workspaceId] = action.payload;
   try {
     const served = yield* call([appClient.workspaces, appClient.workspaces.get], workspaceId);
-    const setup = served?.home?.setup;
+    const home = served?.home;
+    if (!home) return;
     yield* put(
       homeSetupOutputLoaded(workspaceId, {
-        text: setup?.output,
-        truncated: setup?.outputTruncated === true,
+        homeId: home.homeId,
+        text: home.setup?.output,
+        truncated: home.setup?.outputTruncated === true,
       }),
     );
   } catch (error) {
