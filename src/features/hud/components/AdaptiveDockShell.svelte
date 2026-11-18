@@ -311,7 +311,13 @@
     const surface = placement.surface;
     return () => dockViewportRect(visible, surface, surfaceElement?.getBoundingClientRect());
   });
-  const headerWingLeft = $derived(shown.x + 6);
+  // Expanded rows center their avatars at 12 + 6 + 16px; the 28px grip starts at 20px.
+  // Follow the reveal so the compact wing keeps its existing 6px inset.
+  const headerWingLeft = $derived(
+    shown.x +
+      6 +
+      (notch || (placement.shape === 'top-pill' && !dragging) ? 14 * shellMotion.reveal : 0),
+  );
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
   let recordingSeen: string | null = null;
   $effect(() => {

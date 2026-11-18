@@ -2,6 +2,48 @@ import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
+for (const shape of ['notch', 'top-pill'] as const) {
+  test(`expanded ${shape} logo aligns with the workspace icon column`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 720, height: 640 });
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+    const component = await mount(DockRailPreview, {
+      props: dockRailPreview.states[shape].props,
+    });
+    const shell = component.getByTestId('dock-shell');
+    const logo = component.getByTestId('dock-drag-handle');
+    const center = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return box.x + box.width / 2;
+    };
+    const compactCenter = await logo.evaluate(center);
+    await logo.hover();
+    await expect(shell).toHaveAttribute('data-reveal', '1');
+    const row = component.locator('[data-dock-row]').first();
+    const icon = row.locator('[data-dock-repo-avatar]');
+    await expect(icon).toBeVisible();
+    const centers = {
+      logo: await logo.evaluate(center),
+      workspace: await icon.evaluate(center),
+      search: await component.locator('.search-lead').evaluate(center),
+    };
+    await component.locator('section[data-dock-surface]').screenshot({
+      path: info.outputPath(`expanded-${shape}-alignment.png`),
+    });
+    await info.attach('icon-column-centers', {
+      body: JSON.stringify(centers),
+      contentType: 'application/json',
+    });
+    expect(Math.abs(centers.logo - centers.workspace)).toBeLessThan(0.5);
+    expect(Math.abs(centers.logo - centers.search)).toBeLessThan(0.5);
+    await page.mouse.move(1, 630);
+    await expect(shell).toHaveAttribute('data-reveal', '0');
+    expect(Math.abs((await logo.evaluate(center)) - compactCenter)).toBeLessThan(0.5);
+  });
+}
+
 test('compact header status counts match accessible row descriptions', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 640 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
