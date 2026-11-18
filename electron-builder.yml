@@ -19,6 +19,9 @@ files:
   - '!dist/**/*.tsbuildinfo'
   # Dev-startup readiness sentinels (scripts/dev-ready.js); dev-only.
   - '!dist/.dev-ready-*'
+  # The plain-browser build ships only in @intent-hq/web (npx), never in the app.
+  - '!dist/web/**'
+  - '!dist/intent-web-package/**'
   - package.json
   - node_modules/**/*
   - resources/**/*
@@ -65,8 +68,6 @@ extraResources:
 # Unpack native modules to ensure prebuilds are accessible
 asarUnpack:
   - dist/renderer/**/*
-  # Browser access serves the web build with plain fs reads (see browser-access.ipc.ts).
-  - dist/web/**/*
   - resources/**/*
   - node_modules/express/**/*
   - node_modules/body-parser/**/*

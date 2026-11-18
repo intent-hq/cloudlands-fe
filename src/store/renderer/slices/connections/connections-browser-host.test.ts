@@ -29,7 +29,7 @@ describe('withPageBrowserHost', () => {
     });
   });
 
-  it('seeds desktop Browser access as a host that does not manage connections', () => {
+  it('seeds a host without connections.manage as one that does not manage connections', () => {
     servePage({ backendId: 'local', connectionsUrl: '/__browser-access/connections' });
     expect(withPageBrowserHost()?.connections?.browserHost).toEqual({
       manageConnections: false,

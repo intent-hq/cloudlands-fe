@@ -545,15 +545,6 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // (src/features/hud/dock-context-menu.ts). Without a bridge it does nothing;
   // a mock bridge would pretend a window came forward.
   'window:activate-app',
-  // Browser access (Settings > Machines): main owns the setting, the access key
-  // and the loopback server (src/lib/browser-access-ipc.ts). The section only
-  // renders when the real preload bridge exists, and the IPC functions reject
-  // without it; a mock bridge would invent a server that is not running.
-  'browser-access:get-state',
-  'browser-access:set-enabled',
-  'browser-access:set-port',
-  'browser-access:reset-key',
-  'browser-access:create-sign-in-code',
   // Dock composer native sessions (capture, annotate, record, pick): main owns
   // the screen capture, overlay window and helper processes. Both callers
   // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only
@@ -1069,7 +1060,7 @@ describe('Retired file-tracking / line-attribution / file-attribution channels s
 const HOST_HTTP_MODULES: ReadonlyMap<string, string> = new Map([
   [
     path.join('lib', 'client', 'live', 'browser-access-host.ts'),
-    'intent-web /__intent-web/connections API and the Browser access connections list',
+    'intent-web /__intent-web/connections API',
   ],
 ]);
 

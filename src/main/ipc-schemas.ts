@@ -799,12 +799,6 @@ export const MachineRailReorderSchema = z
   .object({ machineIds: z.array(z.string().min(1).max(256)).min(1).max(9) })
   .strict();
 
-export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
-
-export const BrowserAccessSetPortSchema = z
-  .object({ port: z.number().int().min(1024).max(65_535) })
-  .strict();
-
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
   focusOwnerId: z.string().min(1, 'Focus owner ID is required'),

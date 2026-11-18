@@ -33,7 +33,7 @@ import {
   parseSignInState,
   type SignInState,
   type SignInStore,
-} from '../../browser-access/main/browser-access-sign-in-codes';
+} from './browser-access-sign-in-codes';
 
 export const SIGN_IN_FILE = 'sign-in.json';
 

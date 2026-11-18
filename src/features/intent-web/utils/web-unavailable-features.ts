@@ -39,7 +39,7 @@ export const CAPABILITY_FEATURES: Record<keyof PlatformCapabilities, WebUnavaila
 /**
  * The unavailable lines, in display order. A host that manages connections
  * itself (intent-web) also has no Mobile tab and no iCloud sync of saved
- * machines; the desktop's Browser access keeps both on the desktop.
+ * machines.
  */
 export function webUnavailableFeatures(hostManagesConnections: boolean): WebUnavailableFeature[] {
   const web = capabilitiesForPlatform('web');

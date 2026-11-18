@@ -987,18 +987,6 @@ export const IPC_CHANNELS = {
     CLOSE_ALL_FOR_WORKSPACE: 'pip:close-all-for-workspace',
   },
 
-  // Browser access: main serves the web build to a browser behind a front-end
-  // such as `tailscale serve`. get-state → BrowserAccessState; set-enabled
-  // ({ enabled }), set-port ({ port }) and reset-key ({}) also return it.
-  // create-sign-in-code ({}) → BrowserAccessSignInCode.
-  BROWSER_ACCESS: {
-    GET_STATE: 'browser-access:get-state',
-    SET_ENABLED: 'browser-access:set-enabled',
-    SET_PORT: 'browser-access:set-port',
-    RESET_KEY: 'browser-access:reset-key',
-    CREATE_SIGN_IN_CODE: 'browser-access:create-sign-in-code',
-  },
-
   // WebSocket API
   WEBSOCKET_API: {
     GET_STATUS: 'websocket-api:get-status',

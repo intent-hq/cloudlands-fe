@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { hardenProductionScriptCsp } from '../scripts/fix-production-html-utils.mjs';
-import { createBrowserAccessServer } from '../src/features/browser-access/main/browser-access-server';
+import { createBrowserAccessServer } from '../src/features/intent-web/main/browser-access-server';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
 import {

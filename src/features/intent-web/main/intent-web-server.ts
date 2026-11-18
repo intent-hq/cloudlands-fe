@@ -21,9 +21,9 @@ import {
   CONNECTION_ID_PATTERN,
   isSameOriginUpgrade,
   preferredPageOrigin,
-} from '../../browser-access/main/browser-access-auth';
-import { createBrowserAccessServer } from '../../browser-access/main/browser-access-server';
-import type { SignInCodes } from '../../browser-access/main/browser-access-sign-in-codes';
+} from './browser-access-auth';
+import { createBrowserAccessServer } from './browser-access-server';
+import type { SignInCodes } from './browser-access-sign-in-codes';
 import { m } from '../../../shared/paraglide/messages.js';
 import { extractLocalIps, extractTcAddress } from '../../backend/main/daemon-route-info';
 import { isLoopbackHost } from '../../../shared/loopback-host';

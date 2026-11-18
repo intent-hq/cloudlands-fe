@@ -3,18 +3,15 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
-  import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
   import { setMachineRailEnabledRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import {
-    setLabsBrowserAccessEnabled,
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
     setLabsSshMachineSetupEnabled,
     setLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
-    selectLabsBrowserAccessEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsRemoteAgentsEnabled,
     selectLabsSshMachineSetupEnabled,
@@ -25,15 +22,8 @@
   const sshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   const plainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const tabGroups$ = selectLabsTabGroupsEnabled();
-  const browserAccess$ = selectLabsBrowserAccessEnabled();
   const machineRail$ = selectMachineRailEnabled();
   const desktop = isElectronPlatform();
-
-  function setBrowserAccess(enabled: boolean) {
-    appStore.dispatch(setLabsBrowserAccessEnabled(enabled));
-    // Hiding the section must not leave a server running that nobody can see.
-    if (!enabled) appStore.dispatch(setBrowserAccessEnabledRequested(false));
-  }
 
   const schema = $derived(
     defineSettings({
@@ -87,15 +77,6 @@
               set: (enabled) => {
                 appStore.dispatch(setLabsTabGroupsEnabled(enabled));
               },
-            },
-            {
-              kind: 'switch',
-              id: 'labs-browser-access',
-              size: 'sm',
-              label: m.settings_labs_browserAccess_label(),
-              description: m.settings_labs_browserAccess_description(),
-              get: () => $browserAccess$,
-              set: setBrowserAccess,
             },
             {
               kind: 'switch',
