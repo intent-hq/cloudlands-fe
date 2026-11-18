@@ -359,6 +359,7 @@
   envErrors={errors}
   remoteMarks={$remoteReady$}
   differentLogin={!$orchestrator$}
+  keyCheck={!$orchestrator$}
   bind:remoteCompatible
   onCreateAndSignIn={createAndSignIn}
   onCreate={create}

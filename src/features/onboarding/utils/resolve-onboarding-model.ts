@@ -40,6 +40,7 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { providerRefBaseId } from '$shared/provider-profiles';
 import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID, getSpecialistById } from '$lib/constants/specialists';
 import {
   getProviderStatusFromResult,
@@ -141,10 +142,10 @@ async function readProviderReadiness(state: StoreState): Promise<ProviderReadine
   if (selectIsOrchestratorBackend.select(state)) {
     // No local probe: it reports nothing on an orchestrator. Every catalog
     // provider is available with no sign-in verdict; the enabled ones are
-    // the auto-pick candidates.
+    // the auto-pick candidates. A profile reads as its provider.
     const statusMap = selectProviderStatusMap.select(state);
     return {
-      status: (providerId) => statusMap[providerId],
+      status: (providerId) => statusMap[providerRefBaseId(providerId)],
       usable: selectAvailableEnabledProviderIds
         .select(state)
         .filter((providerId) => providerId !== 'mock'),

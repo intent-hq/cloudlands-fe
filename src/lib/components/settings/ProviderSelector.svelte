@@ -71,7 +71,7 @@
   import ProviderProfiles from './ProviderProfiles.svelte';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderProfileAddDialog from './ProviderProfileAddDialog.svelte';
-  import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
+  import { hasProfileKinds, profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
   import RemoteReadyPill from './RemoteReadyPill.svelte';
@@ -158,8 +158,13 @@
   // (env var gated and not enabled), strictly alphabetical by display name.
   // Rendered immediately from the catalog; the daemon's hiddenProviders
   // verdict refines the catalog's own `visible` flag once it arrives.
+  // An orchestrator offers only the providers with profiles: its machines
+  // need a profile's key or token. One still enabled stays so it can be
+  // turned off.
   const orderedCatalogEntries = $derived.by(() =>
-    orderProviderEntries($catalogEntries$, $hiddenProviders$),
+    orderProviderEntries($catalogEntries$, $hiddenProviders$).filter(
+      (entry) => !$orchestrator$ || hasProfileKinds(entry) || $enabledProviders$[entry.id] === true,
+    ),
   );
 
   // Provider options for display - dynamically generated from the catalog

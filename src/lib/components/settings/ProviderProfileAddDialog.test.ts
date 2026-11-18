@@ -147,7 +147,6 @@ describe('ProviderProfileAddDialog', () => {
   it('a terminal that fails to open keeps the error in the dialog with Try again', async () => {
     await seed([], 'remote-tcp');
     await openDialog('codex');
-    expect(screen.queryByTestId('provider-profile-kind-apiKey')).toBeNull();
     await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
     await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Work' } });
     expect(screen.getByText('codex login --device-auth')).toBeTruthy();

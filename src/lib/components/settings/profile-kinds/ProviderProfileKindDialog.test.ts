@@ -23,12 +23,11 @@ const codex = { ...claude, provider: 'codex', providerName: 'Codex' } as const;
 afterEach(() => cleanup());
 
 describe('ProviderProfileKindDialog (mock-up)', () => {
-  it('shows three Codex kind cards (no API key), with the token card naming Business or Enterprise', () => {
+  it('shows all four Codex kind cards, with the token card naming Business or Enterprise', () => {
     render(ProviderProfileKindDialog, { props: { ...codex, mode: 'add' } });
-    for (const kind of ['differentLogin', 'token', 'advanced']) {
+    for (const kind of ['differentLogin', 'apiKey', 'token', 'advanced']) {
       expect(screen.getByTestId(`provider-profile-kind-${kind}`)).toBeTruthy();
     }
-    expect(screen.queryByTestId('provider-profile-kind-apiKey')).toBeNull();
     expect(screen.getByText(m.settings_providerProfileKinds_tokenCodex_description())).toBeTruthy();
   });
 
@@ -60,6 +59,33 @@ describe('ProviderProfileKindDialog (mock-up)', () => {
     );
     await waitFor(() => expect(screen.queryByTestId('provider-profile-kind-details')).toBeNull());
     expect(screen.queryByText(m.settings_providerProfileKinds_waiting_label())).toBeNull();
+  });
+
+  it("without a key check, creates only a key with its provider's format", async () => {
+    const onCreate = vi.fn();
+    render(ProviderProfileKindDialog, {
+      props: {
+        ...codex,
+        mode: 'add',
+        step: 'details',
+        kind: 'apiKey',
+        name: 'Key',
+        keyCheck: false,
+        onCreate,
+      },
+    });
+    const input = screen.getByTestId('provider-profile-secret-input');
+    const create = () =>
+      fireEvent.click(
+        screen.getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+      );
+    await fireEvent.input(input, { target: { value: 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA' } });
+    await create();
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    await fireEvent.input(input, { target: { value: 'sk-proj-AAAAAAAAAAAAAAAAAAAAAAAA' } });
+    await create();
+    expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
   it('calls onCreateAndSignIn instead of advancing when a handler is wired', async () => {

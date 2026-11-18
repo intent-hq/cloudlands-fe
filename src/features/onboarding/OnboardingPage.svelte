@@ -68,6 +68,19 @@
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingForgeStep from '$features/onboarding/steps/OnboardingForgeStep.svelte';
+  import OnboardingConnectStep from '$features/onboarding/steps/OnboardingConnectStep.svelte';
+  import {
+    stepAfterWelcome,
+    visibleOnboardingSteps,
+  } from '$features/onboarding/utils/onboarding-steps';
+  import {
+    CONNECT_KINDS,
+    type ConnectKind,
+  } from '$features/onboarding/utils/onboarding-connect-step';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { providerRefBaseId } from '$shared/provider-profiles';
+  import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import { onboardingForgeCopy } from '$features/onboarding/utils/onboarding-forge-copy';
   import OnboardingGitRequiredNotice from '$features/onboarding/steps/OnboardingGitRequiredNotice.svelte';
   import { needsGitInstallForProject } from '$lib/components/workspace/initializer/plain-folder-create';
@@ -778,6 +791,10 @@
   // On an orchestrator agents run only on its machines: with none set up the
   // first workspace could not start its agent, so the welcome step waits.
   const agentMachines$ = selectOnboardingAgentMachines();
+  // An orchestrator's machines run a provider only with a profile's key or
+  // token, so its onboarding adds the Connect step after the provider pick.
+  const orchestrator$ = selectIsOrchestratorBackend();
+  const onboardingActiveProviderId$ = selectActiveProviderId();
   const canAdvanceFromWelcome = $derived(hasConnectedProvider && $agentMachines$ !== 'none');
   let agentGridRef: AgentGrid | null = $state(null);
   const providerPager = createHorizontalPager({ itemSelector: '[data-provider-id]' });
@@ -786,6 +803,33 @@
   let onboardingTestPromptRunning = $state(false);
   let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
   let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
+  // The card picked on step 1 (its settings write may still be in flight),
+  // else the active provider or profile.
+  const connectBaseId = $derived(
+    onboardingGridSelectedProviderId ?? providerRefBaseId($onboardingActiveProviderId$ ?? ''),
+  );
+  const connectProvider = $derived(profileProviderFromBaseId(connectBaseId));
+  const connectProviderName = $derived(
+    $providerCatalogEntries$.find((entry) => entry.id === connectBaseId)?.displayName ?? '',
+  );
+  let connectStepRef: OnboardingConnectStep | null = $state(null);
+  // Kept here so Back from step 3 (or to step 1 and forward again for the
+  // same provider) keeps an unsaved choice and paste.
+  let connectKind = $state<ConnectKind>(CONNECT_KINDS[0]);
+  let connectSecret = $state('');
+  let connectSaving = $state(false);
+  let connectKindProvider: string | undefined;
+  $effect.pre(() => {
+    const provider = connectProvider;
+    if (provider === connectKindProvider) return;
+    connectKindProvider = provider;
+    connectKind = CONNECT_KINDS[0];
+    connectSecret = '';
+  });
+  // A provider without profile kinds has nothing to connect.
+  $effect(() => {
+    if (isConnectStep && !connectProvider) appStore.dispatch(goToStep('forge'));
+  });
   const onboardingSelectedCatalogEntry = $derived(
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
@@ -845,7 +889,7 @@
         onboardingTestPromptRunning = false;
       }
     }
-    appStore.dispatch(goToStep('forge'));
+    appStore.dispatch(goToStep(stepAfterWelcome($orchestrator$)));
   }
 
   // Pull conflict state
@@ -890,6 +934,7 @@
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isForgeStep = $derived($onboardingStep$ === 'forge');
+  const isConnectStep = $derived($onboardingStep$ === 'connect');
   const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const forgeCopy = $derived(onboardingForgeCopy($gitlabSupported$ || $gitlabConfigured$));
@@ -909,11 +954,7 @@
   // visible order minus the terminal 'ready' entry. Back navigation maps
   // visible step N-1 to the visible order so it never lands on the gate.
   const VISIBLE_STEP_ORDER = $derived(
-    ONBOARDING_STEP_ORDER.filter(
-      (step) =>
-        step !== 'requirements' &&
-        ($hostRole$ !== 'member' || (step !== 'welcome' && step !== 'forge')),
-    ),
+    visibleOnboardingSteps({ hostRole: $hostRole$, orchestrator: $orchestrator$ }),
   );
   const ONBOARDING_TOTAL_STEPS = $derived(VISIBLE_STEP_ORDER.length - 1);
   const onboardingVisibleStep = $derived(
@@ -1187,6 +1228,9 @@
     if (isWelcomeStep && canAdvanceFromWelcome) {
       e.preventDefault();
       advanceFromWelcomeStep();
+    } else if (isConnectStep) {
+      e.preventDefault();
+      connectStepRef?.submit();
     } else if (isForgeStep) {
       // Continue when connected, skip otherwise — both advance to project.
       // Skipping abandons a still-pending device flow (GitHub or GitLab), so
@@ -1567,7 +1611,7 @@
                           </span>
                         {/if}
 
-                        {#if !isRequirementsStep && onboardingVisibleStep > 1}
+                        {#if !isRequirementsStep && onboardingVisibleStep > 1 && !(isConnectStep && connectSaving)}
                           <Button
                             variant="ghost"
                             type="button"
@@ -1613,6 +1657,17 @@
                               {m.onboarding_page_welcome_before()}
                               <br />
                               {m.onboarding_page_welcome_after()}
+                            </p>
+                          </div>
+                        </div>
+                      {:else if isConnectStep}
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
+                          <div class="space-y-3">
+                            <h2 class="text-5xl font-semibold tracking-tight leading-tight">
+                              {m.onboarding_connect_title({ provider: connectProviderName })}
+                            </h2>
+                            <p class="max-w-3xl text-lg text-muted-foreground">
+                              {m.onboarding_connect_description({ provider: connectProviderName })}
                             </p>
                           </div>
                         </div>
@@ -1783,6 +1838,19 @@
                                 </Button>
                               {/if}
                             </div>
+                          {/if}
+                        </div>
+                      {:else if isConnectStep}
+                        <div class="max-w-5xl mx-auto">
+                          {#if connectProvider}
+                            <OnboardingConnectStep
+                              bind:this={connectStepRef}
+                              provider={connectProvider}
+                              bind:kind={connectKind}
+                              bind:secret={connectSecret}
+                              bind:busy={connectSaving}
+                              onContinue={() => appStore.dispatch(goToStep('forge'))}
+                            />
                           {/if}
                         </div>
                       {:else if isForgeStep}

@@ -30,10 +30,13 @@
      * in its ordered list, or with an empty list.
      */
     orchestrator?: 'machine' | 'no-machine';
+    /** The provider picked on the welcome step (the Connect step's provider). */
+    activeProvider?: string;
   }
   const ORCHESTRATOR_STEPS = [
     'requirements',
     'welcome',
+    'connect',
     'forge',
     'project',
     'configuring',
@@ -89,6 +92,9 @@
       'new-workspace-plain-folder': { props: { compact: true, plainFolder: 'off' } },
       'new-workspace-plain-folder-git': { props: { compact: true, plainFolder: 'on' } },
       ...orchestratorStates,
+      'connect-orchestrator-codex': {
+        props: { step: 'connect', orchestrator: 'machine', activeProvider: 'codex' },
+      },
     },
   });
 </script>
@@ -113,6 +119,7 @@
   import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
   import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import {
     checkHostRequirementsComplete,
     ghRequirementResolved,
@@ -169,6 +176,7 @@
     plainFolder,
     cursor = false,
     orchestrator,
+    activeProvider = 'claude-code',
   }: Props = $props();
   const restoreOpen = untrack(() =>
     onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
@@ -336,6 +344,7 @@
   const previousRemoteMachines = appStore.state.remoteMachines;
   const previousHostRequirements = appStore.state.hostRequirements;
   const previousEnabledProviders = appStore.state.providerSettings.enabledProviders;
+  const previousDefaultProvider = appStore.state.model.defaultProviderId;
   if (seededOrchestrator) {
     // An orchestrator runs no agents: its ordered machine list (Labs "Remote
     // agents" on) is where they run. Git is found; Node.js is not, and an
@@ -362,16 +371,24 @@
     appStore.dispatch(ghRequirementResolved(true, 'gh version 2.62.0'));
     appStore.dispatch(checkHostRequirementsComplete());
     // The welcome step enables the picked provider; later steps start from it.
+    const picked = untrack(() => activeProvider);
     appStore.dispatch(
-      loadEnabledProvidersFromStorage({ ...previousEnabledProviders, 'claude-code': true }),
+      loadEnabledProvidersFromStorage({ ...previousEnabledProviders, [picked]: true }),
     );
+    appStore.dispatch(hydrateDefaultProvider(picked));
   }
   const fullCatalog = untrack(() => allProviders);
   const seededCursor = untrack(() => cursor);
+  // An orchestrator's catalog offers profiles for Claude Code and Codex and
+  // never a test prompt.
   const seededProviders = [
     ...(fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders),
     ...(seededCursor ? [MOCK_CURSOR_PROVIDER] : []),
-  ];
+  ].map((entry) =>
+    seededOrchestrator && (entry.id === 'codex' || entry.id === 'claude-code')
+      ? { ...entry, supportsProfiles: true, supportsTestPrompt: false }
+      : entry,
+  );
   appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
   for (const provider of seededProviders) {
     const connected = fullCatalog
@@ -425,6 +442,7 @@
       appStore.dispatch(nodeRequirementResolved(node.ok, node.version));
       appStore.dispatch(ghRequirementResolved(gh.available, gh.version));
       appStore.dispatch(loadEnabledProvidersFromStorage(previousEnabledProviders));
+      appStore.dispatch(hydrateDefaultProvider(previousDefaultProvider));
     }
     if (seededForge) {
       applyGitHub(previousGitHub);

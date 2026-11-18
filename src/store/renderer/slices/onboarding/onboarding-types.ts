@@ -4,8 +4,12 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
+/**
+ * `connect` (paste the provider's credentials) runs only on an orchestrator:
+ * its machines need a profile with a key or token to run the provider.
+ */
 export type OnboardingStep =
-  'requirements' | 'welcome' | 'forge' | 'project' | 'configuring' | 'ready';
+  'requirements' | 'welcome' | 'connect' | 'forge' | 'project' | 'configuring' | 'ready';
 
 export type ProjectConfig = {
   repoUrl: string | null;
@@ -35,6 +39,7 @@ export type OnboardingState = {
 export const STEP_ORDER: OnboardingStep[] = [
   'requirements',
   'welcome',
+  'connect',
   'forge',
   'project',
   'configuring',

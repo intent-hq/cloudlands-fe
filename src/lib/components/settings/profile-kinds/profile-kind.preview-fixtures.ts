@@ -204,3 +204,28 @@ export const codexRows = [
   },
   { id: 'team', name: 'Team token', kind: 'token', status: 'ready' },
 ] as const;
+
+/** A fake OpenAI-shaped key (never a real credential). */
+export const FAKE_OPENAI_KEY = 'sk-proj-fake000000000000000000';
+
+export const codexApiKeyAdd = {
+  ...codexBase,
+  mode: 'add',
+  step: 'details',
+  kind: 'apiKey',
+  name: 'OpenAI key',
+} as const;
+
+export const codexApiKeyEdit = {
+  ...codexBase,
+  mode: 'edit',
+  kind: 'apiKey',
+  name: 'OpenAI key',
+  savedName: 'OpenAI key',
+  secretSaved: true,
+  savedEnv: env([
+    { key: 'CODEX_API_KEY', kind: 'set', value: '********' },
+    { key: 'CODEX_ACCESS_TOKEN', kind: 'unset' },
+    { key: 'OPENAI_API_KEY', kind: 'unset' },
+  ]),
+} as const;

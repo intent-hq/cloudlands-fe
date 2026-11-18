@@ -52,6 +52,7 @@
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
   import { advancedEditRemoteChange } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
@@ -81,6 +82,8 @@
   const setups$ = selectProviderProfileSetups();
   const mutations$ = selectProviderProfileMutations();
   const appOwned$ = selectIsDaemonAppOwned();
+  // An orchestrator runs no provider: a replaced key gets a format check, not a test prompt.
+  const orchestrator$ = selectIsOrchestratorBackend();
   const remoteReady$ = selectRemoteReadyProfilesVisible();
   const newId = () => crypto.randomUUID();
 
@@ -351,6 +354,7 @@
 </script>
 
 <ProviderProfileKindDialog
+  keyCheck={!$orchestrator$}
   bind:open
   static={staticPosition}
   {provider}

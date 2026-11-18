@@ -41,6 +41,25 @@ import { commitOnboardingProviderSelection } from './commit-onboarding-provider-
 import { resolveOnboardingSelectedProvider } from './resolve-onboarding-selected-provider';
 
 describe('commitOnboardingProviderSelection', () => {
+  it('keeps an active profile of the selected provider', () => {
+    const dispatch = vi.fn();
+    expect(
+      commitOnboardingProviderSelection({
+        selectedProviderId: 'codex',
+        activeProviderId: 'codex@p1',
+        dispatch,
+      }),
+    ).toBeUndefined();
+    expect(dispatch).not.toHaveBeenCalled();
+    commitOnboardingProviderSelection({
+      selectedProviderId: 'codex',
+      activeProviderId: 'codex@p1',
+      recommitActive: true,
+      dispatch,
+    });
+    expect(dispatch).toHaveBeenCalledWith(setActiveProvider('codex@p1'));
+  });
+
   it('dispatches the card-click sequence when the selection is not active', () => {
     const dispatch = vi.fn();
     const committed = commitOnboardingProviderSelection({

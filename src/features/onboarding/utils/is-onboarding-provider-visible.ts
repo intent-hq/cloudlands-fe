@@ -21,20 +21,32 @@
  */
 import { isProviderProfileRef } from '$shared/provider-profiles';
 import { isProviderListed } from '$shared/provider-visibility';
+import { hasProfileKinds } from '$lib/provider-profile-kinds';
 
 export interface IsOnboardingProviderVisibleInput {
   /** Gating fields from the provider's `ACPProviderConfig`. */
-  provider: { id?: string; requiresEnvVar?: string; requiresFeatureCode?: string };
+  provider: {
+    id?: string;
+    requiresEnvVar?: string;
+    requiresFeatureCode?: string;
+    supportsProfiles?: boolean;
+  };
   /** Whether the given feature code is activated (from Redux state). */
   isFeatureEnabled: (featureCode: string) => boolean;
   /** Availability status reported for the provider; undefined = not checked yet. */
   status?: { available?: boolean };
   enabled?: boolean;
+  /**
+   * An orchestrator: its machines run a provider only with a profile's key or
+   * token, so only Claude Code and Codex (the providers with profile kinds) show.
+   */
+  orchestrator?: boolean;
 }
 
 export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleInput): boolean {
   const { provider, isFeatureEnabled, status } = input;
   if (provider.id !== undefined && isProviderProfileRef(provider.id)) return false;
+  if (input.orchestrator && !hasProfileKinds(provider)) return false;
   if (provider.requiresFeatureCode && !isFeatureEnabled(provider.requiresFeatureCode)) {
     return false;
   }

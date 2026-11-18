@@ -52,7 +52,8 @@
     type ProfileSetupError,
     type ProfileSignInState,
   } from './profile-kind-mock';
-  import { isJwtShaped, randomSuffix } from '$lib/provider-profile-kinds';
+  import { isJwtShaped, isSecretWellFormed, randomSuffix } from '$lib/provider-profile-kinds';
+  import { secretShapeError } from './secret-shape-error';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
 
   interface Props {
@@ -106,6 +107,11 @@
     remoteMarks?: boolean;
     /** Add: offer the Different login kind (off on an orchestrator). */
     differentLogin?: boolean;
+    /**
+     * The backend checks a saved key with a test prompt. Off on an
+     * orchestrator: the key's format is checked before Create instead.
+     */
+    keyCheck?: boolean;
     /** Advanced: "Use on remote machines". */
     remoteCompatible?: boolean;
     /** Different login create; the parent closes the dialog once the terminal opens. */
@@ -128,6 +134,7 @@
     step = $bindable(mode === 'edit' ? 'details' : 'pick'),
     kind = $bindable('differentLogin'),
     differentLogin = true,
+    keyCheck = true,
     name = $bindable(''),
     backup = $bindable(false),
     savedName = '',
@@ -203,8 +210,11 @@
   const description = $derived.by(() => {
     if (picking) return m.settings_providerProfileKinds_pick_description();
     if (folderKind) return m.settings_providerProfileKinds_differentLoginDialog_description();
-    if (secretKind === 'apiKey')
-      return m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
+    if (secretKind === 'apiKey') {
+      return provider === 'codex'
+        ? m.settings_providerProfileKinds_apiKeyCodexDialog_description()
+        : m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
+    }
     if (secretKind === 'token') {
       return provider === 'codex'
         ? m.settings_providerProfileKinds_tokenCodexDialog_description()
@@ -239,7 +249,10 @@
     }, 1200);
   }
 
-  /** Empty key/token, or a Codex token that is not JWT-shaped (sets the inline error). */
+  /**
+   * Empty key/token, a Codex token that is not JWT-shaped, or, without a key
+   * check, a key or token without its provider's shape (sets the inline error).
+   */
   function validateSecret(): boolean {
     const value = secret.trim();
     if (value === '') {
@@ -251,6 +264,15 @@
     }
     if (secretKind === 'token' && provider === 'codex' && !isJwtShaped(value)) {
       localSecretError = m.settings_providerProfileKinds_tokenNotJwt_error();
+      return false;
+    }
+    const customEndpoint = baseUrl.trim() !== '' || (baseUrlSaved && baseUrlAction !== 'remove');
+    if (
+      !keyCheck &&
+      secretKind &&
+      !isSecretWellFormed(provider, secretKind, value, { customEndpoint })
+    ) {
+      localSecretError = secretShapeError(provider, secretKind);
       return false;
     }
     localSecretError = undefined;
@@ -396,6 +418,7 @@
           bind:customEndpointOpen
           disabled={fieldsDisabled}
           {secretDisabled}
+          {keyCheck}
         />
       {:else if kind === 'advanced'}
         <ProviderProfileEnvEditor
