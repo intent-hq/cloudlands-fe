@@ -73,6 +73,10 @@
     stepAfterWelcome,
     visibleOnboardingSteps,
   } from '$features/onboarding/utils/onboarding-steps';
+  import {
+    CONNECT_KINDS,
+    type ConnectKind,
+  } from '$features/onboarding/utils/onboarding-connect-step';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { providerRefBaseId } from '$shared/provider-profiles';
@@ -791,15 +795,6 @@
   // token, so its onboarding adds the Connect step after the provider pick.
   const orchestrator$ = selectIsOrchestratorBackend();
   const onboardingActiveProviderId$ = selectActiveProviderId();
-  const connectProvider = $derived(
-    profileProviderFromBaseId(providerRefBaseId($onboardingActiveProviderId$ ?? '')),
-  );
-  const connectProviderName = $derived(
-    $providerCatalogEntries$.find(
-      (entry) => entry.id === providerRefBaseId($onboardingActiveProviderId$ ?? ''),
-    )?.displayName ?? '',
-  );
-  let connectStepRef: OnboardingConnectStep | null = $state(null);
   const canAdvanceFromWelcome = $derived(hasConnectedProvider && $agentMachines$ !== 'none');
   let agentGridRef: AgentGrid | null = $state(null);
   const providerPager = createHorizontalPager({ itemSelector: '[data-provider-id]' });
@@ -808,6 +803,33 @@
   let onboardingTestPromptRunning = $state(false);
   let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
   let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
+  // The card picked on step 1 (its settings write may still be in flight),
+  // else the active provider or profile.
+  const connectBaseId = $derived(
+    onboardingGridSelectedProviderId ?? providerRefBaseId($onboardingActiveProviderId$ ?? ''),
+  );
+  const connectProvider = $derived(profileProviderFromBaseId(connectBaseId));
+  const connectProviderName = $derived(
+    $providerCatalogEntries$.find((entry) => entry.id === connectBaseId)?.displayName ?? '',
+  );
+  let connectStepRef: OnboardingConnectStep | null = $state(null);
+  // Kept here so Back from step 3 (or to step 1 and forward again for the
+  // same provider) keeps an unsaved choice and paste.
+  let connectKind = $state<ConnectKind>(CONNECT_KINDS[0]);
+  let connectSecret = $state('');
+  let connectSaving = $state(false);
+  let connectKindProvider: string | undefined;
+  $effect.pre(() => {
+    const provider = connectProvider;
+    if (provider === connectKindProvider) return;
+    connectKindProvider = provider;
+    connectKind = CONNECT_KINDS[0];
+    connectSecret = '';
+  });
+  // A provider without profile kinds has nothing to connect.
+  $effect(() => {
+    if (isConnectStep && !connectProvider) appStore.dispatch(goToStep('forge'));
+  });
   const onboardingSelectedCatalogEntry = $derived(
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
@@ -867,11 +889,7 @@
         onboardingTestPromptRunning = false;
       }
     }
-    appStore.dispatch(
-      goToStep(
-        stepAfterWelcome($orchestrator$ && profileProviderFromBaseId(providerId) !== undefined),
-      ),
-    );
+    appStore.dispatch(goToStep(stepAfterWelcome($orchestrator$)));
   }
 
   // Pull conflict state
@@ -1593,7 +1611,7 @@
                           </span>
                         {/if}
 
-                        {#if !isRequirementsStep && onboardingVisibleStep > 1}
+                        {#if !isRequirementsStep && onboardingVisibleStep > 1 && !(isConnectStep && connectSaving)}
                           <Button
                             variant="ghost"
                             type="button"
@@ -1828,6 +1846,9 @@
                             <OnboardingConnectStep
                               bind:this={connectStepRef}
                               provider={connectProvider}
+                              bind:kind={connectKind}
+                              bind:secret={connectSecret}
+                              bind:busy={connectSaving}
                               onContinue={() => appStore.dispatch(goToStep('forge'))}
                             />
                           {/if}

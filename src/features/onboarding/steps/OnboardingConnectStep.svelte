@@ -28,6 +28,8 @@
     providerProfileSecretSetupRequested,
     providerProfileSetupDismissed,
     providerProfilesRequested,
+    providerSettingsSessionClosed,
+    providerSettingsSessionOpened,
     setActiveProvider,
     setProviderEnabled,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -37,6 +39,7 @@
     selectProviderProfileSetups,
     selectProviderProfilesForBase,
     selectProviderProfilesLoadStatus,
+    selectProviderSettingsSessionRequests,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     CONNECT_KINDS,
@@ -54,6 +57,8 @@
     secret?: string;
     /** The profile save in flight (`providerProfiles` setup id). */
     setupId?: string | null;
+    /** Out: a save is in flight (the page holds Back until it settles). */
+    busy?: boolean;
     /** Advance once the profile is saved and selected. */
     onContinue: () => void;
   }
@@ -63,6 +68,7 @@
     kind = $bindable(CONNECT_KINDS[0]),
     secret = $bindable(''),
     setupId = $bindable(null),
+    busy = $bindable(false),
     onContinue,
   }: Props = $props();
 
@@ -77,13 +83,45 @@
 
   let replacing = $state(false);
   let saveFailed = $state(false);
+  // Making the saved profile the default is a settings write of its own:
+  // advance only once it succeeds, and retry just that write on failure.
+  const sessionId = crypto.randomUUID();
+  const sessionRequests$ = selectProviderSettingsSessionRequests(sessionId);
+  let selecting = $state<{ requestId: string; providerRef: string } | null>(null);
+  let unselectedRef = $state<string | null>(null);
 
   onMount(() => {
+    appStore.dispatch(providerSettingsSessionOpened(sessionId));
     if (selectProviderProfilesLoadStatus.select(appStore.state) !== 'success')
       appStore.dispatch(providerProfilesRequested());
     return () => {
       if (setupId) appStore.dispatch(providerProfileSetupDismissed(setupId));
+      appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
+  });
+
+  function selectProfile(providerRef: string) {
+    const requestId = crypto.randomUUID();
+    selecting = { requestId, providerRef };
+    unselectedRef = null;
+    appStore.dispatch(setProviderEnabled({ providerId: baseProviderId, enabled: true }));
+    appStore.dispatch(setActiveProvider(providerRef, { id: requestId, sessionId }));
+  }
+
+  $effect(() => {
+    const pending = selecting;
+    if (!pending) return;
+    const request = $sessionRequests$.find((item) => item.id === pending.requestId);
+    if (!request || request.status === 'pending') return;
+    untrack(() => {
+      selecting = null;
+      if (request.status === 'success') {
+        onContinue();
+        return;
+      }
+      unselectedRef = pending.providerRef;
+      saveFailed = true;
+    });
   });
 
   // Back keeps the choice: reopen on the saved profile's kind.
@@ -98,8 +136,16 @@
   const showsSaved = $derived(!!saved && savedKind === kind);
   const issue = $derived(connectSecretIssue(provider, kind, secret));
   const setup = $derived(setupId ? $setups$[setupId] : undefined);
-  const busy = $derived(!!setup && (setup.phase === 'saving' || setup.phase === 'checkingKey'));
-  const canContinue = $derived(canContinueConnect({ saved: showsSaved, replacing, issue, busy }));
+  const saving = $derived(
+    selecting !== null || (!!setup && (setup.phase === 'saving' || setup.phase === 'checkingKey')),
+  );
+  $effect(() => {
+    busy = saving;
+  });
+  const canContinue = $derived(
+    (unselectedRef !== null && !saving) ||
+      canContinueConnect({ saved: showsSaved, replacing, issue, busy: saving }),
+  );
   const secretError = $derived(issue === 'shape' ? secretShapeError(provider, kind) : undefined);
 
   const cards = $derived<
@@ -146,7 +192,7 @@
   }
 
   function choose(next: ConnectKind) {
-    if (busy || next === kind) return;
+    if (saving || next === kind) return;
     kind = next;
     secret = '';
     replacing = false;
@@ -155,7 +201,12 @@
 
   /** Continue: keep the saved profile, or save the pasted secret first. */
   export function submit() {
-    if (!canContinue) return;
+    if (unselectedRef && !saving) {
+      saveFailed = false;
+      selectProfile(unselectedRef);
+      return;
+    }
+    if (!canContinueConnect({ saved: showsSaved, replacing, issue, busy: saving })) return;
     if (showsSaved && !replacing) {
       onContinue();
       return;
@@ -202,13 +253,11 @@
       if (current.phase !== 'keySaved' && current.phase !== 'keyWorks') return;
       const profile = $profiles$.find((item) => item.id === current.profileId);
       if (!profile) return;
-      appStore.dispatch(setProviderEnabled({ providerId: baseProviderId, enabled: true }));
-      appStore.dispatch(setActiveProvider(profile.providerRef));
       appStore.dispatch(providerProfileSetupDismissed(current.id));
       setupId = null;
       secret = '';
       replacing = false;
-      onContinue();
+      selectProfile(profile.providerRef);
     });
   });
 </script>
@@ -225,7 +274,7 @@
         variant="outline"
         role="radio"
         aria-checked={selected}
-        disabled={busy}
+        disabled={saving}
         truncateLabel={false}
         labelClass="flex items-start gap-3"
         class="h-auto justify-start gap-3 whitespace-normal p-4 text-left {selected
@@ -254,7 +303,7 @@
       secretSaved={showsSaved}
       bind:replacing
       {secretError}
-      disabled={busy}
+      disabled={saving}
       keyCheck={false}
       pasteStep={false}
       customEndpoint={false}
@@ -278,11 +327,11 @@
       size="xl"
       variant={canContinue ? 'primary' : 'outline'}
       disabled={!canContinue}
-      loading={busy}
+      loading={saving}
       onclick={submit}
       data-testid="onboarding-connect-continue"
     >
-      {busy ? m.onboarding_connect_saving_label() : m.onboarding_connect_continue_label()}
+      {saving ? m.onboarding_connect_saving_label() : m.onboarding_connect_continue_label()}
       {#if canContinue}
         <span class="ml-1 opacity-50">⌘↵</span>
       {/if}
