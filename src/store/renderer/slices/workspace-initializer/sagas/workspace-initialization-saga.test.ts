@@ -715,6 +715,8 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
           sentryIssue: undefined,
           initialAgent: {
             name: 'Developer',
+            // The specialist's placeholder: the agent renames itself on its first turn.
+            nameExplicitlySet: false,
             model: 'sonnet',
             prompt: 'hello onboarding',
             agentType: 'workspace',
@@ -741,6 +743,26 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       status: 'success',
       prepared: { pull: false, specialistId: 'developer', specialistName: 'Developer' },
     });
+  });
+
+  it('leaves the onboarding General agent unnamed so the daemon placeholder is used', async () => {
+    mocks.resolveOnboardingModel.mockResolvedValueOnce({
+      provider: 'claude-code',
+      model: 'sonnet',
+      behaviorPrompt: undefined,
+      specialistId: undefined,
+      specialistName: undefined,
+    });
+    const action = workspaceInitializationSubmitted(onboardingSubmission(), {
+      id: 'onboarding-general',
+      resourceId: 'resource-onboarding-general',
+    });
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    const initialAgent = create.mock.calls[0]?.[0]?.initialAgent;
+    expect(initialAgent).toMatchObject({ nameExplicitlySet: false });
+    expect(initialAgent).not.toHaveProperty('name');
   });
 
   it('applies onboarding domain completion exactly once in the production owner', async () => {
@@ -1671,6 +1693,8 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
           plainFolder: true,
           initialAgent: {
             name: 'Developer',
+            // The specialist's placeholder: the agent renames itself on its first turn.
+            nameExplicitlySet: false,
             model: 'sonnet',
             prompt: 'hello onboarding',
             agentType: 'workspace',
