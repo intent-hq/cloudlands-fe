@@ -422,7 +422,8 @@
         variant="plain"
         size="sm"
         wrapContent={false}
-        class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} h-auto min-w-0 shrink justify-start gap-[var(--operational-leading-gap)] rounded-sm border border-transparent px-1.5 py-0.5 text-left hover:text-foreground"
+        class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} h-auto min-w-0 shrink justify-start rounded-sm border border-transparent px-1.5 py-0.5 text-left hover:text-foreground"
+        style="gap: var(--operational-leading-gap)"
         data-typography-role="body"
         disabled={!ready || Boolean(runtimeError)}
         onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
