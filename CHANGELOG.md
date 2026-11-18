@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.352.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.351.0...v2.352.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **onboarding:** provider credentials on an orchestrator, plus a Codex API key profile ([#4752](https://github.com/intent-hq/cloudlands-fe/issues/4752)) ([b42660e](https://github.com/intent-hq/cloudlands-fe/commit/b42660e554d8bc9221b16d6e2d33499af0945c08))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.244 ([#4757](https://github.com/intent-hq/cloudlands-fe/issues/4757)) ([1c80bca](https://github.com/intent-hq/cloudlands-fe/commit/1c80bca655d1c4f383bf76823e5042f2bb980bae))
+
 ## [2.351.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.350.1...v2.351.0) (2026-11-18)
 
 
