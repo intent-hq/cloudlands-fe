@@ -49,6 +49,7 @@ import {
 } from './update-telemetry';
 import { estimateDirCreatedAtMs } from './user-data-age';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
+import type { LocalPrefKey } from '../../../main/local-pref-keys';
 
 const { autoUpdater } = electronUpdater;
 
@@ -490,7 +491,7 @@ class AutoUpdateService {
    */
   private markCheckSucceededToday(periods: RequestPeriods): void {
     const now = new Date();
-    const updates: Array<[string, string]> = [];
+    const updates: Array<[LocalPrefKey, string]> = [];
     const today = utcDay(now);
     if (this.lastSuccessfulCheckDay !== today) {
       this.lastSuccessfulCheckDay = today;

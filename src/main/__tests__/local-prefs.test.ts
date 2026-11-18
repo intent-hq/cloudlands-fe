@@ -52,6 +52,18 @@ async function readDocumentOnDisk(): Promise<unknown> {
   return JSON.parse(await fs.readFile(path.join(tmpDir, 'local-prefs.json'), 'utf8'));
 }
 
+/** Write the file as an older or newer build left it; the API accepts only registered keys. */
+async function writeDocumentOnDisk(document: Record<string, unknown>): Promise<void> {
+  await fs.writeFile(path.join(tmpDir, 'local-prefs.json'), JSON.stringify(document), 'utf8');
+}
+
+const BROWSER_ACCESS_PREFS = {
+  'browserAccess.enabled': true,
+  'browserAccess.port': 47120,
+  'browserAccess.accessKey': 'k'.repeat(43),
+  'browserAccess.pageOrigin': 'https://box.example.ts.net',
+};
+
 describe('local-prefs', () => {
   it('reads the dock setting as on until opted out, and rejects an unreadable file', async () => {
     const { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref, setLocalPref } =
@@ -59,7 +71,7 @@ describe('local-prefs', () => {
     const file = path.join(tmpDir, 'local-prefs.json');
     // Missing file or missing key: the profile never chose, so the dock is on.
     expect(await getDockLabEnabledLocalPref()).toBe(true);
-    await setLocalPref('unrelated', 1);
+    await setLocalPref('menuBarAutoHide', true);
     expect(await getDockLabEnabledLocalPref()).toBe(true);
     await setDockLabEnabledLocalPref(false);
     expect(await getDockLabEnabledLocalPref()).toBe(false);
@@ -95,8 +107,8 @@ describe('local-prefs', () => {
 
   it('getLocalPref returns undefined for missing file/key', async () => {
     const { getLocalPref, hasLocalPref } = await import('../local-prefs');
-    expect(await getLocalPref('anything')).toBeUndefined();
-    expect(await hasLocalPref('anything')).toBe(false);
+    expect(await getLocalPref('featureCodes')).toBeUndefined();
+    expect(await hasLocalPref('featureCodes')).toBe(false);
   });
 
   it('setLocalPref then getLocalPref round-trips a value', async () => {
@@ -108,30 +120,34 @@ describe('local-prefs', () => {
 
   it('preserves other keys when writing one', async () => {
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
-    await setLocalPref('keychainSettings', { keychainAccessChoice: 'allow' });
+    await setLocalPref('backendClientIdentitiesV1', { key: 'k', canonicalIds: {} });
     await setLocalPref('betaUpdatesEnabled', true);
-    expect(await getLocalPref('keychainSettings')).toEqual({
-      keychainAccessChoice: 'allow',
+    expect(await getLocalPref('backendClientIdentitiesV1')).toEqual({
+      key: 'k',
+      canonicalIds: {},
     });
     expect(await getLocalPref('betaUpdatesEnabled')).toBe(true);
   });
 
+  it('keeps keys it does not know when rewriting the file', async () => {
+    await writeDocumentOnDisk({ addedByNewerBuild: 1 });
+    const { setLocalPref } = await import('../local-prefs');
+    await setLocalPref('dockEnabled', false);
+    expect(await readDocumentOnDisk()).toEqual({ addedByNewerBuild: 1, dockEnabled: false });
+  });
+
   it('deleteLocalPref removes a single key without disturbing others', async () => {
     const { setLocalPref, deleteLocalPref, getLocalPref } = await import('../local-prefs');
-    await setLocalPref('a', 1);
-    await setLocalPref('b', 2);
-    await deleteLocalPref('a');
-    expect(await getLocalPref('a')).toBeUndefined();
-    expect(await getLocalPref('b')).toBe(2);
+    await setLocalPref('selfPublishSuppressed', true);
+    await setLocalPref('dockEnabled', false);
+    await deleteLocalPref('selfPublishSuppressed');
+    expect(await getLocalPref('selfPublishSuppressed')).toBeUndefined();
+    expect(await getLocalPref('dockEnabled')).toBe(false);
   });
 
   it('removes the retired Browser access keys, including its saved access key', async () => {
-    const { setLocalPref, deleteRetiredLocalPrefs } = await import('../local-prefs');
-    await setLocalPref('browserAccess.enabled', true);
-    await setLocalPref('browserAccess.port', 47120);
-    await setLocalPref('browserAccess.accessKey', 'k'.repeat(43));
-    await setLocalPref('browserAccess.pageOrigin', 'https://box.example.ts.net');
-    await setLocalPref('dockLabEnabled', true);
+    await writeDocumentOnDisk({ ...BROWSER_ACCESS_PREFS, dockLabEnabled: true });
+    const { deleteRetiredLocalPrefs } = await import('../local-prefs');
     await deleteRetiredLocalPrefs();
     expect(await readDocumentOnDisk()).toEqual({ dockLabEnabled: true });
   });
@@ -159,11 +175,11 @@ describe('local-prefs', () => {
       if (failRename) throw new Error('disk unavailable');
       return actual(from, to);
     });
-    const { deleteRetiredLocalPrefs, setLocalPref, getLocalPref } = await import('../local-prefs');
-    await setLocalPref('browserAccess.accessKey', 'k'.repeat(43));
+    await writeDocumentOnDisk(BROWSER_ACCESS_PREFS);
+    const { deleteRetiredLocalPrefs, setLocalPref } = await import('../local-prefs');
     failRename = true;
     await expect(deleteRetiredLocalPrefs()).resolves.toBeUndefined();
-    expect(await getLocalPref('browserAccess.accessKey')).toBe('k'.repeat(43));
+    expect(await readDocumentOnDisk()).toEqual(BROWSER_ACCESS_PREFS);
     failRename = false;
     await setLocalPref('dockLabEnabled', true);
     await deleteRetiredLocalPrefs();
@@ -172,10 +188,14 @@ describe('local-prefs', () => {
 
   it('writes are serialized (no torn file with concurrent setters)', async () => {
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
-    await Promise.all([setLocalPref('x', 1), setLocalPref('y', 2), setLocalPref('z', 3)]);
-    expect(await getLocalPref('x')).toBe(1);
-    expect(await getLocalPref('y')).toBe(2);
-    expect(await getLocalPref('z')).toBe(3);
+    await Promise.all([
+      setLocalPref('lastUpdateCheckDay', '2026-11-18'),
+      setLocalPref('lastUpdateWeek', '2026-W47'),
+      setLocalPref('lastUpdateMonth', '2026-11'),
+    ]);
+    expect(await getLocalPref('lastUpdateCheckDay')).toBe('2026-11-18');
+    expect(await getLocalPref('lastUpdateWeek')).toBe('2026-W47');
+    expect(await getLocalPref('lastUpdateMonth')).toBe('2026-11');
   });
 
   it('a reader interleaved between the temp write and the rename sees the previous complete document', async () => {
@@ -188,26 +208,26 @@ describe('local-prefs', () => {
       return actual(from, to);
     });
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
-    await setLocalPref('doc', 'v1');
+    await setLocalPref('backendClientId', 'v1');
 
     let started!: () => void;
     let release!: () => void;
     const renameStarted = new Promise<void>((resolve) => (started = resolve));
     gate = { started, release: new Promise<void>((resolve) => (release = resolve)) };
 
-    const inflight = setLocalPref('doc', 'v2');
+    const inflight = setLocalPref('backendClientId', 'v2');
     await renameStarted;
 
     const midWriteEntries = await fs.readdir(tmpDir);
     expect(midWriteEntries).toContain('local-prefs.json');
     expect(midWriteEntries.some((name) => name.endsWith('.tmp'))).toBe(true);
-    expect(await readDocumentOnDisk()).toEqual({ doc: 'v1' });
-    expect(await getLocalPref('doc')).toBe('v1');
+    expect(await readDocumentOnDisk()).toEqual({ backendClientId: 'v1' });
+    expect(await getLocalPref('backendClientId')).toBe('v1');
 
     release();
     await inflight;
-    expect(await readDocumentOnDisk()).toEqual({ doc: 'v2' });
-    expect(await getLocalPref('doc')).toBe('v2');
+    expect(await readDocumentOnDisk()).toEqual({ backendClientId: 'v2' });
+    expect(await getLocalPref('backendClientId')).toBe('v2');
     expect(await fs.readdir(tmpDir)).toEqual(['local-prefs.json']);
   });
 
@@ -220,13 +240,13 @@ describe('local-prefs', () => {
       return actual(from, to);
     });
     const { setLocalPref, getLocalPref } = await import('../local-prefs');
-    await setLocalPref('doc', 'v1');
+    await setLocalPref('backendClientId', 'v1');
 
     failRename = true;
-    await setLocalPref('doc', 'v2');
+    await setLocalPref('backendClientId', 'v2');
 
-    expect(await readDocumentOnDisk()).toEqual({ doc: 'v1' });
-    expect(await getLocalPref('doc')).toBe('v1');
+    expect(await readDocumentOnDisk()).toEqual({ backendClientId: 'v1' });
+    expect(await getLocalPref('backendClientId')).toBe('v1');
     expect(await fs.readdir(tmpDir)).toEqual(['local-prefs.json']);
   });
 
@@ -234,7 +254,7 @@ describe('local-prefs', () => {
     const target = path.join(tmpDir, 'local-prefs.json');
     await fs.writeFile(target, 'not json at all', 'utf8');
     const { getLocalPref } = await import('../local-prefs');
-    expect(await getLocalPref('anything')).toBeUndefined();
+    expect(await getLocalPref('featureCodes')).toBeUndefined();
   });
 
   it('does not read the legacy electron-store file (fresh-start posture)', async () => {
