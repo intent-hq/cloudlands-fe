@@ -563,7 +563,7 @@
     {#if $isReadyToInstall$}
       <Button
         variant="plain"
-        class="mt-1.5 h-auto cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
+        class="type-caption mt-1.5 h-auto cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
         onclick={() => appStore.dispatch(installUpdate())}
       >
         {m.settings_footer_restartToUpdate_label()}
