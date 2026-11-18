@@ -149,6 +149,8 @@ export function buildCreateWorkspaceRequestFromProposal(
     initialAgent: {
       ...initialAgentFields,
       name: payloadName ?? options.resolveAgentName(specialist),
+      // A name derived from the specialist is a placeholder the agent replaces.
+      ...(payloadName === undefined ? { nameExplicitlySet: false } : {}),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,
       agentType: initialAgent?.agentType ?? createAgentTypeId('workspace'),

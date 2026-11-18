@@ -5,7 +5,7 @@ import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref } from './local-prefs';
 import { getRendererWebContents } from './window-backend';
 
-/** Main owns the dock Labs setting; it is off until the user turns it on. */
+/** Main owns the dock setting; it is on unless the user turned it off. */
 let enabled = false;
 let changeChain: Promise<void> = Promise.resolve();
 

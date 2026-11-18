@@ -562,7 +562,10 @@ export function* prepareOnboardingWorkspaceInitialization(
   }
   const initialAgent: NonNullable<WorkspaceInitializationRequest['createRequest']>['initialAgent'] =
     {
-      name: agentName,
+      // A placeholder like the new-workspace form's, so the agent names itself;
+      // General uses the daemon placeholder so naming does not depend on UI locale.
+      ...(specialistName !== undefined ? { name: agentName } : {}),
+      nameExplicitlySet: false,
       model,
       prompt: hasStagedFiles ? undefined : prompt,
       agentType: createAgentTypeId('workspace'),
