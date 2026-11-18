@@ -5,7 +5,13 @@
   import { Input } from '$lib/components/ui/input';
   import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import { faComment, faEllipsis } from '$lib/icons/phosphor-icons';
+  import { faArrowRight, faEllipsis } from '$lib/icons/phosphor-icons';
+  import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
+    OPERATIONAL_ROW_TONE_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { formatNumber } from '$lib/i18n/format';
   import * as m from '$shared/paraglide/messages.js';
@@ -404,16 +410,20 @@
   >
     {#if currentSnapshot && runnable && onUseConfiguration && !showSource}
       <Button
-        variant="ghost"
+        variant="plain"
         size="sm"
-        class="h-auto min-h-(--control-height-small) min-w-0 shrink py-1 text-muted-foreground hover:text-foreground"
-        truncateLabel={false}
-        labelClass="whitespace-normal text-left"
+        wrapContent={false}
+        class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} h-auto min-w-0 shrink justify-start gap-[var(--operational-leading-gap)] rounded-sm border border-transparent px-1.5 py-0.5 text-left hover:text-foreground"
+        data-typography-role="body"
         disabled={!ready || Boolean(runtimeError)}
         onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
       >
-        {#snippet leadingIcon()}<Fa icon={faComment} size={14} />{/snippet}
-        {m.inlineHtml_preview_useConfiguration_label()}
+        <span class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start" aria-hidden="true">
+          <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+        </span>
+        <span class="min-w-0 flex-1 whitespace-normal text-pretty">
+          {m.inlineHtml_preview_useConfiguration_label()}
+        </span>
       </Button>
     {/if}
     <ActionMenu
