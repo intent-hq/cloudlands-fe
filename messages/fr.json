@@ -6948,6 +6948,8 @@
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Clonage des sous-modules ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "Clonage des sous-modules…",
   "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
+  "workspace_compactInitializer_progressTransferTimeLeft_label": "{received} · {rate} · {duration} restantes",
   "workspace_compactInitializer_progressWorktree_label": "Création de l'arbre de travail…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt amélioré",
   "workspace_compactInitializer_repository_label": "Base de code",

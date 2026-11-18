@@ -38,6 +38,7 @@
     createProgressLabel,
     formatCreateProgressPercent,
   } from '$lib/components/workspace/initializer/create-progress-label';
+  import { createProgressTransferLabel } from '$lib/components/workspace/initializer/create-progress-transfer';
   import {
     CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
@@ -139,6 +140,9 @@
   });
 
   const liveProgress = $derived($progressEntry$?.sawFrame === true);
+  const transferLabel = $derived(
+    $progressEntry$?.transfer ? createProgressTransferLabel($progressEntry$.transfer) : null,
+  );
 
   /** For skipIsolation mode, strip the remote prefix (e.g. "origin/main" → "main") */
   const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
@@ -326,6 +330,11 @@
             data-testid="setup-card-progress-bar"
           ></div>
         </div>
+        {#if transferLabel}
+          <div class="mt-1 text-xs tabular-nums" data-testid="setup-card-progress-transfer">
+            {transferLabel}
+          </div>
+        {/if}
       {:else if skipIsolation || plainFolder}
         {m.onboarding_setupCard_opening_before()}
         {@render repoNameCopyable(m.onboarding_setupCard_opening_after())}

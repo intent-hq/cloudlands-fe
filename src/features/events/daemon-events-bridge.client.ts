@@ -352,6 +352,7 @@ import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
+import { parseCreateProgressTransfer } from '$lib/components/workspace/initializer/create-progress-transfer';
 import { safeParseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
 import type { ContextItem } from '$features/context/types';
@@ -2032,6 +2033,7 @@ function handleCloneProgressEvent(event: WorkspaceEvent, type: string): boolean 
         phase,
         percent,
         message: typeof data?.message === 'string' ? data.message : undefined,
+        transfer: parseCreateProgressTransfer(data?.transfer),
       }),
     );
     return true;

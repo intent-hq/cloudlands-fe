@@ -6948,6 +6948,8 @@
   "workspace_compactInitializer_progressSubmodulesCounted_label": "서브모듈 복제 중 ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "서브모듈 복제 중…",
   "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
+  "workspace_compactInitializer_progressTransferTimeLeft_label": "{received} · {rate} · {duration} 남음",
   "workspace_compactInitializer_progressWorktree_label": "워크트리 생성 중…",
   "workspace_compactInitializer_promptEnhanced_toast": "프롬프트가 개선되었습니다",
   "workspace_compactInitializer_repository_label": "코드베이스",

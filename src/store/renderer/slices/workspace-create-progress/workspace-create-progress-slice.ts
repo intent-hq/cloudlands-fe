@@ -1,6 +1,9 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type { WorkspaceCreateProgressState } from './workspace-create-progress-types';
+import type {
+  WorkspaceCreateProgressState,
+  WorkspaceCreateTransfer,
+} from './workspace-create-progress-types';
 
 export const initialState: WorkspaceCreateProgressState = {
   byProgressId: {},
@@ -18,7 +21,15 @@ export const beginWorkspaceCreateProgress = createAction<[progressId: string]>(
 
 /** Fold a `git:clone:progress` frame (§6.5) into the registered entry. */
 export const workspaceCreateProgressReceived = createAction<
-  [progressId: string, progress: { phase: string; percent: number; message?: string }]
+  [
+    progressId: string,
+    progress: {
+      phase: string;
+      percent: number;
+      message?: string;
+      transfer?: WorkspaceCreateTransfer;
+    },
+  ]
 >('workspaceCreateProgress/progressReceived');
 
 /** Fold the terminal `git:clone:done` frame (§6.5) into the registered entry. */
@@ -57,6 +68,7 @@ workspaceCreateProgressReducer.with(
           phase: progress.phase,
           percent: progress.percent,
           message: progress.message,
+          transfer: progress.transfer,
           sawFrame: true,
         },
       },

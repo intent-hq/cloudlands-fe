@@ -44,6 +44,21 @@ describe('workspaceCreateProgressReducer', () => {
     });
   });
 
+  it('progressReceived keeps the latest transfer and clears it on frames without one', () => {
+    const transfer = { receivedObjects: 5, totalObjects: 10, receivedBytes: 100 };
+    let state = workspaceCreateProgressReducer(initialState, beginWorkspaceCreateProgress(PID));
+    state = workspaceCreateProgressReducer(
+      state,
+      workspaceCreateProgressReceived(PID, { phase: 'receiving', percent: 30, transfer }),
+    );
+    expect(state.byProgressId[PID]?.transfer).toEqual(transfer);
+    state = workspaceCreateProgressReducer(
+      state,
+      workspaceCreateProgressReceived(PID, { phase: 'resolving', percent: 60 }),
+    );
+    expect(state.byProgressId[PID]?.transfer).toBeUndefined();
+  });
+
   it('progressReceived ignores unregistered progressIds (no create in flight)', () => {
     const state = workspaceCreateProgressReducer(
       initialState,

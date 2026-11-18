@@ -171,6 +171,49 @@ describe('WorkspaceSetupCard live clone progress', () => {
     expect(result.container.textContent).not.toContain('Creating an isolated copy of');
   });
 
+  it('shows download size, rate and time left while receiving, and hides them after', async () => {
+    renderCard(PID);
+
+    dispatchToSlice(
+      workspaceCreateProgressReceived(PID, {
+        phase: 'receiving',
+        percent: 40,
+        transfer: { receivedObjects: 1, totalObjects: 1000 },
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('setup-card-progress-label').textContent).toContain('40%');
+    });
+    // No bytes yet: nothing to show.
+    expect(screen.queryByTestId('setup-card-progress-transfer')).toBeNull();
+
+    dispatchToSlice(
+      workspaceCreateProgressReceived(PID, {
+        phase: 'receiving',
+        percent: 45,
+        transfer: {
+          receivedObjects: 500,
+          totalObjects: 1000,
+          receivedBytes: 120_000_000,
+          bytesPerSecond: 1_000_000,
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('setup-card-progress-transfer').textContent).toBe(
+        '120 MB · 1 MB/s · 2m left',
+      );
+    });
+
+    dispatchToSlice(workspaceCreateProgressReceived(PID, { phase: 'resolving', percent: 60 }));
+    await waitFor(() => {
+      expect(screen.getByTestId('setup-card-progress-label').textContent).toContain(
+        'Resolving deltas…',
+      );
+    });
+    expect(screen.queryByTestId('setup-card-progress-transfer')).toBeNull();
+  });
+
   it('never moves percent or bar backwards on a lower late frame', async () => {
     renderCard(PID);
 
