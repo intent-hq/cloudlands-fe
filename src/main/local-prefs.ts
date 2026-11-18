@@ -10,6 +10,9 @@
  * `settings` electron-store; consolidating them here lets the legacy
  * electron-store dependency retire (P3-4).
  *
+ * Every key is listed in `local-pref-keys.ts`; the API accepts no other key.
+ * A removed feature's keys move to its retired list, which startup deletes.
+ *
  * Fresh-start posture: this helper never reads the legacy electron-store
  * file. Existing users start from defaults on first launch.
  *
@@ -23,6 +26,13 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from '../shared/logger';
+import {
+  RETIRED_LOCAL_PREF_KEYS,
+  type LocalPrefKey,
+  type RetiredLocalPrefKey,
+} from './local-pref-keys';
+
+export type { LocalPrefKey } from './local-pref-keys';
 
 const logger = new Logger('LocalPrefs');
 
@@ -32,16 +42,22 @@ const FILE_NAME = 'local-prefs.json';
 /** In-flight write chain so concurrent writers serialize. */
 let writeChain: Promise<void> = Promise.resolve();
 
+/**
+ * The parsed file. Code may name only registered keys; any other key on disk
+ * (from a newer or older build) is kept as-is when the document is rewritten.
+ */
+type LocalPrefsDocument = Partial<Record<LocalPrefKey | RetiredLocalPrefKey, unknown>>;
+
 function filePath(): string {
   return path.join(app.getPath('userData'), FILE_NAME);
 }
 
-async function readAll(): Promise<Record<string, unknown>> {
+async function readAll(): Promise<LocalPrefsDocument> {
   try {
     const raw = await fs.readFile(filePath(), 'utf8');
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return parsed as LocalPrefsDocument;
     }
     return {};
   } catch (error) {
@@ -55,7 +71,7 @@ async function readAll(): Promise<Record<string, unknown>> {
   }
 }
 
-async function writeAll(next: Record<string, unknown>): Promise<void> {
+async function writeAll(next: LocalPrefsDocument): Promise<void> {
   const target = filePath();
   const dir = path.dirname(target);
   await fs.mkdir(dir, { recursive: true });
@@ -76,19 +92,19 @@ async function writeAll(next: Record<string, unknown>): Promise<void> {
 }
 
 /** Read a single FE-local preference; `undefined` when absent. */
-export async function getLocalPref<T = unknown>(key: string): Promise<T | undefined> {
+export async function getLocalPref<T = unknown>(key: LocalPrefKey): Promise<T | undefined> {
   const all = await readAll();
   return all[key] as T | undefined;
 }
 
 /** Return true iff `key` has been persisted (used for the download-attribution "already claimed" marker). */
-export async function hasLocalPref(key: string): Promise<boolean> {
+export async function hasLocalPref(key: LocalPrefKey): Promise<boolean> {
   const all = await readAll();
   return Object.prototype.hasOwnProperty.call(all, key);
 }
 
 /** Write a single FE-local preference (serialized). */
-export async function setLocalPref(key: string, value: unknown): Promise<void> {
+export async function setLocalPref(key: LocalPrefKey, value: unknown): Promise<void> {
   writeChain = writeChain
     .then(async () => {
       const all = await readAll();
@@ -102,7 +118,7 @@ export async function setLocalPref(key: string, value: unknown): Promise<void> {
 }
 
 /** Delete a single FE-local preference (serialized). */
-export async function deleteLocalPref(key: string): Promise<void> {
+export async function deleteLocalPref(key: LocalPrefKey): Promise<void> {
   writeChain = writeChain
     .then(async () => {
       const all = await readAll();
@@ -116,20 +132,17 @@ export async function deleteLocalPref(key: string): Promise<void> {
   return writeChain;
 }
 
-/** Keys of removed features. Browser access stored an access key here. */
-const RETIRED_KEYS = [
-  'browserAccess.enabled',
-  'browserAccess.port',
-  'browserAccess.accessKey',
-  'browserAccess.pageOrigin',
-] as const;
-
-/** Drop preferences of removed features in one write; no write when none is present. */
+/**
+ * Drop `RETIRED_LOCAL_PREF_KEYS` (preferences of removed features) in one
+ * write; no write when none is present.
+ */
 export async function deleteRetiredLocalPrefs(): Promise<void> {
   writeChain = writeChain
     .then(async () => {
       const all = await readAll();
-      const present = RETIRED_KEYS.filter((key) => Object.prototype.hasOwnProperty.call(all, key));
+      const present = RETIRED_LOCAL_PREF_KEYS.filter((key) =>
+        Object.prototype.hasOwnProperty.call(all, key),
+      );
       if (present.length === 0) return;
       for (const key of present) delete all[key];
       await writeAll(all);
@@ -172,7 +185,7 @@ export async function getDockLabEnabledLocalPref(): Promise<boolean> {
  * Like `getLocalPref`, but rejects an unreadable or malformed file instead of
  * reading it as unset, so a caller can tell "never chose" from "cannot know".
  */
-export async function getStrictLocalPref(key: string): Promise<unknown> {
+export async function getStrictLocalPref(key: LocalPrefKey): Promise<unknown> {
   return (await readStrictPrefsDocument())[key];
 }
 
@@ -217,7 +230,7 @@ export async function getDockShortcutOverridesLocalPref(): Promise<unknown> {
   const all = await readStrictPrefsDocument();
   return all.dockShortcutOverrides;
 }
-async function readStrictPrefsDocument(): Promise<Record<string, unknown>> {
+async function readStrictPrefsDocument(): Promise<LocalPrefsDocument> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath(), 'utf8');
@@ -228,7 +241,7 @@ async function readStrictPrefsDocument(): Promise<Record<string, unknown>> {
   const parsed: unknown = JSON.parse(raw);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
     throw new Error('local-prefs is not a JSON object');
-  return parsed as Record<string, unknown>;
+  return parsed as LocalPrefsDocument;
 }
 export async function setDockShortcutOverridesLocalPref(
   overrides: import('../shared/dock-shortcut-settings').DockShortcutOverrides,
