@@ -6,7 +6,7 @@ import {
 } from '$shared/types/machine-rail';
 
 /**
- * Machine rail (Labs): a window can host one renderer per machine and shows
+ * Machine rail: a window can host one renderer per machine and shows
  * one at a time. A toast raised in a renderer that is not shown would never be
  * seen, so it is also handed to the main process, which shows it in the
  * visible machine's renderer. Does nothing in a shown renderer or outside the

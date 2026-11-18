@@ -1141,7 +1141,7 @@ export const IPC_CHANNELS = {
     CHANGED: 'guest-sessions:changed',
   },
 
-  // Machine rail (Labs): one window stays connected to several machines and a
+  // Machine rail: one window stays connected to several machines and a
   // left rail switches which machine's renderer the window shows. Main owns
   // the per-window list and selection; CHANGED is a main→renderer push (also
   // in EVENT_CHANNELS). Types: `shared/types/machine-rail.ts`.

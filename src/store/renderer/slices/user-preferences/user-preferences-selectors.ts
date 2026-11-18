@@ -68,7 +68,7 @@ export const selectChatContentWidth = store.createSelector((state) => {
 });
 
 export const selectCollapseToolRuns = store.createSelector((state) => {
-  return state.userPreferences?.collapseToolRuns ?? false;
+  return state.userPreferences?.collapseToolRuns ?? true;
 });
 
 export const selectShellTransparencyEnabled = store.createSelector((state) => {

@@ -1,5 +1,5 @@
 /**
- * Machine rail (Labs) — shared IPC contract (main ⇄ renderer).
+ * Machine rail — shared IPC contract (main ⇄ renderer).
  *
  * One window stays connected to several machines. Each machine has its own
  * renderer inside the window; the rail picks which one is shown. Main owns the
@@ -50,7 +50,7 @@ export const MACHINE_RAIL_MAX_MACHINES = 9;
 
 /** `machine-rail:get-state` result and `machine-rail:changed` payload. */
 export interface MachineRailState {
-  /** The Labs setting. While off, a window holds and shows one machine. */
+  /** The Machine rail setting (Settings › Appearance). While off, a window holds and shows one machine. */
   enabled: boolean;
   /** The machines this window holds, in rail order. Never empty while the window is open. */
   machineIds: string[];

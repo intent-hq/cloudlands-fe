@@ -1,5 +1,5 @@
 /**
- * Renderer view of the experimental dock Labs setting. Main owns and persists
+ * Renderer view of the notch dock setting. Main owns and persists
  * it; this store reads it through `window:get-dock-lab`, follows the
  * `window:dock-lab-changed` push so every window agrees, and writes through
  * `window:set-dock-lab`. Like console-owner-status, it talks to the preload

@@ -7,6 +7,7 @@ import {
 } from '../../components/chat/__tests__/operational-renderer-test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
+import { setCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import ChatPolishCatalogPreview from './ChatPolishCatalogPreview.svelte';
 
 const fixture = {
@@ -87,11 +88,17 @@ describe('ChatPolishCatalogPreview', async () => {
   });
 
   it('keeps long labels accessible while their visible row can truncate', async () => {
-    const view = render(ChatPolishCatalogPreview, { props: { fixture } });
-    await settleOperationalFrames();
-    const longLabel = view.container.querySelector(
-      '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]',
-    );
-    expect(longLabel?.getAttribute('aria-label')).toContain('ThisIsAnIntentionallyLong');
+    const previous = appStore.state.userPreferences.collapseToolRuns;
+    appStore.dispatch(setCollapseToolRuns(false));
+    try {
+      const view = render(ChatPolishCatalogPreview, { props: { fixture } });
+      await settleOperationalFrames();
+      const longLabel = view.container.querySelector(
+        '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]',
+      );
+      expect(longLabel?.getAttribute('aria-label')).toContain('ThisIsAnIntentionallyLong');
+    } finally {
+      appStore.dispatch(setCollapseToolRuns(previous));
+    }
   });
 });

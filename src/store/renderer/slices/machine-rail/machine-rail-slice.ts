@@ -1,9 +1,9 @@
 /**
- * Machine Rail Slice (Labs)
+ * Machine Rail Slice
  *
  * A read-through view of the window's machine rail, which the main process
  * owns: the machines this window stays connected to and the one it shows. The
- * renderer dispatches intent (select, add, remove, turn the lab on or off);
+ * renderer dispatches intent (select, add, remove, turn the rail on or off);
  * the saga calls main, and main's reply or push is the only thing that changes
  * this state.
  */

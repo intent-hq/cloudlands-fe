@@ -583,7 +583,7 @@ export function registerWorkspaceTabShortcuts({
       },
     });
   }
-  // Keep the familiar workspace digits while the Labs rail is off, unless a user binding owns them.
+  // Keep the familiar workspace digits while the machine rail is off, unless a user binding owns them.
   for (let digit = 1; digit <= 9; digit++) {
     register({
       ...mod,

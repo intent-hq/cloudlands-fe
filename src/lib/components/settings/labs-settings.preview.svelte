@@ -16,7 +16,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { machineRailStateReceived } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import {
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
@@ -34,14 +33,12 @@
     tabGroups: setLabsTabGroupsEnabled,
   } as const;
   const previousPreferences = appStore.state.userPreferences;
-  const previousRail = appStore.state.machineRail;
   const previousApi = window.electronAPI;
 
   for (const [lab, set] of Object.entries(setters)) {
     appStore.dispatch(set(enabled.includes(lab as Lab)));
   }
   if (desktop) {
-    appStore.dispatch(machineRailStateReceived({ ...previousRail, enabled: true }));
     // A non-mock version makes the desktop-only rows render.
     window.electronAPI = {
       ...previousApi,
@@ -59,7 +56,6 @@
     );
     appStore.dispatch(setLabsTabGroupsEnabled(previousPreferences.labsTabGroupsEnabled));
     if (desktop) {
-      appStore.dispatch(machineRailStateReceived(previousRail));
       window.electronAPI = previousApi;
     }
   });

@@ -1032,7 +1032,7 @@ const bootFlow = app.whenReady().then(async () => {
   };
 
   // Menu commands act on the renderer the user is looking at: the window's
-  // own, or the machine view it shows (machine rail lab).
+  // own, or the machine view it shows (machine rail).
   const shownRenderer = (window: BrowserWindowType | null) =>
     window && {
       isDestroyed: () => window.isDestroyed(),
@@ -1713,7 +1713,7 @@ const bootFlow = app.whenReady().then(async () => {
     restore: () => dockMenuController.restore(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
-  // The machine rail lab is main-owned and on by default.
+  // The machine rail is main-owned and on by default.
   await loadMachineRailEnabled();
   // Notification clicks and new machines go to the frame focused last.
   trackFrameFocus();

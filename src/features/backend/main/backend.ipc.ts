@@ -2549,7 +2549,7 @@ function broadcast<C extends string>(
 /** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
 function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    // A window's own renderer plus its machine views (machine rail lab), each
+    // A window's own renderer plus its machine views (machine rail), each
     // bound to its own backend.
     for (const renderer of getRendererWebContents(win)) {
       if (backendId && getBackendIdForWebContents(renderer) !== backendId) continue;

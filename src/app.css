@@ -866,7 +866,7 @@ body.panel-resizing webview {
   justify-content: center;
 }
 
-/* Machine rail (Labs). Every machine has its own renderer (a view) in the
+/* Machine rail. Every machine has its own renderer (a view) in the
    window; the rail takes a strip at the left edge of each. `--machine-rail-inset`
    keeps the per-machine reconnect overlay off that strip so another machine
    stays one click away. The frame page under the views paints the shell

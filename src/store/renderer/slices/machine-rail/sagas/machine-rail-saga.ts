@@ -1,5 +1,5 @@
 /**
- * Machine Rail Saga (Labs)
+ * Machine Rail Saga
  *
  * Mirrors the window's machine rail from main into the slice (first read plus
  * every `machine-rail:changed` push) and sends rail requests to main. Main

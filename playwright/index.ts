@@ -11,6 +11,7 @@ import {
 } from '../src/lib/component-catalog/preview-definition';
 import { store } from '../src/store/renderer/configured-store';
 import { guestSessionsListUnavailable } from '../src/store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { setCollapseToolRuns } from '../src/store/renderer/slices/user-preferences/user-preferences-slice';
 import { registerMockIpcHandler } from '../src/shared/ipc-mock-router';
 import { startChatFixtureSagas } from '../src/test/chat-fixture-sagas';
 import { installMockElectronBridge } from '../src/test/ct-mock-electron-bridge';
@@ -30,6 +31,8 @@ store.init();
 // fail-closed owner-only surfaces (intent-hq/cloudlands-fe#2652) render in
 // previews as they do in the product instead of staying withheld forever.
 store.dispatch(guestSessionsListUnavailable());
+// Component specs assert the ungrouped tool-run layout; the product default groups them.
+store.dispatch(setCollapseToolRuns(false));
 // Answer every composer's draft restore, as the app's root sagas do. A ChatPanel
 // whose `drafts.get` goes unanswered shows the draft loading gate until its 5 s
 // fallback, and removing the gate then shifts every message row (cloudlands-fe#4160).

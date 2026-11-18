@@ -87,6 +87,7 @@
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
+  import MachineRailSettings from '$lib/components/settings/MachineRailSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -194,6 +195,7 @@
     'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
     'notch-dock': 'display',
+    'machine-rail': 'display',
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
@@ -744,6 +746,17 @@
                 <PauseAnimationsWhenUnfocusedSettings />
               </section>
               <DockLabSettings />
+              {#if isElectronPlatform()}
+                <section
+                  id="machine-rail"
+                  data-highlight-id="machine-rail"
+                  use:highlightTarget
+                  data-slot="settings-section-body"
+                  class="px-6 py-4"
+                >
+                  <MachineRailSettings />
+                </section>
+              {/if}
             </div>
           </div>
 

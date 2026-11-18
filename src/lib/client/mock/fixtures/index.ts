@@ -244,7 +244,7 @@ export const mockUserPreferences: UserPreferencesState = {
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   chatContentWidth: 'full',
-  collapseToolRuns: false,
+  collapseToolRuns: true,
   shellTransparencyEnabled: true,
   menuBarAutoHide: false,
   reduceMotionOnBattery: false,
