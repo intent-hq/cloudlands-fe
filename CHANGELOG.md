@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.351.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.350.1...v2.351.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **local-prefs:** register every saved key and fail on keys with no reader ([#4751](https://github.com/intent-hq/cloudlands-fe/issues/4751)) ([b4ffe54](https://github.com/intent-hq/cloudlands-fe/commit/b4ffe54a6b5fc7fe8c9dd00b102da828b2b59fb4))
+* **settings:** move Support into the footer row and drop "Up to date" ([#4741](https://github.com/intent-hq/cloudlands-fe/issues/4741)) ([e7ba96c](https://github.com/intent-hq/cloudlands-fe/commit/e7ba96c26bda714eb626a756e92bc6f5508663f1))
+
 ## [2.350.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.350.0...v2.350.1) (2026-11-18)
 
 
