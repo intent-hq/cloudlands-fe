@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "Counts update checks by platform, version, install source and country so we can see how releases roll out. No identifier is sent. Turn off to check for updates directly on GitHub.",
   "settings_shareUpdateStatistics_label": "Share anonymous update statistics",
   "settings_sidebar_advanced_label": "Advanced",
+  "settings_agentBehavior_advanced_label": "Advanced",
   "settings_sidebar_agentBehavior_label": "Agent defaults",
   "settings_sidebar_agents_label": "Agents",
   "settings_sidebar_appBehavior_label": "General",

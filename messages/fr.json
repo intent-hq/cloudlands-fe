@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "Compte les vérifications de mise à jour par plateforme, version, source d'installation et pays pour suivre le déploiement des versions. Aucun identifiant n'est envoyé. Désactivez pour vérifier les mises à jour directement sur GitHub.",
   "settings_shareUpdateStatistics_label": "Partager des statistiques de mise à jour anonymes",
   "settings_sidebar_advanced_label": "Avancé",
+  "settings_agentBehavior_advanced_label": "Avancé",
   "settings_sidebar_agentBehavior_label": "Valeurs par défaut des agents",
   "settings_sidebar_agents_label": "Agents",
   "settings_sidebar_appBehavior_label": "Général",

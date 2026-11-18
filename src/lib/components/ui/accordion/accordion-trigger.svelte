@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { Accordion as AccordionPrimitive } from 'bits-ui';
+  import CaretRightIcon from 'phosphor-svelte/lib/CaretRightIcon';
   import type { Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { useSize } from '$lib/components/ui/size-context';
@@ -27,13 +28,9 @@
 >
   <span class="min-w-0 flex-1">{@render children?.()}</span>
   <span class="first-line-icon">
-    <svg
+    <CaretRightIcon
       aria-hidden="true"
-      viewBox="0 0 16 16"
-      class="size-4 shrink-0 text-muted-foreground transition-[color,transform,stroke-width] duration-(--motion-fast) ease-(--ease-standard) group-hover:text-foreground group-data-[state=open]:rotate-90 group-data-[state=open]:text-foreground group-data-[state=open]:[stroke-width:2] motion-reduce:transition-none"
-      fill="none"
-    >
-      <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-    </svg>
+      class="size-4 shrink-0 text-muted-foreground transition-[color,transform] duration-(--motion-fast) ease-(--ease-standard) group-hover:text-foreground group-data-[state=open]:rotate-90 group-data-[state=open]:text-foreground motion-reduce:transition-none"
+    />
   </span>
 </AccordionPrimitive.Trigger>

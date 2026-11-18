@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { SettingsFieldRow, SettingsSection } from '$lib/components/patterns/settings';
+  import {
+    SettingsDisclosure,
+    SettingsFieldRow,
+    SettingsSection,
+  } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import {
@@ -338,6 +342,10 @@
     );
   });
 
+  // Hash targets rendered inside the collapsed Agent defaults "Advanced" disclosure.
+  const AGENT_ADVANCED_TARGETS = new Set(['agent-features', 'tool-approvals']);
+  let agentAdvancedOpen = $state(false);
+
   // Listen for hash changes while already on the settings page
   let hashScrollTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
@@ -362,6 +370,7 @@
     if (targetTab && targetTab !== activeTab) {
       activeTab = targetTab;
     }
+    if (AGENT_ADVANCED_TARGETS.has(targetId)) agentAdvancedOpen = true;
 
     // Scroll to hash target after tab switch
     hashScrollTimer = setTimeout(() => {
@@ -891,7 +900,14 @@
             />
           </div>
 
-          <AgentFeaturesSettings />
+          <SettingsDisclosure
+            label={m.settings_agentBehavior_advanced_label()}
+            flush
+            muted
+            bind:open={agentAdvancedOpen}
+          >
+            <AgentFeaturesSettings />
+          </SettingsDisclosure>
         {/if}
 
         <!-- Input -->
