@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.347.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.7...v2.347.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **desktop:** turn the notch dock and machine rail on by default ([#4734](https://github.com/intent-hq/cloudlands-fe/issues/4734)) ([415c500](https://github.com/intent-hq/cloudlands-fe/commit/415c500eeb6f8f5fe00af260d124be1bd13f5663))
+
+
+### 🐛 Bug Fixes
+
+* **onboarding:** mark the first agent's specialist name as a placeholder ([#4732](https://github.com/intent-hq/cloudlands-fe/issues/4732)) ([525602d](https://github.com/intent-hq/cloudlands-fe/commit/525602d2595fa025bdc46b099e59676e10d53594))
+
 ## [2.346.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.346.6...v2.346.7) (2026-11-18)
 
 
