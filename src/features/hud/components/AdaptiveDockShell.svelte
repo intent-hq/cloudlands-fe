@@ -38,7 +38,6 @@
   import DockSideEntries from './DockSideEntries.svelte';
   import DockActionFeedback from './DockActionFeedback.svelte';
   import DockShellSilhouette from './DockShellSilhouette.svelte';
-  import DockMachineMenu from './DockMachineMenu.svelte';
   let {
     workspaces,
     olderWorkspaces = [],
@@ -107,8 +106,6 @@
     },
   );
   let conversationPopupOpen = false;
-  let machineMenuOpen = $state(false);
-  let machineRegions: DockPointerRect[] = [];
   let popupEscapeEvent: KeyboardEvent | null = null;
   const dragging = $derived(placement.phase === 'dragging');
   const side = $derived(placement.placement.kind === 'edge' ? placement.placement.side : null);
@@ -205,21 +202,17 @@
     },
     keepsOpen: (inside, keyboard) => conversationFocus.keepsOverviewOpen(inside, keyboard),
     popupEscapeEvent: () => popupEscapeEvent,
-    machineMenuOpen: () => machineMenuOpen,
+    canTurnOff: () => !recording && !inputLive,
     machineId: () => machineId,
     machines: () => machines,
     machineError: () => machineError,
     switchMachine(id) {
       onMachine?.(id);
     },
-    closeMenu() {
-      machineMenuOpen = false;
-    },
     closeLikeEscape,
     root: () => rootElement,
     outsideBlocked: () =>
       nativeMenuOpen ||
-      machineMenuOpen ||
       conversationPopupOpen ||
       conversationResize.held ||
       (!expanded && !edgeState.held),
@@ -255,7 +248,6 @@
     !edge &&
       !dragging &&
       (nativeMenuOpen ||
-        machineMenuOpen ||
         (pinned
           ? conversationVisible
           : expandedByUser || dockIntro.hold || (!floating && pending))),
@@ -285,9 +277,7 @@
       reveal: shellMotion.reveal,
       expandedHeight: shellMotion.openHeight,
       rowLimit,
-      workspaceCount: machineMenuOpen
-        ? Math.max(overviewWorkspaceCount, Math.min(machines?.length ?? 0, 5))
-        : overviewWorkspaceCount,
+      workspaceCount: overviewWorkspaceCount,
       hasOlderWorkspaces: olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
@@ -353,20 +343,10 @@
         ...(edgeState.shell && !dragging ? [edgeState.shell] : []),
         ...(conversationVisible && !dragging ? conversationRegions : []),
         ...feedbackRegions,
-        ...machineRegions,
       ],
       placement.revision,
     );
   }
-  $effect(() => {
-    if (placement.captureHidden || dragging) machineMenuOpen = false;
-  });
-  $effect(() => {
-    if (machineError)
-      untrack(() => {
-        if (machines && !placement.captureHidden && !dragging) machineMenuOpen = true;
-      });
-  });
   function measure(): void {
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     measureFrame = requestAnimationFrame(() => {
@@ -480,7 +460,7 @@
         placement.captureHidden ||
         placement.phase !== 'idle' ||
         conversationResize.held,
-      popup: nativeMenuOpen || machineMenuOpen || conversationPopupOpen,
+      popup: nativeMenuOpen || conversationPopupOpen,
       root: rootElement,
     }),
     () => command({ action: 'focus' }),
@@ -654,41 +634,13 @@
   const reveal = $derived(shellMotion.reveal);
 </script>
 
-{#if machineMenuOpen && gripElement && (edge || shellMotion.contentVisible)}
-  <DockMachineMenu
-    bind:open={machineMenuOpen}
-    anchor={gripElement}
-    machines={machines ?? []}
-    currentId={machineId}
-    pending={machineSwitching}
-    error={machineError}
-    onSwitch={(id) => onMachine?.(id)}
-    canTurnOff={!recording && !inputLive && machineSwitching === null}
-    side={edge ? (side === 'left' ? 'right' : 'left') : floatingUp ? 'top' : 'bottom'}
-    onRegionsChange={(regions) => {
-      machineRegions = regions;
-      measure();
-    }}
-  />
-{/if}
 <svelte:window
   oncontextmenu={shellDrag.contextMenu}
   onpointerdowncapture={shellDrag.outsidePointer}
   onkeydowncapture={(event) => {
     lastUserInput = performance.now();
     if (shellDrag.gesture || shellDrag.awaiting !== null || dragging) shellDrag.keydown(event);
-    else if (
-      machineMenuOpen &&
-      event.key === 'Escape' &&
-      !event.isComposing &&
-      !placement.captureHidden &&
-      !event.defaultPrevented
-    ) {
-      machineMenuOpen = false;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      gripElement?.focus({ preventScroll: true });
-    } else if (event.key === 'Escape' && conversationPopupOpen) popupEscapeEvent = event;
+    else if (event.key === 'Escape' && conversationPopupOpen) popupEscapeEvent = event;
   }}
   onkeydown={shellDrag.keydown}
   onblur={() => {
@@ -801,7 +753,6 @@
             )
               return;
             event.preventDefault();
-            machineMenuOpen = false;
             // eslint-disable-next-line intent/no-component-async-data-fetch -- native app activation, not domain data
             activateIntentFromDock();
           }}
@@ -813,7 +764,7 @@
               if (!control) shellDrag.suppressClick = false;
               return;
             }
-            if (notch && pinned && !(grip && machines && onMachine)) {
+            if (notch && pinned && !grip) {
               shellDrag.cancelOpen();
               conversationPresence.show();
               expandedByUser = true;
@@ -836,7 +787,7 @@
             aria-label={m.dock_logo_menu_label()}
             title={m.dock_logo_menu_hint()}
             aria-haspopup="menu"
-            aria-expanded={machineMenuOpen}
+            aria-expanded={nativeMenuOpen}
             data-testid="dock-drag-handle"
             wrapContent={false}
             onpointerdown={shellDrag.pointerDown}
@@ -845,12 +796,6 @@
             onpointercancel={() => shellDrag.pointerEnd(true)}
             onlostpointercapture={() => {
               if (shellDrag.gesture) shellDrag.pointerEnd(true);
-            }}
-            oncontextmenu={(event) => {
-              if (dragging || placement.captureHidden || shellDrag.gesture) return;
-              event.preventDefault();
-              event.stopPropagation();
-              machineMenuOpen = true;
             }}
             onkeydown={(event) => {
               if (dragging || placement.captureHidden || shellDrag.gesture) return;
@@ -861,7 +806,7 @@
               ) {
                 event.preventDefault();
                 event.stopPropagation();
-                machineMenuOpen = true;
+                void shellDrag.openMenu(true);
               }
             }}
             onclick={(event) => {
@@ -879,7 +824,7 @@
                 placement.captureHidden
               )
                 return;
-              machineMenuOpen = !machineMenuOpen;
+              void shellDrag.openMenu(event.detail === 0);
             }}
           >
             <span class="grip-mark"><Logo width={16} /></span>

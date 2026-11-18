@@ -1,4 +1,4 @@
-import { showDockContextMenu } from '$features/hud/dock-context-menu';
+import { activateIntentFromDock, showDockContextMenu } from '$features/hud/dock-context-menu';
 import { wantsDockContextMenu } from '$features/hud/dock-context-target';
 import type { DockMachineOption } from './dock-machine-types';
 import { spring } from '$lib/motion';
@@ -49,12 +49,11 @@ interface DockShellDragState {
   userInput(): void;
   dismiss(): void;
   popupEscapeEvent(): KeyboardEvent | null;
-  machineMenuOpen(): boolean;
+  canTurnOff(): boolean;
   machineId(): string;
   machines(): DockMachineOption[] | undefined;
   machineError(): boolean;
   switchMachine(id: string): void;
-  closeMenu(): void;
   closeLikeEscape(): void;
 }
 
@@ -290,31 +289,46 @@ export function useDockShellDrag(state: DockShellDragState) {
     state.dismiss();
   }
   async function contextMenu(event: MouseEvent): Promise<void> {
+    if (!wantsDockContextMenu(event.target)) return;
+    event.preventDefault();
+    await openMenu();
+  }
+  async function openMenu(keyboard = false): Promise<void> {
     if (
+      state.disposed() ||
       state.placement().captureHidden ||
       state.dragging() ||
       gesture ||
-      !wantsDockContextMenu(event.target)
+      awaitingDragStart !== null ||
+      state.resizeBusy() ||
+      nativeMenuOpen
     )
       return;
-    event.preventDefault();
-    if (nativeMenuOpen) return;
     nativeMenuOpen = true;
+    if (keyboard) state.setKeyboardOpen(true);
     cancelOpen();
     cancelClose();
     const current = state.machineId();
+    let restoreFocus = keyboard;
     try {
       const result = await showDockContextMenu({
         machines: state.machines(),
-        currentId: state.machineId(),
+        currentId: current,
         pending: state.machineSwitching(),
         error: state.machineError(),
+        canTurnOff: state.canTurnOff(),
       });
       if (
-        !state.disposed() &&
-        !state.placement().captureHidden &&
-        !state.dragging() &&
-        state.machineId() === current &&
+        state.disposed() ||
+        state.placement().captureHidden ||
+        state.dragging() ||
+        state.machineId() !== current
+      )
+        return;
+      if (result.action === 'open-intent') {
+        restoreFocus = false;
+        activateIntentFromDock();
+      } else if (
         !state.machineSwitching() &&
         result.backendId &&
         result.backendId !== state.machineId() &&
@@ -323,7 +337,16 @@ export function useDockShellDrag(state: DockShellDragState) {
         state.switchMachine(result.backendId);
     } finally {
       nativeMenuOpen = false;
-      if (!state.disposed()) leave();
+      if (!state.disposed()) {
+        if (
+          restoreFocus &&
+          !state.placement().captureHidden &&
+          !state.dragging() &&
+          !state.machineSwitching()
+        )
+          state.grip()?.focus({ preventScroll: true });
+        leave();
+      }
     }
   }
   function keydown(event: KeyboardEvent): void {
@@ -331,7 +354,8 @@ export function useDockShellDrag(state: DockShellDragState) {
       event.key !== 'Escape' ||
       event.isComposing ||
       state.placement().captureHidden ||
-      event.defaultPrevented
+      event.defaultPrevented ||
+      nativeMenuOpen
     )
       return;
     if (gesture || awaitingDragStart !== null || state.dragging()) {
@@ -345,12 +369,6 @@ export function useDockShellDrag(state: DockShellDragState) {
       return;
     }
     if (event === state.popupEscapeEvent()) return;
-    if (state.machineMenuOpen()) {
-      state.closeMenu();
-      event.preventDefault();
-      state.grip()?.focus({ preventScroll: true });
-      return;
-    }
     event.preventDefault();
     state.closeLikeEscape();
   }
@@ -412,6 +430,7 @@ export function useDockShellDrag(state: DockShellDragState) {
       return nativeMenuOpen;
     },
     contextMenu,
+    openMenu,
     outsidePointer,
     keydown,
     pointerDown,
