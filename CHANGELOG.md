@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.350.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.349.1...v2.350.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* move the machine rail out of Labs and collapse tool activity by default ([#4746](https://github.com/intent-hq/cloudlands-fe/issues/4746)) ([abe331a](https://github.com/intent-hq/cloudlands-fe/commit/abe331a1c7e0f93284002864ce434d296a43f010))
+
+
+### 🐛 Bug Fixes
+
+* delete retired Browser access prefs, including the saved access key ([#4744](https://github.com/intent-hq/cloudlands-fe/issues/4744)) ([75afb69](https://github.com/intent-hq/cloudlands-fe/commit/75afb69d5826b1086829d2aeaba0c74d19885d4f))
+
 ## [2.349.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.349.0...v2.349.1) (2026-11-18)
 
 
