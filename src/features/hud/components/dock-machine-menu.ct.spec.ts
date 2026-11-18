@@ -34,7 +34,7 @@ for (const side of ['left', 'right'] as const) {
 test('failed native device selection preserves current machine and retries on the same menu IPC', async ({
   mount,
   page,
-}) => {
+}, info) => {
   const harness = await installPausedClock(page, () =>
     mount(Harness, { props: { failMachineOnce: true }, hooksConfig: { mockBackend: {} } }),
   );
@@ -42,15 +42,26 @@ test('failed native device selection preserves current machine and retries on th
   await logo.press('ArrowDown');
   await page.getByRole('button', { name: 'Choose build server' }).click();
   await page.clock.runFor(600);
-  await logo.press('ArrowDown');
+  const feedback = page.locator('[data-dock-action-feedback]');
+  await expect(feedback.getByRole('status')).toHaveText(
+    'Could not connect. Select a machine to retry.',
+  );
+  await expect(feedback).toBeVisible();
+  await feedback.screenshot({ path: info.outputPath('machine-switch-error.png') });
+  await feedback.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect
     .poll(async () => JSON.parse((await harness.getAttribute('data-request'))!).error)
     .toBe(true);
   await expect
     .poll(async () => JSON.parse((await harness.getAttribute('data-request'))!).currentId)
     .toBe('local');
+  await page.getByRole('button', { name: 'Cancel native menu' }).click();
+  await feedback.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(feedback).toHaveCount(0);
+  await logo.press('ArrowDown');
   await page.getByRole('button', { name: 'Choose build server' }).click();
   await page.clock.runFor(600);
+  await expect(feedback).toHaveCount(0);
   await logo.press('ArrowDown');
   await expect
     .poll(async () => JSON.parse((await harness.getAttribute('data-request'))!).currentId)

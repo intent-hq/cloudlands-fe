@@ -121,14 +121,18 @@
   let feedback = $state<{ message: string; retry?: () => void } | null>(null);
   let feedbackRegions: DockPointerRect[] = [];
   let placementErrorDismissed = $state(false);
+  let machineErrorDismissed = $state(false);
   const actionFeedback = $derived(
     feedback ??
-      (placementError && !placementErrorDismissed
-        ? { message: dockPlacementFailureMessage(placementError), retry: resetPlacement }
-        : null),
+      (machineError && !machineErrorDismissed
+        ? { message: m.dock_machineSwitchFailed_error(), retry: () => void shellDrag.openMenu() }
+        : placementError && !placementErrorDismissed
+          ? { message: dockPlacementFailureMessage(placementError), retry: resetPlacement }
+          : null),
   );
   $effect(() => {
     if (!placementError) placementErrorDismissed = false;
+    if (!machineError) machineErrorDismissed = false;
   });
   let reducedMotion = $state(false);
   let keyboardOpen = $state(false);
@@ -964,6 +968,7 @@
     }}
     onDismiss={() => {
       placementErrorDismissed = !!placementError;
+      machineErrorDismissed = machineError;
       feedback = null;
     }}
     onRegionsChange={(regions) => {
