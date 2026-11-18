@@ -12,6 +12,11 @@
  * This file has no imports so tests can load it without Electron.
  */
 
+/**
+ * Production code uses only `LocalPrefKey`; the array lets the registry test
+ * enumerate the keys.
+ * @internal
+ */
 export const LOCAL_PREF_KEYS = [
   // Auto-update
   'updateChannel',

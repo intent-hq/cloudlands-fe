@@ -51,7 +51,8 @@ function isProductionFile(file: string): boolean {
 function compilerOptions(): ts.CompilerOptions {
   const configPath = path.join(ROOT, 'tsconfig.main.json');
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
-  if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'));
+  if (config.error)
+    throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'));
   const { options } = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
   // Only the files below are loaded; anything else resolves to `any`, which
   // the unresolved-key test reports instead of silently missing a reader.
@@ -227,15 +228,15 @@ function analyze(program: ts.Program): Analysis {
   return { readers, unresolved, retiredCleanupCallers };
 }
 
-/** The program with every read site of `key` blanked out, as if its feature were deleted. */
-function withoutReadersOf(key: string, analysis: Analysis, baseline: ts.Program): ts.Program {
+/** The program with every read site of `keys` blanked out, as if their features were deleted. */
+function withoutReadersOf(keys: string[], analysis: Analysis): ts.Program {
   const byFile = new Map<string, ReadSite[]>();
-  for (const read of analysis.readers.get(key) ?? []) {
+  for (const read of keys.flatMap((key) => analysis.readers.get(key) ?? [])) {
     byFile.set(read.file, [...(byFile.get(read.file) ?? []), read]);
   }
   const overrides = new Map<string, string>();
   for (const [file, sites] of byFile) {
-    let text = baseline.getSourceFile(file)!.getFullText();
+    let text = program.getSourceFile(file)!.getFullText();
     for (const read of sites.sort((a, b) => b.start - a.start)) {
       text = `${text.slice(0, read.start)}(undefined as never)${text.slice(read.end)}`;
     }
@@ -299,14 +300,12 @@ describe('local-prefs key registry', () => {
     expect(analysis.retiredCleanupCallers).toContain(MAIN_INDEX);
   });
 
-  it.each([
-    ['a direct getLocalPref reader', 'menuBarAutoHide'],
-    ['a local-prefs helper reader', 'dockEnabled'],
-  ])('reports a key as orphaned once %s is deleted', (_label, key) => {
-    expect(analysis.readers.get(key)?.length).toBeGreaterThan(0);
-    const mutated = analyze(withoutReadersOf(key, analysis, program));
-    expect(mutated.readers.has(key)).toBe(false);
-    const stillRead = LOCAL_PREF_KEYS.filter((other) => other !== key && mutated.readers.has(other));
-    expect(stillRead).toHaveLength(LOCAL_PREF_KEYS.length - 1);
+  it('reports keys as orphaned once their readers are deleted', () => {
+    // One read through a local-prefs helper and one direct getLocalPref reader,
+    // in registry order.
+    const deleted = ['dockEnabled', 'menuBarAutoHide'];
+    for (const key of deleted) expect(analysis.readers.get(key)?.length, key).toBeGreaterThan(0);
+    const mutated = analyze(withoutReadersOf(deleted, analysis));
+    expect(LOCAL_PREF_KEYS.filter((key) => !mutated.readers.has(key))).toEqual(deleted);
   });
 });
