@@ -642,6 +642,25 @@ describe('settings tab route and focus behavior', () => {
     expect(document.getElementById(sectionId)).not.toBeNull();
   });
 
+  it.each([
+    ['/settings?tab=agent-behavior', 'false'],
+    ['/settings?tab=agent-behavior#agent-features', 'true'],
+    ['/settings#tool-approvals', 'true'],
+  ])('renders Agent defaults Advanced for %s with aria-expanded=%s', async (url, expanded) => {
+    renderSettings(url);
+
+    const main = await waitFor(() => {
+      const content = document.getElementById('global-instructions')?.parentElement;
+      expect(content).toBeTruthy();
+      return content!;
+    });
+    await waitFor(() =>
+      expect(
+        within(main).getByRole('button', { name: 'Advanced' }).getAttribute('aria-expanded'),
+      ).toBe(expanded),
+    );
+  });
+
   it('activates selected specialist views', async () => {
     const developerDefinition = SPECIALISTS.find(({ id }) => id === 'developer')!;
     renderSettings('/settings?tab=specialists');

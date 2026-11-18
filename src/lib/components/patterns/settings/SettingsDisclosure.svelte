@@ -8,6 +8,7 @@
     children,
     flush = false,
     muted = false,
+    open = $bindable(false),
     class: className,
   }: {
     label: string;
@@ -16,12 +17,18 @@
     flush?: boolean;
     /** Keep secondary controls quiet in both disclosure states. */
     muted?: boolean;
+    open?: boolean;
     class?: string;
   } = $props();
-  let value = $state<string[]>([]);
+  const value = $derived(open ? ['content'] : []);
 </script>
 
-<Accordion.Root type="multiple" bind:value class={cn('min-w-0', className)}>
+<Accordion.Root
+  type="multiple"
+  {value}
+  onValueChange={(next: string[]) => (open = next.includes('content'))}
+  class={cn('min-w-0', className)}
+>
   <Accordion.Item value="content">
     <Accordion.Header>
       <Accordion.Trigger

@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "リリースの展開状況を把握するため、アップデートの確認回数をプラットフォーム、バージョン、インストール元、国別に集計します。識別子は送信されません。オフにすると GitHub で直接アップデートを確認します。",
   "settings_shareUpdateStatistics_label": "匿名のアップデート統計を共有",
   "settings_sidebar_advanced_label": "詳細",
+  "settings_agentBehavior_advanced_label": "詳細設定",
   "settings_sidebar_agentBehavior_label": "エージェントのデフォルト",
   "settings_sidebar_agents_label": "エージェント",
   "settings_sidebar_appBehavior_label": "一般",

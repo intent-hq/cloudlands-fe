@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "Cuenta las comprobaciones de actualizaciones por plataforma, versión, origen de instalación y país para ver cómo se distribuyen las versiones. No se envía ningún identificador. Desactívalo para buscar actualizaciones directamente en GitHub.",
   "settings_shareUpdateStatistics_label": "Compartir estadísticas de actualización anónimas",
   "settings_sidebar_advanced_label": "Avanzado",
+  "settings_agentBehavior_advanced_label": "Avanzado",
   "settings_sidebar_agentBehavior_label": "Valores predeterminados del agente",
   "settings_sidebar_agents_label": "Agentes",
   "settings_sidebar_appBehavior_label": "General",

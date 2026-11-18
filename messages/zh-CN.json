@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "按平台、版本、安装来源和国家/地区统计更新检查次数，以便了解版本的推出情况。不会发送任何标识符。关闭后将直接从 GitHub 检查更新。",
   "settings_shareUpdateStatistics_label": "共享匿名更新统计",
   "settings_sidebar_advanced_label": "高级",
+  "settings_agentBehavior_advanced_label": "高级",
   "settings_sidebar_agentBehavior_label": "智能体默认值",
   "settings_sidebar_agents_label": "智能体",
   "settings_sidebar_appBehavior_label": "常规",

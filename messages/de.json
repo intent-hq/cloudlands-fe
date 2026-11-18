@@ -5781,6 +5781,7 @@
   "settings_shareUpdateStatistics_description": "Zählt Update-Prüfungen nach Plattform, Version, Installationsquelle und Land, damit wir sehen, wie Releases ausgerollt werden. Es wird keine Kennung gesendet. Deaktivieren, um direkt bei GitHub nach Updates zu suchen.",
   "settings_shareUpdateStatistics_label": "Anonyme Update-Statistiken teilen",
   "settings_sidebar_advanced_label": "Erweitert",
+  "settings_agentBehavior_advanced_label": "Erweitert",
   "settings_sidebar_agentBehavior_label": "Agent-Standardwerte",
   "settings_sidebar_agents_label": "Agenten",
   "settings_sidebar_appBehavior_label": "Allgemein",

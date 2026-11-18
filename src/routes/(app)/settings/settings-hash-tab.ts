@@ -80,6 +80,7 @@ const hashToTab: Record<string, SettingsTab> = {
   'cli-optimization': 'setup',
   'workspace-api': 'advanced',
   'agent-features': 'agent-behavior',
+  'tool-approvals': 'agent-behavior',
   'agent-backend': 'advanced',
   'notch-dock': 'display',
   'dock-lab': 'display',
