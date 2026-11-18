@@ -54,6 +54,14 @@ async function sectionBoundary(page: Page) {
   await section.scrollIntoViewIfNeeded();
   await expect(section.getByTestId('response-group-summary')).toBeVisible();
   await expect(section.locator('.content-block--text')).toBeVisible();
+  await section.evaluate(async (section) => {
+    await Promise.all(
+      section
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
   return section.evaluate((section) => {
     const operational = section
       .querySelector<HTMLElement>('[data-testid="response-group"]')
