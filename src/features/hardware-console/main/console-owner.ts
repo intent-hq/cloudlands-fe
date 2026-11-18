@@ -12,7 +12,7 @@
  *   - push:   `hardware-console:owner-changed` with a per-webContents
  *             { isOwner } payload whenever ownership changes
  *
- * With the machine rail (Labs) a window hosts one renderer per machine; the
+ * With the machine rail a window hosts one renderer per machine; the
  * owner window's input goes to the renderer it shows, and every rail switch
  * re-announces ownership to that window's renderers.
  *

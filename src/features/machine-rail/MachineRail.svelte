@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * MachineRail (Labs) — the strip at the window's left edge that lists the
+   * MachineRail — the strip at the window's left edge that lists the
    * machines this window stays connected to and switches between them.
    *
    * Every machine has its own renderer in the window and each renders this

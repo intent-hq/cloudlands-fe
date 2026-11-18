@@ -3,8 +3,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
-  import { setMachineRailEnabledRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import {
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
@@ -22,7 +20,6 @@
   const sshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   const plainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const tabGroups$ = selectLabsTabGroupsEnabled();
-  const machineRail$ = selectMachineRailEnabled();
   const desktop = isElectronPlatform();
 
   const schema = $derived(
@@ -76,18 +73,6 @@
               get: () => $tabGroups$,
               set: (enabled) => {
                 appStore.dispatch(setLabsTabGroupsEnabled(enabled));
-              },
-            },
-            {
-              kind: 'switch',
-              id: 'labs-machine-rail',
-              size: 'sm',
-              label: m.settings_labs_machineRail_label(),
-              description: m.settings_labs_machineRail_description(),
-              when: () => desktop,
-              get: () => $machineRail$,
-              set: (enabled) => {
-                appStore.dispatch(setMachineRailEnabledRequested(enabled));
               },
             },
           ],

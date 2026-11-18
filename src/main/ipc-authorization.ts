@@ -80,7 +80,7 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
 
   const owner = BrowserWindow.fromWebContents(sender);
   // An app renderer is a window's own web contents, or a machine view main
-  // created inside that window (machine rail lab).
+  // created inside that window (machine rail).
   if (
     !owner ||
     owner.isDestroyed() ||

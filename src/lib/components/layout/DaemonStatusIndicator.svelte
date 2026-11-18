@@ -177,7 +177,7 @@
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
-  // Machine rail (Labs): the menu opens from the machine's rail item, with no visible
+  // Machine rail: the menu opens from the machine's rail item, with no visible
   // trigger, and lists the rail's actions in place of the machines.
   let {
     open: dropdownOpen = $bindable(false),

@@ -23,7 +23,7 @@ type StrictBinding = Readonly<{
 }>;
 
 /**
- * A machine view: a second renderer hosted inside `window` (machine rail lab),
+ * A machine view: a second renderer hosted inside `window` (machine rail),
  * bound to its own backend. The window's own web contents keeps the window's
  * stamp; a view's binding is read from here first.
  */

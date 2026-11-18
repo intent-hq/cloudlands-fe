@@ -118,7 +118,7 @@ vi.mock('../../features/backend/main/transfer-connections', async (importOrigina
   };
 });
 
-// A machine view's own backend, keyed by web contents id (machine rail lab);
+// A machine view's own backend, keyed by web contents id (machine rail);
 // every other renderer answers with its window's stamp.
 const machineViewBackends = vi.hoisted(() => new Map<number, string>());
 vi.mock('../window-backend', () => ({

@@ -111,7 +111,7 @@ export interface ActionKeyState {
   /** The top workspace tab strip: the cycle keys walk only these, in order. */
   tabState: { workspaceStacks: readonly (readonly string[])[] };
   hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
-  /** The window's machine rail (Labs): the window-cycle key cycles its machines. */
+  /** The window's machine rail: the window-cycle key cycles its machines. */
   machineRail?: { enabled: boolean; machineIds: readonly string[]; selectedId: string };
   connections?: { connections: Collection<ConnectionRecord, 'id'> };
   guestSessions?: { sessions: Collection<{ id: string }, 'id'> };
