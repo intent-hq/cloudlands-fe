@@ -59,6 +59,23 @@ describe('workspaceCreateProgressReducer', () => {
     expect(state.byProgressId[PID]?.transfer).toBeUndefined();
   });
 
+  it('done clears the transfer so a failed download does not leave a frozen rate', () => {
+    let state = workspaceCreateProgressReducer(initialState, beginWorkspaceCreateProgress(PID));
+    state = workspaceCreateProgressReducer(
+      state,
+      workspaceCreateProgressReceived(PID, {
+        phase: 'receiving',
+        percent: 30,
+        transfer: { receivedObjects: 5, totalObjects: 10, receivedBytes: 100 },
+      }),
+    );
+    state = workspaceCreateProgressReducer(
+      state,
+      workspaceCreateProgressDone(PID, { ok: false, error: 'network' }),
+    );
+    expect(state.byProgressId[PID]?.transfer).toBeUndefined();
+  });
+
   it('progressReceived ignores unregistered progressIds (no create in flight)', () => {
     const state = workspaceCreateProgressReducer(
       initialState,

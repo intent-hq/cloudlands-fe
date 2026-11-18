@@ -2033,7 +2033,7 @@ function handleCloneProgressEvent(event: WorkspaceEvent, type: string): boolean 
         phase,
         percent,
         message: typeof data?.message === 'string' ? data.message : undefined,
-        transfer: parseCreateProgressTransfer(data?.transfer),
+        transfer: phase === 'receiving' ? parseCreateProgressTransfer(data?.transfer) : undefined,
       }),
     );
     return true;

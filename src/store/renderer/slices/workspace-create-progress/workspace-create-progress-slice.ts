@@ -87,6 +87,7 @@ workspaceCreateProgressReducer.with(
           ...entry,
           sawFrame: true,
           done: true,
+          transfer: undefined,
           ok: outcome.ok,
           error: outcome.error,
           errorCode: outcome.errorCode,

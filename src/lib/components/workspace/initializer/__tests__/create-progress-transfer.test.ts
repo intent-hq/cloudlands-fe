@@ -137,4 +137,15 @@ describe('createProgressTransferLabel', () => {
       }),
     ).toBe('2.34 GB · 12 MB/s');
   });
+
+  it('keeps one decimal under 10 kB so a slow download does not read as a stall', () => {
+    expect(
+      createProgressTransferLabel({
+        receivedObjects: 1,
+        totalObjects: 1000,
+        receivedBytes: 512_000,
+        bytesPerSecond: 300,
+      }),
+    ).toBe('512 kB · 0.3 kB/s');
+  });
 });

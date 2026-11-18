@@ -45,7 +45,7 @@ function estimateDownloadMsLeft(transfer: WorkspaceCreateTransfer): number | nul
 function byteUnit(bytes: number): { unit: string; value: number; digits: number } {
   if (bytes >= 1e9) return { unit: 'gigabyte', value: bytes / 1e9, digits: 2 };
   if (bytes >= 1e6) return { unit: 'megabyte', value: bytes / 1e6, digits: 1 };
-  return { unit: 'kilobyte', value: bytes / 1e3, digits: 0 };
+  return { unit: 'kilobyte', value: bytes / 1e3, digits: bytes < 1e4 ? 1 : 0 };
 }
 
 function formatBytes(bytes: number, perSecond = false): string {
