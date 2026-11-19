@@ -62,6 +62,12 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectBrowserTabRecoveryRequests: () => recoveryStore,
   selectBrowserTabNavigations: () => navigationStore,
   selectBrowserTabsAgentDrawing: () => agentDrawingStore,
+  selectIsDragging: () => ({
+    subscribe: (run: (value: boolean) => void) => {
+      run(false);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
