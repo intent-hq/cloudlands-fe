@@ -48,7 +48,7 @@ export const PROJECTS = Object.freeze({
 });
 
 const DEFAULT_HEAP_MB = 8192;
-const UPDATE_COMMAND = 'pnpm run lint:test-types -- --update-baseline';
+export const UPDATE_COMMAND = 'pnpm run lint:test-types --update-baseline';
 const DIAGNOSTIC_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.*)$/;
 const GLOBAL_DIAGNOSTIC_RE = /^error (TS\d+): (.*)$/;
 
@@ -337,9 +337,10 @@ export async function checkTestTypes({
   return { ok, lines };
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = { update: false, names: [] };
-  for (let i = 0; i < argv.length; i++) {
+  // pnpm 10 forwards the `--` in `pnpm run lint:test-types -- --update-baseline`.
+  for (let i = argv[0] === '--' ? 1 : 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--update-baseline') options.update = true;
     else if (arg === '--project') options.names.push(argv[++i] ?? '');
