@@ -11,6 +11,7 @@ export function createDaemonRailFixture(rail: boolean, onSelect: (id: string) =>
   const previousRail = store.state.machineRail;
   const root = document.documentElement;
   root.toggleAttribute('data-machine-rail', rail);
+  root.toggleAttribute('data-machine-rail-shown', rail);
   const connections = getItems(store.state.connections.connections).filter(
     (connection) => connection.id !== 'audit-host' && connection.id !== 'local',
   );
@@ -66,6 +67,7 @@ export function createDaemonRailFixture(rail: boolean, onSelect: (id: string) =>
   return () => {
     stop();
     root.removeAttribute('data-machine-rail');
+    root.removeAttribute('data-machine-rail-shown');
     store.dispatch(machineRailStateReceived(previousRail));
   };
 }

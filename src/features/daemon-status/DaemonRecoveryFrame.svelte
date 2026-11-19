@@ -3,7 +3,7 @@
   import type { Snippet } from 'svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
+  import { selectMachineRailShown } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   let {
@@ -22,9 +22,9 @@
     children: Snippet;
   } = $props();
 
-  const railEnabled$ = selectMachineRailEnabled();
+  const railShown$ = selectMachineRailShown();
   const zoomFactor$ = selectZoomFactor();
-  const keepsNavigation = $derived($railEnabled$ || keepTitlebar);
+  const keepsNavigation = $derived($railShown$ || keepTitlebar);
   const top = $derived(keepsNavigation ? getCounterScaledTitlebarHeight($zoomFactor$) : 0);
 </script>
 

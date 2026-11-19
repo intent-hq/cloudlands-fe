@@ -44,10 +44,15 @@ function isRailUpdateRunning(
   return !!workflow && workflow.phase !== 'settled';
 }
 
-/** Whether the Labs setting is on (the rail shows, even with one machine). */
+/** Whether the machine rail setting is on: the window keeps one view per machine. */
 export const selectMachineRailEnabled = store.createSelector(
   // Optional chaining: partial test stores mount shell components without this slice.
   (state): boolean => state.machineRail?.enabled ?? false,
+);
+
+/** Whether the rail is on screen: it is on and the window holds more than one machine. */
+export const selectMachineRailShown = store.createSelector(
+  (state): boolean => !!state.machineRail?.enabled && state.machineRail.machineIds.length > 1,
 );
 
 /**
@@ -130,6 +135,19 @@ export const selectMachineRailGuestCandidates = store.createSelector(
     return getItems(state.guestSessions.sessions).filter((session) => !inRail.has(session.id));
   },
 );
+
+/**
+ * Whether opening machine `id` adds it to this window's rail: the rail is on
+ * and `id` is a saved machine or guest host it can hold but does not yet.
+ * The rail is hidden with one machine, so this is how a second one joins.
+ */
+export const selectOpensInMachineRail = store.createSelector((state, id: string): boolean => {
+  const rail = state.machineRail;
+  if (!rail?.enabled || rail.machineIds.includes(id)) return false;
+  const connection = getItem(state.connections.connections, id);
+  if (connection) return !connection.displayOnly && connection.daemonMode !== 'node';
+  return !!state.guestSessions && getItem(state.guestSessions.sessions, id) !== undefined;
+});
 
 /** Whether this renderer's machine is the one the window shows (or is switching to). */
 export const selectIsRailMachineShown = store.createSelector((state): boolean => {

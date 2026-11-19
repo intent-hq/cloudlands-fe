@@ -1,7 +1,9 @@
 <script lang="ts">
   /**
    * MachineRail — the strip at the window's left edge that lists the
-   * machines this window stays connected to and switches between them.
+   * machines this window stays connected to and switches between them. It
+   * shows only while the window holds more than one machine; with one, the
+   * title bar's status menu takes its place and adds the next machine here.
    *
    * Every machine has its own renderer in the window and each renders this
    * rail from the same main-owned state, so the strip looks continuous while
@@ -60,8 +62,8 @@
   import {
     selectIsRailMachineShown,
     selectMachineRailCandidates,
-    selectMachineRailEnabled,
     selectMachineRailGuestCandidates,
+    selectMachineRailShown,
     railUpdateConsumerId,
     selectMachineRailItems,
     type MachineRailItem,
@@ -76,7 +78,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { moveItem, railDropIndex, railShift } from './rail-reorder';
 
-  const enabled$ = selectMachineRailEnabled();
+  const railShown$ = selectMachineRailShown();
   const items$ = selectMachineRailItems();
   const candidates$ = selectMachineRailCandidates();
   const guestCandidates$ = selectMachineRailGuestCandidates();
@@ -574,7 +576,7 @@
   </div>
 {/snippet}
 
-{#if $enabled$}
+{#if $railShown$}
   <nav
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-2.5"
     aria-label={m.machineRail_nav_ariaLabel()}

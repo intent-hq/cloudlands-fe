@@ -156,6 +156,8 @@
     resolveConnectionAccent,
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
+  import { selectOpensInMachineRail } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
+  import { addRailMachineRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { onDestroy, type Snippet } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -512,7 +514,8 @@
 
   function handleOpenConnection(id: string) {
     dropdownOpen = false;
-    openConnectionOrRecover(id);
+    if (!selectOpensInMachineRail.select(appStore.state, id)) return openConnectionOrRecover(id);
+    appStore.dispatch(addRailMachineRequested(id));
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------

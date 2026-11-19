@@ -53,7 +53,7 @@
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import {
-    selectMachineRailEnabled,
+    selectMachineRailShown,
     selectIsRailMachineShown,
   } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -72,8 +72,8 @@
       : null,
   );
   const onboardingActive$ = selectOnboardingActive();
-  // Machine rail: the status menu moves to the machine's rail item.
-  const machineRailEnabled$ = selectMachineRailEnabled();
+  // While the machine rail shows, the status menu moves to the machine's rail item.
+  const machineRailShown$ = selectMachineRailShown();
   const isMachineShown$ = selectIsRailMachineShown();
 
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
@@ -179,7 +179,7 @@
 </script>
 
 {#snippet titlebarUtilities(showDaemonStatus: boolean)}
-  {#if showDaemonStatus && !$machineRailEnabled$}
+  {#if showDaemonStatus && !$machineRailShown$}
     <DaemonStatusIndicator />
   {/if}
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
@@ -313,7 +313,7 @@
 
   /* Machine rail: without traffic lights the tabs would start above the
      rail; start them where the content frame beside the rail starts. */
-  :global(:root[data-machine-rail]) .window-title-bar:global(.window-title-bar-windows) {
+  :global(:root[data-machine-rail-shown]) .window-title-bar:global(.window-title-bar-windows) {
     padding-left: calc(8px + 3rem);
   }
 
