@@ -5,7 +5,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import type { MachinePlatform } from './machine-facts';
 
-  let { platform }: { platform: MachinePlatform } = $props();
+  let { platform, labeled = false }: { platform: MachinePlatform; labeled?: boolean } = $props();
 
   // i18n-ignore (operating system brand names)
   const NAMES: Record<MachinePlatform, string> = {
@@ -17,8 +17,15 @@
   const Icon = $derived(ICONS[platform]);
 </script>
 
-<Tooltip content={NAMES[platform]} class="inline-flex">
-  <span role="img" aria-label={NAMES[platform]} class="inline-flex text-muted-foreground">
-    <Icon size={14} weight="fill" aria-hidden="true" />
+{#if labeled}
+  <span class="flex items-center gap-2">
+    <Icon size={14} weight="fill" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+    {NAMES[platform]}
   </span>
-</Tooltip>
+{:else}
+  <Tooltip content={NAMES[platform]} class="inline-flex">
+    <span role="img" aria-label={NAMES[platform]} class="inline-flex text-muted-foreground">
+      <Icon size={14} weight="fill" aria-hidden="true" />
+    </span>
+  </Tooltip>
+{/if}

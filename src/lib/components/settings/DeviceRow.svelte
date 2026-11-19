@@ -80,8 +80,8 @@
     canOfferExpose,
     machineForConnection,
   } from '$features/remote-machines/remote-machines-utils';
-  import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
-  import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
+  import MachineName from '$features/remote-machines/MachineName.svelte';
+  import MachineProviderAvailability from '$features/remote-machines/MachineProviderAvailability.svelte';
   import {
     machineRowNeedsNode,
     machineRowPlatform,
@@ -675,16 +675,12 @@
         <DeviceIcon record={device} size={20} class="text-foreground" />
       </span>
     {/snippet}
-    {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
+    {#snippet title()}
+      <MachineName name={displayName} id={`device-${device.id}-name`} {platform} {providers} />
+    {/snippet}
     {#snippet meta()}
-      <!-- One title-line-high flex row centres every part (platform icon,
-           badge, outdated version, provider icons) on the name; inline icons with
-           vertical-align: middle sat ~1.5px below cap-height text. -->
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
-        {#if platform}
-          <MachinePlatformIcon {platform} />
-        {/if}
         {#if exposedMachine}
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
         {:else if isNode && exposing}
@@ -696,11 +692,9 @@
             <span>{device.intentdVersion}</span>
           </Tooltip>
         {/if}
-        <MachineProviderIcons
-          {providers}
-          reported={!device.providers && !!machineRowReport(exposedMachine)}
-          {needsNode}
-        />
+        {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine)}
+          <MachineProviderAvailability {needsNode} />
+        {/if}
       </span>
     {/snippet}
     {#snippet trailing()}
