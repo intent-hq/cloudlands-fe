@@ -774,6 +774,22 @@ export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict(
 
 export const MachineRailMachineSchema = z.object({ id: z.string().min(1).max(256) }).strict();
 
+const RecentAgentIdSchema = z.string().min(1).max(512);
+
+export const RecentAgentVisitSchema = z
+  .object({
+    connectionId: RecentAgentIdSchema,
+    workspaceId: RecentAgentIdSchema,
+    workspaceTitle: z.string().max(1024).nullable(),
+    agentId: RecentAgentIdSchema,
+    agentName: z.string().max(1024),
+  })
+  .strict();
+
+export const RecentAgentWorkspaceSchema = z
+  .object({ connectionId: RecentAgentIdSchema, workspaceId: RecentAgentIdSchema })
+  .strict();
+
 export const MachineRailForwardToastSchema = z
   .object({
     kind: z.enum(['success', 'info', 'warning', 'error']),
@@ -1195,6 +1211,11 @@ export const ConnectionsSetTunnelSchema = ConnectionsGetTunnelSchema.extend({
 
 export const ConnectionsOpenSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
+  /** Open this agent in the backend's window once it shows (the recent-agent switcher). */
+  agent: z
+    .object({ workspaceId: z.string().min(1).max(512), agentId: z.string().min(1).max(512) })
+    .strict()
+    .optional(),
 });
 
 export const ConnectionsUpdateBackendSchema = z.object({

@@ -1,0 +1,152 @@
+<script lang="ts">
+  import { onMount, tick } from 'svelte';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
+  import type { RecentAgentEntry, RecentAgentPageKey } from '$shared/recent-agents';
+  import { onRecentAgentPageKey } from './page-key-forwarding';
+  import {
+    selectConnectedIds,
+    selectCurrentConnectionId,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { selectRecentAgents } from '$store/renderer/slices/recent-agents/recent-agents-selectors';
+  import { recentAgentOpenRequested } from '$store/renderer/slices/recent-agents/recent-agents-slice';
+  import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+  import { store as appStore } from '$store/renderer/store';
+  import RecentAgentSwitcherView from './RecentAgentSwitcherView.svelte';
+  import {
+    isSwitcherModifierReleased,
+    matchSwitcherChord,
+    stepSwitcher,
+    switcherHeldModifiers,
+    SWITCHER_CLOSED,
+    type SwitcherEvent,
+    type SwitcherState,
+  } from './utils/recent-agent-switcher';
+
+  const binding$ = effectiveShortcutReadable('navigation.recent-agents');
+  const recentAgents$ = selectRecentAgents();
+  const currentConnectionId$ = selectCurrentConnectionId();
+  const connectedIds$ = selectConnectedIds();
+  const viewedAgentId$ = selectCurrentlyViewedAgentId();
+
+  const isMac =
+    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+
+  let switcher = $state<SwitcherState>(SWITCHER_CLOSED);
+  /** The list as it was when the switcher opened; pushes do not reorder it mid-switch. */
+  let entries = $state<RecentAgentEntry[]>([]);
+  let held: ReturnType<typeof switcherHeldModifiers> = null;
+  let returnFocus: HTMLElement | null = null;
+  let listbox = $state<HTMLElement | null>(null);
+
+  const selectedIndex = $derived(switcher.open ? switcher.index : -1);
+
+  function isOffline(entry: RecentAgentEntry): boolean {
+    return (
+      entry.connectionId !== $currentConnectionId$ && !$connectedIds$.includes(entry.connectionId)
+    );
+  }
+
+  function isShown(entry: RecentAgentEntry): boolean {
+    return entry.connectionId === $currentConnectionId$ && entry.agentId === $viewedAgentId$;
+  }
+
+  function apply(event: SwitcherEvent): void {
+    const wasOpen = switcher.open;
+    const step = stepSwitcher(switcher, event, entries.length);
+    switcher = step.state;
+    if (!wasOpen && step.state.open) void focusList();
+    if (wasOpen && !step.state.open) {
+      const chosen = step.open === undefined ? undefined : entries[step.open];
+      if (chosen && !isShown(chosen)) {
+        returnFocus = null;
+        appStore.dispatch(recentAgentOpenRequested(chosen));
+      } else {
+        returnFocus?.focus?.();
+        returnFocus = null;
+      }
+    }
+  }
+
+  /** Take focus from the composer, a terminal or a page so later keys reach the switcher. */
+  async function focusList(): Promise<void> {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await tick();
+    listbox?.focus({ preventScroll: true });
+  }
+
+  /** A DOM key event, or one a browser-panel page forwarded through main. */
+  type SwitcherKey = Omit<RecentAgentPageKey, 'type'> &
+    Partial<Pick<KeyboardEvent, 'preventDefault' | 'stopPropagation'>>;
+
+  function swallow(event: SwitcherKey): void {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  }
+
+  function onKeydown(event: SwitcherKey): void {
+    if (!switcher.open) {
+      const direction = matchSwitcherChord(event, $binding$, isMac);
+      if (!direction || $recentAgents$.length === 0) return;
+      swallow(event);
+      entries = [...$recentAgents$];
+      held = switcherHeldModifiers($binding$, isMac);
+      apply({ type: 'chord', backwards: direction === 'backward', sticky: held === null });
+      return;
+    }
+    swallow(event);
+    // The release happened while another window had the keys.
+    if (held && isSwitcherModifierReleased(held, event)) {
+      apply({ type: 'release' });
+      return;
+    }
+    if (event.key === 'Escape') apply({ type: 'cancel' });
+    else if (event.key === 'Enter') apply({ type: 'confirm' });
+    else if (event.key === 'Tab')
+      apply({ type: 'chord', backwards: event.shiftKey, sticky: false });
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      apply({ type: 'move', delta: 1 });
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp')
+      apply({ type: 'move', delta: -1 });
+  }
+
+  function onKeyup(event: SwitcherKey): void {
+    if (!switcher.open) return;
+    swallow(event);
+    if (held && isSwitcherModifierReleased(held, event)) apply({ type: 'release' });
+  }
+
+  function onBlur(): void {
+    if (switcher.open) apply({ type: 'cancel' });
+  }
+
+  onMount(() => {
+    // Capture on window: runs before the composer, xterm and other key handlers.
+    window.addEventListener('keydown', onKeydown, true);
+    window.addEventListener('keyup', onKeyup, true);
+    window.addEventListener('blur', onBlur);
+    const stopPageKeys = onRecentAgentPageKey((key) =>
+      key.type === 'keydown' ? onKeydown(key) : onKeyup(key),
+    );
+    return () => {
+      stopPageKeys();
+      window.removeEventListener('keydown', onKeydown, true);
+      window.removeEventListener('keyup', onKeyup, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  });
+</script>
+
+{#if switcher.open}
+  <RecentAgentSwitcherView
+    {entries}
+    {selectedIndex}
+    currentConnectionId={$currentConnectionId$}
+    {isOffline}
+    bind:listbox
+    onpoint={(index) => apply({ type: 'point', index })}
+    onchoose={(index) => {
+      apply({ type: 'point', index });
+      apply({ type: 'confirm' });
+    }}
+  />
+{/if}

@@ -1145,6 +1145,19 @@ export const IPC_CHANNELS = {
   // left rail switches which machine's renderer the window shows. Main owns
   // the per-window list and selection; CHANGED is a main→renderer push (also
   // in EVENT_CHANNELS). Types: `shared/types/machine-rail.ts`.
+  // Recent agents: the app-wide list of opened agent conversations behind the
+  // recent-agent switcher. Main owns and persists it; CHANGED is a main→renderer
+  // push of the whole list (also in EVENT_CHANNELS). Types: `shared/recent-agents.ts`.
+  RECENT_AGENTS: {
+    LIST: 'recent-agents:list',
+    RECORD: 'recent-agents:record',
+    FORGET_WORKSPACE: 'recent-agents:forget-workspace',
+    CHANGED: 'recent-agents:changed',
+    // Main → renderer: the switcher chord, or the release of its modifier, pressed
+    // in a page of the browser panel, whose keys never reach the app's document
+    // (also in EVENT_CHANNELS).
+    PAGE_KEY: 'recent-agents:page-key',
+  },
   MACHINE_RAIL: {
     GET_STATE: 'machine-rail:get-state',
     SELECT: 'machine-rail:select',
@@ -1282,6 +1295,8 @@ export const EVENT_CHANNELS = [
   'window:dock-shown',
   'window:dock-lab-changed',
   'machine-rail:changed',
+  'recent-agents:changed',
+  'recent-agents:page-key',
   'machine-rail:toast',
   'machine-rail:backdrop-changed',
   'window:dock-backend-switch-failed',

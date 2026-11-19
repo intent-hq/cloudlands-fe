@@ -10,6 +10,7 @@ import {
   normalizeShortcut,
   resolveShortcut,
   sanitizeShortcutOverrides,
+  shortcutDefault,
   shortcutFromKeyboardEvent,
 } from './shortcut-bindings';
 import { SHORTCUT_REGISTRY, SHORTCUTS } from './shortcuts';
@@ -66,6 +67,25 @@ describe('shortcut bindings', () => {
       'mod+shift+p',
     );
     expect(shortcutFromKeyboardEvent({ ...keyPress, ctrlKey: true }, true)).toBe('ctrl+shift+p');
+  });
+
+  it('captures the Super key as its own modifier off macOS', () => {
+    const superTab = {
+      key: 'Tab',
+      code: 'Tab',
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    };
+    expect(shortcutFromKeyboardEvent(superTab, false)).toBe('super+tab');
+    expect(shortcutFromKeyboardEvent(superTab, true)).toBe('mod+tab');
+    expect(matchesShortcut(superTab, 'super+tab', false)).toBe(true);
+    expect(matchesShortcut(superTab, 'mod+tab', false)).toBe(false);
+    expect(
+      matchesShortcut({ ...superTab, metaKey: false, ctrlKey: true }, 'super+tab', false),
+    ).toBe(false);
+    expect(normalizeShortcut('Shift+Win+Tab')).toBe('super+shift+tab');
   });
 
   it('rejects modifier-only and unrepresentable key presses', () => {
@@ -153,6 +173,43 @@ describe('shortcut bindings', () => {
     }
     expect(normalizeShortcut('alt+x + 1-9')).toBe('alt+x + 1-9');
     expect(getShortcutSequenceTrigger('alt+x + 1-9')).toBe('alt+x');
+  });
+});
+
+describe('platform defaults', () => {
+  it('puts the recent-agent switcher on Option+Tab, Super+Tab on Linux, and nothing on Windows', () => {
+    expect(shortcutDefault('navigation.recent-agents', 'mac')).toBe('alt+tab');
+    expect(shortcutDefault('navigation.recent-agents', 'linux')).toBe('super+tab');
+    expect(shortcutDefault('navigation.recent-agents', 'windows')).toBe('');
+    expect(shortcutDefault('global.next-space', 'linux')).toBe('ctrl+tab');
+  });
+
+  it.each([
+    [true, 'mac'],
+    [false, 'linux'],
+  ] as const)('gives no other default the switcher chord (mac=%s)', (mac, platform) => {
+    const chord = shortcutDefault('navigation.recent-agents', platform);
+    const press = (shiftKey: boolean) => ({
+      key: 'Tab',
+      metaKey: chord.startsWith('super') || (mac && chord.startsWith('mod')),
+      ctrlKey: false,
+      altKey: chord.startsWith('alt'),
+      shiftKey,
+    });
+    const claimed = (Object.keys(SHORTCUT_DEFAULTS) as (keyof typeof SHORTCUT_DEFAULTS)[])
+      .filter((id) => id !== 'navigation.recent-agents' && !id.startsWith('leader.'))
+      .filter((id) =>
+        [false, true].some(
+          (shift) => matchesShortcutPattern(press(shift), shortcutDefault(id, platform), mac) >= 0,
+        ),
+      );
+    expect(claimed).toEqual([]);
+  });
+
+  it('never matches an empty (no default) binding', () => {
+    const press = { key: 'Tab', metaKey: false, ctrlKey: false, altKey: true, shiftKey: false };
+    expect(matchesShortcut(press, '', false)).toBe(false);
+    expect(matchesShortcutPattern(press, '', false)).toBe(-1);
   });
 });
 

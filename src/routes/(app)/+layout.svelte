@@ -42,6 +42,7 @@
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
+  import RecentAgentSwitcher from '$features/recent-agents/RecentAgentSwitcher.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import GitCredentialsModal from '$lib/components/GitCredentialsModal.svelte';
@@ -1013,6 +1014,9 @@
       </div>
     </ErrorBoundary>
   </div>
+
+  <!-- Recent-agent switcher (hold-to-cycle chord; renders only while open) -->
+  <RecentAgentSwitcher />
 
   <!-- Global Command Palette Mount -->
   <CommandPalette

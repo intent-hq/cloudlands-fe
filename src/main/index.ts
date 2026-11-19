@@ -363,6 +363,10 @@ import { getNotificationService } from '../features/notifications/main/notificat
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
+import {
+  setupRecentAgentPageKeys,
+  setupRecentAgentsIPC,
+} from '../features/recent-agents/main/recent-agents.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
@@ -704,6 +708,7 @@ const bootFlow = app.whenReady().then(async () => {
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
   setupMetaClipboardShortcuts();
+  setupRecentAgentPageKeys();
 
   // WebHID handlers for the hardware console (silent grant for supported
   // Work Louder devices) — must be registered before any windows exist.
@@ -1683,6 +1688,7 @@ const bootFlow = app.whenReady().then(async () => {
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
+  setupRecentAgentsIPC(); // Needed for the recent-agent switcher in every window
 
   // The daemon owns PATH discovery. Seed only after starting/adopting it (at
   // the top of this phase), and retry briefly while a newly spawned sidecar

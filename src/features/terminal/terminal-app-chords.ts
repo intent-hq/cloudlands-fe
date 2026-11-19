@@ -15,6 +15,7 @@ const TERMINAL_PASSTHROUGH_IDS = [
   'global.next-space-alt',
   'global.previous-space-alt',
   'navigation.go-to-tab',
+  'navigation.recent-agents',
 ] as const satisfies readonly ShortcutId[];
 
 /**

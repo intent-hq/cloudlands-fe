@@ -42,6 +42,8 @@ export const LOCAL_PREF_KEYS = [
   'dockMediaLastSavedChoice',
   'dockBackendId',
   'machineRailEnabled',
+  // Recent-agent switcher
+  'recentAgents',
   // Window chrome, release notes, feature codes
   'menuBarAutoHide',
   'lastSeenReleaseNotesVersion',

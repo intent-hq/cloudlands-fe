@@ -12,6 +12,7 @@ import './connections-bridge-seeder';
 import './machine-setup-bridge-seeder';
 import './guest-sessions-bridge-seeder';
 import './machine-rail-bridge-seeder';
+import './recent-agents-bridge-seeder';
 import './remote-machines-bridge-seeder';
 import './presence-bridge-seeder';
 import './host-bridge-seeder';

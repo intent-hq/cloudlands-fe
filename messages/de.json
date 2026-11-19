@@ -9177,5 +9177,10 @@
   "onboarding_agentMachines_none_title": "Rechner zum Ausführen von Agents hinzufügen",
   "onboarding_agentMachines_none_description": "Dieses Intent schickt Agents an andere Rechner und führt selbst keine aus. Fügen Sie unter Einstellungen → Rechner einen Rechner hinzu und kehren Sie dann zurück, um fortzufahren.",
   "onboarding_agentMachines_openSettings_label": "Einstellungen → Rechner öffnen",
-  "onboarding_providerCard_onMachines_label": "Läuft auf Ihren Rechnern"
+  "onboarding_providerCard_onMachines_label": "Läuft auf Ihren Rechnern",
+  "ui_shortcuts_recentAgents_label": "Zu letztem Agenten wechseln",
+  "recentAgents_switcher_ariaLabel": "Letzte Agenten",
+  "recentAgents_switcher_untitled_label": "Unbenannter Agent",
+  "recentAgents_switcher_offlineMachine_label": "{machine} · Nicht verbunden",
+  "recentAgents_switcher_statusTime_label": "{status} · {time}"
 }

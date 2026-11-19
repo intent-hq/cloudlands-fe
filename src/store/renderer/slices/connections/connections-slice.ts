@@ -26,6 +26,7 @@ import type {
   AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
+  ConnectionAgentTarget,
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
@@ -240,10 +241,10 @@ export const rotateConnectionSecretRequested = createAsyncAction<
 >('connections/rotateSecret', 'connections/rotateSecretRequested');
 
 /** Saga-owned non-destructive open/focus request for one backend. */
-export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(
-  'connections/open',
-  'connections/openRequested',
-);
+export const openConnectionRequested = createAsyncAction<
+  [id: string, agent?: ConnectionAgentTarget],
+  OpenConnectionResult
+>('connections/open', 'connections/openRequested');
 
 /** Saga-owned stored-connection removal request. */
 export const forgetConnectionRequested = createAsyncAction<[id: string], void>(

@@ -12,7 +12,7 @@ import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';
 import type { AgentRulesEditorState, UserPreferencesStoreState } from './user-preferences-types';
 import {
-  SHORTCUT_DEFAULTS,
+  shortcutDefault,
   isShortcutId,
   normalizeShortcut,
   sanitizeShortcutOverrides,
@@ -803,7 +803,7 @@ userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcu
   const normalized = normalizeShortcut(shortcut);
   if (!normalized) return state;
   const shortcutOverrides = { ...state.shortcutOverrides };
-  if (normalized === SHORTCUT_DEFAULTS[id]) delete shortcutOverrides[id];
+  if (normalized === shortcutDefault(id)) delete shortcutOverrides[id];
   else shortcutOverrides[id] = normalized;
   return { ...state, shortcutOverrides };
 });

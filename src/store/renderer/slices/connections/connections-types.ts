@@ -33,6 +33,7 @@ export type {
   AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
+  ConnectionAgentTarget,
   ConnectionRecord,
   ConnectionsListResult,
   OpenConnectionResult,

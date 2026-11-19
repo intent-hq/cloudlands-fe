@@ -157,6 +157,7 @@ import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-ex
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
+  type ConnectionAgentTarget,
   type ConnectionProviderSummary,
   type DaemonMode,
   type ConnectionRecord,
@@ -1412,6 +1413,7 @@ interface BackendWindowHooks {
     mayOpen?: () => boolean,
   ): boolean | Promise<boolean>;
   showWorkspace?(backendId: string, workspaceId: string): void | Promise<void>;
+  showAgent?(backendId: string, agent: ConnectionAgentTarget): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
   ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
@@ -1424,6 +1426,10 @@ const defaultWindowHooks: BackendWindowHooks = {
   async showWorkspace(backendId, workspaceId) {
     const { showWorkspaceInBackendWindow } = await import('../../../main/window');
     showWorkspaceInBackendWindow(backendId, workspaceId);
+  },
+  async showAgent(backendId, agent) {
+    const { showAgentInBackendWindow } = await import('../../../main/window');
+    showAgentInBackendWindow(backendId, agent.workspaceId, agent.agentId);
   },
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -4354,6 +4360,8 @@ export function openBackendWindow(
     mayOpen?: () => boolean;
     parentWindow?: Electron.BrowserWindow | null;
     workspaceId?: string;
+    /** Open this agent once the backend's window shows (the recent-agent switcher). */
+    agent?: ConnectionAgentTarget;
   },
 ): Promise<{ id: string }> {
   return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
@@ -4366,6 +4374,8 @@ function performOpenBackendWindowOwned(
     mayOpen?: () => boolean;
     parentWindow?: Electron.BrowserWindow | null;
     workspaceId?: string;
+    /** Open this agent once the backend's window shows (the recent-agent switcher). */
+    agent?: ConnectionAgentTarget;
   },
   parent?: PoolOwner,
 ): Promise<{ id: string }> {
@@ -4381,6 +4391,8 @@ async function performOpenBackendWindowOriginal(
     mayOpen?: () => boolean;
     parentWindow?: Electron.BrowserWindow | null;
     workspaceId?: string;
+    /** Open this agent once the backend's window shows (the recent-agent switcher). */
+    agent?: ConnectionAgentTarget;
   },
   owner?: PoolOwner,
 ): Promise<{ id: string }> {
@@ -4434,6 +4446,8 @@ async function performOpenBackendWindowOriginal(
     await windowHooks.openOrFocus?.(id);
     if (options?.workspaceId && (!options.mayOpen || options.mayOpen()))
       await windowHooks.showWorkspace?.(id, options.workspaceId);
+    if (options?.agent && (!options.mayOpen || options.mayOpen()))
+      await windowHooks.showAgent?.(id, options.agent);
     return { id };
   } catch (error) {
     recordPoolError(owner, error);
@@ -5562,13 +5576,16 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (event, { id }) => {
+      async (event, { id, agent }) => {
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         const invited = (await guestSessionsStore.findById(id)) !== null;
         const mayOpen = () => allowed() && !event.sender.isDestroyed();
         if (invited && !mayOpen()) throw new Error('Multiplayer is unavailable');
         try {
-          const opened = await openBackendWindow(id, invited ? { mayOpen } : undefined);
+          const opened = await openBackendWindow(id, {
+            ...(invited ? { mayOpen } : {}),
+            ...(agent ? { agent } : {}),
+          });
           return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
         } catch (error) {
           if (error instanceof ConnectionSecretUnavailableError) {

@@ -33,6 +33,7 @@ import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
 import {
   isEventClaimedByCustomBinding,
   SHORTCUT_DEFAULTS,
+  shortcutDefault,
   type ShortcutId,
 } from '$lib/utils/shortcut-bindings';
 import {
@@ -388,7 +389,7 @@ export function registerWorkspaceTabShortcuts({
   };
   const effective = (id: ShortcutId) =>
     resolveBinding ? { binding: () => resolveBinding(id) } : {};
-  const resolve = (id: ShortcutId) => resolveBinding?.(id) ?? SHORTCUT_DEFAULTS[id];
+  const resolve = (id: ShortcutId) => resolveBinding?.(id) ?? shortcutDefault(id);
 
   register({
     ...effective('global.new-space'),

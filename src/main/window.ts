@@ -1016,6 +1016,30 @@ export function showWorkspaceInBackendWindow(backendId: string, workspaceId: str
 }
 
 /**
+ * Show `agentId` of `workspaceId` in a frame holding `backendId`, as
+ * {@link showWorkspaceInBackendWindow} shows a workspace: the queued link opens
+ * the workspace and then the agent, as a notification click does. Returns false
+ * when no frame holds the machine.
+ */
+export function showAgentInBackendWindow(
+  backendId: string,
+  workspaceId: string,
+  agentId: string,
+): boolean {
+  const target = showInFrame(backendId);
+  if (!target?.contents) {
+    logger.warn('No window for backend to show agent in', { backendId, workspaceId, agentId });
+    return false;
+  }
+  queueDeepLinkForRenderer(target.contents, {
+    type: 'notification',
+    params: { workspaceId, agentId },
+  });
+  bringToFront(target.window);
+  return true;
+}
+
+/**
  * Whether closing `backendId` closes `window`: a frame that holds only that
  * machine, or another window (HUD, popup) bound to it.
  */
