@@ -498,11 +498,12 @@ describe('embedded browser CDP workspace routing', () => {
       }
     });
 
-    // Guests inherit the app zoom: a 1100x900 DIP tab at zoom 0.9129 has a
-    // 1205x986 CSS viewport, and a clip of that size at scale 1 asked a 2x
-    // display for 2410x1972 px of a 2200x1800 surface — a tiled capture. The
-    // legacy layoutViewport (DIP on Linux, CSS px on macOS) must not decide it.
-    it('requests the zoomed CSS viewport at its DIP size', async () => {
+    // Guests inherit the app zoom: a 1100x900 tab at zoom 0.9129 has a
+    // 1205x986 CSS viewport. Page.captureScreenshot takes its clip in DIP, so
+    // a CSS-size clip asked a 2x display for 2410x1972 px of a 2200x1800
+    // surface — a tiled capture. The legacy layoutViewport (DIP on Linux, CSS
+    // px on macOS) must not decide it.
+    it('requests the zoomed viewport and scroll offset in DIP', async () => {
       const zoom = 0.9128709435462952;
       const { sendCommand } = screenshotWebContents({
         layoutMetrics: {
@@ -530,13 +531,12 @@ describe('embedded browser CDP workspace routing', () => {
           width: 1100,
           height: 900,
         });
-        expect(captureScreenshotClip(sendCommand)).toEqual({
-          x: 0,
-          y: 40,
-          width: 1204.99,
-          height: 985.9,
-          scale: 0.5 * zoom,
-        });
+        const clip = captureScreenshotClip(sendCommand) as Record<string, number>;
+        expect(clip.x).toBe(0);
+        expect(clip.y).toBeCloseTo(40 * zoom);
+        expect(clip.width).toBeCloseTo(1100, 0);
+        expect(clip.height).toBeCloseTo(900, 0);
+        expect(clip.scale).toBe(0.5);
       } finally {
         embeddedBrowserCdp.unregisterTab('tab-shot-zoom');
       }

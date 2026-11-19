@@ -2624,27 +2624,29 @@ class EmbeddedBrowserCdpService {
     }
 
     // Request exactly the surface the guest draws. Page.captureScreenshot
-    // returns clip × clip.scale × display DPR pixels and resizes the view to
-    // get them — but a <webview> guest cannot be resized that way (its
-    // child-frame view ignores SetSize), so Chromium tiles the existing
-    // surface to fill a larger request. That surface is the viewport in DIP
-    // (CSS × zoom) times the emulation's fit scale: a scale-1 clip tiled
-    // tabs shrunk to fit their panel (intent-hq/intent#4627), and ignoring
-    // zoom tiled every tab of a zoomed app on HiDPI displays.
+    // takes its clip in DIP (CSS × page zoom) and returns clip × clip.scale ×
+    // display DPR pixels, resizing the view to get them — but a <webview>
+    // guest cannot be resized that way (its child-frame view ignores
+    // SetSize), so Chromium repeats the existing surface to fill a larger
+    // request. A scale-1 clip tiled tabs shrunk to fit their panel
+    // (intent-hq/intent#4627), and a CSS-px clip tiled every tab of a
+    // zoomed app on HiDPI displays.
     const fitScale =
       tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
         ? this.resolveEmulationGeometry(tabId).scale
         : 1;
+    const width = cssWidth * zoom;
+    const height = cssHeight * zoom;
     const result = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.captureScreenshot', {
         format: 'jpeg',
         quality: 80,
         clip: {
-          x: visual?.pageX ?? 0,
-          y: visual?.pageY ?? 0,
-          width: cssWidth,
-          height: cssHeight,
-          scale: fitScale * zoom,
+          x: (visual?.pageX ?? 0) * zoom,
+          y: (visual?.pageY ?? 0) * zoom,
+          width,
+          height,
+          scale: fitScale,
         },
       }),
       'Page.captureScreenshot',
@@ -2659,11 +2661,7 @@ class EmbeddedBrowserCdpService {
     }
 
     // The tab's size in DIP: the openTab/resizeTab size for an emulated tab.
-    return {
-      base64: result.data,
-      width: Math.round(cssWidth * zoom),
-      height: Math.round(cssHeight * zoom),
-    };
+    return { base64: result.data, width: Math.round(width), height: Math.round(height) };
   }
 
   /**
