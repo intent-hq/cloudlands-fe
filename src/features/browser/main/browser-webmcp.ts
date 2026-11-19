@@ -111,9 +111,9 @@ export function parseCallOutcome(raw: unknown, name: string): WebMcpCallOutcome 
         error: `No WebMCP tool named "${name}" on this page. Available: ${value.names?.length ? value.names.join(', ') : 'none'}. Use { action: "listTools" } to see each tool's inputSchema.`,
       };
     case 'failed':
-      // i18n-ignore (agent-facing protocol error, not user-facing)
       return {
         ok: false,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         error: `WebMCP tool "${name}" failed: ${value.message ?? 'unknown error'}`,
       };
     default:
