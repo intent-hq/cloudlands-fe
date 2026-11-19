@@ -13,7 +13,11 @@ import {
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
-import { getRendererWebContents } from '../../../main/window-backend';
+import {
+  getRendererWebContents,
+  getWindowForWebContents,
+  isShownRenderer,
+} from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { shortcutDefault } from '../../../shared/keyboard-shortcut-bindings';
 import {
@@ -63,6 +67,17 @@ function change(
   return run;
 }
 
+/**
+ * Background windows restoring a layout also bring chats on screen; only the window in use
+ * records them. A renderer's `document.hasFocus()` cannot tell: it stays false in a machine
+ * view under some Linux compositors, the Intent OS kiosk among them, so main decides.
+ */
+function isWindowInUse(sender: Electron.WebContents): boolean {
+  const window = getWindowForWebContents(sender);
+  if (!window || !isShownRenderer(window, sender)) return false;
+  return window.isFocused() || getAppWindows().length === 1;
+}
+
 export function setupRecentAgentsIPC(now: () => number = Date.now): void {
   ipcMain.handle(
     RECENT_AGENTS.LIST,
@@ -72,8 +87,10 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
     RECENT_AGENTS.RECORD,
     createValidatedHandler(
       RecentAgentVisitSchema,
-      async (_event, visit) =>
-        change((list) => recordRecentAgentVisit(list, { ...visit, visitedAt: now() })),
+      async (event, { viewed, ...visit }) => {
+        if (viewed && !isWindowInUse(event.sender)) return current();
+        return change((list) => recordRecentAgentVisit(list, { ...visit, visitedAt: now() }));
+      },
       RECENT_AGENTS.RECORD,
     ),
   );

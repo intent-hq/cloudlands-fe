@@ -783,6 +783,8 @@ export const RecentAgentVisitSchema = z
     workspaceTitle: z.string().max(1024).nullable(),
     agentId: RecentAgentIdSchema,
     agentName: z.string().max(1024),
+    /** A chat that came on screen: main records it only for the window in use. */
+    viewed: z.boolean().optional(),
   })
   .strict();
 
