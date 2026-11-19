@@ -52,6 +52,8 @@ type Root = {
   };
 };
 
+/** `top` is measured from the scrollport's top edge, so moving the whole
+ * scrollport (an outer scroll, layout above it) is not content movement. */
 type Anchor = { key: string; top: number; scrollTop: number; scope: string; root: Root };
 type NavigationObservation = {
   node: HTMLElement;
@@ -258,15 +260,17 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     const visible: string[] = [];
     const nextAnchors = new Map<HTMLElement, Anchor>();
     const corrections = new Map<HTMLElement, { delta: number; scrollTop: number }>();
+    const documentScroll = (document.scrollingElement ?? document.documentElement) as HTMLElement;
     for (const [scroll, anchor] of anchors) {
       const root = roots.get(anchor.scope);
       const node =
         root === anchor.root ? currentElement(anchor.scope, root, anchor.key) : undefined;
       if (node && scroll.scrollTop === anchor.scrollTop) {
-        const delta = node.getBoundingClientRect().top - anchor.top;
+        const scrollBox = scroll.getBoundingClientRect();
+        const edge = scroll === documentScroll ? 0 : scrollBox.top;
+        const delta = node.getBoundingClientRect().top - edge - anchor.top;
         if (Math.abs(delta) > 0.5) {
-          const scale =
-            scroll.offsetWidth > 0 ? scroll.getBoundingClientRect().width / scroll.offsetWidth : 1;
+          const scale = scroll.offsetWidth > 0 ? scrollBox.width / scroll.offsetWidth : 1;
           corrections.set(scroll, { delta, scrollTop: anchor.scrollTop + delta / (scale || 1) });
         }
       }
@@ -346,15 +350,15 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         clipRight <= clipLeft ||
         box.left >= clipRight ||
         (box.width > 0 ? box.right <= clipLeft : box.left < clipLeft);
-      const documentScroll = (document.scrollingElement ?? document.documentElement) as HTMLElement;
       scroll ??= scrollCandidate ?? documentScroll;
       const scrollBox = scroll.getBoundingClientRect();
+      const scrollEdge = scroll === documentScroll ? 0 : scrollBox.top;
       root.geometry = {
         top: box.top,
         scale,
         scroll,
         scrollTop: scroll?.scrollTop ?? 0,
-        scrollRectTop: scroll === documentScroll ? 0 : scrollBox.top,
+        scrollRectTop: scrollEdge,
         scrollScale:
           scroll && scroll.offsetWidth > 0 ? (scrollBox?.width ?? 0) / scroll.offsetWidth || 1 : 1,
       };
@@ -428,7 +432,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
             if (scroll && !nextAnchors.has(scroll))
               nextAnchors.set(scroll, {
                 key: entry.key,
-                top,
+                top: top - scrollEdge,
                 scrollTop: scroll.scrollTop,
                 scope,
                 root,

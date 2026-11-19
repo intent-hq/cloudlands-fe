@@ -24,8 +24,16 @@ const steps = [
   'Draft the integration plan',
 ];
 
+/** Enough earlier turns to make the chat itself scroll. */
+const history: AgentMessage[] = Array.from({ length: 12 }, (_, index) => ({
+  id: `history-${index}`,
+  role: index % 2 === 0 ? 'user' : 'assistant',
+  timestamp: '2026-11-19T11:00:00.000Z',
+  contentBlocks: [{ type: 'text', text: `Earlier message ${index}. ${'Context. '.repeat(30)}` }],
+})) as AgentMessage[];
+
 /** A streaming turn whose newest tool call is still running. */
-function transcript(tools: number): AgentMessage[] {
+function transcript(tools: number, earlier: AgentMessage[] = []): AgentMessage[] {
   const content: ContentBlock[] = [];
   for (let index = 0; index < tools; index += 1) {
     content.push({
@@ -44,6 +52,7 @@ function transcript(tools: number): AgentMessage[] {
       } as ContentBlock);
   }
   return [
+    ...earlier,
     {
       id: 'user-prompt',
       role: 'user',
@@ -63,12 +72,12 @@ function transcript(tools: number): AgentMessage[] {
 
 type Host = MountResult<typeof ChatPanelOperationalGeometryHost>;
 
-const props = (tools: number) => ({
+const props = (tools: number, earlier: AgentMessage[] = []) => ({
   width: 760,
   height: 640,
   collapseToolRuns: true,
   liveStreaming: true,
-  liveMessages: transcript(tools),
+  liveMessages: transcript(tools, earlier),
 });
 
 function previewOf(host: Locator) {
@@ -183,4 +192,35 @@ test('holds a reader who scrolled the preview back, then resumes at the bottom',
   await expect.poll(async () => (await readPreview(preview)).newestInView).toBe(true);
   expect(await addToolCall(host, 6)).toMatchObject({ newestInView: true });
   await attachShot(host, 'reader-resumed', testInfo);
+});
+
+test('keeps the newest tool call in view when the chat scrolls under it', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1000, height: 900 });
+  const host = await mount(ChatPanelOperationalGeometryHost, { props: props(5, history) });
+  const preview = previewOf(host);
+  const chat = host.getByTestId('chat-transcript-scroll-viewport');
+  await expect(preview).toBeVisible();
+  await expect.poll(async () => (await readPreview(preview)).newestInView).toBe(true);
+
+  // Make room below, then move the chat on its own, as it does when it
+  // follows new content. The preview moves on screen but must not scroll.
+  await wheelUntilScrolled(chat, {
+    deltaY: -120,
+    pointer: host.getByText('How can we integrate with Slack?'),
+  });
+  await expectMotionToSettle(preview, { quietMs: 400 });
+  const following = await readPreview(preview);
+  expect(following.newestInView).toBe(true);
+  const before = await motionSnapshot(preview);
+  await chat.evaluate((node) => {
+    node.scrollTop += 40;
+  });
+  await expectMotionToSettle(preview, { changedFrom: before, quietMs: 400 });
+  const moved = await readPreview(preview);
+  expect(moved.scrollTop).toBeCloseTo(following.scrollTop, 0);
+  expect(moved.newestInView).toBe(true);
+  await attachShot(host, 'chat-scrolled', testInfo);
 });
