@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.357.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.3...v2.357.4) (2026-11-19)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep the live tool-call preview on the newest call ([#4812](https://github.com/intent-hq/cloudlands-fe/issues/4812)) ([3894f64](https://github.com/intent-hq/cloudlands-fe/commit/3894f6437ed16111def3a1402b697085ad98ddd8))
+* **chat:** show the cause and fix in failed-response states ([#4810](https://github.com/intent-hq/cloudlands-fe/issues/4810)) ([7f067a9](https://github.com/intent-hq/cloudlands-fe/commit/7f067a975bd4387854a1a366099f59ceaf03c499))
+* make the recent-agent switcher keys work like Cmd+Tab ([#4807](https://github.com/intent-hq/cloudlands-fe/issues/4807)) ([5fe3f00](https://github.com/intent-hq/cloudlands-fe/commit/5fe3f00c7228156c9bff4358ae848da8e7d6097a))
+
 ## [2.357.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.2...v2.357.3) (2026-11-19)
 
 
