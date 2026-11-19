@@ -3,7 +3,8 @@
    * MachineRail — the strip at the window's left edge that lists the
    * machines this window stays connected to and switches between them. It
    * shows only while the window holds more than one machine; with one, the
-   * title bar's status menu takes its place and adds the next machine here.
+   * title bar's status menu takes its place, and opening another machine
+   * from it adds that machine to this window (main's open joins the frame).
    *
    * Every machine has its own renderer in the window and each renders this
    * rail from the same main-owned state, so the strip looks continuous while

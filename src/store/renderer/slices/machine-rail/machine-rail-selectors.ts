@@ -136,19 +136,6 @@ export const selectMachineRailGuestCandidates = store.createSelector(
   },
 );
 
-/**
- * Whether opening machine `id` adds it to this window's rail: the rail is on
- * and `id` is a saved machine or guest host it can hold but does not yet.
- * The rail is hidden with one machine, so this is how a second one joins.
- */
-export const selectOpensInMachineRail = store.createSelector((state, id: string): boolean => {
-  const rail = state.machineRail;
-  if (!rail?.enabled || rail.machineIds.includes(id)) return false;
-  const connection = getItem(state.connections.connections, id);
-  if (connection) return !connection.displayOnly && connection.daemonMode !== 'node';
-  return !!state.guestSessions && getItem(state.guestSessions.sessions, id) !== undefined;
-});
-
 /** Whether this renderer's machine is the one the window shows (or is switching to). */
 export const selectIsRailMachineShown = store.createSelector((state): boolean => {
   const { enabled, selectedId } = state.machineRail;
