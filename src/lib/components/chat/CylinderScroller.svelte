@@ -29,7 +29,7 @@
   let isUserScrolling = $state(false);
   let isScrolledFromTop = $state(false);
   let followPending = false;
-  let keyboardScrollPending = false;
+  let upwardScrollPending = false;
   let lastScrollTop = 0;
   let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -56,9 +56,18 @@
     isScrolledFromTop = scrollContainer.scrollTop > 2;
   }
 
+  // An upward gesture pauses following only once it moves this drum. A drum
+  // with nothing to scroll passes the gesture to the chat, and a child control
+  // may consume a key, so wait for the browser's scroll before deciding.
+  function expectUpwardScroll() {
+    upwardScrollPending = true;
+    lastScrollTop = scrollContainer?.scrollTop ?? 0;
+    markScrollActivity();
+  }
+
   function handleWheel(e: WheelEvent) {
     if (e.deltaY < 0) {
-      isFollowingBottom = false;
+      expectUpwardScroll();
     } else if (e.deltaY > 0) {
       requestAnimationFrame(() => {
         if (checkIfAtBottom()) isFollowingBottom = true;
@@ -69,11 +78,7 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (e.defaultPrevented) return;
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) {
-      // A child control may edit or natively scroll this drum. Wait for the
-      // browser's default action before deciding whether to pause following.
-      keyboardScrollPending = true;
-      lastScrollTop = scrollContainer?.scrollTop ?? 0;
-      markScrollActivity();
+      expectUpwardScroll();
     }
   }
 
@@ -83,7 +88,7 @@
   }
   function handleTouchMove(e: TouchEvent) {
     const touchY = e.touches[0]?.clientY ?? 0;
-    if (touchStartY - touchY < 0) isFollowingBottom = false;
+    if (touchStartY - touchY < 0) expectUpwardScroll();
   }
   function handleTouchEnd() {
     requestAnimationFrame(() => {
@@ -96,7 +101,7 @@
     if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
     scrollEndTimeout = setTimeout(() => {
       isUserScrolling = false;
-      keyboardScrollPending = false;
+      upwardScrollPending = false;
       if (followPending) scrollToBottom();
     }, 150);
   }
@@ -106,13 +111,13 @@
     if (scrollContainer) {
       const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
       if (
-        keyboardScrollPending &&
+        upwardScrollPending &&
         scrollTop < lastScrollTop &&
         scrollTop + clientHeight < scrollHeight
       ) {
         isFollowingBottom = false;
       }
-      // The first upward keyboard frame may still be within the bottom threshold.
+      // The first upward frame may still be within the bottom threshold.
       // Resume only when the reader moves down to the bottom again.
       if (scrollTop > lastScrollTop && checkIfAtBottom()) isFollowingBottom = true;
       lastScrollTop = scrollTop;

@@ -30,6 +30,7 @@
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { setCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     chatErrorCleared,
@@ -62,6 +63,7 @@
     chiefWorkspace = false,
     failureRecovery,
     initializeStore = true,
+    collapseToolRuns = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -85,6 +87,7 @@
     proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
     chiefWorkspace?: boolean;
     initializeStore?: boolean;
+    collapseToolRuns?: boolean;
     failureRecovery?: {
       state: 'failed' | 'queued' | 'attempting' | 'recovered' | 'retired';
       error: string;
@@ -118,6 +121,7 @@
       })
     : () => {};
   const stopFixtureSagas = ownsStore ? [] : startChatFixtureSagas(store);
+  if (untrack(() => collapseToolRuns)) store.dispatch(setCollapseToolRuns(true));
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
