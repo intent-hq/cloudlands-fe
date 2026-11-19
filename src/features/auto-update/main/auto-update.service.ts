@@ -844,6 +844,11 @@ class AutoUpdateService {
     await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, channel);
   }
 
+  /** @internal Test seam: run an automatic (startup/periodic/daily) check and await its state. */
+  __checkForUpdatesForTesting(trigger: UpdateCheckTrigger): Promise<UpdateState> {
+    return this.checkForUpdates(trigger);
+  }
+
   private async checkForUpdates(trigger: UpdateCheckTrigger = 'periodic'): Promise<UpdateState> {
     // 'disabled' suppresses every automatic check path funneling through
     // here (startup timer, periodic interval, focus/resume staleness check).

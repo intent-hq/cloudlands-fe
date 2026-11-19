@@ -1978,7 +1978,6 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
       scope: 'workspace',
       kind: 'failed',
       reason: 'encryption-unavailable',
-      scope: 'workspace',
       workspaceTitle: 'Shared workspace',
       hostLabel: 'Studio',
     });
@@ -2049,7 +2048,7 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
   it.each([
     [
       'pin mismatch',
-      () => openInviteConnection.mockRejectedValue(new PinMismatchError()),
+      () => openInviteConnection.mockRejectedValue(new PinMismatchError('AA:BB', 'CC:DD')),
       'cert-mismatch',
     ],
     [

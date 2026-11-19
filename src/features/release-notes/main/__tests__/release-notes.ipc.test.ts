@@ -121,6 +121,7 @@ describe('release-notes ownership', () => {
     vi.mocked(checkForReleaseNotesOnStartup).mockImplementationOnce(async (show) => {
       await invoke(C.DISMISS);
       show(NOTES);
+      return NOTES;
     });
     await initializeReleaseNotesOnStartup();
     expect(windows[0].shown.send).not.toHaveBeenCalledWith(C.SHOW, { notes: NOTES });

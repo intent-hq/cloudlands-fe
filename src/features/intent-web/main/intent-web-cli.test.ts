@@ -4,6 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { runIntentWeb } from './intent-web-cli';
+
+/** Start server mode, the only result that carries close(). */
+async function serve(...args: Parameters<typeof runIntentWeb>) {
+  const running = await runIntentWeb(...args);
+  if (!running?.close) throw new Error('intent-web did not start a server');
+  return running;
+}
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
@@ -38,7 +46,7 @@ it.skipIf(process.platform === 'win32')(
     fs.writeFileSync(path.join(webRoot, 'index.html'), 'app');
     const missing = path.join(dir, 'no-tailcat');
     const log = vi.fn();
-    const running = await runIntentWeb(
+    const running = await serve(
       [
         '--data-dir',
         path.join(dir, 'state'),
@@ -50,7 +58,7 @@ it.skipIf(process.platform === 'win32')(
       ],
       { log, webRoot },
     );
-    await running!.close();
+    await running.close();
     expect(log.mock.calls.flat().join('\n')).toContain(
       `tailcat not found or not executable at ${missing}`,
     );
@@ -69,7 +77,7 @@ it.skipIf(process.platform === 'win32')(
     fs.writeFileSync(path.join(webRoot, 'index.html'), 'app');
     const socket = path.join(dir, 'web.sock');
     const log = vi.fn();
-    const running = await runIntentWeb(
+    const running = await serve(
       ['--data-dir', path.join(dir, 'state'), '--socket', socket, '--no-local'],
       { log, webRoot },
     );
@@ -98,7 +106,7 @@ it.skipIf(process.platform === 'win32')(
       await runIntentWeb(['key', '--reset', '--data-dir', path.join(dir, 'state')], { log });
       await vi.waitFor(async () => expect(await request()).toBe(401));
     } finally {
-      await running!.close();
+      await running.close();
     }
   },
 );
@@ -114,7 +122,7 @@ it.skipIf(process.platform === 'win32')(
     fs.writeFileSync(path.join(webRoot, 'index.html'), 'app');
     const state = path.join(dir, 'state');
     const socket = path.join(dir, 'web.sock');
-    const running = await runIntentWeb(['--data-dir', state, '--socket', socket, '--no-local'], {
+    const running = await serve(['--data-dir', state, '--socket', socket, '--no-local'], {
       log: vi.fn(),
       webRoot,
     });
@@ -195,7 +203,7 @@ it.skipIf(process.platform === 'win32')(
         true,
       );
     } finally {
-      await running!.close();
+      await running.close();
     }
   },
 );

@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const requestMock = vi.hoisted(() =>
-  vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({
+  vi.fn(async (_method: string, _params?: Record<string, unknown>): Promise<unknown> => ({
     autoCommit: { enabled: true, source: 'workspace' },
   })),
 );

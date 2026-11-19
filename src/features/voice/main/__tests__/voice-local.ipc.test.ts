@@ -15,8 +15,10 @@ const { mockExecFile, mockFs, mockLoggerWarn } = vi.hoisted(() => ({
   mockLoggerWarn: vi.fn(),
 }));
 
-vi.mock(import('child_process'), async (importOriginal) => {
-  const actual = await importOriginal();
+// String form: execFile's __promisify__ member is not part of the mock, so the
+// typed import() form rejects replacing it.
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
   const patched = { ...actual, execFile: mockExecFile };
   return { ...patched, default: patched };
 });

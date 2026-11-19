@@ -636,7 +636,7 @@ describe('slow telemetry response', () => {
     serveChecks(ctx, [slow.answer, notAvailableAfter(1_000), notAvailableAfter(1_000)]);
     const broadcasts = recordBroadcasts(ctx);
 
-    const first = ctx.service.checkForUpdates('startup');
+    const first = ctx.service.__checkForUpdatesForTesting('startup');
     await vi.advanceTimersByTimeAsync(5_000);
     const again = await ctx.service.checkForUpdatesManual();
     expect(again.status).toBe('checking');
@@ -834,7 +834,7 @@ describe('slow telemetry response while an update is downloaded', () => {
     const slow = slowTelemetry(ctx);
     serveChecks(ctx, [slow.answer, notAvailableAfter(1_000)]);
 
-    const pending = ctx.service.checkForUpdates('periodic');
+    const pending = ctx.service.__checkForUpdatesForTesting('periodic');
     await vi.advanceTimersByTimeAsync(11_000);
     await pending;
 
