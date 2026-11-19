@@ -57,7 +57,7 @@ export const STREAMING_STATUS_PREVIEW_FIXTURES = Object.freeze({
       'session/prompt: provider "codex" (OpenAI Codex) is not authenticated — run "codex login" in a terminal, then retry.',
     failedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
     authGuidance: { loginCommandHint: 'codex login', showClaudeDesktopNote: false },
-    onLogIn: retry,
+    onRunLogin: retry,
     onRetry: retry,
   }),
   'usage-limit': statusProps({

@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "実行計画",
   "chat_failureRecovery_copyDetails_label": "詳細をコピー",
   "chat_failureRecovery_details_label": "詳細",
+  "chat_failureRecovery_runInTerminal_label": "ターミナルで実行",
   "chat_harnessFeaturesModal_capabilities_title": "機能",
   "chat_harnessFeaturesModal_description": "このエージェントセッションの作成時に有効だった機能です。このスナップショットは読み取り専用で、セッションの存続期間中は変更されません。",
   "chat_harnessFeaturesModal_title": "ハーネス v{version}",

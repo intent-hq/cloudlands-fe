@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "Plan d’exécution",
   "chat_failureRecovery_copyDetails_label": "Copier les détails",
   "chat_failureRecovery_details_label": "Détails",
+  "chat_failureRecovery_runInTerminal_label": "Exécuter dans le terminal",
   "chat_harnessFeaturesModal_capabilities_title": "Capacités",
   "chat_harnessFeaturesModal_description": "Capacités avec lesquelles cette session d'agent a été créée. Cet instantané est en lecture seule et reste fixe pendant toute la durée de la session.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",

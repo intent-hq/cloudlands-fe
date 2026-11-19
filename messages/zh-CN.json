@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "执行计划",
   "chat_failureRecovery_copyDetails_label": "复制详情",
   "chat_failureRecovery_details_label": "详情",
+  "chat_failureRecovery_runInTerminal_label": "在终端中运行",
   "chat_harnessFeaturesModal_capabilities_title": "功能",
   "chat_harnessFeaturesModal_description": "此智能体会话创建时启用的功能。此快照为只读，在会话生命周期内保持不变。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",

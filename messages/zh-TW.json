@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "執行計畫",
   "chat_failureRecovery_copyDetails_label": "複製詳細資料",
   "chat_failureRecovery_details_label": "詳細資料",
+  "chat_failureRecovery_runInTerminal_label": "在終端機中執行",
   "chat_harnessFeaturesModal_capabilities_title": "功能",
   "chat_harnessFeaturesModal_description": "此智慧體工作階段建立時啟用的功能。此快照為唯讀，在工作階段存續期間保持不變。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",

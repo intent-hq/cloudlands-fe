@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "실행 계획",
   "chat_failureRecovery_copyDetails_label": "세부 정보 복사",
   "chat_failureRecovery_details_label": "세부 정보",
+  "chat_failureRecovery_runInTerminal_label": "터미널에서 실행",
   "chat_harnessFeaturesModal_capabilities_title": "기능",
   "chat_harnessFeaturesModal_description": "이 에이전트 세션이 생성될 때 적용된 기능입니다. 이 스냅샷은 읽기 전용이며 세션이 유지되는 동안 변경되지 않습니다.",
   "chat_harnessFeaturesModal_title": "하네스 v{version}",

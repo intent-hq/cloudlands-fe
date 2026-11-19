@@ -103,8 +103,8 @@
     processQueueHint?: FeOwnedSessionState['processQueueHint'];
     /** Guarded retry callback; queued input may still need terminal session recovery. */
     onRetry?: () => void;
-    /** Sign-in failures: run the provider's login command in Intent's terminal. */
-    onLogIn?: () => void;
+    /** Sign-in failures: run the login command in Intent's terminal. */
+    onRunLogin?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
     /**
@@ -148,7 +148,7 @@
     hasPendingPermission = false,
     processQueueHint = undefined,
     onRetry,
-    onLogIn,
+    onRunLogin,
     onRetryWithModel,
     onRetryWithProvider,
     onStop,
@@ -265,15 +265,12 @@
       : null,
   );
 
-  let logIn = $derived(
-    status === 'error' && authGuidance && !sessionCorrupted ? onLogIn : undefined,
-  );
   let hasRecoveryAction = $derived(
     status === 'quota-exceeded'
       ? !!onRetryWithProvider && (quotaRetryProviders.length > 0 || !!onRetry)
       : status === 'model-unavailable'
         ? !!onRetryWithModel
-        : status === 'error' && (!!logIn || (!!onRetry && !attempting)),
+        : status === 'error' && !!onRetry && !attempting,
   );
 
   // Error surface copy: recreate-aware when the daemon flagged the session
@@ -466,6 +463,20 @@
                     data-testid="error-auth-login-command">{authGuidance.loginCommandHint}</code
                   >
                   <CopyButton text={authGuidance.loginCommandHint} size="xs" />
+                  {#if onRunLogin}
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      class="[&_svg]:size-3"
+                      iconOnly
+                      tooltip={m.chat_failureRecovery_runInTerminal_label()}
+                      aria-label={m.chat_failureRecovery_runInTerminal_label()}
+                      onclick={onRunLogin}
+                      data-testid="error-auth-run-in-terminal"
+                    >
+                      <Fa icon={faTerminal} size="xs" />
+                    </Button>
+                  {/if}
                 </span>
               </div>
               {#if authGuidance.showClaudeDesktopNote}
@@ -518,19 +529,11 @@
                 model: modelUnavailable.nextAvailableModel,
               })}
             </Button>
-          {:else if status === 'error'}
-            {#if logIn}
-              <Button variant="secondary" size="sm" onclick={logIn} data-testid="error-auth-log-in">
-                <Fa icon={faTerminal} class="size-3" />
-                {m.settings_providers_logIn()}
-              </Button>
-            {/if}
-            {#if onRetry && !attempting}
-              <Button variant={logIn ? 'ghost-light' : 'secondary'} size="sm" onclick={onRetry}>
-                <Fa icon={faRotateRight} class="size-3" />
-                {m.chat_shared_retry_label()}
-              </Button>
-            {/if}
+          {:else if status === 'error' && onRetry && !attempting}
+            <Button variant="secondary" size="sm" onclick={onRetry}>
+              <Fa icon={faRotateRight} class="size-3" />
+              {m.chat_shared_retry_label()}
+            </Button>
           {/if}
           {#if error}<FailureDetails text={error} leading={!hasRecoveryAction} />{/if}
         </div>

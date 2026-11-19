@@ -601,6 +601,7 @@
   "chat_executionPlan_title": "Execution plan",
   "chat_failureRecovery_copyDetails_label": "Copy details",
   "chat_failureRecovery_details_label": "Details",
+  "chat_failureRecovery_runInTerminal_label": "Run in terminal",
   "chat_harnessFeaturesModal_capabilities_title": "Capabilities",
   "chat_harnessFeaturesModal_description": "Capabilities this agent session was created with. This snapshot is read-only and fixed for the session's lifetime.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
