@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const electronMocks = vi.hoisted(() => ({
   appOn: vi.fn(),
   getAllWindows: vi.fn((): unknown[] => []),
-  fromWebContents: vi.fn((): unknown => null),
+  fromWebContents: vi.fn((_contents: unknown): unknown => null),
   sessionHandlers: {
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),

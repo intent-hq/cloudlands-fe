@@ -6,18 +6,19 @@ import {
   parseWindowFramesFile,
   keepFrameMachines,
   routeFromRendererUrl,
+  type FrameSessionFilter,
 } from '../frame-sessions';
 import type { FrameSession } from '../../shared/types/machine-rail';
 
 const BOUNDS = { x: 10, y: 20, width: 1200, height: 800 };
 const OTHER_BOUNDS = { x: 1930, y: 0, width: 900, height: 700 };
 
-const acceptAll = {
+const acceptAll: FrameSessionFilter = {
   isSavedMachine: () => true,
   isRestorableRoute: (route: string) => route !== '/dock' && route !== '/dev-console',
 };
 
-function onlySaved(...ids: string[]) {
+function onlySaved(...ids: string[]): FrameSessionFilter {
   return { ...acceptAll, isSavedMachine: (id: string) => ids.includes(id) };
 }
 

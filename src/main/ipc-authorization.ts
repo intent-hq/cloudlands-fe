@@ -9,7 +9,7 @@ export interface TrustedBrowserBridgeIpcContext {
   readonly [trustedBrowserBridgeBrand]: true;
 }
 
-type PrivilegedIpcContext = IpcMainInvokeEvent | TrustedBrowserBridgeIpcContext;
+export type PrivilegedIpcContext = IpcMainInvokeEvent | TrustedBrowserBridgeIpcContext;
 
 export class IpcAuthorizationError extends Error {
   constructor(

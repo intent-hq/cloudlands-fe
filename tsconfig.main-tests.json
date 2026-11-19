@@ -15,7 +15,7 @@
     "rootDir": ".",
     "lib": ["ES2024", "DOM"],
     "typeRoots": ["./node_modules/@types", "./node_modules"],
-    "types": ["node", "vite/client", "vitest/globals"],
+    "types": ["node", "vite/client", "vitest/globals", "@sveltejs/kit"],
     "paths": {
       "$lib": ["./src/lib"],
       "$lib/*": ["./src/lib/*"],

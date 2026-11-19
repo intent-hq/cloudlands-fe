@@ -15,6 +15,7 @@ import {
   createTrustedBrowserBridgeIpcContext,
   IpcAuthorizationError,
   isTrustedRendererUrl,
+  type PrivilegedIpcContext,
 } from '../ipc-authorization';
 
 function appEvent(overrides: Record<string, unknown> = {}) {
@@ -34,7 +35,7 @@ describe('privileged IPC authorization', () => {
   beforeEach(() => electronMocks.fromWebContents.mockReset());
 
   it('allows the top frame of an owned app window', async () => {
-    const handler = vi.fn(async () => 'ok');
+    const handler = vi.fn(async (_context: PrivilegedIpcContext, _request?: unknown) => 'ok');
     const authorized = createAuthorizedIpcHandler('file:read', handler);
 
     await expect(authorized(appEvent(), { path: 'README.md' })).resolves.toBe('ok');
@@ -47,7 +48,7 @@ describe('privileged IPC authorization', () => {
     const authorized = createAuthorizedIpcHandler('file:read', vi.fn());
 
     await expect(authorized(event)).rejects.toEqual(
-      expect.objectContaining<IpcAuthorizationError>({ reason: 'sender is not an app window' }),
+      expect.objectContaining({ reason: 'sender is not an app window' }),
     );
   });
 
@@ -56,7 +57,7 @@ describe('privileged IPC authorization', () => {
     const authorized = createAuthorizedIpcHandler('file:read', vi.fn());
 
     await expect(authorized(event)).rejects.toEqual(
-      expect.objectContaining<IpcAuthorizationError>({ reason: 'subframe invocation' }),
+      expect.objectContaining({ reason: 'subframe invocation' }),
     );
   });
 
@@ -66,7 +67,7 @@ describe('privileged IPC authorization', () => {
     const authorized = createAuthorizedIpcHandler('file:read', vi.fn());
 
     await expect(authorized(event)).rejects.toEqual(
-      expect.objectContaining<IpcAuthorizationError>({ reason: 'unexpected session' }),
+      expect.objectContaining({ reason: 'unexpected session' }),
     );
   });
 
@@ -76,12 +77,12 @@ describe('privileged IPC authorization', () => {
     const authorized = createAuthorizedIpcHandler('file:read', vi.fn());
 
     await expect(authorized(event)).rejects.toEqual(
-      expect.objectContaining<IpcAuthorizationError>({ reason: 'unexpected renderer URL' }),
+      expect.objectContaining({ reason: 'unexpected renderer URL' }),
     );
   });
 
   it('allows only the symbol-branded browser bridge context', async () => {
-    const handler = vi.fn(async () => 'ok');
+    const handler = vi.fn(async (_context: PrivilegedIpcContext, _request?: unknown) => 'ok');
     const authorized = createAuthorizedIpcHandler('agent-backend:stream-message', handler);
 
     await expect(authorized(createTrustedBrowserBridgeIpcContext())).resolves.toBe('ok');

@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const mockBrowserWindowCtor = vi.fn();
-const mockLoadUrl = vi.fn(() => Promise.resolve());
+const mockLoadUrl = vi.fn((_url: string) => Promise.resolve());
 const mockGetPrimaryDisplay = vi.fn(() => ({
   workArea: { x: 0, y: 0, width: 1440, height: 900 },
 }));
@@ -292,7 +292,7 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     mockGetMainWindow.mockReturnValue(mainWindow);
     await createWindowForDeepLink('intent://create?repo=%2Frepo&newWindow=true', makeHandler());
     expect(mockBrowserWindowCtor).toHaveBeenCalledTimes(1);
-    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    const loadedUrl = mockLoadUrl.mock.calls[0][0];
     expect(loadedUrl).not.toContain('deepLink=');
     expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
       { type: 'create', params: { repo: '/repo', newWindow: 'true' } },
@@ -323,7 +323,7 @@ describe('createWindow cold-start argv scan', () => {
     process.argv = ['electron', '.', PAIR_LINK];
     await createWindow();
     expect(mockLoadUrl).toHaveBeenCalledTimes(1);
-    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    const loadedUrl = mockLoadUrl.mock.calls[0][0];
     expect(loadedUrl).not.toContain(TOKEN);
     expect(loadedUrl).not.toContain('deepLink=');
     expect(logLines.join('\n')).not.toContain(TOKEN);
@@ -332,7 +332,7 @@ describe('createWindow cold-start argv scan', () => {
   it('excludes an uppercase pair link from URL embedding too', async () => {
     process.argv = ['electron', '.', PAIR_LINK.toUpperCase()];
     await createWindow();
-    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    const loadedUrl = mockLoadUrl.mock.calls[0][0];
     expect(loadedUrl).not.toContain('deepLink=');
     expect(logLines.join('\n')).not.toContain(TOKEN.toUpperCase());
   });
@@ -340,7 +340,7 @@ describe('createWindow cold-start argv scan', () => {
   it('queues a non-pair link for the boot window instead of embedding it', async () => {
     process.argv = ['electron', '.', 'intent://open?path=%2FUsers%2Fme'];
     await createWindow();
-    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    const loadedUrl = mockLoadUrl.mock.calls[0][0];
     expect(loadedUrl).not.toContain('deepLink=');
     expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
       { type: 'open', params: { path: '/Users/me' } },
