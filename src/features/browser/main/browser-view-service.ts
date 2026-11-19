@@ -33,11 +33,11 @@ import type { MainOwnedBrowserViews } from './embedded-browser-cdp-service';
 const logger = new Logger('BrowserViewService');
 
 /** Size a view is parked at before any renderer has reported its box. */
-export const DEFAULT_PARKED_SIZE = { width: 1280, height: 800 } as const;
+const DEFAULT_PARKED_SIZE = { width: 1280, height: 800 } as const;
 
 /** Zoom factors a page accepts (Chromium's own range). */
-export const MIN_PAGE_ZOOM = 0.25;
-export const MAX_PAGE_ZOOM = 5;
+const MIN_PAGE_ZOOM = 0.25;
+const MAX_PAGE_ZOOM = 5;
 
 export interface BrowserViewKey {
   backendId: string;
@@ -93,7 +93,10 @@ interface Entry {
   dispose: () => void;
 }
 
-/** Convert a renderer CSS-pixel box to window pixels (machine views sit at 0,0). */
+/**
+ * Convert a renderer CSS-pixel box to window pixels (machine views sit at 0,0).
+ * @internal Exported for unit tests.
+ */
 export function toWindowRect(rect: BrowserViewRect, zoomFactor: number): Electron.Rectangle {
   const zoom = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
   const x = Math.round(rect.x * zoom);

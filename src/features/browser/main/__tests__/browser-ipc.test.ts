@@ -63,6 +63,9 @@ vi.mock('../../../../main/window', () => ({
   getFocusedWindowBackendId: vi.fn(() => 'local'),
 }));
 
+// Main-owned browser views (Labs) are covered by browser-view-ipc.test.ts.
+vi.mock('../browser-view.ipc', () => ({ registerBrowserViewHandlers: vi.fn() }));
+
 vi.mock('../embedded-browser-cdp-service', () => ({
   DEFAULT_AGENT_VIEWPORT: { width: 1280, height: 800 },
   AGENT_VIEWPORT_MIN_PX: 320,

@@ -2,11 +2,13 @@ import { EventEmitter } from 'events';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BrowserViewService,
-  DEFAULT_PARKED_SIZE,
-  MAX_PAGE_ZOOM,
   toWindowRect,
   type BrowserViewServiceDeps,
 } from '../browser-view-service';
+
+/** The service's parked size before any box was reported, and its zoom ceiling. */
+const DEFAULT_PARKED_SIZE = { width: 1280, height: 800 };
+const MAX_PAGE_ZOOM = 5;
 import type { BrowserViewEventMessage } from '../../../../shared/types/browser-view';
 
 vi.mock('../../../../shared/logger', () => ({

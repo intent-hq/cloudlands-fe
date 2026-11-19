@@ -249,7 +249,7 @@ function isBrowserGuest(contents: Electron.WebContents | null | undefined): bool
  * constructor): no preload, no Node.js, context isolation, sandbox, web
  * security on. One function, so the two paths cannot drift.
  */
-export function applyBrowserGuestWebPreferences(webPreferences: Electron.WebPreferences): void {
+function applyBrowserGuestWebPreferences(webPreferences: Electron.WebPreferences): void {
   // Remove any preload scripts that might be injected
   delete webPreferences.preload;
   // Disable Node.js integration in webviews (critical security)

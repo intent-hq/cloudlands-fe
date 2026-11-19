@@ -56,8 +56,7 @@ const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('focus') }),
 ]);
 
-/** @internal Exported for the IPC contract tests. */
-export const BrowserViewSchemas = {
+const BrowserViewSchemas = {
   setLab: z.object({ enabled: z.boolean() }),
   create: z.object({
     tabId: TabIdSchema,
@@ -72,16 +71,6 @@ export const BrowserViewSchemas = {
 
 let labEnabled = false;
 let service: BrowserViewService | null = null;
-
-/** Whether the Labs setting is on (read once at startup, then kept here). */
-export function isBrowserViewLabEnabled(): boolean {
-  return labEnabled;
-}
-
-/** The running service, or null before the handlers are registered. */
-export function getBrowserViewService(): BrowserViewService | null {
-  return service;
-}
 
 /** The sender's window and machine; throws for anything but a bound app renderer's main frame. */
 function senderBinding(event: IpcMainInvokeEvent) {

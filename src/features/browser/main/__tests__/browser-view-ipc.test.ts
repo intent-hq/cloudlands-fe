@@ -105,7 +105,6 @@ async function register() {
   mocks.handlers.clear();
   const module = await import('../browser-view.ipc');
   module.registerBrowserViewHandlers();
-  return module;
 }
 
 const CREATE = { tabId: 'tab-1', workspaceId: 'ws-1', url: 'https://a.test/' };
@@ -133,8 +132,9 @@ describe('browser view IPC', () => {
   });
 
   it('connects the service to the CDP registry', async () => {
-    const module = await register();
-    expect(mocks.setMainOwnedBrowserViews).toHaveBeenCalledWith(module.getBrowserViewService());
+    await register();
+    const [views] = mocks.setMainOwnedBrowserViews.mock.calls[0];
+    expect(views.owns(12345)).toBe(false);
   });
 
   it('refuses a sender that is not a bound app renderer main frame', async () => {
