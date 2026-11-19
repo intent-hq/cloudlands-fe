@@ -130,6 +130,7 @@
           loginCommandHint:
             kind === 'auth' ? `claude auth login --fixture=${'x'.repeat(220)}` : undefined,
           showClaudeDesktopNote: kind === 'auth',
+          onRunLogin: kind === 'auth' ? () => record('run-login') : undefined,
           onRetry: () => record('retry'),
           onSwitchTo: () => record('switch'),
           onClose: close,

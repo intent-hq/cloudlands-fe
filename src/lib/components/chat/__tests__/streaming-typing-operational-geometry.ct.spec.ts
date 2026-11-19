@@ -41,7 +41,7 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
 
   await component.update({ props: { mode: 'error' } });
   await expect(mark).toHaveAttribute('data-motion-state', 'settling');
-  await expect(component.getByRole('alert')).toContainText("Couldn't complete this response");
+  await expect(component.getByRole('alert')).toContainText('Response failed');
   await component.getByRole('button', { name: 'Details', exact: true }).click();
   await expect(component.getByTestId('failure-raw-details')).toHaveText(
     'Provider stopped the response',

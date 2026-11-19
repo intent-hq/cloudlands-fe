@@ -81,7 +81,7 @@ for (const scenario of cases) {
 
     const { geometry, noticeBox, composerBox, proseBox } = await measureNotice(component);
     if (scenario.name === 'failure') {
-      await expect(notice.getByRole('button', { name: '1 recorded failure' })).toBeVisible();
+      await expect(notice.getByRole('button', { name: 'Response failed' })).toBeVisible();
       await expect(notice.getByRole('alert')).toHaveCount(0);
     }
     expect(noticeBox.top).toBeGreaterThanOrEqual(proseBox.bottom);

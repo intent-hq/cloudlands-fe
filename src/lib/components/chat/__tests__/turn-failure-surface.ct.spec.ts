@@ -10,7 +10,7 @@ test('historical failure details are keyboard accessible and preserve raw record
     props: { reason: 'The agent stopped before it could finish the response.' },
   });
   await expect(page.getByRole('alert')).toHaveCount(0);
-  const disclosure = page.getByRole('button', { name: '1 recorded failure' });
+  const disclosure = page.getByRole('button', { name: 'Response failed' });
   await disclosure.focus();
   await disclosure.press('Enter');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');

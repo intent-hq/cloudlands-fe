@@ -12,7 +12,7 @@ for (const scenario of [
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1200, height: 1400 });
     const component = await mount(ChatNoticeConsistencyHost, { props: scenario });
-    await component.getByRole('button', { name: '1 recorded failure' }).click();
+    await component.getByRole('button', { name: 'Response failed' }).click();
     await page.evaluate(() => document.fonts.ready);
     const geometry = await component.locator('[data-notice-variant]').evaluateAll((cells) =>
       cells.map((cell) => {
@@ -30,7 +30,9 @@ for (const scenario of [
       const label = await cell
         .locator('[data-chat-notice-label], .turn-failure-notice button[aria-expanded]')
         .boundingBox();
-      const reason = cell.locator('[data-chat-notice-reason], .turn-failure-notice pre');
+      const reason = cell.locator(
+        '[data-chat-notice-reason], .turn-failure-notice [role="region"]',
+      );
       if (await reason.count()) {
         const reasonBox = await reason.boundingBox();
         expect(reasonBox!.y).toBeGreaterThanOrEqual(label!.y + label!.height);

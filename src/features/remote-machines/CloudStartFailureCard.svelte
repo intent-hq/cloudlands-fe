@@ -6,7 +6,11 @@
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faRotateRight, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCircleExclamation,
+    faRotateRight,
+    faExclamationTriangle,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import FailureDetails from '$lib/components/chat/FailureDetails.svelte';
@@ -50,20 +54,24 @@
   data-cloud-start-failure
   data-stream-terminal-error="true"
   data-tone={view.tone}
-  class="type-caption mt-4 flex w-full min-w-0 flex-col gap-2 rounded-md border border-border bg-card p-3"
+  class="type-caption mt-4 flex w-full min-w-0 items-start gap-2 rounded-md border border-border bg-card p-3"
 >
-  <div class="flex min-w-0 items-start gap-2" data-failure-summary>
-    {#if warning}
-      <Fa icon={faExclamationTriangle} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
-    {/if}
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-      <span class="font-medium {warning ? 'text-warning-ink' : 'text-danger'}"
-        >{view.title}{#if failedAt}
-          <span class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground">
+  <Fa
+    icon={warning ? faExclamationTriangle : faCircleExclamation}
+    class="mt-0.5 size-3 shrink-0 {warning ? 'text-warning-ink' : 'text-danger'}"
+  />
+  <div class="flex min-w-0 flex-1 flex-col gap-2">
+    <div class="flex min-w-0 flex-col gap-0.5" data-failure-summary>
+      <div class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
+        <span class="min-w-0 break-words font-medium {warning ? 'text-warning-ink' : 'text-danger'}"
+          >{view.title}</span
+        >
+        {#if failedAt}
+          <span class="shrink-0 whitespace-nowrap text-muted-foreground">
             <RelativeTime date={failedAt} />
           </span>
-        {/if}</span
-      >
+        {/if}
+      </div>
       <span class="text-muted-foreground">{view.cause}</span>
       {#if queuedNote}
         <span class="text-muted-foreground" data-queued-note={queuedNote}
@@ -73,34 +81,33 @@
         >
       {/if}
     </div>
-  </div>
-  <div class="flex flex-wrap items-center gap-2">
-    {#each view.actions as action, index (action)}
-      <Button
-        variant={index === 0 ? 'default' : 'ghost'}
-        size="sm"
-        class={index === 0 ? 'type-caption h-7 gap-1.5 px-2' : 'shrink-0'}
-        data-primary-action={index === 0 ? '' : undefined}
-        data-action={action}
-        loading={action === 'retry' && retrying}
-        onclick={() => run(action)}
-      >
-        {#if action === 'retry'}<Fa icon={faRotateRight} class="size-3" />{/if}
-        {action === 'retry'
-          ? m.chat_shared_retry_label()
-          : m.cloudMachines_startFailure_machinesSettings_label()}
-      </Button>
-    {/each}
-    <FailureDetails text={view.details} />
-    {#if view.dashboard}
-      <a
-        class="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-        href={cloudDashboardUrl(view.provider)}
-        target="_blank"
-        rel="noopener noreferrer"
-        >{cloudProviderCopy(view.provider).dashboardOpen}
-        <Fa icon={faArrowUpRightFromSquare} class="size-2.5" /></a
-      >
-    {/if}
+    <div class="flex min-w-0 flex-wrap items-center gap-2">
+      {#each view.actions as action, index (action)}
+        <Button
+          variant={index === 0 ? 'secondary' : 'ghost-light'}
+          size="sm"
+          data-primary-action={index === 0 ? '' : undefined}
+          data-action={action}
+          loading={action === 'retry' && retrying}
+          onclick={() => run(action)}
+        >
+          {#if action === 'retry'}<Fa icon={faRotateRight} class="size-3" />{/if}
+          {action === 'retry'
+            ? m.chat_shared_retry_label()
+            : m.cloudMachines_startFailure_machinesSettings_label()}
+        </Button>
+      {/each}
+      <FailureDetails text={view.details} />
+      {#if view.dashboard}
+        <a
+          class="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          href={cloudDashboardUrl(view.provider)}
+          target="_blank"
+          rel="noopener noreferrer"
+          >{cloudProviderCopy(view.provider).dashboardOpen}
+          <Fa icon={faArrowUpRightFromSquare} class="size-2.5" /></a
+        >
+      {/if}
+    </div>
   </div>
 </div>

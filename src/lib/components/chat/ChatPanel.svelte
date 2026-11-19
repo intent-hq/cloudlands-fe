@@ -475,7 +475,9 @@
     selectProviderAuthFailureGuidance,
     selectProviderCatalogLoaded,
     selectProviderConfigurationLabel,
+    selectTerminalLoginProviderId,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { providerLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
@@ -2880,6 +2882,28 @@
       $agentSession$?.model,
       effectiveError,
     );
+  });
+
+  const chatLoginProviderId = $derived.by(() => {
+    void $providerCatalogLoaded$;
+    return selectTerminalLoginProviderId.select(
+      appStore.state,
+      $agentSession$,
+      chatAuthGuidance?.providerId,
+    );
+  });
+
+  async function runLoginInTerminal(providerId: string) {
+    try {
+      await appStore.dispatch(providerLoginRequested(providerId));
+    } catch (cause) {
+      notify.error(cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error());
+    }
+  }
+
+  const chatRunLogin = $derived.by(() => {
+    const providerId = chatLoginProviderId;
+    return providerId ? () => void runLoginInTerminal(providerId) : undefined;
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -7433,6 +7457,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onRunLogin={chatRunLogin}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -7465,6 +7490,7 @@
                         error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
+                        onRunLogin={chatRunLogin}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -7559,6 +7585,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onRunLogin={chatRunLogin}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -7591,6 +7618,7 @@
                         error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
+                        onRunLogin={chatRunLogin}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -7628,6 +7656,7 @@
                   error={turnFailureError}
                   recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
+                  onRunLogin={chatRunLogin}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
@@ -7965,6 +7994,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onRunLogin={chatRunLogin}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -8073,6 +8103,7 @@
                                   error={turnFailureError}
                                   recoveryState={failureTranscript.current.state}
                                   authGuidance={chatAuthGuidance}
+                                  onRunLogin={chatRunLogin}
                                   sessionCorrupted={effectiveSessionCorrupted}
                                   failedAt={effectiveFailedAt}
                                   modelUnavailable={$chatModelUnavailable$}
@@ -8197,6 +8228,7 @@
                     error={turnFailureError}
                     recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
+                    onRunLogin={chatRunLogin}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
@@ -8355,6 +8387,7 @@
                       error={turnFailureError}
                       recoveryState={failureTranscript.current.state}
                       authGuidance={chatAuthGuidance}
+                      onRunLogin={chatRunLogin}
                       sessionCorrupted={effectiveSessionCorrupted}
                       failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}

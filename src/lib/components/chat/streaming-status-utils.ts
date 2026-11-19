@@ -202,12 +202,25 @@ export interface ErrorDisplay {
   detail: string | null;
 }
 
+// Daemon errors lead with the failing ACP call (`session/prompt: …`,
+// `session/new failed: …`); the full text stays under Details.
+const ACP_CALL_PREFIX = /^session\/[a-z_]+(?: failed)?:\s*/i;
+
+/** The first line of an error without its ACP call prefix, for the card body. */
+function summarizeFailureReason(error: string): string {
+  const line = error
+    .split('\n')
+    .map((part) => part.trim())
+    .find(Boolean);
+  const text = (line ?? '').replace(ACP_CALL_PREFIX, '');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /**
  * Derive the error surface copy from the raw error text and the daemon's
- * derived sessionCorrupted flag (monorepo#940). When the flag is absent/false
- * the result matches the pre-existing rendering exactly (title "Response
- * failed", the raw error as the message); when corrupted, distinct
- * recreate-aware copy is shown and the raw error becomes secondary detail.
+ * derived sessionCorrupted flag (monorepo#940): title "Response failed" with
+ * the summarized error as the message, or recreate-aware copy when corrupted.
+ * The raw error is always available under Details.
  */
 export function deriveErrorDisplay(
   error: string | null | undefined,
@@ -225,7 +238,7 @@ export function deriveErrorDisplay(
   return {
     corrupted: false,
     title: m.chat_streamingStatus_responseFailed_label(),
-    message: error,
+    message: summarizeFailureReason(error),
     detail: null,
   };
 }

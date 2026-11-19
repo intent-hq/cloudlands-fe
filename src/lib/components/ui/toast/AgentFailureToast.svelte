@@ -1,6 +1,8 @@
 <script lang="ts">
+  import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { faTerminal } from '$lib/icons/phosphor-icons';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
   import ToastGlyph from './ToastGlyph.svelte';
@@ -25,6 +27,8 @@
     loginCommandHint?: string;
     /** claude-code auth failure: desktop-app sign-in doesn't carry over to the CLI. */
     showClaudeDesktopNote?: boolean;
+    /** Runs the login command in Intent's terminal, when it can sign this agent in. */
+    onRunLogin?: () => void;
     onRetry: () => void;
     /** Navigate to the agent WITHOUT retrying. */
     onSwitchTo: () => void;
@@ -41,6 +45,7 @@
     keySlot = null,
     loginCommandHint,
     showClaudeDesktopNote = false,
+    onRunLogin,
     onRetry,
     onSwitchTo,
     onClose,
@@ -78,6 +83,20 @@
             data-testid="toast-auth-login-command">{loginCommandHint}</code
           >
           <CopyButton text={loginCommandHint} size="xs" />
+          {#if onRunLogin}
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              class="[&_svg]:size-3"
+              iconOnly
+              tooltip={m.chat_failureRecovery_runInTerminal_label()}
+              aria-label={m.chat_failureRecovery_runInTerminal_label()}
+              onclick={onRunLogin}
+              data-testid="toast-auth-run-in-terminal"
+            >
+              <Fa icon={faTerminal} size="xs" />
+            </Button>
+          {/if}
         </div>
         {#if showClaudeDesktopNote}
           <p

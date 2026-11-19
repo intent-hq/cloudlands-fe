@@ -45,10 +45,14 @@ import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectProviderLoadingMap } from '../../agent-availability/agent-availability-selectors';
-import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
+import {
+  checkSingleProviderRequested,
+  providerLoginRequested,
+} from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
   selectProviderAuthFailureGuidance,
+  selectTerminalLoginProviderId,
   type ProviderAuthFailureGuidance,
 } from '../../provider-catalog/provider-catalog-selectors';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
@@ -82,6 +86,7 @@ type FailureMessage =
   | { kind: 'snapshot'; entries: AgentFailureEntry[] }
   | { kind: 'retry'; agentId: string }
   | { kind: 'switch-to'; agentId: string }
+  | { kind: 'run-login'; providerId: string }
   | { kind: 'close'; agentId: string };
 
 type FailureEmitter = (message: FailureMessage) => void;
@@ -172,6 +177,10 @@ function* buildToastProps(
     session?.model,
     entry.error,
   );
+  const loginProviderId = yield* selectTerminalLoginProviderId.effect(
+    session,
+    authGuidance?.providerId,
+  );
   const componentProps: AgentFailureNotifyProps = {
     title: agentName
       ? m.agent_failureToast_agentFailed_title({ name: agentName })
@@ -189,6 +198,9 @@ function* buildToastProps(
     keySlot: resolveKeySlot(entry.workspaceId),
     loginCommandHint: authGuidance?.loginCommandHint,
     showClaudeDesktopNote: authGuidance?.showClaudeDesktopNote ?? false,
+    ...(loginProviderId
+      ? { onRunLogin: () => emit({ kind: 'run-login', providerId: loginProviderId }) }
+      : {}),
     onRetry: () => emit({ kind: 'retry', agentId: entry.agentId }),
     onSwitchTo: () => emit({ kind: 'switch-to', agentId: entry.agentId }),
     onClose: () => emit({ kind: 'close', agentId: entry.agentId }),
@@ -422,6 +434,8 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
         yield* fork(retryAgent, message.agentId, states, emit);
       } else if (message.kind === 'switch-to') {
         yield* fork(switchToAgent, message.agentId);
+      } else if (message.kind === 'run-login') {
+        yield* put(providerLoginRequested(message.providerId));
       } else {
         yield* call(closeAgentToast, message.agentId, states);
       }

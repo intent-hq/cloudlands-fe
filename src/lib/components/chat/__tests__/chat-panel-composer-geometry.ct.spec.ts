@@ -362,7 +362,6 @@ test('shows authoritative restored queue work alongside its already persisted hi
   });
   await expect(component.getByTestId('queued-message-text')).toHaveText('Confirmed A');
   await expect(component.getByText('Persisted A', { exact: true })).toBeVisible();
-  await expect(component.getByTestId('queued-message-retry-status')).toBeVisible();
 });
 
 const desktopNoticeLayouts = [

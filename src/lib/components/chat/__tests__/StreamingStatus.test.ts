@@ -15,6 +15,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faCircleExclamation: { iconName: 'circle-exclamation' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faRotateRight: { iconName: 'rotate-right' },
   faCopy: { iconName: 'copy' },
@@ -141,8 +142,8 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
-    expect(screen.queryByText('Stream timeout after 10 minutes')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
     await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
     expect(screen.getByTestId('failure-raw-details').textContent).toBe(
       'Stream timeout after 10 minutes',
@@ -201,7 +202,7 @@ describe('StreamingStatus rendered UI', () => {
 
     expect(screen.getByTestId('error-title').textContent).toBe('Agent session corrupted');
     expect(screen.getByTestId('error-message').textContent).toBe(
-      'Try again will start a fresh session and carry over the conversation history',
+      'Retry starts a fresh session and keeps the conversation history.',
     );
     expect(screen.queryByTestId('failure-raw-details')).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
@@ -216,12 +217,12 @@ describe('StreamingStatus rendered UI', () => {
   it('renders ordinary error copy without secondary detail when the flag is absent (older daemons)', () => {
     render(StreamingStatus, {
       props: {
-        error: 'Stream timeout after 10 minutes',
+        error: 'session/prompt failed: Stream timeout after 10 minutes',
       },
     });
 
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
-    expect(screen.queryByText('Stream timeout after 10 minutes')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
     expect(screen.queryByTestId('failure-raw-details')).toBeNull();
   });
 
@@ -234,7 +235,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
   });
 
   it('shows current activity without raw stale errors or competing retry actions', () => {
@@ -385,7 +386,7 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
 
     await rerender({
       error: null,
@@ -407,12 +408,7 @@ describe('StreamingStatus rendered UI', () => {
     const failedAtEl = screen.getByTestId('error-failed-at');
     expect(failedAtEl).toBeTruthy();
     expect(failedAtEl.className).toContain('text-muted-foreground');
-    expect(failedAtEl.className).toContain('type-caption');
-    expect(failedAtEl.className).toContain('leading-4');
-    expect(screen.getByTestId('error-title').textContent).not.toContain('·');
-    expect(screen.getByTestId('error-title').textContent).toContain(
-      "Couldn't complete this response",
-    );
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
   });
 
   it('omits the failed-X-ago span when failedAt is absent (older daemons / transient chat errors)', () => {
@@ -423,7 +419,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.queryByTestId('error-failed-at')).toBeNull();
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
   });
 
   it('renders login guidance (copyable command + claude desktop caveat) on provider auth failures', () => {
@@ -437,6 +433,7 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
+    expect(screen.getByTestId('error-title').textContent).toBe('Sign-in required');
     expect(screen.getByTestId('error-auth-guidance')).toBeTruthy();
     expect(screen.getByTestId('error-auth-login-command').textContent).toBe('claude /login');
     expect(screen.getByTestId('error-auth-claude-desktop-note')).toBeTruthy();
@@ -678,7 +675,7 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
       },
     });
     expect(failed.container.querySelector('[data-stream-stalled="true"]')).toBeNull();
-    expect(screen.getByTestId('error-title').textContent).toBe("Couldn't complete this response");
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
   });
 
   it('omits the Cancel button when no onStop handler is provided', () => {

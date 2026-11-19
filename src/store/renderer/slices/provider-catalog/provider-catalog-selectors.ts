@@ -16,7 +16,10 @@ import {
  * `selectEffectiveDefaultProviderId`.
  */
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
+import {
+  daemonLoginCommand,
+  isProviderAuthenticationErrorForEntry,
+} from '$shared/provider-catalog';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
@@ -27,6 +30,7 @@ import {
   type ProviderDefaultNames,
 } from '$shared/provider-profiles';
 import { formatProviderRefLabel } from '$shared/provider-ref-label';
+import type { AgentSession } from '$shared/types/agent-session';
 
 /** True once the first `providers.catalog` hydration landed. */
 export const selectProviderCatalogLoaded = store.createSelector(
@@ -306,8 +310,31 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     const providerId = entry?.id ?? rawId;
     return {
       providerId,
-      loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
+      loginCommandHint:
+        daemonLoginCommand(errorMessage) ||
+        entry?.loginCommandHint ||
+        `${entry?.command ?? providerId} login`,
       showClaudeDesktopNote: providerId === 'claude-code',
     };
+  },
+);
+
+/**
+ * The provider whose login command can run in Intent's terminal after an
+ * agent's sign-in failure, or null. That terminal runs on the daemon host, so
+ * only an agent there on a plain provider (a named profile signs in with its
+ * own settings) whose catalog names a login command.
+ */
+export const selectTerminalLoginProviderId = store.createSelector(
+  (
+    state,
+    agent: Pick<AgentSession, 'nodeId' | 'placement' | 'provider'> | null | undefined,
+    providerId: string | null | undefined,
+  ): string | null => {
+    if (!agent || !providerId) return null;
+    if (agent.nodeId || agent.placement?.target === 'remote') return null;
+    if (agent.provider && isProviderProfileRef(agent.provider)) return null;
+    const command = selectProviderCatalogEntry.select(state, providerId)?.loginCommandHint;
+    return command || providerId === 'claude-code' ? providerId : null;
   },
 );

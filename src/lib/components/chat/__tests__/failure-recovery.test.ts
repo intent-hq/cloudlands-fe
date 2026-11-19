@@ -7,15 +7,17 @@ import TurnFailureNotice from '../TurnFailureNotice.svelte';
 afterEach(cleanup);
 
 describe('compact failure recovery', () => {
-  it('keeps technical text behind Details and copies the exact raw failure', async () => {
+  it('shows the cause and copies the exact raw failure from Details', async () => {
     const raw =
       'JSON-RPC error -32603: workspace requirements failed\n  cause: exact internal detail';
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const onRetry = vi.fn();
     render(StreamingStatus, { error: raw, onRetry });
-    expect(screen.getByText("Couldn't complete this response")).toBeTruthy();
-    expect(screen.queryByText(raw)).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-message').textContent).toBe(
+      'JSON-RPC error -32603: workspace requirements failed',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
     expect(screen.getByTestId('failure-raw-details').textContent).toBe(raw);
     await fireEvent.click(screen.getByRole('button', { name: 'Copy details' }));
@@ -23,14 +25,14 @@ describe('compact failure recovery', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
-  it('distinguishes queued from active and removes competing recovery actions during activity', async () => {
+  it('keeps queued recovery to Retry and removes it during activity', async () => {
     const view = render(StreamingStatus, {
       error: 'raw',
       recoveryState: 'queued',
       onRetry: vi.fn(),
     });
-    expect(screen.getByText('Queued')).toBeTruthy();
-    expect(screen.queryByText(/will retry/i)).toBeNull();
+    expect(screen.queryByText(/queued|will retry/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     await view.rerender({ recoveryState: 'attempting', isProcessing: true });
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Retry', exact: true })).toBeNull(),
@@ -52,7 +54,7 @@ describe('compact failure recovery', () => {
       ],
     });
     expect(screen.queryByRole('alert')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: '2 recorded failures' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Response failed' }));
     expect(screen.getByText('first raw')).toBeTruthy();
     expect(screen.getByText('second raw')).toBeTruthy();
     expect(screen.queryByText(/attempts|recovered/i)).toBeNull();

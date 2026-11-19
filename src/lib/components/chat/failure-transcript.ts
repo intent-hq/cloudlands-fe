@@ -18,11 +18,19 @@ export function projectFailureTranscript(
     messages: [...transcript.groups.flatMap((group) => group.messages), ...transcript.hiddenTail],
     breakBeforeMessageIds: new Set(boundary ? [boundary] : []),
   });
+  // The recovery card already shows the notice proven to be the current failure.
+  const current = summary.current.noticeId;
+  const runs = summary.history
+    .map((run) => ({ ...run, records: run.records.filter((r) => r.messageId !== current) }))
+    .filter((run) => run.records.length > 0);
+  const anchors = new Set(runs.map((run) => run.records[0].messageId));
   return {
     ...summary,
-    runsByAnchor: new Map(summary.history.map((run) => [run.anchorMessageId, run])),
+    runsByAnchor: new Map(runs.map((run) => [run.records[0].messageId, run])),
     collapsedMessageIds: new Set(
-      summary.history.flatMap((run) => run.records.slice(1).map((record) => record.messageId)),
+      summary.history.flatMap((run) =>
+        run.records.map((record) => record.messageId).filter((id) => !anchors.has(id)),
+      ),
     ),
   };
 }
