@@ -7299,6 +7299,7 @@
   "workspace_multiSelectSidebar_showAllFiles_tooltip": "すべてのファイルを表示",
   "workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip": "変更されたファイルのみ表示",
   "workspace_multiSelectSidebar_space_label": "スペース",
+  "workspace_multiSelectSidebar_tabInUse_ariaLabel": "{label}（使用中）",
   "workspace_multiSelectSidebar_undo_label": "元に戻す",
   "workspace_multiSelectSidebar_workingDirectlyIn_before": "直接作業中:",
   "workspace_nav_acceptChanges_label": "変更を承認",

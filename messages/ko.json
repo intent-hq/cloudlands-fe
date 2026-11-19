@@ -7299,6 +7299,7 @@
   "workspace_multiSelectSidebar_showAllFiles_tooltip": "모든 파일 표시",
   "workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip": "변경된 파일만 표시",
   "workspace_multiSelectSidebar_space_label": "스페이스",
+  "workspace_multiSelectSidebar_tabInUse_ariaLabel": "{label} (사용 중)",
   "workspace_multiSelectSidebar_undo_label": "실행 취소",
   "workspace_multiSelectSidebar_workingDirectlyIn_before": "직접 작업 중:",
   "workspace_nav_acceptChanges_label": "변경 사항 수락",

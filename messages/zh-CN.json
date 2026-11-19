@@ -7299,6 +7299,7 @@
   "workspace_multiSelectSidebar_showAllFiles_tooltip": "显示全部文件",
   "workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip": "只显示已更改的文件",
   "workspace_multiSelectSidebar_space_label": "空间",
+  "workspace_multiSelectSidebar_tabInUse_ariaLabel": "{label}（使用中）",
   "workspace_multiSelectSidebar_undo_label": "撤销",
   "workspace_multiSelectSidebar_workingDirectlyIn_before": "直接工作于",
   "workspace_nav_acceptChanges_label": "接受更改",

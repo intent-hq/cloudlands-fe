@@ -7299,6 +7299,7 @@
   "workspace_multiSelectSidebar_showAllFiles_tooltip": "Afficher tous les fichiers",
   "workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip": "Afficher uniquement les fichiers modifiés",
   "workspace_multiSelectSidebar_space_label": "espace",
+  "workspace_multiSelectSidebar_tabInUse_ariaLabel": "{label} (en cours d'utilisation)",
   "workspace_multiSelectSidebar_undo_label": "Annuler",
   "workspace_multiSelectSidebar_workingDirectlyIn_before": "Travail direct dans",
   "workspace_nav_acceptChanges_label": "Accepter les modifications",
