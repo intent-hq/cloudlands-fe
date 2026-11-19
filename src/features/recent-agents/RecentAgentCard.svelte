@@ -19,7 +19,7 @@
     local: boolean;
     /** The entry's machine has no live connection; opening it connects first. */
     offline: boolean;
-    onpoint: () => void;
+    onpoint: (event: PointerEvent) => void;
     onchoose: () => void;
   }
 

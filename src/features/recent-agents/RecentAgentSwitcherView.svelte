@@ -26,6 +26,19 @@
 
   const optionId = (index: number) => `recent-agent-option-${index}`;
 
+  /**
+   * Chromium sends pointer moves without any motion when the list appears under the pointer or
+   * scrolls the selection into view. Only real motion selects a card, or a still pointer would
+   * keep pulling the selection back while Tab moves it.
+   */
+  let lastPointer: { x: number; y: number } | null = null;
+  function pointed(index: number, event: PointerEvent): void {
+    const moved =
+      lastPointer !== null && (lastPointer.x !== event.screenX || lastPointer.y !== event.screenY);
+    lastPointer = { x: event.screenX, y: event.screenY };
+    if (moved) onpoint(index);
+  }
+
   $effect(() => {
     if (selectedIndex < 0) return;
     document
@@ -54,7 +67,7 @@
         selected={index === selectedIndex}
         local={entry.connectionId === currentConnectionId}
         offline={isOffline(entry)}
-        onpoint={() => onpoint(index)}
+        onpoint={(event) => pointed(index, event)}
         onchoose={() => onchoose(index)}
       />
     {/each}
