@@ -15,11 +15,12 @@
  *                     linux-arm64 sidecar on an x64 runner); must be one of the
  *                     TARGET_BY_PLATFORM_ARCH values in fetch-sidecar-lib.mjs
  *   INTENTD_REPO      override the source repo (default intent-hq/intentd)
- *   INTENTD_APP_NAME  override the cargo-dist app/binary name (testing, and
- *                     scripts/fetch-intent-passkey.cjs for the passkey helper)
- *   INTENTD_DEST_DIR  override the staging directory (default resources/sidecar)
+ *   INTENTD_APP_NAME  override the cargo-dist app/binary name (testing only)
  *
  * Flags: --force re-fetches even when the staged sidecar already matches the pin.
+ *
+ * Linux intentd archives also carry libexec/intent-passkey (the browser-panel
+ * passkey helper) and its LGPL text; both are staged next to intentd when present.
  *
  * Idempotent: a stamp file (resources/sidecar/.intentd-fetch-stamp.json) records what
  * was staged; matching version+target+staged-binary-hash skips the download.
@@ -32,7 +33,7 @@ const { pathToFileURL } = require('node:url');
 
 const FE_DIR = path.resolve(__dirname, '..');
 const PIN_FILE = path.join(FE_DIR, 'intentd.version');
-const DEST_DIR = path.resolve(FE_DIR, process.env.INTENTD_DEST_DIR?.trim() || 'resources/sidecar');
+const DEST_DIR = path.join(FE_DIR, 'resources/sidecar');
 const STAMP_FILE = path.join(DEST_DIR, '.intentd-fetch-stamp.json');
 const REPO = process.env.INTENTD_REPO?.trim() || 'intent-hq/intentd';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -245,6 +246,17 @@ async function main() {
     fs.mkdirSync(DEST_DIR, { recursive: true });
     fs.copyFileSync(extractedBin, destBin);
     if (process.platform !== 'win32') fs.chmodSync(destBin, 0o755);
+    for (const name of ['intent-passkey', 'intent-passkey.LGPL-2.1.txt']) {
+      const extra = findFile(extractDir, name);
+      const dest = path.join(DEST_DIR, name);
+      if (!extra) {
+        fs.rmSync(dest, { force: true });
+        continue;
+      }
+      fs.copyFileSync(extra, dest);
+      if (name === 'intent-passkey') fs.chmodSync(dest, 0o755);
+      console.log(`Staged ${name} from ${assetName}`);
+    }
     fs.writeFileSync(
       STAMP_FILE,
       `${JSON.stringify(

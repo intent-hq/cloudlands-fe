@@ -18,14 +18,13 @@ import { checkFrameOrigin, isValidRpIdForHost } from './passkey-origin';
 import { SidecarError, type PasskeySidecar, type SidecarEvent } from './passkey-sidecar';
 import {
   assertedCredential,
-  buildClientDataJSON,
   ceremonyTimeoutMs,
+  clientDataMatches,
   createdCredential,
   createParams,
   dialogErrorReason,
   getParams,
   pageErrorName,
-  sha256Base64Url,
   type SidecarCreateResult,
   type SidecarGetResult,
 } from './passkey-wire';
@@ -100,7 +99,6 @@ interface Ceremony {
   origin: string;
   rpId: string;
   options: PasskeyPageCreateOptions | PasskeyPageGetOptions;
-  clientDataJSON: Buffer;
   timeoutMs: number;
   bluetooth: 'on' | 'off' | 'missing';
   qr: string | null;
@@ -183,11 +181,6 @@ export class PasskeyService {
       return failure('NotAllowedError', 'The document is not active.');
     }
 
-    const clientDataJSON = buildClientDataJSON(
-      kind === 'create' ? 'webauthn.create' : 'webauthn.get',
-      publicKey.challenge,
-      originCheck.origin,
-    );
     return new Promise<PasskeyPageResult>((resolve) => {
       const ceremony: Ceremony = {
         id: randomUUID(),
@@ -198,7 +191,6 @@ export class PasskeyService {
         origin: originCheck.origin,
         rpId,
         options: publicKey,
-        clientDataJSON,
         timeoutMs: ceremonyTimeoutMs(publicKey.timeout),
         bluetooth: hello.bluetooth,
         qr: null,
@@ -302,14 +294,12 @@ export class PasskeyService {
     }
     ceremony.running = true;
     this.show(ceremony, { step: 'progress', transport, progress: 'starting' });
-    const hash = sha256Base64Url(ceremony.clientDataJSON);
     const params =
       ceremony.kind === 'create'
         ? createParams(
             transport,
             ceremony.origin,
             ceremony.rpId,
-            hash,
             ceremony.options as PasskeyPageCreateOptions,
             ceremony.timeoutMs,
           )
@@ -317,7 +307,6 @@ export class PasskeyService {
             transport,
             ceremony.origin,
             ceremony.rpId,
-            hash,
             ceremony.options as PasskeyPageGetOptions,
             ceremony.timeoutMs,
           );
@@ -329,14 +318,25 @@ export class PasskeyService {
       .then(
         (result) => {
           ceremony.running = false;
+          const matches = clientDataMatches(Buffer.from(result.clientDataJSON ?? '', 'base64url'), {
+            type: ceremony.kind === 'create' ? 'webauthn.create' : 'webauthn.get',
+            challenge: ceremony.options.challenge,
+            origin: ceremony.origin,
+          });
+          if (!matches) {
+            logger.warn('Passkey helper returned client data for another request', {
+              ceremonyId: ceremony.id,
+            });
+            this.fail(ceremony, new SidecarError('Unknown', 'Client data mismatch'));
+            return;
+          }
           const credential =
             ceremony.kind === 'create'
               ? createdCredential(
                   result as SidecarCreateResult,
-                  ceremony.clientDataJSON,
                   (ceremony.options as PasskeyPageCreateOptions).extensions?.credProps === true,
                 )
-              : assertedCredential(result as SidecarGetResult, ceremony.clientDataJSON);
+              : assertedCredential(result as SidecarGetResult);
           logger.info('Passkey ceremony finished', { ceremonyId: ceremony.id });
           this.finish(ceremony, { ok: true, credential }, null);
         },

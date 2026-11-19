@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type {
   PasskeyAssertedCredential,
   PasskeyCreatedCredential,
@@ -25,24 +24,40 @@ export function ceremonyTimeoutMs(requested: number | undefined): number {
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(requested)));
 }
 
-/** Same member order as Chromium; main is the only producer (spec §11.1). */
-export function buildClientDataJSON(
-  type: 'webauthn.create' | 'webauthn.get',
-  challenge: string,
-  origin: string,
-): Buffer {
-  return Buffer.from(JSON.stringify({ type, challenge, origin, crossOrigin: false }), 'utf8');
+export interface ClientDataExpectation {
+  type: 'webauthn.create' | 'webauthn.get';
+  challenge: string;
+  origin: string;
 }
 
-export function sha256Base64Url(data: Buffer): string {
-  return createHash('sha256').update(data).digest('base64url');
+/**
+ * Spec §11.1: the helper builds `clientDataJSON` and returns the bytes it
+ * hashed. Main uses them verbatim only when they describe this request.
+ * v1 has no cross-origin frames, so `crossOrigin` must be false and
+ * `topOrigin` absent.
+ */
+export function clientDataMatches(clientDataJSON: Buffer, expected: ClientDataExpectation): boolean {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(clientDataJSON.toString('utf8')) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    data.type === expected.type &&
+    data.challenge === expected.challenge &&
+    data.origin === expected.origin &&
+    data.crossOrigin === false &&
+    data.topOrigin === undefined
+  );
 }
 
 export function createParams(
   transport: PasskeyTransport,
   origin: string,
   rpId: string,
-  clientDataHash: string,
   options: PasskeyPageCreateOptions,
   timeoutMs: number,
 ) {
@@ -52,8 +67,9 @@ export function createParams(
   return {
     transport,
     origin,
+    crossOrigin: false,
     rpId,
-    clientDataHash,
+    challenge: options.challenge,
     rp: { id: rpId, name: options.rp.name },
     user: options.user,
     pubKeyCredParams: options.pubKeyCredParams.length
@@ -77,15 +93,15 @@ export function getParams(
   transport: PasskeyTransport,
   origin: string,
   rpId: string,
-  clientDataHash: string,
   options: PasskeyPageGetOptions,
   timeoutMs: number,
 ) {
   return {
     transport,
     origin,
+    crossOrigin: false,
     rpId,
-    clientDataHash,
+    challenge: options.challenge,
     allowCredentials: options.allowCredentials ?? [],
     userVerification: options.userVerification ?? 'preferred',
     extensions: {},
@@ -94,6 +110,7 @@ export function getParams(
 }
 
 export interface SidecarCreateResult {
+  clientDataJSON: string;
   credentialId: string;
   attestationObject: string;
   authenticatorData: string;
@@ -105,6 +122,7 @@ export interface SidecarCreateResult {
 }
 
 export interface SidecarGetResult {
+  clientDataJSON: string;
   credentialId: string;
   authenticatorData: string;
   signature: string;
@@ -114,14 +132,13 @@ export interface SidecarGetResult {
 
 export function createdCredential(
   result: SidecarCreateResult,
-  clientDataJSON: Buffer,
   credPropsRequested: boolean,
 ): PasskeyCreatedCredential {
   return {
     kind: 'create',
     id: result.credentialId,
     authenticatorAttachment: result.authenticatorAttachment ?? 'cross-platform',
-    clientDataJSON: clientDataJSON.toString('base64url'),
+    clientDataJSON: result.clientDataJSON,
     attestationObject: result.attestationObject,
     authenticatorData: result.authenticatorData,
     publicKey: result.publicKey ?? null,
@@ -134,15 +151,12 @@ export function createdCredential(
   };
 }
 
-export function assertedCredential(
-  result: SidecarGetResult,
-  clientDataJSON: Buffer,
-): PasskeyAssertedCredential {
+export function assertedCredential(result: SidecarGetResult): PasskeyAssertedCredential {
   return {
     kind: 'get',
     id: result.credentialId,
     authenticatorAttachment: result.authenticatorAttachment ?? 'cross-platform',
-    clientDataJSON: clientDataJSON.toString('base64url'),
+    clientDataJSON: result.clientDataJSON,
     authenticatorData: result.authenticatorData,
     signature: result.signature,
     userHandle: result.userHandle ?? null,

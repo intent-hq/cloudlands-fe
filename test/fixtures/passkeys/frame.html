@@ -1,0 +1,19 @@
+<!doctype html>
+<title>Cross-origin passkey frame</title>
+<script>
+  const shimmed = !CredentialsContainer.prototype.get.toString().includes('[native code]');
+  parent.postMessage({ frameProbe: { shimmed } }, '*');
+  window.addEventListener('message', async () => {
+    try {
+      await navigator.credentials.get({
+        publicKey: { challenge: new Uint8Array(32), timeout: 3000 },
+      });
+      parent.postMessage({ frameResult: { state: 'resolved', shimmed } }, '*');
+    } catch (error) {
+      parent.postMessage(
+        { frameResult: { state: 'rejected', shimmed, name: error.name, message: error.message } },
+        '*',
+      );
+    }
+  });
+</script>

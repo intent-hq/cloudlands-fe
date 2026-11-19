@@ -42,10 +42,10 @@ The inline visual runtime's 20000px content-fit bound
 
 Bundled helper:
 
-Linux builds bundle the intent-passkey helper
-(resources/intent-passkey/intent-passkey), built from the public
-intent-hq/intentd repository (crates/intent-passkey). It statically links
-libwebauthn (https://github.com/linux-credentials/libwebauthn), licensed under
-the GNU Lesser General Public License, version 2.1 or later. The complete
+Linux builds bundle the intent-passkey helper (resources/intentd/intent-passkey),
+built from the public intent-hq/intentd repository (crates/intent-passkey). It
+statically links libwebauthn (https://github.com/linux-credentials/libwebauthn),
+licensed under the GNU Lesser General Public License, version 2.1 or later; the
+license text ships next to it as intent-passkey.LGPL-2.1.txt. The complete
 source of the helper and of libwebauthn is public, and users may rebuild and
 replace the helper binary.

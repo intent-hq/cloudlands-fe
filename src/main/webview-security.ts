@@ -21,6 +21,7 @@ import { openExternal } from './open-external';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
+import { arePasskeysEnabled } from '../features/passkeys/main/passkeys.ipc';
 import {
   HUD_ROUTE_PREFIX,
   findExistingHudWindow,
@@ -283,6 +284,11 @@ export function setupWebviewSecurity(): void {
       // when the webview attaches (rather than at app startup).
       if (partition === BROWSER_PANEL_PARTITION) {
         setupBrowserPanelSession();
+        // The passkey frame preload must also reach iframes, so a cross-origin
+        // iframe gets a NotAllowedError from main instead of Chromium's own,
+        // UI-less WebAuthn. The guest stays sandboxed with context isolation
+        // and no Node.js; this only lets session preloads run in subframes.
+        if (arePasskeysEnabled()) webPreferences.nodeIntegrationInSubFrames = true;
       }
 
       logger.debug('Webview security settings enforced', {

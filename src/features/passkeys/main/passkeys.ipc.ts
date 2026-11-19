@@ -5,11 +5,11 @@
  * platforms, or a build that does not bundle it) nothing is registered and
  * the browser panel keeps Electron's own WebAuthn behaviour.
  *
- * Helper location:
+ * Helper location (it ships inside the Linux intentd release archive as
+ * libexec/intent-passkey; scripts/fetch-sidecar.cjs stages it next to intentd):
  *   - `INTENT_PASSKEY_BIN=/path/to/intent-passkey` (dev and tests)
- *   - Packaged: `process.resourcesPath/intent-passkey/intent-passkey`
- *   - Dev: `resources/intent-passkey/linux-<arch>/intent-passkey`, staged by
- *     scripts/fetch-intent-passkey.cjs
+ *   - Packaged: `process.resourcesPath/intentd/intent-passkey`
+ *   - Dev: `resources/sidecar/intent-passkey`
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -33,13 +33,18 @@ export function resolvePasskeyBinaryPath(
   const candidates = override
     ? [override]
     : [
-        ...(resourcesPath ? [path.join(resourcesPath, BINARY_NAME, BINARY_NAME)] : []),
-        path.join(appPath, 'resources', BINARY_NAME, `linux-${process.arch}`, BINARY_NAME),
+        ...(resourcesPath ? [path.join(resourcesPath, 'intentd', BINARY_NAME)] : []),
+        path.join(appPath, 'resources', 'sidecar', BINARY_NAME),
       ];
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
 let service: PasskeyService | null = null;
+
+/** True once the passkey frame preload is registered on the browser-panel session. */
+export function arePasskeysEnabled(): boolean {
+  return service !== null;
+}
 
 /** `preloadPath` lets the isolated Electron test load the compiled preload from its bundle. */
 export function setupPasskeysIPC(
