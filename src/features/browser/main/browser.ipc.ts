@@ -17,6 +17,7 @@ import { Logger } from '../../../shared/logger';
 import { describeUrlForLog } from '../../../shared/utils/sanitize-credentials';
 import { executeActions, type ExecutionResult } from './browser-action-executor';
 import type { BrowserExecutionBackendContext } from './browser-exec-reverse';
+import { registerBrowserViewHandlers } from './browser-view.ipc';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
 import {
@@ -661,6 +662,8 @@ export type { ExecutionResult };
  * Register browser IPC handlers
  */
 export function registerBrowserHandlers(): void {
+  // Main-owned browser views (Labs, off by default).
+  registerBrowserViewHandlers();
   logger.info('Registering browser IPC handlers');
 
   (app as NodeJS.EventEmitter).on(BACKEND_CLIENT_DISCONNECTED_EVENT, disposeTunnelManagerForClient);

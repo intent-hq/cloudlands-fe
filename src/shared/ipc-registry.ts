@@ -697,6 +697,28 @@ export const IPC_CHANNELS = {
     CLEAR_AGENT_TABS: 'browser:clear-agent-tabs',
   },
 
+  // Main-owned browser views (BrowserViewService, Labs: off by default)
+  BROWSER_VIEW: {
+    /** Read the Labs setting (renderer->main) */
+    GET_LAB: 'browser-view:get-lab',
+    /** Change the Labs setting (renderer->main) */
+    SET_LAB: 'browser-view:set-lab',
+    /** Create (or reuse) a tab's main-owned page in the sender's window (renderer->main) */
+    CREATE: 'browser-view:create',
+    /** Close a tab's page: the tab closed (renderer->main) */
+    DESTROY: 'browser-view:destroy',
+    /** Close every page of a workspace: archived or deleted (renderer->main) */
+    DESTROY_WORKSPACE: 'browser-view:destroy-workspace',
+    /** The tab's box in CSS pixels and whether it is on screen (renderer->main) */
+    SET_PLACEMENT: 'browser-view:set-placement',
+    /** Take a tab's page off screen; the page stays alive (renderer->main) */
+    DETACH: 'browser-view:detach',
+    /** A command from the tab's controls (renderer->main) */
+    COMMAND: 'browser-view:command',
+    /** A page event for the renderer that shows the tab (main->renderer event) */
+    EVENT: 'browser-view:event',
+  },
+
   // File Tracking
   FILE_TRACKING: {
     // Event emitted by agent file operations to trigger immediate UI update

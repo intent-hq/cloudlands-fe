@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   onBackendReconnected: vi.fn(),
 }));
 
+// Main-owned browser views (Labs) are covered by browser-view-ipc.test.ts.
+vi.mock('../main/browser-view.ipc', () => ({ registerBrowserViewHandlers: vi.fn() }));
+
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   embeddedBrowserCdp: {
     registerTab: vi.fn(),

@@ -50,6 +50,15 @@ const BROWSER_INVOKE_CHANNELS = [
   // Background-hosting report (agent browser ops on a workspace no window
   // has open): confirms main's adoption; swallowed, main would let it lapse.
   IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,
+  // Main-owned browser views (Labs): the renderer drives pages main owns.
+  IPC_CHANNELS.BROWSER_VIEW.GET_LAB,
+  IPC_CHANNELS.BROWSER_VIEW.SET_LAB,
+  IPC_CHANNELS.BROWSER_VIEW.CREATE,
+  IPC_CHANNELS.BROWSER_VIEW.DESTROY,
+  IPC_CHANNELS.BROWSER_VIEW.DESTROY_WORKSPACE,
+  IPC_CHANNELS.BROWSER_VIEW.SET_PLACEMENT,
+  IPC_CHANNELS.BROWSER_VIEW.DETACH,
+  IPC_CHANNELS.BROWSER_VIEW.COMMAND,
 ] as const;
 
 /** Register the browser CDP invoke bridge handlers. Idempotent. */
