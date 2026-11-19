@@ -844,7 +844,7 @@ class AutoUpdateService {
     await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, channel);
   }
 
-  /** Test seam: run an automatic (startup/periodic/daily) check and await its state. */
+  /** @internal Test seam: run an automatic (startup/periodic/daily) check and await its state. */
   __checkForUpdatesForTesting(trigger: UpdateCheckTrigger): Promise<UpdateState> {
     return this.checkForUpdates(trigger);
   }
