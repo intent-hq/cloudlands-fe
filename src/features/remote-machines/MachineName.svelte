@@ -37,12 +37,13 @@
           <span>{platformFallback}</span>
         {/if}
         {#if providers.length > 0}
-          <ul
+          <div
+            role="list"
             aria-label={m.settings_devices_providers_ariaLabel()}
             class="flex flex-wrap gap-x-3 gap-y-1"
           >
             {#each providers as entry (entry.id)}
-              <li class="flex min-w-0 items-center gap-2">
+              <span role="listitem" class="flex min-w-0 items-center gap-2">
                 <span
                   class="inline-flex shrink-0 text-muted-foreground [&_svg]:m-0"
                   aria-hidden="true"
@@ -54,9 +55,9 @@
                   {/if}
                 </span>
                 <span class="wrap-anywhere">{entry.name}</span>
-              </li>
+              </span>
             {/each}
-          </ul>
+          </div>
         {/if}
       </div>
     {/snippet}
