@@ -481,6 +481,13 @@ function* updateDefinition(
       if (!keepsRun) {
         throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
       }
+      // An unchanged value would reach the daemon as a full replacement and stop the run.
+      if (updates.autoStart === current.autoStart) {
+        yield* put(action.success(current));
+        yield* finishWorkflow(workspaceId, consumer, 'success', current);
+        settled = true;
+        return;
+      }
     }
     const result = yield* call(() =>
       scriptDefinitionTransport.upsert(workspaceId, scriptId, {

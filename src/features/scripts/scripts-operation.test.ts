@@ -21,8 +21,8 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // update() rides the same scriptId upsert and MUST apply the same
 // running-script guard: refuse with an error instead of sending
 // script.create.
-const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock, hello } = vi.hoisted(
-  () => ({
+const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock, hello } =
+  vi.hoisted(() => ({
     hello: { capabilities: { scriptAutoStartInPlace: 1 } as Record<string, number> },
     scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
     scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
@@ -54,8 +54,7 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
       }
       return { config: {} };
     }),
-  }),
-);
+  }));
 vi.mock('$lib/client', () => ({
   appClient: {
     scripts: {
@@ -357,6 +356,22 @@ describe('scripts operation saga: update (script.create scriptId upsert, §5.8)'
       env: undefined,
       autoStart: true,
     });
+    expect(result.success).toBe(true);
+  });
+
+  it('does not upsert an unchanged autoStart on a running script', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        mode: 'service',
+        autoStart: true,
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { autoStart: true });
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
   });
 
