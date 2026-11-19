@@ -443,14 +443,16 @@ describe('invitation lifetime across the actual main and renderer modules', () =
         await policy(true);
       } else state.parent.webContents.emit('destroyed');
       const before = state.parent.webContents.send.mock.calls.filter(
-        ([channel]) => channel === PROGRESS.SHOW,
+        ([channel]: unknown[]) => channel === PROGRESS.SHOW,
       ).length;
       grant.resolve(credential);
       await joining;
       expect(state.add).toHaveBeenCalledOnce();
       expect(state.open).not.toHaveBeenCalled();
       expect(
-        state.parent.webContents.send.mock.calls.filter(([channel]) => channel === PROGRESS.SHOW),
+        state.parent.webContents.send.mock.calls.filter(
+          ([channel]: unknown[]) => channel === PROGRESS.SHOW,
+        ),
       ).toHaveLength(before);
     },
   );
@@ -480,7 +482,7 @@ describe('invitation lifetime across the actual main and renderer modules', () =
       expect(modal?.phase).toBe('connecting');
       const bRequest = modal.requestId;
       const showsBefore = state.parent.webContents.send.mock.calls.filter(
-        ([channel]) => channel === PROGRESS.SHOW,
+        ([channel]: unknown[]) => channel === PROGRESS.SHOW,
       ).length;
       state.focused = windowFixture(99);
       granted.resolve(credential);
@@ -489,7 +491,9 @@ describe('invitation lifetime across the actual main and renderer modules', () =
       expect(state.open).not.toHaveBeenCalled();
       expect(state.focused.webContents.send).not.toHaveBeenCalled();
       expect(
-        state.parent.webContents.send.mock.calls.filter(([channel]) => channel === PROGRESS.SHOW),
+        state.parent.webContents.send.mock.calls.filter(
+          ([channel]: unknown[]) => channel === PROGRESS.SHOW,
+        ),
       ).toHaveLength(showsBefore);
       expect(modal?.requestId).toBe(bRequest);
       flow.cancelInviteProgress();

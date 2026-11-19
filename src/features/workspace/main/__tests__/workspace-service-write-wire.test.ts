@@ -12,7 +12,7 @@ const daemonWorkspaces = new Map<string, Record<string, unknown>>();
 const reconnectHandlers = vi.hoisted(() => new Set<() => void>());
 
 const requestMock = vi.hoisted(() =>
-  vi.fn(async (method: string, params?: Record<string, unknown>) => {
+  vi.fn(async (method: string, params?: Record<string, unknown>): Promise<unknown> => {
     if (method === 'agent.list') return { agents: [] };
     if (method === 'note.list') return { notes: [] };
     if (method === 'workspace.list') {

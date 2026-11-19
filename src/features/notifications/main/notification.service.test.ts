@@ -24,8 +24,20 @@ import {
 } from '../../../main/window-backend';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
-import type { AgentIdleEvent } from '../../events/types';
+import type { AgentIdleEvent, CanonicalAgentStatusFields } from '../../events/types';
+
 import { getActivationFocusClaim } from '../../../main/activation-focus-claim';
+
+/** Canonical status an idle agent reports with agent:idle (PROTOCOL §6.5). */
+const IDLE_STATUS: CanonicalAgentStatusFields = {
+  status: 'idle',
+  activationState: null,
+  isActive: false,
+  isStreaming: false,
+  isProcessing: false,
+  isResponding: false,
+  stopReason: null,
+};
 
 /**
  * Make a single-machine test window a frame showing `machineId` (its
@@ -802,8 +814,10 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect(subscribeCalls(remoteMock)).toHaveLength(1);
 
     // The service registered a disposal listener on the app emitter.
+    // Read as the plain emitter: Electron's typed overloads do not list this custom event.
+    const appEvents: NodeJS.EventEmitter = app;
     const disposalCall = vi
-      .mocked(app.on)
+      .mocked(appEvents.on)
       .mock.calls.find(([evt]) => evt === 'backend-client-disconnected');
     expect(disposalCall).toBeDefined();
     const disposalListener = disposalCall![1] as () => void;
@@ -1247,13 +1261,13 @@ describe('NotificationService showNotification click behavior', () => {
 
     return asFrame({
       id: 1,
-      webContents: { send: mockWebContentsSend, isDestroyed: () => false },
+      webContents: { send: mockWebContentsSend, isDestroyed: (): boolean => false },
       focus: mockFocus,
       show: mockShow,
       restore: mockRestore,
       isMinimized: mockIsMinimized,
       isFocused: () => false,
-      isDestroyed: () => false,
+      isDestroyed: (): boolean => false,
     });
   }
 
@@ -1279,12 +1293,20 @@ describe('NotificationService showNotification click behavior', () => {
    * click handler on the created Notification (the click resolves its
    * target window at click time).
    */
-  function triggerNotificationClick(workspaceId: string, mockWindow: any) {
+  /** Route window lookups to the partial fake, which has only what the click path reads. */
+  function installWindow(mockWindow: ReturnType<typeof createMockWindow>) {
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
     vi.mocked(BrowserWindow.fromId).mockImplementation(
       (id: number) => (id === mockWindow.id ? mockWindow : null) as never,
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as never);
+  }
+
+  function triggerNotificationClick(
+    workspaceId: string,
+    mockWindow: ReturnType<typeof createMockWindow>,
+  ) {
+    installWindow(mockWindow);
     const service = new NotificationService();
     // Access private method via bracket notation
     (service as any).showNotification({ title: 'Test', body: 'Test notification' }, workspaceId);
@@ -1320,12 +1342,7 @@ describe('NotificationService showNotification click behavior', () => {
 
   it('does not send notification:navigate when no workspaceId', () => {
     const mockWindow = createMockWindow(false);
-
-    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
-    vi.mocked(BrowserWindow.fromId).mockImplementation((id: number) =>
-      id === mockWindow.id ? mockWindow : null,
-    );
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow]);
+    installWindow(mockWindow);
 
     // Use showTestNotification which calls showNotification without workspaceId
     const service = new NotificationService();
@@ -1658,9 +1675,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     mockNotificationInstances[0].handlers['click']();
 
     const navigated = [workspaceWindowA, workspaceWindowB].filter((w) =>
-      w.webContents.send.mock.calls.some(
-        ([channel]: [string]) => channel === 'notification:navigate',
-      ),
+      w.webContents.send.mock.calls.some(([channel]) => channel === 'notification:navigate'),
     );
     expect(navigated).toHaveLength(1);
     expect(hudWindow.focus).not.toHaveBeenCalled();
@@ -2193,16 +2208,19 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
 describe('NotificationService chief-of-staff special-case', () => {
   function buildChiefIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}): AgentIdleEvent {
     return {
+      id: 'evt-chief-idle',
       type: 'agent:idle',
       workspaceId: CHIEF_WORKSPACE_ID,
       timestamp: new Date().toISOString(),
+      actor: { type: 'agent', id: 'chief-agent-1' },
       data: {
         agentId: 'chief-agent-1',
         agentName: 'Morning planning',
         isBackground: false,
+        ...IDLE_STATUS,
         ...overrides,
-      } as AgentIdleEvent['data'],
-    } as AgentIdleEvent;
+      },
+    };
   }
 
   function createMockWindow(id: number) {
@@ -2560,15 +2578,18 @@ describe('NotificationService structured notification:show payload', () => {
 
     const service = new NotificationService();
     await service.handleAgentIdle({
+      id: 'evt-chief-idle',
       type: 'agent:idle',
       workspaceId: CHIEF_WORKSPACE_ID,
       timestamp: new Date().toISOString(),
+      actor: { type: 'agent', id: 'chief-agent-1' },
       data: {
         agentId: 'chief-agent-1',
         agentName: 'Morning planning',
         isBackground: false,
+        ...IDLE_STATUS,
       },
-    } as AgentIdleEvent);
+    });
 
     const payload = showPayload(onlyWindow);
     expect(payload).not.toHaveProperty('structured');

@@ -1038,7 +1038,9 @@ describe('embedded browser CDP workspace routing', () => {
         debugger: {
           isAttached: () => true,
           // Page domain hangs (never settles) — forces the CDP timeouts.
-          sendCommand: vi.fn(() => new Promise(() => {})),
+          sendCommand: vi.fn(
+            (_method: string, _params?: unknown) => new Promise<unknown>(() => {}),
+          ),
           on: vi.fn(),
         },
         capturePage: vi.fn(() => new Promise(() => {})),
