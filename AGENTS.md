@@ -393,7 +393,8 @@ combine it with `--resolved-plan` for a budgeted preview, then raise or omit the
 A CT-contract path (`scripts/ct-contract-paths.mjs`, e.g. `src/app.css`) selects the full
 component suite (about 2h15m); the plan names the files that selected it. `--skip-ct-full`
 leaves out only that suite for a quick local run (changed specs still run), records the
-skip in `coverage.json`, and prints `pnpm run test:ct:full` to run it separately.
+skip in `coverage.json`, and prints `pnpm run test:ct:full` to run it separately (the
+sharded run, which like CI leaves out `@quarantine` tests and fails on flaky ones).
 
 `verify:changed` runs changed component test specs once with retries on. CI runs no
 component tests on PRs or in the merge queue (only nightly at 02:17 UTC and on manual

@@ -74,6 +74,7 @@ const CT_FULL_LABEL = 'Playwright component suite (safe fallback)';
 // cloudlands-fe#3752 measured 2h12m for the full suite (AGENTS.md: about 2h15m).
 export const CT_FULL_EXPECTED_DURATION = 'about 2h15m';
 export const CT_FULL_SEPARATE_COMMAND = 'pnpm run test:ct:full';
+const CT_HARNESS_WIDE_FILES = new Set(['src/test/ct-test.ts']);
 const SKIP_DIRS = new Set([
   '.demo-artifacts',
   '.git',
@@ -343,6 +344,8 @@ export function parseArgs(argv) {
     throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
   if (result.static && (result.resolvedPlan || result.maxUnitFiles !== undefined))
     throw new Error('--static selects no unit tests; drop --resolved-plan and --max-unit-files');
+  if (result.static && result.skipCtFull)
+    throw new Error('--static selects no component tests; drop --skip-ct-full');
   if (result.dryRun && result.resume)
     throw new Error('Use --resolved-plan --resume instead of --dry-run to preview a continuation');
   return result;
@@ -1005,15 +1008,14 @@ export function createVerificationPlan(files, options = {}) {
   }
 
   const fullCt = fullCtReasons.length > 0 && !options.skipCtFull;
-  // A skipped full suite still runs the specs the change reaches, but not through
-  // a contract path: every spec imports the harness (src/test/ct-test.ts).
+  // A skipped full suite still runs the specs that import a changed file, except
+  // through the harness every spec imports, which would select them all again.
   const relatedCt = fullCt
     ? []
-    : findRelatedCtTests([...files.filter((file) => !fullCtReasons.includes(file)), ...directCt], {
-        root,
-        ctTests: options.ctTests,
-        readText: options.readText,
-      });
+    : findRelatedCtTests(
+        [...files.filter((file) => !CT_HARNESS_WIDE_FILES.has(file)), ...directCt],
+        { root, ctTests: options.ctTests, readText: options.readText },
+      );
   if (fullCt)
     checks.push(
       playwrightCommand(
@@ -1136,7 +1138,7 @@ export function printPlan(plan, dryRun, log = console.log) {
   const ctFullBy = plan.fullCtReasons?.join(', ');
   if (plan.checks.some((check) => check.id === 'ct-full')) {
     log(
-      `verify:changed: full component suite selected by ${ctFullBy} (CT contract); expect ${CT_FULL_EXPECTED_DURATION} after the other checks. --skip-ct-full defers it to a separate run (the nightly run covers it too)`,
+      `verify:changed: full component suite selected by ${ctFullBy} (CT contract); expect ${CT_FULL_EXPECTED_DURATION} for it alone. --skip-ct-full defers it to a separate run (the nightly run covers it too)`,
     );
   }
   for (const skipped of plan.skipped ?? []) {
@@ -1776,7 +1778,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
       '  --keep-going: after a failed check, still run (and record) every remaining check, then fail listing all failed checks; prerequisites still stop the run.',
     );
     log(
-      `  --skip-ct-full: leave out the full Playwright component suite (${CT_FULL_EXPECTED_DURATION}) that CT-contract paths such as src/app.css select; changed specs still run. coverage.json records the skip; run the suite separately with ${CT_FULL_SEPARATE_COMMAND}.`,
+      `  --skip-ct-full: leave out the full Playwright component suite (${CT_FULL_EXPECTED_DURATION}) that CT-contract paths such as src/app.css select; changed specs still run. coverage.json records the skip. Run the suite separately with ${CT_FULL_SEPARATE_COMMAND}, the sharded full run, which like CI leaves out @quarantine tests and fails on flaky ones.`,
     );
     log(
       "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",

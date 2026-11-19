@@ -1656,13 +1656,21 @@ describe('verification planning', () => {
   // stopping it by hand.
   describe('full component suite notice and --skip-ct-full', () => {
     const spec = 'src/lib/components/ui/button/button.keyboard.ct.spec.ts';
+    const helperSpec = 'src/lib/components/ui/input/inline-edit.ct.spec.ts';
     const files = {
       'src/app.css': '.rail { display: none; }',
       'src/test/ct-test.ts': '',
+      'playwright/inline-edit-assertions.ts': '',
       [spec]: "import { test } from '../../../../test/ct-test';",
+      [helperSpec]:
+        "import { test } from '../../../../test/ct-test';\nimport { x } from '../../../../../playwright/inline-edit-assertions';",
     };
     const plan = (changed: string[], skipCtFull = false) =>
-      createVerificationPlan(changed, { root: fixtureRoot(files), ctTests: [spec], skipCtFull });
+      createVerificationPlan(changed, {
+        root: fixtureRoot(files),
+        ctTests: [spec, helperSpec],
+        skipCtFull,
+      });
     const printed = (changed: string[], skipCtFull = false) => {
       const lines: string[] = [];
       printPlan(plan(changed, skipCtFull), true, (line: string) => lines.push(line));
@@ -1703,6 +1711,14 @@ describe('verification planning', () => {
         plan(changed, true).checks.find((check) => check.id === 'ct-related')?.args ?? [];
       expect(relatedArgs(['src/app.css', spec])).toContain(spec);
       expect(relatedArgs(['src/test/ct-test.ts'])).toEqual([]);
+      // A contract helper that only some specs import still selects them.
+      const helper = relatedArgs(['playwright/inline-edit-assertions.ts']);
+      expect(helper).toContain(helperSpec);
+      expect(helper).not.toContain(spec);
+    });
+
+    it('rejects --skip-ct-full with --static, which selects no component tests', () => {
+      expect(() => parseArgs(['--static', '--skip-ct-full'])).toThrow(/drop --skip-ct-full/);
     });
 
     it('prints the command that runs the skipped suite separately', () => {
@@ -3062,9 +3078,6 @@ describe('expensive-check coordination', () => {
   });
 });
 
-// A slow or flaky lane must not hide later checks: with --keep-going one run
-// reports every failure (an i18n timeout hid a real type error for three runs
-// on cloudlands-fe#4115).
 describe('skipped full component suite', () => {
   const identities = () => ({
     source: { digest: 'source', files: {} },
@@ -3132,6 +3145,9 @@ describe('skipped full component suite', () => {
   });
 });
 
+// A slow or flaky lane must not hide later checks: with --keep-going one run
+// reports every failure (an i18n timeout hid a real type error for three runs
+// on cloudlands-fe#4115).
 describe('keep-going runs', () => {
   function failing(ids: string[]) {
     const ran: string[] = [];
