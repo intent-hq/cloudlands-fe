@@ -666,7 +666,10 @@ describe('BrowserViewService renderer support', () => {
     const contents = views[0].webContents;
     contents.emit('console-message', { level: 'error', message: 'secret token=abc' });
     contents.emit('console-message', { level: 'info', message: 'hello' });
-    contents.emit('console-message', { level: 'info', message: '__INTENT_ELEMENT_PICK_CANCELLED__' });
+    contents.emit('console-message', {
+      level: 'info',
+      message: '__INTENT_ELEMENT_PICK_CANCELLED__',
+    });
 
     expect(
       sent.map(({ message }) => message.event).filter((e) => e.type === 'console-message'),

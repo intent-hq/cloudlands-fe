@@ -8467,6 +8467,8 @@
   "settings_labs_plainFolders_description": "将新工作区创建为不使用 Git 的普通文件夹。关闭后，现有的普通文件夹工作区仍可正常使用。",
   "settings_labs_tabGroups_label": "标签页分组",
   "settings_labs_tabGroups_description": "将工作区标签页归入带名称和颜色的分组。关闭后，分组会保留但隐藏。",
+  "settings_labs_browserPagesInMain_label": "主进程中的浏览器页面",
+  "settings_labs_browserPagesInMain_description": "将浏览器标签页作为原生页面运行，在窗口之间移动时保留其状态。重启 Intent 后生效。",
   "settings_machineRail_label": "计算机侧栏",
   "settings_machineRail_description": "在窗口侧边显示你的计算机侧栏，以便在它们之间切换。",
   "remoteMachines_actionsFor_ariaLabel": "{name} 的操作",

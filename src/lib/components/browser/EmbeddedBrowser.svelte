@@ -73,6 +73,8 @@
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
+  import BrowserViewSlot from './BrowserViewSlot.svelte';
+  import { browserPagesMode } from './main-owned-browser-page';
   import BrowserElementPickerButton from './BrowserElementPickerButton.svelte';
   import BrowserStatusControl from './BrowserStatusControl.svelte';
   import { toWebviewCaptureRect } from './element-picker-coordinates';
@@ -173,6 +175,13 @@
     }
     appStore.dispatch(clearBrowserTabZoomRequest(_workspaceId, tabId));
   });
+
+  // Labs: main owns the page as a native view and this tab shows a
+  // BrowserViewSlot instead of a <webview>. The mode is fixed for the run;
+  // until main answers at app start it reads as unknown and tabs use
+  // <webview>. A tab without a tabId keeps <webview>.
+  const pagesMode$ = browserPagesMode;
+  const mainOwned = $derived($pagesMode$ === 'main' && !!tabId);
 
   // Reference to the URL input for focusing while the identity is in edit mode.
   // The Input component exports focus, blur, select methods
@@ -365,7 +374,8 @@
   let lastRegisteredWebContentsId: number | undefined;
 
   function injectKeyboardInterceptor() {
-    if (!webviewRef) return;
+    // A main-owned page's app shortcuts come from main's before-input-event.
+    if (!webviewRef || mainOwned) return;
     webviewRef
       .executeJavaScript(keyboardInterceptorScript)
       .then(() => {
@@ -387,11 +397,11 @@
       // - partition: isolates cookies/storage from the main app session
       // - allowpopups: enables popup windows (required for OAuth flows)
       // These MUST be set before the first navigation (Electron requirement for partition).
-      if (!currentWebview.getAttribute('partition')) {
+      if (!mainOwned && !currentWebview.getAttribute('partition')) {
         currentWebview.setAttribute('partition', BROWSER_PANEL_PARTITION);
         logger.debug('Set partition attribute on webview', { partition: BROWSER_PANEL_PARTITION });
       }
-      if (!currentWebview.hasAttribute('allowpopups')) {
+      if (!mainOwned && !currentWebview.hasAttribute('allowpopups')) {
         currentWebview.setAttribute('allowpopups', '');
         logger.debug('Set allowpopups attribute on webview');
       }
@@ -409,7 +419,8 @@
         // every dom-ready so a recreated guest re-registers, but skips
         // same-guest navigations to avoid stacking redundant registerTab
         // calls and destroyed-hooks in the main process.
-        if (tabId) {
+        // Main registers a main-owned page itself when it creates it.
+        if (tabId && !mainOwned) {
           try {
             const webContentsId = currentWebview.getWebContentsId();
             if (webContentsId !== lastRegisteredWebContentsId) {
@@ -1127,6 +1138,10 @@
 
   function toggleDevTools() {
     if (!webviewRef || !webviewReady) return;
+    if (webviewRef.toggleDevTools) {
+      webviewRef.toggleDevTools();
+      return;
+    }
     try {
       if (webviewRef.isDevToolsOpened?.()) {
         webviewRef.closeDevTools?.();
@@ -1214,6 +1229,21 @@
     }
   }
 </script>
+
+{#snippet browserPage()}
+  {#if mainOwned && tabId}
+    <BrowserViewSlot
+      bind:webview={webviewRef}
+      {tabId}
+      workspaceId={_workspaceId}
+      url={untrack(() => currentWebviewUrl)}
+      pinned={!!ownerAgentId}
+      visible={isActive && !errorMessage}
+    />
+  {:else}
+    {@render browserWebview()}
+  {/if}
+{/snippet}
 
 {#snippet browserWebview()}
   <!--
@@ -1425,9 +1455,10 @@
     {#if isUrlValid && !isRecreatingWebview && !isGuestDestroyed}
       <BrowserDeviceFrame
         {viewport}
+        chromeOutside={mainOwned}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
       >
-        {@render browserWebview()}
+        {@render browserPage()}
       </BrowserDeviceFrame>
     {:else if url && !isRecreatingWebview && !isGuestDestroyed}
       <!-- URL is invalid or blocked - show error with details -->

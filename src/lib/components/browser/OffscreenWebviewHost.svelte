@@ -40,6 +40,15 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { offscreenWebview } from './offscreen-webview-action';
+  import { mainOwnedOffscreenPage } from './main-owned-offscreen-action';
+  import {
+    browserPagesMode,
+    destroyMainOwnedPage,
+    knownMainOwnedPages,
+    loadBrowserViewsLab,
+  } from './main-owned-browser-page';
+  import { setBrowserViewTabDragging } from './browser-view-overlays';
+  import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
     collectOffscreenTabDecisions,
     diffOffscreenDecisions,
@@ -68,6 +77,17 @@
   const mountedBrowserTabLeases$ = selectMountedBrowserTabLeases();
   const recoveryRequests$ = selectBrowserTabRecoveryRequests();
   const navigations$ = selectBrowserTabNavigations();
+  // Labs: main owns browser pages. Off-screen tabs get a hidden box that
+  // drives the main-owned page instead of a <webview>.
+  const pagesMode$ = browserPagesMode;
+  const mainOwned = $derived($pagesMode$ === 'main');
+  // Read once per window, at app start, before workspace panels mount.
+  void loadBrowserViewsLab();
+  // A tab drag passes over browser boxes: native pages would catch the pointer.
+  const isDragging$ = selectIsDragging();
+  $effect(() => {
+    if (mainOwned) setBrowserViewTabDragging($isDragging$);
+  });
   let recoveryKeys = $state<Record<string, string>>({});
 
   function recoverGuest(tabId: string, requestId: string) {
@@ -126,6 +146,10 @@
   const agentDrawing$ = selectBrowserTabsAgentDrawing();
   const PARKED_OPACITY = '0';
   const AGENT_DRAWING_OPACITY = '0.01';
+
+  const candidatePinned = $derived(
+    new Set(candidates.filter((candidate) => candidate.pinned).map((candidate) => candidate.tabId)),
+  );
 
   let cache = $state<Map<string, number>>(new Map());
   // URL/workspace frozen when a tab enters the keep-alive set, so later
@@ -196,6 +220,19 @@
     });
   });
 
+  // Main-owned pages outlive their panel; close the page of a tab that left
+  // every layout (closed, or its workspace archived or deleted).
+  $effect(() => {
+    if (!mainOwned) return;
+    const present = new Set(decisions.map((decision) => decision.tabId));
+    for (const tabId of [...knownMainOwnedPages().keys()]) {
+      if (present.has(tabId)) continue;
+      void destroyMainOwnedPage(tabId).catch((error: unknown) =>
+        hostingLogger.debug('Could not close a closed tab page', { tabId, error }),
+      );
+    }
+  });
+
   const anyAgentDrawing = $derived(entries.some((entry) => $agentDrawing$[entry.tabId] === true));
 
   $effect(() => {
@@ -261,22 +298,37 @@
       data-agent-drawing={agentDrawing ? '' : undefined}
     >
       {#key entry.recoveryKey}
-        <!--
+        {#if mainOwned}
+          <!-- Main owns the page: a hidden box drives it (no paint here). -->
+          <div
+            data-offscreen-webview-tab={entry.tabId}
+            data-main-owned-offscreen-page
+            use:mainOwnedOffscreenPage={{
+              tabId: entry.tabId,
+              workspaceId: entry.workspaceId,
+              url: entry.url,
+              pinned: candidatePinned.has(entry.tabId),
+            }}
+            use:offscreenWebview={entry}
+          ></div>
+        {:else}
+          <!--
           The element is the guest's capture surface: it is sized to the
           emulated viewport so a CDP screenshot gets one full-size image
           instead of a tiled one (intent-hq/intent#8359).
         -->
-        <webview
-          class="absolute left-0 top-0 border-none"
-          style:width="{entry.size.width}px"
-          style:height="{entry.size.height}px"
-          src={entry.recoveryKey ? 'about:blank' : entry.url}
-          partition={BROWSER_PANEL_PARTITION}
-          allowpopups
-          data-offscreen-webview-tab={entry.tabId}
-          use:browserClientConsumer={entry.workspaceId}
-          use:offscreenWebview={entry}
-        ></webview>
+          <webview
+            class="absolute left-0 top-0 border-none"
+            style:width="{entry.size.width}px"
+            style:height="{entry.size.height}px"
+            src={entry.recoveryKey ? 'about:blank' : entry.url}
+            partition={BROWSER_PANEL_PARTITION}
+            allowpopups
+            data-offscreen-webview-tab={entry.tabId}
+            use:browserClientConsumer={entry.workspaceId}
+            use:offscreenWebview={entry}
+          ></webview>
+        {/if}
       {/key}
     </div>
   {/each}

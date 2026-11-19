@@ -8467,6 +8467,8 @@
   "settings_labs_plainFolders_description": "將新工作區建立為不使用 Git 的一般資料夾。關閉後，現有的一般資料夾工作區仍可正常運作。",
   "settings_labs_tabGroups_label": "分頁群組",
   "settings_labs_tabGroups_description": "將工作區分頁歸入具名稱和顏色的群組。關閉後，群組會保留但隱藏。",
+  "settings_labs_browserPagesInMain_label": "主程序中的瀏覽器頁面",
+  "settings_labs_browserPagesInMain_description": "將瀏覽器分頁作為原生頁面執行，在視窗之間移動時保留其狀態。重新啟動 Intent 後生效。",
   "settings_machineRail_label": "電腦側欄",
   "settings_machineRail_description": "在視窗側邊顯示你的電腦側欄，以便在它們之間切換。",
   "remoteMachines_actionsFor_ariaLabel": "{name} 的操作",

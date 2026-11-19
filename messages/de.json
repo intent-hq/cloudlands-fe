@@ -8467,6 +8467,8 @@
   "settings_labs_plainFolders_description": "Neue Arbeitsbereiche als einfache Ordner ohne Git erstellen. Bestehende Arbeitsbereiche in einfachen Ordnern funktionieren weiter, wenn dies ausgeschaltet ist.",
   "settings_labs_tabGroups_label": "Tab-Gruppen",
   "settings_labs_tabGroups_description": "Arbeitsbereich-Tabs in benannte, farbige Gruppen ordnen. Deine Gruppen bleiben erhalten, sind aber ausgeblendet, wenn dies ausgeschaltet ist.",
+  "settings_labs_browserPagesInMain_label": "Browserseiten im Hauptprozess",
+  "settings_labs_browserPagesInMain_description": "Browser-Tabs als native Seiten ausführen, die ihren Zustand behalten, wenn sie zwischen Fenstern wechseln. Gilt nach einem Neustart von Intent.",
   "settings_machineRail_label": "Rechnerleiste",
   "settings_machineRail_description": "Eine Leiste mit deinen Rechnern am Fensterrand anzeigen, um zwischen ihnen zu wechseln.",
   "remoteMachines_actionsFor_ariaLabel": "Aktionen für {name}",

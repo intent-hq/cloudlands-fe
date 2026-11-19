@@ -8467,6 +8467,8 @@
   "settings_labs_plainFolders_description": "Crea nuevos espacios de trabajo como carpetas simples sin Git. Los existentes siguen funcionando cuando esto está desactivado.",
   "settings_labs_tabGroups_label": "Grupos de pestañas",
   "settings_labs_tabGroups_description": "Agrupa las pestañas de espacios de trabajo en grupos con nombre y color. Tus grupos se conservan, pero se ocultan cuando esto está desactivado.",
+  "settings_labs_browserPagesInMain_label": "Páginas del navegador en el proceso principal",
+  "settings_labs_browserPagesInMain_description": "Ejecuta las pestañas del navegador como páginas nativas que conservan su estado al moverse entre ventanas. Se aplica después de reiniciar Intent.",
   "settings_machineRail_label": "Barra de equipos",
   "settings_machineRail_description": "Muestra una barra con tus equipos en el lateral de la ventana para cambiar entre ellos.",
   "remoteMachines_actionsFor_ariaLabel": "Acciones para {name}",

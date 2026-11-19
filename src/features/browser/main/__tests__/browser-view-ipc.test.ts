@@ -158,9 +158,9 @@ describe('browser view IPC', () => {
 
     // Turning it off keeps this run's pages working until the restart.
     await invoke(CH.SET_LAB, next, { enabled: false });
-    await expect(
-      invoke(CH.CREATE, next, { ...CREATE, tabId: 'tab-2' }),
-    ).resolves.toMatchObject({ webContentsId: expect.any(Number) });
+    await expect(invoke(CH.CREATE, next, { ...CREATE, tabId: 'tab-2' })).resolves.toMatchObject({
+      webContentsId: expect.any(Number),
+    });
   });
 
   it('reads a live page state only for its owner', async () => {
@@ -171,9 +171,7 @@ describe('browser view IPC', () => {
 
     await expect(invoke(CH.STATE, owner, { tabId: 'tab-1' })).resolves.toEqual({ state: null });
     await invoke(CH.CREATE, owner, CREATE);
-    await expect(invoke(CH.STATE, intruder, { tabId: 'tab-1' })).rejects.toThrow(
-      'another window',
-    );
+    await expect(invoke(CH.STATE, intruder, { tabId: 'tab-1' })).rejects.toThrow('another window');
     await expect(invoke(CH.STATE, owner, { tabId: 'tab-1' })).resolves.toMatchObject({
       state: { url: expect.any(String), canGoBack: false },
     });

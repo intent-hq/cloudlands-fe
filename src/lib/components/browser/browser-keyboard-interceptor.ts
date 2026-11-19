@@ -87,6 +87,20 @@ export interface ForwardedPanelShortcut {
   altKey: boolean;
 }
 
+/** The message the injected script logs for a forwarded panel shortcut. */
+export function formatForwardedPanelShortcut(shortcut: ForwardedPanelShortcut): string {
+  return (
+    PANEL_SHORTCUT_PREFIX +
+    [
+      shortcut.key,
+      shortcut.shiftKey ? '1' : '0',
+      shortcut.metaKey ? '1' : '0',
+      shortcut.ctrlKey ? '1' : '0',
+      shortcut.altKey ? '1' : '0',
+    ].join(':')
+  );
+}
+
 /** Parse a forwarded panel shortcut message; older scripts omit the Alt flag. */
 export function parseForwardedPanelShortcut(message: string): ForwardedPanelShortcut | null {
   if (!message.startsWith(PANEL_SHORTCUT_PREFIX)) return null;

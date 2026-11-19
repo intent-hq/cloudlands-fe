@@ -15,6 +15,8 @@ export type EmbeddedBrowserWebview = HTMLElement & {
   openDevTools: () => void;
   closeDevTools: () => void;
   isDevToolsOpened: () => boolean;
+  /** Main-owned pages only: main knows whether DevTools is open. */
+  toggleDevTools?: () => void;
   getURL?: () => string;
   getWebContentsId: () => number;
   getZoomLevel: () => number;

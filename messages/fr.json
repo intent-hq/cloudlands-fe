@@ -8467,6 +8467,8 @@
   "settings_labs_plainFolders_description": "Créez de nouveaux espaces de travail sous forme de dossiers simples sans Git. Les espaces existants continuent de fonctionner lorsque cette option est désactivée.",
   "settings_labs_tabGroups_label": "Groupes d’onglets",
   "settings_labs_tabGroups_description": "Regroupez les onglets des espaces de travail dans des groupes nommés et colorés. Vos groupes sont conservés mais masqués lorsque cette option est désactivée.",
+  "settings_labs_browserPagesInMain_label": "Pages du navigateur dans le processus principal",
+  "settings_labs_browserPagesInMain_description": "Exécute les onglets du navigateur comme pages natives qui gardent leur état quand elles passent d’une fenêtre à l’autre. S’applique après le redémarrage d’Intent.",
   "settings_machineRail_label": "Barre d’ordinateurs",
   "settings_machineRail_description": "Affichez une barre de vos ordinateurs sur le côté de la fenêtre pour passer de l’un à l’autre.",
   "remoteMachines_actionsFor_ariaLabel": "Actions pour {name}",

@@ -8,14 +8,21 @@
   const MIN_VIEWPORT_PX = 320;
   const MAX_VIEWPORT_PX = 3840;
   const RESIZE_DEBOUNCE_MS = 150;
+  /** Height of the strip under the frame for the readout and handle (chromeOutside). */
+  const OUTSIDE_CHROME_PX = 24;
 
   interface Props {
     viewport: BrowserTabViewport;
     onViewportChange: (viewport: BrowserTabViewport) => void;
+    /**
+     * Put the size readout and resize handle under the frame, not over the
+     * page: a main-owned page is a native view that draws above the DOM.
+     */
+    chromeOutside?: boolean;
     children?: Snippet;
   }
 
-  let { viewport, onViewportChange, children }: Props = $props();
+  let { viewport, onViewportChange, chromeOutside = false, children }: Props = $props();
   // svelte-ignore state_referenced_locally - intentional initial size; the effect below syncs later prop changes
   let frameWidth = $state(viewport.mode === 'fit' ? MIN_VIEWPORT_PX : viewport.width);
   // svelte-ignore state_referenced_locally - intentional initial size; the effect below syncs later prop changes
@@ -38,9 +45,12 @@
       height: formatInteger(frameHeight),
     }),
   );
+  const frameAvailableHeight = $derived(
+    chromeOutside ? Math.max(0, availableHeight - OUTSIDE_CHROME_PX) : availableHeight,
+  );
   const frameScale = $derived(
-    !isFit && availableWidth > 0 && availableHeight > 0
-      ? Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight)
+    !isFit && availableWidth > 0 && frameAvailableHeight > 0
+      ? Math.min(1, availableWidth / frameWidth, frameAvailableHeight / frameHeight)
       : 1,
   );
   const renderedWidth = $derived(frameWidth * frameScale);
@@ -130,39 +140,51 @@
     : 'bg-muted/40'}"
   data-browser-device-frame-container
 >
-  <div
-    class="relative overflow-hidden bg-background {isFit
-      ? 'h-full w-full'
-      : dragging
-        ? 'ring-2 ring-primary/30'
-        : ''}"
-    style:width={isFit ? undefined : `${renderedWidth}px`}
-    style:height={isFit ? undefined : `${renderedHeight}px`}
-    data-browser-device-frame={isFit ? undefined : ''}
-    data-width={isFit ? undefined : frameWidth}
-    data-height={isFit ? undefined : frameHeight}
-  >
-    {@render children?.()}
-    {#if !isFit}
-      <span
-        class="pointer-events-none absolute bottom-1 left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur"
-        data-browser-viewport-readout
-      >
-        {dimensionsLabel}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        iconOnly
-        class="absolute bottom-0 right-0 z-20 size-5 cursor-nwse-resize touch-none border-0 bg-transparent p-0 after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b-2 after:border-r-2 after:border-muted-foreground"
-        aria-label={m.browser_viewport_resizeHandle_ariaLabel()}
-        data-testid="browser-device-resize-handle"
-        onpointerdown={handlePointerDown}
-        onpointermove={handlePointerMove}
-        onpointerup={handlePointerEnd}
-        onpointercancel={handlePointerEnd}
-      ></Button>
+  {#snippet frameChrome()}
+    <span
+      class="pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 rounded bg-background/90 px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm backdrop-blur {chromeOutside
+        ? 'top-full mt-0.5'
+        : 'bottom-1'}"
+      data-browser-viewport-readout
+    >
+      {dimensionsLabel}
+    </span>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      iconOnly
+      class="absolute right-0 z-20 size-5 cursor-nwse-resize touch-none border-0 bg-transparent p-0 after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b-2 after:border-r-2 after:border-muted-foreground {chromeOutside
+        ? 'top-full'
+        : 'bottom-0'}"
+      aria-label={m.browser_viewport_resizeHandle_ariaLabel()}
+      data-testid="browser-device-resize-handle"
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerEnd}
+      onpointercancel={handlePointerEnd}
+    ></Button>
+  {/snippet}
+  <div class="relative {isFit ? 'h-full w-full' : ''} {chromeOutside && !isFit ? 'mb-6' : ''}">
+    <div
+      class="relative overflow-hidden bg-background {isFit
+        ? 'h-full w-full'
+        : dragging
+          ? 'ring-2 ring-primary/30'
+          : ''}"
+      style:width={isFit ? undefined : `${renderedWidth}px`}
+      style:height={isFit ? undefined : `${renderedHeight}px`}
+      data-browser-device-frame={isFit ? undefined : ''}
+      data-width={isFit ? undefined : frameWidth}
+      data-height={isFit ? undefined : frameHeight}
+    >
+      {@render children?.()}
+      {#if !isFit && !chromeOutside}
+        {@render frameChrome()}
+      {/if}
+    </div>
+    {#if !isFit && chromeOutside}
+      {@render frameChrome()}
     {/if}
   </div>
 </div>
