@@ -822,6 +822,9 @@ export interface ExecutionResult {
 // Action Executor
 // ============================================================================
 
+/** WebMCP tool actions (document.modelContext). */
+const WEBMCP_ACTIONS = new Set(['listTools', 'callTool']);
+
 /**
  * Actions that manipulate a specific tab and are therefore ownership-enforced
  * for agent callers (monorepo#2857). `openTab` (creates/reuses own tabs),
@@ -1034,9 +1037,12 @@ async function executeAction(
     }
   }
 
-  // Input mutates the page: pin a tab-less action to the tab checked below so
-  // a tab registering during the mount/settle wait cannot receive it.
-  if (!tabId && INPUT_ACTIONS.has(action.action)) tabId = embeddedBrowserCdp.getFirstTab()?.tabId;
+  // Input and WebMCP tool calls act on the page: pin a tab-less action to the
+  // tab checked below so a tab change during the mount/settle wait cannot
+  // redirect it to a tab whose ownership was never checked.
+  if (!tabId && (INPUT_ACTIONS.has(action.action) || WEBMCP_ACTIONS.has(action.action))) {
+    tabId = embeddedBrowserCdp.getFirstTab()?.tabId;
+  }
 
   // Ownership enforcement (monorepo#2857): resolve the tab the action will
   // actually hit — including the first-tab fallback the underlying service
