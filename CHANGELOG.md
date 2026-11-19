@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.354.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.354.0...v2.354.1) (2026-11-19)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** clarify status labels and align floating logo ([#4773](https://github.com/intent-hq/cloudlands-fe/issues/4773)) ([968f606](https://github.com/intent-hq/cloudlands-fe/commit/968f6062440de93c7a1957a5a2d97cce576f67ea))
+
 ## [2.354.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.2...v2.354.0) (2026-11-18)
 
 
