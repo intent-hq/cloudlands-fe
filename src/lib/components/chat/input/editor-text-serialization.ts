@@ -114,3 +114,28 @@ export function pastedTextToParagraphNodes(schema: Schema, text: string): PMNode
   });
   return [schema.nodes.paragraph.create(null, inline)];
 }
+
+/**
+ * Whether a single-line paste's `text/html` is only that same line in one
+ * plain paragraph — what Chromium on Linux puts beside `text/plain` when you
+ * select all in the composer and copy. ProseMirror reads such HTML as a closed
+ * paragraph, so each paste started a new paragraph; the caller inserts the
+ * plain text inline instead. Any formatting (marks, links, mentions, several
+ * blocks) keeps ProseMirror's rich paste.
+ */
+const PLAIN_TAGS = new Set(['P', 'SPAN', 'META', 'BR']);
+
+export function isPlainSingleParagraphHtml(html: string, text: string): boolean {
+  if (/\r|\n/.test(text)) return false;
+  const body = new DOMParser().parseFromString(html, 'text/html').body;
+  const paragraphs = body.querySelectorAll('p');
+  if (paragraphs.length > 1) return false;
+  for (const el of Array.from(body.querySelectorAll('*'))) {
+    if (!PLAIN_TAGS.has(el.tagName)) return false;
+    if (el.tagName === 'SPAN' && (el.getAttribute('style') || el.getAttribute('class'))) {
+      return false;
+    }
+    if (el.tagName === 'BR' && !el.classList.contains('ProseMirror-trailingBreak')) return false;
+  }
+  return (body.textContent ?? '') === text;
+}

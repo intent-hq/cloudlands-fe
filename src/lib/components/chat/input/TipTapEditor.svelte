@@ -58,6 +58,7 @@
   import {
     plainTextToEditorHTML,
     serializeEditorText,
+    isPlainSingleParagraphHtml,
     pastedTextToParagraphNodes,
   } from './editor-text-serialization';
   import {
@@ -1225,6 +1226,16 @@
                 // tell this transaction came from a paste.
                 const tr = state.tr.replaceSelectionWith(node).setMeta('uiEvent', 'paste');
                 dispatch(tr);
+                return true;
+              }
+              const html = event.clipboardData?.getData('text/html');
+              if (html && isPlainSingleParagraphHtml(html, text)) {
+                // A plain one-line copy (select all + copy on Linux) carries a
+                // closed-paragraph HTML slice; insert it inline so repeated
+                // pastes stay on one line.
+                view.dispatch(
+                  view.state.tr.insertText(text).scrollIntoView().setMeta('uiEvent', 'paste'),
+                );
                 return true;
               }
               if (/\r|\n/.test(text)) {
