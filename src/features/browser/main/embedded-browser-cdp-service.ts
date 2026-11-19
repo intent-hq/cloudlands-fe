@@ -2470,7 +2470,16 @@ class EmbeddedBrowserCdpService {
       return;
     }
     const webContentsId = this.resolveTabId(tabId);
-    if (entry.guest && entry.guest.webContentsId !== webContentsId) this.detachAgentDrawing(tabId);
+    if (entry.guest) {
+      // A new guest (offscreen <-> panel handoff), or the same main-owned
+      // page moved to another window: its host changed, so the old host's
+      // capture hold and drawing box are released and the new host is held.
+      const current = webContentsId === undefined ? undefined : webContents.fromId(webContentsId);
+      const hostNow = current && !current.isDestroyed() ? this.hostOf(current) : undefined;
+      if (entry.guest.webContentsId !== webContentsId || entry.guest.host !== hostNow) {
+        this.detachAgentDrawing(tabId);
+      }
+    }
     if (webContentsId === undefined) return;
     try {
       if (!entry.guest) {

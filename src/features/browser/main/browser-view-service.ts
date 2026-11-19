@@ -223,11 +223,19 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     this.deps.cdp.registerTab(tabId, entry.contents.id, entry.key.workspaceId);
   }
 
-  /** The window shows another machine: show or hide its pages to match, on top. */
+  /**
+   * The window shows another machine: show or hide its pages to match, on top.
+   * The rail announces the switch before it raises the selected machine view
+   * in the same task, so placement waits one microtask: raising the pages
+   * now would leave the machine view above them.
+   */
   handleShownMachineChanged(window: BrowserWindow): void {
-    for (const entry of this.byTab.values()) {
-      if (entry.window === window) this.place(entry, true);
-    }
+    queueMicrotask(() => {
+      if (window.isDestroyed()) return;
+      for (const entry of this.byTab.values()) {
+        if (entry.window === window) this.place(entry, true);
+      }
+    });
   }
 
   /** Run a command from the tab's controls. Returns the find request id for `find`. */

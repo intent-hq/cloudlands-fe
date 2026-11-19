@@ -132,4 +132,45 @@ describe('embedded browser CDP with main-owned browser views', () => {
     service.unregisterTab('tab-parked');
     service.setMainOwnedBrowserViews(null);
   });
+  it('moves an agent drawing hold to the new host when the page moves to another window', async () => {
+    const service = await loadService();
+    const page = fakeMainOwnedPage(61);
+    const oldHost = fakeMachineView();
+    const newHost = { ...fakeMachineView(), id: 2 };
+    mocks.getAllWebContents.mockReturnValue([page]);
+    let host: typeof oldHost = oldHost;
+    const releases: string[] = [];
+    service.setMainOwnedBrowserViews({
+      owns: (id) => id === 61,
+      hostFor: (id) => (id === 61 ? (host as unknown as Electron.WebContents) : undefined),
+      holdDrawing: () => {
+        const at = host === oldHost ? 'old' : 'new';
+        return () => releases.push(at);
+      },
+    });
+    service.registerTab('tab-move', 61, 'ws-1');
+    service.setTabOwner('tab-move', 'agent-1');
+    const end = service.beginAgentDrawing('tab-move', 'agent-1');
+    expect(oldHost.backgroundThrottling).toBe(false);
+
+    // BrowserViewService.moveToWindow keeps the webContents id and registers again.
+    host = newHost;
+    service.registerTab('tab-move', 61, 'ws-1');
+
+    expect(oldHost.backgroundThrottling).toBe(true);
+    expect(oldHost.send).toHaveBeenCalledWith('browser:agent-drawing', {
+      tabId: 'tab-move',
+      active: false,
+    });
+    expect(newHost.backgroundThrottling).toBe(false);
+    expect(newHost.send).toHaveBeenCalledWith('browser:agent-drawing', {
+      tabId: 'tab-move',
+      active: true,
+    });
+    expect(releases).toEqual(['old']);
+    expect(service.hasAgentDrawingHold('tab-move')).toBe(true);
+    end();
+    service.unregisterTab('tab-move');
+    service.setMainOwnedBrowserViews(null);
+  });
 });

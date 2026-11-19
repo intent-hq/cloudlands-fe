@@ -250,7 +250,7 @@ describe('BrowserViewService placement', () => {
     expect(service.placementOf('tab-1')).toBe('detached');
   });
 
-  it('hides the page while its window shows another machine, and raises it again after', () => {
+  it('hides the page while its window shows another machine, and raises it again after', async () => {
     const { service, views } = setup();
     const window = new FakeWindow();
     service.create(KEY, windowLike(window), 'https://a.test/');
@@ -258,12 +258,15 @@ describe('BrowserViewService placement', () => {
 
     window.shown = 'remote';
     service.handleShownMachineChanged(windowLike(window));
+    await Promise.resolve();
     expect(service.placementOf('tab-1')).toBe('detached');
 
+    // Like the rail's applySelection: announce the switch, then raise the
+    // selected machine view in the same task.
     window.shown = 'local';
-    // The rail puts the machine view on top when it shows it again.
-    window.contentView.addChildView(window.machineView);
     service.handleShownMachineChanged(windowLike(window));
+    window.contentView.addChildView(window.machineView);
+    await Promise.resolve();
     expect(window.children).toEqual([window.machineView, views[0]]);
     expect(service.placementOf('tab-1')).toBe('shown');
   });
