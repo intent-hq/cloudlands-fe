@@ -429,7 +429,8 @@
                         indicator="switch"
                         checked={script.autoStart === true}
                         disabled={operation?.pending === true}
-                        onSelect={() => setAutoStart(script.id, script.name, script.autoStart !== true)}
+                        onSelect={() =>
+                          setAutoStart(script.id, script.name, script.autoStart !== true)}
                         data-script-action="auto-start"
                       >
                         {m.workspace_devScripts_autoStart_label()}

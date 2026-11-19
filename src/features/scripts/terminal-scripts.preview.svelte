@@ -66,23 +66,22 @@
       setScriptsData(
         workspaceId,
         populated
-          ? [
-              ...['dev', 'build', 'test', 'check'],
-              ...(autoStart ? ['api', 'storybook'] : []),
-            ].map((name) => ({
-              id: `preview-${name}`,
-              workspaceId,
-              name,
-              command: `pnpm ${name}`,
-              mode: ['dev', 'api', 'storybook'].includes(name) ? 'service' : 'command',
-              source: 'auto-detected',
-              createdAt,
-              ...(name === 'api' || name === 'storybook' ? { autoStart: true } : {}),
-              runtime: {
-                status: name === 'dev' || name === 'storybook' ? 'running' : 'idle',
-                restartCount: 0,
-              },
-            }))
+          ? [...['dev', 'build', 'test', 'check'], ...(autoStart ? ['api', 'storybook'] : [])].map(
+              (name) => ({
+                id: `preview-${name}`,
+                workspaceId,
+                name,
+                command: `pnpm ${name}`,
+                mode: ['dev', 'api', 'storybook'].includes(name) ? 'service' : 'command',
+                source: 'auto-detected',
+                createdAt,
+                ...(name === 'api' || name === 'storybook' ? { autoStart: true } : {}),
+                runtime: {
+                  status: name === 'dev' || name === 'storybook' ? 'running' : 'idle',
+                  restartCount: 0,
+                },
+              }),
+            )
           : [],
       ),
     );
