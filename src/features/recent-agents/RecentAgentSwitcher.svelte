@@ -17,6 +17,7 @@
   import { store as appStore } from '$store/renderer/store';
   import RecentAgentSwitcherView from './RecentAgentSwitcherView.svelte';
   import {
+    isSwitcherModifierKeyUp,
     isSwitcherModifierReleased,
     stepSwitcher,
     switcherHeldModifiers,
@@ -79,7 +80,7 @@
 
   /** A DOM key event, or one a browser-panel page forwarded through main. */
   type SwitcherKey = Omit<RecentAgentPageKey, 'type'> &
-    Partial<Pick<KeyboardEvent, 'preventDefault' | 'stopPropagation' | 'target'>>;
+    Partial<Pick<KeyboardEvent, 'preventDefault' | 'stopPropagation' | 'target' | 'repeat'>>;
 
   /** Settings → Keyboard shortcuts records the next chord; it must receive the switcher's too. */
   function isShortcutCapture(event: SwitcherKey): boolean {
@@ -96,15 +97,18 @@
   function onKeydown(event: SwitcherKey): void {
     if (!switcher.open) {
       if (isShortcutCapture(event)) return;
-      const direction = matchSwitcherChord(event, $binding$, isMac);
-      if (!direction || $recentAgents$.length === 0) return;
+      // Only the chord itself opens the switcher; Shift moves back once it is open.
+      if (matchSwitcherChord(event, $binding$, isMac) !== 'forward') return;
+      if ($recentAgents$.length === 0) return;
       swallow(event);
       entries = [...$recentAgents$];
       held = switcherHeldModifiers($binding$, isMac);
-      apply({ type: 'chord', backwards: direction === 'backward', sticky: held === null });
+      apply({ type: 'chord', backwards: false, sticky: held === null });
       return;
     }
     swallow(event);
+    // Holding Tab must not race through the list: one press, one step.
+    if (event.repeat) return;
     // The release happened while another window had the keys.
     if (held && isSwitcherModifierReleased(held, event)) {
       apply({ type: 'release' });
@@ -129,7 +133,7 @@
   function onKeyup(event: SwitcherKey): void {
     if (!switcher.open) return;
     swallow(event);
-    if (held && isSwitcherModifierReleased(held, event)) apply({ type: 'release' });
+    if (held && isSwitcherModifierKeyUp(held, event)) apply({ type: 'release' });
   }
 
   function onBlur(): void {
