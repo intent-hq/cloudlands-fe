@@ -237,9 +237,9 @@ function runTsc(root, tsconfig) {
     let output = '';
     child.stdout.on('data', (chunk) => (output += chunk));
     child.stderr.on('data', (chunk) => (output += chunk));
-    child.on('error', (error) => resolve({ code: 1, output: `${error.message}\n` }));
+    child.on('error', (error) => resolve({ code: null, output: `${error.message}\n` }));
     child.on('close', (code, signal) =>
-      resolve({ code: code ?? 1, output: signal ? `${output}Killed by ${signal}\n` : output }),
+      resolve({ code, output: signal ? `${output}Killed by ${signal}\n` : output }),
     );
   });
 }
@@ -257,18 +257,21 @@ export async function checkTestTypes({
   projects = PROJECTS,
   names = Object.keys(projects),
   update = false,
+  run = runTsc,
 } = {}) {
   const lines = [];
   let ok = true;
   const results = await Promise.all(
-    names.map(async (name) => ({ name, ...(await runTsc(root, projects[name].tsconfig)) })),
+    names.map(async (name) => ({ name, ...(await run(root, projects[name].tsconfig)) })),
   );
   for (const { name, code, output } of results) {
     const { tsconfig, label } = projects[name];
     const { byFile, global } = parseDiagnostics(output, root);
-    // Config or environment errors have no file to baseline, and an unparsed failure
-    // (crash, out of memory) must never read as "no errors".
-    if (global.length || (code !== 0 && byFile.size === 0)) {
+    // Config or environment errors have no file to baseline. tsc exits 0 or, with
+    // diagnostics, 1/2; anything else (signal, out of memory, spawn error) may have
+    // stopped mid-report, so its partial counts must never be compared or written.
+    const finished = code === 0 || ((code === 1 || code === 2) && byFile.size > 0);
+    if (global.length || !finished) {
       ok = false;
       lines.push(`❌ ${label}: tsc -p ${tsconfig} failed outside any test file:`);
       lines.push(...(global.length ? global.map((d) => `  ${d}`) : [output.trim()]));

@@ -201,6 +201,21 @@ describe('checkTestTypes on a fixture project', { timeout: 120_000 }, () => {
     expect(lines.join('\n')).toContain('TS2578');
   });
 
+  it.each([
+    ['killed by a signal', null, 'Killed by SIGKILL'],
+    ['out of memory', 134, 'FATAL ERROR: Reached heap limit'],
+  ])('never compares or writes partial counts when tsc is %s', async (_name, code, tail) => {
+    const root = prefsProject([], baselineEntry(1));
+    const output = `${TEST_FILE}(2,9): error TS2345: Argument is not assignable.\n${tail}\n`;
+    const run = async () => ({ code, output });
+    for (const update of [false, true]) {
+      const { ok, lines } = await checkTestTypes({ root, projects: FIXTURE_PROJECTS, update, run });
+      expect(ok).toBe(false);
+      expect(lines.join('\n')).toContain(tail);
+    }
+    expect(loadBaseline(root, 'main')).toEqual(new Map([[TEST_FILE, 1]]));
+  });
+
   it('fails on a configuration error that names no file', async () => {
     const root = prefsProject([]);
     writeFiles(root, {
