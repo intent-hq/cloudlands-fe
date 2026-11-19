@@ -80,3 +80,24 @@ export function isSwitcherModifierReleased(
     (held.altKey && !event.altKey)
   );
 }
+
+/** Key names of each held modifier; Linux browsers have reported the Super key as all three. */
+const MODIFIER_KEYS = {
+  metaKey: ['Meta', 'OS', 'Super'],
+  ctrlKey: ['Control'],
+  altKey: ['Alt'],
+} as const;
+
+/**
+ * True when `event` releases a modifier the switcher waits on. Only that key's release counts:
+ * releasing Tab while Cmd stays down must not open the selection, even where the Tab key-up
+ * reports no modifiers.
+ */
+export function isSwitcherModifierKeyUp(
+  held: HeldShortcutModifiers,
+  event: Pick<KeyboardEvent, 'key'>,
+): boolean {
+  return (Object.keys(MODIFIER_KEYS) as (keyof typeof MODIFIER_KEYS)[]).some(
+    (flag) => held[flag] && (MODIFIER_KEYS[flag] as readonly string[]).includes(event.key),
+  );
+}
