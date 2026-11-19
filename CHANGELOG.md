@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.356.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.355.2...v2.356.0) (2026-11-19)
+
+
+### 🚀 Features
+
+* add a recent-agent switcher (Option+Tab, Super+Tab on Linux) ([#4783](https://github.com/intent-hq/cloudlands-fe/issues/4783)) ([4cc8559](https://github.com/intent-hq/cloudlands-fe/commit/4cc8559345a812ec4b808137f7bb20528c848d2b))
+
 ## [2.355.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.355.1...v2.355.2) (2026-11-19)
 
 
