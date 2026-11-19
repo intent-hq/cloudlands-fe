@@ -180,7 +180,8 @@
   {#snippet children()}
     {#snippet trigger(tab: SectionTab)}
       {@const unread = tab.id === 'agents' && $unread$}
-      {@const inUse = (tab.id === 'browser' && $hasBrowserTabs$) || (tab.id === 'shell' && shellInUse)}
+      {@const inUse =
+        (tab.id === 'browser' && $hasBrowserTabs$) || (tab.id === 'shell' && shellInUse)}
       <Tabs.Trigger
         value={tab.id}
         aria-label={unread
@@ -270,7 +271,7 @@
           ></span>
         {:else if inUse}
           <span
-            class="sidebar-tab-in-use absolute top-1.5 right-1.5 size-1.5 rounded-full bg-success"
+            class="sidebar-tab-in-use absolute top-1.5 right-1.5 size-1.5 rounded-full bg-muted-foreground"
             aria-hidden="true"
             data-sidebar-tab-in-use-dot
           ></span>
