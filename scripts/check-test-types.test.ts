@@ -233,12 +233,18 @@ describe('checkTestTypes on a fixture project', { timeout: 120_000 }, () => {
 describe('renderer test program on a fixture', { timeout: 120_000 }, () => {
   // The real include/exclude rules over a minimal base config, so the fixture stays small.
   const RENDERER_PROJECTS = { renderer: PROJECTS.renderer };
+  // Its `types` name packages the fixture has no node_modules for.
+  const rendererRules = () => {
+    const { config } = ts.readConfigFile(PROJECTS.renderer.tsconfig, ts.sys.readFile);
+    const { types: _types, ...compilerOptions } = config.compilerOptions;
+    return { ...config, compilerOptions };
+  };
   const rendererFixture = (files: Record<string, string[]>) => {
     const root = tree({
       'tsconfig.json': JSON.stringify({
         compilerOptions: { strict: true, noEmit: true, types: [], lib: ['ES2022'] },
       }),
-      [PROJECTS.renderer.tsconfig]: fs.readFileSync(PROJECTS.renderer.tsconfig, 'utf8'),
+      [PROJECTS.renderer.tsconfig]: JSON.stringify(rendererRules()),
       'src/lib/prefs.ts': [
         "export type PrefKey = 'dockEnabled' | 'menuBarAutoHide';",
         'export function setPref(key: PrefKey, value: unknown): void {',
