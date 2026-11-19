@@ -427,6 +427,7 @@
                       <Menu.Separator />
                       <Menu.CheckboxItem
                         indicator="switch"
+                        closeOnSelect
                         checked={script.autoStart === true}
                         disabled={operation?.pending === true}
                         onSelect={() =>

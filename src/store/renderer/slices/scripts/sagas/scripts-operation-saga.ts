@@ -471,12 +471,16 @@ function* updateDefinition(
     if (current.id !== scriptId || current.workspaceId !== workspaceId || current.archivedAt) {
       throw new Error(m.scripts_pendingChange_error());
     }
-    // The daemon keeps a live run when an upsert changes only autoStart.
-    const autoStartOnly =
-      updates.autoStart !== undefined &&
-      Object.entries(updates).every(([key, value]) => key === 'autoStart' || value === undefined);
-    if (!autoStartOnly && isLiveScriptStatus(current.runtime?.status)) {
-      throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
+    if (isLiveScriptStatus(current.runtime?.status)) {
+      // A daemon advertising scriptAutoStartInPlace keeps the run on an autoStart-only upsert.
+      const autoStartOnly =
+        updates.autoStart !== undefined &&
+        Object.entries(updates).every(([key, value]) => key === 'autoStart' || value === undefined);
+      const keepsRun =
+        autoStartOnly && (yield* call(() => scriptDefinitionTransport.keepsRunOnAutoStartUpsert()));
+      if (!keepsRun) {
+        throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
+      }
     }
     const result = yield* call(() =>
       scriptDefinitionTransport.upsert(workspaceId, scriptId, {
