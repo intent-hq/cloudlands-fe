@@ -19,6 +19,7 @@ import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pa
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isElectronTestPathInput } from './check-electron-test-paths.mjs';
+import { isTestTypeCheckInput } from './check-test-types.mjs';
 import { isRootSpecStubInput } from './check-root-spec-stubs.mjs';
 import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
@@ -614,6 +615,8 @@ function isArchitectureSource(file, root) {
     file === 'scripts/type-check.ts' ||
     // Electron helpers run only in the merge queue; lint:electron-test-paths checks them.
     isElectronTestPathInput(file) ||
+    // Unit test programs and their error baselines; lint:test-types checks them.
+    isTestTypeCheckInput(file) ||
     // Root specs run only nightly; lint:root-spec-stubs checks their virtual-module stubs.
     isRootSpecStubInput(file, root) ||
     basename(file) === 'AGENTS.md'
@@ -748,6 +751,7 @@ function createStaticVerificationPlan(files, root) {
       ...formatAndLintChecks(existing),
       command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']),
       ...typeChecks(new Set(['renderer', 'main', 'preload']), true),
+      command('test-types', 'TypeScript (unit tests, error baseline)', ['run', 'lint:test-types']),
     ],
     fallbackReasons: [],
     triggerViolations: [],
@@ -1712,7 +1716,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
       'Usage: pnpm run verify:changed -- [--static] [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
     );
     log(
-      '  --static: only Prettier and ESLint on the changed files, then knip, svelte-check and the renderer, main and preload type checks repo-wide; no tests. Runs even with nothing changed.',
+      '  --static: only Prettier and ESLint on the changed files, then knip, svelte-check, the renderer, main and preload type checks and the unit-test type baseline repo-wide; no tests. Runs even with nothing changed.',
     );
     log(
       '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',

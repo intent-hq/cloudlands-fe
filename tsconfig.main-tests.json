@@ -1,0 +1,46 @@
+{
+  // Main-process unit tests. tsconfig.main.json excludes them, so nothing checked their
+  // types: cloudlands-fe#4751 narrowed setLocalPref to a key union and ~17 tests kept
+  // passing unregistered keys. `lint:test-types` (in `lint:architecture`) runs this
+  // program against a per-file error baseline that may only shrink
+  // (scripts/check-test-types.mjs). Tests pull in renderer helpers, so the renderer
+  // aliases and ambient types are loaded too; ES2024 matches the Node that runs them.
+  "extends": "./tsconfig.main.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    // Incremental signature emit costs ~140 s on this program; a cold check takes ~45 s.
+    "incremental": false,
+    "rootDir": ".",
+    "lib": ["ES2024", "DOM"],
+    "typeRoots": ["./node_modules/@types", "./node_modules"],
+    "types": ["node", "vite/client", "vitest/globals"],
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"],
+      "$store": ["./src/store"],
+      "$store/*": ["./src/store/*"],
+      "$app": ["./src/app"],
+      "$app/*": ["./src/app/*"],
+      "$features": ["./src/features"],
+      "$features/*": ["./src/features/*"],
+      "$shared": ["./src/shared"],
+      "$shared/*": ["./src/shared/*"],
+      "@fortawesome/fontawesome-common-types": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/fontawesome-svg-core": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-brands-svg-icons": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-regular-svg-icons": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-solid-svg-icons": ["./src/lib/icons/phosphor-icons.ts"]
+    }
+  },
+  "include": [
+    "src/types/**/*.d.ts",
+    "src/app.d.ts",
+    "src/main/**/*.test.ts",
+    "src/main/**/__tests__/**/*.ts",
+    "src/features/*/main/**/*.test.ts",
+    "src/features/*/main/**/__tests__/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-electron"]
+}
