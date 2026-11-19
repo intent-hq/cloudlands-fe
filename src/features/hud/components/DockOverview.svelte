@@ -291,7 +291,7 @@
           <Button
             variant="plain"
             size="sm"
-            class="overview-open"
+            class="overview-open workspace-open"
             wrapContent={false}
             disabled={pending}
             data-dock-row
@@ -321,12 +321,10 @@
               <DockWorkspaceAvatar {item} variant="emphasized" />
             {/if}
             <span class="row-copy">
-              <span class="row-heading">
-                <WorkspaceStatusIcon status={state} size={12} decorative />
-                <span class="type-body font-medium truncate" {title}>{title}</span>
-              </span>
+              <span class="type-body font-medium truncate" {title}>{title}</span>
               <!-- The repo identifies the row; rows without one keep their status line. -->
               <span class="row-status type-caption" id="dock-status-{id}">
+                <WorkspaceStatusIcon status={state} size={12} decorative />
                 {#if repo}<span class="row-repo truncate" title={repo} data-dock-row-repo
                     >{repo}</span
                   >{:else}<span
@@ -337,12 +335,10 @@
                 <span class="sr-only">{status.accessibleName}</span>
               </span>
             </span>
+            <span class="row-time type-caption" title={item.workspace.updatedAt} aria-hidden="true">
+              {item.workspace.updatedAt ? formatCompactRelativeTime(item.workspace.updatedAt) : ''}
+            </span>
           </Button>
-        </div>
-        <div role="gridcell" class="grid-cell">
-          <span class="row-time type-caption" title={item.workspace.updatedAt}>
-            {item.workspace.updatedAt ? formatCompactRelativeTime(item.workspace.updatedAt) : ''}
-          </span>
         </div>
       </div>
     {/each}
@@ -388,7 +384,6 @@
         ><span class="type-body font-medium">{m.dock_assistant_label()}</span></span
       >
     </Button>
-    <span class="row-time" aria-hidden="true"></span>
   </div>
 </nav>
 
@@ -483,13 +478,7 @@
     box-shadow: inset 0 0 0 1px hsl(var(--dock-border));
   }
   .overview-row {
-    display: grid;
-    /* Mirrors the open button's 6px leading inset, so the timestamp is not flush with the
-       row's hover, focus or active highlight. */
-    padding-inline-end: 6px;
-    grid-template-columns: minmax(0, 1fr) 56px;
-    align-items: center;
-    column-gap: 8px;
+    display: block;
     min-height: 52px;
     border-radius: var(--radius-medium);
   }
@@ -545,6 +534,13 @@
     padding: 4px 6px;
     color: inherit;
   }
+  /* Keep status beside the repository and reserve the trailing column for the timestamp. */
+  :global(.workspace-open) {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 56px;
+    column-gap: 12px;
+    padding-inline-end: 0;
+  }
   .row-copy {
     min-width: 0;
     display: flex;
@@ -556,12 +552,6 @@
   }
   .row-copy > span {
     max-width: 100%;
-  }
-  .row-heading {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
   }
   .row-status {
     display: flex;

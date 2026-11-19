@@ -1,6 +1,11 @@
 import type { DockEditorCompactIntent } from '$shared/dock-placement';
 import {
   getDockCompactNotchSize,
+  resolveFloatingDockGeometry,
+  dockWindowEnvelope,
+  dockLocalRect,
+  DOCK_FLOATING_COMPACT_SIZE,
+  DOCK_FLOATING_SHADOW_MARGIN,
   type DockPlacementCommand,
   type DockPlacementSnapshot,
   type DockDisplayGeometry,
@@ -125,6 +130,36 @@ const fixtures: DockWorkspaceView[] = [
   dockItem(11, 'Validate dark theme'),
   dockItem(12, 'Capture final comparison'),
 ];
+
+/** Representative status list for catalog review, scrolling, and shared status regressions. */
+const representativeStatusFixtures = [4, 5, 2, 1, 0, 6, 3, 8, 9, 7].map((source, index) => {
+  const item = fixtures[source];
+  return {
+    ...item,
+    ...(index === 8 ? { isRunning: false } : {}),
+    workspace: {
+      ...item.workspace,
+      repositoryOwner: index === 5 ? undefined : 'demo/team',
+      repositoryName: index === 5 ? undefined : item.workspace.repositoryName,
+      repositoryPath: undefined,
+      plainFolder: index === 5,
+      ...(index === 2
+        ? {
+            title:
+              'Answer a long design question about workspace navigation and the floating companion',
+          }
+        : {}),
+      ...(index === 5 ? { statusMessage: 'Waiting for your review.' } : {}),
+      ...(index === 8
+        ? {
+            title: 'Quiet workspace notes',
+            displayStatus: 'idle' as const,
+            activity: 'idle' as const,
+          }
+        : {}),
+    },
+  };
+});
 
 const compactOverflowFixtures = [
   ...fixtures,
@@ -294,6 +329,46 @@ function adaptiveState(
   };
 }
 
+function representativeStatusState(
+  shape: 'floating' | 'notch',
+  floatingY = 0.2,
+): { props: DockRailPreviewProps } {
+  const base = adaptiveState(shape, 'right', 'dark', representativeStatusFixtures);
+  if (shape === 'notch') return base;
+  // Same native geometry boundary as dock-mode-visual: retain the compact anchor while expanding.
+  const display = {
+    id: 1,
+    bounds: { x: 0, y: 0, width: 640, height: 600 },
+    workArea: { x: 0, y: 0, width: 640, height: 600 },
+    cutout: null,
+  };
+  const target = { kind: 'floating', displayId: 1, x: 0.5, y: floatingY } as const;
+  const geometry = resolveFloatingDockGeometry(target, display, DOCK_FLOATING_COMPACT_SIZE);
+  const windowBounds = dockWindowEnvelope(
+    geometry.surface,
+    display,
+    null,
+    null,
+    true,
+    DOCK_FLOATING_SHADOW_MARGIN,
+  );
+  return {
+    props: {
+      ...base.props,
+      floatingDisplay: display,
+      placement: {
+        ...base.props.placement,
+        placement: target,
+        windowBounds,
+        surface: dockLocalRect(geometry.surface, windowBounds),
+        workArea: dockLocalRect(display.workArea, windowBounds),
+        floatingAnchor: dockLocalRect(geometry.anchor, windowBounds),
+        expansionDirection: geometry.expansionDirection,
+      },
+    },
+  };
+}
+
 function recordingState(shape: DockShape, mode: 'running' | 'paused' | 'stopping' = 'running') {
   const base = adaptiveState(shape);
   return { props: { ...base.props, recordingFixture: mode } };
@@ -305,6 +380,9 @@ export const dockRailPreview = definePreview<DockRailPreviewProps>({
   defaultState: 'four-mixed',
   states: {
     notch: adaptiveState('notch'),
+    'notch-status-list': representativeStatusState('notch'),
+    'floating-status-list': representativeStatusState('floating'),
+    'floating-status-list-up': representativeStatusState('floating', 0.8),
     'recording-notch': recordingState('notch'),
     'recording-floating': recordingState('floating'),
     'recording-edge': recordingState('edge'),

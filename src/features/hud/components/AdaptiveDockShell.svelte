@@ -739,7 +739,11 @@
           class="companion-header"
           class:side-header={edge}
           class:recording-header={edge && !!recording}
-          style:padding-left={heldGripCenter ? `${heldGripCenter.x - 14}px` : undefined}
+          style:padding-left={heldGripCenter
+            ? `${heldGripCenter.x - 14}px`
+            : floating
+              ? `${12 + 8 * shellMotion.reveal}px`
+              : undefined}
           style:padding-top={heldGripCenter ? `${heldGripCenter.y - 14}px` : undefined}
           style:padding-bottom={heldGripCenter ? `${26 - heldGripCenter.y}px` : undefined}
           onpointerdown={(event) => {
