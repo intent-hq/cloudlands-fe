@@ -90,9 +90,10 @@ export const AgentCheckpointSchema = z.object({
 });
 /**
  * A remote agent's checkout setup on its machine (PROTOCOL `methods/nodes.md`
- * "Prepared checkout"). `output` and `outputTruncated` come from detail reads only.
+ * "Prepared checkout"), also a workspace home's opening ("Opening the home").
+ * `output` and `outputTruncated` come from detail reads only.
  */
-const RemoteSetupStatusSchema = z.object({
+export const RemoteSetupStatusSchema = z.object({
   state: z.enum(['pending', 'running', 'completed', 'failed', 'skipped']),
   exitCode: z.number().int().optional(),
   error: z.string().optional(),

@@ -21,6 +21,26 @@ export interface WorkspaceHomeUiState {
   moveFailure: MoveHomeFailure | null;
   /** Workspaces whose Wait retry is in flight. */
   waiting: Record<string, true>;
+  /**
+   * Failed openings dismissed this session, by `homeSetupFailureKey` (the
+   * home and that failure's time), so a later failure of the same home shows.
+   */
+  dismissedSetupFailures: Record<string, true>;
+  /** The home's checkout and setup output, by workspace, read while its log is open. */
+  setupOutputs: Record<string, HomeSetupOutput>;
+}
+
+/** `home.setup.output` and `outputTruncated` from the workspace's detail read. */
+export interface HomeSetupOutput {
+  /** The home the output belongs to; another home's output is not shown. */
+  homeId: string;
+  text?: string;
+  truncated: boolean;
+}
+
+/** One failed opening of a home: the home and when that attempt failed. */
+export function homeSetupFailureKey(homeId: string, finishedAt: string | undefined): string {
+  return `${homeId}|${finishedAt ?? ''}`;
 }
 
 const initialWorkspaceHomeState: WorkspaceHomeUiState = {
@@ -28,6 +48,8 @@ const initialWorkspaceHomeState: WorkspaceHomeUiState = {
   moveStatus: 'idle',
   moveFailure: null,
   waiting: {},
+  dismissedSetupFailures: {},
+  setupOutputs: {},
 };
 
 /** Open the Move home dialog for a workspace (banner, header menu, panels). */
@@ -46,6 +68,22 @@ export const moveHomeSettled = createAction<[workspaceId: string, failure: MoveH
 /** Wait: ask the backend to reconnect the home, then re-read the workspace. */
 export const homeWaitRequested = createAction<[workspaceId: string]>('workspaceHome/waitRequested');
 export const homeWaitSettled = createAction<[workspaceId: string]>('workspaceHome/waitSettled');
+/** The home's output log is open or its home changed: read the output again. */
+export const homeSetupOutputRequested = createAction<[workspaceId: string]>(
+  'workspaceHome/setupOutputRequested',
+);
+/** Saga: the detail read's output. */
+export const homeSetupOutputLoaded = createAction<[workspaceId: string, output: HomeSetupOutput]>(
+  'workspaceHome/setupOutputLoaded',
+);
+/** Saga: the read failed; the last output is no longer known to be current. */
+export const homeSetupOutputUnavailable = createAction<[workspaceId: string]>(
+  'workspaceHome/setupOutputUnavailable',
+);
+/** Hide a home's failed opening banner (nodes.md "Opening the home"). */
+export const homeSetupFailureDismissed = createAction<[failureKey: string]>(
+  'workspaceHome/setupFailureDismissed',
+);
 
 export const workspaceHomeReducer = createReducer<WorkspaceHomeUiState>(initialWorkspaceHomeState);
 workspaceHomeReducer.with(moveHomeDialogOpened, (state, { payload: [workspaceId] }) => ({
@@ -80,4 +118,18 @@ workspaceHomeReducer.with(homeWaitSettled, (state, { payload: [workspaceId] }) =
   if (!state.waiting[workspaceId]) return state;
   const { [workspaceId]: _settled, ...waiting } = state.waiting;
   return { ...state, waiting };
+});
+workspaceHomeReducer.with(homeSetupFailureDismissed, (state, { payload: [key] }) =>
+  state.dismissedSetupFailures[key]
+    ? state
+    : { ...state, dismissedSetupFailures: { ...state.dismissedSetupFailures, [key]: true } },
+);
+workspaceHomeReducer.with(homeSetupOutputLoaded, (state, { payload: [workspaceId, output] }) => ({
+  ...state,
+  setupOutputs: { ...state.setupOutputs, [workspaceId]: output },
+}));
+workspaceHomeReducer.with(homeSetupOutputUnavailable, (state, { payload: [workspaceId] }) => {
+  if (!state.setupOutputs[workspaceId]) return state;
+  const { [workspaceId]: _stale, ...setupOutputs } = state.setupOutputs;
+  return { ...state, setupOutputs };
 });

@@ -1,4 +1,5 @@
 import { store } from '$store/renderer/store';
+import { homeSetupFailureKey } from './workspace-home-slice';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -42,6 +43,40 @@ export const selectCanMoveWorkspaceHome = store.createSelector((state, workspace
     !selectHidesOwnerWorkspaceActions.select(state, workspaceId),
   ),
 );
+
+/** The key of the home's current failed opening, or '' when it has none. */
+export const selectHomeSetupFailureKey = store.createSelector((state, workspaceId: string) => {
+  const home = getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.home;
+  return home?.setup?.state === 'failed'
+    ? homeSetupFailureKey(home.homeId, home.setup.finishedAt)
+    : '';
+});
+
+/**
+ * The banner's view: the home's view without its failed opening banner once
+ * that failure was dismissed (a later failure shows again).
+ */
+export const selectWorkspaceHomeBannerView = store.createSelector(
+  (state, workspaceId: string): WorkspaceHomeView | null => {
+    const view = selectWorkspaceHomeView.select(state, workspaceId);
+    if (view?.banner !== 'setupFailed') return view;
+    const key = selectHomeSetupFailureKey.select(state, workspaceId);
+    if (!key || !state.workspaceHome.dismissedSetupFailures[key]) return view;
+    const cached = dismissedViews.get(view);
+    if (cached) return cached;
+    const hidden = { ...view, banner: null };
+    dismissedViews.set(view, hidden);
+    return hidden;
+  },
+);
+const dismissedViews = new WeakMap<WorkspaceHomeView, WorkspaceHomeView>();
+
+/** The home's checkout and setup output last read, for the current home only, or null. */
+export const selectHomeSetupOutput = store.createSelector((state, workspaceId: string) => {
+  const output = state.workspaceHome.setupOutputs[workspaceId];
+  const homeId = getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.home?.homeId;
+  return output && output.homeId === homeId ? output : null;
+});
 
 /** A Wait retry is in flight for the workspace. */
 export const selectHomeWaiting = store.createSelector(

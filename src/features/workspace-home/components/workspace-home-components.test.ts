@@ -75,6 +75,87 @@ describe('WorkspaceHomeBanner', () => {
   });
 });
 
+describe('WorkspaceHomeBanner while the home opens (nodes.md "Opening the home")', () => {
+  const OPENING = { lastBackupAt: undefined } as const;
+
+  it('a home still opening shows its step and opens the output log on request', async () => {
+    const onToggleOutput = vi.fn();
+    const { rerender } = render(WorkspaceHomeBanner, {
+      view: view({ ...OPENING, setup: { state: 'running', startedAt: 't' } }),
+      onToggleOutput,
+    });
+    expect(screen.getByRole('status').textContent).toContain('Mac Studio');
+    expect(screen.queryByRole('alert')).toBeNull();
+    const toggle = screen.getByRole('button', { name: m.remoteAgent_setup_showOutput() });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle);
+    expect(onToggleOutput).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      view: view({ ...OPENING, setup: { state: 'running', startedAt: 't' } }),
+      onToggleOutput,
+      outputOpen: true,
+      output: 'pnpm install\n',
+    });
+    const hide = screen.getByRole('button', { name: m.remoteAgent_setup_hideOutput() });
+    expect(hide.getAttribute('aria-expanded')).toBe('true');
+    const log = screen.getByRole('log');
+    expect(log.textContent).toContain('pnpm install');
+    expect(document.getElementById(hide.getAttribute('aria-controls')!)?.contains(log)).toBe(true);
+    // Opening is calm: no dismiss and no Move home.
+    expect(
+      screen.queryByRole('button', { name: m.workspaceHome_setupFailed_dismiss() }),
+    ).toBeNull();
+  });
+
+  it('a failed open is announced with its reason, Move home for managers and dismiss', async () => {
+    const onMove = vi.fn();
+    const onDismiss = vi.fn();
+    render(WorkspaceHomeBanner, {
+      view: view({
+        ...OPENING,
+        setup: { state: 'failed', error: 'node-checkout-failed: could not fetch' },
+      }),
+      canMove: true,
+      onMove,
+      onDismiss,
+      onToggleOutput: () => {},
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Mac Studio');
+    expect(document.body.textContent).toContain('could not fetch');
+    expect(document.body.textContent).not.toContain('node-checkout-failed');
+    await fireEvent.click(screen.getByRole('button', { name: m.workspaceHome_move_label() }));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.workspaceHome_setupFailed_dismiss() }),
+    );
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed setup script offers no Move home: the home works', () => {
+    render(WorkspaceHomeBanner, {
+      view: view({ ...OPENING, setup: { state: 'failed', exitCode: 2, startedAt: 't' } }),
+      canMove: true,
+      onDismiss: () => {},
+      onToggleOutput: () => {},
+    });
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: m.workspaceHome_move_label() })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: m.workspaceHome_setupFailed_dismiss() }),
+    ).toBeTruthy();
+  });
+
+  it('a ready home shows no banner', () => {
+    render(WorkspaceHomeBanner, {
+      view: view({ ...OPENING, setup: { state: 'completed', exitCode: 0 } }),
+      onToggleOutput: () => {},
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
 const GARAGE = homeMoveTargetKey({ kind: 'machine', nodeId: 'd-garage' });
 const OLD = homeMoveTargetKey({ kind: 'machine', nodeId: 'd-old' });
 const OPTIONS: MoveHomeOption[] = [
