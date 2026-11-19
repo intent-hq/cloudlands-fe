@@ -216,6 +216,23 @@ type ClaimTabResult =
   | { status: 'already-claimed'; ownerAgentId: string };
 
 /**
+ * Browser-tab pages that main owns as a `WebContentsView` (BrowserViewService)
+ * instead of a `<webview>` guest. Such a page has no `hostWebContents` and is
+ * not of type `webview`, so the service asks this seam instead.
+ */
+export interface MainOwnedBrowserViews {
+  /** Whether `webContentsId` is a live main-owned browser view. */
+  owns(webContentsId: number): boolean;
+  /** The app renderer that shows the view's tab (the machine view of its window). */
+  hostFor(webContentsId: number): WebContents | undefined;
+  /**
+   * Keep a main-owned view painting while it is not on screen (parked under
+   * the machine view); returns the release, or undefined when not main-owned.
+   */
+  holdDrawing(webContentsId: number): (() => void) | undefined;
+}
+
+/**
  * Service for managing CDP connections to embedded browser webviews.
  *
  * Responsibilities:
@@ -227,6 +244,8 @@ type ClaimTabResult =
 class EmbeddedBrowserCdpService {
   /** Map of tabId -> webContentsId */
   private tabRegistry = new Map<string, number>();
+  /** Main-owned browser views, when the BrowserViewService is running. */
+  private mainOwnedViews: MainOwnedBrowserViews | null = null;
   private registeredWorkspaceOwners = new Map<
     number,
     {
@@ -549,8 +568,26 @@ class EmbeddedBrowserCdpService {
     return Math.max(LIST_TABS_TIMEOUT_MS, Math.min(ADOPTED_LIST_TABS_TIMEOUT_MS, halfRemaining));
   }
 
+  /** Connect (or, with null, disconnect) the main-owned browser views. */
+  setMainOwnedBrowserViews(views: MainOwnedBrowserViews | null): void {
+    this.mainOwnedViews = views;
+  }
+
+  /** A browser-tab page: a `<webview>` guest or a main-owned browser view. */
+  private isBrowserTabContents(wc: WebContents): boolean {
+    return wc.getType() === 'webview' || (this.mainOwnedViews?.owns(wc.id) ?? false);
+  }
+
+  /** The app renderer showing a tab page: the guest's host, or the view's machine view. */
+  private hostOf(wc: WebContents): WebContents | undefined {
+    const host = wc.hostWebContents ?? this.mainOwnedViews?.hostFor(wc.id);
+    return host && !host.isDestroyed() ? host : undefined;
+  }
+
   /**
-   * Register a browser tab for CDP access
+   * Register a browser tab for CDP access. A main-owned view registers when
+   * it is created and again after it moves to another window, so the
+   * workspace binding follows the new host.
    */
   registerTab(tabId: string, webContentsId: number, workspaceId?: string): void {
     // A dom-ready registration can arrive after its guest has already died.
@@ -563,7 +600,7 @@ class EmbeddedBrowserCdpService {
       hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
-    const host = wc.hostWebContents;
+    const host = this.hostOf(wc);
     const binding = host && getStrictBackendBindingForWebContents(host);
     if (workspaceId && host && binding) {
       this.registeredWorkspaceOwners.set(webContentsId, { workspaceId, host, binding });
@@ -784,7 +821,7 @@ class EmbeddedBrowserCdpService {
     const contents = webContents.fromId(webContentsId);
     if (!tab || !contents || contents.isDestroyed()) return null;
     const owner = this.registeredWorkspaceOwners.get(webContentsId);
-    const host = contents.hostWebContents;
+    const host = this.hostOf(contents);
     if (
       !owner ||
       !host ||
@@ -812,7 +849,7 @@ class EmbeddedBrowserCdpService {
 
     for (const wc of allWebContents) {
       // Only include webviews (not the main window or other webContents)
-      if (wc.getType() === 'webview' && !wc.isDestroyed()) {
+      if (!wc.isDestroyed() && this.isBrowserTabContents(wc)) {
         const webContentsId = wc.id;
 
         // Try to find the registered tabId, or generate a fallback
@@ -1275,7 +1312,7 @@ class EmbeddedBrowserCdpService {
     if (tabId.startsWith('webview-')) {
       const webContentsId = parseInt(tabId.replace('webview-', ''), 10);
       const wc = webContents.fromId(webContentsId);
-      if (wc && !wc.isDestroyed() && wc.getType() === 'webview') {
+      if (wc && !wc.isDestroyed() && this.isBrowserTabContents(wc)) {
         return webContentsId;
       }
     }
@@ -2301,7 +2338,7 @@ class EmbeddedBrowserCdpService {
     // cost is that a hidden app UI reports itself visible for the duration
     // of the capture (presence is told to ignore it); a visible window is
     // unaffected.
-    const targets = [guest, guest.hostWebContents].filter(
+    const targets = [guest, this.hostOf(guest)].filter(
       (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
     );
     const held: Electron.WebContents[] = [];
@@ -2326,6 +2363,18 @@ class EmbeddedBrowserCdpService {
         });
       }
     }
+    // A main-owned view that is not on screen does not paint at all: park
+    // it under its window's machine view for the hold (BrowserViewService).
+    // Taken after the throttling holds above and released after them.
+    let releaseParking: (() => void) | undefined;
+    try {
+      releaseParking = this.mainOwnedViews?.holdDrawing(webContentsId);
+    } catch (error) {
+      logger.debug('Could not park a browser view for drawing', {
+        webContentsId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     let released = false;
     return () => {
       if (released) return;
@@ -2345,6 +2394,7 @@ class EmbeddedBrowserCdpService {
           // A webContents torn down mid-capture has nothing left to restore.
         }
       }
+      releaseParking?.();
     };
   }
 
@@ -2434,10 +2484,7 @@ class EmbeddedBrowserCdpService {
         guest.once('destroyed', onDestroyed);
         entry.guest = {
           webContentsId,
-          host:
-            guest.hostWebContents && !guest.hostWebContents.isDestroyed()
-              ? guest.hostWebContents
-              : undefined,
+          host: this.hostOf(guest),
           release: this.holdCaptureDrawing(webContentsId),
           detach: () => guest.removeListener('destroyed', onDestroyed),
         };

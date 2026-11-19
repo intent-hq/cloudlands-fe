@@ -44,6 +44,8 @@ export const LOCAL_PREF_KEYS = [
   'machineRailEnabled',
   // Recent-agent switcher
   'recentAgents',
+  // Main-owned browser views (Labs)
+  'browserViewsInMainEnabled',
   // Window chrome, release notes, feature codes
   'menuBarAutoHide',
   'lastSeenReleaseNotesVersion',
