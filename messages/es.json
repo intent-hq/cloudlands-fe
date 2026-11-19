@@ -6949,6 +6949,7 @@
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Clonando submódulos ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "Clonando submódulos…",
   "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
   "workspace_compactInitializer_progressWorktree_label": "Creando el árbol de trabajo…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt mejorado",
   "workspace_compactInitializer_repository_label": "Base de código",

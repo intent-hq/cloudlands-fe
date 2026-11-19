@@ -6949,6 +6949,7 @@
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Submodules ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "Cloning submodules…",
   "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
   "workspace_compactInitializer_progressWorktree_label": "Creating worktree…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt enhanced",
   "workspace_compactInitializer_repository_label": "Codebase",

@@ -14881,6 +14881,42 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
     });
   });
 
+  it('keeps transfer counters on receiving frames only', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(beginWorkspaceCreateProgress(PROGRESS_ID));
+    const transfer = {
+      receivedObjects: 5,
+      totalObjects: 10,
+      receivedBytes: 100,
+      bytesPerSecond: 50,
+    };
+
+    handler(
+      cloneNotification('git:clone:progress', {
+        progressId: PROGRESS_ID,
+        phase: 'receiving',
+        percent: 30,
+        transfer,
+      }),
+    );
+    expect(selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)?.transfer).toEqual(
+      transfer,
+    );
+
+    handler(
+      cloneNotification('git:clone:progress', {
+        progressId: PROGRESS_ID,
+        phase: 'submodules',
+        percent: 72,
+        transfer,
+      }),
+    );
+    expect(
+      selectWorkspaceCreateProgress.select(appStore.state, PROGRESS_ID)?.transfer,
+    ).toBeUndefined();
+  });
+
   it('marks the entry terminal on git:clone:done with ok', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

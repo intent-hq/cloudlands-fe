@@ -6949,6 +6949,7 @@
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Submodule werden geklont ({current}/{total})…",
   "workspace_compactInitializer_progressSubmodules_label": "Submodule werden geklont…",
   "workspace_compactInitializer_progressWithPercent_label": "{label} {percent}",
+  "workspace_compactInitializer_progressTransfer_label": "{received} · {rate}",
   "workspace_compactInitializer_progressWorktree_label": "Worktree wird erstellt…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt verbessert",
   "workspace_compactInitializer_repository_label": "Codebasis",

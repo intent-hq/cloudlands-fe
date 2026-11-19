@@ -1,4 +1,15 @@
 /**
+ * git's download counters on `receiving` frames (PROTOCOL §6.5 `transfer`).
+ * The byte fields appear once git prints its throughput (about 1 s in).
+ */
+export interface WorkspaceCreateTransfer {
+  receivedObjects: number;
+  totalObjects: number;
+  receivedBytes?: number;
+  bytesPerSecond?: number;
+}
+
+/**
  * Transient provisioning-progress state for in-flight `workspace.create`
  * calls, keyed by the FE-minted `progressId` the daemon echoes on
  * `git:clone:progress` / `git:clone:done` frames (PROTOCOL §5.1 / §6.5).
@@ -12,6 +23,8 @@ export interface WorkspaceCreateProgressEntry {
   percent: number;
   /** Optional human-readable progress line from the daemon. */
   message?: string;
+  /** Download counters from the latest frame; absent outside `receiving`. */
+  transfer?: WorkspaceCreateTransfer;
   /**
    * True once at least one daemon frame (progress or done) arrived for this
    * entry — distinguishes live daemon-driven progress from the placeholder
