@@ -348,17 +348,18 @@ class AutoUpdateService {
    */
   private async loadTelemetrySettings(): Promise<void> {
     try {
-      const { getLocalPref, setLocalPref } = await import('../../../main/local-prefs');
+      const { getBooleanLocalPref, getLocalPref, setLocalPref } =
+        await import('../../../main/local-prefs');
       const [share, lastDay, lastWeek, lastMonth, storedFirstSeen, storedEstimated] =
         await Promise.all([
-          getLocalPref<unknown>(SHARE_UPDATE_STATISTICS_PREF),
+          getBooleanLocalPref(SHARE_UPDATE_STATISTICS_PREF, { default: true, onError: false }),
           getLocalPref<unknown>(LAST_UPDATE_CHECK_DAY_PREF),
           getLocalPref<unknown>(LAST_UPDATE_WEEK_PREF),
           getLocalPref<unknown>(LAST_UPDATE_MONTH_PREF),
           getLocalPref<unknown>(FIRST_SEEN_DAY_PREF),
           getLocalPref<unknown>(FIRST_SEEN_ESTIMATED_PREF),
         ]);
-      this.state.shareStatistics = share !== false;
+      this.state.shareStatistics = share;
       this.lastSuccessfulCheckDay = typeof lastDay === 'string' ? lastDay : null;
       this.lastSuccessfulCheckWeek = typeof lastWeek === 'string' ? lastWeek : null;
       this.lastSuccessfulCheckMonth = typeof lastMonth === 'string' ? lastMonth : null;

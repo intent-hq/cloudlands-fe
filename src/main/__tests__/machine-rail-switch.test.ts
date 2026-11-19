@@ -144,9 +144,9 @@ vi.mock('../offscreen-window', () => ({
 const railPref = vi.hoisted(() => ({ value: true as unknown }));
 
 vi.mock('../local-prefs', () => ({
-  getStrictLocalPref: async () => {
-    if (railPref.value instanceof Error) throw railPref.value;
-    return railPref.value;
+  getBooleanLocalPref: async (_key: string, policy: { default: boolean; onError: boolean }) => {
+    if (railPref.value instanceof Error) return policy.onError;
+    return railPref.value ?? policy.default;
   },
   setLocalPref: async () => {},
 }));

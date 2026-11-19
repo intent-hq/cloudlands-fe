@@ -10,7 +10,7 @@
  * a feature forces a choice: keep a reader, or move the key to
  * `RETIRED_LOCAL_PREF_KEYS` so startup deletes it.
  *
- * A read is a call to `getLocalPref`, `getStrictLocalPref` or `hasLocalPref`
+ * A read is a call to `getLocalPref`, `getBooleanLocalPref` or `hasLocalPref`
  * outside `local-prefs.ts`, with the key resolved through the checker, or a
  * reference to an exported `local-prefs.ts` helper that reads the key.
  */
@@ -24,7 +24,7 @@ import { LOCAL_PREF_KEYS, RETIRED_LOCAL_PREF_KEYS } from '../local-pref-keys';
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const LOCAL_PREFS = path.join(ROOT, 'src', 'main', 'local-prefs.ts');
 const MAIN_INDEX = path.join(ROOT, 'src', 'main', 'index.ts');
-const GENERIC_READERS = new Set(['getLocalPref', 'getStrictLocalPref', 'hasLocalPref']);
+const GENERIC_READERS = new Set(['getLocalPref', 'getBooleanLocalPref', 'hasLocalPref']);
 const REGISTERED = new Set<string>(LOCAL_PREF_KEYS);
 
 interface ReadSite {
@@ -321,7 +321,7 @@ describe('local-prefs key registry', () => {
       orphaned,
       'These keys have no production reader. Keep a reader, or move them to ' +
         'RETIRED_LOCAL_PREF_KEYS in src/main/local-pref-keys.ts so startup deletes them. ' +
-        'Reads are found in getLocalPref / getStrictLocalPref / hasLocalPref calls with a ' +
+        'Reads are found in getLocalPref / getBooleanLocalPref / hasLocalPref calls with a ' +
         'literal key (or a const holding one), and in references to an exported ' +
         'local-prefs.ts function that reads the key itself; a read hidden behind an ' +
         'unexported local-prefs.ts function is not followed.',
@@ -338,16 +338,21 @@ describe('local-prefs key registry', () => {
     expect(unknown).toEqual([]);
   });
 
-  it('compiles registered keys only', () => {
+  it('compiles registered keys only, and boolean settings only through getBooleanLocalPref', () => {
     const probe = path.join(ROOT, 'src', 'main', '__local-pref-keys-probe__.ts');
     const calls = [
       `getLocalPref('menuBarAutoHide')`,
+      `getBooleanLocalPref('dockEnabled', { default: true, onError: false })`,
       `setLocalPref('notARegisteredKey', 1)`,
       `deleteLocalPref('browserAccess.accessKey')`,
       `hasLocalPref(String('featureCodes'))`,
+      `getLocalPref('dockEnabled')`,
+      `hasLocalPref('machineRailEnabled')`,
+      `getBooleanLocalPref('menuBarAutoHide', { default: false, onError: false })`,
+      `getBooleanLocalPref('keychainSyncEnabled', { default: true })`,
     ];
     const lines = [
-      `import { deleteLocalPref, getLocalPref, hasLocalPref, setLocalPref } from './local-prefs';`,
+      `import { deleteLocalPref, getBooleanLocalPref, getLocalPref, hasLocalPref, setLocalPref } from './local-prefs';`,
       ...calls.map((call) => `void ${call};`),
     ];
     const probeProgram = createProgram(new Map([[probe, lines.join('\n')]]));
@@ -357,7 +362,7 @@ describe('local-prefs key registry', () => {
         const { line } = diagnostic.file!.getLineAndCharacterOfPosition(diagnostic.start!);
         return calls[line - 1];
       });
-    expect(failing).toEqual(calls.slice(1));
+    expect(failing).toEqual(calls.slice(2));
   });
 
   it('keeps each key in exactly one list', () => {

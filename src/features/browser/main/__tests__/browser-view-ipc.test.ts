@@ -52,7 +52,14 @@ vi.mock('electron', () => {
 });
 
 vi.mock('../../../../main/local-prefs', () => ({
-  getLocalPref: vi.fn(async (key: string) => mocks.prefs.get(key)),
+  // An Error value stands for a prefs file that cannot be read.
+  getBooleanLocalPref: vi.fn(
+    async (key: string, policy: { default: boolean; onError: boolean }) => {
+      const value = mocks.prefs.get(key);
+      if (value instanceof Error) return policy.onError;
+      return (value as boolean | undefined) ?? policy.default;
+    },
+  ),
   setLocalPref: vi.fn(async (key: string, value: unknown) => mocks.prefs.set(key, value)),
 }));
 vi.mock('../../../../main/frames', () => ({
@@ -185,6 +192,20 @@ describe('browser view IPC', () => {
         active: false,
       });
       await expect(invoke(CH.CREATE, next, CREATE)).rejects.toThrow('off');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('stays off on Intent OS when the prefs file cannot be read', async () => {
+    vi.stubEnv('INTENT_OS', '1');
+    mocks.prefs.set('browserViewsInMainEnabled', new Error('malformed'));
+    try {
+      await register();
+      await expect(invoke(CH.GET_LAB, renderer(fakeWindow()), undefined)).resolves.toEqual({
+        enabled: false,
+        active: false,
+      });
     } finally {
       vi.unstubAllEnvs();
     }
