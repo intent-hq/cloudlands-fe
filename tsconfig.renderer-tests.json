@@ -7,12 +7,15 @@
   // imported through svelte's `*.svelte` module shim, so component props are not checked
   // here (svelte-check covers the components); Playwright `*.spec.ts` files are not unit tests.
   // checkJs is off: tests are TypeScript, and the JS they import (eslint-rules, scripts)
-  // is not renderer code.
+  // is not renderer code. Errors in TypeScript the tests import outside the renderer
+  // program (e.g. src/features/agent/testing harnesses) are baselined under that file.
+  // `@sveltejs/kit` declares `$app/*` without the generated .svelte-kit/ (no sync needed).
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "incremental": false,
-    "checkJs": false
+    "checkJs": false,
+    "types": ["vite/client", "svelte", "node", "vitest/globals", "@sveltejs/kit"]
   },
   "include": [
     "src/**/*.d.ts",
