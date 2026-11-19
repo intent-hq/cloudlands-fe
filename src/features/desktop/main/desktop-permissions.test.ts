@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
-import { DesktopNativeAdapter } from './desktop-native';
+import { DesktopNativeAdapter, type NativeRequest } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { requestDesktopPermissions, requestLocalDesktopPermissions } from './desktop-permissions';
@@ -181,7 +181,7 @@ const pending = { accessibility: true, screenRecording: true, screenCapture: 'pe
 const ready = { accessibility: true, screenRecording: true, screenCapture: 'ready' };
 /** A helper whose capture check settles only when the same id asks again. */
 function helper(...answers: unknown[]) {
-  const request = vi.fn(async (operation: string) => {
+  const request = vi.fn<NativeRequest>(async (operation) => {
     if (operation === 'identity')
       return { computerId: 'local', computerName: 'Mac', platform: 'macos' };
     const answer = answers.length > 1 ? answers.shift() : answers[0];

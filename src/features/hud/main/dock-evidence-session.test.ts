@@ -129,7 +129,10 @@ describe('dock evidence capture ownership', () => {
       capturedAt: '2026-10-29T00:00:00.000Z',
       hash: 'a'.repeat(64),
     };
-    f.deps.captureVisible = vi.fn(async () => ({ ok: true, value: pixels }));
+    f.deps.captureVisible = vi.fn<NonNullable<typeof f.deps.captureVisible>>(async () => ({
+      ok: true,
+      value: pixels,
+    }));
     const result = await f.manager.capture(f.owner, { ...f.scope, requestId: 'still' });
     expect(f.deps.captureVisible).toHaveBeenCalledExactlyOnceWith(
       f.window,

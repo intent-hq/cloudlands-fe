@@ -26,7 +26,18 @@ import {
   DOCK_ANNOTATION_CHANNELS,
   type DockAnnotationIssue,
 } from '../../../shared/dock-annotation';
-import type { DockEvidenceNativeEvent, DockMarkTool } from '../../../shared/dock-evidence';
+import type {
+  DockEvidenceErrorCode,
+  DockEvidenceNativeEvent,
+  DockMarkTool,
+} from '../../../shared/dock-evidence';
+import type { DockCursorController } from '../../../main/dock-cursor';
+
+/** What a successful capture reports besides its pixels. */
+type CapturedShot = Omit<
+  Extract<Awaited<ReturnType<DockAnnotationHost['capture']>>, { ok: true }>['value'],
+  'png'
+>;
 
 // A secondary Retina display left of and above the primary (negative origin).
 const DISPLAY = {
@@ -108,8 +119,8 @@ function setup(
   let holdCaptures = false;
   const io = {
     hit: options.hit ?? ((() => noHit) as Hit),
-    shot: { width: 2880, height: 1800 } as Record<string, unknown>,
-    captureError: null as null | 'permission' | 'unavailable',
+    shot: { width: 2880, height: 1800 } as CapturedShot,
+    captureError: null as null | DockEvidenceErrorCode,
     onCaptured: () => {},
   };
   const host: DockAnnotationHost & {
@@ -147,12 +158,7 @@ function setup(
   const timers: { callback: () => void; ms: number }[] = [];
   const cursorOwners: Array<{
     window: unknown;
-    updates: Array<{
-      enabled: boolean;
-      regions: unknown[];
-      excludedRegions: unknown[];
-      revision: number;
-    }>;
+    updates: Array<Parameters<DockCursorController['update']>[0]>;
     changes: Array<{ type: string; custom: unknown }>;
     disposed: number;
   }> = [];
@@ -1245,7 +1251,7 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
   it('never drops a drawn mark silently: a failed capture tells the dock', async () => {
     const t = setup();
     await t.start('live', 'box');
-    t.io.captureError = 'failed' as never;
+    t.io.captureError = 'failed';
     expect(
       await t.gesture(
         [

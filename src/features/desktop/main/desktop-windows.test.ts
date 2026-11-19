@@ -89,7 +89,8 @@ describe('session window ids', () => {
   it('are opaque, stable per window and never shared across sessions', () => {
     const first = new DesktopWindowIds();
     const a = first.idFor(safari);
-    expect(first.idFor({ ...safari, x: 0 })).toBe(a);
+    const moved = { ...safari, x: 0 };
+    expect(first.idFor(moved)).toBe(a);
     expect(first.idFor(slack)).not.toBe(a);
     expect(first.keyFor(a)).toBe(windowKey(safari));
     const second = new DesktopWindowIds();
