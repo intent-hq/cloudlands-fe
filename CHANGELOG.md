@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.357.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.1...v2.357.2) (2026-11-19)
+
+
+### 🐛 Bug Fixes
+
+* record recent agents when the window is in use per main ([#4802](https://github.com/intent-hq/cloudlands-fe/issues/4802)) ([6281be5](https://github.com/intent-hq/cloudlands-fe/commit/6281be53a4999dd0b1bbad3e67215346f01999d8))
+
 ## [2.357.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.0...v2.357.1) (2026-11-19)
 
 
