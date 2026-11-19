@@ -9,6 +9,7 @@ import {
   type HomePersistenceDocument,
   normalizeHomeSetAside,
   normalizeHomeHiddenRepos,
+  normalizeHomeRemovedRepos,
   type HomeSetAsideRecord,
 } from './home-workspaces-persistence';
 
@@ -22,6 +23,8 @@ export interface HomeWorkspacesState extends HomeConfiguration {
   setAside: Record<string, HomeSetAsideRecord>;
   /** Repositories hidden from the Home sidebar; see `HomePersistenceDocument.hiddenRepos`. */
   hiddenRepos: Record<string, number>;
+  /** Deleted local folders; see `HomePersistenceDocument.removedRepos`. */
+  removedRepos: string[];
 }
 const initialState: HomeWorkspacesState = {
   ...defaultHomeConfiguration(),
@@ -31,6 +34,7 @@ const initialState: HomeWorkspacesState = {
   previewAgentIds: {},
   setAside: {},
   hiddenRepos: {},
+  removedRepos: [],
 };
 export const updateHomeWorkspaceView = createAction<[changes: Partial<HomeWorkspacesState>]>(
   'homeWorkspaces/updateView',
@@ -56,6 +60,7 @@ homeWorkspacesReducer.with(resetHomeWorkspaceView, (state) => ({
   persistenceScope: state.persistenceScope,
   setAside: state.setAside,
   hiddenRepos: state.hiddenRepos,
+  removedRepos: state.removedRepos,
 }));
 
 export const hydrateHomeWorkspaceSettings = createAction<
@@ -71,6 +76,7 @@ homeWorkspacesReducer.with(
     ...settings.configuration,
     setAside: settings.setAside ?? {},
     hiddenRepos: settings.hiddenRepos ?? {},
+    removedRepos: settings.removedRepos ?? [],
     persistenceScope: scope,
   }),
 );
@@ -158,37 +164,69 @@ export const homeRepositoryHidden = createAction(
   'homeWorkspaces/repositoryHidden',
   (key: string, newest: number) => ({ key, newest }),
 );
+/** Like a hide, but the deleted local folder stays out of the Hidden section too. */
+export const homeRepositoryRemoved = createAction(
+  'homeWorkspaces/repositoryRemoved',
+  (key: string, newest: number) => ({ key, newest }),
+);
 /** Unhide repositories: explicitly, or because they gained a newer workspace. */
 export const homeRepositoriesUnhidden = createAction(
   'homeWorkspaces/repositoriesUnhidden',
   (keys: string[]) => ({ keys }),
 );
-homeWorkspacesReducer.with(homeRepositoryHidden, (state, { payload: { key, newest } }) => {
+function hideRepository(
+  state: HomeWorkspacesState,
+  key: string,
+  newest: number,
+  removed: boolean,
+): HomeWorkspacesState {
   const hiddenRepos = { ...state.hiddenRepos };
   // Re-adding keeps the newest hides last, so capacity drops the oldest.
   delete hiddenRepos[key];
   hiddenRepos[key] = newest;
-  return { ...state, hiddenRepos };
-});
-homeWorkspacesReducer.with(homeRepositoriesUnhidden, (state, { payload: { keys } }) => {
+  const others = state.removedRepos.filter((candidate) => candidate !== key);
+  return {
+    ...state,
+    hiddenRepos,
+    removedRepos: normalizeHomeRemovedRepos(removed ? [...others, key] : others, hiddenRepos),
+  };
+}
+function unhideRepositories(state: HomeWorkspacesState, keys: string[]): HomeWorkspacesState {
   if (!keys.some((key) => key in state.hiddenRepos)) return state;
   const hiddenRepos = { ...state.hiddenRepos };
   for (const key of keys) delete hiddenRepos[key];
-  return { ...state, hiddenRepos };
-});
+  return {
+    ...state,
+    hiddenRepos,
+    removedRepos: normalizeHomeRemovedRepos(state.removedRepos, hiddenRepos),
+  };
+}
+homeWorkspacesReducer.with(homeRepositoryHidden, (state, { payload: { key, newest } }) =>
+  hideRepository(state, key, newest, false),
+);
+homeWorkspacesReducer.with(homeRepositoryRemoved, (state, { payload: { key, newest } }) =>
+  hideRepository(state, key, newest, true),
+);
+homeWorkspacesReducer.with(homeRepositoriesUnhidden, (state, { payload: { keys } }) =>
+  unhideRepositories(state, keys),
+);
 // A refused Delete brings back the folder it hid.
-homeWorkspacesReducer.with(recentRepositoryRemovalFailed, (state, { payload: [, hiddenKey] }) => {
-  if (!hiddenKey || !(hiddenKey in state.hiddenRepos)) return state;
-  const hiddenRepos = { ...state.hiddenRepos };
-  delete hiddenRepos[hiddenKey];
-  return { ...state, hiddenRepos };
-});
+homeWorkspacesReducer.with(recentRepositoryRemovalFailed, (state, { payload: [, hiddenKey] }) =>
+  hiddenKey ? unhideRepositories(state, [hiddenKey]) : state,
+);
 /** Another app window saved newer hidden repositories for this scope. */
 export const homeHiddenReposSynced = createAction<
-  [scope: string, hiddenRepos: Record<string, number>]
+  [scope: string, hiddenRepos: Record<string, number>, removedRepos: string[]]
 >('homeWorkspaces/hiddenReposSynced');
-homeWorkspacesReducer.with(homeHiddenReposSynced, (state, { payload: [scope, hiddenRepos] }) =>
-  state.persistenceScope === scope
-    ? { ...state, hiddenRepos: normalizeHomeHiddenRepos(hiddenRepos) }
-    : state,
+homeWorkspacesReducer.with(
+  homeHiddenReposSynced,
+  (state, { payload: [scope, hiddenRepos, removedRepos] }) => {
+    if (state.persistenceScope !== scope) return state;
+    const hidden = normalizeHomeHiddenRepos(hiddenRepos);
+    return {
+      ...state,
+      hiddenRepos: hidden,
+      removedRepos: normalizeHomeRemovedRepos(removedRepos, hidden),
+    };
+  },
 );

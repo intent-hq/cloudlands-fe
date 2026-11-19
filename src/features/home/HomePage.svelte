@@ -45,6 +45,7 @@
     HOME_HIDDEN_REPOS_GROUP,
     hiddenHomeRepositories,
     isHomeRepositoryHidden,
+    readdedHomeRepositories,
     revivedHomeRepositories,
   } from './home-hidden-repos';
   import { createHomeRepositoryMenu } from './home-repository-menu';
@@ -308,8 +309,14 @@
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
   // Hidden repositories leave the sidebar only; their workspaces stay in All repos.
   const hiddenRepos = $derived($view$.hiddenRepos ?? {});
+  const removedRepos = $derived($view$.removedRepos ?? []);
   $effect(() => {
-    const revived = revivedHomeRepositories(hiddenRepos, repositoryGroups);
+    const revived = [
+      ...revivedHomeRepositories(hiddenRepos, repositoryGroups),
+      ...($collaborator$
+        ? []
+        : readdedHomeRepositories(hiddenRepos, removedRepos, repositoryGroups, $knownRepos$)),
+    ];
     if (revived.length) untrack(() => store.dispatch(homeRepositoriesUnhidden(revived)));
   });
   // Counts and triage describe active work.
@@ -351,7 +358,9 @@
     }
     return { groups, unassigned };
   });
-  const hiddenSidebarRepos = $derived(hiddenHomeRepositories(hiddenRepos, repositoryGroups));
+  const hiddenSidebarRepos = $derived(
+    hiddenHomeRepositories(hiddenRepos, repositoryGroups, removedRepos),
+  );
   const hiddenReposExpanded = $derived($view$.expandedGroups[HOME_HIDDEN_REPOS_GROUP] === true);
   const selectedOrg = $derived(sidebar.groups.find((group) => `sidebar:${group.key}` === repoKey));
   const scopedWorkspaces = $derived(

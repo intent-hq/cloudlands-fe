@@ -61,12 +61,12 @@ describe('createHomeRepositoryMenu', () => {
     ]);
   });
 
-  it('also hides a deleted local folder that still has workspaces', () => {
+  it('removes a deleted local folder that still has workspaces, not just hides it', () => {
     const workspace = { createdAt: '2026-09-01T00:00:00Z' } as Workspace;
     const { entries } = menu({ ...local, workspaces: [workspace] });
     const actions = dispatched(() => item(entries, 'delete').onClick?.());
     expect(actions.map((action) => action.type)).toEqual([
-      'homeWorkspaces/repositoryHidden',
+      'homeWorkspaces/repositoryRemoved',
       'knownRepos/removeRecentRepository',
     ]);
     expect(actions[1]!.payload).toEqual(['/repos/tools', '/repos/tools']);

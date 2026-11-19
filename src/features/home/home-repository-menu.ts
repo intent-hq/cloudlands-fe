@@ -5,7 +5,11 @@ import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import { removeRecentRepository } from '$store/renderer/slices/known-repos/known-repos-slice';
 import { newestHomeRepositoryWorkspace } from './home-hidden-repos';
-import { homeRepositoriesUnhidden, homeRepositoryHidden } from './home-workspaces-slice';
+import {
+  homeRepositoriesUnhidden,
+  homeRepositoryHidden,
+  homeRepositoryRemoved,
+} from './home-workspaces-slice';
 
 export interface HomeRepositoryMenuOptions {
   repo: RepositoryGroup;
@@ -30,8 +34,8 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
     options.onClose();
     action();
   };
-  const hide = () =>
-    store.dispatch(homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)));
+  const newest = () => newestHomeRepositoryWorkspace(repo.workspaces);
+  const hide = () => store.dispatch(homeRepositoryHidden(repo.key, newest()));
   return [
     ...(options.canCreate
       ? [
@@ -60,9 +64,10 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
             disabled: !options.loaded,
             onClick: then(() => {
               options.onLeave();
-              // Existing workspaces would keep the folder listed, so it is also hidden.
+              // Existing workspaces would keep the folder listed, so it is also removed
+              // from the sidebar; the workspaces stay in All repos.
               const hidden = repo.workspaces.length > 0;
-              if (hidden) hide();
+              if (hidden) store.dispatch(homeRepositoryRemoved(repo.key, newest()));
               if (repo.repoPath)
                 store.dispatch(
                   hidden
