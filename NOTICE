@@ -39,3 +39,13 @@ The inline visual runtime's 20000px content-fit bound
   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   SOFTWARE.
+
+Bundled helper:
+
+Linux builds bundle the intent-passkey helper
+(resources/intent-passkey/intent-passkey), built from the public
+intent-hq/intentd repository (crates/intent-passkey). It statically links
+libwebauthn (https://github.com/linux-credentials/libwebauthn), licensed under
+the GNU Lesser General Public License, version 2.1 or later. The complete
+source of the helper and of libwebauthn is public, and users may rebuild and
+replace the helper binary.

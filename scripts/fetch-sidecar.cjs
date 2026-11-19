@@ -15,7 +15,9 @@
  *                     linux-arm64 sidecar on an x64 runner); must be one of the
  *                     TARGET_BY_PLATFORM_ARCH values in fetch-sidecar-lib.mjs
  *   INTENTD_REPO      override the source repo (default intent-hq/intentd)
- *   INTENTD_APP_NAME  override the cargo-dist app/binary name (testing only)
+ *   INTENTD_APP_NAME  override the cargo-dist app/binary name (testing, and
+ *                     scripts/fetch-intent-passkey.cjs for the passkey helper)
+ *   INTENTD_DEST_DIR  override the staging directory (default resources/sidecar)
  *
  * Flags: --force re-fetches even when the staged sidecar already matches the pin.
  *
@@ -30,7 +32,7 @@ const { pathToFileURL } = require('node:url');
 
 const FE_DIR = path.resolve(__dirname, '..');
 const PIN_FILE = path.join(FE_DIR, 'intentd.version');
-const DEST_DIR = path.join(FE_DIR, 'resources/sidecar');
+const DEST_DIR = path.resolve(FE_DIR, process.env.INTENTD_DEST_DIR?.trim() || 'resources/sidecar');
 const STAMP_FILE = path.join(DEST_DIR, '.intentd-fetch-stamp.json');
 const REPO = process.env.INTENTD_REPO?.trim() || 'intent-hq/intentd';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);

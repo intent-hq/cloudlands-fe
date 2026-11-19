@@ -337,6 +337,22 @@ export const IPC_CHANNELS = {
     DISMISS: 'invite-notice:dismiss',
   },
 
+  // Browser panel passkeys (Linux). Payload contracts live in src/shared/ipc/passkeys.ts.
+  PASSKEYS: {
+    /** Browser-panel frame preload → main (invoke): navigator.credentials.create. */
+    PAGE_CREATE: 'passkeys:page-create',
+    /** Browser-panel frame preload → main (invoke): navigator.credentials.get. */
+    PAGE_GET: 'passkeys:page-get',
+    /** Browser-panel frame preload → main (invoke): the page aborted its request. */
+    PAGE_CANCEL: 'passkeys:page-cancel',
+    /** Main → host renderer: show or update the passkey dialog. */
+    DIALOG_SHOW: 'passkeys:dialog-show',
+    /** Main → host renderer: close the passkey dialog. */
+    DIALOG_CLOSE: 'passkeys:dialog-close',
+    /** Host renderer → main (invoke): the user answered the passkey dialog. */
+    DIALOG_RESPOND: 'passkeys:dialog-respond',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',

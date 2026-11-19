@@ -28,6 +28,8 @@ files:
   - '!resources/sidecar/**'
   # tailcat ships via extraResources (tailcat/), not asar.
   - '!resources/tailcat/**'
+  # intent-passkey ships via linux.extraResources (intent-passkey/), not asar.
+  - '!resources/intent-passkey/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - '!resources/speech-helper/**'
   - '!resources/dock-helper/**'
@@ -221,6 +223,15 @@ portable:
 linux:
   icon: src/assets/icons/icon.png
   category: Development
+  # Browser-panel passkey helper (staged by scripts/fetch-intent-passkey.cjs;
+  # the directory may be empty, then the build ships without passkeys).
+  # Runtime path: process.resourcesPath/intent-passkey/intent-passkey
+  extraResources:
+    - from: 'resources/intent-passkey/linux-${arch}'
+      to: intent-passkey
+      filter:
+        - '**/*'
+        - '!.intentd-fetch-stamp.json'
   target:
     - target: AppImage
       arch:

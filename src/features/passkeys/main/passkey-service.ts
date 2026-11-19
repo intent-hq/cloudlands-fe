@@ -1,0 +1,460 @@
+import { randomUUID } from 'node:crypto';
+import type { IpcMainInvokeEvent, Session, WebContents } from 'electron';
+import { z } from 'zod';
+import { Logger } from '../../../shared/logger';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import type {
+  PasskeyCeremonyKind,
+  PasskeyDialogView,
+  PasskeyErrorReason,
+  PasskeyPageCreateOptions,
+  PasskeyPageErrorName,
+  PasskeyPageGetOptions,
+  PasskeyPageResult,
+  PasskeyProgress,
+  PasskeyTransport,
+} from '../../../shared/ipc/passkeys';
+import { checkFrameOrigin, isValidRpIdForHost } from './passkey-origin';
+import { SidecarError, type PasskeySidecar, type SidecarEvent } from './passkey-sidecar';
+import {
+  assertedCredential,
+  buildClientDataJSON,
+  ceremonyTimeoutMs,
+  createdCredential,
+  createParams,
+  dialogErrorReason,
+  getParams,
+  pageErrorName,
+  sha256Base64Url,
+  type SidecarCreateResult,
+  type SidecarGetResult,
+} from './passkey-wire';
+
+const logger = new Logger('Passkeys');
+const CHANNELS = IPC_CHANNELS.PASSKEYS;
+
+const base64url = z.string().regex(/^[A-Za-z0-9_-]*$/).max(16_384);
+const descriptor = z.object({ id: base64url, transports: z.array(z.string().max(32)).max(8).optional() });
+const optionalText = z.string().max(256).optional();
+
+const CreateRequestSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  publicKey: z.object({
+    challenge: base64url.min(1),
+    rp: z.object({ id: optionalText, name: z.string().max(256) }),
+    user: z.object({ id: base64url.min(1), name: z.string().max(256), displayName: z.string().max(256) }),
+    pubKeyCredParams: z.array(z.object({ type: z.string(), alg: z.number().int() })).max(32),
+    excludeCredentials: z.array(descriptor).max(256).optional(),
+    authenticatorSelection: z
+      .object({
+        residentKey: optionalText,
+        requireResidentKey: z.boolean().optional(),
+        userVerification: optionalText,
+        authenticatorAttachment: optionalText,
+      })
+      .optional(),
+    attestation: optionalText,
+    extensions: z.object({ credProps: z.boolean().optional() }).optional(),
+    timeout: z.number().optional(),
+  }),
+});
+
+const GetRequestSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  publicKey: z.object({
+    challenge: base64url.min(1),
+    rpId: optionalText,
+    allowCredentials: z.array(descriptor).max(256).optional(),
+    userVerification: optionalText,
+    timeout: z.number().optional(),
+  }),
+});
+
+const CancelRequestSchema = z.object({ requestId: z.string().min(1).max(64) });
+
+const DialogResponseSchema = z.discriminatedUnion('action', [
+  z.object({
+    ceremonyId: z.string(),
+    action: z.literal('transport'),
+    transport: z.enum(['hybrid', 'usb']),
+  }),
+  z.object({ ceremonyId: z.string(), action: z.literal('pin'), pin: z.string().min(1).max(256) }),
+  z.object({ ceremonyId: z.string(), action: z.literal('choose'), index: z.number().int().min(0) }),
+  z.object({ ceremonyId: z.string(), action: z.literal('cancel') }),
+]);
+
+const PHONE_PROGRESS = new Set<PasskeyProgress>([
+  'waiting-for-phone',
+  'connecting',
+  'waiting-for-approval',
+  'touch-key',
+  'processing',
+]);
+
+interface Ceremony {
+  id: string;
+  kind: PasskeyCeremonyKind;
+  guest: WebContents;
+  host: WebContents;
+  requestId: string;
+  origin: string;
+  rpId: string;
+  options: PasskeyPageCreateOptions | PasskeyPageGetOptions;
+  clientDataJSON: Buffer;
+  timeoutMs: number;
+  bluetooth: 'on' | 'off' | 'missing';
+  qr: string | null;
+  running: boolean;
+  settled: boolean;
+  /** The dialog is still shown (it can outlive the page request to show an error). */
+  shown: boolean;
+  resolve: (result: PasskeyPageResult) => void;
+  dispose: () => void;
+}
+
+function failure(name: PasskeyPageErrorName, message: string): PasskeyPageResult {
+  return { ok: false, name, message };
+}
+
+/**
+ * Runs WebAuthn ceremonies for browser-panel webviews: one at a time per
+ * webview, with the Intent dialog in the window that hosts the webview.
+ */
+export class PasskeyService {
+  private readonly byId = new Map<string, Ceremony>();
+  private readonly byGuest = new Map<number, Ceremony>();
+  /** Page request ids (per guest) waiting for the helper to start; `true` once aborted. */
+  private readonly starting = new Map<number, { requestId: string; aborted: boolean }>();
+
+  constructor(
+    private readonly sidecar: PasskeySidecar,
+    private readonly browserSession: () => Session,
+  ) {}
+
+  async handlePage(
+    event: IpcMainInvokeEvent,
+    kind: PasskeyCeremonyKind,
+    payload: unknown,
+  ): Promise<PasskeyPageResult> {
+    const parsed =
+      kind === 'create'
+        ? CreateRequestSchema.safeParse(payload)
+        : GetRequestSchema.safeParse(payload);
+    if (!parsed.success) return failure('TypeError', 'Invalid passkey options.');
+    const { requestId, publicKey } = parsed.data;
+
+    const guest = event.sender;
+    const host = guest.hostWebContents;
+    if (guest.getType() !== 'webview' || guest.session !== this.browserSession() || !host) {
+      return failure('NotAllowedError', 'Passkeys are available only in the browser panel.');
+    }
+    const frame = event.senderFrame;
+    if (!frame || frame.isDestroyed()) {
+      return failure('NotAllowedError', 'The document is not active.');
+    }
+    const originCheck = checkFrameOrigin(frame.origin, frame.top?.origin ?? '');
+    if (!originCheck.ok) return failure(originCheck.name, originCheck.message);
+
+    const requestedRpId =
+      kind === 'create'
+        ? (publicKey as PasskeyPageCreateOptions).rp.id
+        : (publicKey as PasskeyPageGetOptions).rpId;
+    const rpId = (requestedRpId ?? originCheck.host).toLowerCase();
+    if (!isValidRpIdForHost(rpId, originCheck.host)) {
+      return failure('SecurityError', 'The RP ID is not valid for this origin.');
+    }
+    if (this.byGuest.has(guest.id) || this.starting.has(guest.id)) {
+      return failure('NotAllowedError', 'A passkey request is already in progress.');
+    }
+
+    const start = { requestId, aborted: false };
+    this.starting.set(guest.id, start);
+    let hello;
+    try {
+      hello = await this.sidecar.start();
+    } catch (error) {
+      logger.warn('Passkey helper unavailable', { error: (error as Error).message });
+      return failure('NotAllowedError', 'Passkeys are not available.');
+    } finally {
+      this.starting.delete(guest.id);
+    }
+    if (start.aborted) return failure('AbortError', 'The operation was aborted.');
+    if (guest.isDestroyed() || host.isDestroyed()) {
+      return failure('NotAllowedError', 'The document is not active.');
+    }
+
+    const clientDataJSON = buildClientDataJSON(
+      kind === 'create' ? 'webauthn.create' : 'webauthn.get',
+      publicKey.challenge,
+      originCheck.origin,
+    );
+    return new Promise<PasskeyPageResult>((resolve) => {
+      const ceremony: Ceremony = {
+        id: randomUUID(),
+        kind,
+        guest,
+        host,
+        requestId,
+        origin: originCheck.origin,
+        rpId,
+        options: publicKey,
+        clientDataJSON,
+        timeoutMs: ceremonyTimeoutMs(publicKey.timeout),
+        bluetooth: hello.bluetooth,
+        qr: null,
+        running: false,
+        settled: false,
+        shown: true,
+        resolve,
+        dispose: () => {},
+      };
+      this.track(ceremony);
+      logger.info('Passkey ceremony started', { ceremonyId: ceremony.id, kind, rpId });
+      this.show(ceremony, {
+        step: 'choose-transport',
+        hybrid:
+          hello.bluetooth === 'on' && hello.transports.hybrid
+            ? 'available'
+            : hello.bluetooth === 'missing'
+              ? 'bluetooth-missing'
+              : 'bluetooth-off',
+      });
+    });
+  }
+
+  handlePageCancel(event: IpcMainInvokeEvent, payload: unknown): void {
+    const parsed = CancelRequestSchema.safeParse(payload);
+    if (!parsed.success) return;
+    const start = this.starting.get(event.sender.id);
+    if (start?.requestId === parsed.data.requestId) start.aborted = true;
+    const ceremony = this.byGuest.get(event.sender.id);
+    if (!ceremony || ceremony.requestId !== parsed.data.requestId) return;
+    this.abort(ceremony, 'AbortError', 'The operation was aborted.');
+  }
+
+  async handleDialog(event: IpcMainInvokeEvent, payload: unknown): Promise<void> {
+    const parsed = DialogResponseSchema.safeParse(payload);
+    if (!parsed.success) return;
+    const response = parsed.data;
+    const ceremony = this.byId.get(response.ceremonyId);
+    if (!ceremony || ceremony.host !== event.sender) return;
+
+    if (response.action === 'cancel') {
+      if (ceremony.settled) this.close(ceremony);
+      else this.abort(ceremony, 'NotAllowedError', 'The user cancelled the request.');
+      return;
+    }
+    if (ceremony.settled) return;
+    try {
+      if (response.action === 'transport') {
+        if (ceremony.running) return;
+        this.begin(ceremony, response.transport);
+      } else if (response.action === 'pin') {
+        this.show(ceremony, { step: 'progress', transport: 'usb', progress: 'processing' });
+        await this.sidecar.request('pin', { ceremony: ceremony.id, pin: response.pin });
+      } else {
+        this.show(ceremony, { step: 'progress', transport: 'usb', progress: 'processing' });
+        await this.sidecar.request('choose', { ceremony: ceremony.id, index: response.index });
+      }
+    } catch (error) {
+      this.fail(ceremony, error);
+    }
+  }
+
+  dispose(): void {
+    for (const ceremony of [...this.byId.values()]) {
+      this.abort(ceremony, 'AbortError', 'The operation was aborted.');
+    }
+    this.sidecar.dispose();
+  }
+
+  private track(ceremony: Ceremony): void {
+    this.byId.set(ceremony.id, ceremony);
+    this.byGuest.set(ceremony.guest.id, ceremony);
+    const onNavigate = (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+      if (details.isMainFrame && !details.isSameDocument) {
+        this.abort(ceremony, 'AbortError', 'The document navigated away.');
+      }
+    };
+    const onGone = () => this.abort(ceremony, 'AbortError', 'The document was closed.');
+    const timer = setTimeout(() => this.timeout(ceremony), ceremony.timeoutMs);
+    ceremony.guest.on('did-start-navigation', onNavigate);
+    ceremony.guest.once('destroyed', onGone);
+    ceremony.host.once('destroyed', onGone);
+    ceremony.dispose = () => {
+      clearTimeout(timer);
+      if (!ceremony.guest.isDestroyed()) {
+        ceremony.guest.off('did-start-navigation', onNavigate);
+        ceremony.guest.off('destroyed', onGone);
+      }
+      if (!ceremony.host.isDestroyed()) ceremony.host.off('destroyed', onGone);
+    };
+  }
+
+  private begin(ceremony: Ceremony, transport: PasskeyTransport): void {
+    if (transport === 'hybrid' && ceremony.bluetooth !== 'on') {
+      this.finish(
+        ceremony,
+        failure('NotAllowedError', 'Bluetooth is not available.'),
+        ceremony.bluetooth === 'missing' ? 'bluetooth-missing' : 'bluetooth-off',
+      );
+      return;
+    }
+    ceremony.running = true;
+    this.show(ceremony, { step: 'progress', transport, progress: 'starting' });
+    const hash = sha256Base64Url(ceremony.clientDataJSON);
+    const params =
+      ceremony.kind === 'create'
+        ? createParams(
+            transport,
+            ceremony.origin,
+            ceremony.rpId,
+            hash,
+            ceremony.options as PasskeyPageCreateOptions,
+            ceremony.timeoutMs,
+          )
+        : getParams(
+            transport,
+            ceremony.origin,
+            ceremony.rpId,
+            hash,
+            ceremony.options as PasskeyPageGetOptions,
+            ceremony.timeoutMs,
+          );
+    this.sidecar
+      .request<SidecarCreateResult | SidecarGetResult>(ceremony.kind, params, {
+        id: ceremony.id,
+        onEvent: (event) => this.onSidecarEvent(ceremony, transport, event),
+      })
+      .then(
+        (result) => {
+          ceremony.running = false;
+          const credential =
+            ceremony.kind === 'create'
+              ? createdCredential(
+                  result as SidecarCreateResult,
+                  ceremony.clientDataJSON,
+                  (ceremony.options as PasskeyPageCreateOptions).extensions?.credProps === true,
+                )
+              : assertedCredential(result as SidecarGetResult, ceremony.clientDataJSON);
+          logger.info('Passkey ceremony finished', { ceremonyId: ceremony.id });
+          this.finish(ceremony, { ok: true, credential }, null);
+        },
+        (error) => {
+          ceremony.running = false;
+          this.fail(ceremony, error);
+        },
+      );
+  }
+
+  private onSidecarEvent(
+    ceremony: Ceremony,
+    transport: PasskeyTransport,
+    event: SidecarEvent,
+  ): void {
+    if (ceremony.settled) return;
+    switch (event.event) {
+      case 'qr':
+        ceremony.qr = event.data;
+        this.show(ceremony, { step: 'qr', data: event.data, progress: 'waiting-for-phone' });
+        return;
+      case 'status': {
+        const progress = PHONE_PROGRESS.has(event.state as PasskeyProgress)
+          ? (event.state as PasskeyProgress)
+          : 'processing';
+        if (progress === 'waiting-for-phone' && ceremony.qr) {
+          this.show(ceremony, { step: 'qr', data: ceremony.qr, progress });
+        } else {
+          this.show(ceremony, { step: 'progress', transport, progress });
+        }
+        return;
+      }
+      case 'pin-needed':
+        this.show(ceremony, {
+          step: 'pin',
+          wrongPin: event.wrongPin === true,
+          ...(typeof event.attemptsLeft === 'number' ? { attemptsLeft: event.attemptsLeft } : {}),
+          ...(typeof event.retryAfterMs === 'number' ? { retryAfterMs: event.retryAfterMs } : {}),
+        });
+        return;
+      case 'choose-account':
+        this.show(ceremony, {
+          step: 'choose-account',
+          accounts: event.accounts.map((account) => ({
+            index: account.index,
+            userName: account.userName ?? '',
+            userDisplayName: account.userDisplayName ?? '',
+          })),
+        });
+        return;
+    }
+  }
+
+  private fail(ceremony: Ceremony, error: unknown): void {
+    const code = error instanceof SidecarError ? error.code : 'Unknown';
+    logger.info('Passkey ceremony failed', { ceremonyId: ceremony.id, code });
+    this.finish(
+      ceremony,
+      failure(pageErrorName(code), 'The operation either timed out or was not allowed.'),
+      dialogErrorReason(code, ceremony.bluetooth),
+    );
+  }
+
+  private timeout(ceremony: Ceremony): void {
+    if (ceremony.settled) return;
+    this.cancelSidecar(ceremony);
+    this.finish(
+      ceremony,
+      failure('NotAllowedError', 'The operation either timed out or was not allowed.'),
+      'timeout',
+    );
+  }
+
+  private abort(ceremony: Ceremony, name: PasskeyPageErrorName, message: string): void {
+    if (!ceremony.settled) {
+      this.cancelSidecar(ceremony);
+      this.finish(ceremony, failure(name, message), null);
+    }
+    this.close(ceremony);
+  }
+
+  private cancelSidecar(ceremony: Ceremony): void {
+    if (!ceremony.running) return;
+    ceremony.running = false;
+    void this.sidecar.request('cancel', { ceremony: ceremony.id }).catch(() => {});
+  }
+
+  /** Settles the page request; with `errorReason` the dialog stays open to say why. */
+  private finish(
+    ceremony: Ceremony,
+    result: PasskeyPageResult,
+    errorReason: PasskeyErrorReason | null,
+  ): void {
+    if (ceremony.settled) return;
+    ceremony.settled = true;
+    ceremony.dispose();
+    if (this.byGuest.get(ceremony.guest.id) === ceremony) this.byGuest.delete(ceremony.guest.id);
+    ceremony.resolve(result);
+    if (errorReason) this.show(ceremony, { step: 'error', reason: errorReason });
+    else this.close(ceremony);
+  }
+
+  private show(ceremony: Ceremony, view: PasskeyDialogView): void {
+    if (!ceremony.shown || ceremony.host.isDestroyed()) return;
+    ceremony.host.send(CHANNELS.DIALOG_SHOW, {
+      ceremonyId: ceremony.id,
+      kind: ceremony.kind,
+      rpId: ceremony.rpId,
+      view,
+    });
+  }
+
+  private close(ceremony: Ceremony): void {
+    this.byId.delete(ceremony.id);
+    if (!ceremony.shown) return;
+    ceremony.shown = false;
+    if (!ceremony.host.isDestroyed()) {
+      ceremony.host.send(CHANNELS.DIALOG_CLOSE, { ceremonyId: ceremony.id });
+    }
+  }
+}
