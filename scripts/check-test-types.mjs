@@ -2,7 +2,7 @@
 // Type-checks unit test files against a per-file error baseline that may only shrink.
 //
 // No other tsconfig covers unit tests: tsconfig.json and tsconfig.main.json both exclude
-// `**/*.test.ts` and `__tests__`. When cloudlands-fe#4751 narrowed getLocalPref /
+// `**/*.test.ts` and `__tests__`, so `main` and `renderer` below are the only test programs. When cloudlands-fe#4751 narrowed getLocalPref /
 // setLocalPref to a key union, src/main/__tests__/local-prefs.test.ts kept passing ~17
 // unregistered keys and nothing reported it; the same PR had to build a TypeScript
 // program inside a test because an `@ts-expect-error` in a test file was never checked.
@@ -28,17 +28,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const BASELINES_DIR = 'scripts/test-type-baselines';
 export const INCIDENTS = Object.freeze(['https://github.com/intent-hq/cloudlands-fe/pull/4751']);
 
-/** Test programs, keyed by the baseline directory name. Renderer tests are next. */
+/**
+ * Test programs, keyed by the baseline directory name. `heapMb` is the tsc heap cap:
+ * the CI job caps every step at 4 GB through NODE_OPTIONS, and a command-line flag
+ * overrides it for the child. Peak RSS measured on 10,000-file programs: main ~3.7 GB,
+ * renderer ~6.9 GB, so they run one after the other to stay within the 16 GB runner.
+ */
 export const PROJECTS = Object.freeze({
   main: Object.freeze({
     tsconfig: 'tsconfig.main-tests.json',
     label: 'main-process unit tests (src/main, src/features/*/main)',
+    heapMb: 8192,
+  }),
+  renderer: Object.freeze({
+    tsconfig: 'tsconfig.renderer-tests.json',
+    label: 'renderer unit tests (src outside src/main, src/features/*/main, src/preload)',
+    heapMb: 12288,
   }),
 });
 
-// Measured at ~3.5 GB for the main-test program; the CI job caps every step at 4 GB
-// through NODE_OPTIONS, and a command-line flag overrides it for this child.
-const TSC_HEAP_MB = 8192;
+const DEFAULT_HEAP_MB = 8192;
 const UPDATE_COMMAND = 'pnpm run lint:test-types -- --update-baseline';
 const DIAGNOSTIC_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.*)$/;
 const GLOBAL_DIAGNOSTIC_RE = /^error (TS\d+): (.*)$/;
@@ -48,7 +57,7 @@ const normalize = (value) => value.split(path.sep).join('/');
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Configs the project tsconfigs extend (scripts/check-test-types.test.ts keeps it whole). */
-export const EXTENDED_TSCONFIGS = Object.freeze(['tsconfig.main.json']);
+export const EXTENDED_TSCONFIGS = Object.freeze(['tsconfig.main.json', 'tsconfig.json']);
 
 /** Files whose change can alter this gate's result besides the tests themselves. */
 export function isTestTypeCheckInput(file) {
@@ -221,10 +230,10 @@ export function findBaselineGrowth(committed, checkedOut, renames = new Map()) {
   return compareCounts(moved, checkedOut).grown;
 }
 
-function runTsc(root, tsconfig) {
+function runTsc(root, { tsconfig, heapMb = DEFAULT_HEAP_MB }) {
   const tsc = createRequire(import.meta.url).resolve('typescript/bin/tsc');
   const args = [
-    `--max-old-space-size=${TSC_HEAP_MB}`,
+    `--max-old-space-size=${heapMb}`,
     tsc,
     '-p',
     tsconfig,
@@ -261,10 +270,9 @@ export async function checkTestTypes({
 } = {}) {
   const lines = [];
   let ok = true;
-  const results = await Promise.all(
-    names.map(async (name) => ({ name, ...(await run(root, projects[name].tsconfig)) })),
-  );
-  for (const { name, code, output } of results) {
+  for (const name of names) {
+    // Sequential: two programs at once would hold both heaps (see PROJECTS).
+    const { code, output } = await run(root, projects[name]);
     const { tsconfig, label } = projects[name];
     const { byFile, global } = parseDiagnostics(output, root);
     // Config or environment errors have no file to baseline. tsc exits 0 or, with
