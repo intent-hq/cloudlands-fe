@@ -293,6 +293,7 @@ describe('renderer test program on a fixture', { timeout: 120_000 }, () => {
 
 describe('parseArgs', () => {
   it('accepts the update command it prints', () => {
+    expect(UPDATE_COMMAND).not.toContain(' -- ');
     const args = UPDATE_COMMAND.split(' ').slice(UPDATE_COMMAND.split(' ').indexOf('lint:test-types') + 1);
     expect(parseArgs(args).update).toBe(true);
   });
@@ -303,6 +304,7 @@ describe('parseArgs', () => {
       names: Object.keys(PROJECTS),
     });
     expect(parseArgs(['--', '--project', 'main']).names).toEqual(['main']);
+    expect(parseArgs(['--', '--project=main']).names).toEqual(['main']);
   });
 
   it('still rejects a -- that is not the first argument', () => {
