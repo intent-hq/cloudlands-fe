@@ -10,12 +10,14 @@ import {
   BASELINES_DIR,
   EXTENDED_TSCONFIGS,
   PROJECTS,
+  UPDATE_COMMAND,
   checkTestTypes,
   compareCounts,
   findBaselineGrowth,
   isTestTypeCheckInput,
   loadBaseline,
   parseBaselineEntries,
+  parseArgs,
   parseDiagnostics,
   readCommittedBaseline,
   readRenames,
@@ -286,6 +288,25 @@ describe('renderer test program on a fixture', { timeout: 120_000 }, () => {
     const { ok, lines } = await checkTestTypes({ root, projects: RENDERER_PROJECTS });
     expect(lines.join('\n')).toContain('0 known type error(s)');
     expect(ok).toBe(true);
+  });
+});
+
+describe('parseArgs', () => {
+  it('accepts the update command it prints', () => {
+    const args = UPDATE_COMMAND.split(' ').slice(UPDATE_COMMAND.split(' ').indexOf('lint:test-types') + 1);
+    expect(parseArgs(args).update).toBe(true);
+  });
+
+  it('ignores a leading -- that pnpm forwards from `pnpm run x -- args`', () => {
+    expect(parseArgs(['--', '--update-baseline'])).toEqual({
+      update: true,
+      names: Object.keys(PROJECTS),
+    });
+    expect(parseArgs(['--', '--project', 'main']).names).toEqual(['main']);
+  });
+
+  it('still rejects a -- that is not the first argument', () => {
+    expect(() => parseArgs(['--update-baseline', '--'])).toThrow('Unknown argument: --');
   });
 });
 
