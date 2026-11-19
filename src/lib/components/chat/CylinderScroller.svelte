@@ -1,6 +1,6 @@
 <!--
   CylinderScroller.svelte
-  A max-height scrollable container with a top gradient fade.
+  A max-height scrollable container whose edges fade over hidden content.
   Auto-scrolls to bottom during streaming.
 -->
 <script lang="ts">
@@ -11,7 +11,7 @@
     maxHeight?: number;
     isActive?: boolean;
     constrained?: boolean;
-    fadeTop?: number;
+    fade?: number;
     children: Snippet;
   }
 
@@ -19,7 +19,7 @@
     maxHeight = 100,
     isActive = true,
     constrained = true,
-    fadeTop = 24,
+    fade = 24,
     children,
   }: Props = $props();
 
@@ -27,13 +27,21 @@
   let scrollContent: HTMLElement | undefined = $state();
   let isFollowingBottom = $state(true);
   let isUserScrolling = $state(false);
-  let isScrolledFromTop = $state(false);
+  let hiddenAbove = $state(0);
+  let hiddenBelow = $state(0);
   let followPending = false;
   let upwardScrollPending = false;
   let lastScrollTop = 0;
   let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const BOTTOM_THRESHOLD = 5;
+
+  function measureEdges() {
+    if (!scrollContainer) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+    hiddenAbove = Math.max(0, Math.round(scrollTop));
+    hiddenBelow = Math.max(0, Math.round(scrollHeight - clientHeight - scrollTop));
+  }
 
   function checkIfAtBottom(): boolean {
     if (!scrollContainer) return true;
@@ -52,8 +60,6 @@
     }
     followPending = false;
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    // Update scroll state
-    isScrolledFromTop = scrollContainer.scrollTop > 2;
   }
 
   // An upward gesture pauses following only once it moves this drum. A drum
@@ -121,8 +127,8 @@
       // Resume only when the reader moves down to the bottom again.
       if (scrollTop > lastScrollTop && checkIfAtBottom()) isFollowingBottom = true;
       lastScrollTop = scrollTop;
-      isScrolledFromTop = scrollTop > 2;
     }
+    measureEdges();
   }
 
   onMount(() => {
@@ -130,7 +136,10 @@
     // wrapped text, tool content and panel reflow still follow the newest line.
     let observer: ResizeObserver | undefined;
     if (scrollContainer && scrollContent && typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(scrollToBottom);
+      observer = new ResizeObserver(() => {
+        measureEdges();
+        scrollToBottom();
+      });
       observer.observe(scrollContent);
       observer.observe(scrollContainer);
     }
@@ -175,9 +184,13 @@
       return '';
     }
     let style = `max-height: min(var(--cylinder-max-height, ${maxHeight}px), 40vh);`;
-    if (isScrolledFromTop) {
-      const ft = `var(--cylinder-top-fade, ${fadeTop}px)`;
-      style += ` mask-image: linear-gradient(to bottom, transparent 0%, black ${ft}, black 100%);`;
+    // Each edge fades in proportion to what it hides, so a follow in progress
+    // only softens the arriving row and a settled bottom stays crisp.
+    const top = Math.min(fade, hiddenAbove);
+    const bottom = Math.min(fade, hiddenBelow);
+    if (top > 0 || bottom > 0) {
+      style += ` --cylinder-fade-top: ${top}px; --cylinder-fade-bottom: ${bottom}px;`;
+      style += ` mask-image: linear-gradient(to bottom, transparent 0, black var(--cylinder-fade-top), black calc(100% - var(--cylinder-fade-bottom)), transparent 100%);`;
     }
     return style;
   });
