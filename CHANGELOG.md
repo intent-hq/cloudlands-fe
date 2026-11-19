@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.355.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.354.1...v2.355.0) (2026-11-19)
+
+
+### 🚀 Features
+
+* **onboarding:** show clone download size and speed ([#4768](https://github.com/intent-hq/cloudlands-fe/issues/4768)) ([6fbaeb9](https://github.com/intent-hq/cloudlands-fe/commit/6fbaeb996ed66225cbc4c120789719284710ee86))
+* **workspace-home:** show "Setting up home on &lt;machine&gt;…" while a home opens ([#4772](https://github.com/intent-hq/cloudlands-fe/issues/4772)) ([caef453](https://github.com/intent-hq/cloudlands-fe/commit/caef453b02eb43161353152a8634144bed32098a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.249 ([#4779](https://github.com/intent-hq/cloudlands-fe/issues/4779)) ([f280134](https://github.com/intent-hq/cloudlands-fe/commit/f280134ed3ceae70a57035a082a306d38540d6f8))
+* **machine-rail:** hide the rail while a window holds one machine ([#4777](https://github.com/intent-hq/cloudlands-fe/issues/4777)) ([91e2004](https://github.com/intent-hq/cloudlands-fe/commit/91e2004d81c0fb9f4ec6275221058240a80f10fe))
+* **toast:** keep inline close-button hover inside the button ([#4735](https://github.com/intent-hq/cloudlands-fe/issues/4735)) ([fb2ec2f](https://github.com/intent-hq/cloudlands-fe/commit/fb2ec2f4c599e3cbc946bdd1671ad6c0663461f7))
+
 ## [2.354.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.354.0...v2.354.1) (2026-11-19)
 
 
