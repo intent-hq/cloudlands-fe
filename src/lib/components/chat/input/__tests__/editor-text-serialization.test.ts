@@ -23,6 +23,7 @@ import {
   plainTextToEditorHTML,
   serializeEditorText,
   pastedTextToParagraphNodes,
+  isPlainSingleParagraphHtml,
 } from '../editor-text-serialization';
 
 /** Mirrors the chat input's plaintext-like StarterKit configuration */
@@ -175,5 +176,27 @@ describe('editor-text-serialization (#1151)', () => {
     } finally {
       skillEditor.destroy();
     }
+  });
+});
+
+describe('isPlainSingleParagraphHtml (one-line paste stays inline)', () => {
+  // Select all + copy in the composer on Linux: text/plain has no newline, the
+  // HTML is one closed paragraph that ProseMirror pasted as a new block.
+  const linuxCopy = `<meta charset='utf-8'><p data-pm-slice="1 1 []">word</p>`;
+
+  it('treats a plain one-paragraph copy of the same text as plain', () => {
+    expect(isPlainSingleParagraphHtml(linuxCopy, 'word')).toBe(true);
+    expect(isPlainSingleParagraphHtml('<p>two words</p>', 'two words')).toBe(true);
+  });
+
+  it('keeps rich paste for formatting, links, several blocks or other text', () => {
+    expect(isPlainSingleParagraphHtml('<p><strong>word</strong></p>', 'word')).toBe(false);
+    expect(isPlainSingleParagraphHtml('<p><a href="https://x.dev">word</a></p>', 'word')).toBe(
+      false,
+    );
+    expect(isPlainSingleParagraphHtml('<p>a</p><p>b</p>', 'ab')).toBe(false);
+    expect(isPlainSingleParagraphHtml('<span style="color:red">word</span>', 'word')).toBe(false);
+    expect(isPlainSingleParagraphHtml('<p>word</p>', 'other')).toBe(false);
+    expect(isPlainSingleParagraphHtml('<p>a<br>b</p>', 'a\nb')).toBe(false);
   });
 });
