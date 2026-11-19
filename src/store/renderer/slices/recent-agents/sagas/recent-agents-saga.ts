@@ -17,17 +17,19 @@ import { handleNotificationNavigate } from '$features/notifications/notification
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { RECENT_AGENTS_CHANGED_EVENT, type RecentAgentEntry } from '$shared/recent-agents';
-import { WorkspaceStatus } from '$shared/types';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { openConnectionRequested } from '../../connections/connections-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
 import { selectCurrentlyViewedAgentId } from '../../unread-tracking/unread-tracking-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
-import { bulkUpdateWorkspaceEntities } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectRecentAgentsBinding } from '../recent-agents-selectors';
-import { recentAgentOpenRequested, recentAgentsReceived } from '../recent-agents-slice';
+import {
+  recentAgentOpenRequested,
+  recentAgentsReceived,
+  recentAgentsWorkspaceArchived,
+} from '../recent-agents-slice';
 
 const logger = createLogger('RecentAgentsSaga');
 const RECENT_AGENTS = IPC_CHANNELS.RECENT_AGENTS;
@@ -154,14 +156,10 @@ function* handleWorkspaceDeleted(action: ReturnType<typeof workspaceDeleted>): S
   if (cause === 'deleted') yield* call(forgetWorkspace, workspaceId);
 }
 
-function* handleWorkspaceUpdates(
-  action: ReturnType<typeof bulkUpdateWorkspaceEntities>,
+function* handleWorkspaceArchived(
+  action: ReturnType<typeof recentAgentsWorkspaceArchived>,
 ): SagaGenerator<void> {
-  for (const update of action.payload[0]) {
-    const [workspaceId, changes] = update.payload;
-    if (changes.status === WorkspaceStatus.Archived || changes.archived === true)
-      yield* call(forgetWorkspace, workspaceId);
-  }
+  yield* call(forgetWorkspace, action.payload[0]);
 }
 
 function* handleOpen(action: ReturnType<typeof recentAgentOpenRequested>): SagaGenerator<void> {
@@ -199,7 +197,7 @@ export function* recentAgentsSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(markAgentAsViewed, handleViewed),
     takeEvery(workspaceDeleted, handleWorkspaceDeleted),
-    takeEvery(bulkUpdateWorkspaceEntities, handleWorkspaceUpdates),
+    takeEvery(recentAgentsWorkspaceArchived, handleWorkspaceArchived),
     takeEvery(recentAgentOpenRequested, handleOpen),
   ]);
 }

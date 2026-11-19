@@ -33,6 +33,11 @@ export const recentAgentOpenRequested = createAction<[entry: RecentAgentEntry]>(
   'recentAgents/openRequested',
 );
 
+/** This window's machine reported the workspace archived: its recent agents drop out. */
+export const recentAgentsWorkspaceArchived = createAction<[workspaceId: string]>(
+  'recentAgents/workspaceArchived',
+);
+
 export const recentAgentsReducer = createReducer<RecentAgentsSliceState>(initialState);
 recentAgentsReducer.with(recentAgentsReceived, (_state, { payload: [entries] }) => ({
   entries: createCollection(

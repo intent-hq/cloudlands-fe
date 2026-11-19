@@ -275,6 +275,7 @@ import {
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { recentAgentsWorkspaceArchived } from '$store/renderer/slices/recent-agents/recent-agents-slice';
 import {
   selectIsSelfLeftWorkspace,
   selectWindowGuestSession,
@@ -3004,6 +3005,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
       logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:updated archive', error);
     });
+    appStore.dispatch(recentAgentsWorkspaceArchived(workspaceId));
     // Workspace archive discards all tabs (protocol §5.9, monorepo#2857):
     // destroy the agent-owned browser tabs — visible and hidden — whose
     // pinned webviews would otherwise stay mounted offscreen indefinitely,
