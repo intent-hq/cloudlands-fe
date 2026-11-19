@@ -25,11 +25,15 @@ import type {
 import {
   confirmQuitWithRunningAgents,
   resetQuitConfirmationStateForTests,
+  type QuitConfirmationDeps,
 } from '../quit-confirmation';
 import type { RespondingAgent, RunningAgentsRpc } from '../running-agents';
 import { app } from 'electron';
 import { getShownRendererWebContents } from '../window-backend';
 import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../machine-rail-state';
+
+/** The shown-changed signal is a custom app event, typed like the source's listener. */
+const appEvents: NodeJS.EventEmitter = app;
 
 vi.mock('../window-backend', () => ({
   getShownRendererWebContents: vi.fn((window: BrowserWindow) => window.webContents),
@@ -142,9 +146,13 @@ function makeDeps(options: {
   const deps = {
     getBackendTargets: vi.fn(() => [{ id: backendId, client }]),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
-    listRespondingAgents: vi.fn(async () => options.agents),
+    listRespondingAgents: vi.fn<QuitConfirmationDeps['listRespondingAgents']>(
+      async () => options.agents,
+    ),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
-    confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
+    confirmViaRenderer: vi.fn<QuitConfirmationDeps['confirmViaRenderer']>(
+      async () => options.rendererDecision ?? null,
+    ),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
     getParentWindow: vi.fn(() => parentWindow),
     showMessageBox: vi.fn(
@@ -407,7 +415,7 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
+    const payload = deps.confirmViaRenderer.mock.calls[0][1];
     expect(payload.interrupted).toHaveLength(AGENTS.length);
     expect(payload.disruptedBrowserTabs).toEqual([]);
     expect(embeddedBrowserCdp.listAgentOwnedTabs).not.toHaveBeenCalled();
@@ -733,7 +741,7 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
       }
       vi.mocked(getShownRendererWebContents).mockReturnValue(window.webContents);
       const onChanged = vi
-        .mocked(app.on)
+        .mocked(appEvents.on)
         .mock.calls.filter(([name]) => name === MACHINE_RAIL_SHOWN_CHANGED_EVENT)
         .at(-1)?.[1];
       expect(onChanged).toBeTypeOf('function');
@@ -754,7 +762,7 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const payload = send.mock.calls[0][1] as QuitConfirmationShowPayload;
     const onChanged = vi
-      .mocked(app.on)
+      .mocked(appEvents.on)
       .mock.calls.filter(([name]) => name === MACHINE_RAIL_SHOWN_CHANGED_EVENT)
       .at(-1)?.[1];
     onChanged?.({});

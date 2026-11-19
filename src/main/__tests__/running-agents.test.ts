@@ -13,7 +13,7 @@
  * (method + params) and feed back PROTOCOL.md-shaped mock responses.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { listRespondingAgents, type RunningAgentsRpc } from '../running-agents';
 
 /** PROTOCOL §5.5 `agent.listActive` stream entry. */
@@ -44,12 +44,12 @@ function mockClient(
   const requests: { method: string; params?: unknown }[] = [];
   const client: RunningAgentsRpc = {
     getStatus: () => status,
-    request: vi.fn(async <T>(method: string, params?: unknown): Promise<T> => {
+    request: async <T>(method: string, params?: unknown): Promise<T> => {
       requests.push({ method, params });
       const handler = handlers[method];
       if (!handler) throw new Error(`unexpected method: ${method}`);
       return handler(params) as T;
-    }),
+    },
   };
   return { client, requests };
 }

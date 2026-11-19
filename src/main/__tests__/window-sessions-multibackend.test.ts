@@ -46,6 +46,10 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     };
 
     webPreferences: Record<string, unknown> | undefined;
+    /** The machine a frame shows (the stamp of any other window); getter defined after imports. */
+    declare readonly machine: string;
+    /** The page a frame's shown machine view shows (any other window's own URL). */
+    declare readonly page: string;
 
     constructor(opts?: {
       x: number;
@@ -200,13 +204,7 @@ import {
 import { noteFrameFocused, rendererFor, shownMachine } from '../frames';
 import type { FrameMachineSession } from '../../shared/types/machine-rail';
 
-interface FrameProbe {
-  /** The machine a frame shows (the stamp of any other window). */
-  readonly machine: string;
-  /** The page a frame's shown machine view shows (any other window's own URL). */
-  readonly page: string;
-}
-type FakeWindow = InstanceType<typeof FakeBrowserWindow> & FrameProbe;
+type FakeWindow = InstanceType<typeof FakeBrowserWindow>;
 
 Object.defineProperties(FakeBrowserWindow.prototype, {
   machine: {
