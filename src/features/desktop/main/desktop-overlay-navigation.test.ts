@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({
   windows: [] as any[],
   create: vi.fn(),
   focus: vi.fn(),
-  showRailMachine: vi.fn((): any => null),
+  showRailMachine: vi.fn((_backendId: string): any => null),
 }));
 vi.mock('electron', () => ({
   app: { focus: mocks.focus },

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { BrowserWindowConstructorOptions } from 'electron';
 
 const mocks = vi.hoisted(() => ({
@@ -76,6 +76,7 @@ import { app, ipcMain, powerMonitor, screen } from 'electron';
 import { DESKTOP_AGENT_SWITCH_GRACE_MS, DesktopControlOverlay } from './desktop-overlay';
 import { DesktopNativeAdapter } from './desktop-native';
 import { DesktopExecutor, type DesktopNative } from './desktop-executor';
+import type { DesktopEndReason } from '../../../shared/types/desktop';
 
 const session = {
   backendId: 'backend-a',
@@ -87,10 +88,11 @@ const session = {
   computerId: 'computer-a',
 };
 let overlay: DesktopControlOverlay;
-let stop: ReturnType<typeof vi.fn>;
-let invalidate: ReturnType<typeof vi.fn>;
-let navigate: ReturnType<typeof vi.fn>;
-let refocus: ReturnType<typeof vi.fn>;
+type OverlayOptions = ConstructorParameters<typeof DesktopControlOverlay>[0];
+let stop: Mock<() => void>;
+let invalidate: Mock<(reason: DesktopEndReason) => void>;
+let navigate: Mock<NonNullable<OverlayOptions['navigate']>>;
+let refocus: Mock<NonNullable<OverlayOptions['refocus']>>;
 function send(window: any, action: string, ...args: unknown[]) {
   ipcMain.emit(
     `desktop-overlay:${action}`,
@@ -117,8 +119,8 @@ beforeEach(() => {
   mocks.focused = null;
   stop = vi.fn();
   invalidate = vi.fn();
-  navigate = vi.fn().mockResolvedValue(undefined);
-  refocus = vi.fn().mockReturnValue(true);
+  navigate = vi.fn<NonNullable<OverlayOptions['navigate']>>().mockResolvedValue(undefined);
+  refocus = vi.fn<NonNullable<OverlayOptions['refocus']>>().mockReturnValue(true);
   overlay = new DesktopControlOverlay({
     url: 'app://workspaces/desktop-overlay',
     preload: '/preload.js',
@@ -280,7 +282,7 @@ describe('desktop overlay native lifecycle', () => {
 describe('desktop executor and overlay startup failures', () => {
   function execution() {
     const native: DesktopNative = {
-      identity: vi.fn(async () => ({
+      identity: vi.fn<DesktopNative['identity']>(async () => ({
         computerId: session.computerId,
         computerName: session.computerName,
         platform: 'macos',

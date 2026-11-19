@@ -47,7 +47,7 @@ function deferred<T>() {
 function setup() {
   let now = 100;
   const native: DesktopNative = {
-    identity: vi.fn(async () => ({
+    identity: vi.fn<DesktopNative['identity']>(async () => ({
       computerId: 'computer',
       computerName: 'Mac',
       platform: 'macos',
@@ -219,7 +219,7 @@ describe('desktop display selection', () => {
       const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
         result: { layoutId: string };
       };
-      const action: DesktopAction =
+      const action: Extract<DesktopAction, { kind: typeof kind }> =
         kind === 'drag'
           ? { kind, layoutId: listed.result.layoutId, from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }
           : kind === 'scroll'
