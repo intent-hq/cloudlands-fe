@@ -265,6 +265,7 @@
         : name,
   );
   const accessibleSummary = $derived(textSnippet ? `${displayName}: ${textSnippet}` : displayName);
+  const mutedToolSummary = $derived(Boolean(collapsedRun) && !isExpanded);
   const groupContentClass = $derived(
     `${OPERATIONAL_GROUP_CONTENT_CLASS} ${getOperationalGroupContentSpacingClass(blocks)}`,
   );
@@ -290,7 +291,11 @@
 </script>
 
 {#snippet leading()}
-  <span class="flex" data-response-group-disclosure-icon>
+  <span
+    class="flex"
+    class:muted-tool-summary={mutedToolSummary}
+    data-response-group-disclosure-icon
+  >
     <Fa
       icon={isExpanded ? faArrowsOutLineVertical : faArrowsInLineVertical}
       size={16}
@@ -300,8 +305,10 @@
 {/snippet}
 
 {#snippet summary()}
-  <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
-    >{displayName}</span
+  <span
+    class="font-normal {OPERATIONAL_PRIMARY_CLASS}"
+    class:muted-tool-summary={mutedToolSummary}
+    data-testid="response-group-name">{displayName}</span
   >{#if textSnippet && !isExpanded && (!isStreaming || !hasPreview)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
@@ -377,6 +384,12 @@
 />
 
 <style>
+  @media (prefers-contrast: no-preference) {
+    .muted-tool-summary {
+      opacity: 0.85;
+    }
+  }
+
   .operational-group-guide {
     left: calc(var(--operational-row-inline-padding) + var(--operational-leading-half-slot-size));
   }
