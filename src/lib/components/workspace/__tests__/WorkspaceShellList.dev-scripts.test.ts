@@ -479,6 +479,56 @@ describe('WorkspaceShellList development script controls', () => {
     }
   });
 
+  it('orders autoStart scripts first, then live scripts, then by name', () => {
+    mocks.scripts[WS] = [
+      script('running', 'Dev server', 'running'),
+      { ...script('auto-idle', 'Worker', 'idle'), mode: 'service', autoStart: true },
+      script('idle', 'Compile', 'idle'),
+      { ...script('auto-running', 'Api', 'running'), autoStart: true },
+    ];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(
+      Array.from(document.querySelectorAll('[data-sidebar-shell-script]'), (row) =>
+        row.getAttribute('data-sidebar-shell-script'),
+      ),
+    ).toEqual(['auto-running', 'auto-idle', 'running', 'idle']);
+  });
+
+  it.each([true, false])(
+    'flips autoStart (currently %s) from the service row menu',
+    async (autoStart) => {
+      mocks.scripts[WS] = [{ ...script('dev', 'Dev server', 'running'), autoStart }];
+      render(WorkspaceShellList, { props: { workspaceId: WS } });
+      await fireEvent.click(within(scriptRow('dev')).getByRole('button', { name: 'Actions' }));
+      const toggle = await screen.findByRole('menuitemcheckbox', { name: 'Start automatically' });
+      expect(toggle.getAttribute('aria-checked')).toBe(String(autoStart));
+      await fireEvent.click(toggle);
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/updateScriptDefinitionRequested',
+          payload: [WS, 'dev', { autoStart: !autoStart }],
+        }),
+      );
+    },
+  );
+
+  it('offers the autoStart toggle only on services the user can manage', async () => {
+    mocks.scripts[WS] = [script('build', 'Build', 'idle'), script('dev', 'Dev server', 'running')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await fireEvent.click(within(scriptRow('build')).getByRole('button', { name: 'Actions' }));
+    await screen.findByRole('menuitem', { name: 'Show in a panel' });
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Start automatically' })).toBeNull();
+  });
+
+  it('hides the autoStart toggle without workspace management authority', async () => {
+    mocks.actionContext = null;
+    mocks.scripts[WS] = [script('dev', 'Dev server', 'running')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await fireEvent.click(within(scriptRow('dev')).getByRole('button', { name: 'Actions' }));
+    await screen.findByRole('menuitem', { name: 'Show in a panel' });
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Start automatically' })).toBeNull();
+  });
+
   it('collapses each group independently and restores its row actions', async () => {
     mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
     mocks.scripts[WS] = [script('idle', 'Build', 'idle')];

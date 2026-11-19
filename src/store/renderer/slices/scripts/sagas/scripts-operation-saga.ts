@@ -471,7 +471,11 @@ function* updateDefinition(
     if (current.id !== scriptId || current.workspaceId !== workspaceId || current.archivedAt) {
       throw new Error(m.scripts_pendingChange_error());
     }
-    if (isLiveScriptStatus(current.runtime?.status)) {
+    // The daemon keeps a live run when an upsert changes only autoStart.
+    const autoStartOnly =
+      updates.autoStart !== undefined &&
+      Object.entries(updates).every(([key, value]) => key === 'autoStart' || value === undefined);
+    if (!autoStartOnly && isLiveScriptStatus(current.runtime?.status)) {
       throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
     }
     const result = yield* call(() =>

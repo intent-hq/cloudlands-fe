@@ -330,6 +330,33 @@ describe('scripts operation saga: update (script.create scriptId upsert, §5.8)'
     expect(result.success).toBe(false);
     expect(result.error).toContain('"dev"');
   });
+
+  it('sends an autoStart-only upsert for a running script — the daemon keeps that run', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+    scriptsCreate.mockResolvedValueOnce({ success: true });
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { autoStart: true });
+
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'yarn dev',
+      mode: 'service',
+      cwd: undefined,
+      env: undefined,
+      autoStart: true,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('scripts operation saga: detect (fake files + daemon script.* seams)', () => {

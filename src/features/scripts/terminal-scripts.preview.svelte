@@ -4,6 +4,7 @@
   interface Props {
     populated?: boolean;
     loadError?: boolean;
+    autoStart?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -13,6 +14,7 @@
     states: {
       empty: { props: {} },
       populated: { props: { populated: true } },
+      'auto-start': { props: { populated: true, autoStart: true } },
       error: { props: { loadError: true } },
     },
   });
@@ -33,7 +35,7 @@
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
-  let { populated = false, loadError = false }: Props = $props();
+  let { populated = false, loadError = false, autoStart = false }: Props = $props();
   const workspaceId = 'preview-terminal-scripts';
   const createdAt = '2026-10-18T00:00:00Z';
 
@@ -64,15 +66,22 @@
       setScriptsData(
         workspaceId,
         populated
-          ? ['dev', 'build', 'test', 'check'].map((name) => ({
+          ? [
+              ...['dev', 'build', 'test', 'check'],
+              ...(autoStart ? ['api', 'storybook'] : []),
+            ].map((name) => ({
               id: `preview-${name}`,
               workspaceId,
               name,
               command: `pnpm ${name}`,
-              mode: name === 'dev' ? 'service' : 'command',
+              mode: ['dev', 'api', 'storybook'].includes(name) ? 'service' : 'command',
               source: 'auto-detected',
               createdAt,
-              runtime: { status: name === 'dev' ? 'running' : 'idle', restartCount: 0 },
+              ...(name === 'api' || name === 'storybook' ? { autoStart: true } : {}),
+              runtime: {
+                status: name === 'dev' || name === 'storybook' ? 'running' : 'idle',
+                restartCount: 0,
+              },
             }))
           : [],
       ),
