@@ -707,6 +707,8 @@ export const IPC_CHANNELS = {
     CREATE: 'browser-view:create',
     /** Close a tab's page: the tab closed (renderer->main) */
     DESTROY: 'browser-view:destroy',
+    /** A tab's live page state, or null when main has no page for it (renderer->main) */
+    STATE: 'browser-view:state',
     /** Close every page of a workspace: archived or deleted (renderer->main) */
     DESTROY_WORKSPACE: 'browser-view:destroy-workspace',
     /** The tab's box in CSS pixels and whether it is on screen (renderer->main) */

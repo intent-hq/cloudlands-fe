@@ -6,7 +6,7 @@
  * must come from the renderer of the window and machine that own the page.
  */
 
-import { app, ipcMain, WebContentsView, type IpcMainInvokeEvent } from 'electron';
+import { app, ipcMain, View, WebContentsView, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
@@ -53,7 +53,11 @@ const CommandSchema = z.discriminatedUnion('type', [
     action: z.enum(['clearSelection', 'keepSelection', 'activateSelection']),
   }),
   z.object({ type: z.literal('open-devtools') }),
+  z.object({ type: z.literal('toggle-devtools') }),
   z.object({ type: z.literal('focus') }),
+  z.object({ type: z.literal('set-audio-muted'), muted: z.boolean() }),
+  z.object({ type: z.literal('execute-javascript'), code: z.string().min(1).max(262_144) }),
+  z.object({ type: z.literal('capture'), rect: RectSchema.optional() }),
 ]);
 
 const BrowserViewSchemas = {
@@ -62,6 +66,7 @@ const BrowserViewSchemas = {
     tabId: TabIdSchema,
     workspaceId: z.string().min(1).max(256),
     url: z.string().min(1).max(32_768),
+    pinned: z.boolean().optional(),
   }),
   tab: z.object({ tabId: TabIdSchema }),
   workspace: z.object({ workspaceId: z.string().min(1).max(256) }),
@@ -70,6 +75,12 @@ const BrowserViewSchemas = {
 };
 
 let labEnabled = false;
+/**
+ * The setting as it was when the app started. The renderer picks the
+ * `<webview>` or main-owned path once per run, so a change applies after a
+ * restart and pages are only created while the run's value is on.
+ */
+let labActive = false;
 let service: BrowserViewService | null = null;
 
 /** The sender's window and machine; throws for anything but a bound app renderer's main frame. */
@@ -103,6 +114,7 @@ async function loadBrowserViewLab(): Promise<void> {
   } catch {
     labEnabled = false;
   }
+  labActive = labEnabled;
 }
 
 /**
@@ -114,6 +126,7 @@ export function registerBrowserViewHandlers(): void {
 
   const views = new BrowserViewService({
     createView: (webPreferences) => new WebContentsView({ webPreferences }),
+    createParkingHolder: () => new View(),
     webPreferences: buildBrowserViewWebPreferences,
     secureContents: secureMainOwnedBrowserContents,
     isNavigationAllowed: isBrowserGuestNavigationAllowed,
@@ -135,7 +148,7 @@ export function registerBrowserViewHandlers(): void {
       z.unknown(),
       async () => {
         await labLoaded;
-        return { enabled: labEnabled };
+        return { enabled: labEnabled, active: labActive };
       },
       CHANNELS.GET_LAB,
     ),
@@ -150,7 +163,7 @@ export function registerBrowserViewHandlers(): void {
         await setLocalPref('browserViewsInMainEnabled', request.enabled);
         labEnabled = request.enabled;
         logger.info('Browser views in main (Labs) changed', { enabled: labEnabled });
-        return { enabled: labEnabled };
+        return { enabled: labEnabled, active: labActive };
       },
       CHANNELS.SET_LAB,
     ),
@@ -161,7 +174,7 @@ export function registerBrowserViewHandlers(): void {
       BrowserViewSchemas.create,
       async (event, request) => {
         await labLoaded;
-        if (!labEnabled) throw new Error('Browser views in main are off');
+        if (!labActive) throw new Error('Browser views in main are off');
         const binding = senderBinding(event);
         return requireService().create(
           {
@@ -171,9 +184,23 @@ export function registerBrowserViewHandlers(): void {
           },
           binding.window,
           request.url,
+          request.pinned === undefined ? {} : { pinned: request.pinned },
         );
       },
       CHANNELS.CREATE,
+    ),
+  );
+  ipcMain.handle(
+    CHANNELS.STATE,
+    createSafeValidatedHandler(
+      BrowserViewSchemas.tab,
+      async (event, { tabId }) => {
+        const views = requireService();
+        if (!views.keyOf(tabId)) return { state: null };
+        requireOwner(event, views, tabId);
+        return { state: views.stateOf(tabId) ?? null };
+      },
+      CHANNELS.STATE,
     ),
   );
   ipcMain.handle(
@@ -236,7 +263,7 @@ export function registerBrowserViewHandlers(): void {
       async (event, { tabId, command }) => {
         const views = requireService();
         requireOwner(event, views, tabId);
-        return views.command(tabId, command);
+        return await views.command(tabId, command);
       },
       CHANNELS.COMMAND,
     ),

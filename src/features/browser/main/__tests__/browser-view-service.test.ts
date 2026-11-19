@@ -48,6 +48,23 @@ class FakeContents extends EventEmitter {
     this.zoomFactor = factor;
   });
   readonly send = vi.fn();
+  devToolsOpen = false;
+  muted = false;
+  readonly isDevToolsOpened = () => this.devToolsOpen;
+  readonly closeDevTools = vi.fn(() => {
+    this.devToolsOpen = false;
+  });
+  readonly setAudioMuted = vi.fn((muted: boolean) => {
+    this.muted = muted;
+  });
+  readonly executeJavaScript = vi.fn(async (code: string) => `ran:${code}`);
+  captureEmpty = false;
+  readonly capturePage = vi.fn(async (_rect?: unknown) => ({
+    isEmpty: () => this.captureEmpty,
+    toDataURL: () => 'data:image/png;base64,AAAA',
+  }));
+  getURL = () => this.loaded.at(-1) ?? '';
+  isLoading = () => false;
   isDestroyed = () => this.destroyed;
   getZoomFactor = () => this.zoomFactor;
   loadURL = vi.fn(async (url: string) => {
@@ -69,6 +86,22 @@ class FakeView {
   });
   setVisible = vi.fn((visible: boolean) => {
     this.visible = visible;
+  });
+}
+
+/** A fake parking holder: a plain view that clips its children. */
+class FakeHolder {
+  bounds = { x: 0, y: 0, width: 0, height: 0 };
+  readonly children: unknown[] = [];
+  setBounds = vi.fn((bounds: typeof this.bounds) => {
+    this.bounds = bounds;
+  });
+  addChildView = vi.fn((view: unknown) => {
+    if (!this.children.includes(view)) this.children.push(view);
+  });
+  removeChildView = vi.fn((view: unknown) => {
+    const at = this.children.indexOf(view);
+    if (at >= 0) this.children.splice(at, 1);
   });
 }
 
@@ -101,6 +134,7 @@ class FakeWindow extends EventEmitter {
 
 function setup(overrides: Partial<BrowserViewServiceDeps> = {}) {
   const views: FakeView[] = [];
+  const holders: FakeHolder[] = [];
   const sent: Array<{ target: unknown; message: BrowserViewEventMessage }> = [];
   const secured: unknown[] = [];
   const preferences = { partition: 'persist:browser-panel', sandbox: true };
@@ -109,6 +143,11 @@ function setup(overrides: Partial<BrowserViewServiceDeps> = {}) {
       const view = new FakeView();
       views.push(view);
       return view;
+    }),
+    createParkingHolder: vi.fn(() => {
+      const holder = new FakeHolder();
+      holders.push(holder);
+      return holder;
     }),
     webPreferences: vi.fn(() => ({ ...preferences })),
     secureContents: vi.fn((contents: unknown) => secured.push(contents)),
@@ -123,7 +162,7 @@ function setup(overrides: Partial<BrowserViewServiceDeps> = {}) {
     ...overrides,
   };
   const service = new BrowserViewService(deps as unknown as BrowserViewServiceDeps);
-  return { service, deps, views, sent, secured, preferences };
+  return { service, deps, views, holders, sent, secured, preferences };
 }
 
 const KEY = { backendId: 'local', workspaceId: 'ws-1', tabId: 'tab-1' };
@@ -273,8 +312,8 @@ describe('BrowserViewService placement', () => {
 });
 
 describe('BrowserViewService drawing holds (parking)', () => {
-  it('parks a detached page under the machine view at its last size, unthrottled', () => {
-    const { service, views } = setup();
+  it('parks a detached page under the machine view at its last size, clipped, unthrottled', () => {
+    const { service, views, holders } = setup();
     const window = new FakeWindow();
     service.create(KEY, windowLike(window), 'https://a.test/');
     service.setPlacement('tab-1', RECT, true);
@@ -285,7 +324,12 @@ describe('BrowserViewService drawing holds (parking)', () => {
 
     expect(release).toBeTypeOf('function');
     expect(service.placementOf('tab-1')).toBe('parked');
-    expect(window.children).toEqual([view, window.machineView]);
+    // The machine view is transparent over the backdrop: the page sits in a
+    // 1×1 holder so it cannot show through translucent app areas.
+    const [holder] = holders;
+    expect(window.children).toEqual([holder, window.machineView]);
+    expect(holder.bounds).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(holder.children).toEqual([view]);
     expect(view.bounds).toEqual({ x: 0, y: 0, width: RECT.width, height: RECT.height });
     expect(view.visible).toBe(true);
     expect(view.webContents.backgroundThrottling).toBe(false);
@@ -293,6 +337,20 @@ describe('BrowserViewService drawing holds (parking)', () => {
     release?.();
 
     expect(service.placementOf('tab-1')).toBe('detached');
+    expect(window.children).toEqual([window.machineView]);
+    expect(holder.children).toEqual([]);
+
+    // Shown again: straight in the window, above the machine view.
+    service.setPlacement('tab-1', RECT, true);
+    expect(window.children).toEqual([window.machineView, view]);
+    // A hold on a shown page does not park it.
+    const onScreenHold = service.holdDrawing(view.webContents.id);
+    expect(service.placementOf('tab-1')).toBe('shown');
+    // Hidden during the hold: from shown straight to parked.
+    service.setPlacement('tab-1', RECT, false);
+    expect(window.children).toEqual([holder, window.machineView]);
+    expect(holder.children).toEqual([view]);
+    onScreenHold?.();
     expect(window.children).toEqual([window.machineView]);
     expect(view.webContents.backgroundThrottling).toBe(true);
   });
@@ -506,5 +564,166 @@ describe('toWindowRect', () => {
       width: 0,
       height: 10,
     });
+  });
+});
+
+describe('BrowserViewService renderer support', () => {
+  it('runs the renderer-only commands on the page', async () => {
+    const { service, views } = setup();
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    const contents = views[0].webContents;
+
+    await expect(
+      service.command('tab-1', { type: 'execute-javascript', code: '1+1' }),
+    ).resolves.toEqual({ value: 'ran:1+1' });
+    service.command('tab-1', { type: 'set-audio-muted', muted: true });
+    expect(contents.muted).toBe(true);
+    service.command('tab-1', { type: 'toggle-devtools' });
+    expect(contents.openDevTools).toHaveBeenCalledWith({ mode: 'detach' });
+    contents.devToolsOpen = true;
+    service.command('tab-1', { type: 'toggle-devtools' });
+    expect(contents.closeDevTools).toHaveBeenCalled();
+  });
+
+  it('parks an off-screen page for a capture and puts it back after', async () => {
+    const { service, views } = setup();
+    const window = new FakeWindow();
+    service.create(KEY, windowLike(window), 'https://a.test/');
+    const contents = views[0].webContents;
+    let placementDuringCapture: string | undefined;
+    contents.capturePage.mockImplementationOnce(async () => {
+      placementDuringCapture = service.placementOf('tab-1');
+      return { isEmpty: () => false, toDataURL: () => 'data:image/png;base64,BBBB' };
+    });
+
+    await expect(service.command('tab-1', { type: 'capture' })).resolves.toEqual({
+      dataUrl: 'data:image/png;base64,BBBB',
+    });
+    expect(placementDuringCapture).toBe('parked');
+    expect(service.placementOf('tab-1')).toBe('detached');
+
+    contents.captureEmpty = true;
+    await expect(
+      service.command('tab-1', { type: 'capture', rect: { x: 1.4, y: 2, width: 30, height: 40 } }),
+    ).resolves.toEqual({ dataUrl: '' });
+    expect(contents.capturePage).toHaveBeenLastCalledWith({ x: 1, y: 2, width: 30, height: 40 });
+  });
+
+  it('reports the live state of a page', () => {
+    const { service, views } = setup();
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    views[0].webContents.history.back = true;
+    views[0].webContents.emit('page-title-updated', {}, 'A title');
+
+    expect(service.stateOf('tab-1')).toEqual({
+      webContentsId: views[0].webContents.id,
+      url: 'https://a.test/',
+      title: 'A title',
+      loading: false,
+      canGoBack: true,
+      canGoForward: false,
+      zoomFactor: 1,
+    });
+    expect(service.stateOf('missing')).toBeUndefined();
+  });
+
+  it('keeps app shortcuts from the page and sends them to the renderer', () => {
+    const { service, views, sent } = setup({ isMac: true });
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    const contents = views[0].webContents;
+    const press = (input: Partial<Electron.Input>) => {
+      const event = { preventDefault: vi.fn() };
+      contents.emit('before-input-event', event, {
+        type: 'keyDown',
+        key: '',
+        code: '',
+        shift: false,
+        control: false,
+        alt: false,
+        meta: false,
+        ...input,
+      });
+      return event.preventDefault;
+    };
+
+    expect(press({ key: 'w', code: 'KeyW', meta: true })).toHaveBeenCalled();
+    expect(press({ key: 'a', code: 'KeyA', meta: true })).not.toHaveBeenCalled();
+    // Option changes the key on macOS; the physical key still matches.
+    expect(press({ key: 'ˆ', code: 'KeyI', meta: true, alt: true })).toHaveBeenCalled();
+
+    const shortcuts = sent
+      .map(({ message }) => message.event)
+      .filter((event) => event.type === 'shortcut');
+    expect(shortcuts.map((event) => event.type === 'shortcut' && event.shortcut.action)).toEqual([
+      'close-tab',
+      'devtools',
+    ]);
+  });
+
+  it('forwards console errors as a count and app messages in full', () => {
+    const { service, views, sent } = setup();
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    const contents = views[0].webContents;
+    contents.emit('console-message', { level: 'error', message: 'secret token=abc' });
+    contents.emit('console-message', { level: 'info', message: 'hello' });
+    contents.emit('console-message', { level: 'info', message: '__INTENT_ELEMENT_PICK_CANCELLED__' });
+
+    expect(
+      sent.map(({ message }) => message.event).filter((e) => e.type === 'console-message'),
+    ).toEqual([
+      { type: 'console-message', level: 'error', message: '' },
+      { type: 'console-message', level: 'info', message: '__INTENT_ELEMENT_PICK_CANCELLED__' },
+    ]);
+  });
+
+  it('marks same-document navigations and tells the renderer when a page closes itself', () => {
+    const { service, views, sent, deps } = setup();
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    const contents = views[0].webContents;
+    contents.emit('did-navigate-in-page', {}, 'https://a.test/#b', true);
+    contents.destroy();
+
+    const events = sent.map(({ message }) => message.event);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'navigated', url: 'https://a.test/#b', inPage: true }),
+    );
+    expect(events.at(-1)).toEqual({ type: 'page-closed' });
+    expect(deps.cdp.unregisterTab).toHaveBeenCalledWith('tab-1');
+    expect(service.keyOf('tab-1')).toBeUndefined();
+  });
+
+  it('closes the oldest off-screen pages over the cap, never pinned, held or mounted ones', () => {
+    let clock = 0;
+    const { service, views, sent } = setup({ maxDetached: 2, now: () => clock });
+    const window = windowLike(new FakeWindow());
+    const open = (tabId: string, pinned = false) => {
+      clock++;
+      service.create({ ...KEY, tabId }, window, 'https://a.test/', { pinned });
+    };
+    open('pinned', true);
+    open('old');
+    open('mounted');
+    service.setPlacement('mounted', RECT, false);
+    open('held');
+    const release = service.holdDrawing(views[3].webContents.id);
+    open('mid');
+    expect(service.keyOf('old')).toBeDefined();
+    open('new');
+
+    // Unpinned, unmounted, unheld off-screen pages: old, mid, new. The cap is 2.
+    expect(service.keyOf('old')).toBeUndefined();
+    expect(sent.at(-1)?.message).toMatchObject({
+      tabId: 'old',
+      event: { type: 'closed-offscreen' },
+    });
+    for (const tabId of ['pinned', 'mounted', 'held', 'mid', 'new']) {
+      expect(service.keyOf(tabId)).toBeDefined();
+    }
+
+    // Unmounting makes a page count again; the oldest goes.
+    clock++;
+    service.detach('mounted');
+    expect(service.keyOf('mid')).toBeUndefined();
+    release?.();
   });
 });

@@ -16,6 +16,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => {
+  class View {
+    addChildView = vi.fn();
+    removeChildView = vi.fn();
+    setBounds = vi.fn();
+  }
   class WebContentsView {
     webContents: any;
     constructor() {
@@ -26,6 +31,9 @@ vi.mock('electron', () => {
         close: vi.fn(),
         navigationHistory: { canGoBack: () => false, canGoForward: () => false },
         stop: vi.fn(),
+        getURL: () => 'https://a.test/',
+        isLoading: () => false,
+        getZoomFactor: () => 1,
       });
       this.webContents = contents;
       mocks.views.push(this);
@@ -38,6 +46,7 @@ vi.mock('electron', () => {
     ipcMain: {
       handle: vi.fn((channel: string, handler: any) => mocks.handlers.set(channel, handler)),
     },
+    View,
     WebContentsView,
   };
 });
@@ -117,18 +126,57 @@ beforeEach(() => {
 });
 
 describe('browser view IPC', () => {
-  it('is off by default: creating a page is refused until the Labs setting is on', async () => {
+  it('is off by default, and a change applies only after a restart', async () => {
     await register();
-    const window = fakeWindow();
-    const event = renderer(window);
+    const event = renderer(fakeWindow());
 
     await expect(invoke(CH.CREATE, event, CREATE)).rejects.toThrow('off');
-    await expect(invoke(CH.GET_LAB, event, undefined)).resolves.toEqual({ enabled: false });
+    await expect(invoke(CH.GET_LAB, event, undefined)).resolves.toEqual({
+      enabled: false,
+      active: false,
+    });
 
-    await expect(invoke(CH.SET_LAB, event, { enabled: true })).resolves.toEqual({ enabled: true });
+    // The renderer chose the <webview> path for this run: no pages yet.
+    await expect(invoke(CH.SET_LAB, event, { enabled: true })).resolves.toEqual({
+      enabled: true,
+      active: false,
+    });
     expect(mocks.prefs.get('browserViewsInMainEnabled')).toBe(true);
-    await expect(invoke(CH.CREATE, event, CREATE)).resolves.toEqual({ webContentsId: 300 });
-    expect(mocks.registerTab).toHaveBeenCalledWith('tab-1', 300, 'ws-1');
+    await expect(invoke(CH.CREATE, event, CREATE)).rejects.toThrow('off');
+
+    // Next run.
+    await register();
+    const next = renderer(fakeWindow());
+    await expect(invoke(CH.GET_LAB, next, undefined)).resolves.toEqual({
+      enabled: true,
+      active: true,
+    });
+    await expect(invoke(CH.CREATE, next, CREATE)).resolves.toEqual({
+      webContentsId: expect.any(Number),
+    });
+    expect(mocks.registerTab).toHaveBeenCalledWith('tab-1', expect.any(Number), 'ws-1');
+
+    // Turning it off keeps this run's pages working until the restart.
+    await invoke(CH.SET_LAB, next, { enabled: false });
+    await expect(
+      invoke(CH.CREATE, next, { ...CREATE, tabId: 'tab-2' }),
+    ).resolves.toMatchObject({ webContentsId: expect.any(Number) });
+  });
+
+  it('reads a live page state only for its owner', async () => {
+    mocks.prefs.set('browserViewsInMainEnabled', true);
+    await register();
+    const owner = renderer(fakeWindow());
+    const intruder = renderer(fakeWindow());
+
+    await expect(invoke(CH.STATE, owner, { tabId: 'tab-1' })).resolves.toEqual({ state: null });
+    await invoke(CH.CREATE, owner, CREATE);
+    await expect(invoke(CH.STATE, intruder, { tabId: 'tab-1' })).rejects.toThrow(
+      'another window',
+    );
+    await expect(invoke(CH.STATE, owner, { tabId: 'tab-1' })).resolves.toMatchObject({
+      state: { url: expect.any(String), canGoBack: false },
+    });
   });
 
   it('connects the service to the CDP registry', async () => {
