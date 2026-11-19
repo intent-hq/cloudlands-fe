@@ -1,5 +1,7 @@
-import { expect, test } from '../../../test/ct-test';
+import { writeFile } from 'node:fs/promises';
+import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
+import DockOverview from './DockOverview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
 for (const shape of ['notch', 'top-pill'] as const) {
@@ -236,3 +238,183 @@ test('workspace status cues follow transitions and open the indicated workspace'
   await target.press('Enter');
   await expect(component).toHaveAttribute('data-preview-action', `workspace:${targetId}`);
 });
+
+test('narrow repository status keeps cues and fallback text clear of timestamps', async ({
+  mount,
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 300, height: 400 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+  const base = dockRailPreview.states.notch.props.workspaces[0];
+  const workspaces = [
+    {
+      ...base,
+      workspace: {
+        ...base.workspace,
+        repositoryOwner: 'demo/team',
+        repositoryName: 'a-deliberately-long-repository-name',
+        title: 'A deliberately long workspace title which must stay in its text column',
+      },
+    },
+    {
+      ...base,
+      workspace: {
+        ...base.workspace,
+        id: `${base.workspace.id}-folder` as typeof base.workspace.id,
+        repositoryOwner: undefined,
+        repositoryName: undefined,
+        repositoryPath: undefined,
+        plainFolder: true,
+        title: 'Folder workspace',
+        statusMessage: 'A long folder status message that must truncate before the timestamp',
+      },
+    },
+  ];
+  const component = await mount(DockOverview, { props: { workspaces, onOpen: () => {} } });
+  for (const item of workspaces) {
+    const row = component.locator(`[data-dock-row][data-workspace-id="${item.workspace.id}"]`);
+    await expect(row).toHaveAccessibleDescription(/Failed$/);
+    await expect(row.locator('[data-workspace-status-visual]')).toHaveCount(1);
+    const clear = await row.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const copy = element.querySelector('.row-copy')!.getBoundingClientRect();
+      const time = element.querySelector('.row-time')!.getBoundingClientRect();
+      const status = element.querySelector('.row-status')!;
+      const cue = status.querySelector('[data-workspace-status-visual]')!.getBoundingClientRect();
+      const text = status
+        .querySelector('[data-dock-row-repo], [data-dock-row-message]')!
+        .getBoundingClientRect();
+      return (
+        copy.width > 0 &&
+        cue.width > 0 &&
+        text.width > 0 &&
+        cue.right < text.left &&
+        text.right <= copy.right &&
+        copy.right <= time.left &&
+        time.right <= box.right &&
+        box.right <= innerWidth
+      );
+    });
+    expect(clear).toBe(true);
+  }
+  await expect(component.locator('[data-dock-row-repo]')).toHaveText(
+    'demo/team/a-deliberately-long-repository-name',
+  );
+  await expect(component.locator('[data-dock-row-message]')).toHaveText(
+    workspaces[1].workspace.statusMessage!,
+  );
+  const path = info.outputPath('narrow-repository-status.png');
+  await component.screenshot({ path });
+  await info.attach('Narrow repository and folder status', { path, contentType: 'image/png' });
+});
+
+for (const mode of ['floating', 'notch'] as const) {
+  test(`long status list in ${mode} keeps cues aligned and every workspace reachable`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 720, height: 680 });
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+    const props = dockRailPreview.states[`${mode}-status-list`].props;
+    const component = await mount(DockRailPreview, { props });
+    const grip = component.getByTestId('dock-drag-handle');
+    // Hover the anchored float for a pointer-driven hero without a keyboard focus ring.
+    if (mode === 'floating') await grip.hover();
+    else {
+      await page.keyboard.press('Tab');
+      await expect(grip).toBeFocused();
+    }
+    await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
+    const overview = component.getByTestId('dock-overview');
+    const rows = overview.locator(
+      '[data-dock-row][data-workspace-id]:not([data-workspace-id="dock:assistant"])',
+    );
+    await expect(rows).toHaveCount(10);
+    await expect(rows.locator('.row-status > [data-workspace-status-visual]')).toHaveCount(10);
+    await expect(rows.locator('[data-dock-row-message]')).toHaveText('Waiting for your review.');
+    const center = (element: Element) => {
+      const r = element.getBoundingClientRect();
+      return r.x + r.width / 2;
+    };
+    const centers = {
+      logo: await grip.evaluate(center),
+      avatar: await rows.first().locator('[data-dock-repo-avatar]').evaluate(center),
+      search: await overview.locator('.search-lead').evaluate(center),
+    };
+    const centersPath = info.outputPath(`${mode}-column-centers.json`);
+    await writeFile(centersPath, JSON.stringify(centers, null, 2));
+    await info.attach(`${mode}-column-centers`, {
+      path: centersPath,
+      contentType: 'application/json',
+    });
+    const surface = component.locator('section[data-dock-surface]');
+    const top = info.outputPath(`${mode}-status-list-top.png`);
+    await surface.screenshot({ path: top });
+    await info.attach(`${mode} long list top`, { path: top, contentType: 'image/png' });
+    expect(Math.abs(centers.logo - centers.avatar)).toBeLessThan(0.5);
+    expect(Math.abs(centers.logo - centers.search)).toBeLessThan(0.5);
+    const scroller = overview.locator('[data-dock-scroll]');
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight))
+      .toBe(true);
+    await wheelUntilScrolled(scroller, { deltaY: 700 });
+    await rows.last().focus();
+    await expect(rows.last()).toBeInViewport();
+    const bottom = info.outputPath(`${mode}-status-list-bottom.png`);
+    await surface.screenshot({ path: bottom });
+    await info.attach(`${mode} long list bottom`, { path: bottom, contentType: 'image/png' });
+    const targetId = await rows.last().getAttribute('data-workspace-id');
+    await rows.last().locator('[data-workspace-status-visual]').click();
+    await expect(component).toHaveAttribute('data-preview-action', `workspace:${targetId}`);
+  });
+}
+
+for (const direction of ['down', 'up'] as const) {
+  test(`floating ${direction} expansion aligns the logo and returns to its compact anchor`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 720, height: 680 });
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+    const props =
+      dockRailPreview.states[
+        direction === 'up' ? 'floating-status-list-up' : 'floating-status-list'
+      ].props;
+    const component = await mount(DockRailPreview, { props });
+    const shell = component.getByTestId('dock-shell');
+    const logo = component.getByTestId('dock-drag-handle');
+    const center = (element: Element) => {
+      const r = element.getBoundingClientRect();
+      return r.x + r.width / 2;
+    };
+    const compact = await logo.evaluate(center);
+    await logo.hover();
+    await expect(shell).toHaveAttribute('data-reveal', '1');
+    await expect(component.locator('section[data-dock-surface]')).toHaveAttribute(
+      'data-expansion-direction',
+      direction,
+    );
+    const avatar = component.locator('[data-dock-repo-avatar]').first();
+    const search = component.locator('.search-lead');
+    await expect
+      .poll(async () => Math.abs((await logo.evaluate(center)) - (await avatar.evaluate(center))))
+      .toBeLessThan(0.5);
+    await expect
+      .poll(async () => Math.abs((await logo.evaluate(center)) - (await search.evaluate(center))))
+      .toBeLessThan(0.5);
+    const path = info.outputPath(`floating-${direction}-aligned.png`);
+    await component.locator('section[data-dock-surface]').screenshot({ path });
+    await info.attach(`Floating ${direction} aligned`, { path, contentType: 'image/png' });
+    await page.mouse.move(700, 660);
+    await expect(shell).toHaveAttribute('data-reveal', '0');
+    await expect
+      .poll(async () => Math.abs((await logo.evaluate(center)) - compact))
+      .toBeLessThan(0.5);
+    // A second opening must retain the same shared avatar/search alignment.
+    await logo.hover();
+    await expect(shell).toHaveAttribute('data-reveal', '1');
+    await expect
+      .poll(async () => Math.abs((await logo.evaluate(center)) - (await avatar.evaluate(center))))
+      .toBeLessThan(0.5);
+  });
+}
