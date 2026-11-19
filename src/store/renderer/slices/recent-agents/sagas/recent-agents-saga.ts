@@ -34,7 +34,7 @@ import {
 const logger = createLogger('RecentAgentsSaga');
 const RECENT_AGENTS = IPC_CHANNELS.RECENT_AGENTS;
 
-type Visit = Omit<RecentAgentEntry, 'visitedAt'>;
+type Visit = Omit<RecentAgentEntry, 'visitedAt'> & { viewed?: boolean };
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -93,12 +93,8 @@ function* watchChanges(): SagaGenerator<void> {
   }
 }
 
-function windowHasFocus(): boolean {
-  return typeof document !== 'undefined' && document.hasFocus();
-}
-
 /** Report `agentId` as opened in this window, when the window knows the agent. */
-function* recordVisit(agentId: string): SagaGenerator<void> {
+function* recordVisit(agentId: string, viewed = false): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
   if (!session?.workspaceId) return;
   const connectionId = yield* selectCurrentConnectionId.effect();
@@ -110,6 +106,7 @@ function* recordVisit(agentId: string): SagaGenerator<void> {
     workspaceTitle: workspace?.title || null,
     agentId,
     agentName: session.name ?? '',
+    ...(viewed ? { viewed } : {}),
   });
 }
 
@@ -121,10 +118,10 @@ function* reportVisit(visit: Visit): SagaGenerator<void> {
   }
 }
 
-/** A chat became the one on screen. Background windows restoring a layout do not count. */
+/** A chat became the one on screen. Main skips background windows restoring a layout. */
 function* handleViewed(action: ReturnType<typeof markAgentAsViewed>): SagaGenerator<void> {
   const [agentId] = action.payload;
-  if (agentId && windowHasFocus()) yield* call(recordVisit, agentId);
+  if (agentId) yield* call(recordVisit, agentId, true);
 }
 
 /** Coming back to a window makes the agent it shows the most recent one. */
