@@ -16,7 +16,8 @@
  * to ensure consistency across the codebase.
  */
 
-import { app, session, shell, systemPreferences } from 'electron';
+import { app, session, systemPreferences } from 'electron';
+import { openExternal } from './open-external';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
@@ -335,7 +336,7 @@ export function setupWebviewSecurity(): void {
 
         if (isExternalHttpUrl(parsed)) {
           event.preventDefault();
-          shell.openExternal(url).catch((err: Error) => {
+          openExternal(url).catch((err: Error) => {
             logger.error('Failed to open URL in external browser', { url, error: err.message });
           });
           return;
@@ -482,7 +483,7 @@ export function setupWebviewSecurity(): void {
         }
 
         if (isExternalHttpUrl(parsed)) {
-          shell.openExternal(url).catch((err: Error) => {
+          openExternal(url).catch((err: Error) => {
             logger.error('Failed to open URL in external browser', { url, error: err.message });
           });
           return { action: 'deny' };

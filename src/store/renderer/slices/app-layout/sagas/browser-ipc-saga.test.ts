@@ -120,6 +120,7 @@ describe('browserIpcSaga', () => {
       ['browser:host-workspace', handlers['browser:host-workspace']],
       ['browser:diagnose-tab', handlers['browser:diagnose-tab']],
       ['browser:open-tab', handlers['browser:open-tab']],
+      ['browser:open-link', handlers['browser:open-link']],
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
       ['browser:show-tab', handlers['browser:show-tab']],
@@ -135,6 +136,7 @@ describe('browserIpcSaga', () => {
       ['browser:host-workspace', 'browser:host-workspace-listener'],
       ['browser:diagnose-tab', 'browser:diagnose-tab-listener'],
       ['browser:open-tab', 'browser:open-tab-listener'],
+      ['browser:open-link', 'browser:open-link-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
       ['browser:show-tab', 'browser:show-tab-listener'],
@@ -145,7 +147,7 @@ describe('browserIpcSaga', () => {
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(20);
+    expect(on).toHaveBeenCalledTimes(22);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -276,6 +278,39 @@ describe('browserIpcSaga', () => {
     await emit({ workspaceId: 'ws-1' }, 'browser:diagnose-tab');
 
     expect(info.mock.calls.some(([line]) => String(line).includes('tab diagnosis'))).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens a web link from main as a user browser tab on the resolved URL', async () => {
+    const actions: unknown[] = [];
+    const invoke = vi.fn(async () => ({
+      url: 'http://daemon.localhost:3000/',
+      rewritten: true,
+      requestedUrl: 'http://localhost:3000/',
+    }));
+    window.electronAPI = { ...window.electronAPI, invoke } as typeof window.electronAPI;
+    const task = start((action) => actions.push(action));
+
+    await emit({ url: 'http://localhost:3000/', workspaceId: 'ws-1' }, 'browser:open-link');
+    await settle();
+    await emit({ url: 'http://localhost:3000/' }, 'browser:open-link');
+
+    expect(invoke).toHaveBeenCalledWith('browser:resolve-url', { url: 'http://localhost:3000/' });
+    expect(actions).toMatchObject([
+      {
+        type: 'panelLayout/openTabInRightmostColumnRequested',
+        payload: {
+          wsId: 'ws-1',
+          tab: {
+            type: 'browser',
+            browserUrl: 'http://daemon.localhost:3000/',
+            browserRequestedUrl: 'http://localhost:3000/',
+          },
+        },
+      },
+    ]);
+    expect(actions).toHaveLength(1);
     task.cancel();
     await task.toPromise();
   });

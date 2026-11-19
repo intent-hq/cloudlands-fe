@@ -1,7 +1,7 @@
 /** Standards-based OAuth flow for hosted MCP servers. */
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { shell } from 'electron';
+import { openExternal } from '../../../main/open-external';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -424,7 +424,7 @@ export async function initiateMcpOAuth(
     authorizationUrl.searchParams.set('code_challenge_method', 'S256');
     authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
     if (scope) authorizationUrl.searchParams.set('scope', scope);
-    await Promise.all([shell.openExternal(authorizationUrl.toString()), callbackServer.completion]);
+    await Promise.all([openExternal(authorizationUrl.toString()), callbackServer.completion]);
     if (!tokens) throw new Error('OAuth sign-in did not return tokens.');
     await persistTokensOnDaemon(serverId, tokens);
     tokenStore.set(serverId, tokens);

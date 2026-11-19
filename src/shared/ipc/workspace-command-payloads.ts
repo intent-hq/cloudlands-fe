@@ -15,6 +15,14 @@ export type BrowserEmulatedSize = {
   height: number;
 };
 
+/**
+ * `browser:open-link` (main → renderer): a web link Intent would hand to the
+ * system browser, sent instead to the window that shows `workspaceId` when
+ * INTENT_NO_SYSTEM_BROWSER is set (Intent OS). The renderer resolves loopback
+ * URLs, then opens a browser panel.
+ */
+export type BrowserOpenLinkPayload = WorkspaceCommandPayload & { url: string };
+
 export type BrowserOpenTabPayload = WorkspaceCommandPayload & {
   url: string;
   position?: 'adjacent' | 'replace' | 'same';

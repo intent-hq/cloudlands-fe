@@ -680,6 +680,11 @@ export const IPC_CHANNELS = {
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */
     OPEN_TAB: 'browser:open-tab',
+    /**
+     * Open a web link in a browser panel of the workspace the window shows,
+     * instead of the system browser (INTENT_NO_SYSTEM_BROWSER) - main->renderer event
+     */
+    OPEN_LINK: 'browser:open-link',
     /** A tab's registration timed out: log this window's view of it (intent-hq/intent#7855) - main->renderer event */
     DIAGNOSE_TAB: 'browser:diagnose-tab',
     /** Close a browser tab in a panel - main->renderer event */
@@ -1456,6 +1461,8 @@ export const EVENT_CHANNELS = [
   'browser:agent-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
+  // Web link open request from main process (no system browser: Intent OS)
+  'browser:open-link',
   // A tab's registration timed out; the renderer logs its view of the tab (intent-hq/intent#7855)
   'browser:diagnose-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)

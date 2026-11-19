@@ -1019,6 +1019,23 @@ export default [
       '@typescript-eslint/no-floating-promises': 'error',
     },
   },
+  // One opener for URLs handed to the OS: src/main/open-external.ts keeps web
+  // links in Intent's own browser when INTENT_NO_SYSTEM_BROWSER is set (Intent
+  // OS has no system browser), so a direct `shell.openExternal` would skip it.
+  {
+    files: mainProcessFiles,
+    ignores: ['**/__tests__/**', '**/*.test.ts', 'src/main/open-external.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'shell',
+          property: 'openExternal',
+          message: 'Use openExternal from src/main/open-external.ts (Intent OS in-app links).',
+        },
+      ],
+    },
+  },
   // Guard raw `dismissedQuestionsMessageId` reads: the dismissal comparison lives
   // in the shared helpers only. See dismissalMarkerRawReadAllowedFiles above.
   {

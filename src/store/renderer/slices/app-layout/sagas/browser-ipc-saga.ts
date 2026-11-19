@@ -3,6 +3,7 @@ import { all, call, join, put, takeEvery, type SagaGenerator } from 'typed-redux
 
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 import { m } from '$shared/paraglide/messages.js';
 import {
   isBrowserEmulatedSize,
@@ -14,6 +15,7 @@ import {
   type BrowserFocusTabPayload,
   type BrowserHostWorkspacePayload,
   type BrowserListTabsRequestPayload,
+  type BrowserOpenLinkPayload,
   type BrowserOpenTabPayload,
   type BrowserShowTabPayload,
   type BrowserTabNavigatedPayload,
@@ -765,6 +767,21 @@ function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGen
   });
 }
 
+/**
+ * A web link main kept out of the system browser (INTENT_NO_SYSTEM_BROWSER,
+ * Intent OS): resolve loopback URLs like a terminal link, then open a user
+ * (unowned) browser tab in the workspace this window shows.
+ */
+function* openLink(data: BrowserOpenLinkPayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data) || typeof data.url !== 'string') return;
+  const resolved = yield* call(resolveBrowserLinkForOpen, data.url);
+  yield* call(openBrowser, {
+    workspaceId: data.workspaceId,
+    url: resolved.url,
+    ...(resolved.requestedUrl === undefined ? {} : { requestedUrl: resolved.requestedUrl }),
+  });
+}
+
 /** `browser:diagnose-tab` payload (main → renderer), validated on arrival. */
 type BrowserDiagnoseTabPayload = { workspaceId?: unknown; tabId?: unknown; stage?: unknown };
 
@@ -853,6 +870,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every requested browser tab must be opened in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserOpenLinkPayload | null>(
+        'browser:open-link',
+        openLink,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Every web link the user opened must open, in arrival order.',
           },
         },
       ),
