@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
-  import type { RecentAgentEntry, RecentAgentPageKey } from '$shared/recent-agents';
+  import {
+    matchSwitcherChord,
+    type RecentAgentEntry,
+    type RecentAgentPageKey,
+  } from '$shared/recent-agents';
   import { onRecentAgentPageKey } from './page-key-forwarding';
   import {
     selectConnectedIds,
@@ -14,7 +18,6 @@
   import RecentAgentSwitcherView from './RecentAgentSwitcherView.svelte';
   import {
     isSwitcherModifierReleased,
-    matchSwitcherChord,
     stepSwitcher,
     switcherHeldModifiers,
     SWITCHER_CLOSED,
@@ -76,7 +79,14 @@
 
   /** A DOM key event, or one a browser-panel page forwarded through main. */
   type SwitcherKey = Omit<RecentAgentPageKey, 'type'> &
-    Partial<Pick<KeyboardEvent, 'preventDefault' | 'stopPropagation'>>;
+    Partial<Pick<KeyboardEvent, 'preventDefault' | 'stopPropagation' | 'target'>>;
+
+  /** Settings → Keyboard shortcuts records the next chord; it must receive the switcher's too. */
+  function isShortcutCapture(event: SwitcherKey): boolean {
+    return (
+      event.target instanceof Element && event.target.closest('[data-shortcut-input]') !== null
+    );
+  }
 
   function swallow(event: SwitcherKey): void {
     event.preventDefault?.();
@@ -85,6 +95,7 @@
 
   function onKeydown(event: SwitcherKey): void {
     if (!switcher.open) {
+      if (isShortcutCapture(event)) return;
       const direction = matchSwitcherChord(event, $binding$, isMac);
       if (!direction || $recentAgents$.length === 0) return;
       swallow(event);
@@ -97,6 +108,12 @@
     // The release happened while another window had the keys.
     if (held && isSwitcherModifierReleased(held, event)) {
       apply({ type: 'release' });
+      return;
+    }
+    // The chord itself moves, whatever its key (e.g. a custom Ctrl+F6).
+    const direction = matchSwitcherChord(event, $binding$, isMac);
+    if (direction) {
+      apply({ type: 'chord', backwards: direction === 'backward', sticky: false });
       return;
     }
     if (event.key === 'Escape') apply({ type: 'cancel' });

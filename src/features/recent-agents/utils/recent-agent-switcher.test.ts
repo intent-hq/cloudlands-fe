@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { matchSwitcherChord } from '$shared/recent-agents';
 import {
   isSwitcherModifierReleased,
-  matchSwitcherChord,
   stepSwitcher,
   switcherHeldModifiers,
   SWITCHER_CLOSED,
@@ -91,6 +91,14 @@ describe('matchSwitcherChord', () => {
       'backward',
     );
     expect(matchSwitcherChord(key('Tab', { metaKey: true }), 'alt+tab', true)).toBeNull();
+  });
+
+  it('reads a custom chord on any key, forward and with Shift', () => {
+    expect(matchSwitcherChord(key('F6', { ctrlKey: true }), 'ctrl+f6', false)).toBe('forward');
+    expect(matchSwitcherChord(key('F6', { ctrlKey: true, shiftKey: true }), 'ctrl+f6', false)).toBe(
+      'backward',
+    );
+    expect(matchSwitcherChord(key('Tab', { ctrlKey: true }), 'ctrl+f6', false)).toBeNull();
   });
 
   it('never opens without a binding (no default on Windows)', () => {

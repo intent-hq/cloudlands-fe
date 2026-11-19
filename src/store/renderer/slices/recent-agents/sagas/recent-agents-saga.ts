@@ -9,6 +9,7 @@
  * on another one.
  */
 
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { all, call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
@@ -25,6 +26,7 @@ import { selectCurrentlyViewedAgentId } from '../../unread-tracking/unread-track
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { bulkUpdateWorkspaceEntities } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectRecentAgentsBinding } from '../recent-agents-selectors';
 import { recentAgentOpenRequested, recentAgentsReceived } from '../recent-agents-slice';
 
 const logger = createLogger('RecentAgentsSaga');
@@ -45,6 +47,9 @@ const requests = {
   },
   record: async (visit: Visit): Promise<void> => {
     await getApi()?.invoke(RECENT_AGENTS.RECORD, visit);
+  },
+  setPageChord: async (binding: string): Promise<void> => {
+    await getApi()?.invoke(RECENT_AGENTS.SET_PAGE_CHORD, { binding });
   },
   forgetWorkspace: async (connectionId: string, workspaceId: string): Promise<void> => {
     await getApi()?.invoke(RECENT_AGENTS.FORGET_WORKSPACE, { connectionId, workspaceId });
@@ -176,8 +181,20 @@ function* handleOpen(action: ReturnType<typeof recentAgentOpenRequested>): SagaG
   yield* put(openConnectionRequested(entry.connectionId, target));
 }
 
+/** Main forwards this chord from browser-panel pages, so it follows the user's binding. */
+function* reportPageChord({
+  payload: binding,
+}: SelectorChannelPayload<string>): SagaGenerator<void> {
+  try {
+    yield* call(requests.setPageChord, binding);
+  } catch (error) {
+    logger.warn('Could not report the switcher chord', error);
+  }
+}
+
 export function* recentAgentsSaga(): SagaGenerator<void> {
   yield* fork(watchChanges);
+  yield* takeLatestFromSelector(selectRecentAgentsBinding, reportPageChord);
   yield* fork(watchFocus);
   yield* all([
     takeEvery(markAgentAsViewed, handleViewed),

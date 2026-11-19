@@ -6,11 +6,16 @@
 import { app, ipcMain } from 'electron';
 import { z } from 'zod';
 import { getAppWindows } from '../../../main/offscreen-window';
-import { RecentAgentVisitSchema, RecentAgentWorkspaceSchema } from '../../../main/ipc-schemas';
+import {
+  RecentAgentPageChordSchema,
+  RecentAgentVisitSchema,
+  RecentAgentWorkspaceSchema,
+} from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { getRendererWebContents } from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { shortcutDefault } from '../../../shared/keyboard-shortcut-bindings';
 import {
   parseRecentAgents,
   recordRecentAgentVisit,
@@ -23,6 +28,8 @@ const RECENT_AGENTS = IPC_CHANNELS.RECENT_AGENTS;
 const EmptySchema = z.object({}).optional();
 
 let entries: RecentAgentEntry[] | null = null;
+/** The switcher chord browser-panel pages forward; renderers report the user's binding. */
+let pageChord = shortcutDefault('navigation.recent-agents');
 /** Changes apply one at a time, each to the list the previous one left. */
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -71,6 +78,17 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
     ),
   );
   ipcMain.handle(
+    RECENT_AGENTS.SET_PAGE_CHORD,
+    createValidatedHandler(
+      RecentAgentPageChordSchema,
+      async (_event, { binding }) => {
+        pageChord = binding;
+        return { ok: true };
+      },
+      RECENT_AGENTS.SET_PAGE_CHORD,
+    ),
+  );
+  ipcMain.handle(
     RECENT_AGENTS.FORGET_WORKSPACE,
     createValidatedHandler(
       RecentAgentWorkspaceSchema,
@@ -86,7 +104,7 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
 
 /**
  * Keys typed in a `<webview>` never reach the app's document, so main forwards the switcher's
- * chord to the page's host renderer. The switcher then takes focus, and later keys reach it
+ * chord (the binding a renderer last reported) to the page's host renderer. The switcher then takes focus, and later keys reach it
  * directly; the modifier release is forwarded too in case it lands in the page first.
  */
 export function setupRecentAgentPageKeys(): void {
@@ -94,7 +112,7 @@ export function setupRecentAgentPageKeys(): void {
     if (contents.getType() !== 'webview') return;
     let chordOpen = false;
     contents.on('before-input-event', (event, input) => {
-      const forward = pageKeyToForward(input, chordOpen);
+      const forward = pageKeyToForward(input, chordOpen, pageChord, process.platform === 'darwin');
       if (!forward) return;
       const host = contents.hostWebContents;
       if (!host || host.isDestroyed()) return;

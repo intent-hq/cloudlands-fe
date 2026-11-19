@@ -131,29 +131,36 @@ describe('pageKeyToForward', () => {
     ...overrides,
   });
 
-  it('forwards Tab with Option/Alt or Super/Cmd, keeping Shift for the direction', () => {
-    expect(pageKeyToForward(input({ alt: true }), false)).toMatchObject({
+  it('forwards the configured chord, keeping Shift for the direction', () => {
+    expect(pageKeyToForward(input({ alt: true }), false, 'alt+tab', true)).toMatchObject({
       type: 'keydown',
       key: 'Tab',
       altKey: true,
     });
-    expect(pageKeyToForward(input({ meta: true, shift: true }), false)).toMatchObject({
-      type: 'keydown',
-      metaKey: true,
-      shiftKey: true,
-    });
+    expect(
+      pageKeyToForward(input({ meta: true, shift: true }), false, 'super+tab', false),
+    ).toMatchObject({ type: 'keydown', metaKey: true, shiftKey: true });
+    expect(
+      pageKeyToForward(input({ key: 'F6', control: true }), false, 'ctrl+f6', false),
+    ).toMatchObject({ type: 'keydown', key: 'F6' });
   });
 
-  it('leaves plain Tab and other chords with the page', () => {
-    expect(pageKeyToForward(input(), false)).toBeNull();
-    expect(pageKeyToForward(input({ control: true }), false)).toBeNull();
-    expect(pageKeyToForward(input({ key: 'a', control: true }), false)).toBeNull();
+  it('leaves every other key, and every key when there is no binding, with the page', () => {
+    expect(pageKeyToForward(input(), false, 'alt+tab', true)).toBeNull();
+    expect(pageKeyToForward(input({ control: true }), false, 'alt+tab', true)).toBeNull();
+    expect(pageKeyToForward(input({ alt: true }), false, 'ctrl+f6', false)).toBeNull();
+    expect(pageKeyToForward(input({ alt: true }), false, '', false)).toBeNull();
   });
 
   it('forwards a modifier release only while a forwarded chord is open', () => {
     const release = input({ type: 'keyUp', key: 'Alt' });
-    expect(pageKeyToForward(release, true)).toMatchObject({ type: 'keyup', altKey: false });
-    expect(pageKeyToForward(release, false)).toBeNull();
-    expect(pageKeyToForward(input({ type: 'keyUp', key: 'Tab' }), true)).toBeNull();
+    expect(pageKeyToForward(release, true, 'alt+tab', true)).toMatchObject({
+      type: 'keyup',
+      altKey: false,
+    });
+    expect(pageKeyToForward(release, false, 'alt+tab', true)).toBeNull();
+    expect(
+      pageKeyToForward(input({ type: 'keyUp', key: 'Tab' }), true, 'alt+tab', true),
+    ).toBeNull();
   });
 });

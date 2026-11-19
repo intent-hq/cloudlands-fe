@@ -4,13 +4,7 @@
  * Esc to cancel. The first press selects the second entry, so a quick press and release returns
  * to the previous agent. A chord with no modifier to hold keeps the switcher open until Enter.
  */
-import {
-  matchesShortcut,
-  normalizeShortcut,
-  shortcutHeldModifiers,
-  type HeldShortcutModifiers,
-  type ShortcutKeyboardEvent,
-} from '$lib/utils/shortcut-bindings';
+import { shortcutHeldModifiers, type HeldShortcutModifiers } from '$lib/utils/shortcut-bindings';
 
 export type SwitcherState =
   | { open: false }
@@ -67,23 +61,6 @@ export function stepSwitcher(
     case 'cancel':
       return { state: SWITCHER_CLOSED };
   }
-}
-
-/**
- * Whether `event` presses the switcher chord: forward, or backwards with Shift added. A binding
- * that already uses Shift has no backwards chord.
- */
-export function matchSwitcherChord(
-  event: ShortcutKeyboardEvent,
-  binding: string,
-  mac: boolean,
-): 'forward' | 'backward' | null {
-  if (matchesShortcut(event, binding, mac)) return 'forward';
-  const normalized = normalizeShortcut(binding);
-  if (!event.shiftKey || !normalized || normalized.split('+').includes('shift')) return null;
-  const key = normalized.slice(normalized.lastIndexOf('+') + 1);
-  const modifiers = normalized.slice(0, normalized.length - key.length);
-  return matchesShortcut(event, `${modifiers}shift+${key}`, mac) ? 'backward' : null;
 }
 
 /** The modifiers the switcher waits on, or null when the binding holds none (sticky mode). */

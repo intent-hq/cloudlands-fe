@@ -1,5 +1,6 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { visibleRecentAgents, type RecentAgentEntry } from '$shared/recent-agents';
+import { resolveShortcut } from '$shared/keyboard-shortcut-bindings';
 import { store } from '../../store';
 
 /**
@@ -19,3 +20,8 @@ export const selectRecentAgents = store.createSelector((state): RecentAgentEntry
   ]);
   return visibleRecentAgents(entries, saved);
 });
+
+/** The switcher's effective binding (the user's, else this platform's default). */
+export const selectRecentAgentsBinding = store.createSelector((state): string =>
+  resolveShortcut('navigation.recent-agents', state.userPreferences?.shortcutOverrides ?? {}),
+);

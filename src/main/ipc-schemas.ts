@@ -786,6 +786,8 @@ export const RecentAgentVisitSchema = z
   })
   .strict();
 
+export const RecentAgentPageChordSchema = z.object({ binding: z.string().max(128) }).strict();
+
 export const RecentAgentWorkspaceSchema = z
   .object({ connectionId: RecentAgentIdSchema, workspaceId: RecentAgentIdSchema })
   .strict();

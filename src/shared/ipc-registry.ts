@@ -1157,6 +1157,9 @@ export const IPC_CHANNELS = {
     // in a page of the browser panel, whose keys never reach the app's document
     // (also in EVENT_CHANNELS).
     PAGE_KEY: 'recent-agents:page-key',
+    // Renderer → main: the switcher's effective binding, so main forwards that
+    // chord (not only the default) from browser-panel pages.
+    SET_PAGE_CHORD: 'recent-agents:set-page-chord',
   },
   MACHINE_RAIL: {
     GET_STATE: 'machine-rail:get-state',

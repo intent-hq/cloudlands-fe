@@ -4,6 +4,12 @@
  * synced across devices); these pure helpers keep it, as the iOS app's agent history does.
  */
 
+import {
+  matchesShortcut,
+  normalizeShortcut,
+  type ShortcutKeyboardEvent,
+} from './keyboard-shortcut-bindings';
+
 /** One opened agent conversation, keyed by its connection and agent. */
 export interface RecentAgentEntry {
   connectionId: string;
@@ -46,11 +52,33 @@ export interface PageInput {
 }
 
 /**
- * What a browser-panel page forwards to its app window: Tab pressed with Option/Alt or Super/Cmd
- * (the switcher's default chords), then, while that chord is open, the release of a modifier. Other keys stay
- * with the page.
+ * Whether `event` presses the switcher chord: forward, or backwards with Shift added. A binding
+ * that already uses Shift has no backwards chord.
  */
-export function pageKeyToForward(input: PageInput, chordOpen: boolean): RecentAgentPageKey | null {
+export function matchSwitcherChord(
+  event: ShortcutKeyboardEvent,
+  binding: string,
+  mac: boolean,
+): 'forward' | 'backward' | null {
+  if (matchesShortcut(event, binding, mac)) return 'forward';
+  const normalized = normalizeShortcut(binding);
+  if (!event.shiftKey || !normalized || normalized.split('+').includes('shift')) return null;
+  const key = normalized.slice(normalized.lastIndexOf('+') + 1);
+  const modifiers = normalized.slice(0, normalized.length - key.length);
+  return matchesShortcut(event, `${modifiers}shift+${key}`, mac) ? 'backward' : null;
+}
+
+/**
+ * What a browser-panel page forwards to its app window: the switcher chord (`binding`, forward or
+ * with Shift), then, while that chord is open, the release of a modifier. Other keys stay with the
+ * page.
+ */
+export function pageKeyToForward(
+  input: PageInput,
+  chordOpen: boolean,
+  binding: string,
+  mac: boolean,
+): RecentAgentPageKey | null {
   const key = {
     key: input.key,
     metaKey: input.meta,
@@ -58,7 +86,7 @@ export function pageKeyToForward(input: PageInput, chordOpen: boolean): RecentAg
     altKey: input.alt,
     shiftKey: input.shift,
   };
-  if (input.type === 'keyDown' && input.key === 'Tab' && (input.alt || input.meta))
+  if (input.type === 'keyDown' && matchSwitcherChord(key, binding, mac))
     return { type: 'keydown', ...key };
   if (chordOpen && input.type === 'keyUp' && ['Control', 'Meta', 'Alt'].includes(input.key))
     return { type: 'keyup', ...key };
