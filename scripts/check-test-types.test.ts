@@ -1,4 +1,4 @@
-// @verify-changed-triggers: tsconfig.main-tests.json, package.json, scripts/test-type-baselines/**
+// @verify-changed-triggers: tsconfig.main-tests.json, tsconfig.renderer-tests.json, package.json, scripts/test-type-baselines/**
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -230,6 +230,59 @@ describe('checkTestTypes on a fixture project', { timeout: 120_000 }, () => {
   });
 });
 
+describe('renderer test program on a fixture', { timeout: 120_000 }, () => {
+  // The real include/exclude rules over a minimal base config, so the fixture stays small.
+  const RENDERER_PROJECTS = { renderer: PROJECTS.renderer };
+  const rendererFixture = (files: Record<string, string[]>) => {
+    const root = tree({
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, types: [], lib: ['ES2022'] },
+      }),
+      [PROJECTS.renderer.tsconfig]: fs.readFileSync(PROJECTS.renderer.tsconfig, 'utf8'),
+      'src/lib/prefs.ts': [
+        "export type PrefKey = 'dockEnabled' | 'menuBarAutoHide';",
+        'export function setPref(key: PrefKey, value: unknown): void {',
+        '  void key;',
+        '  void value;',
+        '}',
+      ],
+      ...files,
+    });
+    vi.stubEnv('NODE_COMPILE_CACHE', path.join(root, 'node-compile-cache'));
+    return root;
+  };
+  const wrongValue = (from: string) => [
+    `import { setPref } from '${from}';`,
+    "setPref('nope', 1);",
+  ];
+
+  it('fails a renderer test that calls a narrowed API with a wrong value', async () => {
+    const root = rendererFixture({
+      'src/lib/prefs.test.ts': wrongValue('./prefs'),
+      'src/store/__tests__/helpers.ts': wrongValue('../../lib/prefs'),
+    });
+    const { ok, lines } = await checkTestTypes({ root, projects: RENDERER_PROJECTS });
+    expect(ok).toBe(false);
+    const report = lines.join('\n');
+    expect(report).toContain('src/lib/prefs.test.ts: 1 type error(s), baseline allows 0');
+    expect(report).toContain('src/store/__tests__/helpers.ts: 1 type error(s), baseline allows 0');
+  });
+
+  it('leaves main-process, preload and Playwright files to their own checks', async () => {
+    const root = rendererFixture({
+      'src/main/a.test.ts': wrongValue('../lib/prefs'),
+      'src/features/backend/main/a.test.ts': wrongValue('../../../lib/prefs'),
+      'src/preload/a.test.ts': wrongValue('../lib/prefs'),
+      'src/lib/__tests__/a.ct.spec.ts': wrongValue('../prefs'),
+      'src/lib/a.visual.spec.ts': wrongValue('./prefs'),
+      'src/lib/ok.test.ts': ["import { setPref } from './prefs';", "setPref('dockEnabled', 1);"],
+    });
+    const { ok, lines } = await checkTestTypes({ root, projects: RENDERER_PROJECTS });
+    expect(lines.join('\n')).toContain('0 known type error(s)');
+    expect(ok).toBe(true);
+  });
+});
+
 describe('committed baseline', () => {
   const git = (root: string, ...args: string[]) =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -308,6 +361,18 @@ describe('repository wiring', () => {
     expect(files.filter((file) => !file.endsWith('.d.ts') && !file.includes('/main/'))).toEqual([]);
   });
 
+  it('type-checks the renderer unit tests and nothing the main program owns', () => {
+    const { tsconfig } = PROJECTS.renderer;
+    const { config } = ts.readConfigFile(tsconfig, ts.sys.readFile);
+    const { fileNames } = ts.parseJsonConfigFileContent(config, ts.sys, process.cwd());
+    const files = fileNames.map((file) => path.relative(process.cwd(), file));
+    expect(files).toContain('src/store/renderer/slices/workspace/workspace-slice.test.ts');
+    expect(
+      files.filter((file) => /^src\/(main|preload|features\/[^/]+\/main)\//.test(file)),
+    ).toEqual([]);
+    expect(files.filter((file) => file.endsWith('.spec.ts'))).toEqual([]);
+  });
+
   it('lists every config a project tsconfig extends as a gate input', () => {
     for (const { tsconfig } of Object.values(PROJECTS)) {
       let config: string | undefined = tsconfig;
@@ -321,6 +386,8 @@ describe('repository wiring', () => {
 
   it('treats the tsconfig and baselines as gate inputs', () => {
     expect(isTestTypeCheckInput(PROJECTS.main.tsconfig)).toBe(true);
+    expect(isTestTypeCheckInput(PROJECTS.renderer.tsconfig)).toBe(true);
+    expect(isTestTypeCheckInput(`${BASELINES_DIR}/renderer/src/lib/a.test.ts.json`)).toBe(true);
     expect(isTestTypeCheckInput('tsconfig.main.json')).toBe(true);
     expect(isTestTypeCheckInput(`${BASELINES_DIR}/main/src/main/a.test.ts.json`)).toBe(true);
     expect(isTestTypeCheckInput('src/main/a.test.ts')).toBe(false);

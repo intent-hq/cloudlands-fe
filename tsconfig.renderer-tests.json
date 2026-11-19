@@ -1,0 +1,37 @@
+{
+  // Renderer unit tests: every Vitest file outside src/main, src/features/*/main and
+  // src/preload. tsconfig.json excludes **/*.test.ts, so when a renderer API narrowed its
+  // inputs, tests passing the old values kept compiling and nothing reported them.
+  // `lint:test-types` (in `lint:architecture`) runs this program against a per-file error
+  // baseline that may only shrink (scripts/check-test-types.mjs). Svelte components are
+  // imported through svelte's `*.svelte` module shim, so component props are not checked
+  // here (svelte-check covers the components); Playwright `*.spec.ts` files are not unit tests.
+  // checkJs is off: tests are TypeScript, and the JS they import (eslint-rules, scripts)
+  // is not renderer code.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "checkJs": false
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.test.ts",
+    "src/**/__tests__/**/*.ts",
+    ".svelte-kit/ambient.d.ts",
+    ".svelte-kit/non-ambient.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-electron",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/features/*/main/**/*",
+    "src/lib/types/**/*.js",
+    "src/shared/paraglide/**/*",
+    "src/paraglide/**/*",
+    "src/lib/components/__knip-canary__/**/*",
+    "**/*.spec.ts"
+  ]
+}

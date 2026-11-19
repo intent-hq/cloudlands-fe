@@ -1358,6 +1358,7 @@ describe('verification planning', () => {
     const changed = [
       'tsconfig.main-tests.json',
       'tsconfig.main.json',
+      'tsconfig.renderer-tests.json',
       'scripts/check-test-types.mjs',
       'scripts/test-type-baselines/main/src/main/__tests__/a.test.ts.json',
     ];
