@@ -39,6 +39,7 @@ import {
   TunnelForbiddenError,
   TunnelManager,
   type TunnelFrame,
+  type TunnelManagerOptions,
   type TunnelSocketLike,
 } from './tunnel-manager';
 import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
@@ -116,7 +117,9 @@ function attachFakeDaemon(ws: FakeTunnelSocket): void {
         sockets.set(streamId, socket);
         ws.deliver({ type: 'openOk', streamId });
       });
-      socket.on('data', (chunk) => ws.deliver({ type: 'data', streamId, payload: chunk }));
+      socket.on('data', (chunk) =>
+        ws.deliver({ type: 'data', streamId, payload: Buffer.from(chunk) }),
+      );
       socket.on('end', () => ws.deliver({ type: 'eof', streamId }));
       socket.on('error', (error: NodeJS.ErrnoException) => {
         if (!sockets.has(streamId)) {
@@ -183,18 +186,7 @@ const WSS_CONFIG: BackendConnectionConfig = {
 
 /** Manager + fake-socket harness with per-test option overrides. */
 function makeManager(
-  options: {
-    maxStreams?: number;
-    maxStreamsPerPort?: number;
-    maxPendingStreams?: number;
-    maxPendingStreamsPerPort?: number;
-    admissionTimeoutMs?: number;
-    admissionRetryMs?: number;
-    backpressureHighWaterMark?: number;
-    openTimeoutMs?: number;
-    connectTimeoutMs?: number;
-    heartbeatIntervalMs?: number;
-    heartbeatTimeoutMs?: number;
+  options: Omit<Partial<TunnelManagerOptions>, 'getConfig' | 'getProtocolVersion'> & {
     daemon?: boolean;
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
@@ -207,7 +199,9 @@ function makeManager(
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
     getProtocolVersion: () =>
-      options.protocolVersion === undefined ? CURRENT_PROTOCOL_VERSION : options.protocolVersion,
+      parseProtocolVersion(
+        options.protocolVersion === undefined ? CURRENT_PROTOCOL_VERSION : options.protocolVersion,
+      ),
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
@@ -247,7 +241,7 @@ function collectUntil(socket: net.Socket, expectedBytes: number): Promise<Buffer
     const chunks: Buffer[] = [];
     let total = 0;
     socket.on('data', (chunk) => {
-      chunks.push(chunk);
+      chunks.push(Buffer.from(chunk));
       total += chunk.length;
       if (total >= expectedBytes) resolve(Buffer.concat(chunks));
     });
@@ -353,13 +347,13 @@ describe('isConnectionRefusedOpenErr', () => {
 });
 
 describe('TunnelManager', () => {
-  const cleanups: Array<() => void | Promise<void>> = [];
+  const cleanups: Array<() => unknown> = [];
   afterEach(async () => {
     while (cleanups.length > 0) {
       await cleanups.pop()?.();
     }
   });
-  const onCleanup = (fn: () => void | Promise<void>): void => {
+  const onCleanup = (fn: () => unknown): void => {
     cleanups.push(fn);
   };
 
@@ -1097,7 +1091,7 @@ describe('TunnelManager', () => {
     let holdOpen = false;
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         attachFakeDaemon(ws);
@@ -1467,7 +1461,7 @@ describe('TunnelManager', () => {
         const created: FakeTunnelSocket[] = [];
         const manager = new TunnelManager({
           getConfig: () => WSS_CONFIG,
-          getProtocolVersion: () => protocolVersion,
+          getProtocolVersion: () => parseProtocolVersion(protocolVersion),
           heartbeatIntervalMs: 0,
           socketFactory: () => {
             const ws = new FakeTunnelSocket();
@@ -1567,7 +1561,7 @@ describe('TunnelManager', () => {
           transport: 'ws',
           wsUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
         }),
-        getProtocolVersion: () => version,
+        getProtocolVersion: () => parseProtocolVersion(version),
         heartbeatIntervalMs: 0,
       });
       onCleanup(() => manager.dispose());
@@ -1710,7 +1704,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1730,7 +1724,7 @@ describe('TunnelManager', () => {
     const created: Array<{ host: string | undefined; ws: FakeTunnelSocket }> = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: '10.0.0.1', hosts: ['10.0.0.1', '127.0.0.1'] }),
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       socketFactory: (config) => {
         const ws = new FakeTunnelSocket();
         created.push({ host: config.host, ws });
@@ -1763,7 +1757,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: 'a', hosts: ['a', 'b'] }),
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -2018,8 +2012,8 @@ class TailcatRelayChild extends EventEmitter {
 describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', () => {
   let daemon: FakeTunnelWssDaemon;
   const TOKEN = 'c'.repeat(64);
-  const cleanups: Array<() => void | Promise<void>> = [];
-  const onCleanup = (fn: () => void | Promise<void>): void => {
+  const cleanups: Array<() => unknown> = [];
+  const onCleanup = (fn: () => unknown): void => {
     cleanups.push(fn);
   };
 
@@ -2042,7 +2036,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // No socketFactory override: the REAL createTunnelSocket dials the fake
     // daemon over TLS, so the handshake-level pin is what's under test.
     const manager = new TunnelManager({
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       getConfig: () => ({
         transport: 'wss',
         host: daemon.host,
@@ -2105,7 +2099,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     await rejecting.start();
     onCleanup(() => rejecting.stop());
     const manager = new TunnelManager({
-      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       getConfig: () => ({
         transport: 'wss',
         host: rejecting.host,
@@ -2129,6 +2123,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     rejecting.countUpgrades(() => (upgrades += 1));
     onCleanup(() => rejecting.stop());
     const manager = new TunnelManager({
+      getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
       getConfig: () => ({
         transport: 'wss',
         host: rejecting.host,
