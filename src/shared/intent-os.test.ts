@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  intentOsBooleanDefault,
   intentOsRendererArguments,
   intentOsSwitchOn,
   isIntentOs,
@@ -37,21 +36,6 @@ describe('intentOsSwitchOn', () => {
 
   it.each(IMPLIED)('%s is off with neither switch', (name) => {
     expect(intentOsSwitchOn(name, {})).toBe(false);
-  });
-});
-
-describe('intentOsBooleanDefault', () => {
-  it('uses the Intent OS default only when nothing is saved', () => {
-    const intentOs = { INTENT_OS: '1' };
-    expect(intentOsBooleanDefault(undefined, false, true, intentOs)).toBe(true);
-    expect(intentOsBooleanDefault(undefined, false, true, {})).toBe(false);
-    expect(intentOsBooleanDefault('yes', false, true, intentOs)).toBe(true);
-  });
-
-  it('lets a saved value win, so turning a default off sticks', () => {
-    const intentOs = { INTENT_OS: '1' };
-    expect(intentOsBooleanDefault(false, false, true, intentOs)).toBe(false);
-    expect(intentOsBooleanDefault(true, true, false, intentOs)).toBe(true);
   });
 });
 

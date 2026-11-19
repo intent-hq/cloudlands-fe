@@ -40,7 +40,7 @@ import {
   MachineRailSetEnabledSchema,
 } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import { getStrictLocalPref, setLocalPref } from './local-prefs';
+import { getBooleanLocalPref, setLocalPref } from './local-prefs';
 import {
   clearWindowRail,
   emptyFrameForClose,
@@ -878,11 +878,9 @@ function restoreMachinesAside(window: BrowserWindowType): void {
 
 /** Reads the persisted setting once at startup: on unless turned off; a failed read keeps it off. */
 export async function loadMachineRailEnabled(): Promise<void> {
-  try {
-    setMachineRailEnabledFlag((await getStrictLocalPref(ENABLED_PREF)) !== false);
-  } catch {
-    setMachineRailEnabledFlag(false);
-  }
+  setMachineRailEnabledFlag(
+    await getBooleanLocalPref(ENABLED_PREF, { default: true, onError: false }),
+  );
 }
 
 function windowOf(sender: Electron.WebContents): BrowserWindowType {

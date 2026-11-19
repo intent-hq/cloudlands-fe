@@ -23,7 +23,7 @@
 import { app } from 'electron';
 import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { Logger } from '../../../shared/logger';
-import { getLocalPref } from '../../../main/local-prefs';
+import { getBooleanLocalPref } from '../../../main/local-prefs';
 import {
   reconcile,
   type KeychainSyncStatus,
@@ -59,12 +59,12 @@ const RECONCILE_DEBOUNCE_MS = 2_000;
 const FOCUS_MIN_INTERVAL_MS = 60_000;
 
 /** True iff keychain sync is on. Opt-out on macOS: an absent pref reads as
- * enabled; only an explicit false disables. Off macOS sync is never on. */
+ * enabled; an explicit false or an unreadable file disables. Off macOS sync is never on. */
 export async function isKeychainSyncEnabled(
   platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
   if (isIsolatedTestBuild() || platform !== 'darwin') return false;
-  return (await getLocalPref<boolean>(KEYCHAIN_SYNC_ENABLED_KEY)) !== false;
+  return getBooleanLocalPref(KEYCHAIN_SYNC_ENABLED_KEY, { default: true, onError: false });
 }
 
 /** The store-backed LocalSyncAdapter handed to reconcile(). */
