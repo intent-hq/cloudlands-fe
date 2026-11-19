@@ -1354,6 +1354,22 @@ describe('verification planning', () => {
     expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates when a unit-test tsconfig or type baseline changes', () => {
+    const changed = [
+      'tsconfig.main-tests.json',
+      'scripts/check-test-types.mjs',
+      'scripts/test-type-baselines/main/src/main/__tests__/a.test.ts.json',
+    ];
+    const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, '{}'])));
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+  });
+
   it('runs the architecture gates when a root spec with virtual-module stubs changes', () => {
     const root = fixtureRoot({
       'test/tab-strip.spec.ts': [
@@ -3383,6 +3399,7 @@ describe('static-only lane (--static)', () => {
     'tsc-main',
     'generate-ipc-channels',
     'tsc-preload',
+    'test-types',
   ];
   const gates = {
     checkNode: () => ({ ok: true, reason: null }),
