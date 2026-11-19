@@ -178,9 +178,14 @@ describe('verify-changed arguments and paths', () => {
       keepGoing: false,
       paths: ['src/a.ts'],
       resume: false,
+      skipCtFull: false,
       static: false,
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
+    expect(parseArgs(['--skip-ct-full', 'src/app.css'])).toMatchObject({
+      skipCtFull: true,
+      paths: ['src/app.css'],
+    });
   });
 
   it('parses --resume, allows a resolved-plan preview and rejects it with --dry-run', () => {
@@ -1646,6 +1651,84 @@ describe('verification planning', () => {
     }
   });
 
+  // The hide-single-machine-rail workspace (cloudlands-fe#4777) changed one rule
+  // in src/app.css and waited about an hour on the full component suite before
+  // stopping it by hand.
+  describe('full component suite notice and --skip-ct-full', () => {
+    const spec = 'src/lib/components/ui/button/button.keyboard.ct.spec.ts';
+    const helperSpec = 'src/lib/components/ui/input/inline-edit.ct.spec.ts';
+    const files = {
+      'src/app.css': '.rail { display: none; }',
+      'src/test/ct-test.ts': '',
+      'playwright/inline-edit-assertions.ts': '',
+      [spec]: "import { test } from '../../../../test/ct-test';",
+      [helperSpec]:
+        "import { test } from '../../../../test/ct-test';\nimport { x } from '../../../../../playwright/inline-edit-assertions';",
+    };
+    const plan = (changed: string[], skipCtFull = false) =>
+      createVerificationPlan(changed, {
+        root: fixtureRoot(files),
+        ctTests: [spec, helperSpec],
+        skipCtFull,
+      });
+    const printed = (changed: string[], skipCtFull = false) => {
+      const lines: string[] = [];
+      printPlan(plan(changed, skipCtFull), true, (line: string) => lines.push(line));
+      return lines;
+    };
+
+    it('names the files that select the full suite and its run time before the checks', () => {
+      const lines = printed(['src/app.css', 'src/test/ct-test.ts']);
+      const notice = lines.findIndex((line) => line.includes('full component suite'));
+      expect(lines[notice]).toContain('src/app.css, src/test/ct-test.ts');
+      expect(lines[notice]).toContain('about 2h15m');
+      expect(lines[notice]).toContain('--skip-ct-full');
+      expect(notice).toBeLessThan(lines.findIndex((line) => / check\(s\)$/.test(line)));
+    });
+
+    it('prints no notice when the full suite is not selected', () => {
+      expect(printed([spec]).join('\n')).not.toContain('full component suite');
+    });
+
+    it('drops only the full suite, keeps the rest of the plan and records why', () => {
+      const full = plan(['src/app.css', 'src/lib/example.ts']);
+      const skipped = plan(['src/app.css', 'src/lib/example.ts'], true);
+      const ids = (value: typeof full) => value.checks.map((check) => check.id);
+      expect(ids(full)).toContain('ct-full');
+      expect(ids(skipped)).toEqual(ids(full).filter((id) => id !== 'ct-full'));
+      expect(skipped.skipped).toEqual([
+        expect.objectContaining({
+          id: 'ct-full',
+          reasons: ['src/app.css'],
+          command: 'pnpm run test:ct:full',
+        }),
+      ]);
+      expect(full.skipped).toEqual([]);
+    });
+
+    it('still runs changed specs, but not every spec through a skipped harness file', () => {
+      const relatedArgs = (changed: string[]) =>
+        plan(changed, true).checks.find((check) => check.id === 'ct-related')?.args ?? [];
+      expect(relatedArgs(['src/app.css', spec])).toContain(spec);
+      expect(relatedArgs(['src/test/ct-test.ts'])).toEqual([]);
+      // A contract helper that only some specs import still selects them.
+      const helper = relatedArgs(['playwright/inline-edit-assertions.ts']);
+      expect(helper).toContain(helperSpec);
+      expect(helper).not.toContain(spec);
+    });
+
+    it('rejects --skip-ct-full with --static, which selects no component tests', () => {
+      expect(() => parseArgs(['--static', '--skip-ct-full'])).toThrow(/drop --skip-ct-full/);
+    });
+
+    it('prints the command that runs the skipped suite separately', () => {
+      const text = printed(['src/app.css'], true).join('\n');
+      expect(text).toContain('--skip-ct-full');
+      expect(text).toContain('pnpm run test:ct:full');
+      expect(text).not.toContain('pnpm run test:ct -- --retries=2');
+    });
+  });
+
   describe('suites declaring verify:changed triggers', () => {
     const driftTest = 'scripts/inline-ipc-channels.test.ts';
     const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';
@@ -2992,6 +3075,73 @@ describe('expensive-check coordination', () => {
     expect(started).toEqual(expect.arrayContaining(['vitest', 'ct']));
     gate.resolve();
     await Promise.all(runs);
+  });
+});
+
+describe('skipped full component suite', () => {
+  const identities = () => ({
+    source: { digest: 'source', files: {} },
+    configuration: 'configuration',
+    commands: [],
+    selections: [],
+  });
+  const skipped = {
+    id: 'ct-full',
+    label: 'Playwright component suite (safe fallback)',
+    reasons: ['src/app.css'],
+    command: 'pnpm run test:ct:full',
+  };
+
+  it('passes, records the skip in the receipt and repeats the command to run it', async () => {
+    const root = temporaryDirectory();
+    const ran: string[] = [];
+    const lines: string[] = [];
+    await runVerificationPlan(
+      { ...testPlan(testCheck('tsc-renderer', null)), skipped: [skipped] },
+      root,
+      {
+        runCheck: async (check: ReturnType<typeof testCheck>) => {
+          ran.push(check.id);
+        },
+        record: true,
+        identities,
+        log: (line: string) => lines.push(line),
+      },
+    );
+    expect(ran).toEqual(['tsc-renderer']);
+    const record = lines.find((line) => line.startsWith('verify:changed: record: '));
+    const coverage = JSON.parse(
+      readFileSync(
+        join(root, record!.slice('verify:changed: record: '.length), 'coverage.json'),
+        'utf8',
+      ),
+    );
+    expect(coverage.complete).toBe(true);
+    expect(coverage.skipped).toEqual([
+      {
+        id: 'ct-full',
+        reason: '--skip-ct-full',
+        selectedBy: ['src/app.css'],
+        command: 'pnpm run test:ct:full',
+      },
+    ]);
+    expect(lines.at(-1)).toContain('pnpm run test:ct:full');
+  });
+
+  it('forwards --skip-ct-full from the command line to the planner', async () => {
+    const root = fixtureRoot({ 'src/app.css': '' });
+    const plans: Array<{ checks: Array<{ id: string }>; skipped?: unknown[] }> = [];
+    await runCli(['--skip-ct-full', 'src/app.css'], root, {
+      log: () => {},
+      checkNode: () => ({ ok: true }),
+      checkDeps: () => ({ ok: true }),
+      ensureI18n: async () => ({ ok: true }),
+      runPlan: async (plan: (typeof plans)[number]) => {
+        plans.push(plan);
+      },
+    });
+    expect(plans[0].checks.map((check) => check.id)).not.toContain('ct-full');
+    expect(plans[0].skipped).toEqual([expect.objectContaining({ id: 'ct-full' })]);
   });
 });
 

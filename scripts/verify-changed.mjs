@@ -70,6 +70,11 @@ export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
+const CT_FULL_LABEL = 'Playwright component suite (safe fallback)';
+// cloudlands-fe#3752 measured 2h12m for the full suite (AGENTS.md: about 2h15m).
+export const CT_FULL_EXPECTED_DURATION = 'about 2h15m';
+export const CT_FULL_SEPARATE_COMMAND = 'pnpm run test:ct:full';
+const CT_HARNESS_WIDE_FILES = new Set(['src/test/ct-test.ts']);
 const SKIP_DIRS = new Set([
   '.demo-artifacts',
   '.git',
@@ -309,6 +314,7 @@ export function parseArgs(argv) {
     keepGoing: false,
     paths: [],
     resume: false,
+    skipCtFull: false,
     static: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -318,6 +324,7 @@ export function parseArgs(argv) {
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
     else if (arg === '--resume') result.resume = true;
     else if (arg === '--keep-going') result.keepGoing = true;
+    else if (arg === '--skip-ct-full') result.skipCtFull = true;
     else if (arg === '--static') result.static = true;
     else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
       const value =
@@ -337,6 +344,8 @@ export function parseArgs(argv) {
     throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
   if (result.static && (result.resolvedPlan || result.maxUnitFiles !== undefined))
     throw new Error('--static selects no unit tests; drop --resolved-plan and --max-unit-files');
+  if (result.static && result.skipCtFull)
+    throw new Error('--static selects no component tests; drop --skip-ct-full');
   if (result.dryRun && result.resume)
     throw new Error('Use --resolved-plan --resume instead of --dry-run to preview a continuation');
   return result;
@@ -817,7 +826,7 @@ export function createVerificationPlan(files, options = {}) {
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
-  let fullCt = false;
+  const fullCtReasons = [];
   let fullPlaywright = false;
   const fallbackReasons = [];
   if (scriptLanes.has('svelte-check')) svelteCheck = true;
@@ -829,7 +838,7 @@ export function createVerificationPlan(files, options = {}) {
     if (snapshots.get(file)) continue;
     if (file === 'package.json' && packageScriptsOnly) {
       architecture = true;
-      if (scriptLanes.has('ct')) fullCt = true;
+      if (scriptLanes.has('ct')) fullCtReasons.push(file);
       continue;
     }
     addBoundary(boundaries, file);
@@ -840,7 +849,7 @@ export function createVerificationPlan(files, options = {}) {
     else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
     // The one CT-contract list (scripts/ct-contract-paths.mjs).
-    if (isCtContractPath(file)) fullCt = true;
+    if (isCtContractPath(file)) fullCtReasons.push(file);
 
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
@@ -998,18 +1007,20 @@ export function createVerificationPlan(files, options = {}) {
     }
   }
 
+  const fullCt = fullCtReasons.length > 0 && !options.skipCtFull;
+  // A skipped full suite still runs the specs that import a changed file, except
+  // through the harness every spec imports, which would select them all again.
   const relatedCt = fullCt
     ? []
-    : findRelatedCtTests([...files, ...directCt], {
-        root,
-        ctTests: options.ctTests,
-        readText: options.readText,
-      });
+    : findRelatedCtTests(
+        [...files.filter((file) => !CT_HARNESS_WIDE_FILES.has(file)), ...directCt],
+        { root, ctTests: options.ctTests, readText: options.readText },
+      );
   if (fullCt)
     checks.push(
       playwrightCommand(
         'ct-full',
-        'Playwright component suite (safe fallback)',
+        CT_FULL_LABEL,
         ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG],
         'ct',
       ),
@@ -1080,6 +1091,18 @@ export function createVerificationPlan(files, options = {}) {
     files,
     prerequisites,
     checks,
+    fullCtReasons,
+    skipped:
+      fullCtReasons.length && options.skipCtFull
+        ? [
+            {
+              id: 'ct-full',
+              label: CT_FULL_LABEL,
+              reasons: fullCtReasons,
+              command: CT_FULL_SEPARATE_COMMAND,
+            },
+          ]
+        : [],
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
     ...(packageScripts && options.packageJsonChange
@@ -1111,6 +1134,17 @@ export function printPlan(plan, dryRun, log = console.log) {
   }
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
+  }
+  const ctFullBy = plan.fullCtReasons?.join(', ');
+  if (plan.checks.some((check) => check.id === 'ct-full')) {
+    log(
+      `verify:changed: full component suite selected by ${ctFullBy} (CT contract); expect ${CT_FULL_EXPECTED_DURATION} for it alone. --skip-ct-full defers it to a separate run (the nightly run covers it too)`,
+    );
+  }
+  for (const skipped of plan.skipped ?? []) {
+    log(
+      `verify:changed: --skip-ct-full: skipping the full component suite selected by ${skipped.reasons.join(', ')}; run it separately with: ${skipped.command}`,
+    );
   }
   if (plan.triggerViolations?.length) {
     log(
@@ -1502,6 +1536,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
   const acquireLock = options.acquireLock ?? acquireVerificationLock;
   const lockPath = options.lockPath ?? defaultLockPath;
   const log = options.log ?? console.log;
+  const skipped = plan.skipped ?? [];
 
   // Keep prerequisites separate from checks so {...plan, checks: selectedChecks}
   // retains them. Resolve every reference before spawning anything, then validate
@@ -1582,12 +1617,22 @@ export async function runVerificationPlan(plan, root, options = {}) {
   let coverage = null;
   const finish = () => {
     if (!attempt || coverage) return coverage;
-    coverage = buildCoverage({
-      attemptId: attempt.id,
-      obligations: credits?.obligations ?? obligationsFor(plan, selections),
-      credits,
-      results: readResults(attempt.resultsPath) ?? [],
-    });
+    coverage = {
+      ...buildCoverage({
+        attemptId: attempt.id,
+        obligations: credits?.obligations ?? obligationsFor(plan, selections),
+        credits,
+        results: readResults(attempt.resultsPath) ?? [],
+      }),
+      // Skipped on request, so not an obligation of this attempt; a later run
+      // without the flag selects (and --resume reruns) the suite again.
+      skipped: skipped.map(({ id, reasons, command }) => ({
+        id,
+        reason: '--skip-ct-full',
+        selectedBy: reasons,
+        command,
+      })),
+    };
     attempt.writeFile('coverage.json', `${JSON.stringify(coverage, null, 2)}\n`);
     log(
       `verify:changed: coverage ${coverage.complete ? 'complete' : 'incomplete'}: ${describeCoverage(coverage)}`,
@@ -1611,6 +1656,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
         log(`\n[verify:changed] ${check.label}: resumed (${execution.skip})`);
         continue;
       }
+      if (check.id === 'ct-full')
+        log(
+          `\n[verify:changed] ${check.label}: expect ${CT_FULL_EXPECTED_DURATION}; to defer it, stop here and rerun with --resume --skip-ct-full`,
+        );
       const command = commandIdentity(check);
       executed += 1;
       attempt?.append({
@@ -1702,6 +1751,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
       `coverage incomplete: ${missing.length} obligation(s) not satisfied (first: ${first.file ? `${first.lane} ${first.file}` : first.id}, ${first.status}). See ${attempt.path}/coverage.json`,
     );
   }
+  for (const entry of skipped)
+    log(
+      `verify:changed: ${entry.label} skipped (--skip-ct-full); run it separately with: ${entry.command}`,
+    );
 }
 
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
@@ -1713,7 +1766,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log(
-      'Usage: pnpm run verify:changed -- [--static] [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
+      'Usage: pnpm run verify:changed -- [--static] [--dry-run | --resolved-plan] [--resume] [--keep-going] [--skip-ct-full] [--max-unit-files N] [--base <ref>] [paths...]',
     );
     log(
       '  --static: only Prettier and ESLint on the changed files, then knip, svelte-check, the renderer, main and preload type checks and the unit-test type baseline repo-wide; no tests. Runs even with nothing changed.',
@@ -1723,6 +1776,9 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     );
     log(
       '  --keep-going: after a failed check, still run (and record) every remaining check, then fail listing all failed checks; prerequisites still stop the run.',
+    );
+    log(
+      `  --skip-ct-full: leave out the full Playwright component suite (${CT_FULL_EXPECTED_DURATION}) that CT-contract paths such as src/app.css select; changed specs still run. coverage.json records the skip. Run the suite separately with ${CT_FULL_SEPARATE_COMMAND}, the sharded full run, which like CI leaves out @quarantine tests and fails on flaky ones.`,
     );
     log(
       "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",
@@ -1771,6 +1827,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const plan = createVerificationPlan(files, {
     root,
     static: args.static,
+    skipCtFull: args.skipCtFull,
     packageJsonChange:
       !args.static && files.includes('package.json')
         ? packageJsonChangeFor(root, {
