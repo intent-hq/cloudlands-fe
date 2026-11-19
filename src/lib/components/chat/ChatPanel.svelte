@@ -473,9 +473,12 @@
   import { getAgentProvider } from '$shared/types/agent-session';
   import {
     selectProviderAuthFailureGuidance,
+    selectProviderCatalogEntry,
     selectProviderCatalogLoaded,
     selectProviderConfigurationLabel,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { providerLoginRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { isProviderProfileRef } from '$shared/provider-profiles';
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
@@ -2880,6 +2883,32 @@
       $agentSession$?.model,
       effectiveError,
     );
+  });
+
+  // Intent's terminal runs on the daemon host, so a sign-in failure offers it
+  // only for an agent there on a plain provider with a catalog login command.
+  const chatLogInProviderId = $derived.by(() => {
+    const session = $agentSession$;
+    const providerId = chatAuthGuidance?.providerId;
+    if (!session || !providerId || isRetiredSession) return null;
+    if (session.nodeId || session.placement?.target === 'remote') return null;
+    if (session.provider && isProviderProfileRef(session.provider)) return null;
+    void $providerCatalogLoaded$;
+    const command = selectProviderCatalogEntry.select(appStore.state, providerId)?.loginCommandHint;
+    return command || providerId === 'claude-code' ? providerId : null;
+  });
+
+  async function logInFromChat(providerId: string) {
+    try {
+      await appStore.dispatch(providerLoginRequested(providerId));
+    } catch (cause) {
+      notify.error(cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error());
+    }
+  }
+
+  const chatLogIn = $derived.by(() => {
+    const providerId = chatLogInProviderId;
+    return providerId ? () => void logInFromChat(providerId) : undefined;
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -7433,6 +7462,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onLogIn={chatLogIn}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -7465,6 +7495,7 @@
                         error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
+                        onLogIn={chatLogIn}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -7559,6 +7590,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onLogIn={chatLogIn}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -7591,6 +7623,7 @@
                         error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
+                        onLogIn={chatLogIn}
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
@@ -7628,6 +7661,7 @@
                   error={turnFailureError}
                   recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
+                  onLogIn={chatLogIn}
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
@@ -7965,6 +7999,7 @@
                           error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
+                          onLogIn={chatLogIn}
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
@@ -8073,6 +8108,7 @@
                                   error={turnFailureError}
                                   recoveryState={failureTranscript.current.state}
                                   authGuidance={chatAuthGuidance}
+                                  onLogIn={chatLogIn}
                                   sessionCorrupted={effectiveSessionCorrupted}
                                   failedAt={effectiveFailedAt}
                                   modelUnavailable={$chatModelUnavailable$}
@@ -8197,6 +8233,7 @@
                     error={turnFailureError}
                     recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
+                    onLogIn={chatLogIn}
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
@@ -8355,6 +8392,7 @@
                       error={turnFailureError}
                       recoveryState={failureTranscript.current.state}
                       authGuidance={chatAuthGuidance}
+                      onLogIn={chatLogIn}
                       sessionCorrupted={effectiveSessionCorrupted}
                       failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}

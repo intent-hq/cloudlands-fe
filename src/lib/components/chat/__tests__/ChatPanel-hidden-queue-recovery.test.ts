@@ -339,10 +339,9 @@ describe('ChatPanel recovery for the rendered queue', () => {
     async (type) => {
       const entry = restoredQueue(type);
       testState.queue = [entry];
-      const { container } = mountPanel();
+      mountPanel();
       expect(screen.queryByTestId('queued-message-content')).toBeNull();
-      expect(container.textContent).not.toContain('Use its controls below');
-      expect(screen.getByText('Needs attention')).toBeTruthy();
+      expect(screen.getByTestId('failure-recovery-card')).toBeTruthy();
       await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
       expect(testState.dispatch).toHaveBeenCalledWith({
         type: 'chatPanelUi/retryAgentRequested',
@@ -381,9 +380,7 @@ describe('ChatPanel recovery for the rendered queue', () => {
       await waitFor(() =>
         expect(screen.getByTestId('queued-message-text').textContent).toBe(entry.content),
       );
-      expect(container.textContent).toContain(
-        'A message is queued. Use its controls below to manage it.',
-      );
+      expect(screen.getByTestId('failure-recovery-card')).toBeTruthy();
       expect(container.textContent).not.toContain('Automatic hook_wake');
       expect(screen.getByRole('img', { name: /attached image/i }).getAttribute('src')).toBe(
         'data:image/png;base64,AAAA',

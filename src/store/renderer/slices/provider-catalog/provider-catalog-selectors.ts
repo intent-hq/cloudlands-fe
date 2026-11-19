@@ -16,7 +16,10 @@ import {
  * `selectEffectiveDefaultProviderId`.
  */
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
+import {
+  daemonLoginCommand,
+  isProviderAuthenticationErrorForEntry,
+} from '$shared/provider-catalog';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
@@ -306,7 +309,10 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     const providerId = entry?.id ?? rawId;
     return {
       providerId,
-      loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
+      loginCommandHint:
+        daemonLoginCommand(errorMessage) ||
+        entry?.loginCommandHint ||
+        `${entry?.command ?? providerId} login`,
       showClaudeDesktopNote: providerId === 'claude-code',
     };
   },

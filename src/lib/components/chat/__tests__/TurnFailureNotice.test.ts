@@ -10,28 +10,28 @@ describe('TurnFailureNotice', () => {
     render(TurnFailureNotice);
 
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByRole('button', { name: '1 recorded failure' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Response failed' })).toBeTruthy();
   });
 
   it('discloses the custom reason when requested', async () => {
     const customReason = 'The agent encountered a critical error';
     render(TurnFailureNotice, { props: { reason: customReason } });
 
-    await fireEvent.click(screen.getByRole('button', { name: '1 recorded failure' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Response failed' }));
     expect(screen.getByText(customReason)).toBeTruthy();
   });
 
   it('has proper ARIA attributes for accessibility', () => {
     render(TurnFailureNotice);
 
-    const disclosure = screen.getByRole('button', { name: '1 recorded failure' });
+    const disclosure = screen.getByRole('button', { name: 'Response failed' });
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(disclosure.getAttribute('aria-controls')).toBeTruthy();
   });
 
   it('updates the disclosed reason without announcing historical errors', async () => {
     const { rerender } = render(TurnFailureNotice, { props: { reason: 'First failure' } });
-    await fireEvent.click(screen.getByRole('button', { name: '1 recorded failure' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Response failed' }));
     await rerender({ reason: 'Updated failure' });
     expect(screen.getByRole('region').textContent).toContain('Updated failure');
     expect(screen.queryByRole('alert')).toBeNull();

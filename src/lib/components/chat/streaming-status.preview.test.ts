@@ -17,6 +17,8 @@ describe('streaming status preview', () => {
       'slot-wait',
       'memory-wait',
       'error',
+      'sign-in',
+      'usage-limit',
       'model-unavailable',
       'long-content',
     ]);
@@ -43,8 +45,11 @@ describe('streaming status preview', () => {
     },
   );
 
-  it.each(['error', 'long-content'] as const)('renders the %s terminal state', (state) => {
-    render(StreamingStatus, { props: preview.states[state].props });
-    expect(screen.getByRole('alert')).toBeTruthy();
-  });
+  it.each(['error', 'sign-in', 'usage-limit', 'long-content'] as const)(
+    'renders the %s terminal state',
+    (state) => {
+      render(StreamingStatus, { props: preview.states[state].props });
+      expect(screen.getByRole('alert')).toBeTruthy();
+    },
+  );
 });

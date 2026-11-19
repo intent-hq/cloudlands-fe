@@ -52,6 +52,22 @@ export const STREAMING_STATUS_PREVIEW_FIXTURES = Object.freeze({
     error: 'The response stream ended before the agent finished.',
     onRetry: retry,
   }),
+  'sign-in': statusProps({
+    error:
+      'session/prompt: provider "codex" (OpenAI Codex) is not authenticated — run "codex login" in a terminal, then retry.',
+    failedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
+    authGuidance: { loginCommandHint: 'codex login', showClaudeDesktopNote: false },
+    onLogIn: retry,
+    onRetry: retry,
+  }),
+  'usage-limit': statusProps({
+    error: 'You have reached your usage limit. It resets in 2 hours.',
+    failedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
+    quotaExceeded: { providerId: 'claude-code', displayName: 'Claude Code' },
+    quotaRetryProviders: [{ id: 'codex', displayName: 'Codex' }],
+    onRetry: retry,
+    onRetryWithProvider: (_provider: string) => undefined,
+  }),
   'model-unavailable': statusProps({
     modelUnavailable: {
       failedModel: 'preview:primary-model',

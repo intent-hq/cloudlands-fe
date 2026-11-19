@@ -1199,23 +1199,6 @@ describe('QueuedMessageList', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows retry status separately from message content until sending starts', async () => {
-    const pending = deferred<'delivered'>();
-    renderQueue({
-      props: {
-        messages: [queued({ content: 'try again', requeuedAfterFailure: true })],
-        onsendnow: () => pending.promise,
-      },
-    });
-
-    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe('try again');
-    expect(screen.getByTestId('queued-message-retry-status').getAttribute('role')).toBe('status');
-    expect(screen.getByTestId('queued-message-retry-status').textContent?.trim()).toBe('Queued');
-    await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
-    expect(screen.queryByTestId('queued-message-retry-status')).toBeNull();
-    pending.resolve('delivered');
-  });
-
   it('renders portable queue authors without a roster cache and keeps unknown, null and absent distinct', () => {
     const author = {
       principalId: null,

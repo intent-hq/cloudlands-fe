@@ -141,7 +141,6 @@ describe('terminal session recovery with a failure-restored user queue', () => {
           }),
       );
       mount();
-      expect(screen.getByTestId('queued-message-retry-status').textContent?.trim()).toBe('Queued');
       const dispatch = vi.spyOn(store, 'dispatch');
       const retry = await screen.findByRole('button', { name: 'Retry', exact: true });
       await fireEvent.click(retry);

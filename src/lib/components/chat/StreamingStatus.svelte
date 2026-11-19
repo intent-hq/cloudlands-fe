@@ -4,14 +4,20 @@
   Streaming status indicator:
   - Normal: Intent mark with "Thinking"
   - Slot/memory wait: "Thinking" plus a red row explaining the admission wait
-  - Error/Timeout: clear failed state with Try Again button
+  - Error/Timeout: failure card with the cause, Retry, and Details
 -->
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte';
   import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import { faRotateRight, faExclamationTriangle, faStop } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCircleExclamation,
+    faRotateRight,
+    faExclamationTriangle,
+    faStop,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { faTerminal } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils/cn';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { FeOwnedSessionState } from '$store/renderer/slices/agent-session/agent-session-types';
@@ -97,6 +103,8 @@
     processQueueHint?: FeOwnedSessionState['processQueueHint'];
     /** Guarded retry callback; queued input may still need terminal session recovery. */
     onRetry?: () => void;
+    /** Sign-in failures: run the provider's login command in Intent's terminal. */
+    onLogIn?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
     /**
@@ -140,6 +148,7 @@
     hasPendingPermission = false,
     processQueueHint = undefined,
     onRetry,
+    onLogIn,
     onRetryWithModel,
     onRetryWithProvider,
     onStop,
@@ -256,6 +265,17 @@
       : null,
   );
 
+  let logIn = $derived(
+    status === 'error' && authGuidance && !sessionCorrupted ? onLogIn : undefined,
+  );
+  let hasRecoveryAction = $derived(
+    status === 'quota-exceeded'
+      ? !!onRetryWithProvider && (quotaRetryProviders.length > 0 || !!onRetry)
+      : status === 'model-unavailable'
+        ? !!onRetryWithModel
+        : status === 'error' && (!!logIn || (!!onRetry && !attempting)),
+  );
+
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
@@ -354,122 +374,123 @@
   </div>
 {/if}
 
-{#snippet warningSummary(
-  title: string,
-  subject: string,
-  hint: string,
-  testId: string,
-  subjectTestId: string,
-)}
-  <Fa icon={faExclamationTriangle} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
-  <div class="flex min-w-0 flex-1 flex-col gap-0.5" data-testid={testId}>
-    <span class="font-medium text-warning-ink"
-      >{title}{#if failedAt}
-        <span class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground">
-          <RelativeTime date={failedAt} />
-        </span>
-      {/if}</span
+{#snippet cardTitle(title: string, tone: 'danger' | 'warning', testId: string)}
+  <div class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
+    <span
+      class="min-w-0 break-words font-medium {tone === 'danger'
+        ? 'text-danger'
+        : 'text-warning-ink'}"
+      data-testid={testId}>{title}</span
     >
-    <span class="min-w-0 break-words text-foreground" data-testid={subjectTestId}>{subject}</span>
-    <span class="text-muted-foreground">{hint}</span>
+    {#if failedAt}
+      <span class="shrink-0 whitespace-nowrap text-muted-foreground" data-testid="error-failed-at">
+        <RelativeTime date={failedAt} />
+      </span>
+    {/if}
   </div>
+{/snippet}
+
+{#snippet subjectHint(subject: string, hint: string, subjectTestId: string)}
+  <span class="break-words text-muted-foreground"
+    ><span class="text-foreground" data-testid={subjectTestId}>{subject}</span>
+    <span aria-hidden="true">·</span>
+    <span>{hint}</span></span
+  >
 {/snippet}
 
 {#if visible}
   {#if status !== 'normal'}
+    {@const tone = status === 'error' ? 'danger' : 'warning'}
     <div
       role="alert"
       aria-live="assertive"
       data-stream-terminal-error="true"
       data-testid="failure-recovery-card"
       class={cn(
-        'type-caption flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card p-3',
+        'type-caption flex min-w-0 items-start gap-2 rounded-md border border-border bg-card p-3',
         status === 'error' && 'mt-2',
         className,
       )}
       in:fade={{ tier: 'moderate' }}
       out:fade={{ tier: 'moderate' }}
     >
-      <div class="flex min-w-0 flex-col gap-2">
-        <div class="flex min-w-0 flex-1 items-start gap-2">
+      <Fa
+        icon={tone === 'danger' ? faCircleExclamation : faExclamationTriangle}
+        class="mt-0.5 size-3 shrink-0 {tone === 'danger' ? 'text-danger' : 'text-warning-ink'}"
+      />
+      <div class="flex min-w-0 flex-1 flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-0.5">
           {#if status === 'model-unavailable' && modelUnavailable}
-            {@render warningSummary(
-              m.chat_streamingStatus_modelUnavailable_title(),
-              modelUnavailable.failedModel,
-              m.chat_streamingStatus_modelUnavailable_hint(),
-              'error-model-unavailable',
-              'model-unavailable-label',
-            )}
-          {:else if status === 'quota-exceeded' && quotaExceeded}
-            {@render warningSummary(
-              m.chat_streamingStatus_quotaExceeded_title(),
-              quotaProviderLabel,
-              quotaRetryProviders.length > 0
-                ? m.chat_streamingStatus_quotaExceeded_hint()
-                : m.chat_streamingStatus_quotaExceeded_hintResetOnly(),
-              'error-quota-exceeded',
-              'quota-provider-label',
-            )}
-          {:else if status === 'error' && errorDisplay}
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="font-medium text-danger" data-testid="error-title"
-                >{errorDisplay.corrupted
-                  ? errorDisplay.title
-                  : m.chat_failureRecovery_title_label()}{#if failedAt}
-                  <span
-                    class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"
-                    data-testid="error-failed-at"
-                  >
-                    <RelativeTime date={failedAt} />
-                  </span>
-                {/if}</span
-              >
-              <span class="text-muted-foreground" data-testid="error-message"
-                >{errorDisplay.corrupted
-                  ? errorDisplay.message
-                  : recoveryState === 'queued'
-                    ? m.chat_failureRecovery_queued_description()
-                    : m.chat_failureRecovery_action_description()}</span
-              >
-              <span class="type-caption text-muted-foreground"
-                >{recoveryState === 'queued'
-                  ? m.chat_failureRecovery_queued_label()
-                  : m.chat_failureRecovery_action_label()}</span
-              >
-              {#if authGuidance}
-                <div class="mt-1.5 flex flex-col gap-1" data-testid="error-auth-guidance">
-                  <span class="type-caption leading-4 text-muted-foreground"
-                    >{m.settings_providers_runToLogIn_label()}</span
-                  >
-                  <div class="flex items-center gap-1">
-                    <code
-                      class="rounded bg-muted px-1.5 py-0.5 text-ui"
-                      data-testid="error-auth-login-command">{authGuidance.loginCommandHint}</code
-                    >
-                    <CopyButton text={authGuidance.loginCommandHint} size="xs" />
-                  </div>
-                  {#if authGuidance.showClaudeDesktopNote}
-                    <span
-                      class="type-caption leading-4 text-muted-foreground"
-                      data-testid="error-auth-claude-desktop-note"
-                      >{m.settings_providers_claudeDesktopNote_label()}</span
-                    >
-                  {/if}
-                </div>
-              {/if}
+            <div class="contents" data-testid="error-model-unavailable">
+              {@render cardTitle(
+                m.chat_streamingStatus_modelUnavailable_title(),
+                tone,
+                'warning-title',
+              )}
+              {@render subjectHint(
+                modelUnavailable.failedModel,
+                m.chat_streamingStatus_modelUnavailable_hint(),
+                'model-unavailable-label',
+              )}
             </div>
+          {:else if status === 'quota-exceeded' && quotaExceeded}
+            <div class="contents" data-testid="error-quota-exceeded">
+              {@render cardTitle(
+                m.chat_streamingStatus_quotaExceeded_title(),
+                tone,
+                'warning-title',
+              )}
+              {@render subjectHint(
+                quotaProviderLabel,
+                quotaRetryProviders.length > 0
+                  ? m.chat_streamingStatus_quotaExceeded_hint()
+                  : m.chat_streamingStatus_quotaExceeded_hintResetOnly(),
+                'quota-provider-label',
+              )}
+            </div>
+          {:else if status === 'error' && errorDisplay}
+            {#if authGuidance && !errorDisplay.corrupted}
+              {@render cardTitle(
+                m.chat_streamingStatus_signInRequired_title(),
+                tone,
+                'error-title',
+              )}
+              <div
+                class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground"
+                data-testid="error-auth-guidance"
+              >
+                <span>{m.settings_providers_runToLogIn_label()}</span>
+                <span class="inline-flex min-w-0 items-center gap-0.5">
+                  <code
+                    class="type-code min-w-0 break-all rounded bg-muted px-1.5 py-0.5 text-xs text-foreground"
+                    data-testid="error-auth-login-command">{authGuidance.loginCommandHint}</code
+                  >
+                  <CopyButton text={authGuidance.loginCommandHint} size="xs" />
+                </span>
+              </div>
+              {#if authGuidance.showClaudeDesktopNote}
+                <span class="text-muted-foreground" data-testid="error-auth-claude-desktop-note"
+                  >{m.settings_providers_claudeDesktopNote_label()}</span
+                >
+              {/if}
+            {:else}
+              {@render cardTitle(errorDisplay.title, tone, 'error-title')}
+              <span
+                class="line-clamp-2 break-words text-muted-foreground"
+                data-testid="error-message">{errorDisplay.message}</span
+              >
+            {/if}
           {/if}
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
           {#if status === 'quota-exceeded' && onRetryWithProvider}
             {#each quotaRetryProviders as alt (alt.id)}
               <Button
-                variant="default"
+                variant="secondary"
                 size="sm"
                 onclick={() => onRetryWithProvider(alt.id)}
                 data-testid="retry-with-provider"
-                class="type-caption h-7 gap-1.5 px-2"
               >
                 <Fa icon={faRotateRight} class="size-3" />
                 {m.chat_streamingStatus_retryOnProvider_label({ provider: alt.displayName })}
@@ -477,11 +498,10 @@
             {/each}
             {#if onRetry}
               <Button
-                variant="secondary"
+                variant={quotaRetryProviders.length > 0 ? 'ghost-light' : 'secondary'}
                 size="sm"
                 onclick={onRetry}
                 data-testid="quota-retry-same-provider"
-                class="type-caption h-7 shrink-0 gap-1.5 px-2 text-muted-foreground"
               >
                 <Fa icon={faRotateRight} class="size-3" />
                 {m.chat_shared_retry_label()}
@@ -489,28 +509,30 @@
             {/if}
           {:else if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
             <Button
-              variant="default"
+              variant="secondary"
               size="sm"
               onclick={() => onRetryWithModel(modelUnavailable.nextAvailableModel)}
-              class="type-caption h-7 gap-1.5 px-2"
             >
               <Fa icon={faRotateRight} class="size-3" />
               {m.chat_streamingStatus_retryWith_label({
                 model: modelUnavailable.nextAvailableModel,
               })}
             </Button>
-          {:else if status === 'error' && onRetry && !attempting}
-            <Button
-              variant="secondary"
-              size="sm"
-              onclick={onRetry}
-              class="shrink-0 text-muted-foreground"
-            >
-              <Fa icon={faRotateRight} class="size-3" />
-              {m.chat_shared_retry_label()}
-            </Button>
+          {:else if status === 'error'}
+            {#if logIn}
+              <Button variant="secondary" size="sm" onclick={logIn} data-testid="error-auth-log-in">
+                <Fa icon={faTerminal} class="size-3" />
+                {m.settings_providers_logIn()}
+              </Button>
+            {/if}
+            {#if onRetry && !attempting}
+              <Button variant={logIn ? 'ghost-light' : 'secondary'} size="sm" onclick={onRetry}>
+                <Fa icon={faRotateRight} class="size-3" />
+                {m.chat_shared_retry_label()}
+              </Button>
+            {/if}
           {/if}
-          {#if error}<FailureDetails text={error} />{/if}
+          {#if error}<FailureDetails text={error} leading={!hasRecoveryAction} />{/if}
         </div>
       </div>
     </div>

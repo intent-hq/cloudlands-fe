@@ -20,14 +20,14 @@ test('keeps destructive and operational secondary text readable in both themes',
   mount,
 }) => {
   const component = await mount(DestructiveContrastHost, { props: { theme: 'light' } });
-  await component.getByRole('button', { name: '1 recorded failure' }).click();
+  await component.getByRole('button', { name: 'Response failed' }).click();
   const targets = [
     { name: 'failed attachment chip', selector: '[data-placement-status="failed"]', alpha: 0.1 },
     { name: 'streaming error title', selector: '[data-testid="error-title"]', alpha: 0 },
     { name: 'historical failure summary', selector: '.turn-failure-notice', alpha: 0 },
     {
       name: 'turn-failure detail',
-      selector: '.turn-failure-notice pre',
+      selector: '.turn-failure-notice [role="region"] p',
       alpha: 0,
     },
     {

@@ -17,7 +17,6 @@
   import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
-  import ArrowClockwiseIcon from 'phosphor-svelte/lib/ArrowClockwiseIcon';
   import ArrowUUpLeftIcon from 'phosphor-svelte/lib/ArrowUUpLeftIcon';
   import QueuedMessageActions from './QueuedMessageActions.svelte';
   import XIcon from 'phosphor-svelte/lib/XIcon';
@@ -1284,18 +1283,6 @@
                             {/if}
                           </div>
                         {/each}
-                        {#if message.requeuedAfterFailure && !isSending(message.id)}
-                          <div
-                            class="type-caption mt-0.5 flex items-start gap-1 text-warning-ink"
-                            data-testid="queued-message-retry-status"
-                            role="status"
-                          >
-                            <span class="first-line-icon" aria-hidden="true">
-                              <ArrowClockwiseIcon size={12} weight="regular" />
-                            </span>
-                            <span>{m.chat_failureRecovery_queued_label()}</span>
-                          </div>
-                        {/if}
                       </div>
                       {#if !disabled && !singleMessage}
                         <div

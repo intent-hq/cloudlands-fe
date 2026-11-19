@@ -189,14 +189,14 @@ describe('TurnFailureNotice', () => {
     render(TurnFailureNotice, { props: { reason: 'Provider stream aborted' } });
 
     expect(screen.queryByRole('alert')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: '1 recorded failure' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Response failed' }));
     expect(screen.getByText('Provider stream aborted')).toBeTruthy();
   });
 
   it('renders the title alone when no reason is provided', () => {
     render(TurnFailureNotice);
 
-    expect(screen.getByRole('button', { name: '1 recorded failure' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Response failed' })).toBeTruthy();
   });
 
   it('applies custom class when provided', () => {

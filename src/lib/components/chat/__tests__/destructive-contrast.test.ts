@@ -61,11 +61,11 @@ describe('destructive state semantics', () => {
   });
 
   test('discloses raw diagnostics below the current failure heading', async () => {
-    const { getByTestId, getByText, getByRole } = render(StreamingStatus, {
+    const { getByTestId, getByRole } = render(StreamingStatus, {
       props: { error: 'Test error message', isStreaming: false },
     });
     await fireEvent.click(getByRole('button', { name: 'Details', exact: true }));
-    expect(getByText('Test error message')).toBeTruthy();
+    expect(getByTestId('failure-raw-details').textContent).toBe('Test error message');
     expectDangerForeground(getByTestId('error-title'));
   });
 
@@ -74,7 +74,7 @@ describe('destructive state semantics', () => {
       props: { reason: 'Test failure reason' },
     });
     container.style.zoom = '2';
-    await fireEvent.click(getByRole('button', { name: '1 recorded failure' }));
+    await fireEvent.click(getByRole('button', { name: 'Response failed' }));
     expect(getByRole('region').textContent).toContain('Test failure reason');
   });
 });
