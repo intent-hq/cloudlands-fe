@@ -260,9 +260,8 @@ declare module '@pierre/diffs' {
 
   export function parsePatchFiles(data: string, cacheKeyPrefix?: string): ParsedPatch[];
 
-  export function parseDiffFromFile(
-    oldFile: FileContents,
-    newFile: FileContents,
-    options?: Record<string, unknown>,
-  ): FileDiffMetadata;
+  export function processFile(
+    patch: string,
+    options: { oldFile: FileContents; newFile: FileContents; cacheKey: string },
+  ): FileDiffMetadata | undefined;
 }

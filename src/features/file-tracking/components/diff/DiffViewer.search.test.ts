@@ -85,7 +85,7 @@ vi.mock('@pierre/diffs', () => {
     FileDiff: MockFileDiff,
     VirtualizedFileDiff: MockFileDiff,
     parsePatchFiles: () => [{ files: [{ hunks: [], lang: 'text' }] }],
-    parseDiffFromFile: () => ({ hunks: [], lang: 'text' }),
+    processFile: () => ({ hunks: [], lang: 'text' }),
   };
 });
 
