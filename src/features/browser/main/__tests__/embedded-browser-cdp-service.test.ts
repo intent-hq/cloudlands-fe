@@ -424,14 +424,17 @@ describe('embedded browser CDP workspace routing', () => {
     function screenshotWebContents(
       opts: {
         emulationDelayMs?: number;
+        layoutMetrics?: unknown;
       } = {},
     ) {
       const sendCommand = vi.fn((method: string, _params?: unknown) => {
         if (method === 'Page.getLayoutMetrics') {
-          return Promise.resolve({
-            layoutViewport: { clientWidth: 1280, clientHeight: 800 },
-            cssVisualViewport: { clientWidth: 1280, clientHeight: 800, pageX: 0, pageY: 0 },
-          });
+          return Promise.resolve(
+            opts.layoutMetrics ?? {
+              layoutViewport: { clientWidth: 1280, clientHeight: 800 },
+              cssVisualViewport: { clientWidth: 1280, clientHeight: 800, pageX: 0, pageY: 0 },
+            },
+          );
         }
         if (method === 'Page.captureScreenshot') {
           return Promise.resolve({ data: 'anVuaw==' });
@@ -492,6 +495,50 @@ describe('embedded browser CDP workspace routing', () => {
         });
       } finally {
         embeddedBrowserCdp.unregisterTab('tab-shot-fit');
+      }
+    });
+
+    // Guests inherit the app zoom: a 1100x900 DIP tab at zoom 0.9129 has a
+    // 1205x986 CSS viewport, and a clip of that size at scale 1 asked a 2x
+    // display for 2410x1972 px of a 2200x1800 surface — a tiled capture. The
+    // legacy layoutViewport (DIP on Linux, CSS px on macOS) must not decide it.
+    it('requests the zoomed CSS viewport at its DIP size', async () => {
+      const zoom = 0.9128709435462952;
+      const { sendCommand } = screenshotWebContents({
+        layoutMetrics: {
+          layoutViewport: { clientWidth: 1100, clientHeight: 900 },
+          cssLayoutViewport: { clientWidth: 1205, clientHeight: 986 },
+          cssVisualViewport: {
+            clientWidth: 1204.99,
+            clientHeight: 985.9,
+            pageX: 0,
+            pageY: 40,
+            zoom,
+          },
+        },
+      });
+      embeddedBrowserCdp.registerTab('tab-shot-zoom', 506);
+      embeddedBrowserCdp.setTabOwner('tab-shot-zoom', 'agent-1', undefined, {
+        width: 1100,
+        height: 900,
+      });
+      embeddedBrowserCdp.reportTabViewBounds('tab-shot-zoom', 550, 450);
+      await flushAsync();
+
+      try {
+        await expect(embeddedBrowserCdp.screenshot('tab-shot-zoom')).resolves.toMatchObject({
+          width: 1100,
+          height: 900,
+        });
+        expect(captureScreenshotClip(sendCommand)).toEqual({
+          x: 0,
+          y: 40,
+          width: 1204.99,
+          height: 985.9,
+          scale: 0.5 * zoom,
+        });
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-zoom');
       }
     });
 

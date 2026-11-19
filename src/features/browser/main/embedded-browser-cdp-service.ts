@@ -2588,56 +2588,50 @@ class EmbeddedBrowserCdpService {
       );
     }
 
-    // Get layout metrics to determine viewport size.
-    // layoutViewport reflects the page's internal layout (may exceed visible area
-    // if the page sets min-width larger than the panel).
-    // cssVisualViewport reflects the actual visible area the user sees.
-    // We cap to whichever is smaller so screenshots match the panel bounds.
+    // Visible viewport in CSS px. The visual viewport is the visible area at
+    // full precision (the layout viewport rounds down to whole CSS px, a lost
+    // DIP once zoomed). The legacy layoutViewport is in DIP on some platforms
+    // and CSS px on others, so it is only a fallback.
     const layoutMetrics = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.getLayoutMetrics'),
       'Page.getLayoutMetrics',
       deadline,
     )) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
+      cssLayoutViewport?: { clientWidth: number; clientHeight: number };
       cssVisualViewport?: {
         clientWidth: number;
         clientHeight: number;
         pageX: number;
         pageY: number;
+        zoom?: number;
       };
     };
 
-    const layoutW = layoutMetrics.layoutViewport.clientWidth;
-    const layoutH = layoutMetrics.layoutViewport.clientHeight;
-    const visualW = layoutMetrics.cssVisualViewport?.clientWidth;
-    const visualH = layoutMetrics.cssVisualViewport?.clientHeight;
+    const layout = layoutMetrics.cssLayoutViewport ?? layoutMetrics.layoutViewport;
+    const visual = layoutMetrics.cssVisualViewport;
+    const cssWidth = visual && visual.clientWidth > 0 ? visual.clientWidth : layout.clientWidth;
+    const cssHeight = visual && visual.clientHeight > 0 ? visual.clientHeight : layout.clientHeight;
+    // Page zoom (CSS px → DIP). Guests inherit the app's zoom, so a zoomed-out
+    // app gives an 1100 DIP tab a 1204 CSS px viewport.
+    const zoom = visual?.zoom !== undefined && visual.zoom > 0 ? visual.zoom : 1;
 
-    // Use scroll offsets from cssVisualViewport so the screenshot captures
-    // what the user currently sees, not the document origin.
-    const scrollX = layoutMetrics.cssVisualViewport?.pageX ?? 0;
-    const scrollY = layoutMetrics.cssVisualViewport?.pageY ?? 0;
-
-    // Use the smaller of layout vs visual viewport so a narrow panel
-    // produces a narrow screenshot instead of capturing off-screen content.
-    const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
-    const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
-
-    if (width <= 0 || height <= 0) {
+    if (cssWidth <= 0 || cssHeight <= 0) {
       throw new Error(
         // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-        `Page.getLayoutMetrics returned an empty viewport (${width}x${height})`,
+        `Page.getLayoutMetrics returned an empty viewport (${cssWidth}x${cssHeight})`,
       );
     }
 
-    // Capture at the scale the tab is drawn at. Page.captureScreenshot
-    // expects an image of clip × clip.scale × display DPR pixels and resizes
-    // the view to clip × clip.scale to get it — but a <webview> guest cannot
-    // be resized that way (its child-frame view ignores SetSize), so the
-    // surface stays at the element's size and Chromium tiles it to fill the
-    // request. On a tab shrunk to fit its panel (scale < 1) a scale-1 clip
-    // therefore returned a repeated 2x2 page (intent-hq/intent#4627); a clip
-    // at the emulation's fit scale requests exactly the surface that exists.
-    const clipScale =
+    // Request exactly the surface the guest draws. Page.captureScreenshot
+    // returns clip × clip.scale × display DPR pixels and resizes the view to
+    // get them — but a <webview> guest cannot be resized that way (its
+    // child-frame view ignores SetSize), so Chromium tiles the existing
+    // surface to fill a larger request. That surface is the viewport in DIP
+    // (CSS × zoom) times the emulation's fit scale: a scale-1 clip tiled
+    // tabs shrunk to fit their panel (intent-hq/intent#4627), and ignoring
+    // zoom tiled every tab of a zoomed app on HiDPI displays.
+    const fitScale =
       tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
         ? this.resolveEmulationGeometry(tabId).scale
         : 1;
@@ -2646,11 +2640,11 @@ class EmbeddedBrowserCdpService {
         format: 'jpeg',
         quality: 80,
         clip: {
-          x: scrollX,
-          y: scrollY,
-          width,
-          height,
-          scale: clipScale,
+          x: visual?.pageX ?? 0,
+          y: visual?.pageY ?? 0,
+          width: cssWidth,
+          height: cssHeight,
+          scale: fitScale * zoom,
         },
       }),
       'Page.captureScreenshot',
@@ -2660,14 +2654,15 @@ class EmbeddedBrowserCdpService {
     if (!result.data) {
       throw new Error(
         // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-        `Page.captureScreenshot returned an empty image (${width}x${height})`,
+        `Page.captureScreenshot returned an empty image (${cssWidth}x${cssHeight})`,
       );
     }
 
+    // The tab's size in DIP: the openTab/resizeTab size for an emulated tab.
     return {
       base64: result.data,
-      width,
-      height,
+      width: Math.round(cssWidth * zoom),
+      height: Math.round(cssHeight * zoom),
     };
   }
 
