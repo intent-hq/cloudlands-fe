@@ -76,6 +76,10 @@ export const homeSetupOutputRequested = createAction<[workspaceId: string]>(
 export const homeSetupOutputLoaded = createAction<[workspaceId: string, output: HomeSetupOutput]>(
   'workspaceHome/setupOutputLoaded',
 );
+/** Saga: the read failed; the last output is no longer known to be current. */
+export const homeSetupOutputUnavailable = createAction<[workspaceId: string]>(
+  'workspaceHome/setupOutputUnavailable',
+);
 /** Hide a home's failed opening banner (nodes.md "Opening the home"). */
 export const homeSetupFailureDismissed = createAction<[failureKey: string]>(
   'workspaceHome/setupFailureDismissed',
@@ -124,3 +128,8 @@ workspaceHomeReducer.with(homeSetupOutputLoaded, (state, { payload: [workspaceId
   ...state,
   setupOutputs: { ...state.setupOutputs, [workspaceId]: output },
 }));
+workspaceHomeReducer.with(homeSetupOutputUnavailable, (state, { payload: [workspaceId] }) => {
+  if (!state.setupOutputs[workspaceId]) return state;
+  const { [workspaceId]: _stale, ...setupOutputs } = state.setupOutputs;
+  return { ...state, setupOutputs };
+});

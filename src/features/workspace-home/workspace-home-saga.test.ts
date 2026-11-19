@@ -283,11 +283,25 @@ describe('Opening the home: setup output (nodes.md "Opening the home")', () => {
     expect(home()).toEqual(OPENING);
   });
 
-  it('keeps no output when the read fails', async () => {
+  it('drops the last output when a later read fails, never showing it as current', async () => {
+    appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS, { home: OPENING })]));
+    mocks.request.mockResolvedValueOnce({
+      workspace: {
+        id: WS,
+        title: WS,
+        branch: 'main',
+        status: 'Active',
+        home: { ...OPENING, setup: { state: 'running', output: 'first read\n' } },
+      },
+    });
+    appStore.dispatch(homeSetupOutputRequested(WS));
+    await vi.waitFor(() =>
+      expect(selectHomeSetupOutput.select(appStore.state, WS)?.text).toBe('first read\n'),
+    );
     mocks.request.mockRejectedValueOnce(new Error('offline'));
     appStore.dispatch(homeSetupOutputRequested(WS));
-    await vi.waitFor(() => expect(calls('workspace.get')).toHaveLength(1));
-    expect(selectHomeSetupOutput.select(appStore.state, WS)).toBeNull();
+    await vi.waitFor(() => expect(selectHomeSetupOutput.select(appStore.state, WS)).toBeNull());
+    expect(calls('workspace.get')).toHaveLength(2);
   });
 
   it('shows no output read for another home of the workspace', async () => {

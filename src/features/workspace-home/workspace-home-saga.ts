@@ -43,6 +43,7 @@ import { setHomeErrorCode, workspaceHomeView } from './workspace-home';
 import {
   homeSetupOutputLoaded,
   homeSetupOutputRequested,
+  homeSetupOutputUnavailable,
   homeWaitRequested,
   homeWaitSettled,
   moveHomeRequested,
@@ -156,6 +157,8 @@ function* readSetupOutput(
     );
   } catch (error) {
     logger.warn('could not read the home setup output', { workspaceId, error });
+    // Never show the previous read as current.
+    yield* put(homeSetupOutputUnavailable(workspaceId));
   }
 }
 
