@@ -47,11 +47,15 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const normalize = (value) => value.split(path.sep).join('/');
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
+/** Configs the project tsconfigs extend (scripts/check-test-types.test.ts keeps it whole). */
+export const EXTENDED_TSCONFIGS = Object.freeze(['tsconfig.main.json']);
+
 /** Files whose change can alter this gate's result besides the tests themselves. */
 export function isTestTypeCheckInput(file) {
   return (
     file === 'scripts/check-test-types.mjs' ||
     file.startsWith(`${BASELINES_DIR}/`) ||
+    EXTENDED_TSCONFIGS.includes(file) ||
     Object.values(PROJECTS).some(({ tsconfig }) => file === tsconfig)
   );
 }
@@ -69,6 +73,12 @@ export function parseDiagnostics(output, root = ROOT) {
     if (located) {
       const [, rawFile, lineNo, column, code, message] = located;
       const file = normalize(path.relative(root, path.resolve(root, rawFile)));
+      // A tsconfig error carries a location but is configuration, never baselined debt.
+      if (file.endsWith('.json')) {
+        global.push(`${file}(${lineNo},${column}) ${code}: ${message}`);
+        last = null;
+        continue;
+      }
       last = { file, line: Number(lineNo), column: Number(column), code, message };
       if (!byFile.has(file)) byFile.set(file, []);
       byFile.get(file).push(last);
@@ -154,30 +164,61 @@ export function compareCounts(baseline, counts) {
   return { grown, shrunk };
 }
 
+const git = (root, args) =>
+  execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 64 << 20,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
 /**
- * The project's baseline as committed at `ref`, or `null` when the project had no
- * baseline there (a new project may establish its starting debt).
+ * The project's baseline as committed at `ref`, or `null` when its tsconfig did not
+ * exist there (a new project may establish its starting debt). An existing project with
+ * no entries has zero debt: its baseline directory is gone, but nothing may come back.
  */
-export function readCommittedBaseline(root, project, ref) {
+export function readCommittedBaseline(root, project, ref, tsconfig = PROJECTS[project]?.tsconfig) {
   const dir = `${BASELINES_DIR}/${project}`;
-  const git = (args) =>
-    execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 });
-  const listing = git(['ls-tree', '-r', '-z', ref, '--', dir]).split('\0').filter(Boolean);
-  if (!listing.length) return null;
+  const listing = git(root, ['ls-tree', '-r', '-z', ref, '--', dir]).split('\0').filter(Boolean);
+  if (!listing.length) {
+    const tracked = git(root, ['ls-tree', '--name-only', ref, '--', tsconfig]).trim();
+    return tracked ? new Map() : null;
+  }
   const blobs = listing.map((record) => {
     const tab = record.indexOf('\t');
     return { sha: record.slice(0, tab).split(' ')[2], file: record.slice(tab + 1) };
   });
   return parseBaselineEntries(
-    blobs.map(({ sha, file }) => [file.slice(dir.length + 1), git(['cat-file', 'blob', sha])]),
+    blobs.map(({ sha, file }) => [
+      file.slice(dir.length + 1),
+      git(root, ['cat-file', 'blob', sha]),
+    ]),
     `${ref}:${dir}`,
   );
 }
 
-/** Baseline entries added or raised since `committed`: `[{ file, allowed, current }]`. */
-export function findBaselineGrowth(committed, checkedOut) {
+/** Files renamed between `ref` and the worktree, as `Map<old path, new path>`. */
+export function readRenames(root, ref) {
+  const fields = git(root, ['diff', '-M', '-z', '--name-status', '--diff-filter=R', ref, '--'])
+    .split('\0')
+    .filter(Boolean);
+  const renames = new Map();
+  for (let i = 0; i + 2 < fields.length; i += 3) renames.set(fields[i + 1], fields[i + 2]);
+  return renames;
+}
+
+/**
+ * Baseline entries added or raised since `committed`: `[{ file, allowed, current }]`.
+ * A renamed file keeps its committed allowance under its new path.
+ */
+export function findBaselineGrowth(committed, checkedOut, renames = new Map()) {
   if (committed === null) return [];
-  return compareCounts(committed, checkedOut).grown;
+  const moved = new Map();
+  for (const [file, count] of committed) {
+    const target = renames.get(file) ?? file;
+    moved.set(target, (moved.get(target) ?? 0) + count);
+  }
+  return compareCounts(moved, checkedOut).grown;
 }
 
 function runTsc(root, tsconfig) {
@@ -239,11 +280,18 @@ export async function checkTestTypes({
       const before = loadBaseline(root, name);
       writeBaseline(root, name, counts);
       const { grown } = compareCounts(before, counts);
+      let committed = null;
+      try {
+        committed = readCommittedBaseline(root, name, 'HEAD', tsconfig);
+      } catch {
+        // Not a git checkout: nothing to compare with.
+      }
       lines.push(
         `📝 ${label}: baseline now ${total} error(s) in ${counts.size} file(s) (${BASELINES_DIR}/${name}/).`,
       );
-      // A project's first baseline is its starting debt; afterwards growth is rejected.
-      if (!before.size) continue;
+      // A project's first baseline is its starting debt; afterwards growth is rejected
+      // (a renamed test keeps its entry: CI matches it through git rename detection).
+      if (committed === null) continue;
       for (const { file, allowed, current } of grown) {
         lines.push(`  ⚠️  ${file}: ${allowed} → ${current}; CI rejects baseline growth.`);
       }
@@ -267,7 +315,8 @@ export async function checkTestTypes({
       lines.push(
         'Fix the test types (the code under test is the contract), or mark a deliberate',
         'type-level probe with `// @ts-expect-error <why>`. The baseline only records old',
-        `debt and may only shrink (${INCIDENTS[0]}).`,
+        `debt and may only shrink (${INCIDENTS[0]}). A moved or renamed test keeps its`,
+        `entry: rerun with --update-baseline (CI follows the git rename).`,
       );
     }
     if (!grown.length && !shrunk.length) {

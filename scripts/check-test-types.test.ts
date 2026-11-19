@@ -8,6 +8,7 @@ import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BASELINES_DIR,
+  EXTENDED_TSCONFIGS,
   PROJECTS,
   checkTestTypes,
   compareCounts,
@@ -17,6 +18,7 @@ import {
   parseBaselineEntries,
   parseDiagnostics,
   readCommittedBaseline,
+  readRenames,
 } from './check-test-types.mjs';
 
 const roots: string[] = [];
@@ -90,6 +92,15 @@ describe('parseDiagnostics', () => {
     ]);
     expect(global).toEqual(["TS2688: Cannot find type definition file for 'nope'."]);
   });
+
+  it('reports a located tsconfig error as configuration, not test debt', () => {
+    const { byFile, global } = parseDiagnostics(
+      "tsconfig.tests.json(4,5): error TS5023: Unknown compiler option 'nope'.",
+      '/repo',
+    );
+    expect(byFile.size).toBe(0);
+    expect(global).toEqual(["tsconfig.tests.json(4,5) TS5023: Unknown compiler option 'nope'."]);
+  });
 });
 
 describe('baseline comparison', () => {
@@ -129,6 +140,21 @@ describe('baseline comparison', () => {
       { file: 'a.test.ts', allowed: 1, current: 2 },
     ]);
     expect(findBaselineGrowth(new Map([['a.test.ts', 3]]), after)).toEqual([]);
+  });
+
+  it('keeps zero debt at zero once every entry is gone', () => {
+    expect(findBaselineGrowth(new Map(), new Map([['a.test.ts', 1]]))).toEqual([
+      { file: 'a.test.ts', allowed: 0, current: 1 },
+    ]);
+  });
+
+  it("carries a renamed file's allowance to its new path", () => {
+    const renames = new Map([['old/a.test.ts', 'new/a.test.ts']]);
+    const committed = new Map([['old/a.test.ts', 2]]);
+    expect(findBaselineGrowth(committed, new Map([['new/a.test.ts', 2]]), renames)).toEqual([]);
+    expect(findBaselineGrowth(committed, new Map([['new/a.test.ts', 3]]), renames)).toEqual([
+      { file: 'new/a.test.ts', allowed: 2, current: 3 },
+    ]);
   });
 });
 
@@ -211,8 +237,29 @@ describe('committed baseline', () => {
     writeFiles(root, baselineEntry(2));
     git(root, 'add', '-A');
     git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'baseline');
-    expect(readCommittedBaseline(root, 'main', before)).toBeNull();
-    expect(readCommittedBaseline(root, 'main', 'HEAD')).toEqual(new Map([[TEST_FILE, 2]]));
+    expect(readCommittedBaseline(root, 'main', before, 'tsconfig.tests.json')).toBeNull();
+    expect(readCommittedBaseline(root, 'main', 'HEAD', 'tsconfig.tests.json')).toEqual(
+      new Map([[TEST_FILE, 2]]),
+    );
+  });
+
+  it('reads an established project with no entries as zero debt, not a new project', () => {
+    const root = tree({ 'tsconfig.tests.json': '{}', ...baselineEntry(1) });
+    git(root, 'init', '-q');
+    git(root, 'add', '-A');
+    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'debt');
+    git(root, 'rm', '-rq', BASELINES_DIR);
+    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'paid off');
+    expect(readCommittedBaseline(root, 'main', 'HEAD', 'tsconfig.tests.json')).toEqual(new Map());
+  });
+
+  it('detects files renamed since a revision', () => {
+    const root = tree({ 'src/old.test.ts': 'export const value = 1;\n'.repeat(20) });
+    git(root, 'init', '-q');
+    git(root, 'add', '-A');
+    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+    git(root, 'mv', 'src/old.test.ts', 'src/new.test.ts');
+    expect(readRenames(root, 'HEAD')).toEqual(new Map([['src/old.test.ts', 'src/new.test.ts']]));
   });
 
   // CI sets LINT_BASELINE_BASE_REF to the PR or merge-group base; locally HEAD.
@@ -220,9 +267,11 @@ describe('committed baseline', () => {
     const ref = process.env.LINT_BASELINE_BASE_REF || 'HEAD';
     for (const project of Object.keys(PROJECTS)) {
       const committed = readCommittedBaseline(process.cwd(), project, ref);
-      expect(findBaselineGrowth(committed, loadBaseline(process.cwd(), project)), project).toEqual(
-        [],
-      );
+      const renames = readRenames(process.cwd(), ref);
+      expect(
+        findBaselineGrowth(committed, loadBaseline(process.cwd(), project), renames),
+        project,
+      ).toEqual([]);
     }
   });
 });
@@ -244,8 +293,20 @@ describe('repository wiring', () => {
     expect(files.filter((file) => !file.endsWith('.d.ts') && !file.includes('/main/'))).toEqual([]);
   });
 
+  it('lists every config a project tsconfig extends as a gate input', () => {
+    for (const { tsconfig } of Object.values(PROJECTS)) {
+      let config: string | undefined = tsconfig;
+      while (config) {
+        const { config: json } = ts.readConfigFile(config, ts.sys.readFile);
+        config = json.extends;
+        if (config) expect(EXTENDED_TSCONFIGS).toContain(config.replace(/^\.\//, ''));
+      }
+    }
+  });
+
   it('treats the tsconfig and baselines as gate inputs', () => {
     expect(isTestTypeCheckInput(PROJECTS.main.tsconfig)).toBe(true);
+    expect(isTestTypeCheckInput('tsconfig.main.json')).toBe(true);
     expect(isTestTypeCheckInput(`${BASELINES_DIR}/main/src/main/a.test.ts.json`)).toBe(true);
     expect(isTestTypeCheckInput('src/main/a.test.ts')).toBe(false);
   });

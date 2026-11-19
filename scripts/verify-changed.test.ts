@@ -1357,6 +1357,7 @@ describe('verification planning', () => {
   it('runs the architecture gates when a unit-test tsconfig or type baseline changes', () => {
     const changed = [
       'tsconfig.main-tests.json',
+      'tsconfig.main.json',
       'scripts/check-test-types.mjs',
       'scripts/test-type-baselines/main/src/main/__tests__/a.test.ts.json',
     ];
