@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.354.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.2...v2.354.0) (2026-11-18)
+
+
+### 🚀 Features
+
+* **settings:** collapse agent settings under Advanced on Agent defaults ([#4758](https://github.com/intent-hq/cloudlands-fe/issues/4758)) ([8a368f6](https://github.com/intent-hq/cloudlands-fe/commit/8a368f6319a08ad3962a6490a594d0411878f220))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.247 ([#4770](https://github.com/intent-hq/cloudlands-fe/issues/4770)) ([86d8d87](https://github.com/intent-hq/cloudlands-fe/commit/86d8d87717481016bd3385fdeae3c842e04a38a4))
+
 ## [2.353.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.353.1...v2.353.2) (2026-11-18)
 
 
