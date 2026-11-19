@@ -8,13 +8,21 @@
 
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type { RecentAgentEntry } from '$shared/recent-agents';
+import {
+  createCollection,
+  type Collection,
+} from '@themislib/themis/utils/collections/collection-utils';
+import { recentAgentKey, type RecentAgentEntry } from '$shared/recent-agents';
+
+/** An entry with its `connectionId/agentId` key, so the slice can hold a Collection. */
+export type KeyedRecentAgent = RecentAgentEntry & { key: string };
 
 export interface RecentAgentsSliceState {
-  entries: RecentAgentEntry[];
+  /** Most recent first: the Collection keeps main's order. */
+  entries: Collection<KeyedRecentAgent, 'key'>;
 }
 
-const initialState: RecentAgentsSliceState = { entries: [] };
+const initialState: RecentAgentsSliceState = { entries: createCollection('key', []) };
 
 /** The list from `recent-agents:list`, a request reply, or a `recent-agents:changed` push. */
 export const recentAgentsReceived =
@@ -27,5 +35,8 @@ export const recentAgentOpenRequested = createAction<[entry: RecentAgentEntry]>(
 
 export const recentAgentsReducer = createReducer<RecentAgentsSliceState>(initialState);
 recentAgentsReducer.with(recentAgentsReceived, (_state, { payload: [entries] }) => ({
-  entries: [...entries],
+  entries: createCollection(
+    'key',
+    entries.map((entry) => ({ ...entry, key: recentAgentKey(entry) })),
+  ),
 }));

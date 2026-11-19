@@ -74,7 +74,7 @@
       : $machineLabel$}
   </span>
   <span class="w-full truncate type-caption text-muted-foreground">
-    {avatarState && avatarState !== 'idle'
+    {avatarState
       ? m.recentAgents_switcher_statusTime_label({
           status: getAgentAvatarStateLabel(avatarState),
           time: formatRelativeTime(entry.visitedAt),

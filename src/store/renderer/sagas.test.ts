@@ -99,6 +99,7 @@ describe('renderer app saga registry', () => {
       'themeSaga',
       'powerSaga',
       'machineRailSaga',
+      'recentAgentsSaga',
       'autoUpdateSaga',
       'specialistsSaga',
       'workspaceCatalogSaga',

@@ -9,7 +9,9 @@ import { store } from '../../store';
  * every entry.
  */
 export const selectRecentAgents = store.createSelector((state): RecentAgentEntry[] => {
-  const { entries } = state.recentAgents;
+  const entries = getItems(state.recentAgents.entries).map(
+    ({ key: _key, ...entry }): RecentAgentEntry => entry,
+  );
   if (!state.connections.hasReceivedList) return entries;
   const saved = new Set<string>([
     state.connections.windowBackendId,
