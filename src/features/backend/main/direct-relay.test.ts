@@ -30,7 +30,7 @@ function collectUntil(socket: net.Socket, expectedBytes: number): Promise<Buffer
     const chunks: Buffer[] = [];
     let total = 0;
     socket.on('data', (chunk) => {
-      chunks.push(chunk);
+      chunks.push(Buffer.from(chunk));
       total += chunk.length;
       if (total >= expectedBytes) resolve(Buffer.concat(chunks));
     });
@@ -56,13 +56,13 @@ async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
 }
 
 describe('DirectRelay', () => {
-  const cleanups: Array<() => void | Promise<void>> = [];
+  const cleanups: Array<() => unknown> = [];
   afterEach(async () => {
     while (cleanups.length > 0) {
       await cleanups.pop()?.();
     }
   });
-  const onCleanup = (fn: () => void | Promise<void>): void => {
+  const onCleanup = (fn: () => unknown): void => {
     cleanups.push(fn);
   };
 
