@@ -304,7 +304,11 @@ test('caps and follows tall live rows as a streaming cylinder', async ({ mount, 
     node.scrollTop = 0;
     node.dispatchEvent(new Event('scroll'));
   });
-  await expect.poll(() => scroller.evaluate((node) => node.style.maskImage)).toBe('');
+  // Back at the top only the hidden lines below fade.
+  const fade = (edge: 'top' | 'bottom') =>
+    scroller.evaluate((node, edge) => node.style.getPropertyValue(`--cylinder-fade-${edge}`), edge);
+  await expect.poll(() => fade('top')).toBe('0px');
+  expect(await fade('bottom')).not.toBe('0px');
   await page.waitForTimeout(200);
 
   await component.update({
