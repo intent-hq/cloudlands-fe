@@ -294,8 +294,8 @@ describe('renderer test program on a fixture', { timeout: 120_000 }, () => {
 describe('parseArgs', () => {
   it('accepts the update command it prints', () => {
     expect(UPDATE_COMMAND).not.toContain(' -- ');
-    const args = UPDATE_COMMAND.split(' ').slice(UPDATE_COMMAND.split(' ').indexOf('lint:test-types') + 1);
-    expect(parseArgs(args).update).toBe(true);
+    const words = UPDATE_COMMAND.split(' ');
+    expect(parseArgs(words.slice(words.indexOf('lint:test-types') + 1)).update).toBe(true);
   });
 
   it('ignores a leading -- that pnpm forwards from `pnpm run x -- args`', () => {
