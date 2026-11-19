@@ -867,12 +867,12 @@ body.panel-resizing webview {
 }
 
 /* Machine rail. Every machine has its own renderer (a view) in the
-   window; the rail takes a strip at the left edge of each. `--machine-rail-inset`
-   keeps the per-machine reconnect overlay off that strip so another machine
-   stays one click away. The frame page under the views paints the shell
-   background for all of them (see routes/frame), so the accent tint
-   cross-fades on a switch. */
-:root[data-machine-rail] {
+   window; the rail takes a strip at the left edge of each while the window
+   holds more than one machine. `--machine-rail-inset` keeps the per-machine
+   reconnect overlay off that strip so another machine stays one click away.
+   The frame page under the views paints the shell background for all of them
+   (see routes/frame), so the accent tint cross-fades on a switch. */
+:root[data-machine-rail-shown] {
   --machine-rail-inset: 3.5rem;
 }
 

@@ -33,6 +33,7 @@ import type { DaemonHealth } from '../../daemon-health/daemon-health-types';
 import {
   selectIsRailMachineShown,
   selectMachineRailEnabled,
+  selectMachineRailShown,
   selectRailBackdropInputs,
   type RailBackdropInputs,
 } from '../machine-rail-selectors';
@@ -48,8 +49,10 @@ import {
 const logger = createLogger('MachineRailSaga');
 const MACHINE_RAIL = IPC_CHANNELS.MACHINE_RAIL;
 
-/** Root attribute while the rail takes space at the window's left edge. */
+/** Root attribute while the rail is on: the frame page paints the shell backdrop. */
 const MACHINE_RAIL_ATTRIBUTE = 'data-machine-rail';
+/** Root attribute while the rail takes space at the window's left edge. */
+const MACHINE_RAIL_SHOWN_ATTRIBUTE = 'data-machine-rail-shown';
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -186,6 +189,10 @@ function* enabledWorker({ payload: enabled }: SelectorChannelPayload<boolean>) {
   yield* call(toggleRootAttribute, MACHINE_RAIL_ATTRIBUTE, enabled);
 }
 
+function* railShownWorker({ payload: shown }: SelectorChannelPayload<boolean>) {
+  yield* call(toggleRootAttribute, MACHINE_RAIL_SHOWN_ATTRIBUTE, shown);
+}
+
 /**
  * Resolves once startup is over: the backend answered, a connection attempt
  * failed (the page then shows its usual cannot-connect dialog), or the splash
@@ -309,6 +316,7 @@ export function* machineRailSaga() {
   yield* takeLatestFromSelector(selectIsRailMachineShown, shownWorker);
   yield* takeLatestFromSelector(selectRailBackdropInputs, backdropWorker);
   yield* takeLatestFromSelector(selectMachineRailEnabled, enabledWorker);
+  yield* takeLatestFromSelector(selectMachineRailShown, railShownWorker);
   yield* takeLatestFromSelector(selectDaemonHealth, healthWorker);
   yield* takeEvery(selectRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.select(id));

@@ -22,8 +22,9 @@ import {
 import { MACHINE_HIDDEN_ATTRIBUTE } from '$shared/types/machine-rail';
 import { machineRailSaga } from './machine-rail-saga';
 
-// The root attribute app.css keys the rail inset on.
+// The root attributes app.css keys the frame backdrop and the rail inset on.
 const MACHINE_RAIL_ATTRIBUTE = 'data-machine-rail';
+const MACHINE_RAIL_SHOWN_ATTRIBUTE = 'data-machine-rail-shown';
 
 const initialState = machineRailReducer(undefined, { type: '@@INIT' } as never);
 
@@ -119,6 +120,7 @@ describe('machineRailSaga', () => {
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
     document.documentElement.removeAttribute(MACHINE_HIDDEN_ATTRIBUTE);
     document.documentElement.removeAttribute(MACHINE_RAIL_ATTRIBUTE);
+    document.documentElement.removeAttribute(MACHINE_RAIL_SHOWN_ATTRIBUTE);
     document.getElementById('splash')?.remove();
   });
 
@@ -179,6 +181,22 @@ describe('machineRailSaga', () => {
     await settle();
     expect(getState().machineRail).toMatchObject(railState());
     expect(notifyError).toHaveBeenCalledTimes(1);
+    task.cancel();
+  });
+
+  it('takes the rail strip only while the window holds more than one machine', async () => {
+    const main = installMain(railState({ machineIds: ['local'] }));
+    const { task } = createHarness();
+    await settle();
+    const root = document.documentElement;
+    expect(root.hasAttribute(MACHINE_RAIL_ATTRIBUTE)).toBe(true);
+    expect(root.hasAttribute(MACHINE_RAIL_SHOWN_ATTRIBUTE)).toBe(false);
+    main.push(railState({ machineIds: ['local', 'b'] }));
+    await settle();
+    expect(root.hasAttribute(MACHINE_RAIL_SHOWN_ATTRIBUTE)).toBe(true);
+    main.push(railState({ machineIds: ['local'] }));
+    await settle();
+    expect(root.hasAttribute(MACHINE_RAIL_SHOWN_ATTRIBUTE)).toBe(false);
     task.cancel();
   });
 

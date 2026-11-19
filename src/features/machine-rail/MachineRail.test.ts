@@ -344,13 +344,8 @@ it('lists every machine for removal in the add menu, the local one included, and
   );
 });
 
-it('offers the only machine for removal too (main then closes the window)', async () => {
+it('is hidden while the window holds a single machine', () => {
   setState({ machineIds: ['local'] });
   render(MachineRail);
-  await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
-  await fireEvent.click(screen.getByTestId('machine-rail-add'));
-  await screen.findByTestId('machine-rail-add-new');
-  expect(
-    screen.getAllByTestId('machine-rail-remove-item').map((item) => item.dataset.machineId),
-  ).toEqual(['local']);
+  expect(screen.queryByTestId('machine-rail')).toBeNull();
 });

@@ -44,10 +44,15 @@ function isRailUpdateRunning(
   return !!workflow && workflow.phase !== 'settled';
 }
 
-/** Whether the Labs setting is on (the rail shows, even with one machine). */
+/** Whether the machine rail setting is on: the window keeps one view per machine. */
 export const selectMachineRailEnabled = store.createSelector(
   // Optional chaining: partial test stores mount shell components without this slice.
   (state): boolean => state.machineRail?.enabled ?? false,
+);
+
+/** Whether the rail is on screen: it is on and the window holds more than one machine. */
+export const selectMachineRailShown = store.createSelector(
+  (state): boolean => !!state.machineRail?.enabled && state.machineRail.machineIds.length > 1,
 );
 
 /**
