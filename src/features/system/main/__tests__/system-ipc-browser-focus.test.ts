@@ -334,8 +334,10 @@ describe('app menu zoom IPC', () => {
       webContents: home,
     });
     bindMachineViewToBackend(host as never, child as never, 'focus-remote');
+    // Typed as the plain emitter: Electron's overloads type a mock's calls as the last event only.
+    const appEvents: NodeJS.EventEmitter = app;
     const created = vi
-      .mocked(app.on)
+      .mocked(appEvents.on)
       .mock.calls.find(([event]) => event === 'browser-window-created')?.[1] as
       ((event: unknown, window: unknown) => void) | undefined;
     expect(created).toBeDefined();

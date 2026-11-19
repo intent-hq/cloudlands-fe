@@ -381,8 +381,10 @@ describe('config IPC backend routing', () => {
       value: [{ pattern: 'git push', action: 'ask' }],
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Backend client is not connected: remote-gone');
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Backend client is not connected: remote-gone'),
+    });
     expect(mocks.localRequest).not.toHaveBeenCalled();
     expect(mocks.remoteRequest).not.toHaveBeenCalled();
   });

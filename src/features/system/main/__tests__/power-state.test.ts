@@ -77,7 +77,9 @@ describe('PowerStateBroadcaster', () => {
 
   it('reads the initial battery state from the power monitor', () => {
     const { monitor } = makeMonitor(true);
-    expect(new PowerStateBroadcaster(monitor, () => []).getState()).toEqual({ onBattery: true });
+    expect(new PowerStateBroadcaster(monitor, (): MockWindow[] => []).getState()).toEqual({
+      onBattery: true,
+    });
     expect(new PowerStateBroadcaster(makeMonitor(false).monitor, () => []).getState()).toEqual({
       onBattery: false,
     });
@@ -123,7 +125,7 @@ describe('PowerStateBroadcaster', () => {
   it('sends the current state to a new window once it finishes loading', () => {
     const { monitor, goBattery } = makeMonitor(false);
     const win = makeWindow();
-    const broadcaster = new PowerStateBroadcaster(monitor, () => []);
+    const broadcaster = new PowerStateBroadcaster(monitor, (): MockWindow[] => []);
 
     goBattery();
     broadcaster.registerWindow(win);
@@ -135,7 +137,7 @@ describe('PowerStateBroadcaster', () => {
   it('does not send to a window destroyed before it finished loading', () => {
     const { monitor } = makeMonitor(true);
     const win = makeWindow();
-    new PowerStateBroadcaster(monitor, () => []).registerWindow(win);
+    new PowerStateBroadcaster(monitor, (): MockWindow[] => []).registerWindow(win);
     win._destroy();
     win._finishLoad();
     expect(win.send).not.toHaveBeenCalled();

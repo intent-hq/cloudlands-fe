@@ -34,6 +34,7 @@ vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
 }));
 
 import { sendToWorkspaceWindows } from '../system.ipc';
+import { ANY_HOST } from '../window-workspace-tracking';
 
 function makeWindow() {
   return {
@@ -57,9 +58,12 @@ describe('sendToWorkspaceWindows routing', () => {
     const winB = makeWindow();
     electronMocks.getAllWindows.mockReturnValue([winA, winB]);
 
-    sendToWorkspaceWindows('ws-missing', 'agent:status-changed', {
-      workspaceId: 'ws-missing',
-    });
+    sendToWorkspaceWindows(
+      'ws-missing',
+      'agent:status-changed',
+      { workspaceId: 'ws-missing' },
+      ANY_HOST,
+    );
 
     expect(electronMocks.getAllWindows).not.toHaveBeenCalled();
     expect(winA.webContents.send).not.toHaveBeenCalled();
@@ -77,7 +81,12 @@ describe('sendToWorkspaceWindows routing', () => {
     electronMocks.getAllWindows.mockReturnValue([winA, winB]);
     electronMocks.broadcastToBrowserIpcClients.mockReturnValue(false);
 
-    const delivery = sendToWorkspaceWindows(undefined, 'websocket-api:discovery-auto-disabled', {});
+    const delivery = sendToWorkspaceWindows(
+      undefined,
+      'websocket-api:discovery-auto-disabled',
+      {},
+      ANY_HOST,
+    );
 
     expect(winA.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
     expect(winB.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
@@ -96,9 +105,12 @@ describe('sendToWorkspaceWindows routing', () => {
   it('reports zero delivery when a workspace-scoped message reaches no window or browser client', () => {
     electronMocks.broadcastToBrowserIpcClients.mockReturnValue(false);
 
-    const delivery = sendToWorkspaceWindows('ws-missing', 'agent:status-changed', {
-      workspaceId: 'ws-missing',
-    });
+    const delivery = sendToWorkspaceWindows(
+      'ws-missing',
+      'agent:status-changed',
+      { workspaceId: 'ws-missing' },
+      ANY_HOST,
+    );
 
     expect(delivery).toEqual({ windowCount: 0, browserClientsNotified: false, delivered: false });
   });
@@ -106,9 +118,12 @@ describe('sendToWorkspaceWindows routing', () => {
   it('counts browser-mode WebSocket delivery even when no Electron window matches', () => {
     electronMocks.broadcastToBrowserIpcClients.mockReturnValue(true);
 
-    const delivery = sendToWorkspaceWindows('ws-missing', 'agent:status-changed', {
-      workspaceId: 'ws-missing',
-    });
+    const delivery = sendToWorkspaceWindows(
+      'ws-missing',
+      'agent:status-changed',
+      { workspaceId: 'ws-missing' },
+      ANY_HOST,
+    );
 
     expect(delivery).toEqual({ windowCount: 0, browserClientsNotified: true, delivered: true });
   });
