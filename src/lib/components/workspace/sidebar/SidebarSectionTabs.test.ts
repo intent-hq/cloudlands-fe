@@ -258,7 +258,7 @@ describe('build-smoke Agents tab selector contract', () => {
 });
 
 describe('sidebar in-use dots', () => {
-  const dot = (view: ReturnType<typeof render>, tabId: string) =>
+  const dot = (view: { container: HTMLElement }, tabId: string) =>
     view.container.querySelector(
       `[data-sidebar-section-tab="${tabId}"] [data-sidebar-tab-in-use-dot]`,
     );
@@ -287,7 +287,9 @@ describe('sidebar in-use dots', () => {
     live.collaborator.set(true);
     live.terminals.set([{ id: 'terminal-1' }]);
     const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
-    await waitFor(() => expect(view.container.querySelector('[data-sidebar-section-tab="shell"]')).not.toBeNull());
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-sidebar-section-tab="shell"]')).not.toBeNull(),
+    );
     expect(dot(view, 'shell')).toBeNull();
   });
 });
