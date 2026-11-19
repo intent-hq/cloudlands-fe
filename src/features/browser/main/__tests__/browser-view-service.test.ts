@@ -330,6 +330,20 @@ describe('BrowserViewService drawing holds (parking)', () => {
     expect(service.placementOf('tab-1')).toBe('detached');
   });
 
+  it('keeps throttling off when a held page goes back on screen before the hold ends', () => {
+    const { service, views } = setup();
+    service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    const contents = views[0].webContents;
+    const release = service.holdDrawing(contents.id);
+    expect(contents.backgroundThrottling).toBe(false);
+
+    service.setPlacement('tab-1', RECT, true);
+    expect(service.placementOf('tab-1')).toBe('shown');
+    // The hold's owner restores throttling when it ends.
+    expect(contents.backgroundThrottling).toBe(false);
+    release?.();
+  });
+
   it('does not hold pages it does not own', () => {
     const { service } = setup();
     expect(service.holdDrawing(9999)).toBeUndefined();

@@ -362,8 +362,13 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       } else if (previous !== 'detached') {
         children.removeChildView(view);
       }
+      // Parking turns throttling off. Leaving it turns throttling back on only
+      // when no hold is left: a hold's owner (the CDP capture hold) restores
+      // its own setting when it ends.
       if (next === 'parked' && previous !== 'parked') contents.backgroundThrottling = false;
-      if (next !== 'parked' && previous === 'parked') contents.backgroundThrottling = true;
+      if (next !== 'parked' && previous === 'parked' && entry.holds === 0) {
+        contents.backgroundThrottling = true;
+      }
       entry.placement = next;
     } catch (error) {
       logger.warn('Could not place a browser view', {
@@ -380,7 +385,9 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     entry.placement = 'detached';
     try {
       if (!entry.window.isDestroyed()) entry.window.contentView.removeChildView(entry.view);
-      if (wasParked && !entry.contents.isDestroyed()) entry.contents.backgroundThrottling = true;
+      if (wasParked && entry.holds === 0 && !entry.contents.isDestroyed()) {
+        entry.contents.backgroundThrottling = true;
+      }
     } catch {
       // The window is already tearing its views down.
     }
