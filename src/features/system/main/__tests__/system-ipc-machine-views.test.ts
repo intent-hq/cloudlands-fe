@@ -163,6 +163,10 @@ function handlerFor(channel: string): Handler {
   return call[1] as Handler;
 }
 
+/** Partial Electron fake: the lookup reads only isDestroyed() and the contents' identity. */
+const viewedBy = (contents: FakeContents) =>
+  getViewedWorkspaceIdForRenderer(contents as unknown as Electron.WebContents);
+
 const reportTabStrip = (sender: FakeContents, workspaceIds: string[]) =>
   handlerFor(IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS)({ sender }, { workspaceIds });
 
@@ -280,12 +284,12 @@ describe('workspace hosting by machine views', () => {
 
     // The window shows its own renderer, yet its hidden view of b views ws-b.
     expect(getWindowIdForWorkspace('ws-b', ANY_HOST)).toBeUndefined();
-    expect(getViewedWorkspaceIdForRenderer(viewB)).toBe('ws-b');
-    expect(getViewedWorkspaceIdForRenderer(window.webContents)).toBe('ws-home');
-    expect(getViewedWorkspaceIdForRenderer(otherWindow.webContents)).toBeUndefined();
+    expect(viewedBy(viewB)).toBe('ws-b');
+    expect(viewedBy(window.webContents)).toBe('ws-home');
+    expect(viewedBy(otherWindow.webContents)).toBeUndefined();
 
     viewB.destroyed = true;
-    expect(getViewedWorkspaceIdForRenderer(viewB)).toBeUndefined();
+    expect(viewedBy(viewB)).toBeUndefined();
   });
 
   it('resolves the backend of a workspace hosted by a hidden view from that view', async () => {

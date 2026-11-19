@@ -7,7 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * catalog via `settings.get` / `settings.update`.
  */
 
-const requestMock = vi.hoisted(() => vi.fn(async () => ({ path: '', value: null })));
+const requestMock = vi.hoisted(() =>
+  vi.fn(async (_method: string, _params?: unknown): Promise<unknown> => ({
+    path: '',
+    value: null,
+  })),
+);
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
@@ -21,6 +26,14 @@ vi.mock('../../../../shared/logger', () => ({
     debug() {}
   },
 }));
+
+/** The `{ path }` a settings.get request carries. */
+function pathOf(params: unknown): string {
+  if (typeof params === 'object' && params !== null && 'path' in params) {
+    if (typeof params.path === 'string') return params.path;
+  }
+  throw new Error(`expected settings.get params, got ${JSON.stringify(params)}`);
+}
 
 function makeConfigManagerStub() {
   const state: Record<string, unknown> = {
@@ -45,28 +58,26 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
   });
 
   it('hydrateFromDaemon reads each non-secret daemon-owned key via settings.get and applies values', async () => {
-    requestMock.mockImplementation(async (_method: string, params: { path: string }) => ({
-      path: params.path,
-      value: `hydrated:${params.path}`,
+    requestMock.mockImplementation(async (_method: string, params: unknown) => ({
+      path: pathOf(params),
+      value: `hydrated:${pathOf(params)}`,
     }));
     const { hydrateFromDaemon, NON_SECRET_DAEMON_KEYS } = await import('../config-daemon-sync');
     const cm = makeConfigManagerStub();
     await hydrateFromDaemon(cm);
     const getCalls = requestMock.mock.calls.filter((c) => c[0] === 'settings.get');
-    expect(getCalls.map((c) => (c[1] as { path: string }).path).sort()).toEqual(
-      [...NON_SECRET_DAEMON_KEYS].sort(),
-    );
+    expect(getCalls.map((c) => pathOf(c[1])).sort()).toEqual([...NON_SECRET_DAEMON_KEYS].sort());
     expect(cm.__state['userRules']).toBe('hydrated:userRules');
   });
 
   it('hydrateFromDaemon never reads any retired ai.* key (the group is removed)', async () => {
-    requestMock.mockImplementation(async (_method: string, params: { path: string }) => ({
-      path: params.path,
+    requestMock.mockImplementation(async (_method: string, params: unknown) => ({
+      path: pathOf(params),
       value: null,
     }));
     const { hydrateFromDaemon } = await import('../config-daemon-sync');
     await hydrateFromDaemon(makeConfigManagerStub());
-    const paths = requestMock.mock.calls.map((c) => (c[1] as { path: string }).path);
+    const paths = requestMock.mock.calls.map((c) => pathOf(c[1]));
     expect(paths.some((p) => p.startsWith('ai.'))).toBe(false);
   });
 
@@ -85,15 +96,16 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
   });
 
   it('pushAllDaemonKeys batches every hydrated daemon key into one settings.update call', async () => {
-    requestMock.mockImplementation(async (_method: string, params: { path: string }) => ({
-      path: params.path,
-      value: `hydrated:${params.path}`,
+    requestMock.mockImplementation(async (_method: string, params: unknown) => ({
+      path: pathOf(params),
+      value: `hydrated:${pathOf(params)}`,
     }));
     const { hydrateFromDaemon, pushAllDaemonKeys, NON_SECRET_DAEMON_KEYS } =
       await import('../config-daemon-sync');
     const cm = makeConfigManagerStub();
     await hydrateFromDaemon(cm);
-    requestMock.mockClear();
+    // Drop the settings.get answers too: the push sends a settings.update.
+    requestMock.mockReset();
     await pushAllDaemonKeys(cm);
     expect(requestMock).toHaveBeenCalledTimes(1);
     const [, body] = requestMock.mock.calls[0];
@@ -123,10 +135,10 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
   it('hydrateFromDaemon discards a result for a key written locally while its fetch was in flight', async () => {
     const pending: Array<() => void> = [];
     requestMock.mockImplementation(
-      (_method: string, params: { path: string }) =>
+      (_method: string, params: unknown) =>
         new Promise((resolve) => {
-          pending.push(() => resolve({ path: params.path, value: `stale:${params.path}` }));
-        }) as Promise<never>,
+          pending.push(() => resolve({ path: pathOf(params), value: `stale:${pathOf(params)}` }));
+        }),
     );
     const { applyLocalDaemonKeyWrite, hydrateFromDaemon } = await import('../config-daemon-sync');
     const cm = makeConfigManagerStub();

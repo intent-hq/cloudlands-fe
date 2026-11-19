@@ -16,7 +16,7 @@ function deferred<T>() {
 
 const electronMocks = vi.hoisted(() => {
   const constructed: any[] = [];
-  const loadURL = vi.fn(async (_url: string) => undefined);
+  const loadURL = vi.fn(async (_url: string): Promise<void> => {});
   class MockBrowserWindow {
     static getAllWindows = vi.fn((): unknown[] => []);
     static fromId = vi.fn();
