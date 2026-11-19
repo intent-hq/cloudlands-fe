@@ -2532,9 +2532,10 @@ describe('testWssConnection saved-route probes', () => {
     },
   );
 
-  it.each([[], ['127.0.0.2']])(
-    'bounds failed direct routes with one deadline (%j)',
-    async (hosts) => {
+  // Object rows: an array row would be spread into arguments, passing no hosts at all.
+  it.each<{ hosts: string[] }>([{ hosts: [] }, { hosts: ['127.0.0.2'] }])(
+    'bounds failed direct routes with one deadline ($hosts)',
+    async ({ hosts }) => {
       let accepted!: () => void;
       const connected = new Promise<void>((resolve) => {
         accepted = resolve;

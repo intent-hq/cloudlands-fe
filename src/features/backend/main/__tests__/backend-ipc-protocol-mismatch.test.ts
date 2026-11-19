@@ -70,7 +70,7 @@ vi.mock('../client-identity', () => ({
 }));
 
 const sidecar = vi.hoisted(() => ({
-  getLocalDaemonProtocolVersion: vi.fn<[], string | null>(() => null),
+  getLocalDaemonProtocolVersion: vi.fn<() => string | null>(() => null),
 }));
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
@@ -166,7 +166,7 @@ beforeEach(() => {
   // events for `remote-1`.
   const window = { id: 1, backendId: 'remote-1', isDestroyed: () => false, webContents: { send } };
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
-  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender: unknown) =>
     sender === window.webContents ? (window as never) : null,
   );
 });

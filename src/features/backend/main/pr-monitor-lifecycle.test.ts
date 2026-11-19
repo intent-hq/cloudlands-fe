@@ -16,6 +16,15 @@ import { stampWindowWithBackend } from '../../../main/window-backend';
 import { JsonRpcClient } from './json-rpc-client';
 import { registerPrMonitorHandlers } from './pr-monitor-lifecycle';
 
+/** The review-monitoring transport always carries the monitor reconnect seam. */
+function onMonitorReconnected(
+  transport: ReturnType<typeof createElectronIpcBackendTransport>,
+  handler: () => void,
+): () => void {
+  if (!transport.onMonitorReconnected) throw new Error('transport has no onMonitorReconnected');
+  return transport.onMonitorReconnected(handler);
+}
+
 const mocks = vi.hoisted(() => ({
   windows: new Map<object, object>(),
   capture: vi.fn(),
@@ -600,7 +609,7 @@ describe('native acknowledged attachment contract', () => {
         window.electronAPI = previous;
       });
       const transport = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
-      const offMonitor = transport.onMonitorReconnected(() => mocks.reconnect?.());
+      const offMonitor = onMonitorReconnected(transport, () => mocks.reconnect?.());
       const chat = vi.fn();
       const offChat = transport.onReconnected(chat);
       const subscription = subscribePrMonitors('ws', () => {});
@@ -688,7 +697,7 @@ describe('native acknowledged attachment contract', () => {
         window.electronAPI = previous;
       });
       const transport = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
-      disposers.push(transport.onMonitorReconnected(() => mocks.reconnect?.()));
+      disposers.push(onMonitorReconnected(transport, () => mocks.reconnect?.()));
       const subscription = subscribePrMonitors('ws', (rows) => updates.push(rows));
       disposers.push(() => subscription.dispose());
       await settle();

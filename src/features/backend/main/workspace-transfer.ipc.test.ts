@@ -14,9 +14,14 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 const start = vi.fn();
 const finalize = vi.fn();
 const cancel = vi.fn();
-const createWorkspaceTransferRelay = vi.fn(() => ({ start, finalize, cancel }));
+const createWorkspaceTransferRelay = vi.fn(
+  (
+    _deps: Parameters<typeof import('./workspace-transfer-relay').createWorkspaceTransferRelay>[0],
+  ) => ({ start, finalize, cancel }),
+);
 vi.mock('./workspace-transfer-relay', () => ({
-  createWorkspaceTransferRelay: (deps: unknown) => createWorkspaceTransferRelay(deps),
+  createWorkspaceTransferRelay: (deps: Parameters<typeof createWorkspaceTransferRelay>[0]) =>
+    createWorkspaceTransferRelay(deps),
 }));
 
 const getBackendClientForIpcEvent = vi.fn();
@@ -159,9 +164,8 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     });
     const handler = await getHandler(TRANSFER.CANCEL);
     await handler(event(1)); // force lazy relay creation
-    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
-      openTargetWorkspace(connectionId: string, workspaceId: string): Promise<void>;
-    };
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0];
+    if (!deps.openTargetWorkspace) throw new Error('IPC wiring must supply openTargetWorkspace');
 
     await deps.openTargetWorkspace('conn-1', 'ws-1');
 
@@ -173,9 +177,8 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     showWorkspaceInBackendWindow.mockReset();
     const handler = await getHandler(TRANSFER.CANCEL);
     await handler(event(1));
-    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
-      openTargetWorkspace(connectionId: string, workspaceId: string): Promise<void>;
-    };
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0];
+    if (!deps.openTargetWorkspace) throw new Error('IPC wiring must supply openTargetWorkspace');
 
     await expect(deps.openTargetWorkspace('conn-1', 'ws-1')).rejects.toThrow('secret unavailable');
     expect(showWorkspaceInBackendWindow).not.toHaveBeenCalled();
@@ -184,9 +187,7 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
   it('wires isOwnerGone to webContents liveness (missing or destroyed ⇒ gone)', async () => {
     const handler = await getHandler(TRANSFER.CANCEL);
     await handler(event(1)); // force lazy relay creation
-    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
-      isOwnerGone(ownerId: number): boolean;
-    };
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0];
 
     (webContents.fromId as any).mockReturnValue(undefined);
     expect(deps.isOwnerGone(5)).toBe(true);
@@ -220,9 +221,7 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
   it('builds the transfer target client with a clientId-only hello (never browserExec)', async () => {
     const handler = await getHandler(TRANSFER.CANCEL);
     await handler(event(1)); // force lazy relay creation
-    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
-      createTargetClient(connectionId: string): Promise<unknown>;
-    };
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0];
     const { buildConfigForConnection } = await import('./backend.ipc');
     (buildConfigForConnection as any).mockResolvedValue({ config: { kind: 'remote' } });
     const { JsonRpcClient } = await import('./json-rpc-client');

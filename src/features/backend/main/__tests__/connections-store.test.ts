@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { DEFAULT_CONNECTION_ACCENT } from '$shared/types/connections';
 
 /**
  * Round-trip tests for the multi-backend connections store
@@ -383,7 +384,7 @@ describe('connections-store', () => {
 
     const kept = await store.updateMetadata(original.id, {
       label: original.label,
-      accent: original.accent,
+      accent: original.accent ?? DEFAULT_CONNECTION_ACCENT,
       host: '10.0.0.42',
       port: 9443,
       detectedDeviceKind: 'macStudio',
@@ -392,7 +393,7 @@ describe('connections-store', () => {
 
     const cleared = await store.updateMetadata(original.id, {
       label: original.label,
-      accent: original.accent,
+      accent: original.accent ?? DEFAULT_CONNECTION_ACCENT,
       host: '10.0.0.43',
       port: 9443,
     });
