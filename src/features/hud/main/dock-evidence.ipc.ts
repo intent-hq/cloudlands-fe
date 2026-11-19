@@ -17,11 +17,11 @@ import {
   app,
   BrowserWindow,
   ipcMain,
-  shell,
   systemPreferences,
   webContents,
   type IpcMainInvokeEvent,
 } from 'electron';
+import { openExternal } from '../../../main/open-external';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
@@ -505,7 +505,7 @@ function createMediaBinder() {
           accessibilityPrompted = true;
           accessibilityTrusted(true);
         }
-        await shell.openExternal(PRIVACY_SETTINGS[control.pane]);
+        await openExternal(PRIVACY_SETTINGS[control.pane]);
         result = { ok: true, value: undefined };
         break;
       case 'accessibility-status':

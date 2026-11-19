@@ -3,6 +3,7 @@ import { BrowserWindow, screen } from 'electron';
 import { isLoopbackHost } from '../../../shared/loopback-host';
 import { getMainWindow } from '../../../main/state';
 import { allowWebNavigationInWindow } from '../../../main/webview-security';
+import { isWebUrl } from '../../../main/web-link-routing';
 
 /** The flag a second launch passes to open a web page in Intent (`--open-url=<url>`). */
 const OPEN_URL_FLAG = '--open-url=';
@@ -17,15 +18,6 @@ export function findOpenUrlArg(argv: readonly string[]): string | undefined {
   const arg = argv.find((value) => value.startsWith(OPEN_URL_FLAG));
   const url = arg?.slice(OPEN_URL_FLAG.length);
   return url && isWebUrl(url) ? url : undefined;
-}
-
-function isWebUrl(value: string): boolean {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === 'https:' || protocol === 'http:';
-  } catch {
-    return false;
-  }
 }
 
 function isLoopbackUrl(value: string): boolean {

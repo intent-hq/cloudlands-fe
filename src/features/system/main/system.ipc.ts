@@ -124,6 +124,7 @@ import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { isDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';
+import { openExternal } from '../../../main/open-external';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -367,6 +368,11 @@ function currentViewedWorkspaceId(window: BrowserWindow): string | undefined {
   return entryMatchesScope(key, entry.backendId, ANY_HOST, liveWindowHostChecker)
     ? entry.workspaceId
     : undefined;
+}
+
+/** The workspace the renderer `window` shows is viewing (see {@link currentViewedWorkspaceId}). */
+export function getViewedWorkspaceId(window: BrowserWindow): string | undefined {
+  return window.isDestroyed() ? undefined : currentViewedWorkspaceId(window);
 }
 
 /**
@@ -1967,7 +1973,7 @@ export function setupSystemIPC() {
       ShellOpenExternalSchema,
       async (_event, validated) => {
         try {
-          await shell.openExternal(validated.url);
+          await openExternal(validated.url);
           return { success: true };
         } catch (error) {
           return {

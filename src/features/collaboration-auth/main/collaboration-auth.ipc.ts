@@ -1,6 +1,7 @@
 import { getShownRendererWebContents, getWindowForWebContents } from '../../../main/window-backend';
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, ipcMain, shell, type WebContents } from 'electron';
+import { BrowserWindow, ipcMain, type WebContents } from 'electron';
+import { openExternal } from '../../../main/open-external';
 import { z } from 'zod';
 import { getMainWindow } from '../../../main/state';
 import { captureLocalIdentityConnection, onBackendStatus } from '../../backend/main/backend.ipc';
@@ -176,7 +177,7 @@ export function prepareCollaborationIdentity(
       attempt,
       policy: () => policies.get(contents.id) ?? { multiplayer: false },
       isLatest: () => generation === sequence,
-      openBrowser: (url) => shell.openExternal(url),
+      openBrowser: (url) => openExternal(url),
       show: (view) => {
         acknowledged = true;
         if (!send(COLLABORATION_AUTH.SHOW, view)) flow.cancel();

@@ -448,7 +448,8 @@ import {
 import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/main/pair-deep-link';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
-import { findOpenUrlArg, openSignInWindow } from '../features/browser/main/sign-in-window';
+import { findOpenUrlArg } from '../features/browser/main/sign-in-window';
+import { openWebUrlFromOs } from './open-external';
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
@@ -2229,7 +2230,7 @@ if (!gotTheLock) {
     // A web page sent from the OS (Intent OS routes xdg-open here).
     const webUrl = findOpenUrlArg(commandLine);
     if (webUrl) {
-      openSignInWindow(webUrl);
+      await openWebUrlFromOs(webUrl);
       return;
     }
 
