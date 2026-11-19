@@ -39,8 +39,22 @@ describe('native menu model', () => {
   it.each([true, false])(
     'routes view commands without stealing renderer reload (macOS=%s)',
     (isMacOS) => {
-      const actions = { reload: vi.fn(), toggleDevTools: vi.fn(), zoom: vi.fn() };
+      const actions = {
+        reload: vi.fn(),
+        toggleDevTools: vi.fn(),
+        zoom: vi.fn(),
+        websiteDarkMode: { enabled: true, setEnabled: vi.fn() },
+      };
       const view = items(buildNativeViewMenu(isMacOS, actions));
+      const websiteDarkMode = view.find((item) => item.id === 'website-dark-mode')!;
+      expect(websiteDarkMode.type).toBe('checkbox');
+      expect(websiteDarkMode.checked).toBe(true);
+      websiteDarkMode.click?.(
+        { checked: false } as Electron.MenuItem,
+        undefined,
+        {} as Electron.KeyboardEvent,
+      );
+      expect(actions.websiteDarkMode.setEnabled).toHaveBeenCalledWith(false);
       const byShortcut = (accelerator: string) =>
         view.find((item) => item.accelerator === accelerator)!;
       const reload = byShortcut('CmdOrCtrl+R');

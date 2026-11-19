@@ -48,6 +48,7 @@ export function buildNativeEditMenu(isMacOS: boolean): MenuItemConstructorOption
 interface ViewMenuActions {
   reload: () => void;
   toggleDevTools: () => void;
+  websiteDarkMode: { enabled: boolean; setEnabled: (enabled: boolean) => void };
   zoom: (channel: 'menu:reset-zoom' | 'menu:zoom-in' | 'menu:zoom-out') => void;
 }
 
@@ -66,6 +67,14 @@ export function buildNativeViewMenu(
         click: actions.reload,
       },
       { role: 'forceReload', label: m.menu_force_reload() },
+      { type: 'separator' },
+      {
+        id: 'website-dark-mode',
+        label: m.menu_website_dark_mode(),
+        type: 'checkbox',
+        checked: actions.websiteDarkMode.enabled,
+        click: (item) => actions.websiteDarkMode.setEnabled(item.checked),
+      },
       { type: 'separator' },
       {
         label: m.menu_toggle_devtools(),
