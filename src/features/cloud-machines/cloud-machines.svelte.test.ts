@@ -66,12 +66,12 @@ describe('Add machine', () => {
   });
 
   it('hides E2B setup while the Labs flag is off and no cloud machine is saved', async () => {
-    seed('add-menu');
-    store.dispatch(setLabsCloudMachinesEnabled(false));
+    seed('labs-off');
     const view = render(DevicesSettings);
     await opensWizardDirectly(view);
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
+    expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
   });
 
   // The flag is kept per app: an app without it must still add to a backend's saved entries.
