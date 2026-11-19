@@ -15,7 +15,7 @@ import {
 import { recentAgentKey, type RecentAgentEntry } from '$shared/recent-agents';
 
 /** An entry with its `connectionId/agentId` key, so the slice can hold a Collection. */
-export type KeyedRecentAgent = RecentAgentEntry & { key: string };
+type KeyedRecentAgent = RecentAgentEntry & { key: string };
 
 export interface RecentAgentsSliceState {
   /** Most recent first: the Collection keeps main's order. */
