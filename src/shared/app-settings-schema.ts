@@ -274,7 +274,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'labs.cloudMachines',
     label: 'E2B cloud machines (Labs)',
     description:
-      'Offer E2B cloud machines: set up E2B in Settings → Machines, list its sandboxes, and start agents on a new E2B sandbox. Needs Remote agents. Agents already on E2B keep showing when disabled.',
+      'Offer E2B cloud machines: set up E2B in Settings → Machines, list its sandboxes, and start agents on a new E2B sandbox. Needs Remote agents. A backend with a cloud machine already saved offers them even when disabled, and agents already on E2B keep showing.',
     category: 'labs',
     type: 'boolean',
     source: 'local-storage',

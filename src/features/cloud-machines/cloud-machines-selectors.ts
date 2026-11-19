@@ -27,16 +27,18 @@ import {
 type State = typeof store.state;
 
 /**
- * E2B setup, the sandbox list and the Start On row show while the Labs
- * "E2B cloud machines" and "Remote agents" flags are on and the backend
- * advertises `cloudMachines: 1`. Agents already on E2B render without it.
+ * Cloud setup, the sandbox list and the Start On row show while the Labs
+ * "Remote agents" flag is on and the backend advertises `cloudMachines: 1`,
+ * once "E2B cloud machines" is on or the backend has a saved entry (the flag
+ * is kept per app). Agents already on a cloud machine render without it.
  */
 export const selectCloudMachinesVisible = store.createSelector(
   (state) =>
-    selectLabsCloudMachinesEnabled.select(state) &&
     selectLabsRemoteAgentsEnabled.select(state) &&
     state.remoteMachines?.supported === true &&
-    state.cloudMachines?.supported === true,
+    state.cloudMachines?.supported === true &&
+    (selectLabsCloudMachinesEnabled.select(state) ||
+      Object.keys(state.cloudMachines?.providers ?? {}).length > 0),
 );
 
 /** The providers a new entry can use; Northflank and Agent37 need named entries. */

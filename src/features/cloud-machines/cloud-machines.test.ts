@@ -477,16 +477,15 @@ describe('Labs flag', () => {
   let restore: () => void = () => {};
   afterEach(() => restore());
 
-  it('offers E2B in Start On only while the flag is on', () => {
+  it('keeps a saved cloud machine in Start On while the flag is off', () => {
     store.init();
     restore = setupCloudMachinesFixture('connected');
     store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
-    const hasCloud = () =>
-      selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud');
-    expect(hasCloud()).toBe(true);
     store.dispatch(setLabsCloudMachinesEnabled(false));
-    expect(hasCloud()).toBe(false);
-    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_BACKEND);
+    expect(selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud')).toBe(
+      true,
+    );
+    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_E2B);
   });
 
   it('names a single entry called "E2B" just E2B in Start On', () => {
