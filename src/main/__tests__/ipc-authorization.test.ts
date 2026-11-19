@@ -1,3 +1,4 @@
+import type { IpcMainInvokeEvent } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
@@ -15,8 +16,12 @@ import {
   createTrustedBrowserBridgeIpcContext,
   IpcAuthorizationError,
   isTrustedRendererUrl,
-  type PrivilegedIpcContext,
 } from '../ipc-authorization';
+
+/** What an authorized handler receives: an IPC event or the branded bridge context. */
+type PrivilegedIpcContext =
+  | IpcMainInvokeEvent
+  | ReturnType<typeof createTrustedBrowserBridgeIpcContext>;
 
 function appEvent(overrides: Record<string, unknown> = {}) {
   const mainFrame = { url: 'app://workspaces/' };
