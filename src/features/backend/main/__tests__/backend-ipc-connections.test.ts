@@ -21,6 +21,7 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ConnectionsListResult } from '$shared/types/connections';
 import { NODE_REFUSED_MARKER } from '$shared/types/pair-link';
 
 const desktopPermissions = vi.hoisted(() => vi.fn());
@@ -244,7 +245,7 @@ const guestStore = vi.hoisted(() => ({
   forget: vi.fn(),
   leaveWorkspace: vi.fn(),
   setWorkspaces: vi.fn(),
-  setPrincipal: vi.fn(async () => true),
+  setPrincipal: vi.fn<typeof import('../guest-sessions-store').setPrincipal>(async () => true),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -366,7 +367,7 @@ async function loadModule() {
   const mod = await import('../backend.ipc');
   // The openOrFocus spy records into the shared lifecycle log so ordering vs
   // client construct/start can be asserted (open AFTER the client connects).
-  const openOrFocus = vi.fn(async () => {
+  const openOrFocus = vi.fn(async (_backendId: string) => {
     lifecycle.events.push({ type: 'open', seq: 0 });
   });
   const ensureLocalWindowBeforeClose = vi.fn();
@@ -398,7 +399,7 @@ function installWindow(backendId?: string) {
     webContents: { send, isDestroyed: () => false },
   };
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window as never]);
-  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) =>
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender: unknown) =>
     sender === window.webContents ? (window as never) : null,
   );
   return send;
@@ -422,7 +423,7 @@ function installBackendWindows() {
     webContents: { ...remoteSender, send: remoteSend, isDestroyed: () => false },
   };
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
-  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
+  vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender: unknown) => {
     if (sender === localSender) return localWindow as never;
     if (sender === remoteSender) return remoteWindow as never;
     if (sender === localWindow.webContents) return localWindow as never;
@@ -3872,7 +3873,7 @@ describe('self-publish IPC', () => {
   };
 
   function installPairingInfo(
-    overrides: Partial<typeof PAIRING_INFO> | null = {},
+    overrides: (Partial<typeof PAIRING_INFO> & { tcAddress?: string }) | null = {},
     tunnelEnabled?: boolean,
   ) {
     rpc.handler = async (method) => {
@@ -4292,7 +4293,7 @@ describe('self-entry refresh IPC', () => {
   };
 
   function installPairingInfo(
-    overrides: Partial<typeof PAIRING_INFO> | null = {},
+    overrides: (Partial<typeof PAIRING_INFO> & { tcAddress?: string }) | null = {},
     tunnelEnabled?: boolean,
   ) {
     rpc.handler = async (method) => {
@@ -6013,9 +6014,10 @@ describe('guest-sessions:* IPC handlers', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
-      expect(
-        (await findHandler('guest-sessions:list')!({}, undefined)).sessions[0].workspaces,
-      ).toEqual([]);
+      expect(await findHandler('guest-sessions:list')!({}, undefined)).toHaveProperty(
+        ['sessions', 0, 'workspaces'],
+        [],
+      );
     });
 
     it('a snapshot requested before a Leave the host already applied (-32602) is discarded too', async () => {

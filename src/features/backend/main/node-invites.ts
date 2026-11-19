@@ -26,7 +26,7 @@ const MAX_PENDING = 8;
 /** The backend probes the machine (route race, pin, invite) before saving. */
 const CLAIM_TIMEOUT_MS = 45_000;
 
-interface NodeInviteBackend {
+export interface NodeInviteBackend {
   request(method: string, params: unknown, options?: { timeoutMs?: number }): Promise<unknown>;
 }
 

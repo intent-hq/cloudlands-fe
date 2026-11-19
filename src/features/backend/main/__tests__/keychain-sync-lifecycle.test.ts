@@ -77,7 +77,7 @@ import {
   type KeychainSyncLifecycle,
 } from '../keychain-sync-lifecycle';
 import { applyRemoteSyncRecord } from '../desktop-connections-store';
-import type { ReconcileResult } from '../keychain-sync';
+import type { KeychainSyncRecord, ReconcileResult } from '../keychain-sync';
 
 function reconcileResult(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
   return {
@@ -499,7 +499,7 @@ describe('keychain-sync lifecycle triggers', () => {
 });
 
 describe('pulled self-tombstone (suppression, no auto-re-publish)', () => {
-  const tombstone = (fingerprint: string | null) => ({
+  const tombstone = (fingerprint: string): KeychainSyncRecord => ({
     label: 'A',
     host: 'h',
     hosts: ['h'],

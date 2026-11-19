@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { NODE_INVITE_CLAIM_METHOD } from '$shared/types/node-invite';
-import { createNodeInvites } from '../node-invites';
+import { createNodeInvites, type NodeInviteBackend } from '../node-invites';
 
 const SECRET = 'invite-secret-value';
 const LINK = `intent://node?v=1&host=192.0.2.20,10.0.0.4&port=7443&fp=AA%3ABB&tc=tc-node.example&invite=inv_1&secret=${SECRET}`;
@@ -21,7 +21,7 @@ function rpcError(rpcCode: number, data?: Record<string, unknown>) {
 }
 
 let time = 1_000;
-let request: ReturnType<typeof vi.fn>;
+let request: Mock<NodeInviteBackend['request']>;
 const client = () => ({ request });
 const invites = () => createNodeInvites({ now: () => time });
 

@@ -163,7 +163,7 @@ vi.mock('../desktop-connections-store', () => ({
 // instead of the connections registry, and its hostname capture persists to
 // it. Empty by default; the guest test below seeds one record.
 const guestStore = vi.hoisted(() => ({
-  list: vi.fn(async () => []),
+  list: vi.fn<typeof import('../guest-sessions-store').list>(async () => []),
   findById: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
@@ -720,7 +720,7 @@ describe('openBackendWindow serialization (monorepo#2221)', () => {
     hostStatus.byHost.set('10.0.0.5', () => new Promise((r) => slowAResolvers.push(r)));
     hostStatus.byHost.set('10.0.0.6', () => Promise.resolve({ hostname: 'beta.local' }));
 
-    const openOrFocus = vi.fn(async () => {});
+    const openOrFocus = vi.fn(async (_backendId: string) => {});
     const mod = await loadModule();
     mod.__setBackendWindowHooksForTesting({ openOrFocus });
 

@@ -376,10 +376,10 @@ describe('Watchdog N-strikes policy', () => {
         return true;
       }),
       killed: false,
-      exitCode: null, // Process remains alive
+      exitCode: null as number | null, // Process remains alive
       signalCode: null, // No signal received yet
-    } as unknown as ChildProcess;
-    __setSidecarProcessForTesting(mockProcess);
+    };
+    __setSidecarProcessForTesting(mockProcess as unknown as ChildProcess);
 
     // Start watchdog with 100ms delay (steady-state regime)
     __startWatchdogForTesting('/test.sock', 100, true);
@@ -422,10 +422,10 @@ describe('Watchdog N-strikes policy', () => {
         return true;
       }),
       killed: false,
-      exitCode: null,
+      exitCode: null as number | null,
       signalCode: null,
-    } as unknown as ChildProcess;
-    __setSidecarProcessForTesting(mockProcess);
+    };
+    __setSidecarProcessForTesting(mockProcess as unknown as ChildProcess);
 
     // Start watchdog with 100ms delay (steady-state regime)
     __startWatchdogForTesting('/test.sock', 100, true);

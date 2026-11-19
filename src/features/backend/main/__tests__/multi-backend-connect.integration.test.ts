@@ -486,7 +486,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     });
     expect(openOrFocus).toHaveBeenCalledWith(remoteId);
 
-    const remoteConfig = mod.getBackendClientForId(remoteId).getConfig() as Record<string, unknown>;
+    const remoteConfig = mod.getBackendClientForId(remoteId).getConfig();
     expect(remoteConfig).toMatchObject({
       transport: 'wss',
       host: '10.0.0.5',
@@ -498,7 +498,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     // The open never flips the persisted whole-app selection; the always-on
     // local member (never a wss transport) keeps serving local windows.
     await expect(invoke('connections:list')).resolves.toMatchObject({ activeId: 'local' });
-    const localConfig = mod.getBackendClient().getConfig() as Record<string, unknown>;
+    const localConfig = mod.getBackendClient().getConfig();
     expect(localConfig.transport).not.toBe('wss');
   });
 
@@ -550,7 +550,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     expect(openOrFocus).not.toHaveBeenCalled();
 
     // The rebuilt client carries the rotated token, and only one record remains.
-    const config = mod.getBackendClientForId('dup-2').getConfig() as Record<string, unknown>;
+    const config = mod.getBackendClientForId('dup-2').getConfig();
     expect(config).toMatchObject({ transport: 'wss', token: 'rotated-token' });
     const listed = await invoke<{ connections: Array<{ id: string }>; activeId: string }>(
       'connections:list',
@@ -737,7 +737,7 @@ describe('multi-backend connect — notifications survive client churn (T9 guard
 
     // The representative daemon event kinds must still reach the handler that
     // was registered BEFORE any client churn — on the always-on local client.
-    const client = mod.getBackendClient() as unknown as { emit(e: string, arg: unknown): void };
+    const client = mod.getBackendClient() as unknown as { emit(e: string, arg?: unknown): void };
     const events = [
       { method: 'events.event', params: { event: { type: 'terminal:data' } } },
       { method: 'events.event', params: { event: { type: 'terminal:exit' } } },

@@ -13,9 +13,15 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const start = vi.fn();
 const cancel = vi.fn();
-const createWorkspaceImportRelay = vi.fn(() => ({ start, cancel }));
+const createWorkspaceImportRelay = vi.fn(
+  (_deps: Parameters<typeof import('./workspace-import-relay').createWorkspaceImportRelay>[0]) => ({
+    start,
+    cancel,
+  }),
+);
 vi.mock('./workspace-import-relay', () => ({
-  createWorkspaceImportRelay: (deps: unknown) => createWorkspaceImportRelay(deps),
+  createWorkspaceImportRelay: (deps: Parameters<typeof createWorkspaceImportRelay>[0]) =>
+    createWorkspaceImportRelay(deps),
 }));
 
 const getBackendClientForIpcEvent = vi.fn();
@@ -93,9 +99,7 @@ describe('workspace-import IPC — per-window affinity wiring', () => {
   it('wires isOwnerGone to webContents liveness (missing or destroyed ⇒ gone)', async () => {
     const handler = await getHandler(TRANSFER.IMPORT_CANCEL);
     await handler(event(1)); // force lazy relay creation
-    const deps = createWorkspaceImportRelay.mock.calls[0][0] as {
-      isOwnerGone(ownerId: number): boolean;
-    };
+    const deps = createWorkspaceImportRelay.mock.calls[0][0];
 
     (webContents.fromId as any).mockReturnValue(undefined);
     expect(deps.isOwnerGone(5)).toBe(true);

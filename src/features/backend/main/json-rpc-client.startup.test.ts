@@ -114,7 +114,11 @@ function make(options: ConstructorParameters<typeof JsonRpcClient>[0] = {}) {
 }
 
 /** Open socket `index` and answer its connect-time hello with the startup error. */
-async function helloAnsweredStarting(sockets: FakeSocket[], index: number, error = notReady()) {
+async function helloAnsweredStarting(
+  sockets: FakeSocket[],
+  index: number,
+  error: { code: number; message: string; data?: unknown } = notReady(),
+) {
   sockets[index].open();
   await vi.advanceTimersByTimeAsync(0);
   sockets[index].error(sockets[index].last('client.hello').id, error);

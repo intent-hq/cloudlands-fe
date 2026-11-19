@@ -321,7 +321,7 @@ describe('openBackendWindow serialization', () => {
     // Park the first open at its window-hook await point.
     let releaseFirst!: () => void;
     const gate = new Promise<void>((r) => (releaseFirst = r));
-    const openOrFocus = vi.fn(async () => {
+    const openOrFocus = vi.fn(async (_backendId: string) => {
       if (openOrFocus.mock.calls.length === 1) await gate;
     });
     mod.__setBackendWindowHooksForTesting({ openOrFocus });
@@ -579,7 +579,7 @@ describe('openLocalAndSpawn — open-only recovery', () => {
       webContents: { send: remoteSend },
     };
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([localWindow, remoteWindow] as never);
-    vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender) => {
+    vi.mocked(BrowserWindow.fromWebContents).mockImplementation((sender: unknown) => {
       if (sender === localWindow.webContents) return localWindow as never;
       if (sender === remoteWindow.webContents) return remoteWindow as never;
       return null;
@@ -588,8 +588,6 @@ describe('openLocalAndSpawn — open-only recovery', () => {
     try {
       const mod = await import('../backend.ipc');
       mod.__setBackendWindowHooksForTesting({
-        captureAndClose: vi.fn(async () => {}),
-        restore: vi.fn(() => {}),
         openOrFocus: vi.fn(async () => {}),
       });
 
@@ -622,8 +620,6 @@ describe('openLocalAndSpawn — open-only recovery', () => {
     try {
       const mod = await import('../backend.ipc');
       mod.__setBackendWindowHooksForTesting({
-        captureAndClose: vi.fn(async () => {}),
-        restore: vi.fn(() => {}),
         openOrFocus: vi.fn(async () => {}),
       });
 

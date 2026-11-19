@@ -312,7 +312,11 @@ describe('invited v2 registry durability', () => {
     });
     expect(await reloaded.list()).toEqual([]);
     const client = keychain();
-    client.insert = vi.fn(async () => ({ ok: false, code: 'unavailable', message: 'locked' }));
+    client.insert = vi.fn<NonNullable<KeychainClient['insert']>>(async () => ({
+      ok: false,
+      code: 'unavailable',
+      message: 'locked',
+    }));
     await expect(reconcileInvitedSessions(adapter, { client })).resolves.toMatchObject({
       errors: [expect.anything()],
     });
