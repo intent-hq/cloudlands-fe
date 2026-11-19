@@ -2,6 +2,7 @@ import {
   expandShortcutPattern,
   normalizeShortcut,
   SHORTCUT_DEFAULTS,
+  shortcutDefault,
   type ShortcutId,
   type ShortcutOverrides,
 } from './keyboard-shortcut-bindings';
@@ -116,7 +117,13 @@ export function dockBindingIssues(
     seen.set(accelerator, id);
     for (const otherId of Object.keys(SHORTCUT_DEFAULTS) as ShortcutId[]) {
       if (isDockShortcutId(otherId)) continue;
-      const patterns = expandShortcutPattern(appOverrides[otherId] ?? SHORTCUT_DEFAULTS[otherId]);
+      const patterns = expandShortcutPattern(
+        appOverrides[otherId] ??
+          shortcutDefault(
+            otherId,
+            platform === 'darwin' ? 'mac' : platform === 'win32' ? 'windows' : 'linux',
+          ),
+      );
       if (patterns.some((pattern) => dockShortcutAccelerator(pattern, platform) === accelerator)) {
         issues.push({ code: 'app-conflict', id, otherId, key });
         break;

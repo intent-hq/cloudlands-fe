@@ -114,6 +114,11 @@ describe('a binding moved only in the shortcut table', () => {
           ...actual.SHORTCUT_DEFAULTS,
           'panel.focus-next-column': 'mod+alt+n',
         },
+        shortcutDefault: (
+          id: Parameters<typeof actual.shortcutDefault>[0],
+          platform?: Parameters<typeof actual.shortcutDefault>[1],
+        ) =>
+          id === 'panel.focus-next-column' ? 'mod+alt+n' : actual.shortcutDefault(id, platform),
       };
     });
 
@@ -124,6 +129,24 @@ describe('a binding moved only in the shortcut table', () => {
     expect(row(shortcuts.SHORTCUT_CATEGORIES.panel.shortcuts)).toBe('mod+alt+n');
     expect(row(shortcuts.SHORTCUT_REGISTRY)).toBe('mod+alt+n');
     expect(shortcuts.SHORTCUTS.FOCUS_NEXT_COLUMN.key).toBe('mod+alt+n');
+  });
+});
+
+describe('Super key display', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each([
+    ['Linux x86_64', 'Super+⇥'],
+    ['Win32', 'Win+⇥'],
+    ['MacIntel', '⌘⇥'],
+  ] as const)('names the Super key on %s', async (platform, expected) => {
+    vi.stubGlobal('navigator', { ...navigator, platform });
+    vi.resetModules();
+    const { formatShortcut: format } = await import('../shortcuts');
+    expect(format('super+tab')).toBe(expected);
   });
 });
 

@@ -8,7 +8,7 @@
 import { m } from '$shared/paraglide/messages.js';
 import {
   resolveShortcut,
-  SHORTCUT_DEFAULTS,
+  shortcutDefault,
   type ShortcutId,
   type ShortcutOverrides,
 } from './shortcut-bindings';
@@ -16,6 +16,8 @@ import {
 // Detect platform once
 const isMac =
   typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+const isWindows =
+  typeof navigator !== 'undefined' && navigator.platform.toUpperCase().startsWith('WIN');
 
 /**
  * Shortcut category for organizing the cheat sheet
@@ -57,6 +59,9 @@ function formatSingleKey(key: string): string {
   if (lower === 'ctrl' || lower === 'control') {
     return isMac ? '⌃' : 'Ctrl';
   }
+  if (lower === 'super' || lower === 'win') {
+    return isMac ? '⌘' : isWindows ? 'Win' : 'Super'; // i18n-ignore (key name)
+  }
   if (lower === 'alt' || lower === 'option') {
     return isMac ? '⌥' : 'Alt';
   }
@@ -88,7 +93,7 @@ function formatSingleKey(key: string): string {
 
 function defaultShortcut(id: ShortcutId, label: () => string) {
   return {
-    key: SHORTCUT_DEFAULTS[id] as string,
+    key: shortcutDefault(id),
     get label() {
       return label();
     },
@@ -204,7 +209,7 @@ export interface ShortcutEntry {
 function entry(id: ShortcutId, label: () => string, contexts?: ShortcutContext[]): ShortcutEntry {
   return {
     id,
-    key: SHORTCUT_DEFAULTS[id],
+    key: shortcutDefault(id),
     get label() {
       return label();
     },
@@ -249,6 +254,7 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_navigationCategory_title();
     },
     shortcuts: [
+      entry('navigation.recent-agents', () => m.ui_shortcuts_recentAgents_label(), ['global']),
       entry('navigation.go-to-tab', () => m.ui_shortcuts_goToTab_label(), ['global']),
       entry('navigation.go-to-device', () => m.machineRail_nav_ariaLabel(), ['global']),
       entry('navigation.new-tab', () => SHORTCUTS.NEW_TAB.label, ['global']),

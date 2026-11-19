@@ -495,8 +495,16 @@ export interface ConnectionTunnelResult {
 }
 
 /** `connections:open` params. */
+/** An agent to open in a backend's window once it shows. */
+export interface ConnectionAgentTarget {
+  workspaceId: string;
+  agentId: string;
+}
+
 export interface OpenConnectionParams {
   id: string;
+  /** Open this agent once the window shows (the recent-agent switcher). */
+  agent?: ConnectionAgentTarget;
 }
 
 /** `connections:open` result: echoes the opened or focused backend id. */

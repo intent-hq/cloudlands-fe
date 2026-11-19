@@ -37,6 +37,8 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   // SSH machine setup (Labs): forwards `machine-setup:ssh-*` to main; no run without a bridge.
   ['src/store/renderer/seeders/machine-setup-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  // Recent-agent switcher: forwards `recent-agents:*` to main; empty list without a bridge.
+  ['src/store/renderer/seeders/recent-agents-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',

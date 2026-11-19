@@ -9177,5 +9177,10 @@
   "onboarding_agentMachines_none_title": "Añade un equipo para ejecutar agentes",
   "onboarding_agentMachines_none_description": "Este Intent envía los agentes a otros equipos y no ejecuta ninguno. Añade un equipo en Configuración → Equipos y vuelve para continuar.",
   "onboarding_agentMachines_openSettings_label": "Abrir Configuración → Equipos",
-  "onboarding_providerCard_onMachines_label": "Se ejecuta en tus equipos"
+  "onboarding_providerCard_onMachines_label": "Se ejecuta en tus equipos",
+  "ui_shortcuts_recentAgents_label": "Cambiar a un agente reciente",
+  "recentAgents_switcher_ariaLabel": "Agentes recientes",
+  "recentAgents_switcher_untitled_label": "Agente sin título",
+  "recentAgents_switcher_offlineMachine_label": "{machine} · Sin conexión",
+  "recentAgents_switcher_statusTime_label": "{status} · {time}"
 }

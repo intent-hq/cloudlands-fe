@@ -10,6 +10,7 @@ export const SHORTCUT_DEFAULTS = {
   'global.previous-space': 'ctrl+shift+tab',
   'global.next-space-alt': 'mod+shift+]',
   'global.previous-space-alt': 'mod+shift+[',
+  'navigation.recent-agents': 'alt+tab',
   'navigation.go-to-device': 'mod+1-9',
   'navigation.go-to-tab': 'mod+alt+1-9',
   'navigation.new-tab': 'mod+t',
@@ -64,12 +65,59 @@ export const SHORTCUT_DEFAULTS = {
 export type ShortcutId = keyof typeof SHORTCUT_DEFAULTS;
 export type ShortcutOverrides = Partial<Record<ShortcutId, string>>;
 
-const MODIFIER_ORDER = ['mod', 'ctrl', 'alt', 'shift'] as const;
+/** The platforms whose defaults can differ from SHORTCUT_DEFAULTS (the macOS defaults). */
+export type ShortcutPlatform = 'mac' | 'linux' | 'windows';
+
+/**
+ * Defaults that differ from SHORTCUT_DEFAULTS on one platform; an empty binding means no default.
+ * The recent-agent switcher holds Option+Tab on macOS (Cmd+Tab is the system app switcher). On
+ * Linux it holds Super+Tab: on Intent OS the Mac Command key arrives as Super. Windows owns both
+ * Alt+Tab and Win+Tab, so the switcher has no default there.
+ */
+const PLATFORM_SHORTCUT_DEFAULTS: Record<
+  Exclude<ShortcutPlatform, 'mac'>,
+  Partial<Record<ShortcutId, string>>
+> = {
+  linux: { 'navigation.recent-agents': 'super+tab' },
+  windows: { 'navigation.recent-agents': '' },
+};
+
+interface PlatformGlobals {
+  process?: { type?: string; platform?: string; versions?: { node?: string } };
+  navigator?: { platform?: string };
+}
+
+/**
+ * Electron main reads `process.platform`; a renderer (no Node globals) reads `navigator.platform`.
+ * Other Node processes (tests, scripts) use the shared defaults.
+ */
+function detectPlatform(): ShortcutPlatform {
+  const { process: proc, navigator: nav } = globalThis as PlatformGlobals;
+  let name = '';
+  if (proc?.type === 'browser') name = proc.platform ?? '';
+  else if (!proc?.versions?.node) name = nav?.platform ?? '';
+  if (/^linux/i.test(name)) return 'linux';
+  if (/^win/i.test(name)) return 'windows';
+  return 'mac';
+}
+
+const PLATFORM = detectPlatform();
+
+/** The default binding of `id` on `platform` (this one unless given); empty when it has none. */
+export function shortcutDefault(id: ShortcutId, platform: ShortcutPlatform = PLATFORM): string {
+  return platform === 'mac'
+    ? SHORTCUT_DEFAULTS[id]
+    : (PLATFORM_SHORTCUT_DEFAULTS[platform][id] ?? SHORTCUT_DEFAULTS[id]);
+}
+
+const MODIFIER_ORDER = ['mod', 'ctrl', 'super', 'alt', 'shift'] as const;
 const MODIFIER_ALIASES: Record<string, (typeof MODIFIER_ORDER)[number]> = {
   mod: 'mod',
   cmd: 'mod',
   command: 'mod',
   meta: 'mod',
+  super: 'super',
+  win: 'super',
   control: 'ctrl',
   ctrl: 'ctrl',
   option: 'alt',
@@ -120,6 +168,8 @@ interface ParsedShortcut {
   key: string;
   mod: boolean;
   ctrl: boolean;
+  /** The Super/Windows key on Linux and Windows; the Command key on macOS. */
+  super: boolean;
   alt: boolean;
   shift: boolean;
 }
@@ -167,7 +217,6 @@ export function shortcutFromKeyboardEvent(
   mac: boolean,
 ): string | null {
   if (MODIFIER_EVENT_KEYS.has(event.key.toLowerCase())) return null;
-  if (!mac && event.metaKey) return null;
 
   let key = event.key;
   if (event.altKey && event.code?.startsWith('Key')) key = event.code.slice(3);
@@ -176,6 +225,7 @@ export function shortcutFromKeyboardEvent(
   const parts: string[] = [];
   if ((mac && event.metaKey) || (!mac && event.ctrlKey)) parts.push('mod');
   if (mac && event.ctrlKey) parts.push('ctrl');
+  if (!mac && event.metaKey) parts.push('super');
   if (event.altKey) parts.push('alt');
   if (event.shiftKey) parts.push('shift');
   parts.push(key);
@@ -210,6 +260,7 @@ function parseShortcut(value: string): ParsedShortcut | null {
     key,
     mod: modifiers.has('mod'),
     ctrl: modifiers.has('ctrl'),
+    super: modifiers.has('super'),
     alt: modifiers.has('alt'),
     shift: modifiers.has('shift'),
   };
@@ -257,7 +308,7 @@ export function normalizeShortcut(value: string): string | null {
 
 /** Preserve a collective shortcut's range/alternatives while changing its captured chord. */
 export function applyShortcutCapture(id: ShortcutId, captured: string): string {
-  const defaultBinding = SHORTCUT_DEFAULTS[id];
+  const defaultBinding = shortcutDefault(id);
   const modifiers = captured.includes('+')
     ? `${captured.slice(0, captured.lastIndexOf('+'))}+`
     : '';
@@ -328,7 +379,7 @@ export function matchesShortcut(
   ]);
   return (
     equivalentKeys.has(parsed.key) &&
-    event.metaKey === (parsed.mod && mac) &&
+    event.metaKey === (mac ? parsed.mod || parsed.super : parsed.super) &&
     event.ctrlKey === (parsed.ctrl || (parsed.mod && !mac)) &&
     event.altKey === parsed.alt &&
     event.shiftKey === (parsed.shift || implicitShift)
@@ -341,13 +392,13 @@ export function sanitizeShortcutOverrides(value: unknown): ShortcutOverrides {
   for (const [id, shortcut] of Object.entries(value)) {
     if (!isShortcutId(id) || typeof shortcut !== 'string') continue;
     const normalized = normalizeShortcut(shortcut);
-    if (normalized && normalized !== SHORTCUT_DEFAULTS[id]) overrides[id] = normalized;
+    if (normalized && normalized !== shortcutDefault(id)) overrides[id] = normalized;
   }
   return overrides;
 }
 
 export function resolveShortcut(id: ShortcutId, overrides: ShortcutOverrides): string {
-  return overrides[id] ?? SHORTCUT_DEFAULTS[id];
+  return overrides[id] ?? shortcutDefault(id);
 }
 
 /**
@@ -361,11 +412,36 @@ export function isEventClaimedByCustomBinding(
   resolve: (id: ShortcutId) => string,
   mac: boolean,
 ): boolean {
-  if (resolve(id) !== SHORTCUT_DEFAULTS[id]) return false;
+  if (resolve(id) !== shortcutDefault(id)) return false;
   return (Object.keys(SHORTCUT_DEFAULTS) as ShortcutId[]).some((other) => {
     if (other === id || other.startsWith('leader.')) return false;
     const binding = resolve(other);
-    if (binding === SHORTCUT_DEFAULTS[other]) return false;
+    if (binding === shortcutDefault(other)) return false;
     return matchesShortcutPattern(event, binding, mac) >= 0;
   });
+}
+
+/** KeyboardEvent modifier flags a shortcut holds on this platform; Shift is not included. */
+export interface HeldShortcutModifiers {
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}
+
+/**
+ * The modifiers a user keeps held for `shortcut` (e.g. Ctrl for `ctrl+tab`), as event flags,
+ * or null when `shortcut` is not one readable chord. Hold-to-cycle shortcuts use it to notice
+ * the release.
+ */
+export function shortcutHeldModifiers(
+  shortcut: string,
+  mac: boolean,
+): HeldShortcutModifiers | null {
+  const parsed = parseShortcut(shortcut);
+  if (!parsed) return null;
+  return {
+    metaKey: mac ? parsed.mod || parsed.super : parsed.super,
+    ctrlKey: parsed.ctrl || (parsed.mod && !mac),
+    altKey: parsed.alt,
+  };
 }
