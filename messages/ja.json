@@ -983,7 +983,7 @@
   "chat_secretRequest_hide_label": "非表示",
   "chat_secretRequest_noticeDeclined_label": "シークレット {name} を拒否しました",
   "chat_secretRequest_noticeProvided_label": "シークレット {name} を提供しました",
-  "chat_secretRequest_privacy_description": "エージェントにはこの値は表示されません。",
+  "chat_secretRequest_privacy_description": "エージェントがこの値を見ることはありません。",
   "chat_secretRequest_provide_label": "提供",
   "chat_secretRequest_provided_description": "提供しました。エージェントはコマンドで使用できます。",
   "chat_secretRequest_show_ariaLabel": "シークレットを表示",

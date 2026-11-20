@@ -983,7 +983,7 @@
   "chat_secretRequest_hide_label": "Ausblenden",
   "chat_secretRequest_noticeDeclined_label": "Geheimnis {name} abgelehnt",
   "chat_secretRequest_noticeProvided_label": "Geheimnis {name} bereitgestellt",
-  "chat_secretRequest_privacy_description": "Der Agent sieht den Wert nie.",
+  "chat_secretRequest_privacy_description": "Agenten sehen diesen Wert nie.",
   "chat_secretRequest_provide_label": "Bereitstellen",
   "chat_secretRequest_provided_description": "Bereitgestellt. Der Agent kann es jetzt in Befehlen verwenden.",
   "chat_secretRequest_show_ariaLabel": "Geheimnis anzeigen",

@@ -983,7 +983,7 @@
   "chat_secretRequest_hide_label": "Ocultar",
   "chat_secretRequest_noticeDeclined_label": "Secreto {name} rechazado",
   "chat_secretRequest_noticeProvided_label": "Secreto {name} proporcionado",
-  "chat_secretRequest_privacy_description": "El agente nunca ve el valor.",
+  "chat_secretRequest_privacy_description": "Los agentes nunca ven este valor.",
   "chat_secretRequest_provide_label": "Proporcionar",
   "chat_secretRequest_provided_description": "Proporcionado. El agente ya puede usarlo en comandos.",
   "chat_secretRequest_show_ariaLabel": "Mostrar secreto",

@@ -983,7 +983,7 @@
   "chat_secretRequest_hide_label": "隱藏",
   "chat_secretRequest_noticeDeclined_label": "已拒絕密鑰 {name}",
   "chat_secretRequest_noticeProvided_label": "已提供密鑰 {name}",
-  "chat_secretRequest_privacy_description": "代理永遠看不到該值。",
+  "chat_secretRequest_privacy_description": "代理永遠看不到這個值。",
   "chat_secretRequest_provide_label": "提供",
   "chat_secretRequest_provided_description": "已提供。代理現在可以在命令中使用它。",
   "chat_secretRequest_show_ariaLabel": "顯示密鑰",
