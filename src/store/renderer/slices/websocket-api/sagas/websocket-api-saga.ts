@@ -219,27 +219,39 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         snapshot.enabled = intent.enabled;
         if (intent.enabled) {
           snapshot = yield* call(loadSnapshot, client, request, true);
+          // First-enable defaults, each its own fail-soft update so a tunnel
+          // that cannot start never rolls back the bind default.
+          const defaults: [{ path: string; value: string[] | boolean }, (e: string) => string][] =
+            [];
+          const failed = (error: string) => m.settings_listenTargets_saveError({ error });
           if (
             snapshot.bindAddressSupported &&
             !snapshot.tunnelOnly &&
             !snapshot.bindIps.some((ip) => ip !== '127.0.0.1')
-          ) {
+          )
+            defaults.push([{ path: 'server.bindAddress', value: ['0.0.0.0'] }, failed]);
+          // Remote access brings the Tailcat tunnel with it by default.
+          if (snapshot.tunnelSupported && !snapshot.tunnelEnabled)
+            defaults.push([
+              { path: 'server.tunnel.enabled', value: true },
+              (error) => m.settings_tunnel_enableError({ error }),
+            ]);
+          let changed = false;
+          for (const [change, message] of defaults) {
             try {
-              yield* call(
-                [client.settings, client.settings.update],
-                [{ path: 'server.bindAddress', value: ['0.0.0.0'] }],
-              );
-              yield* publication('refresh');
-              snapshot = yield* call(loadSnapshot, client, request, true);
+              yield* call([client.settings, client.settings.update], [change]);
+              changed = true;
             } catch (cause) {
               if (yield* selectSettingsFormRequestCurrent.effect(request))
                 yield* call(
                   notify.error,
-                  m.settings_listenTargets_saveError({
-                    error: String(cause instanceof Error ? cause.message : cause),
-                  }),
+                  message(String(cause instanceof Error ? cause.message : cause)),
                 );
             }
+          }
+          if (changed) {
+            yield* publication('refresh');
+            snapshot = yield* call(loadSnapshot, client, request, true);
           }
           yield* publication('autoPublish');
           values.enabledAcknowledged = request.requestId;

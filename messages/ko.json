@@ -5808,6 +5808,7 @@
   "settings_theme_label": "테마",
   "settings_theme_light": "라이트",
   "settings_theme_system": "시스템",
+  "settings_tunnel_enableError": "Tailcat 터널을 활성화할 수 없습니다: {error}",
   "settings_tunnel_enable_description": "기기 간 안전한 암호화 트래픽을 지원합니다.",
   "settings_tunnel_enable_label": "Tailcat 터널 활성화",
   "settings_tunnel_github_link": "GitHub에서 자세히 알아보기",

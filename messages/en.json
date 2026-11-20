@@ -5808,6 +5808,7 @@
   "settings_theme_label": "Theme",
   "settings_theme_light": "Light",
   "settings_theme_system": "System",
+  "settings_tunnel_enableError": "Could not turn on the Tailcat tunnel: {error}",
   "settings_tunnel_enable_description": "Allows secure, encrypted traffic between your devices.",
   "settings_tunnel_enable_label": "Enable Tailcat Tunnel",
   "settings_tunnel_github_link": "Learn more on GitHub",
