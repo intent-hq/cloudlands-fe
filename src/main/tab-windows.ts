@@ -194,7 +194,7 @@ export class TabWindowRegistry {
     if (!entry || window.isDestroyed()) return;
     entry.closing = 'close';
     const { record } = entry;
-    if (record.tab.type === 'browser') this.deps.destroyBrowserPage(record.tab.id);
+    if (this.ownsPage(entry, window)) this.deps.destroyBrowserPage(record.tab.id);
     const target = this.deps.returnTarget(entry.backendId, this.liveSource(entry));
     const event: TabWindowClosedTabEvent = {
       tabWindowId: record.tabWindowId,
@@ -263,7 +263,8 @@ export class TabWindowRegistry {
    * Browser pages are keyed by tab id across every machine and window. A
    * tab window moves and can close the page of its tab, so the caller must
    * own that page: the same machine and workspace, in the caller's window.
-   * A tab with no page (another tab type, or a page not created yet) passes.
+   * A tab with no page yet passes here, but grants nothing: every later move
+   * or close checks the live page again (`ownsPage`).
    */
   private requirePageOwner(
     tabId: string,
@@ -279,6 +280,23 @@ export class TabWindowRegistry {
     if (owner.window !== source) throw new Error('This browser tab belongs to another window');
   }
 
+  /**
+   * Whether the tab's live page belongs to this tab window: a browser tab
+   * whose page has the machine and workspace the record was opened (or
+   * restored) for, in `from` when that is given. Checked at every move and
+   * close, never once for good: a page that is absent is not this tab
+   * window's, and one created later for another machine is never touched.
+   */
+  private ownsPage(entry: Entry, from: BrowserWindow | null): boolean {
+    if (entry.record.tab.type !== 'browser') return false;
+    const owner = this.deps.browserPageOwner(entry.record.tab.id);
+    if (!owner) return false;
+    if (owner.backendId !== entry.backendId || owner.workspaceId !== entry.record.workspaceId) {
+      return false;
+    }
+    return from === null || owner.window === from;
+  }
+
   private attach(entry: Entry, window: BrowserWindow): void {
     entry.window = window;
     window.on('close', (event: Electron.Event) => this.handleClose(entry, window, event));
@@ -287,7 +305,8 @@ export class TabWindowRegistry {
         this.entries.delete(entry.record.tabWindowId);
       }
     });
-    if (entry.record.tab.type === 'browser') this.deps.moveBrowserPage(entry.record.tab.id, window);
+    // Checked now, after the frame opened: the page may have changed meanwhile.
+    if (this.ownsPage(entry, entry.source)) this.deps.moveBrowserPage(entry.record.tab.id, window);
   }
 
   /**
@@ -325,7 +344,7 @@ export class TabWindowRegistry {
       return;
     }
     this.entries.delete(entry.record.tabWindowId);
-    if (entry.record.tab.type === 'browser') this.deps.moveBrowserPage(entry.record.tab.id, target);
+    if (this.ownsPage(entry, window)) this.deps.moveBrowserPage(entry.record.tab.id, target);
     const reveal = entry.closing === 'back';
     this.sendTo(target, entry.backendId, CHANNELS.RETURN_TAB, this.returnEvent(entry, reveal));
     if (reveal && !target.isDestroyed()) {

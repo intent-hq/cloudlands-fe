@@ -371,6 +371,68 @@ describe('TabWindowRegistry', () => {
     });
   });
 
+  describe('a page that appears after open (ownership is checked at every move and close)', () => {
+    type Owner = { backendId: string; workspaceId: string; window: BrowserWindow | null } | null;
+
+    async function openWithoutPage() {
+      let owner: Owner = null;
+      const ctx = setup({ browserPageOwner: () => owner });
+      const moves = vi.fn();
+      const destroys = vi.fn();
+      ctx.deps.moveBrowserPage = moves;
+      ctx.deps.destroyBrowserPage = destroys;
+      const { window } = await openBrowserTab(ctx);
+      expect(moves).not.toHaveBeenCalled();
+      return { ctx, window, moves, destroys, setOwner: (next: Owner) => (owner = next) };
+    }
+
+    it("Close Tab never closes another machine's page created later with the same id", async () => {
+      const { ctx, window, destroys, setOwner } = await openWithoutPage();
+      setOwner({ backendId: 'remote-1', workspaceId: 'ws-1', window: asWindow(window) });
+      ctx.registry.closeTab(asWindow(window));
+      expect(destroys).not.toHaveBeenCalled();
+      expect(window.destroyed).toBe(true);
+    });
+
+    it("move back never moves another workspace's page created later with the same id", async () => {
+      const { ctx, window, moves, setOwner } = await openWithoutPage();
+      setOwner({ backendId: 'local', workspaceId: 'ws-2', window: asWindow(window) });
+      ctx.registry.moveBack(asWindow(window));
+      expect(moves).not.toHaveBeenCalled();
+      expect(ctx.sent.find((m) => m.channel === RETURN_TAB)).toBeDefined();
+    });
+
+    it('a page of the same machine in another window is not taken on move back or close', async () => {
+      const { ctx, window, moves, destroys, setOwner } = await openWithoutPage();
+      setOwner({ backendId: 'local', workspaceId: 'ws-1', window: asWindow(new FakeWindow()) });
+      ctx.registry.closeTab(asWindow(window));
+      expect(destroys).not.toHaveBeenCalled();
+      expect(moves).not.toHaveBeenCalled();
+    });
+
+    it('the page the tab window itself created later moves back with the tab', async () => {
+      const { ctx, window, moves, setOwner } = await openWithoutPage();
+      setOwner({ backendId: 'local', workspaceId: 'ws-1', window: asWindow(window) });
+      ctx.registry.moveBack(asWindow(window));
+      expect(moves).toHaveBeenCalledWith('tab-1', asWindow(ctx.source));
+    });
+
+    it('a page that changed owner while the frame opened is not moved into it', async () => {
+      let owner: Owner = null;
+      const ctx = setup({ browserPageOwner: () => owner });
+      const moves = vi.fn();
+      ctx.deps.moveBrowserPage = moves;
+      (ctx.deps.openFrame as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+        owner = { backendId: 'remote-1', workspaceId: 'ws-1', window: asWindow(ctx.source) };
+        const window = new FakeWindow();
+        ctx.opened.push(window);
+        return asWindow(window);
+      });
+      await openBrowserTab(ctx);
+      expect(moves).not.toHaveBeenCalled();
+    });
+  });
+
   describe('restart', () => {
     const record: TabWindowRecord = {
       tabWindowId: 'tw-saved',
