@@ -3,8 +3,11 @@ import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux
 import { installInAppFileInputs, prefersInAppFilePicker } from '$lib/in-app-file-inputs';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { InAppFileDialogRequest, InAppFileDialogResponse } from '$shared/in-app-file-dialog';
+import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { inAppFileDialogAnswered, inAppFileDialogRequested } from '../in-app-file-dialog-slice';
+
+const logger = createLogger('InAppFileDialogSaga');
 
 function* recordRequest(request: InAppFileDialogRequest): SagaGenerator<void> {
   if (request?.id) yield* put(inAppFileDialogRequested(request));
@@ -12,15 +15,22 @@ function* recordRequest(request: InAppFileDialogRequest): SagaGenerator<void> {
 
 function* sendAnswer(action: ReturnType<typeof inAppFileDialogAnswered>): SagaGenerator<void> {
   const [id, paths] = action.payload;
-  const response: InAppFileDialogResponse = { id, paths: paths && paths.length ? paths : null };
+  // Copy into a plain array: a reactive proxy cannot be cloned over IPC.
+  const response: InAppFileDialogResponse = {
+    id,
+    paths: paths && paths.length ? Array.from(paths, String) : null,
+  };
   try {
     yield* call(
       [window.electronAPI, window.electronAPI.invoke],
       IPC_CHANNELS.IN_APP_FILE_DIALOG.RESPOND,
       response,
     );
-  } catch {
-    // Main resolves the dialog as cancelled when this renderer goes away.
+  } catch (error) {
+    logger.warn('could not answer the in-app file dialog', {
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

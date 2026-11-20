@@ -10,7 +10,7 @@ const settle = async () => {
 
 function start(preferInAppPicker: boolean) {
   let listener: ((data: unknown) => void) | undefined;
-  const invoke = vi.fn(async () => ({ ok: true }));
+  const invoke = vi.fn(async (_channel: string, _payload: unknown) => ({ ok: true }));
   const electronAPI = {
     preferInAppPicker,
     invoke,
@@ -60,6 +60,20 @@ describe('inAppFileDialogSaga', () => {
       ['in-app-file-dialog:respond', { id: 'r1', paths: ['/home/me/a.zip'] }],
       ['in-app-file-dialog:respond', { id: 'r2', paths: null }],
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('sends a cloneable copy of a reactive paths array', async () => {
+    const { task, channel, invoke } = start(true);
+    await settle();
+    const reactive = new Proxy(['/a.png', '/b.png'], {});
+    expect(() => structuredClone(reactive)).toThrow();
+    channel.put(inAppFileDialogAnswered('r3', reactive));
+    await settle();
+    const sent = invoke.mock.calls[0][1];
+    expect(() => structuredClone(sent)).not.toThrow();
+    expect(sent).toEqual({ id: 'r3', paths: ['/a.png', '/b.png'] });
     task.cancel();
     await task.toPromise();
   });

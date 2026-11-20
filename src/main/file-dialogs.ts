@@ -177,7 +177,7 @@ function requestInAppDialogIn(
 }
 
 function hasPendingRequestFor(sender: WebContents): boolean {
-  for (const entry of pending.values()) if (entry.contents === sender) return true;
+  for (const entry of pending.values()) if (entry.contents.id === sender.id) return true;
   return false;
 }
 
@@ -306,7 +306,7 @@ export function registerFileDialogHandlers(): void {
       RespondSchema,
       async (event, { id, paths }) => {
         const entry = pending.get(id);
-        if (!entry || entry.contents !== event.sender) return { ok: false };
+        if (!entry || entry.contents.id !== event.sender.id) return { ok: false };
         entry.resolve(paths && paths.length > 0 ? paths : null);
         return { ok: true };
       },

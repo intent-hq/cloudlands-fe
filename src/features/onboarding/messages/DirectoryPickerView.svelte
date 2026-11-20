@@ -357,7 +357,8 @@
     }
     if (mode === 'file' && multiple) {
       if (selectedFilePaths.length === 0) return;
-      if (onSelectMany) onSelectMany(selectedFilePaths);
+      // A plain copy: the $state proxy cannot cross IPC (structured clone).
+      if (onSelectMany) onSelectMany($state.snapshot(selectedFilePaths));
       else onSelect(selectedFilePaths[0]);
       return;
     }
