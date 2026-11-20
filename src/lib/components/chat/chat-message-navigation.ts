@@ -2,7 +2,7 @@ import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import {
-  getPresentedUserMessageText,
+  getUserMessagePreviewText,
   stripInternalDeliveryNotes,
   stripTruncatedTrailingDeliveryNote,
 } from '$lib/utils/user-message-presentation';
@@ -59,7 +59,7 @@ export function getPlainTextMessagePreview(
   message: AgentMessage,
   ownerPrincipalId?: string | null,
 ): string {
-  return stripMarkdownFormatting(getPresentedUserMessageText(message, ownerPrincipalId))
+  return stripMarkdownFormatting(getUserMessagePreviewText(message, ownerPrincipalId))
     .replace(/\s+/g, ' ')
     .trim();
 }

@@ -1,3 +1,4 @@
+import { getUserMessagePreviewText } from '$lib/utils/user-message-presentation';
 /**
  * Chief thread title derivation.
  *
@@ -39,7 +40,12 @@ export function getChiefThreadTitle(
   if (session.nameExplicitlySet && fallbackName) return fallbackName;
   const firstUserMessage = session.messages.find((message) => message.role === 'user');
   const firstMessage = firstUserMessage ?? session.messages[0];
-  const text = firstMessage ? extractAllContent(firstMessage).trim() : '';
+  const text = firstMessage
+    ? (firstMessage.role === 'user'
+        ? getUserMessagePreviewText(firstMessage)
+        : extractAllContent(firstMessage)
+      ).trim()
+    : '';
   if (!fallbackName || isPlaceholderChiefThreadName(fallbackName)) {
     return text || DEFAULT_CHIEF_THREAD_TITLE;
   }

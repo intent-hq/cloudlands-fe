@@ -2,7 +2,7 @@ import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
-import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+import { getUserMessagePreviewText } from '$lib/utils/user-message-presentation';
 interface ChatSearchBlock {
   messageId: string;
   turnKey: string;
@@ -59,7 +59,7 @@ function buildMessageSearchBlocks(
         turnKey,
         blockPath: '',
         disclosurePath: [],
-        text: parseSuggestedPrompts(getPresentedUserMessageText(message, ownerPrincipalId))
+        text: parseSuggestedPrompts(getUserMessagePreviewText(message, ownerPrincipalId))
           .cleanedContent,
       },
     ];

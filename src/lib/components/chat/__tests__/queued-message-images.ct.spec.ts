@@ -578,14 +578,34 @@ for (const scenario of [
   { name: 'image only', disabled: true, empty: true },
 ]) {
   test(`ordinary screenshot evidence is display-only ${scenario.name}`, async ({ mount }, info) => {
-    const { DOCK_EVIDENCE_CONTEXT_HEADER } = await import('$shared/dock-evidence');
-    const metadata = {
-      type: 'dock_screen_evidence',
-      fromPrincipalId: 'image-author',
-      version: 1,
-      images: [{ id: 'shot', attachment_id: 'first', index: 0 }],
+    const {
+      DOCK_EVIDENCE_CONTEXT_HEADER,
+      emptyDockEvidence,
+      buildDockEvidenceContext,
+      buildDockEvidenceMetadata,
+    } = await import('$shared/dock-evidence');
+    const evidence = emptyDockEvidence('ordinary-screen');
+    evidence.images.push({
+      id: 'shot',
+      contextItemId: 'shot-item',
+      width: 32,
+      height: 32,
+      displayScale: 1,
+      capturedAt: '2026-11-20T12:00:00Z',
+      source: 'capture',
+    });
+    const context = {
+      workspaceId: 'queue-images',
+      agentId: 'queue-images-agent',
+      appUrl: 'intent://local/workspace/queue-images',
+      imageAttachments: { shot: { attachmentId: 'first', raw: null } },
     };
-    const prefix = `${DOCK_EVIDENCE_CONTEXT_HEADER}\n\`\`\`json\n${JSON.stringify({ type: 'dock_screen_evidence', version: 1, images: [{ image: 1, attachment_id: 'first', size: [32, 32], scale: 1, marks: [] }] })}\n\`\`\``;
+    const metadata = {
+      ...buildDockEvidenceMetadata(evidence, context),
+      edited_captures: [],
+      fromPrincipalId: 'image-author',
+    };
+    const prefix = buildDockEvidenceContext(evidence, context);
     const prose = scenario.empty ? '' : 'Please fix this screenshot.';
     const content = prose ? `${prefix}\n\n${prose}` : prefix;
     const component = await mount(QueuedMessageImagesHost, {

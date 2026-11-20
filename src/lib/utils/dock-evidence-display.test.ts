@@ -1,3 +1,9 @@
+import { getPlainTextMessagePreview } from '$lib/components/chat/chat-message-navigation';
+import { extractSearchableContent, findChatSearchMatches } from '$lib/components/chat/chat-search';
+import { getChiefThreadTitle } from '$store/renderer/slices/sidebar-nav/chief-thread-title';
+import { getPresentedUserMessageText } from './user-message-presentation';
+import type { AgentMessage } from '$shared/types';
+import { prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { createPendingEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { queuePresentationMessages } from '$lib/components/chat/queued-message-presentation';
@@ -445,13 +451,106 @@ describe('ordinary screenshot queue display', () => {
   const group = {
     content,
     messageMetadata: own,
-    imageBlocks: [{ type: 'image', attachmentId: 'first' }],
+    imageBlocks: [{ type: 'image' as const, attachmentId: 'first' }],
   };
   it('hides the ordinary trusted Screen prefix without changing raw content or attachments', () => {
     const before = JSON.stringify(group);
     expect(queuedCaptureDisplay(group)).toEqual({ text: prose, captures: [] });
     expect(JSON.stringify(group)).toBe(before);
     expect(queuedCaptureDisplay({ ...group, content: screen }).text).toBe('');
+  });
+  it.each(['screenshot', 'recording'] as const)(
+    'hides the real %s producer empty edit list across queue projections',
+    async (kind) => {
+      const evidence = emptyDockEvidence('producer-empty-edits');
+      evidence.images.push({
+        id: 'shot',
+        contextItemId: 'shot-item',
+        width: 32,
+        height: 32,
+        displayScale: 1,
+        capturedAt: '2026-11-20T12:00:00Z',
+        source: 'capture',
+      });
+      if (kind === 'recording')
+        evidence.clips.push({
+          id: 'clip',
+          contextItemId: 'clip-item',
+          status: 'ready',
+          startedAt: 0,
+          durationMs: 5000,
+          hasMicAudio: true,
+        });
+      const context = {
+        workspaceId: 'w',
+        agentId: 'a',
+        appUrl: 'intent://local/workspace/w',
+        imageAttachments: { shot: { attachmentId: 'first', raw: null } },
+        clipAttachmentIds: { clip: 'video-1' },
+      };
+      // The actual no-edit materializer and producer builders, as composed by prepareEvidenceMessage.
+      const materialized = await prepareDockMediaSend(
+        'w',
+        evidence,
+        { backendId: null, generation: 0, transport: null },
+        null,
+        () => true,
+      );
+      expect(materialized.metadata).toEqual([]);
+      const generated = buildDockEvidenceContext(evidence, context);
+      const message = {
+        id: 'producer',
+        queuedAt: '',
+        position: 0,
+        content: `${generated}\n\n${prose}`,
+        messageMetadata: {
+          ...buildDockEvidenceMetadata(evidence, context),
+          edited_captures: materialized.metadata,
+        },
+        imageBlocks: group.imageBlocks,
+        fileBlocks:
+          kind === 'recording'
+            ? [
+                {
+                  type: 'file' as const,
+                  attachmentId: 'video-1',
+                  fileName: 'clip.mp4',
+                  mimeType: 'video/mp4',
+                },
+              ]
+            : [],
+      };
+      const before = JSON.stringify(message);
+      const projected = queuePresentationMessages(
+        projectPendingSubmissions(undefined, [message]).queue,
+      )[0];
+      const { messageMetadata: _, ...unit } = message;
+      for (const candidate of [
+        message,
+        projected,
+        queuedCaptureGroup({ ...message, deliveryGroups: [unit] }, unit),
+        { ...message, messageMetadata: { mergedMessageMetadata: [message.messageMetadata] } },
+      ])
+        expect(queuedCaptureDisplay(candidate)).toEqual({ text: prose, captures: [] });
+      expect(queuedCaptureDisplay({ ...message, content: generated }).text).toBe('');
+      expect(JSON.stringify(message)).toBe(before);
+    },
+  );
+  it('refuses malformed edit provenance and mixed empty-edit contributions', () => {
+    for (const edited_captures of [null, {}, 'empty', [null], metadata.edited_captures]) {
+      expect(
+        queuedCaptureDisplay({ ...group, messageMetadata: { ...own, edited_captures } }).text,
+      ).toBe(content);
+    }
+    const empty = { ...own, edited_captures: [] };
+    for (const parts of [
+      [{}, empty],
+      [empty, empty],
+    ]) {
+      expect(
+        queuedCaptureDisplay({ ...group, messageMetadata: { mergedMessageMetadata: parts } }).text,
+      ).toBe(content);
+    }
   });
   it('retains copied, malformed, non-prefix and untrusted screen-looking prose', () => {
     for (const messageMetadata of [undefined, { type: 'other' }])
@@ -496,5 +595,83 @@ describe('ordinary screenshot queue display', () => {
         queuedCaptureGroup({ ...group, deliveryGroups: [unit, { content: 'Other' }] }, unit),
       ).text,
     ).toBe(content);
+  });
+});
+
+describe('capture context across human message previews', () => {
+  const ordinary = { type: 'dock_screen_evidence', version: 1, images: [], edited_captures: [] };
+  const source = (content: string, meta?: Record<string, unknown>): AgentMessage => ({
+    id: 'preview-capture',
+    role: 'user',
+    timestamp: '2026-11-20T12:00:00Z',
+    contentBlocks: [
+      { type: 'text', text: content },
+      { type: 'image', attachmentId: 'frame-1', mimeType: 'image/png' },
+      { type: 'file', attachmentId: 'video-1', fileName: 'recording.mp4', mimeType: 'video/mp4' },
+    ],
+    metadata: meta,
+  });
+  const preview = (message: AgentMessage) => [
+    getPlainTextMessagePreview(message),
+    extractSearchableContent(message),
+    getChiefThreadTitle({ name: 'New chat', messages: [message] }),
+  ];
+  it.each([
+    ['ordinary', `${screen}\n\nReview this capture`, ordinary],
+    ['edited recording', `${screen}\n\n${prefix}\n\nReview this capture`, metadata],
+    ['singleton', `${screen}\n\nReview this capture`, { mergedMessageMetadata: [ordinary] }],
+  ])(
+    'shares trusted %s display text without changing edit or stored data',
+    (_name, content, meta) => {
+      const message = source(content as string, meta as Record<string, unknown>);
+      const before = JSON.stringify(message);
+      expect(preview(message)).toEqual([
+        'Review this capture',
+        'Review this capture',
+        'Review this capture',
+      ]);
+      expect(findChatSearchMatches([message], 'Screen evidence', new Map())).toEqual([]);
+      expect(findChatSearchMatches([message], 'Review this capture', new Map())).toHaveLength(1);
+      expect(getPresentedUserMessageText(message)).toBe(content);
+      expect(JSON.stringify(message)).toBe(before);
+      if (meta === metadata) {
+        const parsed = parseStoredMessage(getPresentedUserMessageText(message), {
+          trustedEvidence: true,
+          metadata,
+          blocks,
+        });
+        expect(parsed.userMessage).toBe('Review this capture');
+        expect(parsed.contextItems.map((item) => item.metadata?.kind)).toEqual([
+          'dock_screen_evidence',
+          'dock_edited_captures',
+        ]);
+      }
+    },
+  );
+  it('retains literal, mixed, malformed and non-prefix capture-looking prose', () => {
+    for (const [content, meta] of [
+      [`${screen}\n\nLiteral header`, undefined],
+      [`${screen}\n\nMixed`, { mergedMessageMetadata: [ordinary, {}] }],
+      [`${screen}\n\n[Edited capture outputs]\n{bad}\n\nUser`, ordinary],
+      [`Leading prose\n\n${screen}`, ordinary],
+    ] as const) {
+      const message = source(content, meta);
+      expect(extractSearchableContent(message)).toBe(content);
+      expect(getChiefThreadTitle({ name: '', messages: [message] })).toBe(content);
+      expect(getPlainTextMessagePreview(message)).toContain('Screen evidence');
+    }
+  });
+  it('does not manufacture preview prose for attachment-only messages or replace explicit names', () => {
+    const message = source(screen, ordinary);
+    expect(getPlainTextMessagePreview(message)).toBe('');
+    expect(extractSearchableContent(message)).toBe('');
+    expect(getChiefThreadTitle({ name: 'New chat', messages: [message] })).toBe('New chat');
+    expect(
+      getChiefThreadTitle({
+        name: 'My chosen title',
+        nameExplicitlySet: true,
+        messages: [message],
+      }),
+    ).toBe('My chosen title');
   });
 });
