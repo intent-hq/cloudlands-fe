@@ -57,8 +57,9 @@
       retryUntil = 0;
       return;
     }
-    now = Date.now();
-    retryUntil = now + wait;
+    const start = Date.now();
+    now = start;
+    retryUntil = start + wait;
     const timer = setInterval(() => {
       now = Date.now();
       if (now >= retryUntil) clearInterval(timer);
