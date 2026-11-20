@@ -243,6 +243,7 @@ const electronAPI = {
   },
 
   // Platform info
+  preferInAppPicker: process.argv.includes('--intent-in-app-picker'),
   platform: process.platform,
   arch: process.arch,
   versions: {

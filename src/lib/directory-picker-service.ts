@@ -12,13 +12,15 @@ interface PickOptions {
 
 /**
  * A native dialog can only browse the frontend laptop's filesystem, so use it only when
- * the daemon is local; remote daemons must browse their own filesystem through the modal.
+ * the daemon is local and the desktop session allows native dialogs.
  */
 async function pick(
   { title, defaultPath, openModal, onSelect }: PickOptions,
   openNative: (options: { title?: string; defaultPath?: string }) => Promise<string | null>,
 ): Promise<void> {
-  const useNative = hasCapability('nativeDialogs') && selectIsDaemonLocal.select(appStore.state);
+  const preferInApp = typeof window !== 'undefined' && window.electronAPI?.preferInAppPicker;
+  const useNative =
+    !preferInApp && hasCapability('nativeDialogs') && selectIsDaemonLocal.select(appStore.state);
 
   if (!useNative) {
     openModal();
