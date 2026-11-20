@@ -106,7 +106,7 @@ describe('SecretRequestCard', () => {
     expect(input.type).toBe('password');
   });
 
-  it('dismisses only after confirmation, without handing off a value', async () => {
+  it('Skip declines at once, without handing off a value', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     renderCard('pending', 'sec-card-decline');
     const answers = () =>
@@ -114,9 +114,7 @@ describe('SecretRequestCard', () => {
         .map(([action]) => action as { type: string; payload?: unknown[] })
         .filter((action) => action.type === secretAnswerRequested.type);
     await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(answers()).toHaveLength(0);
-    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss request' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(answers()).toHaveLength(1);
     expect(answers()[0]?.payload?.[0]).toMatchObject({
       requestId: 'sec-card-decline',
@@ -128,19 +126,6 @@ describe('SecretRequestCard', () => {
       expect(screen.getByTestId('secret-request-card').dataset.state).toBe('declined'),
     );
     expect(screen.queryByTestId('secret-request-input')).toBeNull();
-  });
-
-  it('cancelling the dismiss confirmation sends nothing', async () => {
-    const dispatch = vi.spyOn(appStore, 'dispatch');
-    renderCard('pending', 'sec-card-cancel');
-    await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(
-      dispatch.mock.calls.some(
-        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
-      ),
-    ).toBe(false);
   });
 
   it('Hide asks the stack to collapse', async () => {
