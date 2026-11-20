@@ -9325,6 +9325,6 @@
   "chat_advisoryWake_nameWaitingOnPr_label": "{name} wartet auf PR {ref}",
   "chat_advisoryWake_nameWaitingOnPrList_label": "{name} wartet auf PRs {refs}",
   "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} wartet auf {count} PRs",
-  "chat_advisoryWake_agentWaiting_label": "Agent {status}",
+  "chat_advisoryWake_agentWaiting_label": "Der Agent {status}",
   "chat_advisoryWake_agentWaitingType_label": "Agent wartet"
 }
