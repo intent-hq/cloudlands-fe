@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.360.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.359.0...v2.360.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **settings:** turn the Tailcat tunnel on with remote access ([#4837](https://github.com/intent-hq/cloudlands-fe/issues/4837)) ([2e2061c](https://github.com/intent-hq/cloudlands-fe/commit/2e2061cb1752dc4d8f352e28e3c129c33410d7f3))
+
 ## [2.359.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.358.0...v2.359.0) (2026-11-20)
 
 
