@@ -17,6 +17,7 @@ import {
 } from './dock-global-shortcuts';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
 import { configureIntentProtocolClient } from './intent-protocol-client';
+import { disableChromiumFeatures } from './chromium-features';
 
 // CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
@@ -31,6 +32,10 @@ const { ipcMain, app, BrowserWindow } = require('electron');
 // PERF: Enable --expose-gc to allow manual GC
 // This must be done before app.isReady()
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
+
+// Turn off web APIs Electron ships without their browser UI (FedCM: Google
+// sign-in buttons wait forever on it). Must run before app.isReady().
+disableChromiumFeatures(app.commandLine);
 
 // EARLY: Redirect userData to the "intent-cloudlands" directory under the platform
 // appData dir (e.g. ~/Library/Application Support/intent-cloudlands on macOS), on all

@@ -749,7 +749,8 @@ async function grantMicrophoneAccess(): Promise<boolean> {
  *    are blocked as third-party cookies.
  *
  * 2. top-level-storage-access: Allows top-level sites to request cookie access on behalf
- *    of embedded content. Used by federated login (FedCM) and some SSO flows.
+ *    of embedded content. Used by some federated SSO flows. (FedCM itself is turned
+ *    off app-wide: Electron has no account chooser for it; see chromium-features.ts.)
  *
  * 3. clipboard-read/write: Standard copy/paste support.
  *
