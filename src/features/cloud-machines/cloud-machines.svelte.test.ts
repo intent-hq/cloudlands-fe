@@ -815,6 +815,25 @@ describe('Vercel form', () => {
     expect(save.disabled).toBe(false);
   });
 
+  it('refuses an image with a tag, since Intent adds its own version', async () => {
+    const own = {
+      ...VERCEL_ENTRY,
+      vercel: { ...VERCEL_ENTRY.vercel!, image: 'acme/images/intent-node' },
+    };
+    const view = renderForm(own);
+    const form = formOf(view);
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    const image = form.querySelector('input[data-vercel-image]') as HTMLInputElement;
+    await fireEvent.input(image, { target: { value: 'acme/images/intent-node:0.212.0' } });
+    expect(form.querySelector('[data-vercel-image-error]')).not.toBeNull();
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(image, { target: { value: 'acme/images/intent-node@sha256:abc' } });
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(image, { target: { value: 'acme/images/intent-node' } });
+    expect(form.querySelector('[data-vercel-image-error]')).toBeNull();
+    expect(save.disabled).toBe(false);
+  });
+
   it('sends no team, project or image from the edit form when they are unchanged', async () => {
     const view = renderForm(VERCEL_ENTRY);
     const form = formOf(view);
