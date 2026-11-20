@@ -1,5 +1,4 @@
 import { store } from '$store/renderer/store';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setupRemoteMachinesFixture } from './remote-machines-preview';
 import {
   NEW_CLOUD_ENTRY,
@@ -38,7 +37,6 @@ export type CloudMachinesPreviewState =
   | 'key-rejected'
   | 'remove-in-use'
   | 'unsupported'
-  | 'labs-off'
   | 'entries'
   | 'entries-add'
   | 'entries-key-rejected'
@@ -274,8 +272,6 @@ export const GROUPED_SANDBOXES: RemoteMachine[] = [
 /** Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture. */
 export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   const restoreRemote = setupRemoteMachinesFixture('available');
-  const previousCloudLabs = store.state.userPreferences?.labsCloudMachinesEnabled === true;
-  store.dispatch(setLabsCloudMachinesEnabled(state !== 'labs-off'));
   for (const workspace of WORKSPACES)
     store.dispatch(
       setWorkspaceEntity({
@@ -297,8 +293,6 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
     'setup-tested',
     'setup-key-rejected',
     'unsupported',
-    // No saved entry, else the backend counts as opted in; its sandboxes still list agents on E2B.
-    'labs-off',
   ].includes(state);
   const entries = ENTRY_SCENES.includes(state);
   const team =
@@ -344,7 +338,7 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
             : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
           : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
             ? GROUPED_SANDBOXES
-            : (configured || state === 'labs-off') && state !== 'connected-no-sandboxes'
+            : configured && state !== 'connected-no-sandboxes'
               ? E2B_SANDBOXES
               : [],
       // Read now: uptime then matches the fixture until the next 30 s tick.
@@ -420,7 +414,6 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
     collapsedSandboxGroups.clear();
     if (grouped) removePendingAgentDeletion('agent-sb-3');
     for (const workspace of WORKSPACES) store.dispatch(removeWorkspaceEntity(workspace.id));
-    store.dispatch(setLabsCloudMachinesEnabled(previousCloudLabs));
     restoreRemote();
   };
 }

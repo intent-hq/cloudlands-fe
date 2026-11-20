@@ -126,11 +126,6 @@ export const selectLabsTabGroupsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsTabGroupsEnabled === true;
 });
 
-/** Labs: E2B cloud machines. Off hides setup and new placement, never existing agents. */
-export const selectLabsCloudMachinesEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsCloudMachinesEnabled === true;
-});
-
 /** Labs: Set up a new machine over SSH. Off hides only the SSH install method. */
 export const selectLabsSshMachineSetupEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsSshMachineSetupEnabled === true;

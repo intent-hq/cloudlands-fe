@@ -26,7 +26,6 @@ import {
 } from '$features/remote-machines/remote-machines-slice';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { E2B_PROVIDER } from '../../../test/cloud-machines-preview';
 
 vi.mock('$lib/client', () => ({
@@ -331,7 +330,6 @@ describe('Settings → Machines with machineOrder: 1', () => {
 
   it('keeps the single E2B row of a backend without named entries', () => {
     seed({ order: ORDER.filter((row) => row.kind !== 'cloud') });
-    store.dispatch(setLabsCloudMachinesEnabled(true));
     store.dispatch(
       cloudMachinesLoaded({
         supported: true,

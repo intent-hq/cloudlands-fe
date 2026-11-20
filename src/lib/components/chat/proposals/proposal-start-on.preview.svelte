@@ -58,7 +58,6 @@
     startOnPreviewMachine,
   } from '$lib/components/workspace/initializer/start-on.preview-fixtures';
   import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
-  import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     clearProposalLifecycle,
     proposalApplySucceeded,
@@ -133,8 +132,6 @@
           ],
     ),
   );
-  const previousCloudLabs = store.state.userPreferences?.labsCloudMachinesEnabled === true;
-  store.dispatch(setLabsCloudMachinesEnabled(true));
   store.dispatch(
     cloudMachinesLoaded({
       supported: true,
@@ -169,7 +166,6 @@
     );
   onDestroy(() => {
     store.dispatch(clearProposalLifecycle(lifecycleId));
-    store.dispatch(setLabsCloudMachinesEnabled(previousCloudLabs));
   });
 
   let applied = $state<string | null>(null);
