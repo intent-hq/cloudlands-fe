@@ -219,16 +219,19 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         snapshot.enabled = intent.enabled;
         if (intent.enabled) {
           snapshot = yield* call(loadSnapshot, client, request, true);
+          // Remote access brings the Tailcat tunnel with it by default.
+          const defaults: { path: string; value: string[] | boolean }[] = [];
           if (
             snapshot.bindAddressSupported &&
             !snapshot.tunnelOnly &&
             !snapshot.bindIps.some((ip) => ip !== '127.0.0.1')
-          ) {
+          )
+            defaults.push({ path: 'server.bindAddress', value: ['0.0.0.0'] });
+          if (snapshot.tunnelSupported && !snapshot.tunnelEnabled)
+            defaults.push({ path: 'server.tunnel.enabled', value: true });
+          if (defaults.length > 0) {
             try {
-              yield* call(
-                [client.settings, client.settings.update],
-                [{ path: 'server.bindAddress', value: ['0.0.0.0'] }],
-              );
+              yield* call([client.settings, client.settings.update], defaults);
               yield* publication('refresh');
               snapshot = yield* call(loadSnapshot, client, request, true);
             } catch (cause) {

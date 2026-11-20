@@ -241,6 +241,63 @@ describe('WebSocketApiSettings', () => {
     expect(copy.hasAttribute('disabled')).toBe(true);
   });
 
+  describe('turning on remote access', () => {
+    afterEach(() => mocks.mockSettingsUpdate.mockReset());
+
+    async function toggleOn(rows: { path: string; value: unknown }[]) {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5181 },
+        ...rows,
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue({
+        token: 'test-token',
+        certFingerprint: 'AA:BB',
+        port: 5181,
+        path: '/ws',
+        localIps: ['192.0.2.10'],
+        hostname: 'test-machine',
+      });
+      render(WebSocketApiSettings);
+      const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+      await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+      mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+        ...rows,
+      ]);
+      await fireEvent.click(toggle);
+      await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    }
+
+    it('turns the Tailcat tunnel on with it', async () => {
+      await toggleOn([
+        { path: 'server.bindAddress', value: ['192.0.2.10'] },
+        { path: 'server.tunnel.enabled', value: false },
+        { path: 'server.tunnel.only', value: false },
+      ]);
+      await waitFor(() =>
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.tunnel.enabled', value: true },
+        ]),
+      );
+    });
+
+    it('leaves an already-on tunnel and a daemon without tunnel support alone', async () => {
+      await toggleOn([
+        { path: 'server.bindAddress', value: ['192.0.2.10'] },
+        { path: 'server.tunnel.enabled', value: true },
+        { path: 'server.tunnel.only', value: false },
+      ]);
+      cleanup();
+      await toggleOn([{ path: 'server.bindAddress', value: ['192.0.2.10'] }]);
+      expect(mocks.mockSettingsUpdate.mock.calls.flat(2)).not.toContainEqual(
+        expect.objectContaining({ path: 'server.tunnel.enabled' }),
+      );
+    });
+  });
+
   describe('mobile pairing dialog', () => {
     async function renderPairing() {
       mocks.mockSettingsList.mockResolvedValue([
@@ -1529,7 +1586,7 @@ describe('WebSocketApiSettings', () => {
       );
     });
 
-    it('first enable from a loopback-only daemon defaults bindAddress to [0.0.0.0] with the tunnel untouched', async () => {
+    it('first enable from a loopback-only daemon defaults bindAddress to [0.0.0.0] and turns the tunnel on', async () => {
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({
           enabled: false,
@@ -1550,7 +1607,7 @@ describe('WebSocketApiSettings', () => {
         settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
       );
       mocks.mockSettingsList.mockResolvedValue(
-        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
+        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: true, only: false } }),
       );
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       await fireEvent.click(screen.getByRole('switch'));
@@ -1561,6 +1618,7 @@ describe('WebSocketApiSettings', () => {
         ]);
         expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
           { path: 'server.bindAddress', value: ['0.0.0.0'] },
+          { path: 'server.tunnel.enabled', value: true },
         ]);
       });
       // The bind change rebinds listeners → pairing info is re-fetched.
@@ -1577,7 +1635,7 @@ describe('WebSocketApiSettings', () => {
         screen
           .getByRole('switch', { name: m.settings_tunnel_enable_label() })
           .getAttribute('aria-checked'),
-      ).toBe('false');
+      ).toBe('true');
     });
 
     it('first enable leaves a bindAddress already customized beyond loopback alone', async () => {
