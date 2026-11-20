@@ -19,7 +19,10 @@
   import { commitOnboardingProviderSelection } from '../utils/commit-onboarding-provider-selection';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
-  import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
+  import {
+    orderOnboardingProviders,
+    resolveFreeOnboardingProvider,
+  } from '../utils/order-onboarding-providers';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { providerInstallCommand } from '$features/providers/utils/provider-install-commands';
 
@@ -126,25 +129,27 @@
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
    *  not-installed) from the last-known statuses, then Claude Code, Codex
    *  and the rest in catalog order within each tier. Tier 1 requires `authenticated === true` — a
-   *  stricter bar than `isProviderReady`, which counts unknown auth as ready. */
+   *  stricter bar than `isProviderReady`, which counts unknown auth as ready.
+   *  When nothing else is installed, OpenCode (free models, no sign-in) leads. */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
     // Reactive reads from Redux selectors
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
-    return orderOnboardingProviders($catalogEntries$, statusMap)
-      .filter((p) =>
-        // Feature-code gate + env-var gate (via availability status, default-deny)
-        isOnboardingProviderVisible({
-          provider: p,
-          isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
-          status: statusMap[p.id],
-          enabled: $enabledProviders$[p.id] === true,
-          orchestrator: $orchestrator$,
-        }),
-      )
-      .map((p) => {
+    const visible = $catalogEntries$.filter((p) =>
+      // Feature-code gate + env-var gate (via availability status, default-deny)
+      isOnboardingProviderVisible({
+        provider: p,
+        isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
+        status: statusMap[p.id],
+        enabled: $enabledProviders$[p.id] === true,
+        orchestrator: $orchestrator$,
+      }),
+    );
+    const freeProviderId = resolveFreeOnboardingProvider(visible, statusMap, hasCheckedOnce);
+    return orderOnboardingProviders(visible, statusMap, { promotedProviderId: freeProviderId }).map(
+      (p) => {
         const status = statusMap[p.id];
         const inFlight = loadingMap[p.id];
         return {
@@ -175,8 +180,10 @@
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
           unavailableReason: status?.unavailableReason,
+          free: p.id === freeProviderId,
         };
-      });
+      },
+    );
   });
 
   /** A provider is ready when installed and not explicitly unauthenticated

@@ -20,6 +20,8 @@ export interface ProviderStatus {
   warning?: string;
   /** Whether this provider supports npx fallback when binary is unresolved. */
   hasNpxFallback?: boolean;
+  /** Not installed, but runs from its npm package through npx (discovery `hasNpxFallback`). */
+  viaNpx?: boolean;
   /** CLI version the daemon reported for the resolved binary (discovery `cliVersion`). */
   version?: string;
   /**

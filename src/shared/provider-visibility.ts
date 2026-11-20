@@ -1,8 +1,12 @@
-/** Auggie is offered only to existing installations or users who enabled it. */
+/**
+ * Auggie is offered only to existing installations or users who enabled it.
+ * Running from its npm package through npx is not an installation.
+ */
 export function isProviderListed(
   providerId: string | undefined,
-  installed: boolean | undefined,
+  status: { readonly available?: boolean; readonly viaNpx?: boolean } | undefined,
   enabled = false,
 ): boolean {
-  return providerId !== 'auggie' || installed === true || enabled;
+  const installed = status?.available === true && status.viaNpx !== true;
+  return providerId !== 'auggie' || installed || enabled;
 }

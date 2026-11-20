@@ -93,7 +93,7 @@ export const selectContextListedProviderIds = store.createSelector(
       : selectProviderStatusMap.select(state);
     return selectContextProviderEntries
       .select(state, workspaceId)
-      .filter((p) => isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true))
+      .filter((p) => isProviderListed(p.id, status[p.id], enabled[p.id] === true))
       .map((p) => p.id);
   },
 );

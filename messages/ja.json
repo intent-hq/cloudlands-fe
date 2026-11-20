@@ -4483,6 +4483,7 @@
   "onboarding_providerCard_requiresNpx_before": "Node.js（npx）が必要 —",
   "onboarding_providerCard_selected_ariaLabel": "{name}（選択済み）",
   "onboarding_providerCard_selected_label": "選択済み",
+  "onboarding_providerCard_free_label": "無料",
   "onboarding_providerCard_use_ariaLabel": "{name} を使用",
   "onboarding_requirementsStep_checkAgain_label": "再確認",
   "onboarding_requirementsStep_checking_label": "お使いのマシンで git と Node.js を確認しています…",

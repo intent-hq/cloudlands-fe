@@ -23,7 +23,9 @@ export interface ProviderEntryGroups<T> {
 
 export interface GroupProviderEntriesOptions {
   isProviderEnabled: (providerId: string) => boolean;
-  availabilityByProviderId: Readonly<Record<string, { readonly available: boolean } | undefined>>;
+  availabilityByProviderId: Readonly<
+    Record<string, { readonly available: boolean; readonly viaNpx?: boolean } | undefined>
+  >;
   hiddenProviderIds?: readonly string[];
   activeProviderId?: string | null;
 }
@@ -74,8 +76,7 @@ export function groupProviderEntries<T extends OrderableProviderEntry>(
 
   for (const entry of orderProviderEntries(entries, hiddenProviderIds)) {
     const enabled = isProviderEnabled(entry.id);
-    if (!isProviderListed(entry.id, availabilityByProviderId[entry.id]?.available, enabled))
-      continue;
+    if (!isProviderListed(entry.id, availabilityByProviderId[entry.id], enabled)) continue;
     if (enabled) {
       groups.enabled.push(entry);
     } else if (availabilityByProviderId[entry.id]?.available === true) {

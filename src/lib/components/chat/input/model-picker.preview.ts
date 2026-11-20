@@ -458,7 +458,7 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
       setup: setupModels(
         true,
         false,
-        'codex: Install codex on the execution host and make it available on PATH, then retry. Intent requires the installed CLI; no bundled runtime replaces a missing one.',
+        'codex: Install codex on the execution host and make it available on PATH, then retry.',
         undefined,
         'cli-missing',
       ),

@@ -45,6 +45,13 @@
           brand: { color1: '#CBE6FF', color2: '#DDBEFC', isLight: true },
         },
       },
+      free: {
+        props: {
+          ...base,
+          provider: { ...provider, id: 'opencode', name: 'OpenCode', available: false, free: true },
+          brand: { color1: '#000', color2: '#1E1E1E' },
+        },
+      },
       unavailable: { props: { ...base, provider: { ...provider, available: false } } },
     },
   });

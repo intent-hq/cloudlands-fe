@@ -59,7 +59,10 @@ import { mockInvoke } from '$shared/ipc-mock-router';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
-import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
+import type {
+  ProviderAvailabilityResult,
+  ProviderStatus,
+} from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -411,6 +414,12 @@ describe('provider-status-bridge-seeder', () => {
         },
         { name: 'absent', row: { id: 'claude-code', installed: false }, available: false },
         {
+          // No `claude` CLI and no bundled fallback: nothing can launch.
+          name: 'npx launch without the claude CLI or a bundled copy',
+          row: { id: 'claude-code', installed: true, resolvedPath: '/bin/npx', cliResolved: false },
+          available: false,
+        },
+        {
           name: 'gated',
           row: { id: 'claude-code', installed: true, gatedOff: 'disabled' },
           available: false,
@@ -565,6 +574,199 @@ describe('provider-status-bridge-seeder', () => {
             : {},
         );
       }
+    },
+  );
+
+  describe.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
+    'Claude Code and Codex without an installed CLI through %s',
+    (channel) => {
+      const npxOk = { resolvedPath: '/usr/bin/npx', version: '10.9.0', versionOk: true };
+      it.each([
+        { id: 'claude-code', key: 'claudeCode', sweep: { 'claude-code': false } },
+        { id: 'codex', key: 'codex', sweep: { codex: false } },
+      ] as const)(
+        '$id runs its bundled CLI through npx, signed out',
+        async ({ id, key, sweep }) => {
+          routeDaemon({
+            'host.checkAuggie': { available: false },
+            'host.toolAvailability': NO_TOOLS,
+            'host.findBinary': { available: false },
+            'host.providerDiscovery': {
+              providers: [{ id, installed: true, cliResolved: false, hasNpxFallback: true }],
+              npx: npxOk,
+            },
+            'host.providerAuthStatus':
+              channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? authOne(id, false) : authSweep(sweep),
+          });
+          const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+            channel,
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? id : undefined,
+          );
+          expect(response.success).toBe(true);
+          const status =
+            channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+              ? response.data?.providers[key]
+              : response.data;
+          expect(status).toMatchObject({ available: true, viaNpx: true, authenticated: false });
+        },
+      );
+
+      it('keeps an installed Codex CLI, not npx', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': {
+            tools: { ...NO_TOOLS.tools, codex: { available: true }, npx: { available: true } },
+          },
+          'host.findBinary': { available: true },
+          'host.providerDiscovery': {
+            providers: [{ id: 'codex', installed: true, cliResolved: true }],
+            npx: npxOk,
+          },
+          'host.providerAuthStatus':
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE
+              ? authOne('codex', true)
+              : authSweep({ codex: true }),
+        });
+        const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+          channel,
+          channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? 'codex' : undefined,
+        );
+        const status =
+          channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+            ? response.data?.providers.codex
+            : response.data;
+        expect(status?.available).toBe(true);
+        expect(status).not.toHaveProperty('viaNpx');
+      });
+    },
+  );
+
+  describe.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
+    'OpenCode without an installed CLI through %s',
+    (channel) => {
+      const opencodeRow = { id: 'opencode', installed: false, hasNpxFallback: true };
+      const npxOk = { resolvedPath: '/usr/bin/npx', version: '10.9.0', versionOk: true };
+      const status = async () => {
+        const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+          channel,
+          channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? 'opencode' : undefined,
+        );
+        expect(response.success).toBe(true);
+        return channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+          ? { status: response.data?.providers.opencode, all: response.data }
+          : { status: response.data, all: undefined };
+      };
+
+      it('runs from npx, with the daemon auth verdict', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: false },
+          'host.providerDiscovery': { providers: [opencodeRow], npx: npxOk },
+          'host.providerAuthStatus':
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE
+              ? authOne('opencode', true)
+              : authSweep({ opencode: true }),
+        });
+        const { status: opencode, all } = await status();
+        expect(opencode).toMatchObject({ available: true, viaNpx: true, authenticated: true });
+        // Unsloth needs the real opencode binary, not npx.
+        expect(all?.providers.unsloth?.available ?? false).toBe(false);
+      });
+
+      it.each([
+        { name: 'npx is missing', npx: { resolvedPath: null, version: null, versionOk: false } },
+        { name: 'npx is too old', npx: { ...npxOk, version: '6.14.0', versionOk: false } },
+      ])('stays unavailable when $name', async ({ npx }) => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: false },
+          'host.providerDiscovery': { providers: [opencodeRow], npx },
+          'host.providerAuthStatus': authSweep(),
+        });
+        const { status: opencode } = await status();
+        expect(opencode?.available).toBe(false);
+        expect(opencode).not.toHaveProperty('viaNpx');
+      });
+
+      it.each([
+        { id: 'grok', key: 'grok', sweep: { grok: false } },
+        { id: 'auggie', key: 'auggie', sweep: { auggie: false } },
+      ] as const)('runs $id from its npm package, signed out', async ({ id, key, sweep }) => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: false },
+          'host.providerDiscovery': {
+            providers: [{ id, installed: false, hasNpxFallback: true }],
+            npx: npxOk,
+          },
+          'host.providerAuthStatus':
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? authOne(id, false) : authSweep(sweep),
+        });
+        const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+          channel,
+          channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? id : undefined,
+        );
+        const status =
+          channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+            ? response.data?.providers[key]
+            : response.data;
+        expect(status).toMatchObject({ available: true, viaNpx: true, authenticated: false });
+      });
+
+      it('shows Log in for an npx provider until a sign-in is confirmed, except OpenCode', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: false },
+          'host.providerDiscovery': {
+            providers: [opencodeRow, { id: 'grok', installed: false, hasNpxFallback: true }],
+            npx: npxOk,
+          },
+          'host.providerAuthStatus': (params: unknown) => {
+            const id = (params as { providerId?: string } | undefined)?.providerId;
+            return id ? authOne(id, null) : authSweep();
+          },
+        });
+        for (const [id, key, authenticated] of [
+          ['grok', 'grok', false],
+          ['opencode', 'opencode', undefined],
+        ] as const) {
+          const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+            channel,
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? id : undefined,
+          );
+          const status =
+            channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+              ? response.data?.providers[key]
+              : response.data;
+          expect(status?.viaNpx).toBe(true);
+          expect(status?.authenticated).toBe(authenticated);
+        }
+      });
+
+      it('prefers an installed CLI over npx', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': {
+            tools: { ...NO_TOOLS.tools, opencode: { available: true } },
+          },
+          'host.findBinary': { available: true },
+          'host.providerDiscovery': {
+            providers: [{ ...opencodeRow, installed: true }],
+            npx: npxOk,
+          },
+          'host.providerAuthStatus':
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE
+              ? authOne('opencode', true)
+              : authSweep({ opencode: true }),
+        });
+        const { status: opencode } = await status();
+        expect(opencode?.available).toBe(true);
+        expect(opencode).not.toHaveProperty('viaNpx');
+      });
     },
   );
 

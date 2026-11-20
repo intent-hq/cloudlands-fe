@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getOnboardingProviderTier, orderOnboardingProviders } from './order-onboarding-providers';
+import {
+  getOnboardingProviderTier,
+  orderOnboardingProviders,
+  resolveFreeOnboardingProvider,
+} from './order-onboarding-providers';
 
 const ids = (providers: { id: string }[]) => providers.map((p) => p.id);
 const providers = (...list: string[]) => list.map((id) => ({ id }));
@@ -106,6 +110,12 @@ describe('orderOnboardingProviders', () => {
     expect(ids(result)).toEqual(['opencode', 'auggie', 'claude-code', 'codex']);
   });
 
+  it('leads with the promoted provider ahead of Claude Code and Codex', () => {
+    const catalog = providers('claude-code', 'codex', 'auggie', 'opencode');
+    const result = orderOnboardingProviders(catalog, {}, { promotedProviderId: 'opencode' });
+    expect(ids(result)).toEqual(['opencode', 'claude-code', 'codex', 'auggie']);
+  });
+
   it('applies the Claude Code, Codex priority inside a detected tier', () => {
     const catalog = providers('auggie', 'codex', 'claude-code');
     const ready = { available: true, authenticated: true };
@@ -115,5 +125,58 @@ describe('orderOnboardingProviders', () => {
       'claude-code': ready,
     });
     expect(ids(result)).toEqual(['claude-code', 'codex', 'auggie']);
+  });
+});
+
+describe('resolveFreeOnboardingProvider', () => {
+  const catalog = providers('claude-code', 'codex', 'opencode');
+
+  it('promotes OpenCode once the first check finds nothing installed', () => {
+    const statusMap = {
+      'claude-code': { available: false },
+      codex: { available: false },
+      opencode: { available: true, viaNpx: true },
+    };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
+  });
+
+  it('does not promote OpenCode when it cannot run (no npx)', () => {
+    const statusMap = { 'claude-code': { available: false }, opencode: { available: false } };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBeUndefined();
+  });
+
+  it('keeps OpenCode promoted after it alone is installed', () => {
+    const statusMap = {
+      'claude-code': { available: false },
+      opencode: { available: true, authenticated: true },
+    };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
+  });
+
+  it('keeps OpenCode promoted when others only run through npx', () => {
+    const statusMap = {
+      'claude-code': { available: true, authenticated: false, viaNpx: true },
+      codex: { available: true, authenticated: false, viaNpx: true },
+      opencode: { available: true, authenticated: true, viaNpx: true },
+    };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
+  });
+
+  it('does not promote while the first check is still running', () => {
+    expect(resolveFreeOnboardingProvider(catalog, {}, false)).toBeUndefined();
+  });
+
+  it('does not promote when another provider is installed, even logged out', () => {
+    const statusMap = {
+      codex: { available: true, authenticated: false },
+      opencode: { available: true, viaNpx: true },
+    };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBeUndefined();
+  });
+
+  it('does not promote when OpenCode is not offered', () => {
+    expect(
+      resolveFreeOnboardingProvider(providers('claude-code', 'codex'), {}, true),
+    ).toBeUndefined();
   });
 });

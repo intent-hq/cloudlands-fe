@@ -19,6 +19,7 @@
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { observeOverflow } from '$lib/actions/observe-overflow';
+  import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ProviderTerminalButton from './ProviderTerminalButton.svelte';
@@ -50,6 +51,8 @@
     warning?: string;
     /** The CLI is present but refused (e.g. Cursor's Grok agent host); `warning` explains why. */
     unavailableReason?: string;
+    /** Promoted as the free choice when nothing else is installed. */
+    free?: boolean;
   }
 
   export interface ProviderBrandColors {
@@ -232,6 +235,11 @@
           >
             <Fa icon={faArrowUpRightFromSquare} size={11} />
           </Button>
+        {/if}
+        {#if provider.free}
+          <Badge variant="solid" color="green" size="compact" class="ml-auto">
+            {m.onboarding_providerCard_free_label()}
+          </Badge>
         {/if}
       </div>
 
