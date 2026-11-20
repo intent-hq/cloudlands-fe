@@ -289,11 +289,19 @@ describe('TabWindowRegistry', () => {
     const ctx = setup();
     const moves = vi.fn();
     const registry = new TabWindowRegistry({ ...ctx.deps, moveBrowserPage: moves });
+    // Fields beyond TabWindowTab (here the terminal id) pass through unchanged.
+    const terminal = {
+      id: 'term-1',
+      type: 'terminal',
+      title: 'Shell',
+      closable: true,
+      terminalId: 't1',
+    };
     await registry.open(asWindow(ctx.source), 'local', {
       tabWindowId: 'tw-9',
       workspaceId: 'ws-1',
       sourceLayoutId: 'ws-1',
-      tab: { id: 'term-1', type: 'terminal', title: 'Shell', closable: true, terminalId: 't1' },
+      tab: terminal,
     });
     ctx.opened.at(-1)!.close();
     expect(moves).not.toHaveBeenCalled();
