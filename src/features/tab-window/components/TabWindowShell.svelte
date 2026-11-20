@@ -113,7 +113,7 @@
         </Button>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-compact"
           aria-label={m.tabWindow_closeTab_label()}
           title={m.tabWindow_closeTab_label()}
           data-testid="tab-window-close-tab"

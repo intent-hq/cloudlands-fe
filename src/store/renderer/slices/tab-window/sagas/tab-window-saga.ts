@@ -16,16 +16,7 @@
  * close it on request. Its workspace deleted closes it for real; the tab
  * leaving its one-tab layout any other way moves it back.
  */
-import {
-  call,
-  delay,
-  fork,
-  put,
-  take,
-  takeEvery,
-  takeLatest,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
 import { currentTabWindowId } from '$lib/tab-window/tab-window-renderer';
@@ -274,34 +265,33 @@ function* closeForReal(): SagaGenerator<void> {
 function* watchTab(record: TabWindowRecord, layoutId: string): SagaGenerator<void> {
   let reported = syncedFields(record.tab);
   let leaving = false;
-  yield* takeLatest(
-    (action: { type: string }) => action.type.startsWith('panelLayout/'),
-    function* () {
-      yield* delay(UPDATE_DEBOUNCE_MS);
-      const tab = findPanelTab(yield* selectPanels.effect(layoutId), record.tab.id);
-      if (!tab) {
-        // The tab left this window's layout (its own close, or a cleanup
-        // that runs here too). Move it back rather than close it: nothing is
-        // lost, and the source window's own state decides what stays.
-        if (leaving) return;
-        leaving = true;
-        try {
-          yield* call(invoke, CHANNELS.MOVE_BACK);
-        } catch (error) {
-          logger.warn('Could not move the tab back', { error });
-        }
-        return;
-      }
-      const fields = syncedFields(tab);
-      if (fields === reported) return;
-      reported = fields;
+  // Read the tab after any action settles; the state, not the action, decides.
+  while (true) {
+    yield* take('*');
+    yield* delay(UPDATE_DEBOUNCE_MS);
+    const tab = findPanelTab(yield* selectPanels.effect(layoutId), record.tab.id);
+    if (!tab) {
+      // The tab left this window's layout (its own close, or a cleanup
+      // that runs here too). Move it back rather than close it: nothing is
+      // lost, and the source window's own state decides what stays.
+      if (leaving) continue;
+      leaving = true;
       try {
-        yield* call(invoke, CHANNELS.UPDATE, { tab });
+        yield* call(invoke, CHANNELS.MOVE_BACK);
       } catch (error) {
-        logger.debug('Could not report a tab window change', { error });
+        logger.warn('Could not move the tab back', { error });
       }
-    },
-  );
+      continue;
+    }
+    const fields = syncedFields(tab);
+    if (fields === reported) continue;
+    reported = fields;
+    try {
+      yield* call(invoke, CHANNELS.UPDATE, { tab });
+    } catch (error) {
+      logger.debug('Could not report a tab window change', { error });
+    }
+  }
 }
 
 function* tabWindowSagaFor(tabWindowId: string): SagaGenerator<void> {
@@ -345,12 +335,10 @@ function* tabWindowSagaFor(tabWindowId: string): SagaGenerator<void> {
   yield* takeEvery(closeTabWindowTabRequested, closeForReal);
   const workspaceId = record.workspaceId;
   // Its workspace was deleted: the tab has nothing to go back to.
-  yield* take(
-    (action: { type: string; payload?: unknown }) =>
-      action.type === workspaceDeleted.type &&
-      Array.isArray(action.payload) &&
-      action.payload[0] === workspaceId,
-  );
+  while (true) {
+    const deleted = yield* take(workspaceDeleted);
+    if (deleted.payload[0] === workspaceId) break;
+  }
   yield* call(closeForReal);
 }
 
