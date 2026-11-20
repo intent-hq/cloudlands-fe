@@ -1,0 +1,147 @@
+<!doctype html>
+<title>Passkey fixture page</title>
+<script src="/swa.js"></script>
+<iframe
+  id="frame"
+  src="http://a.localhost:__PORT__/frame"
+  allow="publickey-credentials-get *"
+></iframe>
+<script>
+  const results = {};
+  let controller = null;
+  const bytes = (length, seed) => Uint8Array.from({ length }, (_, i) => (i * 7 + seed) & 255);
+  const b64 = (buffer) => SimpleWebAuthnBrowser.bufferToBase64URLString(buffer);
+  const isShimmed = () => !CredentialsContainer.prototype.get.toString().includes('[native code]');
+
+  function summarize(credential) {
+    const response = credential.response;
+    const attestation = response instanceof AuthenticatorAttestationResponse;
+    return {
+      isPublicKeyCredential: credential instanceof PublicKeyCredential,
+      isAttestation: attestation,
+      isAssertion: response instanceof AuthenticatorAssertionResponse,
+      id: credential.id,
+      rawId: b64(credential.rawId),
+      type: credential.type,
+      authenticatorAttachment: credential.authenticatorAttachment,
+      clientDataJSON: b64(response.clientDataJSON),
+      clientData: JSON.parse(new TextDecoder().decode(response.clientDataJSON)),
+      transports: attestation ? response.getTransports() : undefined,
+      publicKeyAlgorithm: attestation ? response.getPublicKeyAlgorithm() : undefined,
+      publicKeyLength: attestation ? response.getPublicKey().byteLength : undefined,
+      authenticatorDataLength: attestation
+        ? response.getAuthenticatorData().byteLength
+        : response.authenticatorData.byteLength,
+      userHandle: response.userHandle ? b64(response.userHandle) : undefined,
+      extensions: credential.getClientExtensionResults(),
+      json: credential.toJSON(),
+    };
+  }
+
+  window.passkeyPage = {
+    shimmed: isShimmed,
+    start(name, kind, options = {}) {
+      controller = new AbortController();
+      const challenge = bytes(32, 3);
+      const userId = bytes(16, 9);
+      const rp = { name: 'Fixture', ...(options.rpId ? { id: options.rpId } : {}) };
+      const user = { id: userId, name: 'ada@example.com', displayName: 'Ada' };
+      const params = [{ type: 'public-key', alg: -7 }];
+      let pending;
+      if (kind === 'create') {
+        pending = navigator.credentials.create({
+          signal: controller.signal,
+          publicKey: {
+            challenge,
+            rp,
+            user,
+            pubKeyCredParams: params,
+            extensions: { credProps: true },
+          },
+        });
+      } else if (kind === 'get') {
+        pending = navigator.credentials.get({
+          signal: controller.signal,
+          publicKey: { challenge, ...(options.rpId ? { rpId: options.rpId } : {}) },
+        });
+      } else if (kind === 'swa-create') {
+        pending = SimpleWebAuthnBrowser.startRegistration({
+          optionsJSON: {
+            challenge: b64(challenge),
+            rp,
+            user: { ...user, id: b64(userId) },
+            pubKeyCredParams: params,
+            extensions: { credProps: true },
+          },
+        });
+      } else {
+        pending = SimpleWebAuthnBrowser.startAuthentication({
+          optionsJSON: { challenge: b64(challenge) },
+        });
+      }
+      results[name] = { state: 'pending', challenge: b64(challenge) };
+      pending.then(
+        (value) => {
+          results[name] = {
+            state: 'resolved',
+            challenge: b64(challenge),
+            value: value instanceof PublicKeyCredential ? summarize(value) : value,
+          };
+        },
+        (error) => {
+          results[name] = {
+            state: 'rejected',
+            challenge: b64(challenge),
+            name: error?.name,
+            message: String(error?.message ?? error),
+          };
+        },
+      );
+    },
+    abort() {
+      controller?.abort();
+    },
+    result(name) {
+      return results[name];
+    },
+    async capabilities() {
+      return {
+        uvpaa: await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+        conditional: await PublicKeyCredential.isConditionalMediationAvailable(),
+        capabilities: await PublicKeyCredential.getClientCapabilities(),
+      };
+    },
+    frameGet() {
+      results.frame = { state: 'pending' };
+      document.getElementById('frame').contentWindow.postMessage({ tag: 'frame' }, '*');
+    },
+    // Frame tree localhost → a.localhost → localhost: the inner frame matches the
+    // top origin but not its parent.
+    nestedFrameGet() {
+      results.nested = { state: 'pending' };
+      const inner = encodeURIComponent(`${location.origin}/frame`);
+      addFrame('nested', `http://a.localhost:${location.port}/frame?nest=${inner}`, (frame) =>
+        setTimeout(() => frame.contentWindow.postMessage({ tag: 'nested' }, '*'), 300),
+      );
+    },
+    sameOriginFrameGet() {
+      results.same = { state: 'pending' };
+      addFrame('same', '/frame', (frame) => frame.contentWindow.postMessage({ tag: 'same' }, '*'));
+    },
+    removeFrame(id) {
+      document.getElementById(id)?.remove();
+    },
+  };
+  function addFrame(id, src, onload) {
+    const frame = document.createElement('iframe');
+    frame.id = id;
+    frame.allow = 'publickey-credentials-get *';
+    frame.onload = () => onload(frame);
+    frame.src = src;
+    document.body.append(frame);
+  }
+  window.addEventListener('message', (event) => {
+    if (event.data?.frameResult) results[event.data.tag ?? 'frame'] = event.data.frameResult;
+    if (event.data?.frameProbe) results.frameProbe = event.data.frameProbe;
+  });
+</script>
