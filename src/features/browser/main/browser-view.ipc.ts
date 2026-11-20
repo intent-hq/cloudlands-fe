@@ -297,3 +297,19 @@ export async function isMainOwnedBrowserPagesActive(): Promise<boolean> {
   await labReady;
   return labActive;
 }
+
+/**
+ * The machine, workspace and window of a tab's main-owned page, or null
+ * when main has no page for it.
+ */
+export function mainOwnedBrowserPageOwner(
+  tabId: string,
+): { backendId: string; workspaceId: string; window: Electron.BrowserWindow | null } | null {
+  const key = service?.keyOf(tabId);
+  if (!key || !service) return null;
+  return {
+    backendId: key.backendId,
+    workspaceId: key.workspaceId,
+    window: service.windowOf(tabId) ?? null,
+  };
+}

@@ -87,6 +87,14 @@ function setup(overrides: Partial<TabWindowRegistryDeps> = {}) {
     }),
     moveBrowserPage: (tabId, window) => pageWindow.set(tabId, window),
     destroyBrowserPage: (tabId) => destroyedPages.push(tabId),
+    browserPageOwner: (tabId) =>
+      pageWindow.has(tabId) || tabId === 'tab-1'
+        ? {
+            backendId: 'local',
+            workspaceId: 'ws-1',
+            window: (pageWindow.get(tabId) as BrowserWindow | undefined) ?? asWindow(source),
+          }
+        : null,
     isQuitting: () => quitting,
     displayMode: 'full-screen',
     isMac: false,
@@ -307,6 +315,59 @@ describe('TabWindowRegistry', () => {
     expect(moves).not.toHaveBeenCalled();
     expect(ctx.sent.find((m) => m.channel === RETURN_TAB)?.payload).toMatchObject({
       tab: { id: 'term-1', terminalId: 't1' },
+    });
+  });
+
+  describe('page ownership (browser pages are keyed by tab id across machines)', () => {
+    const owned = (owner: { backendId?: string; workspaceId?: string; window?: FakeWindow }) =>
+      setup({
+        browserPageOwner: () => ({
+          backendId: owner.backendId ?? 'local',
+          workspaceId: owner.workspaceId ?? 'ws-1',
+          window: asWindow(owner.window ?? new FakeWindow()),
+        }),
+      });
+
+    it.each([
+      ['another machine', { backendId: 'remote-1' }, 'another workspace'],
+      ['another workspace', { workspaceId: 'ws-2' }, 'another workspace'],
+    ] as const)('refuses a page of %s and leaves it alone', async (_label, owner, message) => {
+      const ctx = owned(owner);
+      ctx.deps.browserPageOwner = vi.fn(() => ({
+        backendId: owner.backendId ?? 'local',
+        workspaceId: owner.workspaceId ?? 'ws-1',
+        window: asWindow(ctx.source),
+      }));
+      await expect(openBrowserTab(ctx)).rejects.toThrow(message);
+      expect(ctx.deps.openFrame).not.toHaveBeenCalled();
+      expect(ctx.pageWindow.size).toBe(0);
+      expect(ctx.registry.status('tw-1').open).toBe(false);
+    });
+
+    it('refuses a page that lives in another window', async () => {
+      const ctx = owned({ window: new FakeWindow() });
+      await expect(openBrowserTab(ctx)).rejects.toThrow('another window');
+      expect(ctx.deps.openFrame).not.toHaveBeenCalled();
+      expect(ctx.pageWindow.size).toBe(0);
+    });
+
+    it("a tab id already in another machine's tab window is refused, not focused", async () => {
+      const ctx = setup();
+      const { window } = await openBrowserTab(ctx);
+      await expect(
+        ctx.registry.open(asWindow(ctx.source), 'remote-1', {
+          tabWindowId: 'tw-2',
+          workspaceId: 'ws-1',
+          sourceLayoutId: 'ws-1',
+          tab: browserTab(),
+        }),
+      ).rejects.toThrow('another workspace');
+      expect(window.focus).not.toHaveBeenCalled();
+    });
+
+    it('a tab with no page (another tab type) needs no page owner', async () => {
+      const ctx = setup({ browserPageOwner: () => null });
+      await expect(openBrowserTab(ctx)).resolves.toMatchObject({ id: 'tw-1' });
     });
   });
 

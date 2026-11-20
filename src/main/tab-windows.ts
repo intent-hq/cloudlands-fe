@@ -60,6 +60,10 @@ export interface TabWindowRegistryDeps {
   moveBrowserPage(tabId: string, window: BrowserWindow): void;
   /** Close a browser tab's main-owned page (no-op without one). */
   destroyBrowserPage(tabId: string): void;
+  /** Who owns a browser tab's main-owned page, or null when it has none. */
+  browserPageOwner(
+    tabId: string,
+  ): { backendId: string; workspaceId: string; window: BrowserWindow | null } | null;
   /** The app is quitting: a closing tab window is saved, not moved back. */
   isQuitting(): boolean;
   /** How a tab window fills the screen on this platform. */
@@ -102,9 +106,14 @@ export class TabWindowRegistry {
   ): Promise<string> {
     const existing = this.entryForTab(params.tab.id);
     if (existing) {
+      // Another machine's or workspace's tab with this id is not the caller's to show.
+      if (existing.backendId !== backendId || existing.record.workspaceId !== params.workspaceId) {
+        throw new Error('This tab belongs to another workspace');
+      }
       this.focus(existing.record.tabWindowId);
       return existing.record.tabWindowId;
     }
+    this.requirePageOwner(params.tab.id, source, backendId, params.workspaceId);
     const tabWindowId =
       isTabWindowId(params.tabWindowId) && !this.entries.has(params.tabWindowId)
         ? params.tabWindowId
@@ -249,6 +258,26 @@ export class TabWindowRegistry {
   }
 
   // Internals
+
+  /**
+   * Browser pages are keyed by tab id across every machine and window. A
+   * tab window moves and can close the page of its tab, so the caller must
+   * own that page: the same machine and workspace, in the caller's window.
+   * A tab with no page (another tab type, or a page not created yet) passes.
+   */
+  private requirePageOwner(
+    tabId: string,
+    source: BrowserWindow,
+    backendId: string,
+    workspaceId: string,
+  ): void {
+    const owner = this.deps.browserPageOwner(tabId);
+    if (!owner) return;
+    if (owner.backendId !== backendId || owner.workspaceId !== workspaceId) {
+      throw new Error('This browser tab belongs to another workspace');
+    }
+    if (owner.window !== source) throw new Error('This browser tab belongs to another window');
+  }
 
   private attach(entry: Entry, window: BrowserWindow): void {
     entry.window = window;

@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   destroyMainOwnedBrowserPage,
   isMainOwnedBrowserPagesActive,
+  mainOwnedBrowserPageOwner,
   moveMainOwnedBrowserPage,
 } from '../features/browser/main/browser-view.ipc';
 import { IPC_CHANNELS } from '../shared/ipc-registry';
@@ -94,6 +95,7 @@ export function registerTabWindowHandlers(): void {
     openReturnFrame,
     moveBrowserPage: moveMainOwnedBrowserPage,
     destroyBrowserPage: destroyMainOwnedBrowserPage,
+    browserPageOwner: mainOwnedBrowserPageOwner,
     isQuitting: isWindowSessionTeardown,
     displayMode: tabWindowDisplayMode(process.platform, process.env),
     isMac: process.platform === 'darwin',
