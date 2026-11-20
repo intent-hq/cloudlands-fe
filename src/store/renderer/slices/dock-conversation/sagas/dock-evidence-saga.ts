@@ -4,7 +4,7 @@ import {
 } from '$features/hud/composer/dock-recording-warm';
 import type { DockMediaSendService } from '$features/hud/composer/dock-media-send';
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
-import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
+import { dockCaptureEditorEnabled } from '$features/hud/media-editor/open-capture-editor';
 import { beginDockEditorHold, endDockEditorHold, showDockEditorShell } from './dock-editor-hold';
 import { Logger } from '$shared/logger';
 
@@ -419,7 +419,7 @@ function* captureWithHold(
     activePair(workspaceId, agentId) &&
     (workspaceId !== CHIEF_WORKSPACE_ID ||
       currentDockServerCapabilities(appStore.state)?.chiefAttachments === true) &&
-    dockCaptureEditorPreviewEnabled()
+    dockCaptureEditorEnabled()
   ) {
     // The editor shows at once (loading) while the screenshot is made durable and admitted.
     showDockEditorShell(hold);
@@ -1479,7 +1479,7 @@ function* placeFinishedClip(
       source &&
       activePair(workspaceId, agentId) &&
       isDockBindingCurrent(binding) &&
-      dockCaptureEditorPreviewEnabled()
+      dockCaptureEditorEnabled()
     ) {
       yield* put(
         dockMediaEditorOpenRequested(

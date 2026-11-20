@@ -11,6 +11,9 @@ type IpcRow = {
   hide?: boolean | null;
   openId?: string;
   currentRegions?: boolean;
+  attachmentId?: string;
+  sourceId?: string;
+  sourceRevision?: number;
 };
 
 /**
@@ -21,14 +24,18 @@ type IpcRow = {
  * the editor request (adopted, not ended); a refused editor ends it; Attach returns to the
  * exact conversation with its prompt focused; a stale attach does nothing.
  */
-test('editor handoff: held through capture/stop, attach returns to the prompt', async ({
+test('editor handoff without a preview flag: Stop opens the canonical editor and a finished tile reopens it', async ({
   mount,
   page,
 }, info) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1000, height: 740 });
   await mount(Harness, {
-    props: { shell: dockRailPreview.states.notch.props, nativePlacementFixture: true },
+    props: {
+      shell: dockRailPreview.states.notch.props,
+      nativePlacementFixture: true,
+      desktopEditorFixture: true,
+    },
     hooksConfig: {
       mockIpc: {
         'window:get-dock-placement': null,
@@ -89,8 +96,13 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     const d = (window as any).__dockComposerE2E.store.state.dockConversation;
     return { workspaceId: d.workspaceId as string, agentId: d.agentId as string };
   });
-  // The editor preview (the only way a capture opens straight in the editor today).
-  await page.evaluate(() => localStorage.setItem('intent.dock.captureEditorPreview', '1'));
+  // Fresh Electron-backed sessions use the editor without a stored preview opt-in.
+  expect(await page.evaluate(() => window.electronAPI?.versions?.electron)).toBe(
+    '42.0.0-ct-desktop',
+  );
+  expect(
+    await page.evaluate(() => localStorage.getItem('intent.dock.captureEditorPreview')),
+  ).toBeNull();
   // Main's side of the handoff, recorded and answered.
   await page.evaluate(() => {
     const api = (window as any).electronAPI;
@@ -170,7 +182,12 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     page.evaluate(
       () => (window as any).__dockComposerE2E.store.state.hud.dockCloseRequest as number,
     );
-  const receipts: Record<string, unknown> = { pair, refusedProbeRetried };
+  const receipts: Record<string, unknown> = {
+    pair,
+    refusedProbeRetried,
+    previewFlag: null,
+    editorIpc: 'mocked; native editor window is outside this browser test',
+  };
 
   // 1. Screenshot: hold → capture → editor request carrying that hold (adopted, not ended).
   // Phase marks, from inside the page: request, image in the evidence, original placed (its
@@ -359,6 +376,9 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   rows = await recordingOpened(stopped.before);
   const stopOpen = rows.find((r) => r.ch === 'dock-capture-editor:open' && r.kind === 'recording')!;
   expect(stopOpen.token).toBe(stopped.hold.token);
+  expect(stopOpen.sourceId).toBeTruthy();
+  expect(stopOpen.attachmentId).toBeTruthy();
+  expect(stopOpen.sourceRevision).toBeGreaterThanOrEqual(0);
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   receipts.recordingStop = { holdAtStart: true, openCarriesHold: true, ended: false };
 
@@ -393,18 +413,42 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   await expect(page.getByTestId('dock-surface')).toHaveAttribute('data-expanded', 'true');
   for (const mode of ['expanded-pill', 'already-compact-pill']) {
     const before = (await ipc()).length;
-    await page.evaluate(
-      ({ workspaceId, agentId, clipId }) =>
-        (window as any).__dockComposerE2E.store.dispatch({
-          type: 'dockConversation/mediaEditorOpenRequested',
-          payload: [workspaceId, agentId, clipId],
-        }),
-      { ...pair, clipId: stopped.clipId },
-    );
+    if (mode === 'expanded-pill') {
+      // Exercise the finished tile's real controller callback, with the preview flag absent.
+      // The rendered tile uses its ContextItem id, not the recording's logical clip id.
+      await page
+        .locator('[data-kind="clip"]')
+        .getByRole('button', { name: /^Clip,/ })
+        .click();
+    } else {
+      // A compact dock has no exposed tile; preserve its idempotent saga contract separately.
+      await page.evaluate(
+        ({ workspaceId, agentId, clipId }) =>
+          (window as any).__dockComposerE2E.store.dispatch({
+            type: 'dockConversation/mediaEditorOpenRequested',
+            payload: [workspaceId, agentId, clipId],
+          }),
+        { ...pair, clipId: stopped.clipId },
+      );
+    }
     const pillRows = await recordingOpened(before);
     const pill = pillRows.find((r) => r.ch === 'dock-capture-editor:open')!;
+    expect(pill).toMatchObject({
+      sourceId: stopOpen.sourceId,
+      sourceRevision: stopOpen.sourceRevision,
+      attachmentId: stopOpen.attachmentId,
+    });
     await compactFor(pill);
-    receipts[mode] = { compact: true, sameOwner: true, shortcutToggled: false };
+    expect(
+      await page.evaluate(() => localStorage.getItem('intent.dock.captureEditorPreview')),
+    ).toBeNull();
+    receipts[mode] = {
+      compact: true,
+      sameOwner: true,
+      sameCanonicalSource: true,
+      shortcutToggled: false,
+      activatedFromTile: mode === 'expanded-pill',
+    };
   }
   expect(await closeRequests()).toBe(closesBefore);
   await page.screenshot({ path: info.outputPath('16-editor-owner-compact.png') });
