@@ -83,6 +83,8 @@ let labEnabled = false;
  */
 let labActive = false;
 let service: BrowserViewService | null = null;
+/** The Labs setting read at start (resolved once it is known). */
+let labReady: Promise<void> = Promise.resolve();
 
 /** The sender's window and machine; throws for anything but a bound app renderer's main frame. */
 function senderBinding(event: IpcMainInvokeEvent) {
@@ -124,6 +126,7 @@ async function loadBrowserViewLab(): Promise<void> {
  */
 export function registerBrowserViewHandlers(): void {
   const labLoaded = loadBrowserViewLab();
+  labReady = labLoaded;
 
   const views = new BrowserViewService({
     createView: (webPreferences) => new WebContentsView({ webPreferences }),
@@ -272,4 +275,41 @@ export function registerBrowserViewHandlers(): void {
       CHANNELS.COMMAND,
     ),
   );
+}
+
+/**
+ * Move a browser tab's main-owned page to `window` (a tab window, or the
+ * window it goes back to) with the same webContents: no reload. A no-op
+ * without the service or a page for the tab (the `<webview>` path reloads).
+ */
+export function moveMainOwnedBrowserPage(tabId: string, window: Electron.BrowserWindow): void {
+  if (!service?.keyOf(tabId)) return;
+  service.moveToWindow(tabId, window);
+}
+
+/** Close a browser tab's main-owned page: its tab closed in a tab window. */
+export function destroyMainOwnedBrowserPage(tabId: string): void {
+  service?.destroy(tabId);
+}
+
+/** Whether this run uses main-owned browser pages (the Labs setting tab windows are part of). */
+export async function isMainOwnedBrowserPagesActive(): Promise<boolean> {
+  await labReady;
+  return labActive;
+}
+
+/**
+ * The machine, workspace and window of a tab's main-owned page, or null
+ * when main has no page for it.
+ */
+export function mainOwnedBrowserPageOwner(
+  tabId: string,
+): { backendId: string; workspaceId: string; window: Electron.BrowserWindow | null } | null {
+  const key = service?.keyOf(tabId);
+  if (!key || !service) return null;
+  return {
+    backendId: key.backendId,
+    workspaceId: key.workspaceId,
+    window: service.windowOf(tabId) ?? null,
+  };
 }

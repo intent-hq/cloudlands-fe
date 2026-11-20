@@ -30,6 +30,7 @@
     faArrowRight,
     faCheck,
     faComment,
+    faWindowRestore,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -54,6 +55,10 @@
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { toggleExpandPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { openTabInOwnWindowRequested } from '$store/renderer/slices/tab-window/tab-window-slice';
+  import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
+  import { browserPagesMode } from '$lib/components/browser/main-owned-browser-page';
+  import { isTabWindowLayoutId } from '$shared/types/tab-window';
   import {
     PANE_DRAG_MIME,
     clearDraggedPaneState,
@@ -107,6 +112,8 @@
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
   const closePaneShortcut$ = effectiveShortcutReadable('navigation.close-tab');
   const zoomPanelShortcut$ = effectiveShortcutReadable('panel.maximize');
+  const tabWindowShortcut$ = effectiveShortcutReadable('panel.tab-window');
+  const pagesMode$ = browserPagesMode;
   const createColumnRightShortcut$ = effectiveShortcutReadable('panel.create-column-right');
   const movePaneLeftShortcut$ = effectiveShortcutReadable('panel.move-pane-previous-column');
   const movePaneRightShortcut$ = effectiveShortcutReadable('panel.move-pane-next-column');
@@ -199,6 +206,11 @@
     onTabRename,
     onSplitHorizontal,
   }: Props = $props();
+
+  // Labs ("Browser pages in the main process"): any tab can open in its own window.
+  const canOpenTabWindows = $derived(
+    $pagesMode$ === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(layoutId),
+  );
 
   // Panel identity is immutable for this component lifetime. Cleanup must not
   // re-read a parent prop after reactive layout removal has started.
@@ -477,6 +489,21 @@
         icon: faCopy,
         onClick: () => void copyTabTitle(tab),
       });
+    }
+    if (canOpenTabWindows) {
+      items.push(
+        { type: 'separator' },
+        {
+          id: 'open-in-own-window',
+          label: m.tabWindow_openInOwnWindow_label(),
+          icon: faWindowRestore,
+          shortcut: formatShortcut($tabWindowShortcut$),
+          onClick: () =>
+            appStore.dispatch(
+              openTabInOwnWindowRequested(layoutId ?? workspaceId, workspaceId, tab.id),
+            ),
+        },
+      );
     }
     items.push(
       { type: 'separator' },

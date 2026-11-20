@@ -281,3 +281,58 @@ describe('routeFromRendererUrl', () => {
     expect(routeFromRendererUrl('about:blank', '/workspace/new')).toBeNull();
   });
 });
+
+describe('saved tab windows', () => {
+  const tab = { id: 'tab-1', type: 'browser', title: 'Page', closable: true };
+  const tabWindow = { tabWindowId: 'tw-1', workspaceId: 'ws-1', sourceLayoutId: 'ws-1', tab };
+
+  function read(frames: unknown[], filter = acceptAll) {
+    return parseWindowFramesFile({ version: 1, frames }, filter);
+  }
+
+  it('keeps a tab window with its record, on its own page, full screen kept', () => {
+    expect(
+      read([
+        {
+          bounds: BOUNDS,
+          isFullScreen: true,
+          machines: [{ id: 'local', route: '/workspace/other' }],
+          selectedId: 'local',
+          tabWindow: { ...tabWindow, tab: { ...tab, tabWindowId: 'stale' } },
+        },
+      ]),
+    ).toEqual([
+      {
+        bounds: BOUNDS,
+        isFullScreen: true,
+        machines: [{ id: 'local', route: '/tab-window/tw-1' }],
+        selectedId: 'local',
+        tabWindow,
+      },
+    ]);
+  });
+
+  it('drops a tab window with a bad record or a forgotten machine', () => {
+    const base = { bounds: BOUNDS, machines: [{ id: 'local' }], selectedId: 'local' };
+    expect(read([{ ...base, tabWindow: { ...tabWindow, tabWindowId: '../x' } }])).toEqual([]);
+    expect(read([{ ...base, tabWindow: { ...tabWindow, tab: { id: 'tab-1' } } }])).toEqual([]);
+    expect(read([{ ...base, tabWindow: { ...tabWindow, workspaceId: '' } }])).toEqual([]);
+    expect(read([{ ...base, tabWindow }], onlySaved('remote'))).toEqual([]);
+  });
+
+  it('restores tab windows after every app frame, so they never become the main window', () => {
+    const tabFrame: FrameSession = {
+      bounds: BOUNDS,
+      machines: [{ id: 'local', route: '/tab-window/tw-1' }],
+      selectedId: 'local',
+      tabWindow,
+    };
+    const app = frame(['local']);
+    const remote = frame(['remote']);
+    expect(orderFramesForRestore([tabFrame, remote, app], 'local')).toEqual([
+      app,
+      remote,
+      tabFrame,
+    ]);
+  });
+});

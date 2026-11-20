@@ -47,6 +47,14 @@ describe('classifyBrowserViewShortcut', () => {
     expect(action({ key: 'ArrowRight', meta: true, alt: true }, false)).toBeNull();
   });
 
+  it('forwards open in own window / move back with the platform modifier only', () => {
+    expect(action({ key: 'Enter', meta: true, shift: true }, true)).toBe('forward');
+    expect(action({ key: 'Enter', control: true, shift: true }, false)).toBe('forward');
+    expect(action({ key: 'Enter', control: true, shift: true }, true)).toBeNull();
+    expect(action({ key: 'Enter', meta: true }, true)).toBeNull();
+    expect(action({ key: 'Enter', shift: true }, true)).toBeNull();
+  });
+
   it('keeps the modifier state for the renderer keydown', () => {
     expect(classifyBrowserViewShortcut(key({ key: ']', meta: true, shift: true }), true)).toEqual({
       action: 'forward',

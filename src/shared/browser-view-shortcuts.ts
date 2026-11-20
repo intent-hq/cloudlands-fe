@@ -67,6 +67,8 @@ export function classifyBrowserViewShortcut(
   if (isPlatformMod && alt && !shift && (key === 'ArrowLeft' || key === 'ArrowRight')) {
     return shortcut('forward');
   }
+  // Open the tab in its own window, or move it back (Mod+Shift+Enter).
+  if (isPlatformMod && shift && !alt && key === 'Enter') return shortcut('forward');
   if (isMod && shift && !alt && letter('c')) return shortcut('copy-url');
   if ((meta && alt && letter('i')) || (control && shift && letter('i'))) {
     return shortcut('devtools');

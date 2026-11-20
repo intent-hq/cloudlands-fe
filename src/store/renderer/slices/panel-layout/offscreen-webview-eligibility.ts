@@ -24,7 +24,9 @@ type OffscreenSkipReason =
   /** A URL the embedded browser does not navigate to. */
   | 'url-not-loadable'
   /** The registry homes the tab on another client (or this client's id is unknown). */
-  | 'hosted-elsewhere';
+  | 'hosted-elsewhere'
+  /** The tab is in a tab window of its own, whose renderer shows its page. */
+  | 'in-tab-window';
 
 export type OffscreenEligibility =
   { eligible: true } | { eligible: false; reason: OffscreenSkipReason };
@@ -63,6 +65,7 @@ export function classifyOffscreenTab(
   context: OffscreenEligibilityContext,
 ): OffscreenEligibility {
   if (tab.type !== 'browser') return { eligible: false, reason: 'not-browser' };
+  if (tab.tabWindowId) return { eligible: false, reason: 'in-tab-window' };
   // Hidden (user-closed or agent-hidden) owned tabs have no panel to render
   // them even in the displayed workspace, so only panel tabs defer to it.
   if (context.placement === 'panel' && context.workspaceDisplayed) {

@@ -47,6 +47,7 @@ export const SHORTCUT_DEFAULTS = {
   'panel.move-pane-next-column': 'mod+alt+pagedown',
   'panel.move-pane-previous-column': 'mod+alt+pageup',
   'panel.copy-browser-url': 'mod+shift+c',
+  'panel.tab-window': 'mod+shift+enter',
   'leader.navigate-panels': 'h/j/k/l',
   'leader.resize-panels': 'H/J/K/L',
   'leader.split-right': '%',

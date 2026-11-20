@@ -38,6 +38,8 @@ export interface UsePanelShortcutsOptions {
   onFocusNotes?: () => void;
   onFocusActivity?: () => void;
   onMaximizePanel?: () => void;
+  /** Open the focused tab in a window of its own (Cmd/Ctrl+Shift+Enter). */
+  onOpenTabWindow?: () => void;
   onLayoutFocus?: () => void;
   onLayoutSplit?: () => void;
   onLayoutFull?: () => void;
@@ -70,6 +72,23 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
         event.preventDefault();
         logger.debug('Maximizing panel');
         options.onMaximizePanel?.();
+        return;
+      }
+
+      if (
+        options.onOpenTabWindow &&
+        matchesShortcut(
+          event,
+          resolveShortcut(
+            'panel.tab-window',
+            appStore.state.userPreferences?.shortcutOverrides ?? {},
+          ),
+          isMac,
+        )
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onOpenTabWindow();
         return;
       }
 

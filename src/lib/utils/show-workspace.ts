@@ -26,6 +26,7 @@ import { call, put, select, type SagaGenerator } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { isHudWindowRenderer } from './hud-window';
+import { isTabWindowRenderer } from '../tab-window/tab-window-renderer';
 import { navigateToRoute } from './navigation.client';
 import { bumpNavigationEpoch, navigationEpoch } from './navigation-epoch';
 import { currentRoutePath, parseWorkspaceRoute } from './workspace-route-path';
@@ -92,9 +93,9 @@ async function runJump(
   return jump;
 }
 
-/** Nothing to do for an empty id or in the HUD window. */
+/** Nothing to do for an empty id, in the HUD window, or in a tab window. */
 function skipJump(workspaceId: string): boolean {
-  return !workspaceId || isHudWindowRenderer();
+  return !workspaceId || isHudWindowRenderer() || isTabWindowRenderer();
 }
 
 /**

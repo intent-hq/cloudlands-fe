@@ -18,6 +18,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { readWindowRail } from './machine-rail-state';
 import { getAppWindows } from './offscreen-window';
 import { getMainWindow } from './state';
+import { isTabWindow } from './tab-window-identity';
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
@@ -130,11 +131,12 @@ export function trackFrameFocus(): void {
 
 /**
  * Every live frame, the most recently focused first. Frames not focused since
- * {@link trackFrameFocus} started keep window order after them.
+ * {@link trackFrameFocus} started keep window order after them. Tab windows
+ * (one panel tab each) are not listed: nothing but their own tab goes there.
  */
 export function framesByRecentFocus(): BrowserWindowType[] {
   return getAppWindows()
-    .filter(isFrame)
+    .filter((window) => isFrame(window) && !isTabWindow(window))
     .sort((a, b) => (lastFocused.get(b) ?? 0) - (lastFocused.get(a) ?? 0));
 }
 
@@ -148,7 +150,7 @@ export function frameToShow(
   machineId: string,
   preferred?: BrowserWindowType | null,
 ): BrowserWindowType | null {
-  const holders = framesHolding(machineId);
+  const holders = framesHolding(machineId).filter((window) => !isTabWindow(window));
   if (preferred && holders.includes(preferred)) return preferred;
   const focused = BrowserWindow.getFocusedWindow();
   if (focused && holders.includes(focused)) return focused;
@@ -158,6 +160,6 @@ export function frameToShow(
 /** The focused frame, else the most recently focused one (window order before any focus); null with no frame. */
 export function mostRecentFrame(): BrowserWindowType | null {
   const focused = BrowserWindow.getFocusedWindow();
-  if (focused && isFrame(focused)) return focused;
+  if (focused && isFrame(focused) && !isTabWindow(focused)) return focused;
   return framesByRecentFocus()[0] ?? null;
 }

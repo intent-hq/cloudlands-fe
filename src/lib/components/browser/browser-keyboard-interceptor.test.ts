@@ -45,6 +45,17 @@ describe('browser keyboard interceptor script', () => {
     expect(getBrowserHistoryDirection(parseForwardedPanelShortcut(messages[0])!)).toBeNull();
   });
 
+  it.each([
+    ['MacIntel', { key: 'Enter', metaKey: true, shiftKey: true }, true],
+    ['Win32', { key: 'Enter', ctrlKey: true, shiftKey: true }, true],
+    ['MacIntel', { key: 'Enter', ctrlKey: true, shiftKey: true }, false],
+  ] as const)('on %s, %o forwards open in own window: %s', (platform, init, forwarded) => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    const { messages } = pressInPage(init);
+    expect(messages.length > 0).toBe(forwarded);
+    if (forwarded) expect(parseForwardedPanelShortcut(messages[0])?.key).toBe('Enter');
+  });
+
   it('forwards Mod+Shift brackets for workspace tab switching', () => {
     const { messages } = pressInPage({ key: '}', metaKey: true, shiftKey: true });
     expect(parseForwardedPanelShortcut(messages[0])).toEqual({
