@@ -31,6 +31,29 @@ function isFileInput(target: EventTarget | null): target is HTMLInputElement {
   );
 }
 
+/**
+ * Disk paths of the files this module put into inputs, keyed by the `File`
+ * objects themselves. Only main's answer to a user's pick fills it (no setter
+ * is exported), so other renderer code cannot plant a path here.
+ */
+const pickedFilePaths = new WeakMap<File, string>();
+
+/**
+ * The host path behind a `File`, for path-based attachment placement.
+ * Native choosers and drops expose it through `electronAPI.getPathForFile`;
+ * files from the in-app picker are rebuilt from bytes, so that returns '' and
+ * the path main approved for the pick is used instead. '' when neither knows.
+ */
+export function sourcePathForFile(file: File, win: Window | undefined = globalThis.window): string {
+  let nativePath = '';
+  try {
+    nativePath = win?.electronAPI?.getPathForFile?.(file) ?? '';
+  } catch {
+    nativePath = '';
+  }
+  return nativePath || pickedFilePaths.get(file) || '';
+}
+
 /** Build the `FileList` the native chooser would have produced. */
 function toFileList(picked: readonly InAppPickedFile[]): FileList {
   const transfer = new DataTransfer();
@@ -60,6 +83,11 @@ export async function pickIntoFileInput(
     return false;
   }
   input.files = toFileList(picked);
+  // Key by the Files the input now holds: those are what change handlers read.
+  Array.from(input.files ?? [], (file, index) => {
+    const path = picked[index]?.path;
+    if (path) pickedFilePaths.set(file, path);
+  });
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
   return true;

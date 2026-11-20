@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { installInAppFileInputs, pickIntoFileInput } from './in-app-file-inputs';
+import { installInAppFileInputs, pickIntoFileInput, sourcePathForFile } from './in-app-file-inputs';
 
 // jsdom has no DataTransfer; a minimal one is enough for FileList building.
 class FakeDataTransfer {
@@ -104,5 +104,38 @@ describe('installInAppFileInputs', () => {
     document.body.click();
     expect(invoke).not.toHaveBeenCalled();
     dispose();
+  });
+});
+
+describe('sourcePathForFile', () => {
+  it('prefers the native path of a dropped or natively picked file', () => {
+    const file = new File(['x'], 'native.txt');
+    const getPathForFile = vi.fn(() => '/native/native.txt');
+    (window as { electronAPI?: unknown }).electronAPI = { getPathForFile };
+    expect(sourcePathForFile(file, window)).toBe('/native/native.txt');
+  });
+
+  it('returns the path main approved for an in-app pick', async () => {
+    (window as { electronAPI?: unknown }).electronAPI = { getPathForFile: () => '' };
+    const input = fileInput({ multiple: true });
+    const invoke = vi.fn(async () => [
+      {
+        name: 'notes.txt',
+        path: '/home/me/notes.txt',
+        type: 'text/plain',
+        data: new Uint8Array([1]),
+      },
+      { name: 'b.pdf', path: '/home/me/b.pdf', type: 'application/pdf', data: new Uint8Array([2]) },
+    ]);
+    await pickIntoFileInput(input, { invoke });
+    const [first, second] = Array.from(input.files ?? []);
+    expect(sourcePathForFile(first, window)).toBe('/home/me/notes.txt');
+    expect(sourcePathForFile(second, window)).toBe('/home/me/b.pdf');
+  });
+
+  it('knows no path for a File the picker did not produce', () => {
+    (window as { electronAPI?: unknown }).electronAPI = { getPathForFile: () => '' };
+    expect(sourcePathForFile(new File(['x'], 'forged.txt'), window)).toBe('');
+    expect(sourcePathForFile(new File(['x'], 'no-bridge.txt'), undefined)).toBe('');
   });
 });
