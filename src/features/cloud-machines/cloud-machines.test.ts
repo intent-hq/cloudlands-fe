@@ -47,12 +47,7 @@ import {
   setupCloudMachinesFixture,
 } from '../../test/cloud-machines-preview';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
-import {
-  selectEffectiveStartOn,
-  selectRemoteMachine,
-  selectStartOnOptions,
-} from '$features/remote-machines/remote-machines-selectors';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
 import {
   providerProfilesLoaded,
   setProviderEnabled,
@@ -473,20 +468,9 @@ describe('an agent on E2B', () => {
   });
 });
 
-describe('Labs flag', () => {
+describe('Start On entry names', () => {
   let restore: () => void = () => {};
   afterEach(() => restore());
-
-  it('keeps a saved cloud machine in Start On while the flag is off', () => {
-    store.init();
-    restore = setupCloudMachinesFixture('connected');
-    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
-    store.dispatch(setLabsCloudMachinesEnabled(false));
-    expect(selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud')).toBe(
-      true,
-    );
-    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_E2B);
-  });
 
   it('names a single entry called "E2B" just E2B in Start On', () => {
     store.init();
@@ -510,22 +494,6 @@ describe('Labs flag', () => {
         m.cloudMachines_startOn_entry_label({ name: 'Team project' }),
       ],
     ]);
-  });
-
-  it('still shows an agent already on E2B, with its sandbox state, while the flag is off', () => {
-    store.init();
-    restore = setupCloudMachinesFixture('labs-off');
-    const sandbox = E2B_SANDBOXES[2]!;
-    const location = agentMachineLocation(
-      {
-        id: 'a-paused',
-        nodeName: 'E2B',
-        nodeId: sandbox.id,
-        placement: { target: 'e2b', checkout: 'isolated' },
-      } as AgentSession,
-      selectRemoteMachine.select(store.state, sandbox.id),
-    );
-    expect(location?.cloud?.state).toBe('paused');
   });
 });
 

@@ -19,8 +19,11 @@ import {
 import CloudMachineRow from './CloudMachineRow.svelte';
 import CloudSandboxList from './CloudSandboxList.svelte';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { NEW_CLOUD_ENTRY, cloudMachineValidated } from './cloud-machines-slice';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import {
+  NEW_CLOUD_ENTRY,
+  cloudMachineValidated,
+  cloudMachinesLoaded,
+} from './cloud-machines-slice';
 
 const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('$features/desktop/desktop-agent-navigation', () => ({ navigateToDesktopAgent }));
@@ -65,22 +68,22 @@ describe('Add machine', () => {
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
   });
 
-  it('hides E2B setup while the Labs flag is off and no cloud machine is saved', async () => {
-    seed('labs-off');
-    const view = render(DevicesSettings);
-    await opensWizardDirectly(view);
-    expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
-    expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
-    expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
-  });
-
-  // The flag is kept per app: an app without it must still add to a backend's saved entries.
-  it('offers Add cloud with saved cloud machines even while the Labs flag is off', async () => {
-    seed('providers');
-    store.dispatch(setLabsCloudMachinesEnabled(false));
+  it('offers every cloud provider the backend lists before any cloud machine is saved', async () => {
+    seed('agent37-add-menu');
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'northflank', 'agent37'],
+        providers: [],
+        machines: [],
+        readAt: Date.now(),
+      }),
+    );
     const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
     expect(await view.findByTestId('add-cloud-e2b')).toBeTruthy();
     expect(view.getByTestId('add-cloud-northflank')).toBeTruthy();
+    expect(view.getByTestId('add-cloud-agent37')).toBeTruthy();
   });
 
   it('has no E2B item once E2B is set up, and the E2B row shows', async () => {

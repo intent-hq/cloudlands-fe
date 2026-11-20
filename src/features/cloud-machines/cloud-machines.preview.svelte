@@ -36,7 +36,6 @@
       'key-rejected': sceneState('key-rejected'),
       'remove-in-use': sceneState('remove-in-use'),
       unsupported: sceneState('unsupported'),
-      'labs-off': sceneState('labs-off'),
       entries: sceneState('entries'),
       'entries-add': sceneState('entries-add'),
       'entries-key-rejected': sceneState('entries-key-rejected'),
