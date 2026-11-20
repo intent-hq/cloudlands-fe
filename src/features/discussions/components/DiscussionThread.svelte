@@ -488,6 +488,18 @@
     observer.observe(element);
     return () => observer.disconnect();
   });
+  // Images load after the first scroll; keep a reader at the bottom pinned there.
+  let history: HTMLDivElement | undefined = $state();
+  $effect(() => {
+    const element = scroller;
+    const content = history;
+    if (!element || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (followingBottom) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  });
   function jumpToNewest() {
     if (!scroller) return;
     scroller.scrollTop = scroller.scrollHeight;
@@ -770,6 +782,7 @@
       onscroll={reportVisible}
     >
       <div
+        bind:this={history}
         class="flex min-h-full flex-col gap-[18px]"
         class:justify-end={initialized && !hasMore && !error && unreadCount === 0}
       >

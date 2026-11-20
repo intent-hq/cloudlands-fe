@@ -15,7 +15,7 @@
     <Button
       variant="plain"
       wrapContent={false}
-      class="max-w-full cursor-zoom-in overflow-hidden rounded-[10px] bg-muted/50"
+      class="h-auto max-w-full cursor-zoom-in overflow-hidden rounded-[10px] bg-muted/50"
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name: image.name })}
       onclick={(event: MouseEvent) => {
         opener = event.currentTarget as HTMLElement;
