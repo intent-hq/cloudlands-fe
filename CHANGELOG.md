@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.3...v2.361.4) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* **dev:** generate i18n before dev:web starts Vite ([#4858](https://github.com/intent-hq/cloudlands-fe/issues/4858)) ([f1687b0](https://github.com/intent-hq/cloudlands-fe/commit/f1687b0715251a84363b0a9accac2d364833c5a6))
+* **markdown:** keep sized images readable inside table cells ([#4863](https://github.com/intent-hq/cloudlands-fe/issues/4863)) ([36957be](https://github.com/intent-hq/cloudlands-fe/commit/36957beb8acf73fec70de8640fe8ed01cd4a40ba))
+* **passkeys:** let browser-panel pages reach the passkey page channels ([#4857](https://github.com/intent-hq/cloudlands-fe/issues/4857)) ([b64c0b6](https://github.com/intent-hq/cloudlands-fe/commit/b64c0b6f9d3dd3c36265dd21367d0588f2ee93bd))
+
 ## [2.361.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.2...v2.361.3) (2026-11-20)
 
 
