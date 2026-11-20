@@ -14,6 +14,7 @@ import {
   shell,
   webContents as electronWebContents,
 } from 'electron';
+import { showOpenDialog } from '../../../main/file-dialogs';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import {
   ANY_HOST,
@@ -1957,9 +1958,7 @@ export function setupSystemIPC() {
               ? ['openFile', 'noResolveAliases']
               : ['openDirectory', 'createDirectory'],
         };
-        const result = targetWindow
-          ? await dialog.showOpenDialog(targetWindow, options)
-          : await dialog.showOpenDialog(options);
+        const result = await showOpenDialog(targetWindow, options);
         return result.canceled ? null : result.filePaths;
       },
       DIALOG_CHANNELS.OPEN,

@@ -64,6 +64,7 @@ import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
+import { inAppFileDialogSaga } from './slices/in-app-file-dialog/sagas/in-app-file-dialog-saga';
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
@@ -270,6 +271,7 @@ export const sagas = [
   collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
+  inAppFileDialogSaga,
   statsReadSaga,
   pluginsSettingsSaga,
   prMonitorSaga,

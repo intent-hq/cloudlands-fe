@@ -14,10 +14,12 @@
     clearCreateDirectoryError,
     clearPathNavigationError,
     createDirectoryRequested,
+    directoryPickerSourceSet,
     loadDirectoryRequested,
     navigateToPathRequested,
     resetDirectoryPicker,
     type DirectoryPickerListing,
+    type DirectoryPickerSource,
   } from '$store/renderer/slices/directory-picker/directory-picker-slice';
   import {
     selectDirectoryPickerCreateError,
@@ -39,8 +41,20 @@
     initialPath?: string;
     /** Submit-button label. Defaults to the label for the active mode. */
     selectLabel?: string;
-    mode?: 'directory' | 'file';
+    mode?: 'directory' | 'file' | 'save';
+    /** File mode: allow several files; the choice arrives through `onSelectMany`. */
+    multiple?: boolean;
+    /** Lowercase extensions without the dot; other files are hidden. */
+    extensions?: string[];
+    /** Save mode: the file name to start with. */
+    defaultFileName?: string;
+    /**
+     * `daemon` (default) lists the daemon host; `local` lists the frontend host
+     * through main, for the in-app stand-in of native file dialogs.
+     */
+    source?: DirectoryPickerSource;
     onSelect: (path: string) => void;
+    onSelectMany?: (paths: string[]) => void;
     onClose: () => void;
   }
 
@@ -52,16 +66,27 @@
     initialPath,
     selectLabel,
     mode = 'directory',
+    multiple = false,
+    extensions,
+    defaultFileName,
+    source = 'daemon',
     onSelect,
+    onSelectMany,
     onClose,
   }: Props = $props();
 
   const modeDefaultLabel = $derived(
-    mode === 'file'
-      ? m.onboarding_dirPicker_selectFile_label()
-      : m.onboarding_dirPicker_selectFolder_label(),
+    mode === 'save'
+      ? m.onboarding_dirPicker_save_label()
+      : mode === 'file'
+        ? multiple
+          ? m.onboarding_dirPicker_chooseFiles_title()
+          : m.onboarding_dirPicker_selectFile_label()
+        : m.onboarding_dirPicker_selectFolder_label(),
   );
-  const resolvedTitle = $derived(title ?? modeDefaultLabel);
+  const resolvedTitle = $derived(
+    title ?? (mode === 'save' ? m.onboarding_dirPicker_saveTitle_label() : modeDefaultLabel),
+  );
   const resolvedSelectLabel = $derived(selectLabel ?? modeDefaultLabel);
 
   const listing$ = untrack(() =>
@@ -95,11 +120,13 @@
   function requestDirectory(path: string | undefined) {
     if (staticData) return;
     loadedFor = path ?? '';
+    appStore.dispatch(directoryPickerSourceSet(source));
     appStore.dispatch(loadDirectoryRequested(path));
   }
 
   function createDirectory(path: string) {
     if (staticData) return;
+    appStore.dispatch(directoryPickerSourceSet(source));
     appStore.dispatch(createDirectoryRequested(path));
   }
 
@@ -162,14 +189,18 @@
       title={resolvedTitle}
       selectLabel={resolvedSelectLabel}
       {mode}
+      {multiple}
+      {extensions}
+      {defaultFileName}
       {listing}
       {loading}
       {error}
       {pathError}
       {createError}
       {favorites}
-      showFiles={mode === 'file'}
+      showFiles={mode !== 'directory'}
       {onSelect}
+      {onSelectMany}
       {onClose}
       onNavigate={requestDirectory}
       onNavigateToPath={(path) => !staticData && appStore.dispatch(navigateToPathRequested(path))}

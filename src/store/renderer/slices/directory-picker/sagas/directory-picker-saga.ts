@@ -3,7 +3,11 @@ import { call, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { selectDirectoryPickerListing } from '../directory-picker-selectors';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import {
+  selectDirectoryPickerListing,
+  selectDirectoryPickerSource,
+} from '../directory-picker-selectors';
 import {
   directoryListingFailed,
   directoryListingLoaded,
@@ -16,6 +20,29 @@ import {
 } from '../directory-picker-slice';
 
 const logger = createLogger('DirectoryPickerSaga');
+
+/** The daemon method's frontend-host twin, served by main (src/main/file-dialogs.ts). */
+async function localHostRequest<T>(method: string, params: Record<string, unknown>): Promise<T> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) throw new Error(`'${method}' needs the desktop app`);
+  if (method === 'host.listDirectory') {
+    return (await api.invoke(IPC_CHANNELS.IN_APP_FILE_DIALOG.LIST_DIRECTORY, params)) as T;
+  }
+  if (method === 'host.createDirectory') {
+    return (await api.invoke(IPC_CHANNELS.IN_APP_FILE_DIALOG.CREATE_DIRECTORY, params)) as T;
+  }
+  throw new Error(`'${method}' has no frontend-host equivalent`);
+}
+
+/**
+ * List or create through the picker's source: the daemon for project folders,
+ * the frontend host (via main) when the picker stands in for a native dialog.
+ */
+function* hostRequest<T>(method: string, params: Record<string, unknown>): SagaGenerator<T> {
+  const source = yield* selectDirectoryPickerSource.effect();
+  if (source === 'local') return yield* call(localHostRequest<T>, method, params);
+  return yield* call(backendRequest<T>, method, params);
+}
 function isMissingPathError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
@@ -28,7 +55,7 @@ function isMissingPathError(message: string): boolean {
 function* loadDirectory(requestedPath: string | null): SagaGenerator<void> {
   try {
     const listing: DirectoryPickerListing = yield* call(
-      backendRequest<DirectoryPickerListing>,
+      hostRequest<DirectoryPickerListing>,
       'host.listDirectory',
       requestedPath ? { path: requestedPath } : {},
     );
@@ -62,7 +89,7 @@ function* loadDirectory(requestedPath: string | null): SagaGenerator<void> {
 function* loadHomeFallback(requestedPath: string): SagaGenerator<void> {
   try {
     const listing: DirectoryPickerListing = yield* call(
-      backendRequest<DirectoryPickerListing>,
+      hostRequest<DirectoryPickerListing>,
       'host.listDirectory',
       {},
     );
@@ -77,7 +104,7 @@ function* loadHomeFallback(requestedPath: string): SagaGenerator<void> {
 function* navigateToTypedPath(path: string): SagaGenerator<void> {
   try {
     const listing: DirectoryPickerListing = yield* call(
-      backendRequest<DirectoryPickerListing>,
+      hostRequest<DirectoryPickerListing>,
       'host.listDirectory',
       { path },
     );
@@ -94,7 +121,7 @@ function* navigateToTypedPath(path: string): SagaGenerator<void> {
 
 function* createDirectory(path: string): SagaGenerator<void> {
   try {
-    yield* call(backendRequest, 'host.createDirectory', { path });
+    yield* call(hostRequest, 'host.createDirectory', { path });
     yield* put(loadDirectoryRequested(path));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -58,6 +58,8 @@ declare global {
         data?: any;
         timestamp: string;
       }) => void;
+      /** Intent OS: native file choosers do not work, use the in-app picker. */
+      preferInAppPicker?: boolean;
       platform: string;
       arch: string;
       versions: {

@@ -7,6 +7,7 @@ import {
   directoryListingFailed,
   directoryListingLoaded,
   directoryPickerReducer,
+  directoryPickerSourceSet,
   initialState,
   loadDirectoryRequested,
   navigateToPathRequested,
@@ -31,6 +32,7 @@ describe('directoryPickerReducer', () => {
     const next = directoryPickerReducer(initialState, loadDirectoryRequested('/Users/me/code'));
 
     expect(next).toEqual({
+      source: 'daemon',
       listing: null,
       loading: true,
       error: null,
@@ -111,6 +113,7 @@ describe('directoryPickerReducer', () => {
 
   it('resets back to the initial state on resetDirectoryPicker', () => {
     const populated = {
+      source: 'local' as const,
       listing: listing('/some/path'),
       loading: false,
       error: null,
@@ -263,5 +266,12 @@ describe('directoryPickerReducer', () => {
       expect(next.createError).toBeNull();
       expect(next.listing?.path).toBe('/Users/me');
     });
+  });
+
+  it('records the listing source and resets it to the daemon on close', () => {
+    const local = directoryPickerReducer(initialState, directoryPickerSourceSet('local'));
+    expect(local.source).toBe('local');
+    expect(directoryPickerReducer(local, directoryPickerSourceSet('local'))).toBe(local);
+    expect(directoryPickerReducer(local, resetDirectoryPicker()).source).toBe('daemon');
   });
 });
