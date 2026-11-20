@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 
 const [profile, url, bundleDir] = process.argv.slice(2);
@@ -19,6 +19,9 @@ app.on('web-contents-created', (_event, contents) => {
     webPreferences.webSecurity = true;
   });
 });
+
+// The production ipcMain.handle authorization wrapper (src/main/index.ts).
+require(path.join(bundleDir, 'ipc-authorization.cjs')).installIpcHandleAuthorization(ipcMain);
 
 app.whenReady().then(async () => {
   require(path.join(bundleDir, 'passkeys-main.cjs')).setupPasskeysIPC(

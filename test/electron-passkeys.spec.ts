@@ -70,6 +70,7 @@ test.beforeAll(async () => {
         },
       },
     });
+  await bundle(resolve('src/main/ipc-authorization.ts'), 'ipc-authorization.cjs');
   await bundle(resolve('src/features/passkeys/main/passkeys.ipc.ts'), 'passkeys-main.cjs');
   await bundle(resolve('src/preload/passkey-page.ts'), 'passkey-page.js');
   await chmod(join(fixture, 'fake-sidecar.cjs'), 0o755);
@@ -357,6 +358,39 @@ test.describe.serial('browser-panel passkeys', () => {
       ['0000', '1234'],
     );
     expect(requests.find((request) => request.method === 'choose')?.params.index).toBe(1);
+  });
+
+  test('page channels reject the app window, which keeps its own channels', async () => {
+    const { page, log } = launched!;
+    const before = sidecarRequests(log).length;
+    const invoke = (channel: string, payload?: unknown) =>
+      page.evaluate(
+        ([name, body]) =>
+          (window as any).electronAPI.invoke(name, body).then(
+            () => 'resolved',
+            (error: Error) => error.message,
+          ),
+        [channel, payload] as const,
+      );
+    const create = await invoke('passkeys:page-create', {
+      requestId: 'from-app-window',
+      publicKey: {
+        challenge: 'AA',
+        rp: { id: 'localhost', name: 'x' },
+        user: { id: 'AA', name: 'u', displayName: 'u' },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+      },
+    });
+    expect(create).toContain(
+      'Unauthorized IPC invocation on passkeys:page-create: unexpected sender',
+    );
+    expect(await invoke('passkeys:page-capabilities')).toContain('unexpected sender');
+    expect(await invoke('passkeys:device-list')).toBe('resolved');
+    expect(
+      sidecarRequests(log)
+        .slice(before)
+        .map((r) => r.method),
+    ).not.toContain('create');
   });
 
   test('rejects an RP ID the origin does not own without asking the helper', async () => {
