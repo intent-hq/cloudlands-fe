@@ -17,7 +17,11 @@
  * leaving its one-tab layout any other way moves it back.
  */
 import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { takeLatestFromSelector } from '@themislib/themis/saga';
+import {
+  takeEveryFromSelector,
+  takeLatestFromSelector,
+  type SelectorChannelPayload,
+} from '@themislib/themis/saga';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
 import { currentTabWindowId } from '$lib/tab-window/tab-window-renderer';
@@ -42,15 +46,18 @@ import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { hydrateBrowserClientsRequested } from '../../browser-clients/browser-clients-slice';
 import { routedWorkspaceId } from '../../../utils/routed-workspace-id';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectHiddenTabs, selectPanels } from '../../panel-layout/panel-layout-selectors';
+import {
+  selectHiddenTabs,
+  selectPanels,
+  selectRestoredTabWindowCopies,
+  selectTabWindowFocusRequests,
+} from '../../panel-layout/panel-layout-selectors';
 import {
   closeTab,
   initializeLayout,
-  restoreHiddenTab,
-  revealHiddenTabAvoidingPanel,
-  setRestoreStatus,
   tabMovedToWindow,
   tabReturnedFromWindow,
+  tabWindowFocusConsumed,
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
@@ -111,6 +118,7 @@ function* openInOwnWindow(
     return;
   }
   const tabWindowId = newTabWindowId();
+  opening.add(tabWindowId);
   yield* put(tabMovedToWindow(layoutId, tabId, tabWindowId));
   try {
     yield* call(invoke, CHANNELS.OPEN, {
@@ -123,6 +131,8 @@ function* openInOwnWindow(
     logger.warn('Could not open a tab window', { error });
     yield* put(tabReturnedFromWindow(layoutId, tab));
     yield* call(toastError, m.tabWindow_openFailed_error());
+  } finally {
+    opening.delete(tabWindowId);
   }
 }
 
@@ -193,36 +203,52 @@ function* settleOrphan(layoutId: string, tab: PanelTab): SagaGenerator<boolean> 
   return true;
 }
 
-/** A reveal of a hidden tab that is in its own window brings that window up instead. */
-function* onRevealHidden(
-  action: ReturnType<typeof restoreHiddenTab> | ReturnType<typeof revealHiddenTabAvoidingPanel>,
-): SagaGenerator<void> {
-  const { wsId, tabId } = action.payload;
-  const tab = (yield* selectHiddenTabs.effect(wsId)).find((t) => t.id === tabId);
-  if (!tab?.tabWindowId) return;
-  try {
-    const result = yield* call(invoke<{ focused: boolean }>, CHANNELS.FOCUS, {
-      tabWindowId: tab.tabWindowId,
-    });
-    if (result?.focused) return;
-  } catch (error) {
-    logger.debug('Could not bring a tab window up', { error });
+/** Tab windows this renderer is opening now: their copies are not orphans yet. */
+const opening = new Set<string>();
+
+/** A reveal of a hidden copy brings its tab window up; a gone window gives the tab back. */
+function* onFocusRequests({ payload }: SelectorChannelPayload<string>): SagaGenerator<void> {
+  for (const key of payload ? payload.split('\n') : []) {
+    const [layoutId, seqText, tabWindowId] = key.split('\u0000');
+    const seq = Number(seqText);
+    let focused = false;
+    try {
+      const result = yield* call(invoke<{ focused: boolean }>, CHANNELS.FOCUS, { tabWindowId });
+      focused = result?.focused === true;
+    } catch (error) {
+      logger.debug('Could not bring a tab window up', { error });
+    }
+    yield* put(tabWindowFocusConsumed(layoutId, seq));
+    if (focused) continue;
+    const tab = (yield* selectHiddenTabs.effect(layoutId)).find(
+      (t) => t.tabWindowId === tabWindowId,
+    );
+    if (tab) yield* call(settleOrphan, layoutId, tab);
   }
-  yield* call(settleOrphan, wsId, tab);
 }
 
-function* onLayoutSettled(action: ReturnType<typeof setRestoreStatus>): SagaGenerator<void> {
-  const [layoutId, status] = action.payload;
-  if (status !== 'restored' || isTabWindowLayoutId(layoutId)) return;
-  for (const tab of yield* selectHiddenTabs.effect(layoutId)) {
-    if (tab.tabWindowId) yield* call(settleOrphan, layoutId, tab);
+/** When a layout restores, a copy whose tab window did not come back returns to a panel. */
+function* onRestoredCopies(
+  checked: Set<string>,
+  { payload }: SelectorChannelPayload<string>,
+): SagaGenerator<void> {
+  for (const key of payload ? payload.split('\n') : []) {
+    if (checked.has(key)) continue;
+    checked.add(key);
+    const [layoutId, tabId] = key.split('\u0000');
+    const tab = (yield* selectHiddenTabs.effect(layoutId)).find((t) => t.id === tabId);
+    if (!tab?.tabWindowId || opening.has(tab.tabWindowId)) continue;
+    yield* call(settleOrphan, layoutId, tab);
   }
 }
 
 function* sourceWindowSaga(): SagaGenerator<void> {
   yield* takeEvery(openTabInOwnWindowRequested, openInOwnWindow);
-  yield* takeEvery([restoreHiddenTab, revealHiddenTabAvoidingPanel], onRevealHidden);
-  yield* takeEvery(setRestoreStatus, onLayoutSettled);
+  yield* takeEveryFromSelector(selectTabWindowFocusRequests, onFocusRequests);
+  const checked = new Set<string>();
+  yield* takeLatestFromSelector(selectRestoredTabWindowCopies, function* (event) {
+    yield* call(onRestoredCopies, checked, event);
+  });
   if (!isElectron()) return;
   yield* takeEveryFromElectronChannel<TabWindowReturnEvent | null>(
     CHANNELS.RETURN_TAB,

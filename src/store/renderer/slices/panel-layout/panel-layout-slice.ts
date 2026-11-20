@@ -3059,8 +3059,9 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   const { wsId, tabId, timestamp, focus, newPanelId } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab) return state;
   // A tab in its own window stays there; the tab window saga brings that window up.
-  if (!hiddenTab || hiddenTab.tabWindowId) return state;
+  if (hiddenTab.tabWindowId) return requestTabWindowFocus(state, wsId, hiddenTab.tabWindowId);
 
   if (focus) {
     const targetPanelId =
@@ -4773,7 +4774,8 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
   const { wsId, tabId, avoidPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
-  if (!hiddenTab || hiddenTab.tabWindowId) return state;
+  if (!hiddenTab) return state;
+  if (hiddenTab.tabWindowId) return requestTabWindowFocus(state, wsId, hiddenTab.tabWindowId);
 
   const previousFocusedPanelId = ws.focusedPanelId;
   const order = getPanelOrder(ws.root);
@@ -5068,4 +5070,28 @@ panelLayoutReducer.with(tabReturnedFromWindow, (state, { payload }) => {
   };
   ws = addToFocusHistory(ws, targetPanelId, tab.id, timestamp);
   return setWorkspaceState(state, wsId, ws);
+});
+
+/** The tab window saga brought the requested tab window up (or found it gone). */
+export const tabWindowFocusConsumed = createAction(
+  'panelLayout/tabWindowFocusConsumed',
+  (wsId: string, seq: number) => ({ wsId, seq }),
+);
+
+function requestTabWindowFocus(
+  state: PanelLayoutSliceState,
+  wsId: string,
+  tabWindowId: string,
+): PanelLayoutSliceState {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    tabWindowFocusRequest: { tabWindowId, seq: (ws.tabWindowFocusRequest?.seq ?? 0) + 1 },
+  });
+}
+
+panelLayoutReducer.with(tabWindowFocusConsumed, (state, { payload }) => {
+  const ws = getWorkspaceState(state, payload.wsId);
+  if (ws.tabWindowFocusRequest?.seq !== payload.seq) return state;
+  return setWorkspaceState(state, payload.wsId, { ...ws, tabWindowFocusRequest: null });
 });

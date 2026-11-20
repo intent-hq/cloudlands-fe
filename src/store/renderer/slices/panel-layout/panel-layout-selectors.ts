@@ -472,3 +472,35 @@ export const selectLastPanelClose = store.createSelector<
       ? { kind: 'tab', closedAt: lastClosedPanelTab.closedAt }
       : null;
 });
+
+/**
+ * Tab windows: every pending focus request, as `layoutId\u0000seq\u0000tabWindowId`
+ * keys joined by newlines (a string, so the selector channel fires on change only).
+ */
+export const selectTabWindowFocusRequests = store.createSelector<[], string>((state) =>
+  Object.entries(state.panelLayout.byWorkspaceId)
+    .flatMap(([layoutId, ws]) =>
+      ws.tabWindowFocusRequest
+        ? [
+            `${layoutId}\u0000${ws.tabWindowFocusRequest.seq}\u0000${ws.tabWindowFocusRequest.tabWindowId}`,
+          ]
+        : [],
+    )
+    .join('\n'),
+);
+
+/**
+ * Tab windows: the hidden copies (tabs shown in a tab window) of every
+ * restored layout, as `layoutId\u0000tabId` keys joined by newlines.
+ */
+export const selectRestoredTabWindowCopies = store.createSelector<[], string>((state) =>
+  Object.entries(state.panelLayout.byWorkspaceId)
+    .flatMap(([layoutId, ws]) =>
+      ws.restoreStatus === 'restored'
+        ? getItems(ws.hiddenTabs ?? emptyWorkspaceState.hiddenTabs)
+            .filter((tab) => tab.tabWindowId)
+            .map((tab) => `${layoutId}\u0000${tab.id}`)
+        : [],
+    )
+    .join('\n'),
+);

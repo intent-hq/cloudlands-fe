@@ -245,8 +245,6 @@ const PERSIST_ACTIONS = [
 ];
 
 const HISTORY_ACTIONS = [
-  // A tab moving to its window is purged from every history snapshot.
-  tabMovedToWindow,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInRightmostColumn,

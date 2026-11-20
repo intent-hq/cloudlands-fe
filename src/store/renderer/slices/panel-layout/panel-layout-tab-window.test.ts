@@ -8,6 +8,7 @@ import {
   revealHiddenTabAvoidingPanel,
   tabMovedToWindow,
   tabReturnedFromWindow,
+  tabWindowFocusConsumed,
   updateTabTitle,
 } from './panel-layout-slice';
 import type { PanelLayoutSliceState, PanelTab } from './panel-layout-types';
@@ -66,6 +67,10 @@ describe('tab windows in the panel layout', () => {
     const ws = next.byWorkspaceId[WS];
     expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['n1']);
     expect(getItem(ws.hiddenTabs, 'b1')?.tabWindowId).toBe('tw-1');
+    // The reveal asks for the tab window instead (the saga brings it up).
+    expect(ws.tabWindowFocusRequest).toEqual({ tabWindowId: 'tw-1', seq: 2 });
+    const consumed = reducer(next, tabWindowFocusConsumed(WS, 2)).byWorkspaceId[WS];
+    expect(consumed.tabWindowFocusRequest).toBeNull();
   });
 
   it('the copy follows the window: a title change lands on it', () => {
