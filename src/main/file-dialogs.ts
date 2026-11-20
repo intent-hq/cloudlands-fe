@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session as electronSession } from 'electron';
 import type {
   OpenDialogOptions,
   OpenDialogReturnValue,
@@ -40,7 +40,8 @@ import {
 } from '../shared/in-app-file-dialog';
 import { Logger } from '../shared/logger';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
-import { getShownRendererWebContents } from './window-backend';
+import { getShownRendererWebContents, getWindowForWebContents } from './window-backend';
+import { routeSessionDownloads } from './in-app-downloads';
 
 const logger = new Logger('FileDialogs');
 
@@ -191,6 +192,23 @@ const fileDialogs = createFileDialogs({
   requestInApp: requestInAppDialog,
 });
 
+/**
+ * Show the in-app open picker in one specific renderer (the app renderer that
+ * shows a browser tab), for choosers main intercepts itself. Resolves the
+ * chosen paths, or `null` on cancel.
+ */
+export function pickFilesInApp(
+  contents: WebContents,
+  options: { multiple: boolean; accept?: string; title?: string },
+): Promise<string[] | null> {
+  return requestInAppDialogIn(contents, {
+    kind: 'open',
+    title: options.title,
+    multiple: options.multiple,
+    extensions: extensionsFromAccept(options.accept),
+  }).then((paths) => (paths && !options.multiple ? paths.slice(0, 1) : paths));
+}
+
 /** Open chooser: native, or the in-app picker under INTENT_IN_APP_PICKER=1. */
 export const showOpenDialog = fileDialogs.showOpenDialog;
 /** Save chooser: native, or the in-app picker under INTENT_IN_APP_PICKER=1. */
@@ -299,6 +317,18 @@ function requirePendingRequest(sender: WebContents): void {
 /** Register the in-app picker's IPC handlers. Idempotent per process start. */
 export function registerFileDialogHandlers(): void {
   const channels = IPC_CHANNELS.IN_APP_FILE_DIALOG;
+
+  // Downloads (website links, browser tabs) otherwise open the native Save dialog.
+  if (inAppFileDialogsEnabled()) {
+    const ownerForDownload = (contents: WebContents | undefined) => {
+      const host = contents?.hostWebContents ?? contents;
+      return host && !host.isDestroyed() ? getWindowForWebContents(host) : null;
+    };
+    routeSessionDownloads(electronSession.defaultSession, ownerForDownload, showSaveDialog);
+    app.on('web-contents-created', (_event, contents) => {
+      routeSessionDownloads(contents.session, ownerForDownload, showSaveDialog);
+    });
+  }
 
   ipcMain.handle(
     channels.RESPOND,

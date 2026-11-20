@@ -27,6 +27,11 @@ import {
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 import { runInputAction, type InputAction } from './browser-input';
+import {
+  answerFileChooser,
+  enableFileChooserInterception,
+  type FileChooserOpenedParams,
+} from './browser-file-chooser';
 
 const logger = new Logger('EmbeddedBrowserCdp');
 /** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
@@ -241,6 +246,12 @@ export interface MainOwnedBrowserViews {
  * - CDP execution: runs scripts/commands on browser tabs via webContents.debugger
  * - Tab focus: brings unmounted tabs back to life by requesting UI switch
  */
+/** Show the in-app open picker in `host`; resolves chosen paths or `null` on cancel. */
+type InAppFileChooser = (
+  host: WebContents,
+  options: { multiple: boolean; accept?: string },
+) => Promise<string[] | null>;
+
 class EmbeddedBrowserCdpService {
   /** Map of tabId -> webContentsId */
   private tabRegistry = new Map<string, number>();
@@ -257,6 +268,16 @@ class EmbeddedBrowserCdpService {
 
   /** Set of webContentsIds that have debugger attached */
   private attachedDebuggers = new Set<number>();
+  /**
+   * The in-app picker for website file choosers, set by main/index.ts only
+   * under INTENT_IN_APP_PICKER (injected so this module does not import the
+   * main-process dialog graph).
+   */
+  private inAppFileChooser: InAppFileChooser | null = null;
+  /** Tabs whose website file choosers go to the in-app picker (INTENT_IN_APP_PICKER). */
+  private fileChooserTabs = new Set<number>();
+  /** Of those, the ones whose current CDP session has interception on. */
+  private fileChooserArmed = new Set<number>();
 
   /**
    * Cache of browser tabs from panel layout (includes unmounted tabs),
@@ -610,6 +631,16 @@ class EmbeddedBrowserCdpService {
     // An agent acting on this tab (possibly the action that mounted it on
     // demand) keeps the new guest drawing too.
     if (this.agentDrawing.has(tabId)) this.attachAgentDrawing(tabId);
+
+    // Intent OS: route this page's file uploads through the in-app picker.
+    if (this.inAppFileChooser) {
+      this.armFileChooser(webContentsId).catch((error: unknown) => {
+        logger.warn('Could not intercept file choosers for browser tab', {
+          webContentsId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // Owned tabs are always emulated (docs/protocol §5.9): (re)apply the
     // recorded viewport on every registration so emulation survives
@@ -1393,6 +1424,13 @@ class EmbeddedBrowserCdpService {
    */
   private onDebuggerDetached(webContentsId: number): void {
     this.attachedDebuggers.delete(webContentsId);
+    // Interception lives in the CDP session; a later session must turn it on again.
+    if (this.fileChooserArmed.delete(webContentsId) && this.fileChooserTabs.has(webContentsId)) {
+      setTimeout(() => {
+        if (!this.fileChooserTabs.has(webContentsId)) return;
+        this.armFileChooser(webContentsId).catch(() => undefined);
+      }, 1000);
+    }
     for (const [tabId, mappedWebContentsId] of this.tabRegistry) {
       if (mappedWebContentsId === webContentsId) {
         this.tabsWithDeviceMetricsOverride.delete(tabId);
@@ -2036,6 +2074,63 @@ class EmbeddedBrowserCdpService {
       return false;
     }
     return wc.debugger.isAttached();
+  }
+
+  /**
+   * Route browser-tab file choosers to the in-app picker from now on. Tabs
+   * that registered earlier are armed on their next registration (dom-ready).
+   */
+  setInAppFileChooser(pick: InAppFileChooser | null): void {
+    this.inAppFileChooser = pick;
+  }
+
+  /**
+   * Intercept the tab's file choosers (once per CDP session) and answer them
+   * with the in-app picker shown in the tab's app renderer.
+   */
+  private async armFileChooser(webContentsId: number): Promise<void> {
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return;
+    if (!this.fileChooserTabs.has(webContentsId)) {
+      this.fileChooserTabs.add(webContentsId);
+      wc.debugger.on('message', (_event, method, params, sessionId) => {
+        if (sessionId || method !== 'Page.fileChooserOpened') return;
+        void this.onFileChooserOpened(webContentsId, params as FileChooserOpenedParams);
+      });
+      wc.once('destroyed', () => {
+        this.fileChooserTabs.delete(webContentsId);
+        this.fileChooserArmed.delete(webContentsId);
+      });
+    }
+    if (this.fileChooserArmed.has(webContentsId)) return;
+    await enableFileChooserInterception({
+      send: (method, params) => this.sendCommand(webContentsId, method, params),
+    });
+    this.fileChooserArmed.add(webContentsId);
+  }
+
+  private async onFileChooserOpened(
+    webContentsId: number,
+    params: FileChooserOpenedParams,
+  ): Promise<void> {
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return;
+    const host = this.hostOf(wc);
+    try {
+      await answerFileChooser(
+        { send: (method, commandParams) => this.sendCommand(webContentsId, method, commandParams) },
+        params,
+        (options) =>
+          host && this.inAppFileChooser
+            ? this.inAppFileChooser(host, options)
+            : Promise.resolve(null),
+      );
+    } catch (error) {
+      logger.warn('Browser tab file chooser failed', {
+        webContentsId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

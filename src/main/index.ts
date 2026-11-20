@@ -146,7 +146,12 @@ setTimeout(() => {
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol, session } from 'electron';
-import { registerFileDialogHandlers, showSaveDialog } from './file-dialogs';
+import {
+  inAppFileDialogsEnabled,
+  pickFilesInApp,
+  registerFileDialogHandlers,
+  showSaveDialog,
+} from './file-dialogs';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
@@ -1671,6 +1676,12 @@ const bootFlow = app.whenReady().then(async () => {
   setupPowerStateIPC();
   await setupConfigIPC();
   registerFileDialogHandlers(); // In-app file chooser (INTENT_IN_APP_PICKER)
+  if (inAppFileDialogsEnabled()) {
+    // Website uploads in browser tabs use the in-app picker too.
+    void import('../features/browser/main/embedded-browser-cdp-service').then(
+      ({ embeddedBrowserCdp }) => embeddedBrowserCdp.setInAppFileChooser(pickFilesInApp),
+    );
+  }
   registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
