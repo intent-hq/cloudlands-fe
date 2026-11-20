@@ -292,7 +292,10 @@
             use:mainOwnedOffscreenPage={{
               tabId: entry.tabId,
               workspaceId: entry.workspaceId,
-              url: entry.url,
+              // A recovery boots on a neutral page, as the <webview> path does:
+              // the closing URL could close the replacement again before main
+              // sends the requested URL.
+              url: entry.recoveryKey ? 'about:blank' : entry.url,
               pinned: candidatePinned.has(entry.tabId),
             }}
             use:offscreenWebview={entry}
