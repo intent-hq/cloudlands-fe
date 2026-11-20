@@ -635,7 +635,7 @@ describe('MarkdownViewer static rendering', () => {
         return element!;
       });
       expect(frame.style.aspectRatio).toBe('640 / 360');
-      expect(frame.style.width).toBe('min(640px, 100%)');
+      expect(frame.style.getPropertyValue('--image-width')).toBe('640px');
       const placeholder = screen.getByTestId('media-loading-placeholder');
       expect(frame.contains(placeholder)).toBe(true);
       expect(placeholder.textContent).toContain('docs/diagram.png');

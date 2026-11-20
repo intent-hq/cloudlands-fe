@@ -5,6 +5,7 @@
     landscape?: boolean;
     unsized?: boolean;
     isStreaming?: boolean;
+    table?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -16,6 +17,8 @@
       landscape: { props: { landscape: true } },
       unsized: { props: { unsized: true } },
       streaming: { props: { isStreaming: true } },
+      table: { props: { landscape: true, table: true } },
+      'table-unsized': { props: { landscape: true, table: true, unsized: true } },
     },
   });
 </script>
@@ -25,7 +28,7 @@
   import { IMAGE_SHARING_SVG } from '$lib/components/markdown/image-sharing.preview-fixtures';
   import ChatImageBlock from './ChatImageBlock.svelte';
 
-  let { landscape = false, unsized = false, isStreaming = false }: Props = $props();
+  let { landscape = false, unsized = false, isStreaming = false, table = false }: Props = $props();
   const width = $derived(landscape ? 960 : 600);
   const height = $derived(landscape ? 600 : 1200);
   const source = $derived(
@@ -39,6 +42,14 @@
       ),
     )}`,
   );
+  const tableContent = $derived(
+    [
+      '| Case | Before | After |',
+      '| --- | --- | --- |',
+      `| Hidden 1100×900, 2x | ![Before](${source}) | ![After](${source}) |`,
+      `| Visible, 760×900 in wider panel, 2x | ![Before](${source}) | ![After](${source}) |`,
+    ].join('\n'),
+  );
 </script>
 
 <!-- i18n-ignore (development-only preview copy and synthetic artwork) -->
@@ -48,7 +59,7 @@
     <article class="min-w-0 space-y-3">
       <h2 class="type-body font-medium">Markdown image</h2>
       <MarkdownViewer
-        content={`![Harbor study](${source})`}
+        content={table ? tableContent : `![Harbor study](${source})`}
         chatImageThumbnails
         {isStreaming}
         media={unsized ? undefined : { [source]: { width, height } }}
