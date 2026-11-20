@@ -29,6 +29,13 @@
  *       card only when agents.permissionPolicy (or INTENTD_PERMISSION_POLICY) is "interactive";
  *       under its default "allow" it approves unasked. See the header of the monorepo's
  *       scripts/dev-sandbox.sh for a ready-made sandbox command.
+ *     - workspaceApi: `workspace_api` calls ({ code, summary }) made in order through the
+ *       daemon-provided workspace MCP bridge before the reply; the daemon passes the bridge
+ *       only when started with MOCK_AGENT_SESSION_MCP=1. Example: a secret-request card
+ *       (needs agentFeatures.secretRequests and agentFeatures.hostExec on):
+ *         { "workspaceApi": [{ "summary": "Ask for a key", "code":
+ *             "return await ws.secret.request({ name: 'OPENROUTER_API_KEY', reason: 'Run the tests' });" }],
+ *           "response": "I need an API key to continue." }
  *   MOCK_AGENT_BEHAVIOR_FILE - path of a JSON file holding the same payload, re-read on every
  *     session/prompt. Takes precedence over MOCK_AGENT_BEHAVIOR when the file exists. The
  *     daemon spawns this agent with the env it was itself started with, so a test can only
@@ -37,7 +44,7 @@
  *     Gives the app time to finish chat initialization. Default: 3000. Set to 0 for no delay.
  */
 import readline from 'node:readline';
-import { createMockChild } from './mock-workspace-mcp.js';
+import { callWorkspaceApi, createMockChild } from './mock-workspace-mcp.js';
 import { respondToMockRequest } from './mock-acp-request.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -159,6 +166,9 @@ async function handleSessionPrompt(id, params) {
   if (behavior.delegate && !delegated) {
     delegated = true;
     await createMockChild(mcpServers, behavior.delegate);
+  }
+  for (const call of Array.isArray(behavior.workspaceApi) ? behavior.workspaceApi : []) {
+    await callWorkspaceApi(mcpServers, call);
   }
 
   process.stderr.write(
