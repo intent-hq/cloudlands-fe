@@ -2,6 +2,7 @@ import type { AgentMessage } from '$shared/types';
 import { readAdvisoryWake } from './advisory-wake';
 import type { ConversationTurn } from './conversation-turns';
 
+/** @internal */
 export function advisoryFoldKey(message?: AgentMessage | null): string | null {
   const metadata = message?.metadata;
   if (message?.role !== 'user' || metadata?.type !== 'event_notification') return null;
