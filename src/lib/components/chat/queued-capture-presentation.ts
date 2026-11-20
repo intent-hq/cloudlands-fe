@@ -39,7 +39,9 @@ export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
       screen &&
       single &&
       candidates.length === 1 &&
-      candidates[0].edited_captures === undefined &&
+      (candidates[0].edited_captures === undefined ||
+        (Array.isArray(candidates[0].edited_captures) &&
+          candidates[0].edited_captures.length === 0)) &&
       !text.startsWith('[Edited capture outputs]') // i18n-ignore (persisted producer marker)
     )
       return { text: screen.remaining, captures: [] };
