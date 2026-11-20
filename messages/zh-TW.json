@@ -9219,7 +9219,7 @@
   "passkeys_dialog_close_label": "關閉",
   "passkeys_dialog_thisDevice_label": "這部裝置",
   "passkeys_dialog_devicePin_description": "輸入你的 Intent OS PIN 以確認身分。",
-  "passkeys_dialog_devicePin_label": "Intent OS PIN",
+  "passkeys_dialog_devicePin_label": "Intent OS PIN 碼",
   "passkeys_dialog_deviceOldPin_description": "你的 PIN 已變更。輸入先前的 PIN 以解鎖你的通行金鑰。",
   "passkeys_dialog_deviceOldPin_label": "先前的 PIN",
   "passkeys_dialog_devicePinWait_error": "PIN 錯誤次數過多。請在 {seconds} 秒後再試一次。",

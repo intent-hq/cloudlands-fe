@@ -9219,7 +9219,7 @@
   "passkeys_dialog_close_label": "닫기",
   "passkeys_dialog_thisDevice_label": "이 기기",
   "passkeys_dialog_devicePin_description": "본인 확인을 위해 Intent OS PIN을 입력하세요.",
-  "passkeys_dialog_devicePin_label": "Intent OS PIN",
+  "passkeys_dialog_devicePin_label": "Intent OS PIN 번호",
   "passkeys_dialog_deviceOldPin_description": "PIN이 변경되었습니다. 패스키 잠금을 해제하려면 이전 PIN을 입력하세요.",
   "passkeys_dialog_deviceOldPin_label": "이전 PIN",
   "passkeys_dialog_devicePinWait_error": "잘못된 PIN을 너무 많이 입력했습니다. {seconds}초 후에 다시 시도하세요.",
