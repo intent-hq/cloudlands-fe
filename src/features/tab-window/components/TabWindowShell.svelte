@@ -38,6 +38,10 @@
     record ? ($panels$[PANEL_ID]?.tabs.find((t) => t.id === record.tab.id) ?? null) : null,
   );
   const icon = $derived(tab ? tabTypeRegistry.get(tab.type)?.icon : undefined);
+  // Only favicons the app's image policy allows (https, data).
+  const favicon = $derived(
+    tab?.faviconUrl && /^(https:|data:)/.test(tab.faviconUrl) ? tab.faviconUrl : null,
+  );
   const title = $derived(tab?.title || (tab ? tabTypeRegistry.get(tab.type)?.defaultTitle : ''));
 
   const moveBackShortcut$ = effectiveShortcutReadable('panel.tab-window');
@@ -87,8 +91,8 @@
   {:else}
     <header class="tab-window-header app-drag-region" class:mac>
       <div class="tab-window-title">
-        {#if tab?.faviconUrl}
-          <img class="tab-window-favicon" src={tab.faviconUrl} alt="" />
+        {#if favicon}
+          <img class="tab-window-favicon" src={favicon} alt="" />
         {:else if icon}
           <Fa {icon} size="sm" />
         {/if}

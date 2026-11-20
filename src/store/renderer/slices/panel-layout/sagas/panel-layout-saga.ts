@@ -159,6 +159,8 @@ import {
   updateTabTitle,
   promoteDiscussionTab,
   updateTabViewport,
+  tabMovedToWindow,
+  tabReturnedFromWindow,
 } from '../panel-layout-slice';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
@@ -237,9 +239,14 @@ const PERSIST_ACTIONS = [
   // Registry acknowledgement / row application changes which fields persist.
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  // Tab windows: a tab in its own window must stay hidden here after a restart.
+  tabMovedToWindow,
+  tabReturnedFromWindow,
 ];
 
 const HISTORY_ACTIONS = [
+  // A tab moving to its window is purged from every history snapshot.
+  tabMovedToWindow,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInRightmostColumn,

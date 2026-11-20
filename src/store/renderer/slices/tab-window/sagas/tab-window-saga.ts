@@ -13,8 +13,8 @@
  *
  * In a tab window: read the record from main, show the tab in a one-tab
  * layout, load its workspace, report tab changes, and move the tab back or
- * close it on request. Its workspace deleted, or the tab closed from inside
- * (its own close action), closes it for real.
+ * close it on request. Its workspace deleted closes it for real; the tab
+ * leaving its one-tab layout any other way moves it back.
  */
 import {
   call,
@@ -268,19 +268,26 @@ function* closeForReal(): SagaGenerator<void> {
   }
 }
 
-/** Report tab changes to main, and close for real when the tab left the layout. */
+/** Report tab changes to main, and move the tab back when it left the layout. */
 function* watchTab(record: TabWindowRecord, layoutId: string): SagaGenerator<void> {
   let reported = syncedFields(record.tab);
-  let closing = false;
+  let leaving = false;
   yield* takeLatest(
     (action: { type: string }) => action.type.startsWith('panelLayout/'),
     function* () {
       yield* delay(UPDATE_DEBOUNCE_MS);
       const tab = findPanelTab(yield* selectPanels.effect(layoutId), record.tab.id);
       if (!tab) {
-        if (closing) return;
-        closing = true;
-        yield* call(closeForReal);
+        // The tab left this window's layout (its own close, or a cleanup
+        // that runs here too). Move it back rather than close it: nothing is
+        // lost, and the source window's own state decides what stays.
+        if (leaving) return;
+        leaving = true;
+        try {
+          yield* call(invoke, CHANNELS.MOVE_BACK);
+        } catch (error) {
+          logger.warn('Could not move the tab back', { error });
+        }
         return;
       }
       const fields = syncedFields(tab);
