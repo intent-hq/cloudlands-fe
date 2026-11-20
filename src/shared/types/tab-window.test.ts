@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   canMoveTabToWindow,
   isTabWindowLayoutId,
-  isTabWindowRoute,
   tabWindowDisplayMode,
   tabWindowIdFromRoute,
   tabWindowLayoutId,
@@ -14,7 +13,6 @@ describe('tab window routes and layout keys', () => {
     expect(tabWindowRoute('abc-123')).toBe('/tab-window/abc-123');
     expect(tabWindowIdFromRoute('/tab-window/abc-123')).toBe('abc-123');
     expect(tabWindowIdFromRoute('/tab-window/abc-123/')).toBe('abc-123');
-    expect(isTabWindowRoute('/tab-window/abc-123')).toBe(true);
   });
 
   it('rejects other pages and malformed ids', () => {

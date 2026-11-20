@@ -31,7 +31,7 @@ export interface TabWindowTab {
 }
 
 /** Route prefix of a tab window's page; the id follows. */
-export const TAB_WINDOW_ROUTE_PREFIX = '/tab-window/';
+const TAB_WINDOW_ROUTE_PREFIX = '/tab-window/';
 
 /** Panel-layout key a tab window's renderer keeps its one tab under. */
 const TAB_WINDOW_LAYOUT_PREFIX = 'tab-window:';
@@ -61,11 +61,6 @@ export function tabWindowIdFromRoute(pathname: string): string | null {
   if (!pathname.startsWith(TAB_WINDOW_ROUTE_PREFIX)) return null;
   const id = pathname.slice(TAB_WINDOW_ROUTE_PREFIX.length).replace(/\/$/, '');
   return isTabWindowId(id) ? id : null;
-}
-
-/** Whether a route path is a tab window page. */
-export function isTabWindowRoute(pathname: string): boolean {
-  return tabWindowIdFromRoute(pathname) !== null;
 }
 
 /** The panel-layout key of a tab window's one tab. */
@@ -109,11 +104,6 @@ export interface TabWindowOpenResult {
 /** `tab-window:get` result: the sender's tab window, or null when it is not one. */
 export interface TabWindowGetResult {
   record: TabWindowRecord | null;
-}
-
-/** `tab-window:update` params: the tab window's tab changed (title, URL, favicon). */
-export interface TabWindowUpdateParams {
-  tab: TabWindowTab;
 }
 
 /** `tab-window:is-open` result. */
