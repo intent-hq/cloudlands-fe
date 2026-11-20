@@ -9,6 +9,8 @@ export interface LinkSource {
   panelId?: string;
   /** Assistant side-panel layout containing the element. */
   assistantLayoutId?: string;
+  /** Workspace whose surface renders the element, for callers that pass no workspace. */
+  surfaceWorkspaceId?: string;
 }
 
 export function readLinkSource(
@@ -22,5 +24,7 @@ export function readLinkSource(
     panelId: element?.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId,
     assistantLayoutId: element?.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset
       .assistantLayoutId,
+    surfaceWorkspaceId: element?.closest<HTMLElement>('[data-workspace-surface]')?.dataset
+      .workspaceSurface,
   };
 }
