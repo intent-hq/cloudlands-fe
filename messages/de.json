@@ -9317,5 +9317,14 @@
   "passkeys_settings_deleteConfirm_title": "Passkey für {site} löschen?",
   "passkeys_settings_deleteConfirm_description": "Sie können sich mit diesem Passkey nicht mehr als {user} bei {site} anmelden. Entfernen Sie ihn auch in den Kontoeinstellungen der Website.",
   "passkeys_settings_deleteFailed_error": "Der Passkey wurde nicht gelöscht. Versuchen Sie es erneut.",
-  "passkeys_settings_list_ariaLabel": "Geräte-Passkeys"
+  "passkeys_settings_list_ariaLabel": "Geräte-Passkeys",
+  "chat_advisoryWake_waiting_label": "wartet",
+  "chat_advisoryWake_waitingOnPr_label": "wartet auf PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "wartet auf PRs {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "wartet auf {count} PRs",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} wartet auf PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} wartet auf PRs {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} wartet auf {count} PRs",
+  "chat_advisoryWake_agentWaiting_label": "Agent {status}",
+  "chat_advisoryWake_agentWaitingType_label": "Agent wartet"
 }

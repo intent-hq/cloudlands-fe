@@ -9317,5 +9317,14 @@
   "passkeys_settings_deleteConfirm_title": "要刪除 {site} 的通行金鑰嗎？",
   "passkeys_settings_deleteConfirm_description": "你將無法再使用此通行金鑰以 {user} 身分登入 {site}。也請在該網站的帳戶設定中將其刪除。",
   "passkeys_settings_deleteFailed_error": "通行金鑰未刪除。請再試一次。",
-  "passkeys_settings_list_ariaLabel": "裝置通行金鑰"
+  "passkeys_settings_list_ariaLabel": "裝置通行金鑰",
+  "chat_advisoryWake_waiting_label": "正在等待",
+  "chat_advisoryWake_waitingOnPr_label": "正在等待 PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "正在等待 PR {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "正在等待 {count} 個 PR",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} 正在等待 PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} 正在等待 PR {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} 正在等待 {count} 個 PR",
+  "chat_advisoryWake_agentWaiting_label": "代理程式{status}",
+  "chat_advisoryWake_agentWaitingType_label": "代理程式正在等待"
 }

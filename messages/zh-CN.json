@@ -9317,5 +9317,14 @@
   "passkeys_settings_deleteConfirm_title": "删除 {site} 的通行密钥？",
   "passkeys_settings_deleteConfirm_description": "你将无法再使用此通行密钥以 {user} 身份登录 {site}。也请在该网站的账户设置中将其删除。",
   "passkeys_settings_deleteFailed_error": "通行密钥未删除。请重试。",
-  "passkeys_settings_list_ariaLabel": "设备通行密钥"
+  "passkeys_settings_list_ariaLabel": "设备通行密钥",
+  "chat_advisoryWake_waiting_label": "正在等待",
+  "chat_advisoryWake_waitingOnPr_label": "正在等待 PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "正在等待 PR {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "正在等待 {count} 个 PR",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} 正在等待 PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} 正在等待 PR {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} 正在等待 {count} 个 PR",
+  "chat_advisoryWake_agentWaiting_label": "智能体{status}",
+  "chat_advisoryWake_agentWaitingType_label": "智能体正在等待"
 }

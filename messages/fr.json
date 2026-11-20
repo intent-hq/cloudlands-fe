@@ -9317,5 +9317,14 @@
   "passkeys_settings_deleteConfirm_title": "Supprimer la clé d’accès pour {site} ?",
   "passkeys_settings_deleteConfirm_description": "Vous ne pourrez plus vous connecter à {site} en tant que {user} avec cette clé d’accès. Supprimez-la aussi dans les paramètres du compte du site.",
   "passkeys_settings_deleteFailed_error": "La clé d’accès n’a pas été supprimée. Réessayez.",
-  "passkeys_settings_list_ariaLabel": "Clés d’accès de l’appareil"
+  "passkeys_settings_list_ariaLabel": "Clés d’accès de l’appareil",
+  "chat_advisoryWake_waiting_label": "est en attente",
+  "chat_advisoryWake_waitingOnPr_label": "attend la PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "attend les PR {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "attend {count} PR",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} attend la PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} attend les PR {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} attend {count} PR",
+  "chat_advisoryWake_agentWaiting_label": "L’agent {status}",
+  "chat_advisoryWake_agentWaitingType_label": "L’agent est en attente"
 }

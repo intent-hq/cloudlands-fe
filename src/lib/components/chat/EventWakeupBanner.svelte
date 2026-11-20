@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
+  import { readAdvisoryWake, advisoryActivityLabel, advisoryStatusLabel } from './advisory-wake';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * EventWakeupBanner Component
@@ -98,6 +99,7 @@
     onPinnedActivate,
   }: Props = $props();
 
+  const advisoryWake = $derived(readAdvisoryWake(metadata));
   const componentId = $props.id();
   const detailsId = `${componentId}-event-wakeup-details`;
   let detailsOpen = $state(false);
@@ -126,6 +128,7 @@
 
   function localizedActivityLabel(type: string, data: Record<string, unknown>): string {
     const name = resolveAgentName(data);
+    if (type === 'agent:idle' && advisoryWake) return advisoryActivityLabel(name, advisoryWake);
     if (name) {
       if (type === 'agent:idle') {
         return m.events_activity_nameFinished_label({ name });
@@ -233,7 +236,9 @@
       status:
         event.type === 'agent:reportToParent'
           ? m.chat_msgAttribution_sentMessage_after()
-          : m.events_activity_partFinished_label().trim(),
+          : advisoryWake
+            ? advisoryStatusLabel(advisoryWake)
+            : m.events_activity_partFinished_label().trim(),
     };
   });
 
@@ -258,7 +263,10 @@
   }
 
   function eventTypeLabel(type: string): string {
-    if (type === 'agent:idle') return m.chat_eventWakeup_agentFinished_label();
+    if (type === 'agent:idle')
+      return advisoryWake
+        ? m.chat_advisoryWake_agentWaitingType_label()
+        : m.chat_eventWakeup_agentFinished_label();
     if (type === 'agent:reportToParent') return m.events_activity_partFinished_label().trim();
     if (type === 'agent:created') return m.chat_eventWakeup_newAgent_label();
     return categorizeEventTypes([type])[0] ?? type;
@@ -273,6 +281,7 @@
   }
 
   function agentStatusLabel(type: string): string {
+    if (type === 'agent:idle' && advisoryWake) return advisoryStatusLabel(advisoryWake);
     return type === 'agent:reportToParent'
       ? m.chat_msgAttribution_sentMessage_after()
       : m.events_activity_partFinished_label().trim();
@@ -471,7 +480,8 @@
                       agentId={event.agentId}
                       agentName={event.agentName}
                       {workspace}
-                      isCompleted={event.type !== 'agent:created'}
+                      isCompleted={event.type !== 'agent:created' &&
+                        !(event.type === 'agent:idle' && advisoryWake)}
                       activationLabel={onPinnedActivate
                         ? m.chat_stickyMessageHeader_scrollToPrevious_title()
                         : undefined}
@@ -532,7 +542,7 @@
                     {agentSummaryRoles.name}
                   </strong>
                   <span
-                    class="type-body min-w-0 shrink truncate font-normal text-muted-foreground"
+                    class="type-body min-w-0 max-w-[70%] shrink-0 truncate font-normal text-muted-foreground"
                     data-testid="event-wakeup-status"
                     use:truncatedTitle={agentSummaryRoles.status}
                   >

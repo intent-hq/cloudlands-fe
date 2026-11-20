@@ -9317,5 +9317,14 @@
   "passkeys_settings_deleteConfirm_title": "¿Eliminar la llave de acceso de {site}?",
   "passkeys_settings_deleteConfirm_description": "Ya no podrás iniciar sesión en {site} como {user} con esta llave de acceso. Elimínala también en la configuración de la cuenta del sitio.",
   "passkeys_settings_deleteFailed_error": "La llave de acceso no se eliminó. Vuelve a intentarlo.",
-  "passkeys_settings_list_ariaLabel": "Llaves de acceso del dispositivo"
+  "passkeys_settings_list_ariaLabel": "Llaves de acceso del dispositivo",
+  "chat_advisoryWake_waiting_label": "está esperando",
+  "chat_advisoryWake_waitingOnPr_label": "está esperando el PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "está esperando los PR {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "está esperando {count} PR",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} está esperando el PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} está esperando los PR {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} está esperando {count} PR",
+  "chat_advisoryWake_agentWaiting_label": "El agente {status}",
+  "chat_advisoryWake_agentWaitingType_label": "El agente está esperando"
 }
