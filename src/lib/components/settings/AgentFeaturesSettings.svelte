@@ -9,8 +9,9 @@
    * its FEATURE_DEFAULTS value when the daemon omits it; explicit values win.
    * Peer agents and secret requests require their registered settings.list
    * entry, so an older daemon that omits one keeps that control unavailable.
-   * Secret requests also stays unavailable while host command execution is
-   * off, because the daemon only exposes ws.secret alongside ws.host.exec.
+   * Secret requests also shows off and unavailable, with a hint, while host
+   * command execution is off, because the daemon only exposes ws.secret
+   * alongside ws.host.exec.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -275,8 +276,12 @@
         feature.path === 'agentFeatures.peerAgents'
           ? peerAgentsEnabled
           : feature.path === 'agentFeatures.secretRequests'
-            ? secretRequestsSupported && values[feature.path]
+            ? secretRequestsAvailable && values[feature.path]
             : values[feature.path];
+      const needsHostExec =
+        feature.path === 'agentFeatures.secretRequests' &&
+        secretRequestsSupported &&
+        !values['agentFeatures.hostExec'];
       entries.push({
         kind: 'switch',
         id: feature.path,
@@ -287,8 +292,10 @@
           loading ||
           (feature.path === 'agentFeatures.peerAgents' && !peerAgentsSupported) ||
           (feature.path === 'agentFeatures.secretRequests' && !secretRequestsAvailable),
-        // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
-        status: tokenImpacts[feature.path],
+        status: needsHostExec
+          ? m.settings_agentFeatures_secretRequests_needsHostExec_hint()
+          : // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
+            tokenImpacts[feature.path],
         statusTone: 'subtle',
         get: () => currentValue,
         set: (checked: boolean) => handleToggle(feature.path, checked),

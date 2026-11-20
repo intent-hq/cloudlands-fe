@@ -11,7 +11,7 @@
 
   interface Dismiss {
     label: string;
-    tooltip: string;
+    tooltip?: string;
     onDismiss: () => void;
     testId?: string;
   }

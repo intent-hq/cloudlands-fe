@@ -5,9 +5,11 @@
    * transcript requests or the daemon connection changes, to tell pending
    * cards from expired ones and to find pending requests whose card is outside
    * the loaded page. Hide collapses the stack to one chip, like the Q&A
-   * card; a new request expands it again. Values never pass through here.
+   * card; a new request expands it again. Typed values stay in this
+   * component's local state while collapsed, never in the store.
    */
   import { untrack } from 'svelte';
+  import { slide, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import {
     secretAnswerRequested,
@@ -50,6 +52,8 @@
   const answers = $derived($secretRequests$.answers);
   const collapsedKeys = $derived($secretRequests$.collapsed[agentId]);
   const awaiting = $derived(awaitingSecretRequests(visible, answers));
+  // The first waiting card carries the stack's one Hide and privacy note.
+  const leadRequestId = $derived(awaiting[0]?.request.requestId);
   const collapsed = $derived(showSecretStackChip(visible, answers, collapsedKeys));
   // The chip offers Dismiss only for a single waiting request, like the Q&A
   // chip; with several, the user expands the stack to choose.
@@ -67,6 +71,8 @@
     requestId: string;
     name: string;
   } | null>(null);
+  // Typed values by request id, kept here so Hide does not lose them.
+  let values = $state<Record<string, string>>({});
   let stackElement = $state<HTMLDivElement>();
   let chipExpandButton = $state<HTMLElement | null>(null);
   let focusAfter = $state<'chip' | 'cards' | null>(null);
@@ -80,6 +86,14 @@
         target.requestId !== chipRequest?.requestId)
     )
       chipDismissTarget = null;
+  });
+
+  $effect(() => {
+    const live = new Set(visible.map(({ request }) => request.requestId));
+    untrack(() => {
+      for (const requestId of Object.keys(values))
+        if (!live.has(requestId)) delete values[requestId];
+    });
   });
 
   // Nothing left to show: forget the hidden snapshot so it cannot re-collapse
@@ -167,32 +181,51 @@
 {#if visible.length > 0}
   <div
     bind:this={stackElement}
-    class="flex w-full flex-col gap-2 px-4 pb-2"
+    class="w-full pb-2"
     data-testid="secret-request-cards"
+    in:springIn={{ tier: 'moderate', y: 8, scale: 1 }}
+    out:slide={{ tier: 'moderate' }}
   >
     {#if collapsed}
-      <CollapsedCardChip
-        bind:expandButton={chipExpandButton}
-        data-testid="secret-request-chip"
-        heading={awaiting.length === 1
-          ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
-          : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
-        hint={m.chat_secretRequest_clickToExpand_label()}
-        onExpand={expand}
-        expandTestId="secret-request-expand"
-        dismiss={chipRequest
-          ? {
-              label: m.chat_secretRequest_dismiss_label(),
-              tooltip: m.chat_secretRequest_dismiss_tooltip(),
-              onDismiss: openChipDismiss,
-              testId: 'secret-request-chip-dismiss',
-            }
-          : undefined}
-      />
+      <div in:springIn={{ tier: 'moderate', y: 4, scale: 1 }}>
+        <CollapsedCardChip
+          bind:expandButton={chipExpandButton}
+          data-testid="secret-request-chip"
+          heading={awaiting.length === 1
+            ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
+            : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
+          hint={m.chat_secretRequest_clickToExpand_label()}
+          onExpand={expand}
+          expandTestId="secret-request-expand"
+          dismiss={chipRequest
+            ? {
+                label: m.chat_secretRequest_dismiss_label(),
+                onDismiss: openChipDismiss,
+                testId: 'secret-request-chip-dismiss',
+              }
+            : undefined}
+        />
+      </div>
     {:else}
-      {#each visible as { request, state } (request.requestId)}
-        <SecretRequestCard {request} {workspaceId} {agentId} listedState={state} onHide={hide} />
-      {/each}
+      <div in:springIn={{ tier: 'moderate', y: 8, scale: 1 }}>
+        {#each visible as { request, state } (request.requestId)}
+          <div
+            class="not-first:pt-2"
+            in:springIn={{ tier: 'moderate', y: 8, scale: 1 }}
+            out:slide={{ tier: 'moderate' }}
+          >
+            <SecretRequestCard
+              {request}
+              {workspaceId}
+              {agentId}
+              listedState={state}
+              bind:value={values[request.requestId]}
+              showPrivacy={request.requestId === leadRequestId}
+              onHide={request.requestId === leadRequestId ? hide : undefined}
+            />
+          </div>
+        {/each}
+      </div>
     {/if}
   </div>
 {/if}

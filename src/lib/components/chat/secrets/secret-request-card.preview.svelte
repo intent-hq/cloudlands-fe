@@ -2,7 +2,8 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import type { SecretRequestCardState } from './pending-secret-requests';
 
-  type Scene = 'pending' | 'states' | 'failed' | 'collapsed' | 'collapsed-many';
+  type Scene =
+    'pending' | 'states' | 'failed' | 'sending' | 'stack' | 'edge' | 'collapsed' | 'collapsed-many';
 
   interface Props {
     scene?: Scene;
@@ -16,6 +17,9 @@
       pending: { props: { scene: 'pending' } },
       states: { props: { scene: 'states' } },
       failed: { props: { scene: 'failed' } },
+      sending: { props: { scene: 'sending' } },
+      stack: { props: { scene: 'stack' } },
+      edge: { props: { scene: 'edge' } },
       collapsed: { props: { scene: 'collapsed' } },
       'collapsed-many': { props: { scene: 'collapsed-many' } },
     },
@@ -54,6 +58,7 @@
   });
 
   store.dispatch(secretAnswerUpdated('sec-preview-failed', 'failed', 1));
+  store.dispatch(secretAnswerUpdated('sec-preview-sending', 'sending', 1));
 
   // A collapsed stack per scene: one request, or three.
   const stack = (agentId: string, names: string[], collapse = true) => {
@@ -93,6 +98,11 @@
     return deriveSecretRequestTranscript([message]);
   };
   const expanded = stack('preview-expanded', ['OPENROUTER_API_KEY'], false);
+  const expandedMany = stack(
+    'preview-expanded-many',
+    ['OPENROUTER_API_KEY', 'GITHUB_TOKEN', 'SENTRY_DSN'],
+    false,
+  );
   const collapsedOne = stack('preview-collapsed', ['OPENROUTER_API_KEY']);
   const collapsedMany = stack('preview-collapsed-many', [
     'OPENROUTER_API_KEY',
@@ -107,6 +117,40 @@
   {:else if scene === 'failed'}
     <SecretRequestCard
       request={request('sec-preview-failed')}
+      workspaceId="preview"
+      agentId="preview-agent"
+      listedState="pending"
+    />
+  {:else if scene === 'sending'}
+    <SecretRequestCard
+      request={request('sec-preview-sending')}
+      workspaceId="preview"
+      agentId="preview-agent"
+      listedState="pending"
+      value="sk-or-v1-preview"
+    />
+  {:else if scene === 'stack'}
+    <SecretRequestCards
+      transcript={expandedMany}
+      workspaceId="preview"
+      agentId="preview-expanded-many"
+    />
+  {:else if scene === 'edge'}
+    <SecretRequestCard
+      request={{
+        ...request(
+          'sec-preview-long',
+          'GOOGLE_APPLICATION_CREDENTIALS_FOR_THE_STAGING_ANALYTICS_PIPELINE',
+        ),
+        reason:
+          'Needed to read the staging analytics bucket while the migration runs, then to verify that the exported tables match the production schema before switching traffic over.',
+      }}
+      workspaceId="preview"
+      agentId="preview-agent"
+      listedState="pending"
+    />
+    <SecretRequestCard
+      request={{ ...request('sec-preview-no-reason', 'NPM_TOKEN'), reason: '' }}
       workspaceId="preview"
       agentId="preview-agent"
       listedState="pending"
