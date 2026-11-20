@@ -20,7 +20,7 @@
 
 export type PasskeyTransport = 'hybrid' | 'usb';
 
-interface PasskeyCredentialDescriptor {
+export interface PasskeyCredentialDescriptor {
   id: string;
   transports?: string[];
 }

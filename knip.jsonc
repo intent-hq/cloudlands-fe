@@ -260,6 +260,8 @@
     "@vitest/coverage-v8",
     // Fonts loaded via url() in src/app.css — knip does not parse CSS
     "@fontsource-variable/source-serif-4",
+    // UMD bundle served as a page script by test/electron-passkeys.spec.ts (read by path)
+    "@simplewebauthn/browser",
     // Runtime body parsing for express; explicitly packed via electron-builder.yml files list
     "body-parser",
     // Spawned via resolveBin() in scripts/run-svelte-check.mjs (pnpm run check)

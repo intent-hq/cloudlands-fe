@@ -1,19 +1,44 @@
 <!doctype html>
-<title>Cross-origin passkey frame</title>
-<script>
-  const shimmed = !CredentialsContainer.prototype.get.toString().includes('[native code]');
-  parent.postMessage({ frameProbe: { shimmed } }, '*');
-  window.addEventListener('message', async () => {
-    try {
-      await navigator.credentials.get({
-        publicKey: { challenge: new Uint8Array(32), timeout: 3000 },
-      });
-      parent.postMessage({ frameResult: { state: 'resolved', shimmed } }, '*');
-    } catch (error) {
-      parent.postMessage(
-        { frameResult: { state: 'rejected', shimmed, name: error.name, message: error.message } },
-        '*',
-      );
+<title>Passkey frame</title>
+<body>
+  <script>
+    // ?nest=<url> embeds another frame and relays messages both ways, so the
+    // test can build an A → B → A frame tree.
+    const nest = new URLSearchParams(location.search).get('nest');
+    const shimmed = !CredentialsContainer.prototype.get.toString().includes('[native code]');
+    let child = null;
+    if (nest) {
+      child = document.createElement('iframe');
+      child.src = nest;
+      child.allow = 'publickey-credentials-get *';
+      document.body.append(child);
+    } else {
+      parent.postMessage({ frameProbe: { shimmed } }, '*');
     }
-  });
-</script>
+    window.addEventListener('message', async (event) => {
+      if (child && event.source === child.contentWindow) {
+        if (event.data?.frameResult) parent.postMessage(event.data, '*');
+        return;
+      }
+      if (child) {
+        child.contentWindow.postMessage(event.data, '*');
+        return;
+      }
+      const tag = event.data?.tag ?? 'frame';
+      try {
+        await navigator.credentials.get({
+          publicKey: { challenge: new Uint8Array(32), timeout: 3000 },
+        });
+        parent.postMessage({ tag, frameResult: { state: 'resolved', shimmed } }, '*');
+      } catch (error) {
+        parent.postMessage(
+          {
+            tag,
+            frameResult: { state: 'rejected', shimmed, name: error.name, message: error.message },
+          },
+          '*',
+        );
+      }
+    });
+  </script>
+</body>

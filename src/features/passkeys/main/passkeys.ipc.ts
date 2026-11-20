@@ -1,5 +1,5 @@
 /**
- * Browser-panel passkeys (Linux). Registers the WebAuthn frame preload on the
+ * Browser-panel passkeys (Linux, opt-in while unfinished: `INTENT_BROWSER_PASSKEYS=1`). Registers the WebAuthn frame preload on the
  * `persist:browser-panel` session and the IPC handlers that run ceremonies
  * through the bundled `intent-passkey` helper. Without the helper (other
  * platforms, or a build that does not bundle it) nothing is registered and
@@ -51,6 +51,7 @@ export function setupPasskeysIPC(
   preloadPath = path.join(__dirname, '../../../preload-build/preload/passkey-page.js'),
 ): void {
   if (process.platform !== 'linux' || service) return;
+  if (process.env.INTENT_BROWSER_PASSKEYS !== '1') return;
   const binary = resolvePasskeyBinaryPath();
   if (!binary) {
     logger.info('intent-passkey is not bundled; the browser panel keeps native WebAuthn');

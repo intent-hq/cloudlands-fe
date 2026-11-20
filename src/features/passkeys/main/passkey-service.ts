@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { IpcMainInvokeEvent, Session, WebContents } from 'electron';
+import type { IpcMainInvokeEvent, Session, WebContents, WebFrameMain } from 'electron';
 import { z } from 'zod';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import type {
   PasskeyCeremonyKind,
+  PasskeyCredentialDescriptor,
   PasskeyDialogView,
   PasskeyErrorReason,
   PasskeyPageCreateOptions,
@@ -36,7 +37,7 @@ const base64url = z
   .string()
   .regex(/^[A-Za-z0-9_-]*$/)
   .max(16_384);
-const descriptor = z.object({
+const descriptor: z.ZodType<PasskeyCredentialDescriptor> = z.object({
   id: base64url,
   transports: z.array(z.string().max(32)).max(8).optional(),
 });
@@ -105,6 +106,8 @@ interface Ceremony {
   kind: PasskeyCeremonyKind;
   guest: WebContents;
   host: WebContents;
+  /** The frame (document) that started the ceremony. */
+  frame: WebFrameMain;
   requestId: string;
   origin: string;
   rpId: string;
@@ -114,8 +117,9 @@ interface Ceremony {
   qr: string | null;
   running: boolean;
   settled: boolean;
-  /** The dialog is still shown (it can outlive the page request to show an error). */
+  /** The dialog was shown; it can outlive the page request to show an error. */
   shown: boolean;
+  closed: boolean;
   resolve: (result: PasskeyPageResult) => void;
   dispose: () => void;
 }
@@ -124,6 +128,16 @@ function failure(name: PasskeyPageErrorName, message: string): PasskeyPageResult
   return { ok: false, name, message };
 }
 
+function sameOriginWithAncestors(frame: WebFrameMain): boolean {
+  for (let parent = frame.parent; parent; parent = parent.parent) {
+    if (parent.origin !== frame.origin) return false;
+  }
+  return true;
+}
+
+/** How often main checks that the initiating frame still exists (iframes have no removal event). */
+const FRAME_CHECK_MS = 500;
+
 /**
  * Runs WebAuthn ceremonies for browser-panel webviews: one at a time per
  * webview, with the Intent dialog in the window that hosts the webview.
@@ -131,8 +145,6 @@ function failure(name: PasskeyPageErrorName, message: string): PasskeyPageResult
 export class PasskeyService {
   private readonly byId = new Map<string, Ceremony>();
   private readonly byGuest = new Map<number, Ceremony>();
-  /** Page request ids (per guest) waiting for the helper to start; `true` once aborted. */
-  private readonly starting = new Map<number, { requestId: string; aborted: boolean }>();
 
   constructor(
     private readonly sidecar: PasskeySidecar,
@@ -160,7 +172,7 @@ export class PasskeyService {
     if (!frame || frame.isDestroyed()) {
       return failure('NotAllowedError', 'The document is not active.');
     }
-    const originCheck = checkFrameOrigin(frame.origin, frame.top?.origin ?? '');
+    const originCheck = checkFrameOrigin(frame.origin, sameOriginWithAncestors(frame));
     if (!originCheck.ok) return failure(originCheck.name, originCheck.message);
 
     const requestedRpId =
@@ -171,24 +183,8 @@ export class PasskeyService {
     if (!isValidRpIdForHost(rpId, originCheck.host)) {
       return failure('SecurityError', 'The RP ID is not valid for this origin.');
     }
-    if (this.byGuest.has(guest.id) || this.starting.has(guest.id)) {
+    if (this.byGuest.has(guest.id)) {
       return failure('NotAllowedError', 'A passkey request is already in progress.');
-    }
-
-    const start = { requestId, aborted: false };
-    this.starting.set(guest.id, start);
-    let hello;
-    try {
-      hello = await this.sidecar.start();
-    } catch (error) {
-      logger.warn('Passkey helper unavailable', { error: (error as Error).message });
-      return failure('NotAllowedError', 'Passkeys are not available.');
-    } finally {
-      this.starting.delete(guest.id);
-    }
-    if (start.aborted) return failure('AbortError', 'The operation was aborted.');
-    if (guest.isDestroyed() || host.isDestroyed()) {
-      return failure('NotAllowedError', 'The document is not active.');
     }
 
     return new Promise<PasskeyPageResult>((resolve) => {
@@ -197,38 +193,50 @@ export class PasskeyService {
         kind,
         guest,
         host,
+        frame,
         requestId,
         origin: originCheck.origin,
         rpId,
         options: publicKey,
         timeoutMs: ceremonyTimeoutMs(publicKey.timeout),
-        bluetooth: hello.bluetooth,
+        bluetooth: 'missing',
         qr: null,
         running: false,
         settled: false,
-        shown: true,
+        shown: false,
+        closed: false,
         resolve,
         dispose: () => {},
       };
+      // Track the document before the helper starts, so an abort, navigation
+      // or removal while it starts still ends this ceremony.
       this.track(ceremony);
       logger.info('Passkey ceremony started', { ceremonyId: ceremony.id, kind, rpId });
-      this.show(ceremony, {
-        step: 'choose-transport',
-        hybrid:
-          hello.bluetooth === 'on' && hello.transports.hybrid
-            ? 'available'
-            : hello.bluetooth === 'missing'
-              ? 'bluetooth-missing'
-              : 'bluetooth-off',
-      });
+      this.sidecar.start().then(
+        (hello) => {
+          if (ceremony.settled) return;
+          ceremony.bluetooth = hello.bluetooth;
+          this.show(ceremony, {
+            step: 'choose-transport',
+            hybrid:
+              hello.bluetooth === 'on' && hello.transports.hybrid
+                ? 'available'
+                : hello.bluetooth === 'missing'
+                  ? 'bluetooth-missing'
+                  : 'bluetooth-off',
+          });
+        },
+        (error: unknown) => {
+          logger.warn('Passkey helper unavailable', { error: (error as Error).message });
+          this.finish(ceremony, failure('NotAllowedError', 'Passkeys are not available.'), null);
+        },
+      );
     });
   }
 
   handlePageCancel(event: IpcMainInvokeEvent, payload: unknown): void {
     const parsed = CancelRequestSchema.safeParse(payload);
     if (!parsed.success) return;
-    const start = this.starting.get(event.sender.id);
-    if (start?.requestId === parsed.data.requestId) start.aborted = true;
     const ceremony = this.byGuest.get(event.sender.id);
     if (!ceremony || ceremony.requestId !== parsed.data.requestId) return;
     this.abort(ceremony, 'AbortError', 'The operation was aborted.');
@@ -273,18 +281,34 @@ export class PasskeyService {
   private track(ceremony: Ceremony): void {
     this.byId.set(ceremony.id, ceremony);
     this.byGuest.set(ceremony.guest.id, ceremony);
-    const onNavigate = (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
-      if (details.isMainFrame && !details.isSameDocument) {
+    // A new document in the initiating frame or any ancestor ends the ceremony.
+    const lineage = new Set<number>();
+    for (let frame: WebFrameMain | null = ceremony.frame; frame; frame = frame.parent) {
+      lineage.add(frame.frameTreeNodeId);
+    }
+    const onNavigate = (details: {
+      isMainFrame: boolean;
+      isSameDocument: boolean;
+      frame: WebFrameMain | null;
+    }) => {
+      if (details.isSameDocument) return;
+      if (details.isMainFrame || (details.frame && lineage.has(details.frame.frameTreeNodeId))) {
         this.abort(ceremony, 'AbortError', 'The document navigated away.');
       }
     };
     const onGone = () => this.abort(ceremony, 'AbortError', 'The document was closed.');
     const timer = setTimeout(() => this.timeout(ceremony), ceremony.timeoutMs);
+    const frameCheck = setInterval(() => {
+      if (ceremony.frame.isDestroyed() || ceremony.frame.detached) {
+        this.abort(ceremony, 'AbortError', 'The document was removed.');
+      }
+    }, FRAME_CHECK_MS);
     ceremony.guest.on('did-start-navigation', onNavigate);
     ceremony.guest.once('destroyed', onGone);
     ceremony.host.once('destroyed', onGone);
     ceremony.dispose = () => {
       clearTimeout(timer);
+      clearInterval(frameCheck);
       if (!ceremony.guest.isDestroyed()) {
         ceremony.guest.off('did-start-navigation', onNavigate);
         ceremony.guest.off('destroyed', onGone);
@@ -450,7 +474,8 @@ export class PasskeyService {
   }
 
   private show(ceremony: Ceremony, view: PasskeyDialogView): void {
-    if (!ceremony.shown || ceremony.host.isDestroyed()) return;
+    if (ceremony.closed || ceremony.host.isDestroyed()) return;
+    ceremony.shown = true;
     ceremony.host.send(CHANNELS.DIALOG_SHOW, {
       ceremonyId: ceremony.id,
       kind: ceremony.kind,
@@ -461,9 +486,9 @@ export class PasskeyService {
 
   private close(ceremony: Ceremony): void {
     this.byId.delete(ceremony.id);
-    if (!ceremony.shown) return;
-    ceremony.shown = false;
-    if (!ceremony.host.isDestroyed()) {
+    if (ceremony.closed) return;
+    ceremony.closed = true;
+    if (ceremony.shown && !ceremony.host.isDestroyed()) {
       ceremony.host.send(CHANNELS.DIALOG_CLOSE, { ceremonyId: ceremony.id });
     }
   }

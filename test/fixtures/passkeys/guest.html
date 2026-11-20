@@ -113,11 +113,35 @@
     },
     frameGet() {
       results.frame = { state: 'pending' };
-      document.getElementById('frame').contentWindow.postMessage('get', '*');
+      document.getElementById('frame').contentWindow.postMessage({ tag: 'frame' }, '*');
+    },
+    // Frame tree localhost → a.localhost → localhost: the inner frame matches the
+    // top origin but not its parent.
+    nestedFrameGet() {
+      results.nested = { state: 'pending' };
+      const inner = encodeURIComponent(`${location.origin}/frame`);
+      addFrame('nested', `http://a.localhost:${location.port}/frame?nest=${inner}`, (frame) =>
+        setTimeout(() => frame.contentWindow.postMessage({ tag: 'nested' }, '*'), 300),
+      );
+    },
+    sameOriginFrameGet() {
+      results.same = { state: 'pending' };
+      addFrame('same', '/frame', (frame) => frame.contentWindow.postMessage({ tag: 'same' }, '*'));
+    },
+    removeFrame(id) {
+      document.getElementById(id)?.remove();
     },
   };
+  function addFrame(id, src, onload) {
+    const frame = document.createElement('iframe');
+    frame.id = id;
+    frame.allow = 'publickey-credentials-get *';
+    frame.onload = () => onload(frame);
+    frame.src = src;
+    document.body.append(frame);
+  }
   window.addEventListener('message', (event) => {
-    if (event.data?.frameResult) results.frame = event.data.frameResult;
+    if (event.data?.frameResult) results[event.data.tag ?? 'frame'] = event.data.frameResult;
     if (event.data?.frameProbe) results.frameProbe = event.data.frameProbe;
   });
 </script>

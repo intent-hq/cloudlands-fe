@@ -14,11 +14,15 @@ function isLoopbackAddress(host: string): boolean {
 }
 
 /**
- * Checks the browser-process origins of the calling frame. `frameOrigin` and
- * `topOrigin` come from `event.senderFrame`, never from the page.
+ * Checks the browser-process origin of the calling frame (`event.senderFrame`,
+ * never the page). `sameOriginWithAncestors` must cover every ancestor frame,
+ * as WebAuthn defines it: an A → B → A tree is cross-origin.
  */
-export function checkFrameOrigin(frameOrigin: string, topOrigin: string): FrameOriginCheck {
-  if (frameOrigin !== topOrigin) {
+export function checkFrameOrigin(
+  frameOrigin: string,
+  sameOriginWithAncestors: boolean,
+): FrameOriginCheck {
+  if (!sameOriginWithAncestors) {
     return {
       ok: false,
       name: 'NotAllowedError',

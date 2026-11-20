@@ -175,6 +175,7 @@ async function launch(bluetooth: 'on' | 'off' = 'on'): Promise<Launched> {
     env: {
       ...env,
       DD_TRACE_ENABLED: 'false',
+      INTENT_BROWSER_PASSKEYS: '1',
       INTENT_PASSKEY_BIN: join(fixture, 'fake-sidecar.cjs'),
       FAKE_PASSKEY_LOG: log,
       FAKE_PASSKEY_BLUETOOTH: bluetooth,
@@ -393,6 +394,31 @@ test.describe.serial('browser-panel passkeys', () => {
     expect(result).toMatchObject({ state: 'rejected', name: 'NotAllowedError', shimmed: true });
     expect(sidecarRequests(log).slice(before)).toEqual([]);
     await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('rejects a frame that is cross-origin with an ancestor but not the top (A → B → A)', async () => {
+    const { app, page, log } = launched!;
+    const before = sidecarRequests(log).length;
+    await guest(app, 'window.passkeyPage.nestedFrameGet()');
+    const result = await settled(app, 'nested');
+    expect(result).toMatchObject({ state: 'rejected', name: 'NotAllowedError', shimmed: true });
+    expect(sidecarRequests(log).slice(before)).toEqual([]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('removing the initiating iframe ends its ceremony and frees the webview', async () => {
+    const { app, page } = launched!;
+    await guest(app, 'window.passkeyPage.sameOriginFrameGet()');
+    await expect(page.getByRole('dialog')).toContainText('Use a passkey for localhost');
+    await guest(app, `window.passkeyPage.removeFrame('same')`);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await guest(app, `window.passkeyPage.start('after-removal', 'get')`);
+    await expect(page.getByRole('dialog')).toContainText('Use a passkey for localhost');
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).last().click();
+    expect(await settled(app, 'after-removal')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
   });
 
   test('rejects helper client data that names another origin', async () => {
