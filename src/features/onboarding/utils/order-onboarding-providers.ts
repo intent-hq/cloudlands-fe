@@ -26,7 +26,7 @@ export interface OnboardingProviderTierStatus {
 const PRIORITY_PROVIDER_IDS: readonly string[] = ['claude-code', 'codex'];
 
 /** OpenCode ships free models that need no sign-in. */
-export const FREE_ONBOARDING_PROVIDER_ID = 'opencode';
+const FREE_ONBOARDING_PROVIDER_ID = 'opencode';
 
 /**
  * The provider to promote as the free choice: OpenCode, once the first

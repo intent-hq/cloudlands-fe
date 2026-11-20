@@ -148,8 +148,8 @@
       }),
     );
     const freeProviderId = resolveFreeOnboardingProvider(visible, statusMap, hasCheckedOnce);
-    return orderOnboardingProviders(visible, statusMap, { promotedProviderId: freeProviderId })
-      .map((p) => {
+    return orderOnboardingProviders(visible, statusMap, { promotedProviderId: freeProviderId }).map(
+      (p) => {
         const status = statusMap[p.id];
         const inFlight = loadingMap[p.id];
         return {
@@ -182,7 +182,8 @@
           unavailableReason: status?.unavailableReason,
           free: p.id === freeProviderId,
         };
-      });
+      },
+    );
   });
 
   /** A provider is ready when installed and not explicitly unauthenticated
