@@ -20,10 +20,18 @@ import {
   delay,
   put,
   race,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
+import { confirm } from '$lib/components/patterns/confirm';
+import {
+  UNSLOTH_SWITCH_CONFIRM_KEY,
+  unslothModelSwitchFromError,
+  withoutUnslothSwitchConfirmation,
+  type UnslothModelSwitchRefusal,
+} from '$shared/unsloth-model-switch';
 
 import { agentClient } from '$features/agent/agent.client';
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
@@ -489,7 +497,10 @@ function* dispatchToLifecycle(
     yield* put(chatSendFailed(agentId, m.agent_chatSend_historyFailed_error()));
     return;
   }
-  const recordedAttempt = buildRecordedAttempt(content, options);
+  const recordedAttempt = buildRecordedAttempt(content, {
+    ...options,
+    messageMetadata: withoutUnslothSwitchConfirmation(options.messageMetadata),
+  });
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
   if (!skipQueueCheck && isResponding) {
     if (!submission) yield* put(clearChatDraft(wsId, agentId));
@@ -617,7 +628,39 @@ function* dispatchToLifecycle(
     if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;
     yield* settle('uncertain');
     yield* put(chatSendFailed(agentId, yield* sendFailureMessage(agentId, error)));
+    const unslothSwitch = unslothModelSwitchFromError(error);
+    if (unslothSwitch) yield* spawn(confirmUnslothSwitchAndResend, agentId, wsId, unslothSwitch);
   }
+}
+
+/**
+ * The managed Unsloth server holds one model (PROTOCOL §5.5). Ask before a
+ * send loads another one and unloads it for the listed agents; on confirm,
+ * resend the refused message once with the confirmation flag.
+ */
+function* confirmUnslothSwitchAndResend(
+  agentId: string,
+  wsId: string,
+  refusal: UnslothModelSwitchRefusal,
+): SagaGenerator<void> {
+  const accepted = yield* call(confirm, {
+    title: m.agent_unslothSwitch_confirm_title(),
+    description:
+      refusal.agents.length === 1
+        ? m.agent_unslothSwitch_confirmDescription_one({ model: refusal.requestedModel })
+        : m.agent_unslothSwitch_confirmDescription_many({
+            model: refusal.requestedModel,
+            count: refusal.agents.length,
+          }),
+    items: refusal.agents.map((agent) => ({
+      label: agent.agentName,
+      ...(agent.workspaceTitle ? { detail: agent.workspaceTitle } : {}),
+    })),
+    confirmLabel: m.agent_unslothSwitch_confirm_label(),
+    destructive: true,
+  });
+  if (!accepted) return;
+  yield* call(resendLastAttempt, agentId, wsId, undefined, { [UNSLOTH_SWITCH_CONFIRM_KEY]: true });
 }
 
 /**
@@ -627,6 +670,7 @@ function* dispatchToLifecycle(
  * their message.
  */
 function* sendFailureMessage(agentId: string, error: unknown): SagaGenerator<string> {
+  if (unslothModelSwitchFromError(error)) return m.agent_unslothSwitch_notSent_error();
   const replacement = providerReplacementFromError(error);
   if (!replacement) {
     const message = error instanceof Error ? error.message : String(error);
@@ -734,6 +778,45 @@ async function showNothingToRetry(): Promise<void> {
   }
 }
 
+function* resendLastAttempt(
+  agentId: string,
+  wsId: string,
+  model?: string,
+  extraMetadata?: Record<string, unknown>,
+): SagaGenerator<void> {
+  const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
+  if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
+    yield* call(showNothingToRetry);
+    return;
+  }
+  const retry = lastAttempted.submission
+    ? yield* call(prepareSubmissionRetry, agentId, wsId, lastAttempted, model)
+    : 'legacy';
+  if (!retry) return;
+  const messageMetadata = lastAttempted.options?.messageMetadata;
+  yield* call(
+    dispatchToLifecycle,
+    agentId,
+    wsId,
+    lastAttempted.text,
+    undefined,
+    {
+      ...(retry !== 'legacy'
+        ? {
+            submission: { scope: retry.scope, id: retry.submission.id },
+            userAppMessageId: retry.submission.appMessageId,
+          }
+        : {}),
+      imageBlocks: lastAttempted.options?.imageBlocks,
+      fileBlocks: lastAttempted.options?.fileBlocks,
+      noteIds: lastAttempted.options?.noteIds,
+      messageMetadata: extraMetadata ? { ...messageMetadata, ...extraMetadata } : messageMetadata,
+      model: model ?? lastAttempted.options?.model,
+    },
+    false,
+  );
+}
+
 function* retryLastMessage(
   action: RetryAction | RetryModelAction,
   model?: string,
@@ -741,42 +824,7 @@ function* retryLastMessage(
   const [agentId, wsId] = action.payload;
   let settled = false;
   try {
-    const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
-    if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
-      yield* call(showNothingToRetry);
-      yield* put(action.success(undefined as void));
-      settled = true;
-      return;
-    }
-    const retry = lastAttempted.submission
-      ? yield* call(prepareSubmissionRetry, agentId, wsId, lastAttempted, model)
-      : 'legacy';
-    if (!retry) {
-      yield* put(action.success(undefined as void));
-      settled = true;
-      return;
-    }
-    yield* call(
-      dispatchToLifecycle,
-      agentId,
-      wsId,
-      lastAttempted.text,
-      undefined,
-      {
-        ...(retry !== 'legacy'
-          ? {
-              submission: { scope: retry.scope, id: retry.submission.id },
-              userAppMessageId: retry.submission.appMessageId,
-            }
-          : {}),
-        imageBlocks: lastAttempted.options?.imageBlocks,
-        fileBlocks: lastAttempted.options?.fileBlocks,
-        noteIds: lastAttempted.options?.noteIds,
-        messageMetadata: lastAttempted.options?.messageMetadata,
-        model: model ?? lastAttempted.options?.model,
-      },
-      false,
-    );
+    yield* call(resendLastAttempt, agentId, wsId, model);
     yield* put(action.success(undefined as void));
     settled = true;
   } catch (error) {

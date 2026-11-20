@@ -27,6 +27,21 @@
   let inputRef = $state<HTMLInputElement | null>(null);
 </script>
 
+{#snippet itemList()}
+  {#if request.kind === 'confirm'}
+    <ul class="grid gap-1.5">
+      {#each request.options.items ?? [] as item, index (index)}
+        <li class="flex min-w-0 items-baseline justify-between gap-3">
+          <span class="min-w-0 truncate">{item.label}</span>
+          {#if item.detail}
+            <span class="min-w-0 shrink truncate text-subtle">{item.detail}</span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
 {#if request?.kind === 'confirm'}
   <DestructiveConfirm
     open
@@ -36,6 +51,7 @@
     confirmLabel={request.options.confirmLabel ?? m.modals_bulkActionConfirm_confirm_label()}
     cancelLabel={request.options.cancelLabel ?? m.modals_bulkActionConfirm_cancel_label()}
     destructive={request.options.destructive ?? false}
+    details={request.options.items?.length ? itemList : undefined}
     {busy}
     onConfirm={() => onAccept(value)}
     {onCancel}

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   // the failed turn has no renderer-side record to resend (wake-started
   // turns, or after a reload; intent-hq/intent#7226).
   agentRetry: vi.fn(),
+  confirm: vi.fn(),
   // Image pre-upload (monorepo#3338): default maps each inline block to a
   // deterministic reference block; individual tests override to assert the
   // failure path.
@@ -38,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: mocks.confirm }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { info: mocks.toastInfo, error: mocks.toastError },
 }));
@@ -985,6 +987,77 @@ describe('chatSendSaga', () => {
     expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, expected()));
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  describe('Unsloth model switch confirmation', () => {
+    async function switchRefusal() {
+      const { BackendError } = await import('$lib/client/live/backend-transport-types');
+      return new BackendError({
+        code: 'invalid_params',
+        rpcCode: -32602,
+        message: 'switching the Unsloth server unloads the model for 2 other agents',
+        data: {
+          code: 'unsloth-model-switch-confirmation-required',
+          currentModel: 'unsloth/Qwen3-4B-GGUF',
+          requestedModel: 'unsloth/gemma-3-27b-it-GGUF',
+          agents: [
+            {
+              agentId: 'agent-a',
+              agentName: 'Planner',
+              workspaceId: 'ws-a',
+              workspaceTitle: 'Dark mode',
+            },
+            {
+              agentId: 'agent-b',
+              agentName: 'Reviewer',
+              workspaceId: 'ws-b',
+              workspaceTitle: null,
+            },
+          ],
+        },
+      });
+    }
+
+    it('asks before switching, naming the affected agents, then resends confirmed', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValueOnce(undefined);
+      mocks.confirm.mockResolvedValue(true);
+      const run = harness();
+      run.channel.put(
+        sendMessage(AGENT, { wsId: WS, text: 'next turn', messageMetadata: { source: 'chat' } }),
+      );
+      await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(2));
+
+      const [request] = mocks.confirm.mock.calls[0];
+      expect(request.items).toEqual([
+        { label: 'Planner', detail: 'Dark mode' },
+        { label: 'Reviewer' },
+      ]);
+      const [, content, , resent] = mocks.send.mock.calls[1];
+      expect(content).toBe('next turn');
+      expect(resent.messageMetadata).toEqual({
+        source: 'chat',
+        confirmUnslothModelSwitch: true,
+      });
+      expect(mocks.send.mock.calls[0][3].messageMetadata).toEqual({ source: 'chat' });
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('leaves the message unsent when the user cancels', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal());
+      mocks.confirm.mockResolvedValue(false);
+      const run = harness();
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(mocks.send).toHaveBeenCalledTimes(1);
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === chatSendFailed.type)).toBe(
+        true,
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    });
   });
 
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {

@@ -9,6 +9,8 @@ import {
   heartbeatFailed,
   systemStatusFailure,
   systemStatusSuccess,
+  unslothStatusFailure,
+  unslothStatusSuccess,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import type {
@@ -16,6 +18,7 @@ import type {
   BackendTransportInfo,
   DaemonStatusCheckFailureKind,
   SystemStatusWirePayload,
+  UnslothStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
@@ -58,6 +61,18 @@ const statusPayload: SystemStatusWirePayload = {
   protocolVersion: '2.5',
   host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
 };
+
+const unslothServer = (phase: string): UnslothStatusWirePayload => ({
+  running: true,
+  repoId: 'unsloth/Qwen3.8-27B-GGUF',
+  port: 8888,
+  pid: 51200,
+  uptimeSecs: 17,
+  phase,
+  cpuPercent: 4,
+  memoryBytes: 650_330_112,
+  attachedAgentCount: 2,
+});
 
 // A daemon that has sampled its process tree: the agent memory row appears
 // and opens the per-agent breakdown.
@@ -215,6 +230,8 @@ interface Scenario {
   machines?: boolean;
   /** Paused E2B sandboxes seeded into the cloud-machine rows. */
   pausedSandboxes?: number;
+  /** Phase of a running managed Unsloth server; omitted means none runs. */
+  unslothPhase?: string;
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -274,6 +291,7 @@ function setup({
   failures,
   machines = false,
   pausedSandboxes = 0,
+  unslothPhase,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -306,6 +324,7 @@ function setup({
         ),
       );
     }
+    if (unslothPhase) store.dispatch(unslothStatusSuccess(unslothServer(unslothPhase)));
     if (pausedSandboxes > 0) {
       store.dispatch(
         cloudMachinesLoaded({
@@ -362,6 +381,7 @@ function setup({
     }
     return () => {
       liveScenes -= 1;
+      if (unslothPhase) store.dispatch(unslothStatusFailure());
       if (pausedSandboxes > 0) {
         store.dispatch(
           cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }),
@@ -459,6 +479,8 @@ export const preview = definePreview<Record<string, never>>({
         pausedSandboxes: 1,
       }),
     },
+    'unsloth-minting': { props: {}, setup: setup({ unslothPhase: 'minting' }) },
+    'unsloth-ready': { props: {}, setup: setup({ unslothPhase: 'ready' }) },
     'degraded-timeout': {
       props: {},
       setup: setup({ failures: { kind: 'timeout', count: 1 } }),
