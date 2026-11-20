@@ -12,6 +12,7 @@ import {
 import { appClient, localMachineClient } from '$lib/client';
 import type { ServerPairingInfo } from '$lib/client/app-client';
 import { readSelfPairing } from '$features/devices/self-pairing';
+import { bindIsLoopbackOnly, tunnelDefaultApplies } from './tunnel-default';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -201,6 +202,26 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       if (enabled !== intent.enabled) error = m.settings_wsApi_startListenerError();
       values = { enabled };
       yield* put(settingsFormRequestProgressed(request, values));
+      if (enabled && intent.enabled) {
+        try {
+          const settings = yield* call([appClient.settings, appClient.settings.list]);
+          // appClient follows the active machine: write only while this form
+          // (and so its machine) is still the current one.
+          if (tunnelDefaultApplies(settings) && (yield* requestCurrent(request, context)))
+            yield* call(
+              [appClient.settings, appClient.settings.update],
+              [{ path: 'server.tunnel.enabled', value: true }],
+            );
+        } catch (cause) {
+          if (yield* requestCurrent(request, context))
+            yield* call(
+              notify.error,
+              m.settings_tunnel_enableError({
+                error: cause instanceof Error ? cause.message : String(cause),
+              }),
+            );
+        }
+      }
       if (enabled) values = yield* loadMobile(request, context);
       else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
     } else if (intent.kind === 'load') {
@@ -219,33 +240,29 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         snapshot.enabled = intent.enabled;
         if (intent.enabled) {
           snapshot = yield* call(loadSnapshot, client, request, true);
-          // First-enable defaults, each its own fail-soft update so a tunnel
-          // that cannot start never rolls back the bind default.
-          const defaults: [{ path: string; value: string[] | boolean }, (e: string) => string][] =
-            [];
-          const failed = (error: string) => m.settings_listenTargets_saveError({ error });
-          if (
-            snapshot.bindAddressSupported &&
-            !snapshot.tunnelOnly &&
-            !snapshot.bindIps.some((ip) => ip !== '127.0.0.1')
-          )
-            defaults.push([{ path: 'server.bindAddress', value: ['0.0.0.0'] }, failed]);
-          // Remote access brings the Tailcat tunnel with it by default.
-          if (snapshot.tunnelSupported && !snapshot.tunnelEnabled)
-            defaults.push([
-              { path: 'server.tunnel.enabled', value: true },
-              (error) => m.settings_tunnel_enableError({ error }),
-            ]);
+          // Remote access defaults to loopback plus the Tailcat tunnel; a
+          // daemon without the tunnel keeps the all-interfaces default so
+          // something can still reach it. Networks chosen before are kept.
+          const loopbackOnly = !snapshot.tunnelOnly && bindIsLoopbackOnly(snapshot.bindIps);
+          const change =
+            snapshot.tunnelSupported && !snapshot.tunnelEnabled && loopbackOnly
+              ? { path: 'server.tunnel.enabled', value: true as boolean | string[] }
+              : !snapshot.tunnelSupported && snapshot.bindAddressSupported && loopbackOnly
+                ? { path: 'server.bindAddress', value: ['0.0.0.0'] as boolean | string[] }
+                : null;
           let changed = false;
-          for (const [change, message] of defaults) {
+          if (change) {
             try {
               yield* call([client.settings, client.settings.update], [change]);
               changed = true;
             } catch (cause) {
+              const error = cause instanceof Error ? cause.message : String(cause);
               if (yield* selectSettingsFormRequestCurrent.effect(request))
                 yield* call(
                   notify.error,
-                  message(String(cause instanceof Error ? cause.message : cause)),
+                  change.path === 'server.bindAddress'
+                    ? m.settings_listenTargets_saveError({ error })
+                    : m.settings_tunnel_enableError({ error }),
                 );
             }
           }
