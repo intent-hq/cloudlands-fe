@@ -297,6 +297,8 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
     'setup-tested',
     'setup-key-rejected',
     'unsupported',
+    // No saved entry, else the backend counts as opted in; its sandboxes still list agents on E2B.
+    'labs-off',
   ].includes(state);
   const entries = ENTRY_SCENES.includes(state);
   const team =
@@ -342,7 +344,7 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
             : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
           : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
             ? GROUPED_SANDBOXES
-            : configured && state !== 'connected-no-sandboxes'
+            : (configured || state === 'labs-off') && state !== 'connected-no-sandboxes'
               ? E2B_SANDBOXES
               : [],
       // Read now: uptime then matches the fixture until the next 30 s tick.
