@@ -8,6 +8,8 @@
   import { untrack } from 'svelte';
   import { FormField } from '$lib/components/patterns/form';
   import { Button, Input, ToggleGroup } from '$lib/components/patterns/settings/custom-controls';
+  import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { dialog } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import type { SshAuthMethod, SshLoginPrefill } from '$shared/types/machine-setup';
@@ -34,6 +36,7 @@
     initial?.method ?? (untrack(() => agentAvailable) === false ? 'key' : 'agent'),
   );
   let keyPath = $state(initial?.keyPath ?? DEFAULT_SSH_KEY_PATH);
+  let keyPickerOpen = $state(false);
   let passphrase = $state('');
   let password = $state('');
   let hostInput: HTMLInputElement | null = $state(null);
@@ -50,6 +53,11 @@
     if (hostInput) requestAnimationFrame(() => hostInput?.focus());
   });
 
+  const daemonLocal = selectIsDaemonLocal();
+  const canBrowseKey = $derived(
+    typeof window === 'undefined' || !window.electronAPI?.preferInAppPicker || $daemonLocal,
+  );
+
   const portNumber = $derived(Number(port.trim()));
   const portError = $derived(
     port.trim() && !validSshPort(portNumber) ? m.machineSetup_ssh_port_error() : undefined,
@@ -64,6 +72,11 @@
   });
 
   async function browseKey() {
+    if (window.electronAPI?.preferInAppPicker) {
+      // SSH setup reads private keys on the frontend host.
+      if (selectIsDaemonLocal.select(appStore.state)) keyPickerOpen = true;
+      return;
+    }
     // eslint-disable-next-line intent/no-component-async-data-fetch -- a native file picker for a local key file, not a domain data fetch
     const picked = await dialog.openFile({ title: m.machineSetup_ssh_keyFile_browse_title() });
     if (picked) keyPath = picked;
@@ -160,7 +173,7 @@
             autocomplete="off"
             spellcheck={false}
           />
-          <Button type="button" variant="outline" onclick={browseKey}
+          <Button type="button" variant="outline" disabled={!canBrowseKey} onclick={browseKey}
             >{m.machineSetup_ssh_keyFile_browse_label()}</Button
           >
         </div>
@@ -182,3 +195,14 @@
     </FormField>
   {/if}
 </div>
+
+<DirectoryPickerModal
+  open={keyPickerOpen}
+  title={m.machineSetup_ssh_keyFile_browse_title()}
+  mode="file"
+  onSelect={(path) => {
+    if (selectIsDaemonLocal.select(appStore.state)) keyPath = path;
+    keyPickerOpen = false;
+  }}
+  onClose={() => (keyPickerOpen = false)}
+/>
