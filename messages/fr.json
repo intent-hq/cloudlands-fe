@@ -8167,6 +8167,8 @@
   "workspace_discussion_mentionAgents_label": "Assistants",
   "workspace_discussion_mentionUsers_label": "Personnes",
   "workspace_discussion_mentions_label": "Mentionner quelqu’un",
+  "workspace_discussion_attachImage_label": "Joindre une image",
+  "workspace_discussion_imageUploadFailed_error": "Impossible d'importer l'image",
   "workspace_discussion_messageActions_label": "Actions du message",
   "workspace_discussion_multipleUnsupported_label": "Cet hôte ne prend pas encore en charge plusieurs discussions. Mettez à jour Intent sur l’hôte.",
   "workspace_discussion_new_label": "Nouveau",

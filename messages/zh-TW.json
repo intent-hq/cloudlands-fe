@@ -8167,6 +8167,8 @@
   "workspace_discussion_mentionAgents_label": "代理程式",
   "workspace_discussion_mentionUsers_label": "使用者",
   "workspace_discussion_mentions_label": "提及某人",
+  "workspace_discussion_attachImage_label": "附加圖片",
+  "workspace_discussion_imageUploadFailed_error": "無法上傳圖片",
   "workspace_discussion_messageActions_label": "訊息操作",
   "workspace_discussion_multipleUnsupported_label": "此主機尚不支援多個討論。請更新主機上的 Intent。",
   "workspace_discussion_new_label": "新訊息",

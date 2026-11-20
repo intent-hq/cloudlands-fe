@@ -2,6 +2,7 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { Input } from '$lib/components/ui/input';
   import { composerMinHeight } from '$lib/components/chat/composer-height';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
@@ -14,7 +15,18 @@
     faXmark,
     faReply,
     faAt,
+    faImage,
   } from '@fortawesome/free-solid-svg-icons';
+  import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { notify } from '$lib/components/patterns/notify';
+  import {
+    discussionImageMimeType,
+    isDiscussionImageFile,
+    joinDiscussionBody,
+    splitDiscussionBody,
+    uploadDiscussionImage,
+  } from '../discussion-images';
   import CloudSlashIcon from 'phosphor-svelte/lib/CloudSlashIcon';
   import DiscussionMessageView from './DiscussionMessageView.svelte';
   import DiscussionAgentActivity from './DiscussionAgentActivity.svelte';
@@ -33,7 +45,10 @@
     type DiscussionAgentMention,
     type DiscussionAgentNames,
   } from '../discussion-agent-mentions';
-  import { discussionMessageParts } from '../discussion-message-content';
+  import {
+    discussionMessageParts,
+    discussionReplyFirstLine,
+  } from '../discussion-message-content';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import {
     discussionActivityAnswered,
@@ -289,8 +304,66 @@
     void workspaceId;
     void conversationId;
     void draftVersion;
-    composerValue = draft;
+    composerValue = splitDiscussionBody(draft, workspaceId).text;
   });
+  const draftParts = $derived(splitDiscussionBody(draft, workspaceId));
+  function changeDraft(text: string) {
+    onDraftChange(joinDiscussionBody(text, draftParts.images));
+  }
+  let uploads = $state<{ id: string; file: File }[]>([]);
+  let imageInput: HTMLInputElement | null = $state(null);
+  async function attachImages(files: readonly File[]) {
+    const target = workspaceId;
+    const conversation = conversationId;
+    const images = files.filter(isDiscussionImageFile);
+    if (!target || !images.length || !(canCompose ?? canSend)) return;
+    await Promise.all(
+      images.map(async (file) => {
+        const id = crypto.randomUUID();
+        uploads = [...uploads, { id, file }];
+        try {
+          const image = await uploadDiscussionImage(target, file);
+          if (workspaceId !== target || conversationId !== conversation) return;
+          onDraftChange(joinDiscussionBody(draftParts.text, [...draftParts.images, image]));
+        } catch (error) {
+          notify.error(m.workspace_discussion_imageUploadFailed_error(), {
+            description: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          uploads = uploads.filter((upload) => upload.id !== id);
+        }
+      }),
+    );
+  }
+  function removeImage(url: string) {
+    onDraftChange(
+      joinDiscussionBody(
+        draftParts.text,
+        draftParts.images.filter((image) => image.url !== url),
+      ),
+    );
+    composer?.focus({ preventScroll: true });
+  }
+  function pasteImages(event: ClipboardEvent) {
+    const files = [...(event.clipboardData?.files ?? [])].filter(isDiscussionImageFile);
+    if (!files.length) return;
+    event.preventDefault();
+    void attachImages(files);
+  }
+  function dragImages(event: DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files') || !(canCompose ?? canSend)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+  function dropImages(event: DragEvent) {
+    const files = [...(event.dataTransfer?.files ?? [])].filter(isDiscussionImageFile);
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void attachImages(files);
+    composer?.focus({ preventScroll: true });
+  }
   const tooLong = $derived(new TextEncoder().encode(draft).byteLength > DISCUSSION_MAX_BODY_BYTES);
   const uid = $props.id();
   const mentionListId = `${uid}-mentions`;
@@ -513,7 +586,7 @@
 
   function input(event: Event & { currentTarget: HTMLTextAreaElement }) {
     pendingMentionCaret = null;
-    onDraftChange(event.currentTarget.value);
+    changeDraft(event.currentTarget.value);
     if (!composing) updateMentionQuery();
     if (isActive && isPanelFocused && canSend && document.activeElement === composer) {
       onComposerFocusChange?.(true);
@@ -550,9 +623,9 @@
     if (mentionPickerOpen) {
       mentionPickerOpen = false;
     } else {
-      const start = composer?.selectionStart ?? draft.length;
-      const end = composer?.selectionEnd ?? draft.length;
-      const body = composer?.value ?? draft;
+      const start = composer?.selectionStart ?? draftParts.text.length;
+      const end = composer?.selectionEnd ?? draftParts.text.length;
+      const body = composer?.value ?? draftParts.text;
       const query = discussionMentionQuery(body, start, end);
       if (query) {
         openMentions(query.start, query.end, query.query);
@@ -561,7 +634,7 @@
         const caret = start + prefix.length + 1;
         const value = body.slice(0, start) + prefix + '@' + body.slice(end);
         pendingMentionCaret = { value, position: caret };
-        onDraftChange(value);
+        changeDraft(value);
         openMentions(caret - 1, caret, '');
       }
     }
@@ -571,7 +644,7 @@
   function selectMention(option: DiscussionMentionOption) {
     if (!(canCompose ?? canSend) || !mentionPickerOpen || composing) return;
     const { start, end } = mentionSelection;
-    const body = composer?.value ?? draft;
+    const body = composer?.value ?? draftParts.text;
     const label = option.label.replace(/\s+/g, ' ').trim();
     const prefix = start > 0 && !/\s/.test(body[start - 1]) ? ' ' : '';
     const insertion = `${prefix}@${label} `;
@@ -583,7 +656,7 @@
     } else {
       pendingMentionCaret = { value, position: start + insertion.length };
       if (onPrincipalSelect) onPrincipalSelect(option.user, start, end);
-      else onDraftChange(value);
+      else changeDraft(value);
     }
     // Accept the picker insertion in the native input before the next key event.
     // Redux selectors can publish the accepted draft after a fast follow-up key.
@@ -597,19 +670,20 @@
   }
 
   function appendToDraft(text: string) {
-    const current = composer?.value ?? draft;
-    onDraftChange(current + (current && !/\s$/.test(current) ? ' ' : '') + text);
+    const current = composer?.value ?? draftParts.text;
+    changeDraft(current + (current && !/\s$/.test(current) ? ' ' : '') + text);
     void tick().then(() => composer?.focus({ preventScroll: true }));
   }
 
   function send() {
-    const body = composer?.value ?? draft;
+    const body = joinDiscussionBody(composer?.value ?? draftParts.text, draftParts.images);
     if (
       !canSend ||
       !canSendDraft ||
       (agentMentions.length > 0 && !agentsSupported) ||
       sending ||
       composing ||
+      uploads.length > 0 ||
       new TextEncoder().encode(body).byteLength > DISCUSSION_MAX_BODY_BYTES ||
       !body.trim()
     )
@@ -898,6 +972,9 @@
       class="relative flex flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none transition-[min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none"
       style:min-height={`${composerMinHeight(panelHeight, !!composerValue.trim())}px`}
       class:opacity-45={!(canCompose ?? canSend)}
+      ondragover={dragImages}
+      ondrop={dropImages}
+      role="group"
     >
       {#if replyTo}
         <div
@@ -908,7 +985,7 @@
           <span class="max-w-1/2 shrink-0 truncate"
             >{m.workspace_discussion_replyingTo_label({ name: replyName })}</span
           >
-          <span class="min-w-0 flex-1 truncate">{replyTo.body.split('\n')[0]}</span>
+          <span class="min-w-0 flex-1 truncate">{discussionReplyFirstLine(replyTo.body)}</span>
           <Button
             variant="ghost"
             size="icon-compact"
@@ -933,6 +1010,36 @@
           onHighlight={(index) => (highlightedMention = index)}
           onSelect={selectMention}
         />
+      {/if}
+      {#if draftParts.images.length || uploads.length}
+        <div class="mb-2 flex flex-wrap gap-2" data-discussion-composer-images>
+          {#each draftParts.images as image (image.url)}
+            <AttachmentPreview
+              id={image.url}
+              name={image.name}
+              type={discussionImageMimeType(image.url)}
+              imageUrl={image.url}
+              variant="thumbnail"
+              thumbnailClass="size-14"
+              disabled={!(canCompose ?? canSend)}
+              onRemove={(canCompose ?? canSend) ? removeImage : undefined}
+            />
+          {/each}
+          {#each uploads as upload (upload.id)}
+            <div class="relative" aria-busy="true">
+              <AttachmentPreview
+                id={upload.id}
+                name={upload.file.name}
+                type={upload.file.type}
+                file={upload.file}
+                variant="thumbnail"
+                thumbnailClass="size-14 opacity-50"
+                disabled
+              />
+              <IntentMarkLoader size={16} class="absolute inset-0 m-auto" />
+            </div>
+          {/each}
+        </div>
       {/if}
       <div class="flex min-w-0 flex-1 flex-col gap-1">
         <div class="relative">
@@ -977,6 +1084,7 @@
               ? `${mentionListId}-option-${activeMentionIndex}`
               : undefined}
             oninput={input}
+            onpaste={pasteImages}
             onscroll={(event) => (composerScrollTop = event.currentTarget.scrollTop)}
             onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
             onblur={() => {
@@ -1037,6 +1145,28 @@
                 onclick={toggleMentions}><Fa icon={faAt} size="sm" /></Button
               >
             {/if}
+            {#if workspaceId}
+              <Input
+                bind:ref={imageInput}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                class="hidden"
+                onchange={(event: Event & { currentTarget: HTMLInputElement }) => {
+                  void attachImages([...(event.currentTarget.files ?? [])]);
+                  event.currentTarget.value = '';
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={!(canCompose ?? canSend)}
+                aria-label={m.workspace_discussion_attachImage_label()}
+                tooltip={m.workspace_discussion_attachImage_label()}
+                onmousedown={(event) => event.preventDefault()}
+                onclick={() => imageInput?.click()}><Fa icon={faImage} size="sm" /></Button
+              >
+            {/if}
             {#if composerActions}{@render composerActions()}{:else if workspaceId}
               <DiscussionReferencePicker
                 {workspaceId}
@@ -1058,6 +1188,7 @@
                 !canSendDraft ||
                 (agentMentions.length > 0 && !agentsSupported) ||
                 !draft.trim() ||
+                uploads.length > 0 ||
                 sending ||
                 tooLong}
               aria-label={sendError && retryDraft
