@@ -511,7 +511,7 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
         ...(options.messageMetadata !== undefined
-          ? { messageMetadata: options.messageMetadata }
+          ? { messageMetadata: withoutUnslothSwitchConfirmation(options.messageMetadata) }
           : {}),
       };
       // Captured BEFORE the wire call: an authoritative snapshot folded while
@@ -626,10 +626,12 @@ function* dispatchToLifecycle(
   } catch (error) {
     if (!(yield* mutationIsCurrent(agentId, ownership))) return;
     if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;
-    yield* settle('uncertain');
-    yield* put(chatSendFailed(agentId, yield* sendFailureMessage(agentId, error)));
+    // The Unsloth switch refusal is a known pre-send refusal: nothing persisted.
     const unslothSwitch = unslothModelSwitchFromError(error);
-    if (unslothSwitch) yield* spawn(confirmUnslothSwitchAndResend, agentId, wsId, unslothSwitch);
+    yield* settle(unslothSwitch ? 'rejected' : 'uncertain');
+    yield* put(chatSendFailed(agentId, yield* sendFailureMessage(agentId, error)));
+    if (unslothSwitch)
+      yield* spawn(confirmUnslothSwitchAndResend, agentId, wsId, unslothSwitch, ownership);
   }
 }
 
@@ -642,7 +644,10 @@ function* confirmUnslothSwitchAndResend(
   agentId: string,
   wsId: string,
   refusal: UnslothModelSwitchRefusal,
+  ownership: ReturnType<typeof captureAgentMutationOwnership>,
 ): SagaGenerator<void> {
+  const refused = yield* selectChatLastAttemptedMessage.effect(agentId);
+  if (!refused) return;
   const accepted = yield* call(confirm, {
     title: m.agent_unslothSwitch_confirm_title(),
     description:
@@ -659,8 +664,30 @@ function* confirmUnslothSwitchAndResend(
     confirmLabel: m.agent_unslothSwitch_confirm_label(),
     destructive: true,
   });
-  if (!accepted) return;
-  yield* call(resendLastAttempt, agentId, wsId, undefined, { [UNSLOTH_SWITCH_CONFIRM_KEY]: true });
+  // The confirmation covers only the refused attempt, for the same owner: a
+  // newer send or retry, or an ownership change, voids it.
+  if (!accepted || !(yield* mutationIsCurrent(agentId, ownership))) return;
+  if ((yield* selectChatLastAttemptedMessage.effect(agentId)) !== refused) return;
+  const admission = yield* call(prepareSubmissionRetry, agentId, wsId, refused);
+  if (!admission || (admission !== 'legacy' && !admission.isCurrent())) return;
+  // Resend through the agent's command queue, once, with the confirmation.
+  yield* put(
+    sendMessage(agentId, {
+      wsId,
+      text: refused.text,
+      imageBlocks: refused.options?.imageBlocks,
+      fileBlocks: refused.options?.fileBlocks,
+      noteIds: refused.options?.noteIds,
+      model: refused.options?.model,
+      messageMetadata: { ...refused.options?.messageMetadata, [UNSLOTH_SWITCH_CONFIRM_KEY]: true },
+      ...(admission !== 'legacy'
+        ? {
+            userAppMessageId: admission.submission.appMessageId,
+            submission: { scope: admission.scope, id: admission.submission.id },
+          }
+        : {}),
+    }),
+  );
 }
 
 /**
@@ -778,45 +805,6 @@ async function showNothingToRetry(): Promise<void> {
   }
 }
 
-function* resendLastAttempt(
-  agentId: string,
-  wsId: string,
-  model?: string,
-  extraMetadata?: Record<string, unknown>,
-): SagaGenerator<void> {
-  const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
-  if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
-    yield* call(showNothingToRetry);
-    return;
-  }
-  const retry = lastAttempted.submission
-    ? yield* call(prepareSubmissionRetry, agentId, wsId, lastAttempted, model)
-    : 'legacy';
-  if (!retry) return;
-  const messageMetadata = lastAttempted.options?.messageMetadata;
-  yield* call(
-    dispatchToLifecycle,
-    agentId,
-    wsId,
-    lastAttempted.text,
-    undefined,
-    {
-      ...(retry !== 'legacy'
-        ? {
-            submission: { scope: retry.scope, id: retry.submission.id },
-            userAppMessageId: retry.submission.appMessageId,
-          }
-        : {}),
-      imageBlocks: lastAttempted.options?.imageBlocks,
-      fileBlocks: lastAttempted.options?.fileBlocks,
-      noteIds: lastAttempted.options?.noteIds,
-      messageMetadata: extraMetadata ? { ...messageMetadata, ...extraMetadata } : messageMetadata,
-      model: model ?? lastAttempted.options?.model,
-    },
-    false,
-  );
-}
-
 function* retryLastMessage(
   action: RetryAction | RetryModelAction,
   model?: string,
@@ -824,7 +812,42 @@ function* retryLastMessage(
   const [agentId, wsId] = action.payload;
   let settled = false;
   try {
-    yield* call(resendLastAttempt, agentId, wsId, model);
+    const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
+    if (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options)) {
+      yield* call(showNothingToRetry);
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+    const retry = lastAttempted.submission
+      ? yield* call(prepareSubmissionRetry, agentId, wsId, lastAttempted, model)
+      : 'legacy';
+    if (!retry) {
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+    yield* call(
+      dispatchToLifecycle,
+      agentId,
+      wsId,
+      lastAttempted.text,
+      undefined,
+      {
+        ...(retry !== 'legacy'
+          ? {
+              submission: { scope: retry.scope, id: retry.submission.id },
+              userAppMessageId: retry.submission.appMessageId,
+            }
+          : {}),
+        imageBlocks: lastAttempted.options?.imageBlocks,
+        fileBlocks: lastAttempted.options?.fileBlocks,
+        noteIds: lastAttempted.options?.noteIds,
+        messageMetadata: lastAttempted.options?.messageMetadata,
+        model: model ?? lastAttempted.options?.model,
+      },
+      false,
+    );
     yield* put(action.success(undefined as void));
     settled = true;
   } catch (error) {
