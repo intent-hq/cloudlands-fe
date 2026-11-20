@@ -13,6 +13,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faArrowUpRightFromSquare,
+    faBolt,
     faEllipsis,
     faExclamationTriangle,
     faWindowMaximize,
@@ -339,7 +340,7 @@
                 data-script-status-indicator
               ></span>
               <span
-                class="min-w-0 flex-1 truncate type-caption font-normal {script.autoStart
+                class="min-w-0 truncate type-caption font-normal {script.autoStart
                   ? 'text-primary-ink'
                   : 'text-foreground'}"
                 use:truncatedTitle={script.name}
@@ -350,6 +351,11 @@
                   <span class="sr-only">{m.workspace_devScripts_autoStartIndicator_label()}</span>
                 {/if}
               </span>
+              {#if script.autoStart}
+                <span class="flex shrink-0 text-primary-ink" data-script-auto-start-icon>
+                  <Fa icon={faBolt} class="size-2.5" />
+                </span>
+              {/if}
             </Button>
             {#if errorLabel}
               <span
