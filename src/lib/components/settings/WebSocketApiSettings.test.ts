@@ -297,6 +297,16 @@ describe('WebSocketApiSettings', () => {
       );
     });
 
+    it('keeps the all-interfaces default on a daemon without the tunnel', async () => {
+      await toggleOn([{ path: 'server.bindAddress', value: '127.0.0.1' }]);
+      await waitFor(() =>
+        expect(mocks.mockSettingsUpdate.mock.calls).toEqual([
+          [[{ path: 'server.wsApi.enabled', value: true }]],
+          [[{ path: 'server.bindAddress', value: ['0.0.0.0'] }]],
+        ]),
+      );
+    });
+
     it('keeps networks chosen before, tunnel setting included', async () => {
       await toggleOn([
         { path: 'server.bindAddress', value: ['192.0.2.10'] },
@@ -1612,9 +1622,6 @@ describe('WebSocketApiSettings', () => {
         { path: 'server.wsApi.enabled', value: true },
       ]);
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
-      mocks.mockSettingsList.mockResolvedValueOnce(
-        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
-      );
       mocks.mockSettingsList.mockResolvedValueOnce(
         settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
       );
