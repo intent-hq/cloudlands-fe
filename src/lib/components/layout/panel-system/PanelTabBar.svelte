@@ -113,11 +113,7 @@
   const closePaneShortcut$ = effectiveShortcutReadable('navigation.close-tab');
   const zoomPanelShortcut$ = effectiveShortcutReadable('panel.maximize');
   const tabWindowShortcut$ = effectiveShortcutReadable('panel.tab-window');
-  // Labs ("Browser pages in the main process"): any tab can open in its own window.
   const pagesMode$ = browserPagesMode;
-  const canOpenTabWindows = $derived(
-    $pagesMode$ === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(layoutId),
-  );
   const createColumnRightShortcut$ = effectiveShortcutReadable('panel.create-column-right');
   const movePaneLeftShortcut$ = effectiveShortcutReadable('panel.move-pane-previous-column');
   const movePaneRightShortcut$ = effectiveShortcutReadable('panel.move-pane-next-column');
@@ -210,6 +206,11 @@
     onTabRename,
     onSplitHorizontal,
   }: Props = $props();
+
+  // Labs ("Browser pages in the main process"): any tab can open in its own window.
+  const canOpenTabWindows = $derived(
+    $pagesMode$ === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(layoutId),
+  );
 
   // Panel identity is immutable for this component lifetime. Cleanup must not
   // re-read a parent prop after reactive layout removal has started.
