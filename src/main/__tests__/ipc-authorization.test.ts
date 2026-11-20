@@ -3,16 +3,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
   defaultSession: {},
+  browserPanelSession: {},
   fromWebContents: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: electronMocks.fromWebContents },
-  session: { defaultSession: electronMocks.defaultSession },
+  session: {
+    defaultSession: electronMocks.defaultSession,
+    fromPartition: (partition: string) =>
+      partition === 'persist:browser-panel' ? electronMocks.browserPanelSession : {},
+  },
 }));
 
 import {
+  BROWSER_PANEL_GUEST_IPC_CHANNELS,
   createAuthorizedIpcHandler,
+  createBrowserPanelGuestIpcHandler,
   createTrustedBrowserBridgeIpcContext,
   IpcAuthorizationError,
   isTrustedRendererUrl,
@@ -112,5 +119,81 @@ describe('privileged IPC authorization', () => {
         DEV_PORT: '5197',
       }),
     ).toBe(false);
+  });
+});
+
+function guestEvent(
+  overrides: { host?: Record<string, unknown>; sender?: Record<string, unknown> } = {},
+) {
+  const host = {
+    isDestroyed: () => false,
+    getType: () => 'window',
+    getURL: () => 'app://workspaces/',
+    session: electronMocks.defaultSession,
+    ...overrides.host,
+  };
+  const sender = {
+    isDestroyed: () => false,
+    getType: () => 'webview',
+    session: electronMocks.browserPanelSession,
+    hostWebContents: host,
+    ...overrides.sender,
+  };
+  electronMocks.fromWebContents.mockImplementation((contents: unknown) =>
+    contents === host ? { isDestroyed: () => false, webContents: host } : null,
+  );
+  return { sender, senderFrame: { isDestroyed: () => false, url: 'https://example.com/' } } as any;
+}
+
+describe('browser-panel guest IPC authorization', () => {
+  beforeEach(() => electronMocks.fromWebContents.mockReset());
+  const channel = 'passkeys:page-create';
+  const reject = async (context: unknown, reason: string) =>
+    expect(createBrowserPanelGuestIpcHandler(channel, vi.fn())(context as any)).rejects.toEqual(
+      expect.objectContaining({ reason }),
+    );
+
+  it('admits only the four passkey page channels', () => {
+    expect([...BROWSER_PANEL_GUEST_IPC_CHANNELS].sort()).toEqual([
+      'passkeys:page-cancel',
+      'passkeys:page-capabilities',
+      'passkeys:page-create',
+      'passkeys:page-get',
+    ]);
+  });
+
+  it('allows a browser-panel webview hosted by an app window', async () => {
+    const handler = vi.fn(async () => 'ok');
+    await expect(createBrowserPanelGuestIpcHandler(channel, handler)(guestEvent())).resolves.toBe(
+      'ok',
+    );
+  });
+
+  it('rejects an app window, the browser bridge, and webviews in other sessions', async () => {
+    await reject(appEvent(), 'unexpected sender');
+    await reject(createTrustedBrowserBridgeIpcContext(), 'browser bridge cannot act as a web page');
+    await reject(
+      guestEvent({ sender: { session: electronMocks.defaultSession } }),
+      'unexpected session',
+    );
+    await reject(guestEvent({ sender: { isDestroyed: () => true } }), 'unexpected sender');
+  });
+
+  it('rejects a guest whose host is not a trusted app window', async () => {
+    await reject(guestEvent({ sender: { hostWebContents: null } }), 'webview has no app host');
+    await reject(
+      guestEvent({ host: { getURL: () => 'https://evil.example/' } }),
+      'unexpected host URL',
+    );
+    await reject(guestEvent({ host: { session: {} } }), 'unexpected session');
+    const event = guestEvent();
+    electronMocks.fromWebContents.mockReturnValue(null);
+    await reject(event, 'sender is not an app window');
+  });
+
+  it('keeps app-only passkey channels closed to browser-panel guests', async () => {
+    await expect(
+      createAuthorizedIpcHandler('passkeys:device-list', vi.fn())(guestEvent()),
+    ).rejects.toEqual(expect.objectContaining({ reason: 'unexpected sender' }));
   });
 });

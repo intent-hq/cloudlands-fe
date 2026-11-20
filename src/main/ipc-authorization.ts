@@ -1,6 +1,8 @@
 import { BrowserWindow, session } from 'electron';
+import { BROWSER_PANEL_PARTITION } from '../shared/constants';
+import { IPC_CHANNELS } from '../shared/ipc-registry';
 import { isMachineViewOf } from './window-backend';
-import type { IpcMainInvokeEvent } from 'electron';
+import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron';
 
 const trustedBrowserBridgeBrand = Symbol('trusted-browser-bridge-ipc-context');
 
@@ -62,6 +64,21 @@ export function isTrustedRendererUrl(
   }
 }
 
+/** Throws unless `sender` is an app renderer: an app window's contents or its machine view. */
+function assertAppRenderer(sender: WebContents, channel: string): void {
+  if (sender.session !== session.defaultSession) {
+    throw new IpcAuthorizationError(channel, 'unexpected session');
+  }
+  const owner = BrowserWindow.fromWebContents(sender);
+  if (
+    !owner ||
+    owner.isDestroyed() ||
+    (owner.webContents !== sender && !isMachineViewOf(owner, sender))
+  ) {
+    throw new IpcAuthorizationError(channel, 'sender is not an app window');
+  }
+}
+
 function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: string): void {
   if (isTrustedBrowserBridgeIpcContext(context)) return;
 
@@ -74,22 +91,47 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
   if (!senderFrame || senderFrame !== sender.mainFrame) {
     throw new IpcAuthorizationError(channel, 'subframe invocation');
   }
-  if (sender.session !== session.defaultSession) {
-    throw new IpcAuthorizationError(channel, 'unexpected session');
-  }
-
-  const owner = BrowserWindow.fromWebContents(sender);
-  // An app renderer is a window's own web contents, or a machine view main
-  // created inside that window (machine rail).
-  if (
-    !owner ||
-    owner.isDestroyed() ||
-    (owner.webContents !== sender && !isMachineViewOf(owner, sender))
-  ) {
-    throw new IpcAuthorizationError(channel, 'sender is not an app window');
-  }
+  assertAppRenderer(sender, channel);
   if (!isTrustedRendererUrl(senderFrame.url)) {
     throw new IpcAuthorizationError(channel, 'unexpected renderer URL');
+  }
+}
+
+/**
+ * Channels that web pages in the browser panel may invoke (through the
+ * passkey frame preload). Closed list: every other channel admits app
+ * renderers only. The handlers still check the frame origin and RP ID.
+ */
+export const BROWSER_PANEL_GUEST_IPC_CHANNELS: ReadonlySet<string> = new Set([
+  IPC_CHANNELS.PASSKEYS.PAGE_CREATE,
+  IPC_CHANNELS.PASSKEYS.PAGE_GET,
+  IPC_CHANNELS.PASSKEYS.PAGE_CANCEL,
+  IPC_CHANNELS.PASSKEYS.PAGE_CAPABILITIES,
+]);
+
+function assertBrowserPanelGuestIpcContext(context: unknown, channel: string): void {
+  if (isTrustedBrowserBridgeIpcContext(context)) {
+    throw new IpcAuthorizationError(channel, 'browser bridge cannot act as a web page');
+  }
+  const event = context as IpcMainInvokeEvent;
+  const sender = event?.sender;
+  const senderFrame = event?.senderFrame;
+  if (!sender || sender.isDestroyed() || sender.getType() !== 'webview') {
+    throw new IpcAuthorizationError(channel, 'unexpected sender');
+  }
+  if (sender.session !== session.fromPartition(BROWSER_PANEL_PARTITION)) {
+    throw new IpcAuthorizationError(channel, 'unexpected session');
+  }
+  if (!senderFrame || senderFrame.isDestroyed()) {
+    throw new IpcAuthorizationError(channel, 'frame is gone');
+  }
+  const host = sender.hostWebContents;
+  if (!host || host.isDestroyed() || host.getType() !== 'window') {
+    throw new IpcAuthorizationError(channel, 'webview has no app host');
+  }
+  assertAppRenderer(host, channel);
+  if (!isTrustedRendererUrl(host.getURL())) {
+    throw new IpcAuthorizationError(channel, 'unexpected host URL');
   }
 }
 
@@ -101,4 +143,40 @@ export function createAuthorizedIpcHandler<T extends (...args: any[]) => any>(
     assertAuthorizedIpcContext(context, channel);
     return handler(context, ...args);
   }) as T;
+}
+
+/** A handler for a {@link BROWSER_PANEL_GUEST_IPC_CHANNELS} channel: browser-panel webviews only. */
+export function createBrowserPanelGuestIpcHandler<T extends (...args: any[]) => any>(
+  channel: string,
+  handler: T,
+): T {
+  return (async (context: IpcMainInvokeEvent, ...args: unknown[]) => {
+    assertBrowserPanelGuestIpcContext(context, channel);
+    return handler(context, ...args);
+  }) as T;
+}
+
+/**
+ * Makes every `ipcMain.handle` registration authorized: browser-panel guest
+ * channels get the guest guard, all others the app-renderer guard.
+ * `onRegister` receives handlers the HTTP IPC bridge may call (guest channels
+ * are excluded: a web-page request has no meaning there).
+ */
+export function installIpcHandleAuthorization(
+  ipcMain: IpcMain,
+  onRegister: (channel: string, handler: ((...args: any[]) => any) | null) => void = () => {},
+): void {
+  const originalHandle = ipcMain.handle.bind(ipcMain);
+  Object.defineProperty(ipcMain, 'handle', {
+    value(channel: string, handler: (...args: any[]) => any) {
+      const guest = BROWSER_PANEL_GUEST_IPC_CHANNELS.has(channel);
+      const authorized = guest
+        ? createBrowserPanelGuestIpcHandler(channel, handler)
+        : createAuthorizedIpcHandler(channel, handler);
+      onRegister(channel, guest ? null : authorized);
+      return originalHandle(channel, authorized);
+    },
+    writable: false,
+    configurable: true,
+  });
 }

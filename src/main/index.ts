@@ -64,7 +64,7 @@ app.setPath(
 // dev apps (e.g. the reference Intent build's "dev-instance-N" scheme) on the
 // SingletonLock, yielding intent-cloudlands/cloudlands-dev[-PORT] in dev. This must
 // run before setupConsoleLogCapture() so logs go to the correct userData directory.
-import { createAuthorizedIpcHandler } from './ipc-authorization.js';
+import { installIpcHandleAuthorization } from './ipc-authorization.js';
 const devUserDataSegment = resolveDevUserDataDirName();
 if (devUserDataSegment) {
   const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
@@ -103,21 +103,10 @@ const __registeredHandlers = new Set<string>();
 const __ipcHandlerFunctions = new Map<string, (...args: any[]) => any>();
 (global as any).__ipcHandlerFunctions = __ipcHandlerFunctions;
 
-// Store the original handle method
-const originalHandle = ipcMain.handle.bind(ipcMain);
-
-// Override ipcMain.handle using Object.defineProperty
-// Silent registration - we'll log a summary at the end instead of per-handler
-Object.defineProperty(ipcMain, 'handle', {
-  value(channel: string, handler: any) {
-    __registeredHandlers.add(channel);
-    const authorizedHandler = createAuthorizedIpcHandler(channel, handler);
-    __ipcHandlerFunctions.set(channel, authorizedHandler);
-    // Silent - no per-handler logging to reduce noise
-    return originalHandle(channel, authorizedHandler);
-  },
-  writable: false,
-  configurable: true,
+// Every ipcMain.handle registration is authorized; we log a summary at the end.
+installIpcHandleAuthorization(ipcMain, (channel, handler) => {
+  __registeredHandlers.add(channel);
+  if (handler) __ipcHandlerFunctions.set(channel, handler);
 });
 
 // Log handler count summary after startup
