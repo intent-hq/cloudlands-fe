@@ -11,7 +11,6 @@
   import Fa from 'svelte-fa';
   import { faChevronDown, faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import { InlineCode } from '$lib/components/ui/inline-code';
   import { Input } from '$lib/components/ui/input';
   import { InputMessage } from '$lib/components/ui/input-message';
   import { Label } from '$lib/components/ui/label';
@@ -99,11 +98,11 @@
 >
   <div class="flex min-w-0 flex-col gap-1.5">
     <div class="flex min-w-0 items-start gap-2">
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
+      <div class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <h3 class="type-title font-semibold text-foreground">
           {m.chat_secretRequest_heading_label()}
         </h3>
-        <InlineCode class="type-code min-w-0 px-1.5 wrap-anywhere">{request.name}</InlineCode>
+        <span class="min-w-0 type-code text-muted-foreground wrap-anywhere">{request.name}</span>
       </div>
       {#if open && onHide}
         <Button
