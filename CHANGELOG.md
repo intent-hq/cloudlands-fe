@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.358.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.5...v2.358.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **browser:** add BrowserViewService for main-owned browser views (Labs) ([#4818](https://github.com/intent-hq/cloudlands-fe/issues/4818)) ([b363614](https://github.com/intent-hq/cloudlands-fe/commit/b363614028c1e7374c2826f03feedd1e31f1f031))
+
+
+### 🐛 Bug Fixes
+
+* select switcher cards only on real pointer motion ([#4819](https://github.com/intent-hq/cloudlands-fe/issues/4819)) ([728f5e3](https://github.com/intent-hq/cloudlands-fe/commit/728f5e3cf307566047bd29f22a724800475d6bb2))
+
 ## [2.357.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.4...v2.357.5) (2026-11-19)
 
 
