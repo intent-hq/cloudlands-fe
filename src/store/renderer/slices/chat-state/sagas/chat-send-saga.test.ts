@@ -94,6 +94,7 @@ import {
   agentSessionStopChatRequested,
   bulkUpsertSessions,
   initialState as sessionInitialState,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   agentQueueReducer,
@@ -1029,7 +1030,7 @@ describe('chatSendSaga', () => {
     it('asks before switching, naming the affected agents, then resends confirmed', async () => {
       mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValueOnce(undefined);
       mocks.confirm.mockResolvedValue(true);
-      const run = harness();
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }));
       run.channel.put(
         sendMessage(AGENT, { wsId: WS, text: 'next turn', messageMetadata: { source: 'chat' } }),
       );
@@ -1064,7 +1065,7 @@ describe('chatSendSaga', () => {
     it('rejects a refused submission and resends it under a fresh admission', async () => {
       mocks.send.mockRejectedValueOnce(await switchRefusal());
       mocks.confirm.mockResolvedValue(true);
-      const run = harness(session(), undefined, {
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }), undefined, {
         id: WS,
         name: 'Workspace',
         path: '/repo',
@@ -1137,6 +1138,25 @@ describe('chatSendSaga', () => {
           ([, , , options]) => options?.messageMetadata?.confirmUnslothModelSwitch,
         ),
       ).toBe(false);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('does not resend when the agent model changed while the dialog was open', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValue(undefined);
+      let answer: (accepted: boolean) => void = () => {};
+      mocks.confirm.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }));
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      run.dispatch(updateSession(AGENT, { model: 'unsloth/Llama-3.2-3B-GGUF' }));
+
+      answer(true);
+      await settle();
+      await settle();
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === sendMessage.type)).toBe(
+        false,
+      );
       run.task.cancel();
       await run.task.toPromise();
     });

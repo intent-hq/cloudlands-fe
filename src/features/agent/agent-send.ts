@@ -64,6 +64,7 @@ import { getAgentQueueEventSnapshotSeq, hydrateAgentQueue } from './agent-queue-
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { unslothModelSwitchFromError } from '$shared/unsloth-model-switch';
 
 const logger = createLogger('AgentSend');
 
@@ -346,6 +347,9 @@ export async function sendMessage(
         dispatchRedux(setAgentStreaming(session.id, true));
 
         let wireRejected = false;
+        // The error boundary rethrows a message-only error, so keep the
+        // structured Unsloth switch refusal for the caller's confirmation.
+        let switchRefusal: unknown;
         try {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
@@ -452,8 +456,9 @@ export async function sendMessage(
                       : {}),
                   },
                 ).catch((error: unknown) => {
-                  if (isCurrent()) throw error;
-                  return undefined;
+                  if (!isCurrent()) return undefined;
+                  if (unslothModelSwitchFromError(error)) switchRefusal = error;
+                  throw error;
                 });
                 if (!isCurrent()) return;
 
@@ -663,8 +668,9 @@ export async function sendMessage(
               }),
             );
           }
-          if (supported) settle(wireRejected ? 'rejected' : 'uncertain');
-          throw streamingError;
+          // An Unsloth switch refusal happens before the daemon persists anything.
+          if (supported) settle(wireRejected || switchRefusal ? 'rejected' : 'uncertain');
+          throw switchRefusal ?? streamingError;
         }
       }
     },

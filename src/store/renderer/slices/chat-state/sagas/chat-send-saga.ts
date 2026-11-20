@@ -668,6 +668,9 @@ function* confirmUnslothSwitchAndResend(
   // newer send or retry, or an ownership change, voids it.
   if (!accepted || !(yield* mutationIsCurrent(agentId, ownership))) return;
   if ((yield* selectChatLastAttemptedMessage.effect(agentId)) !== refused) return;
+  // The user confirmed loading this model; a model change since then voids it.
+  const model = refused.options?.model ?? (yield* selectAgentSession.effect(agentId))?.model;
+  if (model !== refusal.requestedModel) return;
   const admission = yield* call(prepareSubmissionRetry, agentId, wsId, refused);
   if (!admission || (admission !== 'legacy' && !admission.isCurrent())) return;
   // Resend through the agent's command queue, once, with the confirmation.
@@ -678,7 +681,7 @@ function* confirmUnslothSwitchAndResend(
       imageBlocks: refused.options?.imageBlocks,
       fileBlocks: refused.options?.fileBlocks,
       noteIds: refused.options?.noteIds,
-      model: refused.options?.model,
+      model: refusal.requestedModel,
       messageMetadata: { ...refused.options?.messageMetadata, [UNSLOTH_SWITCH_CONFIRM_KEY]: true },
       ...(admission !== 'legacy'
         ? {
