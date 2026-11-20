@@ -14,8 +14,8 @@ import { ReverseRpcHandlerError, type JsonRpcClient } from './json-rpc-client';
 
 const logger = new Logger('AssistantBackendRelay');
 
-export const BACKENDS_REPORT_METHOD = 'backends.report';
-export const BACKENDS_RELAY_METHOD = 'backends.relayCall';
+const BACKENDS_REPORT_METHOD = 'backends.report';
+const BACKENDS_RELAY_METHOD = 'backends.relayCall';
 
 /** Longest relayed call this app accepts; the daemon passes its own bound. */
 const MAX_RELAY_TIMEOUT_MS = 10 * 60_000;
@@ -41,7 +41,7 @@ export interface LocalBackendFacts {
   daemonVersion?: string;
 }
 
-/** The Keychain machine identity (docs/protocol/backend-keychain.md). */
+/** The Keychain machine identity (docs/protocol/backend-keychain.md). @internal */
 export function backendIdentity(backend: {
   host: string;
   port: number;
@@ -120,7 +120,7 @@ export interface RelayDeps {
   clientFor(connectionId: string): Promise<JsonRpcClient>;
 }
 
-/** Resolve the saved connection a relayed `backendId` names. */
+/** Resolve the saved connection a relayed `backendId` names. @internal */
 export async function connectionForBackend(
   backendId: string,
   deps: RelayDeps,
@@ -140,7 +140,7 @@ export async function connectionForBackend(
   return null;
 }
 
-/** Serve `backends.relayCall`: `{ result }` or the remote's `{ error }`. */
+/** Serve `backends.relayCall`: `{ result }` or the remote's `{ error }`. @internal */
 export async function handleRelayCall(params: unknown, deps: RelayDeps): Promise<unknown> {
   const call = parseRelayParams(params);
   const connectionId = await connectionForBackend(call.backendId, deps);
