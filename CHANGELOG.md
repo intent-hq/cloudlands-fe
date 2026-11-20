@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.360.0...v2.361.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **backend:** report backends and relay Assistant calls to them ([#4841](https://github.com/intent-hq/cloudlands-fe/issues/4841)) ([48eb739](https://github.com/intent-hq/cloudlands-fe/commit/48eb7390e04b32b8bbe57608cda75e26541e79fc))
+* **chat:** approval card for Assistant rpc-call proposals ([#4833](https://github.com/intent-hq/cloudlands-fe/issues/4833)) ([2e68704](https://github.com/intent-hq/cloudlands-fe/commit/2e68704fd28a2bb25618cb6692e9f29214be6ec5))
+* **cloud-machines:** add Vercel as a cloud machine provider ([#4834](https://github.com/intent-hq/cloudlands-fe/issues/4834)) ([520670b](https://github.com/intent-hq/cloudlands-fe/commit/520670bdd0904bb0bda958f38ee96d5baa76df87))
+* **scripts:** show a bolt icon next to auto-start script names ([#4843](https://github.com/intent-hq/cloudlands-fe/issues/4843)) ([75bb971](https://github.com/intent-hq/cloudlands-fe/commit/75bb971cc1ed8355362ff9986f6058af95c205be))
+* **settings:** default remote access to loopback plus the Tailcat tunnel ([#4839](https://github.com/intent-hq/cloudlands-fe/issues/4839)) ([fa92453](https://github.com/intent-hq/cloudlands-fe/commit/fa924537b1b30bd81677a61e8accf0b084045d8a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.257 ([#4845](https://github.com/intent-hq/cloudlands-fe/issues/4845)) ([64884c0](https://github.com/intent-hq/cloudlands-fe/commit/64884c0cbaad2c44c51de3c414c0f6f68ec8b5b8))
+
 ## [2.360.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.359.0...v2.360.0) (2026-11-20)
 
 
