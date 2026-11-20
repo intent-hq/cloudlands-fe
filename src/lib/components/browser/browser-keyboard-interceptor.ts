@@ -62,6 +62,10 @@ export const keyboardInterceptorScript = `
         ) {
           forwardPanelShortcut(e);
         }
+        // Forward open in own window / move back (Mod+Shift+Enter).
+        if (isPlatformMod && e.shiftKey && !e.altKey && e.key === 'Enter') {
+          forwardPanelShortcut(e);
+        }
         // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
         if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
           e.preventDefault();

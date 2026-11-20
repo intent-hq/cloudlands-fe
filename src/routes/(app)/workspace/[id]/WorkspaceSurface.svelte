@@ -76,7 +76,12 @@
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
 
-  import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectFocusedPanel,
+    selectPanelLayoutRoot,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { openTabInOwnWindowRequested } from '$store/renderer/slices/tab-window/tab-window-slice';
+  import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
 
   // Onboarding
   import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
@@ -705,6 +710,14 @@
     onFocusActivity: () => {
       // Switch to agents tab in TabbedSidebar (Activity tab was removed)
       appStore.dispatch(setSidebarActiveTab(workspaceId, 'agents'));
+    },
+    onOpenTabWindow: () => {
+      if (!tabWindowsAvailable()) return;
+      const focused = selectFocusedPanel.select(appStore.state, panelLayoutId);
+      if (!focused?.activeTabId) return;
+      appStore.dispatch(
+        openTabInOwnWindowRequested(panelLayoutId, workspaceId, focused.activeTabId),
+      );
     },
     onMaximizePanel: () => {
       // Toggle maximize: hide sidebar and dock for focus mode
