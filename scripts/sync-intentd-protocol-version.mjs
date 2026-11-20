@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { githubAuthToken, parseVersionPin, releaseTag } from './fetch-sidecar-lib.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 // Writes src/test/current-protocol-version.ts: the PROTOCOL_VERSION of the intentd
 // release pinned in intentd.version, which test fixtures use as their default
@@ -79,7 +80,8 @@ export async function fetchProtocolSource(
   return response.text();
 }
 
-export async function main(argv = process.argv.slice(2), root = process.cwd(), deps = {}) {
+export async function main(args, root = process.cwd(), deps = {}) {
+  const argv = scriptArgs(args);
   const unknown = argv.filter((argument) => argument !== '--check');
   if (unknown.length) {
     console.error(

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseVersionPin } from './fetch-sidecar-lib.mjs';
 import { OUTPUT_FILE, PIN_FILE, parseVersionModule } from './sync-intentd-protocol-version.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 // Offline guard for the test fixtures' CURRENT_PROTOCOL_VERSION: the generated module
 // records the intentd pin it was read from, and that pin must still be the one in
@@ -32,7 +33,8 @@ export function checkProtocolPin(root = process.cwd()) {
   };
 }
 
-export function main(argv = process.argv.slice(2), root = process.cwd()) {
+export function main(args, root = process.cwd()) {
+  const argv = scriptArgs(args);
   if (argv.length) {
     console.error(
       `Unknown argument(s): ${argv.join(' ')}\nUsage: node scripts/check-intentd-protocol-pin.mjs`,

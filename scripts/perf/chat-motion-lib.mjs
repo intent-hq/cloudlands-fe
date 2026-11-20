@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { scriptArgs } from '../script-args.mjs';
 
 export const SCENARIOS = {
   footer: { marks: ['collapse', 'expand'] },
@@ -58,7 +59,8 @@ function normalizeUrl(value) {
   return url.href;
 }
 
-export function parseArgs(argv) {
+export function parseArgs(args) {
+  const argv = scriptArgs(args);
   const options = {
     scenario: 'footer',
     inflate: 10_000,

@@ -298,7 +298,7 @@ describe('parseArgs', () => {
     expect(parseArgs(words.slice(words.indexOf('lint:test-types') + 1)).update).toBe(true);
   });
 
-  it('ignores a leading -- that pnpm forwards from `pnpm run x -- args`', () => {
+  it('ignores the -- that pnpm forwards from `pnpm run x -- args`', () => {
     expect(parseArgs(['--', '--update-baseline'])).toEqual({
       update: true,
       names: Object.keys(PROJECTS),
@@ -307,8 +307,8 @@ describe('parseArgs', () => {
     expect(parseArgs(['--', '--project=main']).names).toEqual(['main']);
   });
 
-  it('still rejects a -- that is not the first argument', () => {
-    expect(() => parseArgs(['--update-baseline', '--'])).toThrow('Unknown argument: --');
+  it('still rejects a second --', () => {
+    expect(() => parseArgs(['--', '--update-baseline', '--'])).toThrow('Unknown argument: --');
   });
 });
 

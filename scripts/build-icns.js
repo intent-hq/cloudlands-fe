@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { scriptArgs } from './script-args.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -156,7 +157,7 @@ async function buildDevelopmentIcons() {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  const args = scriptArgs();
   const unknownArgs = args.filter((arg) => arg !== '--dev-only');
   if (unknownArgs.length > 0) throw new Error(`Unknown argument: ${unknownArgs[0]}`);
 

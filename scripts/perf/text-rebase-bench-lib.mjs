@@ -2,6 +2,8 @@
 // paired head/base aggregation of the runner documents, and the text table.
 // No git, no processes — text-rebase-bench-lib.test.ts covers this file.
 
+import { scriptArgs } from '../script-args.mjs';
+
 export const USAGE =
   'usage: pnpm perf:text-rebase --base <ref> [--head <ref>] [--runs 5] [--repeats 5] [--shapes a,b] [--json <file>]';
 
@@ -30,7 +32,8 @@ function integerOption(flag, value, { min }) {
   return parsed;
 }
 
-export function parseArgs(argv) {
+export function parseArgs(args) {
+  const argv = scriptArgs(args);
   const options = { runs: 5, repeats: 5 };
   const seen = new Set();
   for (let index = 0; index < argv.length; index += 1) {
