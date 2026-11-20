@@ -79,7 +79,12 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
     const openInWorkspace = options.openInWorkspace ?? source.openInWorkspace;
     const sourcePanelId = openInWorkspace ? undefined : options.sourcePanelId || source.panelId;
     const { assistantLayoutId } = source;
-    options = { ...options, openInWorkspace, sourcePanelId };
+    // Views like code review and tool output render links without a workspace;
+    // the surface they sit in still owns them, so ⌘-click can open in the app.
+    const workspaceId =
+      options.workspaceId ??
+      (source.surfaceWorkspaceId ? WorkspaceId(source.surfaceWorkspaceId) : undefined);
+    options = { ...options, workspaceId, openInWorkspace, sourcePanelId };
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);

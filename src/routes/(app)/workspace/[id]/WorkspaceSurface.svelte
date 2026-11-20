@@ -17,6 +17,7 @@
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { workspaceSurfaceLink } from '$features/navigation/link-source';
   import { notify } from '$lib/components/patterns/notify';
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
@@ -927,6 +928,7 @@
       bind:this={surfaceElement}
       class="h-full min-h-0 w-full overflow-hidden"
       data-workspace-surface={workspaceId}
+      use:workspaceSurfaceLink={workspaceId}
       data-loading={!$workspace}
     >
       <WorkspaceSurfaceLoadBoundary
