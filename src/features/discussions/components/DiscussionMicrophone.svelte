@@ -15,6 +15,7 @@
   import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { createDiscussionMicrophone } from '../discussion-microphone';
+  import DictationStopButton from '$features/voice/components/DictationStopButton.svelte';
   import { m } from '$shared/paraglide/messages.js';
   let {
     workspaceId,
@@ -108,18 +109,26 @@
     if (document.hidden) controller?.cancel();
   }}
 />
-<Button
-  variant="ghost"
-  size="icon-sm"
-  disabled={disabled || !active || !identity}
-  onclick={toggle}
-  aria-label={label}
-  tooltip={label}
-  aria-pressed={state === 'recording'}
-  class={state === 'recording' ? 'text-danger' : ''}
->
-  {#if state === 'transcribing'}<IntentMarkLoader size={14} />{:else}<Fa
-      icon={faMicrophone}
-      size="sm"
-    />{/if}
-</Button>
+{#if state === 'recording'}
+  <DictationStopButton
+    disabled={disabled || !active || !identity}
+    onclick={toggle}
+    aria-label={label}
+    tooltip={label}
+  />
+{:else}
+  <Button
+    variant="ghost"
+    size="icon-sm"
+    disabled={disabled || !active || !identity}
+    onclick={toggle}
+    aria-label={label}
+    tooltip={label}
+    aria-pressed={false}
+  >
+    {#if state === 'transcribing'}<IntentMarkLoader size={14} />{:else}<Fa
+        icon={faMicrophone}
+        size="sm"
+      />{/if}
+  </Button>
+{/if}
