@@ -17,6 +17,7 @@
  * leaving its one-tab layout any other way moves it back.
  */
 import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
 import { currentTabWindowId } from '$lib/tab-window/tab-window-renderer';
@@ -265,33 +266,32 @@ function* closeForReal(): SagaGenerator<void> {
 function* watchTab(record: TabWindowRecord, layoutId: string): SagaGenerator<void> {
   let reported = syncedFields(record.tab);
   let leaving = false;
-  // Read the tab after any action settles; the state, not the action, decides.
-  while (true) {
-    yield* take('*');
+  // Each change of the tab window's layout, settled; the state decides.
+  yield* takeLatestFromSelector(selectPanels, [layoutId], function* () {
     yield* delay(UPDATE_DEBOUNCE_MS);
     const tab = findPanelTab(yield* selectPanels.effect(layoutId), record.tab.id);
     if (!tab) {
       // The tab left this window's layout (its own close, or a cleanup
       // that runs here too). Move it back rather than close it: nothing is
       // lost, and the source window's own state decides what stays.
-      if (leaving) continue;
+      if (leaving) return;
       leaving = true;
       try {
         yield* call(invoke, CHANNELS.MOVE_BACK);
       } catch (error) {
         logger.warn('Could not move the tab back', { error });
       }
-      continue;
+      return;
     }
     const fields = syncedFields(tab);
-    if (fields === reported) continue;
+    if (fields === reported) return;
     reported = fields;
     try {
       yield* call(invoke, CHANNELS.UPDATE, { tab });
     } catch (error) {
       logger.debug('Could not report a tab window change', { error });
     }
-  }
+  });
 }
 
 function* tabWindowSagaFor(tabWindowId: string): SagaGenerator<void> {
