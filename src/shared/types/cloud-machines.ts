@@ -1,27 +1,34 @@
 /**
- * Cloud machines on E2B, Northflank or Agent37 (PROTOCOL `methods/nodes.md` → "Cloud machines").
+ * Cloud machines on E2B, Northflank, Agent37 or Vercel (PROTOCOL `methods/nodes.md` → "Cloud machines").
  *
  * The backend owner saves one or more named entries, each with its own API key
- * (E2B, Agent37) or token (Northflank); the backend then starts one machine per agent
+ * (E2B, Agent37) or token (Northflank, Vercel); the backend then starts one machine per agent
  * placed on an entry. The secret is a write-only `cloudMachines.configure`
  * param: no type below carries it, so it never lands in Redux.
  */
 
 /** Cloud providers an entry can use. */
-export type CloudProviderKind = 'e2b' | 'northflank' | 'agent37';
-const CLOUD_PROVIDER_KINDS: readonly CloudProviderKind[] = ['e2b', 'northflank', 'agent37'];
+export type CloudProviderKind = 'e2b' | 'northflank' | 'agent37' | 'vercel';
+const CLOUD_PROVIDER_KINDS: readonly CloudProviderKind[] = [
+  'e2b',
+  'northflank',
+  'agent37',
+  'vercel',
+];
 export function isCloudProviderKind(value: unknown): value is CloudProviderKind {
   return CLOUD_PROVIDER_KINDS.includes(value as CloudProviderKind);
 }
-/** The provider an entry id names: "northflank-<12 hex>", "agent37-<12 hex>", else E2B. */
+/** The provider an entry id names: "northflank-", "agent37-" or "vercel-<12 hex>", else E2B. */
 export function cloudProviderOfEntryId(cloudMachineId: string | undefined): CloudProviderKind {
   if (cloudMachineId?.startsWith('northflank-')) return 'northflank';
+  if (cloudMachineId?.startsWith('vercel-')) return 'vercel';
   return cloudMachineId?.startsWith('agent37-') ? 'agent37' : 'e2b';
 }
 const CLOUD_PROVIDER_NAMES: Record<CloudProviderKind, string> = {
   e2b: 'E2B', // i18n-ignore (product name)
   northflank: 'Northflank', // i18n-ignore (product name)
   agent37: 'Agent37', // i18n-ignore (product name)
+  vercel: 'Vercel', // i18n-ignore (product name)
 };
 /** The product name, for labels and default entry names. */
 export function cloudProviderName(provider: CloudProviderKind): string {
@@ -90,17 +97,55 @@ export const AGENT37_SIZES: readonly CloudMachineSizeInfo[] = [
   { id: '4x32', vcpu: 4, memoryMiB: 32768 },
 ];
 
+/** A Vercel entry's own settings (`CloudMachineProvider.vercel`). */
+interface VercelEntrySettings {
+  /** "team_…" */
+  teamId: string;
+  /** "prj_…" */
+  projectId: string;
+  /** A Vercel registry repository without a tag; the backend adds the version. */
+  image: string;
+}
+
+/** Intent's public node image on Vercel, the image of an entry without its own. */
+export const DEFAULT_VERCEL_IMAGE = 'sutterhill/intent-images/intent-node';
+/** `configure` refuses any other team or project id. */
+export const VERCEL_TEAM_ID = /^team_[A-Za-z0-9]{1,64}$/u;
+export const VERCEL_PROJECT_ID = /^prj_[A-Za-z0-9]{1,64}$/u;
+
+const VERCEL_TEAM_SLUG = /^[a-z0-9-]+$/u;
+const VERCEL_IMAGE_SEGMENT = /^[a-z0-9][a-z0-9._-]*$/u;
+/**
+ * A Vercel registry repository without tag or digest: "<team slug>/<project>/<repository>",
+ * or "<repository>" in the entry's own project. A registry host or tag is refused.
+ */
+export function isVercelImage(image: string): boolean {
+  const segments = image.split('/');
+  return (
+    (segments.length === 1 || segments.length === 3) &&
+    segments.every((segment) => VERCEL_IMAGE_SEGMENT.test(segment)) &&
+    (segments.length === 1 || VERCEL_TEAM_SLUG.test(segments[0]!))
+  );
+}
+
+/** Vercel gives 2 GB per vCPU at every size, so a new entry knows them before a test. */
+export const VERCEL_SIZES: readonly CloudMachineSizeInfo[] = [
+  { id: '2x4', vcpu: 2, memoryMiB: 4096 },
+  { id: '4x8', vcpu: 4, memoryMiB: 8192 },
+  { id: '8x16', vcpu: 8, memoryMiB: 16384 },
+];
+
 type CloudProviderState = 'ready' | 'key-rejected' | 'unreachable';
 
 /** One named entry (`CloudMachineProvider` on the wire). */
 export interface CloudMachineProvider {
-  /** The `cloudMachineId`: "e2b", "e2b-<12 hex>", "northflank-<12 hex>" or "agent37-<12 hex>"; "" on a `validateOnly` create. */
+  /** The `cloudMachineId`: "e2b", or "e2b-", "northflank-", "agent37-" or "vercel-<12 hex>"; "" on a `validateOnly` create. */
   id: string;
   provider: CloudProviderKind;
   name: string;
   state: CloudProviderState | string;
   template: string;
-  /** E2B only; "" on Northflank and Agent37. */
+  /** E2B only; "" on the other providers. */
   templateProject: string;
   agentProviders: string[];
   /** Published sizes for this backend's version, smallest first. */
@@ -112,6 +157,7 @@ export interface CloudMachineProvider {
   checkedAt?: string;
   northflank?: NorthflankEntrySettings;
   agent37?: Agent37EntrySettings;
+  vercel?: VercelEntrySettings;
 }
 
 type CloudSandboxState = 'running' | 'pausing' | 'paused' | 'resuming' | 'stopping';
@@ -121,7 +167,7 @@ export interface CloudMachineState {
   provider: CloudProviderKind;
   /** The entry the sandbox started from; "e2b" from an older backend. */
   cloudMachineId: string;
-  /** E2B's sandbox id, the Northflank service id, or the Agent37 instance id. */
+  /** E2B's or Vercel's sandbox id, the Northflank service id, or the Agent37 instance id. */
   sandboxId: string;
   state: CloudSandboxState | string;
   template: string;
@@ -143,10 +189,14 @@ export interface CloudMachineConfigureInput {
   name?: string;
   /** Copy another entry's saved key (or token) instead of sending one. */
   apiKeyFrom?: string;
-  /** Secret, the E2B or Agent37 key or Northflank token: sent once, never stored in state. */
+  /** Secret, the E2B or Agent37 key or Northflank or Vercel token: sent once, never stored in state. */
   apiKey?: string;
-  /** Northflank only; required to create. */
+  /** Northflank and Vercel; required to create. */
   projectId?: string;
+  /** Vercel only; required to create. */
+  teamId?: string;
+  /** Vercel only: a registry repository without a tag; "" goes back to Intent's public image. */
+  image?: string;
   /** Agent37 only. */
   instanceType?: Agent37InstanceType;
   /** Agent37 only; `eu` and `ap-south` need `instanceType: "vm"`. */
@@ -164,7 +214,7 @@ export type CloudMachineErrorData =
       retryable: boolean;
       status?: number;
       provider?: CloudProviderKind;
-      /** Only with `permission-denied`: the refused Northflank or Agent37 call. */
+      /** Only with `permission-denied`: the refused provider call. */
       action?: string;
     }
   | { code: 'cloud-profile-required'; providerRef?: string; provider?: CloudProviderKind }
@@ -191,8 +241,8 @@ function parseSize(value: unknown, provider: CloudProviderKind): CloudMachineSiz
   const vcpu = positiveInt(value.vcpu);
   const memoryMiB = positiveInt(value.memoryMiB);
   if (!vcpu || !memoryMiB) return null;
-  // Agent37 starts one template at every size: no plan of either kind.
-  if (provider === 'agent37') return { id: value.id, vcpu, memoryMiB };
+  // Agent37 and Vercel start one image at every size: no plan of either kind.
+  if (provider === 'agent37' || provider === 'vercel') return { id: value.id, vcpu, memoryMiB };
   return {
     id: value.id,
     vcpu,
@@ -243,6 +293,17 @@ export function parseCloudMachineProvider(value: unknown): CloudMachineProvider 
     ...(text(value.checkedAt) ? { checkedAt: value.checkedAt } : {}),
     ...(provider === 'northflank' ? { northflank: parseNorthflankSettings(value.northflank) } : {}),
     ...(provider === 'agent37' ? { agent37: parseAgent37Settings(value.agent37) } : {}),
+    ...(provider === 'vercel' ? { vercel: parseVercelSettings(value.vercel) } : {}),
+  };
+}
+
+function parseVercelSettings(value: unknown): VercelEntrySettings {
+  const settings = record(value) ? value : {};
+  const field = (key: string) => (text(settings[key]) ? (settings[key] as string) : '');
+  return {
+    teamId: field('teamId'),
+    projectId: field('projectId'),
+    image: field('image') || DEFAULT_VERCEL_IMAGE,
   };
 }
 

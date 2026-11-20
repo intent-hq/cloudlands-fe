@@ -1,5 +1,5 @@
 <!--
-  Settings → an E2B, Northflank or Agent37 entry: its live sandboxes (services, instances), of everyone who runs agents on
+  Settings → a cloud entry: its live sandboxes (Northflank services, Agent37 instances), of everyone who runs agents on
   this backend, grouped by workspace (running first), with who started each,
   uptime, Pause and Delete. Uptime advances locally between reads while a sandbox runs.
 -->

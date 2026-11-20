@@ -1,5 +1,5 @@
 <!--
-  Settings → one E2B, Northflank or Agent37 entry; the meta line names its provider. Before setup it holds the inline setup form; after,
+  Settings → one E2B, Northflank, Agent37 or Vercel entry; the meta line names its provider. Before setup it holds the inline setup form; after,
   it names the template and size, and lists the entry's live sandboxes under
   it. With named entries (Nodes), the name renames in place. Editing reopens
   the form; Remove deletes the entry's key and every sandbox it started.

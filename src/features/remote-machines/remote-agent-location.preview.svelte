@@ -35,6 +35,7 @@
     | 'e2b-key-rejected'
     | 'agent37-no-capacity'
     | 'agent37-wallet'
+    | 'vercel-project-missing'
     | 'e2b-starting-turn'
     | 'e2b-setup-turn'
     | 'e2b-started-turn'
@@ -87,6 +88,8 @@
       // An agent on an Agent37 entry: no room in its region, then an empty wallet.
       'agent37-no-capacity': sceneState('agent37-no-capacity'),
       'agent37-wallet': sceneState('agent37-wallet'),
+      // An agent on a Vercel entry whose project is gone: Settings and the Vercel dashboard.
+      'vercel-project-missing': sceneState('vercel-project-missing'),
       'e2b-starting-turn': sceneState('e2b-starting-turn'),
       'e2b-setup-turn': sceneState('e2b-setup-turn'),
       'e2b-started-turn': sceneState('e2b-started-turn'),
@@ -134,6 +137,7 @@
   import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
   import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
+  import { VERCEL_ENTRY } from '../../test/cloud-machines-preview';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
@@ -319,8 +323,9 @@
 
   // Agents on E2B: a sandbox row while it runs or is paused; start fields and errors otherwise.
   const E2B_NODE = 'd-e2b-sandbox-1';
-  const isE2bScene = (s: Scene) => s.startsWith('e2b-') || isAgent37Scene(s);
+  const isE2bScene = (s: Scene) => s.startsWith('e2b-') || isAgent37Scene(s) || isVercelScene(s);
   const isAgent37Scene = (s: Scene) => s.startsWith('agent37-');
+  const isVercelScene = (s: Scene) => s.startsWith('vercel-');
   const E2B_BOOTSTRAP_DETAIL =
     [
       "the sandbox's intentd did not mint a credential (exit 3): intentd or its tunnel did not start in the sandbox.",
@@ -379,6 +384,11 @@
       detail:
         'Agent37 refused a new instance: insufficient_balance (402). Top up the Agent37 wallet. {"code":"cloud-quota","provider":"agent37","limit":"plan","retryable":false}',
     },
+    'vercel-project-missing': {
+      code: 'remote-launch-failed',
+      detail:
+        'Vercel answered 404 for project prj_preview000000000000000000. {"code":"cloud-machine-unavailable","provider":"vercel","reason":"project-missing","retryable":false,"status":404}',
+    },
     'e2b-key-rejected': {
       code: 'remote-launch-failed',
       detail:
@@ -387,19 +397,28 @@
   };
   const e2bAgent = (s: Scene): AgentSession =>
     agent('ral-e2b', 'Docs sweeper', {
-      ...(isAgent37Scene(s)
+      ...(isVercelScene(s)
         ? {
-            nodeName: 'Agent37',
+            nodeName: 'Vercel',
             placement: {
               target: 'cloud' as const,
               checkout: 'isolated' as const,
-              cloudMachineId: 'agent37-4b8d2e6f1a90',
+              cloudMachineId: VERCEL_ENTRY.id,
             },
           }
-        : {
-            nodeName: 'E2B',
-            placement: { target: 'e2b' as const, checkout: 'isolated' as const },
-          }),
+        : isAgent37Scene(s)
+          ? {
+              nodeName: 'Agent37',
+              placement: {
+                target: 'cloud' as const,
+                checkout: 'isolated' as const,
+                cloudMachineId: 'agent37-4b8d2e6f1a90',
+              },
+            }
+          : {
+              nodeName: 'E2B',
+              placement: { target: 'e2b' as const, checkout: 'isolated' as const },
+            }),
       ...(s === 'e2b-running' ||
       s === 'e2b-paused' ||
       s === 'e2b-picker-paused' ||
@@ -645,7 +664,7 @@
     store.dispatch(
       cloudMachinesLoaded({
         supported: true,
-        providers: [],
+        providers: isVercelScene(s) ? [VERCEL_ENTRY] : [],
         machines:
           s === 'e2b-running' ||
           s === 'e2b-paused' ||

@@ -435,7 +435,9 @@
                           ? m.cloudMachines_addMenu_northflank_description()
                           : kind === 'agent37'
                             ? m.cloudMachines_addMenu_agent37_description()
-                            : m.cloudMachines_addMenu_e2b_description()}</span
+                            : kind === 'vercel'
+                              ? m.cloudMachines_addMenu_vercel_description()
+                              : m.cloudMachines_addMenu_e2b_description()}</span
                       >
                     </span>
                   </Menu.Item>
