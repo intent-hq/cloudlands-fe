@@ -203,9 +203,9 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       values = { enabled };
       yield* put(settingsFormRequestProgressed(request, values));
       if (enabled && intent.enabled) {
-        const tunnelError = yield* call(turnTunnelOnByDefault, appClient);
-        if (tunnelError && (yield* requestCurrent(request, context)))
-          yield* call(notify.error, m.settings_tunnel_enableError({ error: tunnelError }));
+        const tunnel = yield* call(turnTunnelOnByDefault, appClient);
+        if (tunnel.error && (yield* requestCurrent(request, context)))
+          yield* call(notify.error, m.settings_tunnel_enableError({ error: tunnel.error }));
       }
       if (enabled) values = yield* loadMobile(request, context);
       else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
@@ -225,37 +225,10 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         snapshot.enabled = intent.enabled;
         if (intent.enabled) {
           snapshot = yield* call(loadSnapshot, client, request, true);
-          // First-enable defaults, each its own fail-soft update so a tunnel
-          // that cannot start never rolls back the bind default.
-          const defaults: [{ path: string; value: string[] | boolean }, (e: string) => string][] =
-            [];
-          const failed = (error: string) => m.settings_listenTargets_saveError({ error });
-          if (
-            snapshot.bindAddressSupported &&
-            !snapshot.tunnelOnly &&
-            !snapshot.bindIps.some((ip) => ip !== '127.0.0.1')
-          )
-            defaults.push([{ path: 'server.bindAddress', value: ['0.0.0.0'] }, failed]);
-          // Remote access brings the Tailcat tunnel with it by default.
-          if (snapshot.tunnelSupported && !snapshot.tunnelEnabled)
-            defaults.push([
-              { path: 'server.tunnel.enabled', value: true },
-              (error) => m.settings_tunnel_enableError({ error }),
-            ]);
-          let changed = false;
-          for (const [change, message] of defaults) {
-            try {
-              yield* call([client.settings, client.settings.update], [change]);
-              changed = true;
-            } catch (cause) {
-              if (yield* selectSettingsFormRequestCurrent.effect(request))
-                yield* call(
-                  notify.error,
-                  message(String(cause instanceof Error ? cause.message : cause)),
-                );
-            }
-          }
-          if (changed) {
+          const tunnel = yield* call(turnTunnelOnByDefault, client);
+          if (tunnel.error && (yield* selectSettingsFormRequestCurrent.effect(request)))
+            yield* call(notify.error, m.settings_tunnel_enableError({ error: tunnel.error }));
+          if (tunnel.changed) {
             yield* publication('refresh');
             snapshot = yield* call(loadSnapshot, client, request, true);
           }
