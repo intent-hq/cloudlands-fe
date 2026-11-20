@@ -52,7 +52,7 @@ const MAX_PAGE_ZOOM = 5;
  * path's MAX_OFFSCREEN_WEBVIEWS). Pinned (agent-owned) pages and pages in a
  * drawing hold do not count and are never closed by the cap.
  */
-export const DEFAULT_MAX_DETACHED_VIEWS = 8;
+const DEFAULT_MAX_DETACHED_VIEWS = 8;
 
 /** Console messages from the app's own page scripts (element picker). */
 const APP_CONSOLE_PREFIX = '__INTENT_';

@@ -20,7 +20,7 @@ export interface BrowserViewKeyInput {
   meta: boolean;
 }
 
-export type BrowserViewShortcutAction =
+type BrowserViewShortcutAction =
   | 'close-tab'
   | 'refresh'
   | 'focus-url'
