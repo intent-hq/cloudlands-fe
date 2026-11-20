@@ -454,6 +454,10 @@
   } | null>(null);
   const screenshotLabels = $derived({
     capture: m.dock_composer_screenshotAction_label(),
+    captureMode: {
+      window: m.dock_composer_captureWindow_label(),
+      region: m.dock_composer_captureRegion_label(),
+    },
     captureModes: {
       fullscreen: m.dock_composer_captureFullscreen_label(),
       window: m.dock_composer_captureWindow_label(),

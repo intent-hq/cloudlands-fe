@@ -52,9 +52,7 @@
     !!media.captureModesAvailable && !!menuLabels && !blocked && !media.alerts?.capture,
   );
   const modeLabel = $derived(
-    surface === 'chat' || mode === 'fullscreen'
-      ? labels.capture
-      : (labels.captureMode?.[mode] ?? labels.capture),
+    mode === 'fullscreen' ? labels.capture : (labels.captureMode?.[mode] ?? labels.capture),
   );
   const tooltip = $derived(
     media.alerts?.capture ??
@@ -213,7 +211,7 @@
         aria-hidden="true"
       ></span>{/if}
   {/key}
-  <DockComposerIcon glyph={surface === 'chat' ? 'camera' : DOCK_CAPTURE_GLYPHS[mode]} />
+  <DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[mode]} />
 </Button>
 {#if menuLabels && media.captureModesAvailable}
   <DockCaptureModeMenu

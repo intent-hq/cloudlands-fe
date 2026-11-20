@@ -61,10 +61,14 @@ test('the screenshot picker opens markup and attaches the edited image to the or
   await expect(attachment).toHaveCount(0);
   await expect(editor).toHaveText('Can you take a look at this?');
 
-  const regionCapture = capture;
+  const regionCapture = page.getByRole('button', { name: 'Region', exact: true });
   await expect(regionCapture).toBeEnabled();
   await regionCapture.focus();
   await regionCapture.press('ArrowUp');
+  await expect(menu.getByRole('menuitemradio', { name: 'Region' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   const windowMode = menu.getByRole('menuitemradio', { name: 'Window' });
   await windowMode.click();
   const review = page.getByRole('dialog', { name: 'Screenshot', exact: true });
