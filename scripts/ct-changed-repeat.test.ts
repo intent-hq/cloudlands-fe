@@ -104,11 +104,11 @@ describe('parseArgs', () => {
       ['--repeat-each=x'],
       ['--grep', 'x'],
       ['src/a/one.test.ts'],
-      ['--dry-run', '--', '--repeat-each=3'],
-      ['--dry-run', '--', '--workers=8'],
-      ['--dry-run', '--', '-j', '8'],
-      ['--dry-run', '--', '--retries=2'],
-      ['--dry-run', '--', '--reporter=dot'],
+      ['--', '--dry-run', '--', '--repeat-each=3'],
+      ['--', '--dry-run', '--', '--workers=8'],
+      ['--', '--dry-run', '--', '-j', '8'],
+      ['--', '--dry-run', '--', '--retries=2'],
+      ['--', '--dry-run', '--', '--reporter=dot'],
     ]) {
       expect(() => parseArgs(argv), argv.join(' ')).toThrow();
     }

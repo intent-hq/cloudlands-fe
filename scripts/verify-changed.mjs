@@ -65,6 +65,7 @@ import {
   RESULTS_ENV,
   sourceIdentity,
 } from './verify-changed-receipts.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
@@ -306,7 +307,8 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
   }
 }
 
-export function parseArgs(argv) {
+export function parseArgs(args) {
+  const argv = scriptArgs(args);
   const result = {
     base: null,
     dryRun: false,
@@ -319,7 +321,6 @@ export function parseArgs(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
     else if (arg === '--resume') result.resume = true;

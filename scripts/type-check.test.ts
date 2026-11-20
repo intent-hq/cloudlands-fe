@@ -1,4 +1,4 @@
-// @verify-changed-triggers: scripts/type-check.ts, package.json, .github/workflows/intent-pr.yml
+// @verify-changed-triggers: scripts/type-check.ts, scripts/script-args.mjs, package.json, .github/workflows/intent-pr.yml
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -43,6 +43,7 @@ function fixtureRoot() {
   temporaryPaths.push(root);
   mkdirSync(join(root, 'scripts'));
   copyFileSync(resolve('scripts/type-check.ts'), join(root, 'scripts/type-check.ts'));
+  copyFileSync(resolve('scripts/script-args.mjs'), join(root, 'scripts/script-args.mjs'));
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'junction');
   write(root, 'package.json', JSON.stringify({ type: 'module' }));
   write(

@@ -9,13 +9,21 @@ import { scriptArgs } from './script-args.mjs';
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(scriptsDir);
 
-const REJECTS_UNKNOWN = /[`'"]Unknown (?:argument|option|flag)/;
+// A string literal (not a comment) naming an unknown argument, option or flag.
+const UNKNOWN_ARG_STRING = /[`'"][^`'"\n]*\bunknown (?:or \w+ )?(?:argument|option|flag)/i;
+const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 const IMPORTS_HELPER =
   /import\s*\{[^}]*\bscriptArgs\b[^}]*\}\s*from\s*['"](?:\.\.?\/)+script-args\.mjs['"]/;
 
+function rejectsUnknownArgs(source: string) {
+  return source
+    .split('\n')
+    .some((line) => !COMMENT_LINE.test(line) && UNKNOWN_ARG_STRING.test(line));
+}
+
 function missesScriptArgs(source: string) {
   return (
-    REJECTS_UNKNOWN.test(source) && !(IMPORTS_HELPER.test(source) && /\bscriptArgs\(/.test(source))
+    rejectsUnknownArgs(source) && !(IMPORTS_HELPER.test(source) && /\bscriptArgs\(/.test(source))
   );
 }
 
@@ -35,8 +43,12 @@ describe('scriptArgs', () => {
   it.each([
     [['--', '--check'], ['--check']],
     [
-      ['--check', '--'],
-      ['--check', '--'],
+      ['--follow', '--', '--port', '1'],
+      ['--follow', '--port', '1'],
+    ],
+    [
+      ['--', 'a.ct.spec.ts', '--', '--grep', 'x'],
+      ['a.ct.spec.ts', '--', '--grep', 'x'],
     ],
     [['--', '--'], ['--']],
     [['--'], []],
@@ -60,6 +72,19 @@ describe('scriptArgs', () => {
     expect(run.status).toBe(2);
     expect(run.stderr).toContain('Unknown argument(s): --bogus\n');
   });
+
+  it('drops the separator after flags baked into a package.json script', () => {
+    const run = spawnSync(
+      process.execPath,
+      ['scripts/observe-memory.js', '--follow', '--', '--help'],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      },
+    );
+    expect(run.stderr).toBe('');
+    expect(run.status).toBe(0);
+  });
 });
 
 describe('scripts that reject unknown arguments use scriptArgs', () => {
@@ -72,12 +97,15 @@ describe('scripts that reject unknown arguments use scriptArgs', () => {
         `import { scriptArgs } from './script-args.mjs';\n${parser.replace('process.argv.slice(2)', 'scriptArgs()')}`,
       ),
     ).toBe(false);
+    expect(missesScriptArgs('usage(`unknown option ${arg}`);')).toBe(true);
+    expect(missesScriptArgs('throw new Error(`Unknown or incomplete option: ${arg}`);')).toBe(true);
     expect(missesScriptArgs('// Unknown options are forwarded unchanged.')).toBe(false);
+    expect(missesScriptArgs(' * after `--`: npm drops unknown flags before it')).toBe(false);
   });
 
   it('covers every script under scripts/', () => {
     const sources = scriptSources();
-    expect(sources.filter(({ source }) => REJECTS_UNKNOWN.test(source)).length).toBeGreaterThan(10);
+    expect(sources.filter(({ source }) => rejectsUnknownArgs(source)).length).toBeGreaterThan(10);
     const offenders = sources
       .filter(({ source }) => missesScriptArgs(source))
       .map(({ file }) => file);

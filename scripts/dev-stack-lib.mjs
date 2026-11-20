@@ -5,6 +5,8 @@
  * rules are unit-testable (scripts/dev-stack-lib.test.ts).
  */
 
+import { scriptArgs } from './script-args.mjs';
+
 export const ROLE_BUILD = 'build';
 export const ROLE_LONG = 'long';
 
@@ -18,7 +20,8 @@ export const ROLE_LONG = 'long';
  * @param {string[]} argv process.argv.slice(2)
  * @returns {{ role: 'build' | 'long', command: string }[]}
  */
-export function parseCommands(argv) {
+export function parseCommands(args) {
+  const argv = scriptArgs(args);
   const commands = [];
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
