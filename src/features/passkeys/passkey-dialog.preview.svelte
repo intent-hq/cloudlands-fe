@@ -58,7 +58,13 @@
     'error-timeout': { step: 'error', reason: 'timeout' },
     'long-site': { step: 'choose-transport', hybrid: 'bluetooth-missing', device: false },
     'device-choose': { step: 'choose-transport', hybrid: 'available', device: true },
-    'device-pin-first': { step: 'pin', kind: 'device', wrongPin: false, attemptsLeft: 10, firstPasskey: true },
+    'device-pin-first': {
+      step: 'pin',
+      kind: 'device',
+      wrongPin: false,
+      attemptsLeft: 10,
+      firstPasskey: true,
+    },
     'device-pin-wrong': { step: 'pin', kind: 'device', wrongPin: true, attemptsLeft: 4 },
     'device-pin-wait': {
       step: 'pin',
@@ -67,7 +73,13 @@
       attemptsLeft: 5,
       retryAfterMs: 30_000,
     },
-    'device-old-pin': { step: 'pin', kind: 'device', wrongPin: false, attemptsLeft: 9, oldPin: true },
+    'device-old-pin': {
+      step: 'pin',
+      kind: 'device',
+      wrongPin: false,
+      attemptsLeft: 9,
+      oldPin: true,
+    },
     'device-error-locked': { step: 'error', reason: 'device-locked' },
     'device-error-no-passkey': { step: 'error', reason: 'device-no-passkey' },
   };

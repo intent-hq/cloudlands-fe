@@ -1,8 +1,8 @@
 import { store } from '../../store';
-import { initialState, type DevicePasskeysState } from './device-passkeys-slice';
+import { devicePasskeysView, initialState, type DevicePasskeysView } from './device-passkeys-slice';
 
-export const selectDevicePasskeys = store.createSelector(
-  (state): DevicePasskeysState => state.devicePasskeys ?? initialState,
+export const selectDevicePasskeys = store.createSelector((state): DevicePasskeysView =>
+  devicePasskeysView(state.devicePasskeys ?? initialState),
 );
 
 /** Settings → Passkeys is shown only once the helper confirms device passkeys. */

@@ -25,7 +25,6 @@ export async function deleteDevicePasskey(credentialId: string): Promise<boolean
   if (!api) return false;
   const request: PasskeyDeviceDeleteRequest = { credentialId };
   const result = (await api.invoke(CHANNELS.DEVICE_DELETE, request)) as
-    | PasskeyDeviceDeleteResult
-    | undefined;
+    PasskeyDeviceDeleteResult | undefined;
   return result?.ok === true;
 }

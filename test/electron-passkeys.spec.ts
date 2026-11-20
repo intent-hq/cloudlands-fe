@@ -506,7 +506,10 @@ test.describe.serial('browser-panel device passkeys (Intent OS PIN)', () => {
     const { app } = launched!;
     expect(await guest(app, 'window.passkeyPage.capabilities()')).toMatchObject({
       uvpaa: true,
-      capabilities: { passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true },
+      capabilities: {
+        passkeyPlatformAuthenticator: true,
+        userVerifyingPlatformAuthenticator: true,
+      },
     });
   });
 
@@ -599,7 +602,11 @@ test.describe.serial('browser-panel device passkeys (Intent OS PIN)', () => {
       userHandle: Buffer.from('grace').toString('base64url'),
       clientData: { type: 'webauthn.get', challenge: result.challenge },
     });
-    expect(sidecarRequests(log).filter((r) => r.method === 'choose').at(-1)?.params.index).toBe(1);
+    expect(
+      sidecarRequests(log)
+        .filter((r) => r.method === 'choose')
+        .at(-1)?.params.index,
+    ).toBe(1);
   });
 
   test('too many wrong PINs block the field until the wait ends', async () => {

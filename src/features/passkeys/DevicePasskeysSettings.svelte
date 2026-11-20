@@ -13,22 +13,22 @@
   import { formatDate } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { PasskeyDeviceCredential } from '$shared/ipc/passkeys';
-  import type { DevicePasskeysState } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
+  import type { DevicePasskeysView } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
 
   interface Props {
-    state: DevicePasskeysState;
+    passkeys: DevicePasskeysView;
     /** Preview only: render the confirm dialog in place, open for this credential. */
     staticConfirmId?: string;
     onRetry: () => void;
     onDelete: (credentialId: string) => void;
   }
 
-  let { state, staticConfirmId, onRetry, onDelete }: Props = $props();
+  let { passkeys, staticConfirmId, onRetry, onDelete }: Props = $props();
 
   let pending = $state<PasskeyDeviceCredential | null>(null);
   let confirmOpen = $state(false);
   $effect(() => {
-    const entry = state.credentials.find((item) => item.credentialId === staticConfirmId);
+    const entry = passkeys.credentials.find((item) => item.credentialId === staticConfirmId);
     if (entry) {
       pending = entry;
       confirmOpen = true;
@@ -38,14 +38,15 @@
   const userLabel = (entry: PasskeyDeviceCredential) => entry.userName || entry.userDisplayName;
 
   const sorted = $derived(
-    [...state.credentials].sort(
+    [...passkeys.credentials].sort(
       (a, b) => a.rpId.localeCompare(b.rpId) || userLabel(a).localeCompare(userLabel(b)),
     ),
   );
 
   const failedEntry = $derived(
-    state.deleteFailedId
-      ? (state.credentials.find((entry) => entry.credentialId === state.deleteFailedId) ?? null)
+    passkeys.deleteFailedId
+      ? (passkeys.credentials.find((entry) => entry.credentialId === passkeys.deleteFailedId) ??
+          null)
       : null,
   );
 
@@ -64,14 +65,14 @@
   id="passkeys"
   title={m.passkeys_settings_title()}
   description={m.passkeys_settings_description()}
-  busy={state.status === 'loading'}
+  busy={passkeys.status === 'loading'}
   error={failedEntry ? m.passkeys_settings_deleteFailed_error() : undefined}
 >
-  {#if state.status === 'loading'}
+  {#if passkeys.status === 'loading'}
     <div class="flex justify-center px-6 py-6 text-muted-foreground">
       <IntentMarkLoader size={20} />
     </div>
-  {:else if state.status === 'error'}
+  {:else if passkeys.status === 'error'}
     <div class="flex items-center justify-between gap-4 px-6 py-4">
       <p class="type-body text-danger" role="alert">{m.passkeys_settings_loadFailed_error()}</p>
       <Button variant="secondary" size="sm" onclick={onRetry}>
@@ -91,7 +92,7 @@
       class="divide-y divide-border"
     >
       {#snippet row({ item })}
-        {@const deleting = state.deletingIds.includes(item.credentialId)}
+        {@const deleting = passkeys.deletingIds.includes(item.credentialId)}
         <ListRow class="px-6 py-3" data-testid="device-passkey-row">
           {#snippet title()}
             <span class="block truncate">{item.rpId}</span>

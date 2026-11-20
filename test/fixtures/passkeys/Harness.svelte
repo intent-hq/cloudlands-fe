@@ -7,6 +7,7 @@
     devicePasskeyDeleteRequested,
     devicePasskeysReducer,
     devicePasskeysRequested,
+    devicePasskeysView,
     initialState,
   } from '../../../src/store/renderer/slices/device-passkeys/device-passkeys-slice';
   import { devicePasskeysSaga } from '../../../src/store/renderer/slices/device-passkeys/sagas/device-passkeys-saga';
@@ -51,7 +52,7 @@
     >
       <div class="mx-auto max-w-3xl">
         <DevicePasskeysSettings
-          state={passkeys}
+          passkeys={devicePasskeysView(passkeys)}
           onRetry={() => dispatch(devicePasskeysRequested())}
           onDelete={(credentialId) => dispatch(devicePasskeyDeleteRequested(credentialId))}
         />

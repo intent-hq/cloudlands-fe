@@ -20,7 +20,7 @@
 
 <script lang="ts">
   import type { PasskeyDeviceCredential } from '$shared/ipc/passkeys';
-  import type { DevicePasskeysState } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
+  import type { DevicePasskeysView } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
   import DevicePasskeysSettings from './DevicePasskeysSettings.svelte';
 
   let { state = 'list' }: { state?: string } = $props();
@@ -54,13 +54,13 @@
     lastUsedAt: USED,
   };
 
-  const base: DevicePasskeysState = {
+  const base: DevicePasskeysView = {
     status: 'ready',
     credentials,
     deletingIds: [],
     deleteFailedId: null,
   };
-  const states: Record<string, DevicePasskeysState> = {
+  const states: Record<string, DevicePasskeysView> = {
     list: base,
     empty: { ...base, credentials: [] },
     loading: { ...base, status: 'loading', credentials: [] },
@@ -74,7 +74,7 @@
 
 <div class="min-h-[480px] w-full max-w-4xl bg-background p-6">
   <DevicePasskeysSettings
-    state={states[state] ?? base}
+    passkeys={states[state] ?? base}
     staticConfirmId={state === 'confirm' ? credentials[0].credentialId : undefined}
     onRetry={() => {}}
     onDelete={() => {}}

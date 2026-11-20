@@ -577,7 +577,7 @@
 
         {#if activeTab === 'passkeys' && $devicePasskeysAvailable$}
           <DevicePasskeysSettings
-            state={$devicePasskeys$}
+            passkeys={$devicePasskeys$}
             onRetry={() => appStore.dispatch(devicePasskeysRequested())}
             onDelete={(credentialId) =>
               appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
