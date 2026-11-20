@@ -32,7 +32,7 @@
     orchestrator?: 'machine' | 'no-machine';
     /** The provider picked on the welcome step (the Connect step's provider). */
     activeProvider?: string;
-    /** A fresh machine: no provider installed, or only OpenCode. */
+    /** A fresh machine: nothing installed (OpenCode runs through npx), or only OpenCode. */
     fresh?: 'none' | 'opencode';
   }
   const ORCHESTRATOR_STEPS = [
@@ -397,13 +397,15 @@
   appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
   const seededFresh = untrack(() => fresh);
   for (const provider of seededProviders) {
+    const viaNpx = seededFresh === 'none' && provider.id === 'opencode';
     const connected = seededFresh
-      ? seededFresh === 'opencode' && provider.id === 'opencode'
+      ? provider.id === 'opencode'
       : fullCatalog
         ? provider.id === 'codex' || provider.id === 'claude-code'
         : provider.id !== 'opencode';
     appStore.dispatch(
       checkSingleProviderSuccess(provider.id, {
+        ...(viaNpx ? { viaNpx } : {}),
         available: connected || (!seededFresh && provider.id === 'auggie'),
         authenticated: connected,
       }),

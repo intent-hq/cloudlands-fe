@@ -287,6 +287,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     if (!status.available && withNpxFallback(status, discovery, id).available) {
       withAuth(status, authVerdicts[id]);
     }
+    signedOutUnlessConfirmed(status, id);
     withVersion(status, discovery, id);
   }
 
@@ -317,6 +318,19 @@ function providerStatusFromDiscovery(
 ): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === providerId);
   return { available: row?.installed === true && !row.gatedOff };
+}
+
+/**
+ * A provider running through npx has no installed CLI, so it is rarely
+ * signed in: show Log in until the daemon confirms a sign-in. The daemon
+ * keeps an unknown verdict unknown (it must not block agent creation).
+ * OpenCode is exempt: its free models need no account.
+ */
+function signedOutUnlessConfirmed(status: ProviderStatus, providerId: string): ProviderStatus {
+  if (status.viaNpx && providerId !== 'opencode' && status.authenticated !== true) {
+    status.authenticated = false;
+  }
+  return status;
 }
 
 /**
@@ -515,13 +529,13 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     selectHostRole.select(appStore.state) === 'member' ||
     DISCOVERY_STATUS_PROVIDERS.has(providerId)
   ) {
-    return checkSingleProviderStatus(providerId, force);
+    return signedOutUnlessConfirmed(await checkSingleProviderStatus(providerId, force), providerId);
   }
   const [status, discovery] = await Promise.all([
     checkSingleProviderStatus(providerId, force),
     discoveryForVersions(),
   ]);
-  return withVersion(status, discovery, providerId);
+  return withVersion(signedOutUnlessConfirmed(status, providerId), discovery, providerId);
 }
 
 /** Providers whose single check already reads discovery (and its version). */

@@ -135,9 +135,14 @@ describe('resolveFreeOnboardingProvider', () => {
     const statusMap = {
       'claude-code': { available: false },
       codex: { available: false },
-      opencode: { available: false },
+      opencode: { available: true, viaNpx: true },
     };
     expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
+  });
+
+  it('does not promote OpenCode when it cannot run (no npx)', () => {
+    const statusMap = { 'claude-code': { available: false }, opencode: { available: false } };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBeUndefined();
   });
 
   it('keeps OpenCode promoted after it alone is installed', () => {
@@ -164,7 +169,7 @@ describe('resolveFreeOnboardingProvider', () => {
   it('does not promote when another provider is installed, even logged out', () => {
     const statusMap = {
       codex: { available: true, authenticated: false },
-      opencode: { available: false },
+      opencode: { available: true, viaNpx: true },
     };
     expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBeUndefined();
   });

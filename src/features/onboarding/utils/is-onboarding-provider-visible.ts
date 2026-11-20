@@ -34,7 +34,7 @@ export interface IsOnboardingProviderVisibleInput {
   /** Whether the given feature code is activated (from Redux state). */
   isFeatureEnabled: (featureCode: string) => boolean;
   /** Availability status reported for the provider; undefined = not checked yet. */
-  status?: { available?: boolean };
+  status?: { available?: boolean; viaNpx?: boolean };
   enabled?: boolean;
   /**
    * An orchestrator: its machines run a provider only with a profile's key or
@@ -53,5 +53,5 @@ export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleIn
   if (provider.requiresEnvVar && status?.available !== true) {
     return false;
   }
-  return isProviderListed(provider.id, status?.available, input.enabled);
+  return isProviderListed(provider.id, status, input.enabled);
 }

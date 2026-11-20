@@ -716,6 +716,37 @@ describe('provider-status-bridge-seeder', () => {
         expect(status).toMatchObject({ available: true, viaNpx: true, authenticated: false });
       });
 
+      it('shows Log in for an npx provider until a sign-in is confirmed, except OpenCode', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: false },
+          'host.providerDiscovery': {
+            providers: [opencodeRow, { id: 'grok', installed: false, hasNpxFallback: true }],
+            npx: npxOk,
+          },
+          'host.providerAuthStatus': (params: unknown) => {
+            const id = (params as { providerId?: string } | undefined)?.providerId;
+            return id ? authOne(id, null) : authSweep();
+          },
+        });
+        for (const [id, key, authenticated] of [
+          ['grok', 'grok', false],
+          ['opencode', 'opencode', undefined],
+        ] as const) {
+          const response = await mockInvoke<Envelope<ProviderAvailabilityResult & ProviderStatus>>(
+            channel,
+            channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? id : undefined,
+          );
+          const status =
+            channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+              ? response.data?.providers[key]
+              : response.data;
+          expect(status?.viaNpx).toBe(true);
+          expect(status?.authenticated).toBe(authenticated);
+        }
+      });
+
       it('prefers an installed CLI over npx', async () => {
         routeDaemon({
           'host.checkAuggie': { available: false },

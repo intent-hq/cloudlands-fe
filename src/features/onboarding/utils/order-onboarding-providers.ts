@@ -32,8 +32,9 @@ const FREE_ONBOARDING_PROVIDER_ID = 'opencode';
 
 /**
  * The provider to promote as the free choice: OpenCode, once the first
- * availability sweep has finished (`checked`) and found no other provider
- * installed (running one through npx does not count). Waiting for the sweep keeps the grid from reordering when a
+ * availability sweep has finished (`checked`), OpenCode can run (installed or
+ * through npx), and no other provider is installed (running one through npx
+ * does not count). Waiting for the sweep keeps the grid from reordering when a
  * slower probe later finds Claude Code or Codex.
  */
 export function resolveFreeOnboardingProvider(
@@ -43,6 +44,7 @@ export function resolveFreeOnboardingProvider(
 ): string | undefined {
   if (!checked) return undefined;
   if (!providers.some((p) => p.id === FREE_ONBOARDING_PROVIDER_ID)) return undefined;
+  if (statusMap[FREE_ONBOARDING_PROVIDER_ID]?.available !== true) return undefined;
   const otherInstalled = providers.some(
     (p) =>
       p.id !== FREE_ONBOARDING_PROVIDER_ID &&
