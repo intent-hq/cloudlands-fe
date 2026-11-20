@@ -13,6 +13,7 @@ export type SettingsTab =
   | 'setup'
   | 'advanced'
   | 'input'
+  | 'passkeys'
   | 'specialists';
 
 export type SettingKind =

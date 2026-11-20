@@ -157,7 +157,7 @@ test.afterAll(async () => {
   }
 });
 
-async function launch(bluetooth: 'on' | 'off' = 'on'): Promise<Launched> {
+async function launch(bluetooth: 'on' | 'off' = 'on', device = false): Promise<Launched> {
   const env = Object.fromEntries(
     ['PATH', 'TMPDIR', 'DISPLAY', 'XAUTHORITY'].flatMap((key) =>
       process.env[key] ? [[key, process.env[key]!]] : [],
@@ -179,6 +179,11 @@ async function launch(bluetooth: 'on' | 'off' = 'on'): Promise<Launched> {
       INTENT_PASSKEY_BIN: join(fixture, 'fake-sidecar.cjs'),
       FAKE_PASSKEY_LOG: log,
       FAKE_PASSKEY_BLUETOOTH: bluetooth,
+      FAKE_PASSKEY_DEVICE: device ? '1' : '0',
+      // Settings → Passkeys IPC admits only a trusted app renderer URL; in
+      // development that is the dev server origin the fixture window loads.
+      NODE_ENV: 'development',
+      DEV_PORT: new URL(baseUrl).port,
     },
   });
   const page = await app.firstWindow();
@@ -235,8 +240,8 @@ function sidecarRequests(log: string): Array<{ id: string; method: string; param
     .map((line) => JSON.parse(line));
 }
 
-async function shoot(page: Page, name: string) {
-  const dialog = page.getByRole('dialog');
+async function shoot(page: Page, name: string, target = page.getByRole('dialog')) {
+  const dialog = target;
   for (const theme of ['light', 'dark'] as const) {
     await page.evaluate((next) => {
       document.documentElement.classList.remove('light', 'dark');
@@ -275,6 +280,7 @@ test.describe.serial('browser-panel passkeys', () => {
     const { app, page, log } = launched!;
     await guest(app, `window.passkeyPage.start('create', 'swa-create')`);
     await expect(page.getByRole('dialog')).toContainText('Create a passkey for localhost');
+    await expect(page.getByRole('dialog')).not.toContainText('This device');
     await shoot(page, '1-choose');
     await page.getByText('Phone or tablet').click();
     await expect(page.getByRole('img', { name: 'QR code to scan with your phone' })).toBeVisible();
@@ -476,6 +482,255 @@ test.describe.serial('browser-panel passkeys without Bluetooth', () => {
     await expect(page.getByRole('img', { name: 'QR code to scan with your phone' })).toHaveCount(0);
     await shoot(page, '8-error-bluetooth-off');
     expect(await settled(app, 'bt')).toMatchObject({ state: 'rejected', name: 'NotAllowedError' });
+    expect(sidecarRequests(log).map((request) => request.method)).toEqual(['hello']);
+  });
+});
+
+test.describe.serial('browser-panel device passkeys (Intent OS PIN)', () => {
+  let launched: Launched | undefined;
+  let firstCredential = '';
+  test.beforeAll(async () => {
+    test.setTimeout(120_000);
+    launched = await launch('on', true);
+  });
+  test.afterAll(async () => close(launched));
+
+  const dialog = () => launched!.page.getByRole('dialog');
+  const pinField = (label = 'Intent OS PIN') => launched!.page.getByLabel(label);
+  async function enterPin(pin: string, label?: string) {
+    await pinField(label).fill(pin);
+    await launched!.page.getByRole('button', { name: 'Continue' }).click();
+  }
+
+  test('reports a user-verifying platform authenticator', async () => {
+    const { app } = launched!;
+    expect(await guest(app, 'window.passkeyPage.capabilities()')).toMatchObject({
+      uvpaa: true,
+      capabilities: {
+        passkeyPlatformAuthenticator: true,
+        userVerifyingPlatformAuthenticator: true,
+      },
+    });
+  });
+
+  test('first create on this device shows PIN advice, retries a wrong PIN', async () => {
+    const { app, page, log } = launched!;
+    await guest(app, `window.passkeyPage.start('device-create', 'create')`);
+    await expect(dialog()).toContainText('This device');
+    await shoot(page, 'd1-choose-device');
+    await page.getByText('This device').click();
+    await expect(pinField()).toBeVisible();
+    await expect(dialog()).toContainText('Enter your Intent OS PIN');
+    await expect(page.getByTestId('passkey-pin-advice')).toContainText('8 or more digits');
+    await shoot(page, 'd2-pin-first-passkey');
+    await enterPin('1111');
+    await expect(dialog()).toContainText('Wrong PIN. 9 tries left.');
+    await shoot(page, 'd3-pin-wrong');
+    await enterPin('246813579');
+    const result = await settled(app, 'device-create');
+    expect(result.state).toBe('resolved');
+    expect(result.value).toMatchObject({
+      isAttestation: true,
+      authenticatorAttachment: 'platform',
+      transports: ['internal'],
+      clientData: { type: 'webauthn.create', challenge: result.challenge, crossOrigin: false },
+    });
+    firstCredential = result.value!.id;
+    await expect(dialog()).toHaveCount(0);
+    const requests = sidecarRequests(log);
+    const create = requests.filter((request) => request.method === 'create').at(-1)!;
+    expect(create.params).toMatchObject({ transport: 'device', rpId: 'localhost' });
+    expect(requests.some((request) => request.method === 'device.list')).toBe(true);
+  });
+
+  test('a second passkey create shows no PIN advice', async () => {
+    const { app, page } = launched!;
+    await guest(
+      app,
+      `window.passkeyPage.start('device-create-2', 'create', { userName: 'grace@example.com', userDisplayName: 'Grace Hopper', userId: 'grace' })`,
+    );
+    await page.getByText('This device').click();
+    await expect(pinField()).toBeVisible();
+    await expect(page.getByTestId('passkey-pin-advice')).toHaveCount(0);
+    await enterPin('246813579');
+    expect((await settled(app, 'device-create-2')).state).toBe('resolved');
+  });
+
+  test('an excluded credential says this device already has a passkey', async () => {
+    const { app, page } = launched!;
+    await guest(
+      app,
+      `window.passkeyPage.start('device-excluded', 'create', { exclude: [${JSON.stringify(firstCredential)}] })`,
+    );
+    await page.getByText('This device').click();
+    await expect(dialog()).toContainText('This device already has a passkey for this site.');
+    expect(await settled(app, 'device-excluded')).toMatchObject({
+      state: 'rejected',
+      name: 'InvalidStateError',
+    });
+    await dialog().getByRole('button', { name: 'Close' }).last().click();
+    await expect(dialog()).toHaveCount(0);
+  });
+
+  test('a cross-platform request does not offer this device', async () => {
+    const { app, page } = launched!;
+    await guest(
+      app,
+      `window.passkeyPage.start('device-cross', 'create', { attachment: 'cross-platform' })`,
+    );
+    await expect(dialog()).toContainText('Security key');
+    await expect(dialog()).not.toContainText('This device');
+    await dialog().getByRole('button', { name: 'Cancel' }).last().click();
+    expect(await settled(app, 'device-cross')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+  });
+
+  test('get asks for the PIN, then the account chooser', async () => {
+    const { app, page, log } = launched!;
+    await guest(app, `window.passkeyPage.start('device-get', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('246813579');
+    await expect(page.getByText('Grace Hopper')).toBeVisible();
+    await shoot(page, 'd4-accounts');
+    await page.getByText('Grace Hopper').click();
+    const result = await settled(app, 'device-get');
+    expect(result.value).toMatchObject({
+      isAssertion: true,
+      authenticatorAttachment: 'platform',
+      userHandle: Buffer.from('grace').toString('base64url'),
+      clientData: { type: 'webauthn.get', challenge: result.challenge },
+    });
+    expect(
+      sidecarRequests(log)
+        .filter((r) => r.method === 'choose')
+        .at(-1)?.params.index,
+    ).toBe(1);
+  });
+
+  test('too many wrong PINs block the field until the wait ends', async () => {
+    const { app, page } = launched!;
+    await guest(app, `window.passkeyPage.start('device-wait', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('2222');
+    await expect(dialog()).toContainText(/Too many wrong PINs\. Try again in \d s\./);
+    await expect(pinField()).toBeDisabled();
+    await shoot(page, 'd5-pin-wait');
+    await expect(pinField()).toBeEnabled({ timeout: 5_000 });
+    await expect(dialog()).toContainText('Wrong PIN.');
+    await enterPin('246813579');
+    await page.getByText('Ada', { exact: true }).click();
+    expect((await settled(app, 'device-wait')).state).toBe('resolved');
+  });
+
+  test('a changed PIN asks once for the previous PIN; a wrong one fails', async () => {
+    const { app, page } = launched!;
+    await guest(app, `window.passkeyPage.start('device-old', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('4444');
+    await expect(dialog()).toContainText(
+      'Your PIN changed. Enter your previous PIN to unlock your passkeys.',
+    );
+    await expect(pinField('Previous PIN')).toBeVisible();
+    await shoot(page, 'd6-old-pin');
+    await enterPin('0000', 'Previous PIN');
+    await expect(dialog()).toContainText('The previous PIN is not correct.');
+    await shoot(page, 'd7-error-old-pin');
+    expect(await settled(app, 'device-old')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+    await dialog().getByRole('button', { name: 'Close' }).last().click();
+  });
+
+  test('the right previous PIN unlocks the passkeys', async () => {
+    const { app, page } = launched!;
+    await guest(app, `window.passkeyPage.start('device-old-ok', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('4444');
+    await enterPin('5555', 'Previous PIN');
+    await page.getByText('Ada', { exact: true }).click();
+    expect((await settled(app, 'device-old-ok')).state).toBe('resolved');
+  });
+
+  test('locked device passkeys say why', async () => {
+    const { app, page } = launched!;
+    await guest(app, `window.passkeyPage.start('device-locked', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('3333');
+    await expect(dialog()).toContainText('Passkeys on this device are locked');
+    await shoot(page, 'd8-error-locked');
+    expect(await settled(app, 'device-locked')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+    await dialog().getByRole('button', { name: 'Close' }).last().click();
+  });
+
+  test('Settings → Passkeys lists device passkeys and deletes one after confirm', async () => {
+    const { page, log } = launched!;
+    await page.evaluate(() => (window as any).passkeySettings.open());
+    const panel = page.getByTestId('passkey-settings-panel');
+    const rows = panel.getByTestId('device-passkey-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: 'grace@example.com' })).toContainText('Last used');
+    await expect(rows.filter({ hasText: 'ada@example.com' })).toContainText('Created');
+    await shoot(page, 'd9-settings-list', panel);
+    await rows
+      .filter({ hasText: 'grace@example.com' })
+      .getByRole('button', { name: /Delete/ })
+      .click();
+    await expect(dialog()).toContainText('Delete the passkey for localhost?');
+    await shoot(page, 'd10-settings-confirm');
+    const listed = sidecarRequests(log).filter((r) => r.method === 'device.delete').length;
+    await dialog().getByRole('button', { name: 'Cancel' }).click();
+    await expect(rows).toHaveCount(2);
+    expect(sidecarRequests(log).filter((r) => r.method === 'device.delete').length).toBe(listed);
+    await rows
+      .filter({ hasText: 'grace@example.com' })
+      .getByRole('button', { name: /Delete/ })
+      .click();
+    await dialog().getByRole('button', { name: 'Delete' }).click();
+    await expect(rows).toHaveCount(1);
+    const deleted = sidecarRequests(log).filter((r) => r.method === 'device.delete');
+    expect(deleted).toHaveLength(1);
+    await rows.getByRole('button', { name: /Delete/ }).click();
+    await dialog().getByRole('button', { name: 'Delete' }).click();
+    await expect(panel.getByTestId('device-passkeys-empty')).toBeVisible();
+    await shoot(page, 'd11-settings-empty', panel);
+    await page.evaluate(() => (window as any).passkeySettings.close());
+  });
+
+  test('get with no passkey for the site says so', async () => {
+    const { app, page } = launched!;
+    await guest(app, `window.passkeyPage.start('device-none', 'get')`);
+    await page.getByText('This device').click();
+    await enterPin('246813579');
+    await expect(dialog()).toContainText('This device has no passkey for localhost.');
+    await shoot(page, 'd12-error-no-passkey');
+    expect(await settled(app, 'device-none')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+    await dialog().getByRole('button', { name: 'Close' }).last().click();
+  });
+});
+
+test.describe.serial('Settings → Passkeys without device passkeys', () => {
+  let launched: Launched | undefined;
+  test.beforeAll(async () => {
+    test.setTimeout(120_000);
+    launched = await launch('on', false);
+  });
+  test.afterAll(async () => close(launched));
+
+  test('reports device passkeys unavailable', async () => {
+    const { page, log } = launched!;
+    await page.evaluate(() => (window as any).passkeySettings.open());
+    await expect
+      .poll(() => page.evaluate(() => (window as any).passkeySettings.status()))
+      .toBe('unavailable');
     expect(sidecarRequests(log).map((request) => request.method)).toEqual(['hello']);
   });
 });

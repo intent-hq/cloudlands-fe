@@ -45,6 +45,7 @@ export type SidecarEvent =
       attemptsLeft?: number;
       retryAfterMs?: number;
       wrongPin?: boolean;
+      oldPin?: boolean;
     }
   | {
       event: 'choose-account';
@@ -192,4 +193,14 @@ export class PasskeySidecar {
     }
     this.settle(message.id, message.result ?? {});
   }
+}
+
+/** Spec §11.1 `device.list` entry. */
+export interface SidecarDeviceCredential {
+  credentialId: string;
+  rpId: string;
+  userName?: string;
+  userDisplayName?: string;
+  createdAt: number;
+  lastUsedAt?: number | null;
 }

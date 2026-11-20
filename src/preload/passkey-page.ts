@@ -8,17 +8,20 @@ import { contextBridge, ipcRenderer } from 'electron';
 const PAGE_CREATE = 'passkeys:page-create';
 const PAGE_GET = 'passkeys:page-get';
 const PAGE_CANCEL = 'passkeys:page-cancel';
+const PAGE_CAPABILITIES = 'passkeys:page-capabilities';
 
 export interface PasskeyPageBridge {
   create(request: unknown): Promise<unknown>;
   get(request: unknown): Promise<unknown>;
   cancel(requestId: string): Promise<unknown>;
+  capabilities(): Promise<unknown>;
 }
 
 const bridge: PasskeyPageBridge = {
   create: (request) => ipcRenderer.invoke(PAGE_CREATE, request),
   get: (request) => ipcRenderer.invoke(PAGE_GET, request),
   cancel: (requestId) => ipcRenderer.invoke(PAGE_CANCEL, { requestId }),
+  capabilities: () => ipcRenderer.invoke(PAGE_CAPABILITIES),
 };
 
 /**
@@ -265,12 +268,15 @@ export function installPasskeyShim(bridge: PasskeyPageBridge): void {
     Object.defineProperty(container, name, { value, writable: true, configurable: true });
   }
 
+  const platform = (): Promise<boolean> =>
+    bridge.capabilities().then(
+      (result: any) => result?.platformAuthenticator === true,
+      () => false,
+    );
   const capabilities = {
     conditionalCreate: false,
     conditionalGet: false,
     hybridTransport: true,
-    passkeyPlatformAuthenticator: false,
-    userVerifyingPlatformAuthenticator: false,
     relatedOrigins: false,
     signalAllAcceptedCredentials: false,
     signalCurrentUserDetails: false,
@@ -278,9 +284,14 @@ export function installPasskeyShim(bridge: PasskeyPageBridge): void {
     'extension:credProps': true,
   };
   const statics: Record<string, () => Promise<unknown>> = {
-    isUserVerifyingPlatformAuthenticatorAvailable: () => Promise.resolve(false),
+    isUserVerifyingPlatformAuthenticatorAvailable: platform,
     isConditionalMediationAvailable: () => Promise.resolve(false),
-    getClientCapabilities: () => Promise.resolve({ ...capabilities }),
+    getClientCapabilities: () =>
+      platform().then((available) => ({
+        ...capabilities,
+        passkeyPlatformAuthenticator: available,
+        userVerifyingPlatformAuthenticator: available,
+      })),
   };
   for (const [name, value] of Object.entries(statics)) {
     Object.defineProperty(w.PublicKeyCredential, name, {

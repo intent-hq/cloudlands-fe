@@ -294,6 +294,7 @@
   "settings_labs_title_label": ["de", "fr", "es"],
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_guestSessions_label": ["fr"],
+  "settings_sidebar_passkeys_label": ["de"],
   "settings_theme_label": ["de"],
   "settings_theme_system": ["de"],
   "settings_updateChannel_alpha_label": ["de", "fr", "zh-CN", "zh-TW"],

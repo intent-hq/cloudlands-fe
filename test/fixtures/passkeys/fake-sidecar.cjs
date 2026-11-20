@@ -5,13 +5,21 @@
 // PIN rules (USB): "0000" is wrong (3 tries left), "9999" locks the key,
 // anything else is accepted. While `<FAKE_PASSKEY_LOG>.tamper` exists, the
 // returned clientDataJSON names another origin.
+// With FAKE_PASSKEY_DEVICE=1 the "device" transport keeps passkeys in memory.
+// Device PIN rules: "1111" is wrong, "2222" starts a 1.5 s wait, "3333"
+// locks device passkeys, "4444" is a changed PIN (asks for the old PIN, which
+// is "5555"), anything else is accepted. A get with more than one passkey for
+// the site asks to choose an account after the PIN.
 const fs = require('node:fs');
 const { createHash, randomBytes } = require('node:crypto');
 const readline = require('node:readline');
 
 const log = process.env.FAKE_PASSKEY_LOG;
 const bluetooth = process.env.FAKE_PASSKEY_BLUETOOTH || 'on';
+const deviceEnabled = process.env.FAKE_PASSKEY_DEVICE === '1';
 const ceremonies = new Map();
+const deviceStore = [];
+let deviceAttempts = 10;
 
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const b64 = (bytes) => Buffer.from(bytes).toString('base64url');
@@ -70,6 +78,129 @@ function finish(ceremony) {
   }
 }
 
+function finishDevice(ceremony, credential) {
+  const { id, method, params } = ceremony;
+  ceremonies.delete(id);
+  if (method === 'create') {
+    write({
+      id,
+      result: {
+        clientDataJSON: clientDataJSON(method, params),
+        credentialId: credential.credentialId,
+        attestationObject: b64(randomBytes(64)),
+        authenticatorData: b64(authenticatorData(params.rpId)),
+        publicKey: b64(randomBytes(91)),
+        publicKeyAlgorithm: -7,
+        transports: ['internal'],
+        authenticatorAttachment: 'platform',
+        extensions: { credProps: { rk: true } },
+      },
+    });
+  } else {
+    credential.lastUsedAt = Date.now();
+    write({
+      id,
+      result: {
+        clientDataJSON: clientDataJSON(method, params),
+        credentialId: credential.credentialId,
+        authenticatorData: b64(authenticatorData(params.rpId)),
+        signature: b64(randomBytes(70)),
+        userHandle: credential.userHandle,
+        authenticatorAttachment: 'platform',
+      },
+    });
+  }
+}
+
+function askDevicePin(ceremony, extra = {}) {
+  write({
+    event: 'pin-needed',
+    ceremony: ceremony.id,
+    kind: 'device',
+    attemptsLeft: deviceAttempts,
+    wrongPin: false,
+    ...extra,
+  });
+}
+
+function startDevice(ceremony) {
+  const { params, method } = ceremony;
+  if (method === 'create') {
+    const excluded = (params.excludeCredentials || []).some((entry) =>
+      deviceStore.some((stored) => stored.credentialId === entry.id),
+    );
+    if (excluded) {
+      fail(ceremony.id, 'InvalidState');
+      return;
+    }
+  }
+  askDevicePin(ceremony);
+}
+
+function afterDevicePin(ceremony) {
+  write({ event: 'status', ceremony: ceremony.id, state: 'processing' });
+  const { params } = ceremony;
+  if (ceremony.method === 'create') {
+    const credential = {
+      credentialId: b64(randomBytes(16)),
+      rpId: params.rpId,
+      userName: params.user.name,
+      userDisplayName: params.user.displayName,
+      userHandle: params.user.id,
+      createdAt: Date.now(),
+      lastUsedAt: null,
+    };
+    deviceStore.push(credential);
+    finishDevice(ceremony, credential);
+    return;
+  }
+  const candidates = deviceStore.filter((stored) => stored.rpId === params.rpId);
+  if (candidates.length === 0) {
+    fail(ceremony.id, 'NotAllowed');
+  } else if (candidates.length === 1) {
+    finishDevice(ceremony, candidates[0]);
+  } else {
+    ceremony.candidates = candidates;
+    write({
+      event: 'choose-account',
+      ceremony: ceremony.id,
+      accounts: candidates.map((stored, index) => ({
+        index,
+        userName: stored.userName,
+        userDisplayName: stored.userDisplayName,
+      })),
+    });
+  }
+}
+
+function devicePin(ceremony, pin) {
+  if (ceremony.waitUntil && Date.now() < ceremony.waitUntil) {
+    askDevicePin(ceremony, { wrongPin: true, retryAfterMs: ceremony.waitUntil - Date.now() });
+    return;
+  }
+  if (ceremony.askedOldPin) {
+    if (pin === '5555') afterDevicePin(ceremony);
+    else fail(ceremony.id, 'NotAllowed');
+    return;
+  }
+  if (pin === '3333') {
+    fail(ceremony.id, 'PinLocked');
+  } else if (pin === '1111') {
+    deviceAttempts -= 1;
+    askDevicePin(ceremony, { wrongPin: true });
+  } else if (pin === '2222') {
+    deviceAttempts -= 1;
+    ceremony.waitUntil = Date.now() + 1500;
+    askDevicePin(ceremony, { wrongPin: true, retryAfterMs: 1500 });
+  } else if (pin === '4444') {
+    ceremony.askedOldPin = true;
+    askDevicePin(ceremony, { oldPin: true });
+  } else {
+    deviceAttempts = 10;
+    afterDevicePin(ceremony);
+  }
+}
+
 function fail(id, code) {
   ceremonies.delete(id);
   write({ id, error: { code, message: code } });
@@ -109,7 +240,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         result: {
           protocol: 1,
           version: 'fake',
-          transports: { hybrid: bluetooth === 'on', usb: true, device: false },
+          transports: { hybrid: bluetooth === 'on', usb: true, device: deviceEnabled },
           bluetooth,
         },
       });
@@ -123,6 +254,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       const ceremony = { id, method, params };
       ceremonies.set(id, ceremony);
       if (params.transport === 'hybrid') startHybrid(ceremony);
+      else if (params.transport === 'device' && deviceEnabled) startDevice(ceremony);
+      else if (params.transport === 'device') fail(id, 'NotSupported');
       else startUsb(ceremony);
       return;
     }
@@ -139,6 +272,10 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       write({ id, result: {} });
       const ceremony = ceremonies.get(params.ceremony);
       if (!ceremony) return;
+      if (ceremony.params.transport === 'device') {
+        devicePin(ceremony, params.pin);
+        return;
+      }
       if (params.pin === '9999') {
         fail(ceremony.id, 'PinLocked');
       } else if (params.pin === '0000') {
@@ -166,10 +303,32 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     case 'choose': {
       write({ id, result: {} });
       const ceremony = ceremonies.get(params.ceremony);
-      if (ceremony) {
+      if (ceremony?.candidates) {
+        const chosen = ceremony.candidates[params.index];
+        if (chosen) finishDevice(ceremony, chosen);
+        else fail(ceremony.id, 'NotAllowed');
+      } else if (ceremony) {
         ceremony.account = params.index;
         finish(ceremony);
       }
+      return;
+    }
+    case 'device.list':
+      if (!deviceEnabled) {
+        write({ id, error: { code: 'NotSupported', message: 'device' } });
+        return;
+      }
+      write({
+        id,
+        result: {
+          credentials: deviceStore.map(({ userHandle: _handle, ...entry }) => entry),
+        },
+      });
+      return;
+    case 'device.delete': {
+      const index = deviceStore.findIndex((stored) => stored.credentialId === params.credentialId);
+      if (index >= 0) deviceStore.splice(index, 1);
+      write({ id, result: {} });
       return;
     }
     default:

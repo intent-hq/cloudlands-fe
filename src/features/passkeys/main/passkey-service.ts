@@ -6,17 +6,26 @@ import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import type {
   PasskeyCeremonyKind,
   PasskeyCredentialDescriptor,
+  PasskeyDeviceCredential,
+  PasskeyDeviceDeleteResult,
+  PasskeyDeviceListResult,
   PasskeyDialogView,
   PasskeyErrorReason,
   PasskeyPageCreateOptions,
   PasskeyPageErrorName,
+  PasskeyPageCapabilities,
   PasskeyPageGetOptions,
   PasskeyPageResult,
   PasskeyProgress,
   PasskeyTransport,
 } from '../../../shared/ipc/passkeys';
 import { checkFrameOrigin, isValidRpIdForHost } from './passkey-origin';
-import { SidecarError, type PasskeySidecar, type SidecarEvent } from './passkey-sidecar';
+import {
+  SidecarError,
+  type PasskeySidecar,
+  type SidecarDeviceCredential,
+  type SidecarEvent,
+} from './passkey-sidecar';
 import {
   assertedCredential,
   ceremonyTimeoutMs,
@@ -82,11 +91,13 @@ const GetRequestSchema = z.object({
 
 const CancelRequestSchema = z.object({ requestId: z.string().min(1).max(64) });
 
+const DeviceDeleteSchema = z.object({ credentialId: base64url.min(1) });
+
 const DialogResponseSchema = z.discriminatedUnion('action', [
   z.object({
     ceremonyId: z.string(),
     action: z.literal('transport'),
-    transport: z.enum(['hybrid', 'usb']),
+    transport: z.enum(['hybrid', 'usb', 'device']),
   }),
   z.object({ ceremonyId: z.string(), action: z.literal('pin'), pin: z.string().min(1).max(256) }),
   z.object({ ceremonyId: z.string(), action: z.literal('choose'), index: z.number().int().min(0) }),
@@ -114,6 +125,13 @@ interface Ceremony {
   options: PasskeyPageCreateOptions | PasskeyPageGetOptions;
   timeoutMs: number;
   bluetooth: 'on' | 'off' | 'missing';
+  /** "This device" is offered: the helper has device passkeys and the site allows a platform authenticator. */
+  device: boolean;
+  transport: PasskeyTransport | null;
+  /** Device create on a device with no passkeys yet (PIN strength advice). */
+  firstPasskey: boolean;
+  /** The last PIN prompt asked for the previous PIN (a wrong one ends with NotAllowed). */
+  askedOldPin: boolean;
   qr: string | null;
   running: boolean;
   settled: boolean;
@@ -137,6 +155,19 @@ function sameOriginWithAncestors(frame: WebFrameMain): boolean {
 
 /** How often main checks that the initiating frame still exists (iframes have no removal event). */
 const FRAME_CHECK_MS = 500;
+
+function deviceCredential(entry: SidecarDeviceCredential): PasskeyDeviceCredential | null {
+  if (typeof entry?.credentialId !== 'string' || typeof entry.rpId !== 'string') return null;
+  if (typeof entry.createdAt !== 'number') return null;
+  return {
+    credentialId: entry.credentialId,
+    rpId: entry.rpId,
+    userName: entry.userName ?? '',
+    userDisplayName: entry.userDisplayName ?? '',
+    createdAt: entry.createdAt,
+    lastUsedAt: typeof entry.lastUsedAt === 'number' ? entry.lastUsedAt : null,
+  };
+}
 
 /**
  * Runs WebAuthn ceremonies for browser-panel webviews: one at a time per
@@ -165,7 +196,7 @@ export class PasskeyService {
 
     const guest = event.sender;
     const host = guest.hostWebContents;
-    if (guest.getType() !== 'webview' || guest.session !== this.browserSession() || !host) {
+    if (!this.isBrowserPanelGuest(guest) || !host) {
       return failure('NotAllowedError', 'Passkeys are available only in the browser panel.');
     }
     const frame = event.senderFrame;
@@ -187,6 +218,11 @@ export class PasskeyService {
       return failure('NotAllowedError', 'A passkey request is already in progress.');
     }
 
+    const attachment =
+      kind === 'create'
+        ? (publicKey as PasskeyPageCreateOptions).authenticatorSelection?.authenticatorAttachment
+        : undefined;
+
     return new Promise<PasskeyPageResult>((resolve) => {
       const ceremony: Ceremony = {
         id: randomUUID(),
@@ -200,6 +236,10 @@ export class PasskeyService {
         options: publicKey,
         timeoutMs: ceremonyTimeoutMs(publicKey.timeout),
         bluetooth: 'missing',
+        device: false,
+        transport: null,
+        firstPasskey: false,
+        askedOldPin: false,
         qr: null,
         running: false,
         settled: false,
@@ -216,6 +256,7 @@ export class PasskeyService {
         (hello) => {
           if (ceremony.settled) return;
           ceremony.bluetooth = hello.bluetooth;
+          ceremony.device = hello.transports.device === true && attachment !== 'cross-platform';
           this.show(ceremony, {
             step: 'choose-transport',
             hybrid:
@@ -224,6 +265,7 @@ export class PasskeyService {
                 : hello.bluetooth === 'missing'
                   ? 'bluetooth-missing'
                   : 'bluetooth-off',
+            device: ceremony.device,
           });
         },
         (error: unknown) => {
@@ -232,6 +274,64 @@ export class PasskeyService {
         },
       );
     });
+  }
+
+  /** `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable` for a browser-panel page. */
+  async handlePageCapabilities(event: IpcMainInvokeEvent): Promise<PasskeyPageCapabilities> {
+    const none = { platformAuthenticator: false };
+    if (!this.isBrowserPanelGuest(event.sender)) return none;
+    const frame = event.senderFrame;
+    if (!frame || frame.isDestroyed()) return none;
+    if (!checkFrameOrigin(frame.origin, sameOriginWithAncestors(frame)).ok) return none;
+    try {
+      const hello = await this.sidecar.start();
+      return { platformAuthenticator: hello.transports.device === true };
+    } catch {
+      return none;
+    }
+  }
+
+  /** Settings → Passkeys. The IPC layer admits app windows only. */
+  async listDevicePasskeys(): Promise<PasskeyDeviceListResult> {
+    let hello;
+    try {
+      hello = await this.sidecar.start();
+    } catch {
+      return { available: false };
+    }
+    if (hello.transports.device !== true) return { available: false };
+    try {
+      const result = await this.sidecar.request<{ credentials?: SidecarDeviceCredential[] }>(
+        'device.list',
+        {},
+      );
+      const credentials = (Array.isArray(result.credentials) ? result.credentials : [])
+        .map(deviceCredential)
+        .filter((entry): entry is PasskeyDeviceCredential => entry !== null);
+      return { available: true, credentials };
+    } catch (error) {
+      logger.warn('Listing device passkeys failed', {
+        code: error instanceof SidecarError ? error.code : 'Unknown',
+      });
+      return { available: true, error: true };
+    }
+  }
+
+  async deleteDevicePasskey(payload: unknown): Promise<PasskeyDeviceDeleteResult> {
+    const parsed = DeviceDeleteSchema.safeParse(payload);
+    if (!parsed.success) return { ok: false };
+    try {
+      const hello = await this.sidecar.start();
+      if (hello.transports.device !== true) return { ok: false };
+      await this.sidecar.request('device.delete', { credentialId: parsed.data.credentialId });
+      logger.info('Device passkey deleted');
+      return { ok: true };
+    } catch (error) {
+      logger.warn('Deleting a device passkey failed', {
+        code: error instanceof SidecarError ? error.code : 'Unknown',
+      });
+      return { ok: false };
+    }
   }
 
   handlePageCancel(event: IpcMainInvokeEvent, payload: unknown): void {
@@ -257,14 +357,18 @@ export class PasskeyService {
     if (ceremony.settled) return;
     try {
       if (response.action === 'transport') {
-        if (ceremony.running) return;
-        this.begin(ceremony, response.transport);
-      } else if (response.action === 'pin') {
-        this.show(ceremony, { step: 'progress', transport: 'usb', progress: 'processing' });
-        await this.sidecar.request('pin', { ceremony: ceremony.id, pin: response.pin });
+        if (ceremony.running || ceremony.transport) return;
+        if (response.transport === 'device' && !ceremony.device) return;
+        await this.begin(ceremony, response.transport);
       } else {
-        this.show(ceremony, { step: 'progress', transport: 'usb', progress: 'processing' });
-        await this.sidecar.request('choose', { ceremony: ceremony.id, index: response.index });
+        if (!ceremony.running) return;
+        const transport = ceremony.transport ?? 'usb';
+        this.show(ceremony, { step: 'progress', transport, progress: 'processing' });
+        if (response.action === 'pin') {
+          await this.sidecar.request('pin', { ceremony: ceremony.id, pin: response.pin });
+        } else {
+          await this.sidecar.request('choose', { ceremony: ceremony.id, index: response.index });
+        }
       }
     } catch (error) {
       this.fail(ceremony, error);
@@ -276,6 +380,20 @@ export class PasskeyService {
       this.abort(ceremony, 'AbortError', 'The operation was aborted.');
     }
     this.sidecar.dispose();
+  }
+
+  private isBrowserPanelGuest(contents: WebContents): boolean {
+    return contents.getType() === 'webview' && contents.session === this.browserSession();
+  }
+
+  /** True when the device store has no passkeys yet; a failed list shows no advice. */
+  private async deviceIsEmpty(): Promise<boolean> {
+    try {
+      const result = await this.sidecar.request<{ credentials?: unknown[] }>('device.list', {});
+      return Array.isArray(result.credentials) && result.credentials.length === 0;
+    } catch {
+      return false;
+    }
   }
 
   private track(ceremony: Ceremony): void {
@@ -317,7 +435,7 @@ export class PasskeyService {
     };
   }
 
-  private begin(ceremony: Ceremony, transport: PasskeyTransport): void {
+  private async begin(ceremony: Ceremony, transport: PasskeyTransport): Promise<void> {
     if (transport === 'hybrid' && ceremony.bluetooth !== 'on') {
       this.finish(
         ceremony,
@@ -326,8 +444,13 @@ export class PasskeyService {
       );
       return;
     }
-    ceremony.running = true;
+    ceremony.transport = transport;
     this.show(ceremony, { step: 'progress', transport, progress: 'starting' });
+    if (transport === 'device' && ceremony.kind === 'create') {
+      ceremony.firstPasskey = await this.deviceIsEmpty();
+      if (ceremony.settled) return;
+    }
+    ceremony.running = true;
     const params =
       ceremony.kind === 'create'
         ? createParams(
@@ -403,14 +526,23 @@ export class PasskeyService {
         }
         return;
       }
-      case 'pin-needed':
+      case 'pin-needed': {
+        const kind = event.kind === 'device' ? 'device' : 'usb';
+        const oldPin = kind === 'device' && event.oldPin === true;
+        ceremony.askedOldPin = oldPin;
         this.show(ceremony, {
           step: 'pin',
+          kind,
           wrongPin: event.wrongPin === true,
           ...(typeof event.attemptsLeft === 'number' ? { attemptsLeft: event.attemptsLeft } : {}),
-          ...(typeof event.retryAfterMs === 'number' ? { retryAfterMs: event.retryAfterMs } : {}),
+          ...(typeof event.retryAfterMs === 'number' && event.retryAfterMs > 0
+            ? { retryAfterMs: event.retryAfterMs }
+            : {}),
+          ...(oldPin ? { oldPin: true } : {}),
+          ...(kind === 'device' && ceremony.firstPasskey && !oldPin ? { firstPasskey: true } : {}),
         });
         return;
+      }
       case 'choose-account':
         this.show(ceremony, {
           step: 'choose-account',
@@ -430,7 +562,12 @@ export class PasskeyService {
     this.finish(
       ceremony,
       failure(pageErrorName(code), 'The operation either timed out or was not allowed.'),
-      dialogErrorReason(code, ceremony.bluetooth),
+      dialogErrorReason(code, {
+        bluetooth: ceremony.bluetooth,
+        transport: ceremony.transport,
+        kind: ceremony.kind,
+        askedOldPin: ceremony.askedOldPin,
+      }),
     );
   }
 

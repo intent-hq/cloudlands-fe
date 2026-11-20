@@ -58,6 +58,12 @@ const SETTINGS_PAGES = {
     },
     searchText: 'input keyboard shortcuts voice dictation microphone',
   },
+  passkeys: {
+    get label() {
+      return m.settings_sidebar_passkeys_label();
+    },
+    searchText: 'passkeys webauthn security keys browser sign in device pin',
+  },
   setup: {
     get label() {
       return m.settings_sidebar_setup_label();
@@ -82,16 +88,19 @@ const SETTINGS_PAGES = {
 export function getSettingsPaletteCommands({
   isCollaboratorOnlyClient,
   multiplayerEnabled,
+  devicePasskeysAvailable = false,
 }: {
   isCollaboratorOnlyClient: boolean;
   multiplayerEnabled: boolean;
+  devicePasskeysAvailable?: boolean;
 }) {
   // Match the settings page's hidden tabs, including its safe boot-time defaults.
   return (Object.keys(SETTINGS_PAGES) as SettingsTab[])
     .filter(
       (tab) =>
         !(isCollaboratorOnlyClient && (tab === 'providers' || tab === 'connections')) &&
-        !(tab === 'collaboration' && !multiplayerEnabled),
+        !(tab === 'collaboration' && !multiplayerEnabled) &&
+        !(tab === 'passkeys' && !devicePasskeysAvailable),
     )
     .map((tab) => ({
       id: `settings-${tab}`,

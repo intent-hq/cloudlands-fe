@@ -45,7 +45,11 @@
       const challenge = bytes(32, 3);
       const userId = bytes(16, 9);
       const rp = { name: 'Fixture', ...(options.rpId ? { id: options.rpId } : {}) };
-      const user = { id: userId, name: 'ada@example.com', displayName: 'Ada' };
+      const user = {
+        id: options.userId ? new TextEncoder().encode(options.userId) : userId,
+        name: options.userName ?? 'ada@example.com',
+        displayName: options.userDisplayName ?? 'Ada',
+      };
       const params = [{ type: 'public-key', alg: -7 }];
       let pending;
       if (kind === 'create') {
@@ -57,6 +61,17 @@
             user,
             pubKeyCredParams: params,
             extensions: { credProps: true },
+            ...(options.attachment
+              ? { authenticatorSelection: { authenticatorAttachment: options.attachment } }
+              : {}),
+            ...(options.exclude
+              ? {
+                  excludeCredentials: options.exclude.map((id) => ({
+                    type: 'public-key',
+                    id: SimpleWebAuthnBrowser.base64URLStringToBuffer(id),
+                  })),
+                }
+              : {}),
           },
         });
       } else if (kind === 'get') {

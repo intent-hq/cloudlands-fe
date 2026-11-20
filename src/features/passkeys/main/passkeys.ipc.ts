@@ -17,6 +17,7 @@ import { app, ipcMain, session } from 'electron';
 import { BROWSER_PANEL_PARTITION } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
+import { createAuthorizedIpcHandler } from '../../../main/ipc-authorization';
 import { PasskeySidecar } from './passkey-sidecar';
 import { PasskeyService } from './passkey-service';
 
@@ -72,6 +73,18 @@ export function setupPasskeysIPC(
   );
   ipcMain.handle(CHANNELS.PAGE_GET, (event, payload) => active.handlePage(event, 'get', payload));
   ipcMain.handle(CHANNELS.PAGE_CANCEL, (event, payload) => active.handlePageCancel(event, payload));
+  ipcMain.handle(CHANNELS.PAGE_CAPABILITIES, (event) => active.handlePageCapabilities(event));
+  // Settings → Passkeys: app windows only, never a browser-panel page.
+  ipcMain.handle(
+    CHANNELS.DEVICE_LIST,
+    createAuthorizedIpcHandler(CHANNELS.DEVICE_LIST, () => active.listDevicePasskeys()),
+  );
+  ipcMain.handle(
+    CHANNELS.DEVICE_DELETE,
+    createAuthorizedIpcHandler(CHANNELS.DEVICE_DELETE, (_event, payload: unknown) =>
+      active.deleteDevicePasskey(payload),
+    ),
+  );
   ipcMain.handle(CHANNELS.DIALOG_RESPOND, (event, payload) => active.handleDialog(event, payload));
   app.once('will-quit', () => active.dispose());
   logger.info('Browser-panel passkeys enabled', { binary });

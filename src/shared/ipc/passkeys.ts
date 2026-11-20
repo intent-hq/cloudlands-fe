@@ -8,17 +8,23 @@
  *   {@link PasskeyPageResult}; failures resolve `{ ok: false }` so the page sees
  *   a DOMException name and not an Electron wrapper message.
  * - `passkeys:page-cancel` (invoke) is the page's AbortSignal.
+ * - `passkeys:page-capabilities` (invoke) resolves {@link PasskeyPageCapabilities}.
  *
  * Host side (the window that holds the webview):
  * - `passkeys:dialog-show` (send) is the full dialog state for one ceremony.
  * - `passkeys:dialog-close` (send) closes it.
  * - `passkeys:dialog-respond` (invoke) is the user's answer.
  *
+ * App window (Settings → Passkeys, app renderer only):
+ * - `passkeys:device-list` (invoke) resolves {@link PasskeyDeviceListResult}.
+ * - `passkeys:device-delete` (invoke, {@link PasskeyDeviceDeleteRequest}) resolves
+ *   {@link PasskeyDeviceDeleteResult}.
+ *
  * Main takes the origin from `event.senderFrame` only; nothing here carries an
  * origin or URL from the page.
  */
 
-export type PasskeyTransport = 'hybrid' | 'usb';
+export type PasskeyTransport = 'hybrid' | 'usb' | 'device';
 
 export interface PasskeyCredentialDescriptor {
   id: string;
@@ -105,6 +111,11 @@ export type PasskeyErrorReason =
   | 'pin-locked'
   | 'timeout'
   | 'already-registered'
+  | 'device-locked'
+  | 'device-already-registered'
+  | 'device-no-passkey'
+  | 'device-old-pin-wrong'
+  | 'device-failed'
   | 'unavailable'
   | 'failed';
 
@@ -115,10 +126,21 @@ interface PasskeyAccount {
 }
 
 export type PasskeyDialogView =
-  | { step: 'choose-transport'; hybrid: PasskeyHybridAvailability }
+  | { step: 'choose-transport'; hybrid: PasskeyHybridAvailability; device: boolean }
   | { step: 'qr'; data: string; progress: PasskeyProgress }
   | { step: 'progress'; transport: PasskeyTransport; progress: PasskeyProgress }
-  | { step: 'pin'; wrongPin: boolean; attemptsLeft?: number; retryAfterMs?: number }
+  | {
+      step: 'pin';
+      /** `device`: the Intent OS PIN; `usb`: the security key PIN. */
+      kind: 'usb' | 'device';
+      wrongPin: boolean;
+      attemptsLeft?: number;
+      retryAfterMs?: number;
+      /** Device only: the PIN changed; ask once for the previous PIN. */
+      oldPin?: boolean;
+      /** Device create with no device passkeys yet: show the PIN strength advice. */
+      firstPasskey?: boolean;
+    }
   | { step: 'choose-account'; accounts: PasskeyAccount[] }
   | { step: 'error'; reason: PasskeyErrorReason };
 
@@ -139,3 +161,32 @@ export type PasskeyDialogResponse =
   | { ceremonyId: string; action: 'pin'; pin: string }
   | { ceremonyId: string; action: 'choose'; index: number }
   | { ceremonyId: string; action: 'cancel' };
+
+export interface PasskeyPageCapabilities {
+  /** True when this device can create and use device passkeys (Intent OS PIN). */
+  platformAuthenticator: boolean;
+}
+
+export interface PasskeyDeviceCredential {
+  credentialId: string;
+  rpId: string;
+  userName: string;
+  userDisplayName: string;
+  /** Milliseconds since the Unix epoch. */
+  createdAt: number;
+  /** Milliseconds since the Unix epoch; null until first use. */
+  lastUsedAt: number | null;
+}
+
+export type PasskeyDeviceListResult =
+  | { available: false }
+  | { available: true; credentials: PasskeyDeviceCredential[] }
+  | { available: true; error: true };
+
+export interface PasskeyDeviceDeleteRequest {
+  credentialId: string;
+}
+
+export interface PasskeyDeviceDeleteResult {
+  ok: boolean;
+}

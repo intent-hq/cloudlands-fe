@@ -183,11 +183,39 @@ export function pageErrorName(code: SidecarErrorCode | string): PasskeyPageError
   }
 }
 
+export interface DialogErrorContext {
+  bluetooth: 'on' | 'off' | 'missing' | undefined;
+  transport?: PasskeyTransport | null;
+  kind?: 'create' | 'get';
+  /** The last PIN prompt of this ceremony asked for the previous PIN. */
+  askedOldPin?: boolean;
+}
+
 /** The dialog error for a sidecar failure; `null` closes the dialog without one. */
 export function dialogErrorReason(
   code: SidecarErrorCode | string,
-  bluetooth: 'on' | 'off' | 'missing' | undefined,
+  context: DialogErrorContext,
 ): PasskeyErrorReason | null {
+  if (context.transport === 'device') {
+    switch (code) {
+      case 'Abort':
+        return null;
+      case 'PinLocked':
+        return 'device-locked';
+      case 'InvalidState':
+        return 'device-already-registered';
+      case 'Timeout':
+        return 'timeout';
+      case 'NotAllowed':
+        if (context.askedOldPin) return 'device-old-pin-wrong';
+        return context.kind === 'get' ? 'device-no-passkey' : 'device-failed';
+      case 'NotSupported':
+        return 'unavailable';
+      default:
+        return 'device-failed';
+    }
+  }
+  const bluetooth = context.bluetooth;
   switch (code) {
     case 'Abort':
       return null;
