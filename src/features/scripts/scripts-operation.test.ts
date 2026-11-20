@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
@@ -21,8 +21,9 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // update() rides the same scriptId upsert and MUST apply the same
 // running-script guard: refuse with an error instead of sending
 // script.create.
-const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock } = vi.hoisted(
-  () => ({
+const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock, hello } =
+  vi.hoisted(() => ({
+    hello: { capabilities: { scriptAutoStartInPlace: 1 } as Record<string, number> },
     scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
     scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
     scriptsRemove: vi.fn(() => Promise.resolve({ success: true })),
@@ -30,6 +31,7 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
       Promise.resolve(null),
     ),
     backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'client.hello') return { server: { capabilities: hello.capabilities } };
       if (method === 'script.remove') {
         const result = await scriptsRemove(params.workspaceId, params.scriptId);
         if (!result.success) throw new Error(result.error);
@@ -52,8 +54,7 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
       }
       return { config: {} };
     }),
-  }),
-);
+  }));
 vi.mock('$lib/client', () => ({
   appClient: {
     scripts: {
@@ -330,6 +331,75 @@ describe('scripts operation saga: update (script.create scriptId upsert, §5.8)'
     expect(result.success).toBe(false);
     expect(result.error).toContain('"dev"');
   });
+
+  it('sends an autoStart-only upsert for a running script — the daemon keeps that run', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+    scriptsCreate.mockResolvedValueOnce({ success: true });
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { autoStart: true });
+
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'yarn dev',
+      mode: 'service',
+      cwd: undefined,
+      env: undefined,
+      autoStart: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('does not upsert an unchanged autoStart on a running script', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        mode: 'service',
+        autoStart: true,
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { autoStart: true });
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    ['an older daemon', {}, { autoStart: true }],
+    ['a mixed update', { scriptAutoStartInPlace: 1 }, { autoStart: true, name: 'renamed' }],
+  ])(
+    'refuses an update to a running script from %s — no script.create goes out',
+    async (_case, capabilities, updates) => {
+      hello.capabilities = capabilities;
+      onTestFinished(() => {
+        hello.capabilities = { scriptAutoStartInPlace: 1 };
+      });
+      scriptsList.mockResolvedValueOnce([
+        liveScript({
+          id: 'script-auto-dev',
+          name: 'dev',
+          mode: 'service',
+          runtime: { status: 'running', pid: 4242, restartCount: 0 },
+        }),
+      ]);
+
+      const result = await scriptsClient.update('ws-1', 'script-auto-dev', updates);
+
+      expect(scriptsCreate).not.toHaveBeenCalled();
+      expect(result.success).toBe(false);
+    },
+  );
 });
 
 describe('scripts operation saga: detect (fake files + daemon script.* seams)', () => {

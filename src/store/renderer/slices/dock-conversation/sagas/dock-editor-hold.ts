@@ -1,17 +1,17 @@
 import { call } from 'typed-redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
 import { DOCK_CAPTURE_EDITOR_CHANNELS } from '$shared/dock-capture-editor';
-import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
+import { dockCaptureEditorEnabled } from '$features/hud/media-editor/open-capture-editor';
 
 /**
  * Capture → editor handoff, renderer side: before a capture (or a recording stop) that
  * may open the media editor, ask main to keep the dock out of sight. The editor adopts
  * the hold when it opens; every other outcome must end it (`endDockEditorHold`).
  * `hide` (a screenshot): main hides the dock at once and loads the editor window, hidden.
- * Null when the editor cannot follow (preview off) or main refused.
+ * Null when the editor is unavailable on this surface or main refused.
  */
 export function* beginDockEditorHold(hide = false): SagaGenerator<string | null> {
-  if (!dockCaptureEditorPreviewEnabled() || !window.electronAPI?.invoke) return null;
+  if (!dockCaptureEditorEnabled() || !window.electronAPI?.invoke) return null;
   const token = crypto.randomUUID();
   const ok = yield* call(() =>
     window.electronAPI

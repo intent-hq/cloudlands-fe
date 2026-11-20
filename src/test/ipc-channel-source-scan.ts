@@ -224,6 +224,11 @@ const BRIDGE_TEST_ONLY_FILE_RE =
  * through a bridge-bound receiver (`api.invoke`, `getPreloadBridge().invoke`).
  */
 const INVOKE_HEAD_RE = /\b([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?!?\s*\??\.\s*invoke\b/g;
+/**
+ * Dedicated preloads (not the generated general bridge) call `ipcRenderer.invoke`
+ * on literal channels, e.g. the frame page and browser-panel passkey preloads.
+ */
+const DEDICATED_PRELOAD_RE = /^src\/preload\/(?!index\.)[^/]+\.ts$/;
 /** A file may hold bridge calls only if it names the bridge (value or `ElectronAPI` type). */
 const BRIDGE_AWARE_RE = /electronAPI/i;
 /** `const NAME`, `function NAME`, or a typed `NAME:` / `NAME?:` parameter or property. */
@@ -563,9 +568,11 @@ export function scanDirectBridgeCallers(
   );
 
   for (const { file, source } of files) {
-    if (!BRIDGE_AWARE_RE.test(source)) continue;
+    const dedicatedPreload = DEDICATED_PRELOAD_RE.test(file);
+    if (!BRIDGE_AWARE_RE.test(source) && !dedicatedPreload) continue;
     const context = contexts.get(file)!;
     const receivers = collectBridgeReceivers(source);
+    if (dedicatedPreload) receivers.add('ipcRenderer');
     for (const match of source.matchAll(INVOKE_HEAD_RE)) {
       if (!receivers.has(match[1]) || isOnCommentLine(source, match.index)) continue;
       const site = `${file}:${lineOf(source, match.index)}`;

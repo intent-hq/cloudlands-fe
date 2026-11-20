@@ -44,6 +44,7 @@ import {
   planRendererBuild,
   resolveStack,
 } from './resolve-stack-lib.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST_RELATIVE = join('.svelte-kit', 'output', 'client');
@@ -157,7 +158,7 @@ function prepareDist({ tag, dist, rebuild }) {
 }
 
 function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseArgs(scriptArgs());
   const stack = readFileSync(options.stack ?? 0, 'utf8').replace(/\n$/, '');
   const { distDir, baseDir } = prepareDist(options);
   const index = existsSync(distDir) ? indexSourceMaps(distDir) : new Map();

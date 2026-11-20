@@ -1,5 +1,9 @@
 import { store } from '../../store';
-import type { DirectoryPickerListing } from './directory-picker-slice';
+import type { DirectoryPickerListing, DirectoryPickerSource } from './directory-picker-slice';
+
+export const selectDirectoryPickerSource = store.createSelector(
+  (state): DirectoryPickerSource => state.directoryPicker.source ?? 'daemon',
+);
 
 export const selectDirectoryPickerListing = store.createSelector(
   (state): DirectoryPickerListing | null => state.directoryPicker.listing,

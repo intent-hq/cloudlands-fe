@@ -103,6 +103,7 @@ vi.mock('../desktop-connections-store', () => ({
   setHostname: store.setHostname,
   getDetectHosts: store.getDetectHosts,
   setHosts: store.setHosts,
+  onConnectionsMutated: () => () => {},
 }));
 
 // ---------------------------------------------------------------------------

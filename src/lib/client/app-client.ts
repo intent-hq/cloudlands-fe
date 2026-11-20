@@ -7,6 +7,7 @@ import type { AgentPlacement } from '$shared/types/agent-node';
 import type { AgentPermissionPolicy } from '$shared/types/agent-session';
 import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
+import type { RpcProposalResolution } from '$shared/types/rpc-proposal';
 import type {
   ScriptArchiveFilter,
   ScriptListPage,
@@ -1039,6 +1040,16 @@ export interface AgentsClient {
     outcome: 'applied' | 'dismissed';
     detail?: string;
   }): Promise<MutationResult>;
+  /**
+   * Approve (the daemon runs the held calls in order) or reject an Assistant
+   * `rpc-call` proposal (`agent.resolveRpcProposal`, §5.5). Owner only.
+   */
+  resolveRpcProposal(params: {
+    agentId: string;
+    workspaceId: string;
+    proposalId: string;
+    decision: 'approve' | 'reject';
+  }): Promise<RpcProposalResolution>;
   /**
    * Advance the per-conversation seen marker (`agent.markSeen`, §5.5). The
    * daemon persists `lastSeenMessageId` in session metadata — served on

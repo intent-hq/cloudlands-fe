@@ -32,7 +32,6 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsTabGroupsEnabled,
-  selectLabsCloudMachinesEnabled,
   selectLabsSshMachineSetupEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -68,7 +67,6 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsTabGroupsEnabled,
-  setLabsCloudMachinesEnabled,
   setLabsSshMachineSetupEnabled,
   setLanguagePreference,
   setNoteFontStyle,
@@ -89,7 +87,6 @@ import {
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsTabGroups,
-  toggleLabsCloudMachines,
   toggleLabsSshMachineSetup,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
@@ -119,7 +116,6 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
-const LABS_CLOUD_MACHINES_STORAGE_KEY = 'labs:cloudMachinesEnabled';
 const LABS_SSH_MACHINE_SETUP_STORAGE_KEY = 'labs:sshMachineSetupEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
@@ -283,13 +279,6 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsTabGroupsEnabled(labsTabGroupsEnabled));
   }
 
-  const labsCloudMachinesEnabled = yield* getLocalStorageJSON<boolean>(
-    LABS_CLOUD_MACHINES_STORAGE_KEY,
-  );
-  if (typeof labsCloudMachinesEnabled === 'boolean') {
-    yield* put(setLabsCloudMachinesEnabled(labsCloudMachinesEnabled));
-  }
-
   const labsSshMachineSetupEnabled = yield* getLocalStorageJSON<boolean>(
     LABS_SSH_MACHINE_SETUP_STORAGE_KEY,
   );
@@ -446,13 +435,6 @@ function* persistLabsRemoteAgentsWorker() {
   );
 }
 
-function* persistLabsCloudMachinesWorker() {
-  yield* setLocalStorageJSON(
-    LABS_CLOUD_MACHINES_STORAGE_KEY,
-    yield* selectLabsCloudMachinesEnabled.effect(),
-  );
-}
-
 function* persistLabsSshMachineSetupWorker() {
   yield* setLocalStorageJSON(
     LABS_SSH_MACHINE_SETUP_STORAGE_KEY,
@@ -594,10 +576,6 @@ function* watchUserPreferenceWrites() {
     persistLabsPlainFolderWorkspacesWorker,
   );
   yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
-  yield* takeEvery(
-    [setLabsCloudMachinesEnabled, toggleLabsCloudMachines],
-    persistLabsCloudMachinesWorker,
-  );
   yield* takeEvery(
     [setLabsSshMachineSetupEnabled, toggleLabsSshMachineSetup],
     persistLabsSshMachineSetupWorker,

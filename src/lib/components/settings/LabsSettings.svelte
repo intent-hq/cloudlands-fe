@@ -15,12 +15,15 @@
     selectLabsSshMachineSetupEnabled,
     selectLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { browserViewsLab } from '$lib/components/browser/main-owned-browser-page';
+  import { setBrowserViewsLabRequested } from '$store/renderer/slices/browser-views-lab/browser-views-lab-slice';
 
   const remoteAgents$ = selectLabsRemoteAgentsEnabled();
   const sshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   const plainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const tabGroups$ = selectLabsTabGroupsEnabled();
   const desktop = isElectronPlatform();
+  const browserPagesLab$ = browserViewsLab;
 
   const schema = $derived(
     defineSettings({
@@ -73,6 +76,18 @@
               get: () => $tabGroups$,
               set: (enabled) => {
                 appStore.dispatch(setLabsTabGroupsEnabled(enabled));
+              },
+            },
+            {
+              kind: 'switch',
+              id: 'labs-browser-pages-in-main',
+              size: 'sm',
+              label: m.settings_labs_browserPagesInMain_label(),
+              description: m.settings_labs_browserPagesInMain_description(),
+              when: () => desktop,
+              get: () => $browserPagesLab$.enabled,
+              set: (enabled) => {
+                appStore.dispatch(setBrowserViewsLabRequested(enabled));
               },
             },
           ],

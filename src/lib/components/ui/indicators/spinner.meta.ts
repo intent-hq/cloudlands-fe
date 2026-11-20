@@ -30,6 +30,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/onboarding/steps/OnboardingForgeStep.svelte',
     'src/features/onboarding/steps/OnboardingPromptStep.svelte',
     'src/features/onboarding/steps/OnboardingRequirementsStep.svelte',
+    'src/features/passkeys/PasskeyDialog.svelte',
     'src/features/remote-machines/AgentPlacementNotice.svelte',
     'src/features/scripts/components/ScriptDetectionControls.svelte',
     'src/features/workspace-home/components/WorkspaceHomeBanner.svelte',

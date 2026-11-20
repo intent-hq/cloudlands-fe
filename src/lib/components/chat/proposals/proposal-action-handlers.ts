@@ -5,7 +5,10 @@ import type { ProposalLifecycleState } from '$store/renderer/slices/proposal-lif
 import {
   applyProposalRequested,
   agentScopedProposalKey,
+  proposalResolutionReconciled,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import { appClient } from '$lib/client';
+import type { RpcProposalResolution } from '$shared/types/rpc-proposal';
 import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import { store as appStore } from '$store/renderer/store';
 import type { PendingProposalEntry } from './pending-proposals';
@@ -173,4 +176,32 @@ export function reconcileAppliedProposals(input: {
       clearDraftBeforeRequest: true,
     }).catch(() => {});
   }
+}
+
+/**
+ * Approve or reject an Assistant `rpc-call` card. The daemon runs the calls it
+ * holds (never the card's copy) and resolves the proposal for every client.
+ */
+export async function resolveRpcProposal(
+  agentId: string,
+  workspaceId: string,
+  proposalId: string,
+  decision: 'approve' | 'reject',
+): Promise<RpcProposalResolution> {
+  const result = await appClient.agents.resolveRpcProposal({
+    agentId,
+    workspaceId,
+    proposalId,
+    decision,
+  });
+  if (result.success) {
+    appStore.dispatch(
+      proposalResolutionReconciled({
+        proposalId: agentScopedProposalKey(agentId, proposalId),
+        outcome: result.outcome,
+        completedAt: Date.now(),
+      }),
+    );
+  }
+  return result;
 }

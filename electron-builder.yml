@@ -36,7 +36,8 @@ files:
   - '!resources/desktop-helper/**'
 
 # Bundle the intentd binary into the packaged app
-# Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
+# Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows).
+# Linux also stages intent-passkey (browser-panel passkeys) here.
 extraResources:
   - from: resources/sidecar
     to: intentd

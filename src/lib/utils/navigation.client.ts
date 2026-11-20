@@ -7,6 +7,7 @@
  */
 import { createLogger } from './client-logger';
 import { isHudWindowRenderer } from './hud-window';
+import { isTabWindowRenderer } from '../tab-window/tab-window-renderer';
 import { bumpNavigationEpoch } from './navigation-epoch';
 
 const logger = createLogger('Navigation');
@@ -39,6 +40,8 @@ export async function navigateToRoute(
 ): Promise<void> {
   if (
     isHudWindowRenderer() ||
+    // A tab window shows its one tab; it never navigates away from it.
+    isTabWindowRenderer() ||
     (typeof window !== 'undefined' && /^\/dock(?:\/|$)/.test(window.location.pathname))
   ) {
     logger.debug('Ignoring navigation in auxiliary window', { route });

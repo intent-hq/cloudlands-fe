@@ -104,6 +104,12 @@ export interface PanelTab {
   emulatedSize?: { width: number; height: number };
   faviconUrl?: string;
   contextItemId?: string;
+  /**
+   * The tab is shown in a tab window of its own (shared/types/tab-window.ts).
+   * Set only on the hidden copy the source window keeps; it moves back in
+   * place when the tab window closes.
+   */
+  tabWindowId?: string;
 
   // Additional data for rendering
   data?: Record<string, unknown>;
@@ -282,6 +288,12 @@ export interface WorkspacePanelLayoutState {
   /** Preserves an established count during same-backend restore and hydration. */
   columnCountInitialized?: boolean;
   restoreStatus: PanelLayoutRestoreStatus;
+  /**
+   * A reveal (sidebar, agent focusTab) asked for a hidden copy whose tab is
+   * in its own window: the tab window saga brings that window up, then
+   * clears this. Never saved.
+   */
+  tabWindowFocusRequest?: { tabWindowId: string; seq: number } | null;
   pendingFocusTabId: string | null;
   pendingPanelReveal?: PanelRevealRequest | null;
   recentlyClosed: RecentlyClosedTab[];

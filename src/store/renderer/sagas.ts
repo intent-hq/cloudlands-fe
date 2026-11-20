@@ -64,6 +64,7 @@ import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
+import { inAppFileDialogSaga } from './slices/in-app-file-dialog/sagas/in-app-file-dialog-saga';
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
@@ -100,7 +101,10 @@ import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
+import { devicePasskeysSaga } from './slices/device-passkeys/sagas/device-passkeys-saga';
 import { machineRailSaga } from './slices/machine-rail/sagas/machine-rail-saga';
+import { browserViewsLabSaga } from './slices/browser-views-lab/sagas/browser-views-lab-saga';
+import { tabWindowSaga } from './slices/tab-window/sagas/tab-window-saga';
 import { recentAgentsSaga } from './slices/recent-agents/sagas/recent-agents-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
@@ -246,7 +250,10 @@ export const sagas = [
   dockConversationSaga,
   themeSaga,
   powerSaga,
+  devicePasskeysSaga,
   machineRailSaga,
+  browserViewsLabSaga,
+  tabWindowSaga,
   recentAgentsSaga,
   autoUpdateSaga,
   specialistsSaga,
@@ -266,6 +273,7 @@ export const sagas = [
   collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
+  inAppFileDialogSaga,
   statsReadSaga,
   pluginsSettingsSaga,
   prMonitorSaga,

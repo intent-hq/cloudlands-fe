@@ -62,6 +62,10 @@ export const keyboardInterceptorScript = `
         ) {
           forwardPanelShortcut(e);
         }
+        // Forward open in own window / move back (Mod+Shift+Enter).
+        if (isPlatformMod && e.shiftKey && !e.altKey && e.key === 'Enter') {
+          forwardPanelShortcut(e);
+        }
         // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
         if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
           e.preventDefault();
@@ -85,6 +89,20 @@ export interface ForwardedPanelShortcut {
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+}
+
+/** The message the injected script logs for a forwarded panel shortcut. */
+export function formatForwardedPanelShortcut(shortcut: ForwardedPanelShortcut): string {
+  return (
+    PANEL_SHORTCUT_PREFIX +
+    [
+      shortcut.key,
+      shortcut.shiftKey ? '1' : '0',
+      shortcut.metaKey ? '1' : '0',
+      shortcut.ctrlKey ? '1' : '0',
+      shortcut.altKey ? '1' : '0',
+    ].join(':')
+  );
 }
 
 /** Parse a forwarded panel shortcut message; older scripts omit the Alt flag. */

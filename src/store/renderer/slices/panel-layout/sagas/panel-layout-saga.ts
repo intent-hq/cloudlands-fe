@@ -24,6 +24,8 @@ import { getItem, getItems } from '@themislib/themis/utils/collections/collectio
 import { deepEqual } from 'fast-equals';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
+import { isTabWindowRenderer } from '$lib/tab-window/tab-window-renderer';
+import { isTabWindowLayoutId } from '$shared/types/tab-window';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import {
@@ -157,6 +159,8 @@ import {
   updateTabTitle,
   promoteDiscussionTab,
   updateTabViewport,
+  tabMovedToWindow,
+  tabReturnedFromWindow,
 } from '../panel-layout-slice';
 import {
   HISTORY_PERSIST_DEBOUNCE_MS,
@@ -235,6 +239,9 @@ const PERSIST_ACTIONS = [
   // Registry acknowledgement / row application changes which fields persist.
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  // Tab windows: a tab in its own window must stay hidden here after a restart.
+  tabMovedToWindow,
+  tabReturnedFromWindow,
 ];
 
 const HISTORY_ACTIONS = [
@@ -321,7 +328,14 @@ function storageKey(wsId: string, backendId: string): string {
 }
 
 function isValidWorkspaceId(wsId: string | null | undefined): wsId is string {
-  return Boolean(wsId && wsId !== 'new' && wsId !== 'undefined' && !wsId.startsWith('optimistic-'));
+  return Boolean(
+    wsId &&
+    wsId !== 'new' &&
+    wsId !== 'undefined' &&
+    !wsId.startsWith('optimistic-') &&
+    // A tab window's one-tab layout is never saved or restored.
+    !isTabWindowLayoutId(wsId),
+  );
 }
 
 function getWsId(action: { payload?: unknown }): string | undefined {
@@ -975,6 +989,8 @@ function persistablePanels(panels: Record<string, PanelState>): Record<string, P
 }
 
 function* persistPanelLayout(action: { type?: string; payload?: unknown }): SagaGenerator<void> {
+  // The window a tab window's tab came from owns the saved layouts.
+  if (isTabWindowRenderer()) return;
   try {
     if (action.type) yield* call(cancelExistingWorkspaceDefaults, { ...action, type: action.type });
     const wsId = getWsId(action);
@@ -1031,6 +1047,7 @@ function* persistPanelLayout(action: { type?: string; payload?: unknown }): Saga
 }
 
 function* persistHistoryToDisk(wsId: string, backendId?: string): SagaGenerator<void> {
+  if (isTabWindowRenderer() || !isValidWorkspaceId(wsId)) return;
   try {
     const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
     if (workspace === emptyWorkspaceState) return;

@@ -13,6 +13,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faArrowUpRightFromSquare,
+    faBolt,
     faEllipsis,
     faExclamationTriangle,
     faWindowMaximize,
@@ -34,7 +35,9 @@
     restartScriptRequested,
     startScriptRequested,
     stopScriptRequested,
+    updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
+  import { notify } from '$lib/components/patterns/notify';
   import {
     selectActiveTerminalIdForWorkspace,
     selectTerminalsForWorkspace,
@@ -74,8 +77,10 @@
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
+        Number(right.autoStart === true) - Number(left.autoStart === true) ||
         Number(isLiveScriptStatus(right.runtime.status)) -
-          Number(isLiveScriptStatus(left.runtime.status)) || left.name.localeCompare(right.name),
+          Number(isLiveScriptStatus(left.runtime.status)) ||
+        left.name.localeCompare(right.name),
     ),
   );
 
@@ -163,6 +168,19 @@
           ? stopScriptRequested(workspaceId, scriptId)
           : restartScriptRequested(workspaceId, scriptId);
     appStore.dispatch(operation);
+  }
+
+  function setAutoStart(scriptId: string, name: string, autoStart: boolean) {
+    const request = updateScriptDefinitionRequested(workspaceId, scriptId, { autoStart });
+    appStore.dispatch(request);
+    request.promise.catch((error: unknown) => {
+      notify.error(
+        m.workspace_devScripts_autoStartFailed_error({
+          name,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    });
   }
 
   function deleteScript(scriptId: string) {
@@ -322,11 +340,22 @@
                 data-script-status-indicator
               ></span>
               <span
-                class="min-w-0 flex-1 truncate type-caption font-normal text-foreground"
+                class="min-w-0 truncate type-caption font-normal {script.autoStart
+                  ? 'text-primary-ink'
+                  : 'text-foreground'}"
                 use:truncatedTitle={script.name}
+                data-script-auto-start={script.autoStart || undefined}
               >
                 {script.name}
+                {#if script.autoStart}
+                  <span class="sr-only">{m.workspace_devScripts_autoStartIndicator_label()}</span>
+                {/if}
               </span>
+              {#if script.autoStart}
+                <span class="flex shrink-0 text-primary-ink" data-script-auto-start-icon>
+                  <Fa icon={faBolt} class="size-2.5" />
+                </span>
+              {/if}
             </Button>
             {#if errorLabel}
               <span
@@ -399,6 +428,20 @@
                         {#snippet leading()}<Fa icon={faRotateRight} class="size-3" />{/snippet}
                         {m.workspace_devScripts_restart_ariaLabel({ name: script.name })}
                       </Menu.Item>
+                    {/if}
+                    {#if $actionContext$ && script.mode === 'service'}
+                      <Menu.Separator />
+                      <Menu.CheckboxItem
+                        indicator="switch"
+                        closeOnSelect
+                        checked={script.autoStart === true}
+                        disabled={operation?.pending === true}
+                        onSelect={() =>
+                          setAutoStart(script.id, script.name, script.autoStart !== true)}
+                        data-script-action="auto-start"
+                      >
+                        {m.workspace_devScripts_autoStart_label()}
+                      </Menu.CheckboxItem>
                     {/if}
                     {#if $actionContext$}
                       <Menu.Separator />

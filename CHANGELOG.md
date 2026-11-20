@@ -4,6 +4,71 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.1...v2.361.2) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.258 ([#4854](https://github.com/intent-hq/cloudlands-fe/issues/4854)) ([890480c](https://github.com/intent-hq/cloudlands-fe/commit/890480c68994febb66574e9688743726bee1c166))
+* **machine-rail:** send toasts from background machines ([#4778](https://github.com/intent-hq/cloudlands-fe/issues/4778)) ([6d1d798](https://github.com/intent-hq/cloudlands-fe/commit/6d1d7987d6db47eda3b97ab032c73c978b21cf67))
+* **navigation:** open ⌘-clicked links in the app from views that pass no workspace ([#4851](https://github.com/intent-hq/cloudlands-fe/issues/4851)) ([a9579d8](https://github.com/intent-hq/cloudlands-fe/commit/a9579d800f2c0e45558eb8fd3496ed1e8eeec025))
+
+## [2.361.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.0...v2.361.1) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** mute collapsed tool activity summaries ([#4847](https://github.com/intent-hq/cloudlands-fe/issues/4847)) ([b26cd11](https://github.com/intent-hq/cloudlands-fe/commit/b26cd11a2b595576c42c62c1408eea37dd647c3d))
+* **dock:** enable capture editing by default ([#4848](https://github.com/intent-hq/cloudlands-fe/issues/4848)) ([78c4a7c](https://github.com/intent-hq/cloudlands-fe/commit/78c4a7c9d381db3049d4c569a4f61043f7aa4131))
+
+## [2.361.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.360.0...v2.361.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **backend:** report backends and relay Assistant calls to them ([#4841](https://github.com/intent-hq/cloudlands-fe/issues/4841)) ([48eb739](https://github.com/intent-hq/cloudlands-fe/commit/48eb7390e04b32b8bbe57608cda75e26541e79fc))
+* **chat:** approval card for Assistant rpc-call proposals ([#4833](https://github.com/intent-hq/cloudlands-fe/issues/4833)) ([2e68704](https://github.com/intent-hq/cloudlands-fe/commit/2e68704fd28a2bb25618cb6692e9f29214be6ec5))
+* **cloud-machines:** add Vercel as a cloud machine provider ([#4834](https://github.com/intent-hq/cloudlands-fe/issues/4834)) ([520670b](https://github.com/intent-hq/cloudlands-fe/commit/520670bdd0904bb0bda958f38ee96d5baa76df87))
+* **scripts:** show a bolt icon next to auto-start script names ([#4843](https://github.com/intent-hq/cloudlands-fe/issues/4843)) ([75bb971](https://github.com/intent-hq/cloudlands-fe/commit/75bb971cc1ed8355362ff9986f6058af95c205be))
+* **settings:** default remote access to loopback plus the Tailcat tunnel ([#4839](https://github.com/intent-hq/cloudlands-fe/issues/4839)) ([fa92453](https://github.com/intent-hq/cloudlands-fe/commit/fa924537b1b30bd81677a61e8accf0b084045d8a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.257 ([#4845](https://github.com/intent-hq/cloudlands-fe/issues/4845)) ([64884c0](https://github.com/intent-hq/cloudlands-fe/commit/64884c0cbaad2c44c51de3c414c0f6f68ec8b5b8))
+
+## [2.360.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.359.0...v2.360.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **settings:** turn the Tailcat tunnel on with remote access ([#4837](https://github.com/intent-hq/cloudlands-fe/issues/4837)) ([2e2061c](https://github.com/intent-hq/cloudlands-fe/commit/2e2061cb1752dc4d8f352e28e3c129c33410d7f3))
+
+## [2.359.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.358.0...v2.359.0) (2026-11-20)
+
+
+### 🚀 Features
+
+* **browser:** list and call page WebMCP tools from agent browser ([#4804](https://github.com/intent-hq/cloudlands-fe/issues/4804)) ([b8d1f06](https://github.com/intent-hq/cloudlands-fe/commit/b8d1f067a2cfceefc550a1a1a900a021b68c7562))
+* **browser:** show main-owned browser pages in browser tabs (Labs) ([#4828](https://github.com/intent-hq/cloudlands-fe/issues/4828)) ([1aa2f6c](https://github.com/intent-hq/cloudlands-fe/commit/1aa2f6c15a6f8ac3d91fb0d09e858fb8b61e2d29))
+* **cloud-machines:** retire the E2B cloud machines Labs flag ([#4826](https://github.com/intent-hq/cloudlands-fe/issues/4826)) ([beea355](https://github.com/intent-hq/cloudlands-fe/commit/beea35561beb123fa5c3e718857165223afbbf99))
+* **passkeys:** device passkeys with the Intent OS PIN and Settings → Passkeys ([#4823](https://github.com/intent-hq/cloudlands-fe/issues/4823)) ([966025a](https://github.com/intent-hq/cloudlands-fe/commit/966025a7597be3bf8846c2def1ed56549b9bc0ca))
+* **passkeys:** passkeys in the browser panel on Linux (QR and security keys) ([#4822](https://github.com/intent-hq/cloudlands-fe/issues/4822)) ([a18e195](https://github.com/intent-hq/cloudlands-fe/commit/a18e195cc24d9b1f290dc19c28808435dd9ceed4))
+* **scripts:** auto-start toggle and in-use dots for Browsers and Shells ([#4809](https://github.com/intent-hq/cloudlands-fe/issues/4809)) ([510312d](https://github.com/intent-hq/cloudlands-fe/commit/510312d145adbf8ed9919c6dbe6c5b36f8c584e7))
+* **specialists:** rename Maintenance Coordinator to Maintainer ([#4814](https://github.com/intent-hq/cloudlands-fe/issues/4814)) ([0be6e10](https://github.com/intent-hq/cloudlands-fe/commit/0be6e10c059cbb013735de97f17b081d1519ada7))
+* **windows:** open any tab in its own full-screen window (Labs) ([#4835](https://github.com/intent-hq/cloudlands-fe/issues/4835)) ([f2665cc](https://github.com/intent-hq/cloudlands-fe/commit/f2665cc357b631d212d393a440dab6f076e1013a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.255 ([#4836](https://github.com/intent-hq/cloudlands-fe/issues/4836)) ([c409e78](https://github.com/intent-hq/cloudlands-fe/commit/c409e781c1cb6bcab1c9797b8073c6d458bcf6c9))
+* **cloud-machines:** offer Add cloud when the backend has saved cloud machines ([#4811](https://github.com/intent-hq/cloudlands-fe/issues/4811)) ([9fba1e6](https://github.com/intent-hq/cloudlands-fe/commit/9fba1e685caee702aa64ba1ac2874cc9615cc492))
+* **home:** remove deleted local folders from the sidebar instead of hiding them ([#4800](https://github.com/intent-hq/cloudlands-fe/issues/4800)) ([46f62b2](https://github.com/intent-hq/cloudlands-fe/commit/46f62b21ac4d758c1a9ce4aa4feb0dc23ed4b36d))
+* open new-tab links as browser tabs on Intent OS ([#4832](https://github.com/intent-hq/cloudlands-fe/issues/4832)) ([75860c4](https://github.com/intent-hq/cloudlands-fe/commit/75860c49ac92a4842fa350b8397c739bdf3e9c8b))
+* **passkeys:** resolve the preload path without __dirname in the ESM main build ([#4831](https://github.com/intent-hq/cloudlands-fe/issues/4831)) ([bec1e65](https://github.com/intent-hq/cloudlands-fe/commit/bec1e65b8387d9ed480cb2a2310fb0ef907a34f6))
+* turn off FedCM so Google sign-in buttons open their popup ([#4825](https://github.com/intent-hq/cloudlands-fe/issues/4825)) ([e790a89](https://github.com/intent-hq/cloudlands-fe/commit/e790a890c46bfa0036ab2e148dd99ed287291497))
+* use the in-app file picker for every chooser on Intent OS ([#4830](https://github.com/intent-hq/cloudlands-fe/issues/4830)) ([87e105b](https://github.com/intent-hq/cloudlands-fe/commit/87e105b6bca54b0fb6fb6e32e056534aa0fdc7ac))
+
 ## [2.358.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.357.5...v2.358.0) (2026-11-20)
 
 

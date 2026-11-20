@@ -9,6 +9,7 @@
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import ProposalCard from './ProposalCard.svelte';
+  import RpcCallProposalCard from './RpcCallProposalCard.svelte';
   import DismissProposalConfirmDialog from './DismissProposalConfirmDialog.svelte';
   import {
     classifyPendingProposalRefs,
@@ -23,6 +24,7 @@
     dismissProposal,
     reconcileAppliedProposals,
     rememberProposalIdentity,
+    resolveRpcProposal,
     undoProposal,
   } from './proposal-action-handlers';
   import {
@@ -173,7 +175,12 @@
     data-inline-proposal
     data-pending-proposal-key={isPending ? proposalId : undefined}
   >
-    {#if isPending}
+    {#if isPending && proposal.kind === 'rpc-call'}
+      <RpcCallProposalCard
+        {proposal}
+        onResolve={(decision) => resolveRpcProposal(agentId, workspaceId, proposalId, decision)}
+      />
+    {:else if isPending}
       {#if initialDraftLoaded}
         <ProposalCard
           {proposal}

@@ -30,6 +30,7 @@ import {
 } from './ct-changed-specs.mjs';
 import { diffBase } from './ct-contract-paths.mjs';
 import { CT_BUILD_HEAP_MB, removeHeapFlags } from './run-ct-tests.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -104,8 +105,7 @@ export function usage() {
 }
 
 export function parseArgs(argv) {
-  const args = [...argv];
-  if (args[0] === '--') args.shift();
+  const args = scriptArgs(argv);
   const result = {
     base: DEFAULT_BASE,
     workers: CT_CHANGED_WORKERS,

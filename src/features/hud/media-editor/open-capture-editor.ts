@@ -1,9 +1,9 @@
 /**
- * Opening the capture editor from the dock. Internal preview for now: the clip pill
- * opens the editor only while `intent.dock.captureEditorPreview` is set to '1' in
- * the dock's local storage; otherwise it keeps its player dialog.
+ * Opening the desktop capture editor from the dock. Finished capture tiles open
+ * the editor; browser surfaces retain their existing player dialog.
  */
-import { electronAPI, isElectron } from '$lib/electron-bridge';
+import { electronAPI } from '$lib/electron-bridge';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import {
   dockMediaSourceFor,
   type DockComposerEvidence,
@@ -16,14 +16,8 @@ import {
   type DockCaptureEditorOpenResult,
 } from '$shared/dock-capture-editor';
 
-const PREVIEW_KEY = 'intent.dock.captureEditorPreview';
-
-export function dockCaptureEditorPreviewEnabled(): boolean {
-  try {
-    return isElectron() && localStorage.getItem(PREVIEW_KEY) === '1';
-  } catch {
-    return false;
-  }
+export function dockCaptureEditorEnabled(): boolean {
+  return isElectronPlatform();
 }
 
 /**
@@ -86,7 +80,7 @@ export function dockRecordingEditorRequest(input: {
 export async function openDockCaptureEditor(
   request: DockCaptureEditorOpenRequest,
 ): Promise<DockCaptureEditorOpenResult> {
-  if (!isElectron()) return { ok: false, error: 'unavailable' };
+  if (!dockCaptureEditorEnabled()) return { ok: false, error: 'unavailable' };
   try {
     return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request)) ?? {
       ok: false,

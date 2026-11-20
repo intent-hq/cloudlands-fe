@@ -209,8 +209,10 @@ export const notify = {
     props: AgentFailureNotifyProps,
     options?: NotifyOptions<AgentFailureToastComponent>,
   ) => lazyCustom(loadAgentFailureToast, props, options),
-  appError: (props: AppErrorNotifyProps, options?: NotifyOptions<ErrorToastComponent>) =>
-    lazyCustom(loadErrorToast, props, options),
+  appError: (props: AppErrorNotifyProps, options?: NotifyOptions<ErrorToastComponent>) => {
+    forwardToastWhenHidden(props.error.type, props.error.title || props.error.message);
+    return lazyCustom(loadErrorToast, props, options);
+  },
   update: (props: UpdateNotifyProps, options?: NotifyOptions<UpdateToastComponent>) =>
     lazyCustom(loadUpdateToast, props, options),
 };

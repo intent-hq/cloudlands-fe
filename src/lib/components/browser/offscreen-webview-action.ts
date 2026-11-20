@@ -126,7 +126,10 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     }
     try {
       const webContentsId = webview.getWebContentsId();
-      if (webContentsId !== lastRegisteredWebContentsId) {
+      // Main registers a main-owned page itself when it creates it (Labs).
+      if (node.dataset.mainOwnedPage !== undefined) {
+        lastRegisteredWebContentsId = webContentsId;
+      } else if (webContentsId !== lastRegisteredWebContentsId) {
         if (lastRegisteredWebContentsId !== undefined) initiatedDesiredUrl = undefined;
         lastRegisteredWebContentsId = webContentsId;
         logger.info('Registering offscreen browser tab for CDP', {

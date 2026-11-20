@@ -157,6 +157,7 @@ vi.mock('../desktop-connections-store', () => ({
   setDaemonVersion: store.setDaemonVersion,
   getDetectHosts: store.getDetectHosts,
   setHosts: store.setHosts,
+  onConnectionsMutated: () => () => {},
 }));
 
 // Guest sessions (multiplayer): a joined host resolves through this store

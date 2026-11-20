@@ -3,7 +3,7 @@
   import { extractAllContent, type AgentMessage, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import { getUserMessagePreviewText } from '$lib/utils/user-message-presentation';
   import { getPrMonitorWakeChipLabel } from '$lib/utils/pr-monitor-wake-attribution';
   import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import { isEventWakeMessage } from './event-wake-summary';
@@ -29,7 +29,7 @@
   const attribution = $derived(getAgentMessageAttribution(message.metadata));
   const wake = $derived(getAutomatedWakePresentation(message));
   const text = $derived.by(() => {
-    const body = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
+    const body = getUserMessagePreviewText(message, workspace?.ownerPrincipalId);
     if (attribution) {
       const name =
         attribution.kind === 'chief' ? m.layout_chiefCard_title() : attribution.displayName;

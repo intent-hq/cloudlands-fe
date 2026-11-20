@@ -18,7 +18,6 @@
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
   import { trackKnownRepoLoads } from '../../test/fixtures/command-palette-repos-fixture';
   import type { MockBackendMethodHandler } from '../../test/ct-mock-electron-bridge';
-  import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     setWorkspaceInitializerRecentRepos,
     workspaceInitializerRecentReposRefreshFinished,
@@ -134,17 +133,6 @@
       stop();
       appStore.dispatch(removeWorkspaceEntity(live));
       appStore.dispatch(removeWorkspaceEntity(retired));
-    };
-  }
-
-  /** Labs: the E2B cloud machines command, from off or on. */
-  function setupCloudLab(enabled: boolean) {
-    const previous = appStore.state.userPreferences?.labsCloudMachinesEnabled === true;
-    appStore.dispatch(setLabsCloudMachinesEnabled(enabled));
-    const stop = setupPaletteNoteSearch();
-    return () => {
-      stop();
-      appStore.dispatch(setLabsCloudMachinesEnabled(previous));
     };
   }
 
@@ -323,14 +311,6 @@
         setup: setupPaletteNoteSearch,
       },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
-      'labs-e2b-off': {
-        props: { initialQuery: 'E2B', withoutWorkspace: true },
-        setup: () => setupCloudLab(false),
-      },
-      'labs-e2b-on': {
-        props: { initialQuery: 'E2B', withoutWorkspace: true },
-        setup: () => setupCloudLab(true),
-      },
       blended: { props: { initialQuery: 'in' }, setup: () => setupRepos() },
       repos: { props: { initialQuery: 'cloudl' }, setup: () => setupRepos() },
       'repo-rows': { props: { initialQuery: 'cloudl' }, setup: () => setupRepos('owner', false) },

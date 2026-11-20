@@ -267,6 +267,7 @@
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { sourcePathForFile } from '$lib/in-app-file-inputs';
   import {
     formatFileSize,
     imageFilesToContextItems,
@@ -1395,10 +1396,7 @@
         ? `pasted-file-${Date.now()}.${file.type.split('/')[1] || 'bin'}`
         : file.name;
 
-    const sourcePath =
-      (
-        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
-      ).electronAPI?.getPathForFile?.(file) ?? '';
+    const sourcePath = sourcePathForFile(file);
 
     const mimeType = file.type || undefined;
     const itemId = `attachment-pending-${Date.now()}-${fileName}`;

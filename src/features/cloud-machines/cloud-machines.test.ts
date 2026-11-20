@@ -44,15 +44,16 @@ import {
   NORTHFLANK_SANDBOXES,
   TEAM_ENTRY,
   TEAM_SANDBOXES,
+  VERCEL_ENTRY,
+  VERCEL_SANDBOXES,
   setupCloudMachinesFixture,
 } from '../../test/cloud-machines-preview';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import {
-  selectEffectiveStartOn,
   selectRemoteMachine,
   selectStartOnOptions,
 } from '$features/remote-machines/remote-machines-selectors';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   providerProfilesLoaded,
   setProviderEnabled,
@@ -60,6 +61,7 @@ import {
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { cloudProfileBlockReason, startOnCloud } from './cloud-machines-selectors';
 import {
+  cloudDashboardUrl,
   cloudErrorText,
   formatUptime,
   liveRunningSeconds,
@@ -473,20 +475,9 @@ describe('an agent on E2B', () => {
   });
 });
 
-describe('Labs flag', () => {
+describe('Start On entry names', () => {
   let restore: () => void = () => {};
   afterEach(() => restore());
-
-  it('keeps a saved cloud machine in Start On while the flag is off', () => {
-    store.init();
-    restore = setupCloudMachinesFixture('connected');
-    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
-    store.dispatch(setLabsCloudMachinesEnabled(false));
-    expect(selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud')).toBe(
-      true,
-    );
-    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_E2B);
-  });
 
   it('names a single entry called "E2B" just E2B in Start On', () => {
     store.init();
@@ -511,10 +502,24 @@ describe('Labs flag', () => {
       ],
     ]);
   });
+});
 
-  it('still shows an agent already on E2B, with its sandbox state, while the flag is off', () => {
+describe('Remote agents off', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('offers no cloud machine in Start On', () => {
     store.init();
-    restore = setupCloudMachinesFixture('labs-off');
+    restore = setupCloudMachinesFixture('providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    expect(startOnCloud(store.state)).toBeNull();
+  });
+
+  it('still shows an agent already on E2B, with its sandbox state', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
     const sandbox = E2B_SANDBOXES[2]!;
     const location = agentMachineLocation(
       {
@@ -758,5 +763,118 @@ describe('Agent37 entries', () => {
   it('picks the next free default name for Agent37', () => {
     expect(nextCloudEntryName(['E2B', 'Northflank'], 'agent37')).toBe('Agent37');
     expect(nextCloudEntryName(['agent37'], 'agent37')).toBe('Agent37 2');
+  });
+});
+
+describe('Vercel entries', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('reads a Vercel entry with its team, project and image, no plan per size, never the token', () => {
+    const parsed = parseCloudMachineProvider({ ...VERCEL_ENTRY, apiKey: 'vercel-token-secret' });
+    expect(parsed).toEqual(VERCEL_ENTRY);
+    expect(JSON.stringify(parsed)).not.toContain('vercel-token-secret');
+    expect(parsed?.sizes.every((size) => size.plan === undefined)).toBe(true);
+    expect(parseRemoteMachine(VERCEL_SANDBOXES[0])?.cloud?.provider).toBe('vercel');
+    expect(cloudProviderOfEntryId(VERCEL_ENTRY.id)).toBe('vercel');
+  });
+
+  it("reads missing Vercel settings as empty, on Intent's public image", () => {
+    const parsed = parseCloudMachineProvider({ ...VERCEL_ENTRY, vercel: { image: 42 } });
+    expect(parsed?.vercel).toEqual({
+      teamId: '',
+      projectId: '',
+      image: 'sutterhill/intent-images/intent-node',
+    });
+  });
+
+  it('places a Vercel entry with the provider-neutral target', () => {
+    const providerOf = (id: string) => (id === VERCEL_ENTRY.id ? 'vercel' : 'e2b');
+    expect(
+      initialAgentPlacement(startOnCloudId(VERCEL_ENTRY.id), { cloudEntries: true, providerOf }),
+    ).toEqual({ target: 'cloud', checkout: 'isolated', cloudMachineId: VERCEL_ENTRY.id });
+  });
+
+  it('lists a Vercel entry in Start On by provider and name', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('vercel-providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const cloud = selectStartOnOptions.select(store.state).filter((o) => o.kind === 'cloud');
+    expect(cloud.at(-1)?.label).toBe(
+      m.cloudMachines_startOn_vercel_label({ name: VERCEL_ENTRY.name }),
+    );
+  });
+
+  it('names a starting Vercel agent by its provider', () => {
+    const location = agentMachineLocation({
+      id: 'a-vc',
+      placement: { target: 'cloud', checkout: 'isolated', cloudMachineId: VERCEL_ENTRY.id },
+      cloudStart: { step: 'creating-sandbox' },
+    } as AgentSession);
+    expect(location?.name).toBe('Vercel');
+  });
+
+  it('explains Vercel errors in its own words: token, team, project, image, plan', () => {
+    const vercel = { provider: 'vercel' as const, retryable: false };
+    const unavailable = (reason: string) =>
+      cloudErrorText({ code: 'cloud-machine-unavailable', reason, ...vercel }).description;
+    expect(unavailable('key-rejected')).toBe(
+      m.cloudMachines_vercel_error_keyRejected_description(),
+    );
+    expect(unavailable('permission-denied')).toBe(
+      m.cloudMachines_vercel_error_permissionDenied_description(),
+    );
+    expect(unavailable('project-missing')).toBe(
+      m.cloudMachines_vercel_error_projectMissing_description(),
+    );
+    expect(unavailable('template-missing')).toBe(
+      m.cloudMachines_vercel_error_imageMissing_description(),
+    );
+    expect(cloudErrorText({ code: 'cloud-quota', limit: 'plan', ...vercel }).description).toBe(
+      m.cloudMachines_vercel_error_quotaPlan_description(),
+    );
+    for (const reason of ['key-rejected', 'permission-denied', 'project-missing', 'api-error']) {
+      const text = cloudErrorText(
+        { code: 'cloud-machine-unavailable', reason, retryable: false },
+        'vercel',
+      );
+      expect(text.title + text.description).not.toMatch(/E2B|Northflank|Agent37/u);
+    }
+  });
+
+  it('sends a missing project or image to Settings with Open Vercel, and retries a busy Vercel', () => {
+    const fail = (data: object) =>
+      cloudStartFailureView(
+        placementFailure(
+          { code: 'remote-launch-failed', detail: `x ${JSON.stringify(data)}` },
+          'Vercel',
+        ),
+        { canRetry: true },
+      );
+    const project = fail({
+      code: 'cloud-machine-unavailable',
+      reason: 'project-missing',
+      retryable: false,
+      provider: 'vercel',
+    });
+    expect(project).toMatchObject({ provider: 'vercel', tone: 'warning', dashboard: true });
+    expect(project?.actions).toEqual(['settings']);
+    expect(project?.cause).toBe(m.cloudMachines_vercel_error_projectMissing_description());
+    const image = fail({
+      code: 'cloud-machine-unavailable',
+      reason: 'template-missing',
+      retryable: false,
+      provider: 'vercel',
+    });
+    expect(image).toMatchObject({ tone: 'warning', actions: ['settings'] });
+    expect(image?.cause).toBe(m.cloudMachines_vercel_error_imageMissing_description());
+    const rate = fail({ code: 'cloud-quota', limit: 'rate', retryable: true, provider: 'vercel' });
+    expect(rate?.actions[0]).toBe('retry');
+    expect(cloudDashboardUrl('vercel')).toBe('https://vercel.com/dashboard');
+  });
+
+  it('picks the next free default name for Vercel', () => {
+    expect(nextCloudEntryName(['E2B', 'Agent37'], 'vercel')).toBe('Vercel');
+    expect(nextCloudEntryName(['vercel'], 'vercel')).toBe('Vercel 2');
   });
 });

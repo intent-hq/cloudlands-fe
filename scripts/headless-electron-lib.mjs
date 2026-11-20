@@ -2,6 +2,7 @@
 // virtual-display decision, and the Electron launch options. Kept free of
 // Electron/Playwright imports so they are unit-testable.
 import path from 'node:path';
+import { scriptArgs } from './script-args.mjs';
 
 export { resolveIntentdSocketPath } from './vite-plugin-intentd-bridge.mjs';
 
@@ -47,7 +48,8 @@ function parsePositiveInt(flag, raw) {
 }
 
 /** Parse CLI flags. Accepts both `--flag value` and `--flag=value`. */
-export function parseHeadlessArgs(argv) {
+export function parseHeadlessArgs(args) {
+  const argv = scriptArgs(args);
   const options = {
     route: DEFAULT_ROUTE,
     out: null,
@@ -72,8 +74,6 @@ export function parseHeadlessArgs(argv) {
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    // pnpm forwards a literal `--` separator on some versions; ignore it.
-    if (arg === '--') continue;
     if (arg === '-h' || arg === '--help') {
       options.help = true;
       continue;

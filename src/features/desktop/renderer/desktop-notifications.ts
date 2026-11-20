@@ -1,4 +1,5 @@
 import type { DesktopPermissionRequest } from '$shared/types/desktop';
+import { forwardToastWhenHidden } from '$lib/utils/machine-toast-forward';
 import { m } from '$shared/paraglide/messages.js';
 
 const promptOperations = new Map<string, symbol>();
@@ -13,6 +14,7 @@ export async function showDesktopPrompt(request: DesktopPermissionRequest): Prom
     import('./DesktopConsentToast.svelte'),
   ]);
   if (promptOperations.get(request.requestId) !== operation) return;
+  forwardToastWhenHidden('warning', m.desktop_consent_title());
   notify.custom(component, {
     id: `desktop-consent:${request.requestId}`,
     duration: Infinity,

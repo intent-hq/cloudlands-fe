@@ -56,6 +56,14 @@ const BROWSER_URL_RESOLUTION = 'src/lib/utils/browser-url-resolution.ts';
  */
 const KNOWN_BRIDGE_WRAPPERS: ReadonlyMap<string, KnownBridgeWrapper> = new Map([
   [
+    'src/lib/components/browser/main-owned-browser-page.ts',
+    {
+      reason:
+        '`invoke(channel, payload)` sends the main-owned browser page channels (BROWSER_VIEW) declared in this module to main.',
+      channelFiles: ['src/lib/components/browser/main-owned-browser-page.ts'],
+    },
+  ],
+  [
     'src/features/dev-console/dev-console-client.ts',
     {
       reason: '`devConsoleInvoke(channel, request)` is the Dev Console window bridge.',

@@ -83,6 +83,8 @@ describe('production route graph', () => {
       'frame/+page.svelte',
       'hud/+layout.svelte',
       'hud/+page.svelte',
+      'tab-window/+layout.svelte',
+      'tab-window/[id]/+page.svelte',
     ]);
     expect(routeFiles.some(isInternalRouteFile)).toBe(false);
     expect(existsSync(path.join(routesRoot, 'sandbox/+page.svelte'))).toBe(true);

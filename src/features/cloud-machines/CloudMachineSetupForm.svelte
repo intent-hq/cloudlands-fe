@@ -1,16 +1,17 @@
 <!--
-  Settings → an E2B, Northflank or Agent37 entry: the inline setup and edit
-  form. The API key (E2B, Agent37) or token (Northflank) is kept only in this
+  Settings → an E2B, Northflank, Agent37 or Vercel entry: the inline setup and
+  edit form. The API key (E2B, Agent37) or token (Northflank, Vercel) is kept only in this
   component's local state until it is sent in one `cloudMachines.configure`
   request; the field is cleared afterwards. A new named entry asks for a name,
   and can copy the saved secret of another entry of the same provider.
   Northflank also takes the project its services run in; the region is the
   project's, read-only. Agent37 takes the instance type, and a region for a
-  full VM (a standard sandbox runs in the US only).
+  full VM (a standard sandbox runs in the US only). Vercel takes the team and
+  project its sandboxes run in, and on request the entry's own image.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import {
     Button,
     Input,
@@ -24,6 +25,11 @@
   import {
     AGENT37_REGIONS,
     AGENT37_SIZES,
+    VERCEL_SIZES,
+    VERCEL_PROJECT_ID,
+    VERCEL_TEAM_ID,
+    isVercelImage,
+    DEFAULT_VERCEL_IMAGE,
     DEFAULT_CLOUD_MACHINE_SIZE,
     DEFAULT_IDLE_PAUSE_MINUTES,
     DEFAULT_PAUSED_DELETE_DAYS,
@@ -79,6 +85,7 @@
   const kind = untrack(() => entry?.provider ?? newProvider);
   const northflank = kind === 'northflank';
   const agent37 = kind === 'agent37';
+  const vercel = kind === 'vercel';
   const e2bCopy = {
     ariaLabel: m.cloudMachines_form_ariaLabel(),
     intro: m.cloudMachines_form_intro,
@@ -95,34 +102,48 @@
     sizeUnknown: m.cloudMachines_form_sizeUnknown(),
     privacy: m.cloudMachines_form_privacy,
   };
-  const copy = agent37
+  const northflankTokenCopy = {
+    keyLabel: m.cloudMachines_northflank_form_token_label(),
+    keySavedPlaceholder: m.cloudMachines_northflank_form_tokenSaved_placeholder(),
+    test: m.cloudMachines_northflank_form_test_label(),
+    works: m.cloudMachines_northflank_form_tokenWorks(),
+    keyFrom: m.cloudMachines_northflank_form_keyFrom,
+    keyFromLabel: m.cloudMachines_northflank_form_keyFrom_label(),
+    keyFromClear: m.cloudMachines_northflank_form_keyFrom_clear(),
+  };
+  const copy = vercel
     ? {
         ...e2bCopy,
-        ariaLabel: m.cloudMachines_agent37_form_ariaLabel(),
-        intro: m.cloudMachines_agent37_form_intro,
-        keyPlaceholder: m.cloudMachines_agent37_form_apiKey_placeholder(),
-        keyNote: m.cloudMachines_agent37_form_apiKey_note,
-        sizeLabel: m.cloudMachines_agent37_form_size_label(),
-        privacy: m.cloudMachines_agent37_form_privacy,
+        ...northflankTokenCopy,
+        ariaLabel: m.cloudMachines_vercel_form_ariaLabel(),
+        intro: m.cloudMachines_vercel_form_intro,
+        keyLabel: m.cloudMachines_vercel_form_token_label(),
+        keyPlaceholder: m.cloudMachines_vercel_form_token_placeholder(),
+        keyNote: m.cloudMachines_vercel_form_token_note,
+        privacy: m.cloudMachines_vercel_form_privacy,
       }
-    : northflank
+    : agent37
       ? {
-          ariaLabel: m.cloudMachines_northflank_form_ariaLabel(),
-          intro: m.cloudMachines_northflank_form_intro,
-          keyLabel: m.cloudMachines_northflank_form_token_label(),
-          keyPlaceholder: m.cloudMachines_northflank_form_token_placeholder(),
-          keySavedPlaceholder: m.cloudMachines_northflank_form_tokenSaved_placeholder(),
-          keyNote: m.cloudMachines_northflank_form_token_note,
-          test: m.cloudMachines_northflank_form_test_label(),
-          works: m.cloudMachines_northflank_form_tokenWorks(),
-          keyFrom: m.cloudMachines_northflank_form_keyFrom,
-          keyFromLabel: m.cloudMachines_northflank_form_keyFrom_label(),
-          keyFromClear: m.cloudMachines_northflank_form_keyFrom_clear(),
-          sizeLabel: m.cloudMachines_northflank_form_size_label(),
-          sizeUnknown: m.cloudMachines_northflank_form_sizeUnknown(),
-          privacy: m.cloudMachines_northflank_form_privacy,
+          ...e2bCopy,
+          ariaLabel: m.cloudMachines_agent37_form_ariaLabel(),
+          intro: m.cloudMachines_agent37_form_intro,
+          keyPlaceholder: m.cloudMachines_agent37_form_apiKey_placeholder(),
+          keyNote: m.cloudMachines_agent37_form_apiKey_note,
+          sizeLabel: m.cloudMachines_agent37_form_size_label(),
+          privacy: m.cloudMachines_agent37_form_privacy,
         }
-      : e2bCopy;
+      : northflank
+        ? {
+            ...northflankTokenCopy,
+            ariaLabel: m.cloudMachines_northflank_form_ariaLabel(),
+            intro: m.cloudMachines_northflank_form_intro,
+            keyPlaceholder: m.cloudMachines_northflank_form_token_placeholder(),
+            keyNote: m.cloudMachines_northflank_form_token_note,
+            sizeLabel: m.cloudMachines_northflank_form_size_label(),
+            sizeUnknown: m.cloudMachines_northflank_form_sizeUnknown(),
+            privacy: m.cloudMachines_northflank_form_privacy,
+          }
+        : e2bCopy;
   // The form edits one entry (or one new entry) for its whole life.
   const formKey = untrack(() => entry?.id ?? NEW_CLOUD_ENTRY);
   const configureKey = cloudConfigureKey(formKey);
@@ -162,9 +183,29 @@
   const nameError = $derived(askName ? cloudEntryNameError(name, $entries$, provider?.id) : null);
   let apiKey = $state(untrack(() => initialDraft?.apiKey ?? ''));
   let projectId = $state(
-    untrack(() => initialDraft?.projectId ?? entry?.northflank?.projectId ?? ''),
+    untrack(
+      () =>
+        initialDraft?.projectId ?? entry?.northflank?.projectId ?? entry?.vercel?.projectId ?? '',
+    ),
   );
-  const placeMissing = $derived(northflank && !projectId.trim());
+  let teamId = $state(untrack(() => initialDraft?.teamId ?? entry?.vercel?.teamId ?? ''));
+  // "" stands for Intent's public image, which the backend reports by name.
+  const savedImage = untrack(() =>
+    entry?.vercel?.image === DEFAULT_VERCEL_IMAGE ? '' : (entry?.vercel?.image ?? ''),
+  );
+  let image = $state(untrack(() => initialDraft?.image ?? savedImage));
+  // The image field stays out of the way until asked for, or the entry has its own.
+  let imageOpen = $state(untrack(() => !!image));
+  const teamInvalid = $derived(vercel && !!teamId.trim() && !VERCEL_TEAM_ID.test(teamId.trim()));
+  const projectInvalid = $derived(
+    vercel && !!projectId.trim() && !VERCEL_PROJECT_ID.test(projectId.trim()),
+  );
+  const imageInvalid = $derived(vercel && !!image.trim() && !isVercelImage(image.trim()));
+  const placeMissing = $derived(
+    (northflank || vercel) &&
+      (!projectId.trim() ||
+        (vercel && (!teamId.trim() || teamInvalid || projectInvalid || imageInvalid))),
+  );
   let instanceType = $state<Agent37InstanceType>(
     untrack(() => initialDraft?.instanceType ?? entry?.agent37?.instanceType ?? 'default'),
   );
@@ -196,9 +237,16 @@
     const tested = validated?.sizes;
     if (tested) untrack(() => (testedSizes = tested));
   });
-  // Agent37's sizes never depend on the key, so a new entry shows them before a test.
+  // Agent37's and Vercel's sizes never depend on the key, so a new entry shows them before a test.
   const sizes = $derived<readonly CloudMachineSizeInfo[]>(
-    testedSizes ?? (provider?.sizes.length ? provider.sizes : agent37 ? AGENT37_SIZES : []),
+    testedSizes ??
+      (provider?.sizes.length
+        ? provider.sizes
+        : agent37
+          ? AGENT37_SIZES
+          : vercel
+            ? VERCEL_SIZES
+            : []),
   );
   const keyRequired = $derived(!provider && !apiKey.trim() && !apiKeyFrom);
   // The project's region: from the last test, else the saved entry.
@@ -240,8 +288,11 @@
     message: string;
     cloud?: Parameters<typeof cloudErrorText>[0];
     forbidden?: boolean;
+    inUse?: boolean;
   }) {
     if (failure.forbidden) return cloudProviderCopy(kind).ownerOnly;
+    // A new team or project while sandboxes run there.
+    if (failure.inUse && vercel) return m.cloudMachines_vercel_error_placeInUse();
     return failure.cloud ? cloudErrorText(failure.cloud, kind).description : failure.message;
   }
 
@@ -251,12 +302,24 @@
     return !provider || size !== provider.size || apiKey.trim() || apiKeyFrom ? { size } : {};
   }
 
-  /** Northflank: the project; Agent37: the type and region; each when new or changed. */
+  /** Northflank: the project; Agent37: the type and region; Vercel: team, project, image; each when new or changed. */
   function placeParams(): {
     projectId?: string;
+    teamId?: string;
+    image?: string;
     instanceType?: Agent37InstanceType;
     region?: Agent37Region;
   } {
+    if (vercel) {
+      const team = teamId.trim();
+      const project = projectId.trim();
+      const ownImage = image.trim();
+      return {
+        ...(team && team !== provider?.vercel?.teamId ? { teamId: team } : {}),
+        ...(project && project !== provider?.vercel?.projectId ? { projectId: project } : {}),
+        ...(ownImage !== savedImage ? { image: ownImage } : {}),
+      };
+    }
     if (agent37)
       return {
         ...(instanceType !== provider?.agent37?.instanceType ? { instanceType } : {}),
@@ -289,6 +352,12 @@
       ...(askName && (!provider || name.trim() !== provider.name) ? { name: name.trim() } : {}),
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : apiKeyFrom ? { apiKeyFrom } : {}),
     };
+  }
+
+  async function openImage() {
+    imageOpen = true;
+    await tick();
+    document.getElementById(`${uid}-image`)?.focus();
   }
 
   function resetTest() {
@@ -487,6 +556,61 @@
       </p>
     {/if}
 
+    {#if vercel}
+      <Label for="{uid}-team" class="self-start @xl:pt-2"
+        >{m.cloudMachines_vercel_form_team_label()}</Label
+      >
+      <div class="min-w-0 space-y-1">
+        <Input
+          id="{uid}-team"
+          class="w-full max-w-sm"
+          autocomplete="off"
+          spellcheck={false}
+          placeholder={m.cloudMachines_vercel_form_team_placeholder()}
+          bind:value={teamId}
+          disabled={busy}
+          oninput={resetTest}
+          aria-invalid={teamInvalid ? 'true' : undefined}
+          aria-describedby={teamInvalid ? `${uid}-team-error` : undefined}
+          data-vercel-team
+        />
+        {#if teamInvalid}
+          <p id="{uid}-team-error" class="type-body text-danger" data-vercel-id-error>
+            {m.cloudMachines_vercel_form_team_invalid()}
+          </p>
+        {/if}
+      </div>
+
+      <Label for="{uid}-project" class="self-start @xl:pt-2"
+        >{m.cloudMachines_vercel_form_project_label()}</Label
+      >
+      <div class="min-w-0 space-y-1">
+        <Input
+          id="{uid}-project"
+          class="w-full max-w-sm"
+          autocomplete="off"
+          spellcheck={false}
+          placeholder={m.cloudMachines_vercel_form_project_placeholder()}
+          bind:value={projectId}
+          disabled={busy}
+          oninput={resetTest}
+          aria-invalid={projectInvalid ? 'true' : undefined}
+          aria-describedby={projectInvalid
+            ? `${uid}-project-error ${uid}-session-note`
+            : `${uid}-session-note`}
+          data-cloud-project
+        />
+        {#if projectInvalid}
+          <p id="{uid}-project-error" class="type-body text-danger" data-vercel-id-error>
+            {m.cloudMachines_vercel_form_project_invalid()}
+          </p>
+        {/if}
+        <p id="{uid}-session-note" class="type-body text-muted-foreground" data-vercel-session-note>
+          {m.cloudMachines_vercel_form_session_note()}
+        </p>
+      </div>
+    {/if}
+
     {#if agent37}
       <Label id="{uid}-type-label" class="self-start @xl:pt-2"
         >{m.cloudMachines_agent37_form_type_label()}</Label
@@ -598,6 +722,53 @@
         {/each}
       </Select.Content>
     </Select.Root>
+
+    {#if vercel}
+      <Label for={imageOpen ? `${uid}-image` : `${uid}-image-toggle`} class="self-start @xl:pt-2"
+        >{m.cloudMachines_vercel_form_image_label()}</Label
+      >
+      <div class="min-w-0 space-y-1">
+        {#if imageOpen}
+          <Input
+            id="{uid}-image"
+            class="w-full max-w-sm"
+            autocomplete="off"
+            spellcheck={false}
+            placeholder={m.cloudMachines_vercel_form_image_placeholder()}
+            bind:value={image}
+            disabled={busy}
+            oninput={resetTest}
+            aria-invalid={imageInvalid ? 'true' : undefined}
+            aria-describedby={imageInvalid
+              ? `${uid}-image-error ${uid}-image-note`
+              : `${uid}-image-note`}
+            data-vercel-image
+          />
+          {#if imageInvalid}
+            <p id="{uid}-image-error" class="type-body text-danger" data-vercel-image-error>
+              {m.cloudMachines_vercel_form_image_invalid()}
+            </p>
+          {/if}
+          <p id="{uid}-image-note" class="type-body text-muted-foreground">
+            {m.cloudMachines_vercel_form_image_note()}
+          </p>
+        {:else}
+          <p class="flex flex-wrap items-baseline gap-x-2 pt-2 type-body text-muted-foreground">
+            <span>{m.cloudMachines_vercel_form_image_public()}</span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              class="h-auto px-0"
+              id="{uid}-image-toggle"
+              disabled={busy}
+              onclick={openImage}
+              data-vercel-image-toggle>{m.cloudMachines_vercel_form_image_use()}</Button
+            >
+          </p>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <p

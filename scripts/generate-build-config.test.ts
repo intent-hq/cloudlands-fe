@@ -1,4 +1,4 @@
-// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts, vitest.config.ts, tests/integration/vitest.integration.config.ts
+// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/script-args.mjs, scripts/type-check.ts, vitest.config.ts, tests/integration/vitest.integration.config.ts
 // @vitest-environment node
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -224,7 +224,12 @@ describe.each([
 describe('cold prebuild configuration', () => {
   function prebuildRoot(source: string) {
     const root = fixtureRoot();
-    for (const script of ['pnpm-run.mjs', 'pnpm-launcher.mjs', 'type-check.ts']) {
+    for (const script of [
+      'pnpm-run.mjs',
+      'pnpm-launcher.mjs',
+      'script-args.mjs',
+      'type-check.ts',
+    ]) {
       copyFileSync(join(SCRIPTS_DIR, script), join(root, 'scripts', script));
     }
     symlinkSync(resolve(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'junction');

@@ -83,6 +83,14 @@ export const scriptDefinitionTransport = {
     }
   },
 
+  /** Whether an autoStart-only upsert keeps a live run (`scriptAutoStartInPlace: 1`). */
+  async keepsRunOnAutoStartUpsert(): Promise<boolean> {
+    const hello = await backendRequest<{
+      server?: { capabilities?: { scriptAutoStartInPlace?: number } };
+    }>('client.hello', {});
+    return hello?.server?.capabilities?.scriptAutoStartInPlace === 1;
+  },
+
   remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
     return runMutation('script.remove', { workspaceId, scriptId });
   },

@@ -184,6 +184,7 @@
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
+  import PasskeyDialogHost from '$features/passkeys/PasskeyDialogHost.svelte';
   import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
@@ -1178,6 +1179,7 @@
 
   <InviteNoticeHost bind:open={showInviteNotice} />
   <InviteProgressHost bind:open={showInviteProgress} />
+  <PasskeyDialogHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

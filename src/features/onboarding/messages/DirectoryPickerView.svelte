@@ -23,6 +23,7 @@
   import { cn } from '$lib/utils';
   import { menuItem } from '$lib/components/ui/menu';
   import { m } from '$shared/paraglide/messages.js';
+  import { fileMatchesExtensions } from '$shared/in-app-file-dialog';
   import type {
     DirectoryPickerEntry,
     DirectoryPickerListing,
@@ -51,12 +52,20 @@
     error: string | null;
     pathError: string | null;
     createError?: string | null;
-    mode?: 'directory' | 'file';
+    /** `save` picks a folder plus a file name and confirms before replacing a file. */
+    mode?: 'directory' | 'file' | 'save';
+    /** File mode: allow choosing several files (`onSelectMany`). */
+    multiple?: boolean;
+    /** Lowercase extensions without the dot; other files are hidden. */
+    extensions?: string[];
+    /** Save mode: the file name to start with. */
+    defaultFileName?: string;
     showFiles?: boolean;
     favorites?: DirectoryPickerFavorite[];
     initialSearchQuery?: string;
     onClose: () => void;
     onSelect: (path: string) => void;
+    onSelectMany?: (paths: string[]) => void;
     onNavigate: (path?: string) => void;
     onNavigateToPath: (path: string) => void;
     onClearPathError: () => void;
@@ -75,11 +84,15 @@
     pathError,
     createError = null,
     mode = 'directory',
+    multiple = false,
+    extensions,
+    defaultFileName = '',
     showFiles = false,
     favorites,
     initialSearchQuery = '',
     onClose,
     onSelect,
+    onSelectMany,
     onNavigate,
     onNavigateToPath,
     onClearPathError,
@@ -100,6 +113,11 @@
   let newFolderOpen = $state(false);
   let newFolderName = $state('');
   let selectedFilePath = $state<string | null>(null);
+  let selectedFilePaths = $state<string[]>([]);
+  let fileNameInputRef = $state<HTMLInputElement | null>(null);
+  let fileName = $state(untrack(() => defaultFileName));
+  /** Save mode: the existing file the user has been asked to replace. */
+  let replaceTarget = $state<string | null>(null);
   let selectedFolderPath = $state<string | null>(null);
   let lastListingPath: string | null = null;
   let wasOpen = false;
@@ -117,10 +135,22 @@
   const breadcrumbs = $derived(
     listing ? buildDirectoryPickerBreadcrumbs(listing.path, listing.home) : [],
   );
+  const listsFiles = $derived(showFiles || mode === 'file' || mode === 'save');
   const visibleEntries = $derived(
-    filterDirectoryPickerEntries(listing?.entries ?? [], searchDraft, showFiles || mode === 'file'),
+    filterDirectoryPickerEntries(listing?.entries ?? [], searchDraft, listsFiles).filter(
+      (entry) => entry.isDirectory || fileMatchesExtensions(entry.name, extensions),
+    ),
   );
-  const canSelect = $derived(mode === 'file' ? selectedFilePath !== null : listing !== null);
+  const saveFileName = $derived(withDefaultExtension(fileName.trim(), extensions));
+  const canSelect = $derived(
+    mode === 'file'
+      ? multiple
+        ? selectedFilePaths.length > 0
+        : selectedFilePath !== null
+      : mode === 'save'
+        ? listing !== null && isValidFileName(saveFileName)
+        : listing !== null,
+  );
   const activeFavoriteId = $derived(
     sidebarHighlight ?? findActiveFavoriteId(listing?.path, defaultFavorites),
   );
@@ -137,10 +167,44 @@
     mode === 'directory' ? (selectedFolderEntry?.name ?? breadcrumbs.at(-1)?.label ?? null) : null,
   );
   const selectButtonLabel = $derived(
-    selectTargetName !== null
-      ? m.onboarding_dirPicker_selectNamed_label({ name: selectTargetName })
-      : selectLabel,
+    mode === 'save'
+      ? replaceTarget !== null
+        ? m.onboarding_dirPicker_replace_label()
+        : selectLabel
+      : mode === 'file' && multiple && selectedFilePaths.length > 1
+        ? m.onboarding_dirPicker_selectCount_label({ count: selectedFilePaths.length })
+        : selectTargetName !== null
+          ? m.onboarding_dirPicker_selectNamed_label({ name: selectTargetName })
+          : selectLabel,
   );
+
+  function withDefaultExtension(name: string, exts: string[] | undefined): string {
+    if (!name || !exts?.length || fileMatchesExtensions(name, exts)) return name;
+    return `${name}.${exts[0]}`;
+  }
+
+  function isValidFileName(name: string): boolean {
+    return name !== '' && name !== '.' && name !== '..' && !name.includes('/');
+  }
+
+  function joinListingPath(name: string): string | null {
+    if (!listing) return null;
+    return listing.path.endsWith('/') ? `${listing.path}${name}` : `${listing.path}/${name}`;
+  }
+
+  function isSelectedFile(path: string): boolean {
+    return multiple ? selectedFilePaths.includes(path) : path === selectedFilePath;
+  }
+
+  function chooseFile(path: string) {
+    if (!multiple) {
+      selectedFilePath = path;
+      return;
+    }
+    selectedFilePaths = selectedFilePaths.includes(path)
+      ? selectedFilePaths.filter((p) => p !== path)
+      : [...selectedFilePaths, path];
+  }
   const listboxId = `${uid}-contents`;
   const activeOptionId = $derived(
     visibleEntries.length > 0 ? `${uid}-entry-${focusedIndex}` : undefined,
@@ -158,6 +222,8 @@
   function requestNavigation(path?: string) {
     focusedIndex = 0;
     selectedFilePath = null;
+    selectedFilePaths = [];
+    replaceTarget = null;
     selectedFolderPath = null;
     onNavigate(path);
     queueMicrotask(() => listContainerRef?.scrollTo({ top: 0 }));
@@ -169,7 +235,8 @@
 
   function activateEntry(entry: DirectoryPickerEntry) {
     if (entry.isDirectory) navigateInto(entry);
-    else if (mode === 'file') selectedFilePath = entry.path;
+    else if (mode === 'file') chooseFile(entry.path);
+    else if (mode === 'save') setFileName(entry.name);
   }
 
   function navigateUp() {
@@ -259,9 +326,54 @@
     }
   }
 
+  function setFileName(name: string) {
+    fileName = name;
+    replaceTarget = null;
+  }
+
+  function handleSave() {
+    if (!canSelect) return;
+    const name = saveFileName;
+    const existing = listing?.entries.find((entry) => entry.name === name);
+    if (existing?.isDirectory) {
+      // Typing a folder's name opens it, as native save dialogs do.
+      setFileName('');
+      requestNavigation(existing.path);
+      return;
+    }
+    const target = joinListingPath(name);
+    if (!target) return;
+    if (existing && replaceTarget !== target) {
+      replaceTarget = target;
+      return;
+    }
+    onSelect(target);
+  }
+
   function handleSelect() {
+    if (mode === 'save') {
+      handleSave();
+      return;
+    }
+    if (mode === 'file' && multiple) {
+      if (selectedFilePaths.length === 0) return;
+      // A plain copy: the $state proxy cannot cross IPC (structured clone).
+      if (onSelectMany) onSelectMany($state.snapshot(selectedFilePaths));
+      else onSelect(selectedFilePaths[0]);
+      return;
+    }
     const path = mode === 'file' ? selectedFilePath : (selectedFolderEntry?.path ?? listing?.path);
     if (path) onSelect(path);
+  }
+
+  function handleFileNameKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleSelect();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+    }
   }
 
   function retryListing() {
@@ -279,7 +391,8 @@
       !open ||
       event.defaultPrevented ||
       event.target === pathInputRef ||
-      event.target === newFolderInputRef
+      event.target === newFolderInputRef ||
+      event.target === fileNameInputRef
     )
       return;
     if (event.target === searchInputRef) {
@@ -311,6 +424,9 @@
   $effect(() => {
     if (open && !wasOpen) {
       searchDraft = initialSearchQuery;
+      fileName = defaultFileName;
+      replaceTarget = null;
+      selectedFilePaths = [];
       queueMicrotask(() => dialogRef?.focus());
     }
     wasOpen = open;
@@ -325,6 +441,8 @@
         pathEditing = false;
         sidebarHighlight = null;
         selectedFilePath = null;
+        selectedFilePaths = [];
+        replaceTarget = null;
         selectedFolderPath = null;
         newFolderOpen = false;
         newFolderName = '';
@@ -552,8 +670,10 @@
                 {@const isFocused = index === focusedIndex}
                 {@const isSelected =
                   mode === 'file'
-                    ? entry.path === selectedFilePath
-                    : entry.path === selectedFolderEntry?.path}
+                    ? isSelectedFile(entry.path)
+                    : mode === 'save'
+                      ? !entry.isDirectory && entry.name === saveFileName
+                      : entry.path === selectedFolderEntry?.path}
                 <li role="presentation">
                   <Button
                     id={`${uid}-entry-${index}`}
@@ -561,17 +681,17 @@
                     variant="ghost"
                     role="option"
                     tabindex={-1}
-                    aria-selected={mode === 'file'
+                    aria-selected={mode === 'file' || mode === 'save'
                       ? isSelected
                       : selectedFolderEntry
                         ? isSelected
                         : isFocused}
-                    aria-disabled={!entry.isDirectory && mode !== 'file'}
+                    aria-disabled={!entry.isDirectory && mode === 'directory'}
                     data-picker-index={index}
                     class={cn(
                       menuItem(),
                       pickerRowClass,
-                      entry.isDirectory || mode === 'file'
+                      entry.isDirectory || mode !== 'directory'
                         ? undefined
                         : 'cursor-not-allowed text-ghost',
                       isSelected || (mode === 'directory' && !selectedFolderEntry && isFocused)
@@ -582,11 +702,19 @@
                     )}
                     onclick={() => {
                       focusedIndex = index;
-                      if (!entry.isDirectory && mode === 'file') selectedFilePath = entry.path;
+                      if (!entry.isDirectory && mode === 'file') chooseFile(entry.path);
+                      else if (!entry.isDirectory && mode === 'save') setFileName(entry.name);
                       else if (entry.isDirectory && mode === 'directory')
                         selectedFolderPath = entry.path;
                     }}
-                    ondblclick={() => navigateInto(entry)}
+                    ondblclick={() => {
+                      if (entry.isDirectory) navigateInto(entry);
+                      else if (mode === 'file' && !multiple) onSelect(entry.path);
+                      else if (mode === 'save') {
+                        setFileName(entry.name);
+                        handleSave();
+                      }
+                    }}
                   >
                     <Fa
                       icon={entry.isDirectory ? faFolder : faFile}
@@ -612,6 +740,16 @@
       </div>
     </div>
 
+    {#if replaceTarget !== null}
+      <div
+        class="shrink-0 border-t border-border bg-warning/10 px-3 py-1.5 text-xs text-warning-ink"
+        role="alert"
+        data-testid="directory-picker-replace-confirm"
+      >
+        {m.onboarding_dirPicker_replaceConfirm_description({ name: saveFileName })}
+      </div>
+    {/if}
+
     {#if createError}
       <div
         class="shrink-0 border-t border-border bg-danger-background/10 px-3 py-1.5 text-xs text-danger/90"
@@ -624,7 +762,20 @@
     <footer
       class="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-muted/10 px-4 py-3"
     >
-      {#if mode === 'directory' && onCreateDirectory}
+      {#if mode === 'save'}
+        <Input
+          bind:ref={fileNameInputRef}
+          bind:value={() => fileName, (next) => setFileName(next)}
+          type="text"
+          class="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-sm text-foreground outline-none focus-visible:border-ring"
+          placeholder={m.onboarding_dirPicker_fileName_ariaLabel()}
+          aria-label={m.onboarding_dirPicker_fileName_ariaLabel()}
+          spellcheck="false"
+          autocomplete="off"
+          onkeydown={handleFileNameKeydown}
+        />
+      {/if}
+      {#if mode !== 'file' && onCreateDirectory}
         {#if newFolderOpen}
           <div class="flex min-w-0 flex-1 items-center gap-1.5">
             <Input

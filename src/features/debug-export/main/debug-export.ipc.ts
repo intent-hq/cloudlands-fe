@@ -4,7 +4,8 @@
  * IPC handlers for exporting all debug logs as a zip file.
  */
 
-import { ipcMain, dialog } from 'electron';
+import { ipcMain } from 'electron';
+import { showSaveDialog } from '../../../main/file-dialogs';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
@@ -47,7 +48,7 @@ export function registerDebugExportHandlers(): void {
           const suggestedFilename = `intent-debug-${dateStr}-${timeStr}.zip`;
 
           // Show save dialog
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: suggestedFilename,
             filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });

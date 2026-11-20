@@ -5,6 +5,7 @@
 //   diagnostic knob for the dependency-scan crashes tracked in
 //   intent-hq/intent#4617, not a fix; leave it unset for normal runs.
 import { viteHarnessCacheDir } from '../../test/vite-harness-cache.mjs';
+import { scriptArgs } from '../script-args.mjs';
 
 const DEFAULT_SANDBOX_WIDTH = 720;
 const DEFAULT_SANDBOX_TIMEOUT_MS = 30_000;
@@ -175,7 +176,8 @@ function normalizeBaseUrl(value) {
   return url.href;
 }
 
-export function parseSandboxArgs(argv) {
+export function parseSandboxArgs(args) {
+  const argv = scriptArgs(args);
   const scene = argv[0];
   if (!scene || scene.startsWith('--')) {
     throw new Error('A sandbox scene is required as the first argument.');

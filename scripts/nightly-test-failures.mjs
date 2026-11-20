@@ -13,6 +13,7 @@ import {
   SOURCE_REPO,
   trustedRun,
 } from './nightly-test-report.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 function save(directory, name, value) {
   writeFileSync(join(directory, name), `${JSON.stringify(value, null, 2)}\n`);
@@ -60,7 +61,7 @@ function writeScope(plan, env, directory) {
 export function main(argv, { env = process.env, createClient = githubClient } = {}) {
   let directory;
   try {
-    const [command, ...args] = argv;
+    const [command, ...args] = scriptArgs(argv);
     let runId;
     let runAttempt;
     let write = false;

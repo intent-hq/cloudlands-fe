@@ -19,6 +19,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { scriptArgs } from './script-args.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
@@ -87,7 +88,7 @@ function run({ args }: Command): Promise<{ code: number; output: string }> {
 async function main() {
   let options: ReturnType<typeof parseArgs>;
   try {
-    options = parseArgs(process.argv.slice(2));
+    options = parseArgs(scriptArgs());
   } catch (error) {
     console.error(`${(error as Error).message}\n${USAGE}`);
     return 2;

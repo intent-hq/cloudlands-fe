@@ -48,7 +48,7 @@ export interface ClientHostIdentity {
 export interface MainClientHelloParams extends ClientHostIdentity {
   clientId: string;
   name: string;
-  capabilities: { browserExec: true; desktopControl?: 1 };
+  capabilities: { browserExec: true; desktopControl?: 1; backendRelay: 1 };
 }
 
 let localHostIdentity: Pick<ClientHostIdentity, 'prettyHostname' | 'deviceKind'> = {};
@@ -104,6 +104,8 @@ export async function buildMainClientHelloParams(
     name: DESKTOP_CLIENT_NAME,
     capabilities: {
       browserExec: true,
+      // Serves `backends.relayCall` and sends `backends.report` (Assistant remote backends).
+      backendRelay: 1,
       ...(desktopNativeAvailable() ? { desktopControl: 1 as const } : {}),
     },
     ...getClientHostIdentity(),

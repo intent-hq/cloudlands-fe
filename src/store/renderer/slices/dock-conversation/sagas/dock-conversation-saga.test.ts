@@ -1100,8 +1100,16 @@ describe('ordinary file limit at send', () => {
 });
 
 describe('dock screen evidence through the canonical send', () => {
-  // A workspace daemon without raw retention: composites are pre-placed, raws never uploaded.
+  // Send-time raw retention is absent: place composites without associating retained raws.
+  // A desktop editor's separately durable original is covered by the editor handoff CT.
   beforeEach(() => {
+    // This suite scripts the daemon/send and capture seams, not the desktop editor.
+    // Identify its bridge as web so desktop-only editor preparation cannot place an
+    // original before these explicit send-time placement/retention assertions.
+    const bridge = window.electronAPI!;
+    const previousVersions = bridge.versions;
+    Object.assign(bridge, { versions: { ...previousVersions, electron: '0.0.0-browser' } });
+    cleanups.push(() => Object.assign(bridge, { versions: previousVersions }));
     __resetDockRetentionProbesForTests();
     let placed = 0;
     backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));

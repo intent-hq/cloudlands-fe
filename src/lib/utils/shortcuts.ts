@@ -318,6 +318,7 @@ export const SHORTCUT_CATEGORIES: Record<
         'global',
       ]),
       entry('panel.copy-browser-url', () => m.ui_shortcuts_copyBrowserUrl_label(), ['panel']),
+      entry('panel.tab-window', () => m.ui_shortcuts_tabWindow_label(), ['global']),
     ],
   },
   leader: {

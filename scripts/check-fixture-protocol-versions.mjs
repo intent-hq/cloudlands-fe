@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { scriptArgs } from './script-args.mjs';
 
 // Fake daemon hellos and daemon-status fixtures in tests must default their
 // protocolVersion to CURRENT_PROTOCOL_VERSION (src/test/current-protocol-version.ts,
@@ -119,7 +120,8 @@ export function collectFixtureFiles(root, directory = path.join(root, SCAN_ROOT)
   return files;
 }
 
-export function main(argv = process.argv.slice(2), root = process.cwd()) {
+export function main(args, root = process.cwd()) {
+  const argv = scriptArgs(args);
   if (argv.length) {
     console.error(
       `Unknown argument(s): ${argv.join(' ')}\nUsage: node scripts/check-fixture-protocol-versions.mjs`,

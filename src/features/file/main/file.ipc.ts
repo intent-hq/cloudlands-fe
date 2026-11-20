@@ -4,7 +4,8 @@
  * IPC layer for file operations.
  */
 
-import { ipcMain, dialog } from 'electron';
+import { ipcMain } from 'electron';
+import { showSaveDialog } from '../../../main/file-dialogs';
 import { promises as fs, createReadStream } from 'fs';
 import { createHash } from 'crypto';
 import path from 'path';
@@ -794,7 +795,7 @@ export function setupFileIPC() {
           const baseName = path.basename(expandedPath);
 
           if (stats.isDirectory()) {
-            const { filePath, canceled } = await dialog.showSaveDialog({
+            const { filePath, canceled } = await showSaveDialog(undefined, {
               defaultPath: `${baseName}.zip`,
               filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
             });
@@ -808,7 +809,7 @@ export function setupFileIPC() {
             return { success: true, data: { filePath } };
           }
 
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: baseName,
           });
           if (canceled || !filePath) {
@@ -856,7 +857,7 @@ export function setupFileIPC() {
           // window's connection must never retarget this download.
           const { backendId, client } = getBackendClientForIpcEvent(event);
           const config = client.getConfig();
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: fileName,
           });
           if (canceled || !filePath) {

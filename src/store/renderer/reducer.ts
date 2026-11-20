@@ -31,6 +31,7 @@ import { multiPanelContextReducer } from './slices/multi-panel-context/multi-pan
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
 import { powerReducer } from './slices/power/power-slice';
+import { devicePasskeysReducer } from './slices/device-passkeys/device-passkeys-slice';
 import { machineRailReducer } from './slices/machine-rail/machine-rail-slice';
 import { recentAgentsReducer } from './slices/recent-agents/recent-agents-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
@@ -66,6 +67,7 @@ import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo
 import { importableSessionsReducer } from './slices/importable-sessions/importable-sessions-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
+import { inAppFileDialogReducer } from './slices/in-app-file-dialog/in-app-file-dialog-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
@@ -169,6 +171,7 @@ export const reducers = {
   pip: pipReducer,
   dockConversation: dockConversationReducer,
   power: powerReducer,
+  devicePasskeys: devicePasskeysReducer,
   machineRail: machineRailReducer,
   recentAgents: recentAgentsReducer,
   specialists: specialistsReducer,
@@ -200,6 +203,7 @@ export const reducers = {
   importableSessions: importableSessionsReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
+  inAppFileDialog: inAppFileDialogReducer,
   linearAuth: linearAuthReducer,
   identity: identityReducer,
   voiceSettings: voiceSettingsReducer,

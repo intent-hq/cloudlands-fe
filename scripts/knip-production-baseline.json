@@ -102,8 +102,7 @@
     ],
     "src/features/backend/main/client-identity.ts": [
       "DESKTOP_CLIENT_NAME",
-      "__resetLocalHostIdentityForTesting",
-      "getClientHostIdentity"
+      "__resetLocalHostIdentityForTesting"
     ],
     "src/features/backend/main/connections-store.ts": [
       "connectionsStore.LOCAL_CONNECTION_LABEL"
@@ -175,9 +174,6 @@
     ],
     "src/features/browser/main/browser-exec-reverse.ts": [
       "BROWSER_EXEC_METHOD"
-    ],
-    "src/features/browser/main/embedded-browser-cdp-service.ts": [
-      "AGENT_DRAWING_IDLE_MS"
     ],
     "src/features/browser/main/workspace-forward-cleanup.service.ts": [
       "__resetWorkspaceForwardCleanupForTesting"
@@ -2170,8 +2166,7 @@
       "selectPanelColumnCountsByWorkspaceId",
       "selectPanelColumnStack",
       "selectPanelNavigatorItems",
-      "selectPanelRestoreStatusesByWorkspaceId",
-      "selectWorkspaceHasBrowserTabs"
+      "selectPanelRestoreStatusesByWorkspaceId"
     ],
     "src/store/renderer/slices/panel-layout/panel-layout-slice.ts": [
       "panel.MAX_SEEDED_CONTEXT_LINK_TABS",
@@ -2659,9 +2654,6 @@
     ],
     "src/features/backend/main/backend-connection.ts": [
       "RaceAttempt"
-    ],
-    "src/features/backend/main/client-identity.ts": [
-      "ClientHostIdentity"
     ],
     "src/features/backend/main/desktop-connections-store.ts": [
       "connectionsStore.ConnectionRecord"

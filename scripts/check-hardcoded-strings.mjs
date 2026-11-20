@@ -39,6 +39,7 @@ import {
   SCAFFOLDING_FILE_RE,
   SKIP_DIRS,
 } from './hardcoded-strings-scope.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 const ROOT = process.cwd();
 const DEFAULT_BASELINE = resolve(ROOT, 'scripts/hardcoded-strings-baseline.json');
@@ -678,7 +679,7 @@ function formatViolation(violation) {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseArgs(scriptArgs());
   const useDefaultDirs = options.dirs.length === 0;
   const dirs = useDefaultDirs ? ENFORCED_DIRS : options.dirs;
   const baselinePath =

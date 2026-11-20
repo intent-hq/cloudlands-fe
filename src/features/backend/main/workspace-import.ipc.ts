@@ -10,7 +10,8 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
+import { BrowserWindow, ipcMain, webContents } from 'electron';
+import { showOpenDialog as showFileOpenDialog } from '../../../main/file-dialogs';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { getRendererWebContents } from '../../../main/window-backend';
@@ -54,9 +55,7 @@ async function showOpenDialog(): Promise<string | undefined> {
   };
   // Window-modal when possible so the wizard underneath stays inert.
   const win = BrowserWindow.getFocusedWindow();
-  const { filePaths, canceled } = win
-    ? await dialog.showOpenDialog(win, options)
-    : await dialog.showOpenDialog(options);
+  const { filePaths, canceled } = await showFileOpenDialog(win, options);
   return canceled || filePaths.length === 0 ? undefined : filePaths[0];
 }
 

@@ -478,6 +478,13 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'transfer:cancel',
   'transfer:import-start',
   'transfer:import-cancel',
+  // In-app file dialogs (INTENT_IN_APP_PICKER): main owns the chooser request
+  // and lists the frontend host's disk only while that renderer has one open.
+  // They run only when the real preload reports preferInAppPicker; a mock
+  // would fake local files. file-dialogs.test.ts covers the main side.
+  'in-app-file-dialog:list-directory',
+  'in-app-file-dialog:create-directory',
+  'in-app-file-dialog:pick-files',
   // Resource details capture the original real preload bridge. Without it,
   // capture rejects before IPC; the mock client independently reports unavailable.
   // Mock bridging would bypass the original-connection admission and retirement.
@@ -501,6 +508,15 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // a bridge the slice default `isConsoleOwner: true` stands and no IPC is
   // attempted). A mock bridge would shadow the main-process tracker.
   'hardware-console:get-owner-status',
+  // Browser-panel passkey dialog answers go to the main-owned ceremony on the
+  // real preload bridge (passkey-dialog-service.ts). Main shows the dialog only
+  // in Electron; a mock bridge would invent an authenticator outcome.
+  'passkeys:dialog-respond',
+  // Settings → Passkeys reads and deletes device passkeys in the main-owned
+  // helper (device-passkeys-client.ts). Without the preload bridge the client
+  // reports device passkeys unavailable; a mock would invent stored keys.
+  'passkeys:device-list',
+  'passkeys:device-delete',
   // Experimental dock Labs setting: main owns and persists it and pushes
   // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
   // stays off; a mock bridge would create a second source of truth.

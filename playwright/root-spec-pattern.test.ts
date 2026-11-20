@@ -81,6 +81,7 @@ describe('root spec pattern', () => {
       'catalog-manual-review.capture.spec.ts',
       'current-main-baseline.spec.ts',
       'electron-browser-lifetime.spec.ts',
+      'electron-passkeys.spec.ts',
     ]);
   });
 });

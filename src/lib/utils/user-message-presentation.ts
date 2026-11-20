@@ -1,3 +1,4 @@
+import { captureMessagePresentation } from './capture-message-presentation';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
@@ -141,4 +142,13 @@ export function getPresentedUserMessageText(
     if (stripped.trim()) break;
   }
   return presentLeadingHeader(stripInternalDeliveryNotes(textParts.join(''), message.metadata));
+}
+
+/** Human-readable summaries/search only; raw editing and resend use getPresentedUserMessageText. */
+export function getUserMessagePreviewText(
+  message: AgentMessage,
+  ownerPrincipalId?: string | null,
+): string {
+  const text = getPresentedUserMessageText(message, ownerPrincipalId);
+  return message.role === 'user' ? captureMessagePresentation(text, message.metadata).text : text;
 }

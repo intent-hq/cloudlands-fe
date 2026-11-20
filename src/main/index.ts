@@ -18,6 +18,7 @@ import {
 } from './dock-global-shortcuts';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
 import { configureIntentProtocolClient } from './intent-protocol-client';
+import { disableChromiumFeatures } from './chromium-features';
 
 // CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
@@ -32,6 +33,10 @@ const { ipcMain, app, BrowserWindow } = require('electron');
 // PERF: Enable --expose-gc to allow manual GC
 // This must be done before app.isReady()
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
+
+// Turn off web APIs Electron ships without their browser UI (FedCM: Google
+// sign-in buttons wait forever on it). Must run before app.isReady().
+disableChromiumFeatures(app.commandLine);
 
 // EARLY: Redirect userData to the "intent-cloudlands" directory under the platform
 // appData dir (e.g. ~/Library/Application Support/intent-cloudlands on macOS), on all
@@ -142,6 +147,12 @@ setTimeout(() => {
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol, session } from 'electron';
+import {
+  inAppFileDialogsEnabled,
+  pickFilesInApp,
+  registerFileDialogHandlers,
+  showSaveDialog,
+} from './file-dialogs';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
@@ -154,6 +165,7 @@ import {
 } from './utils/graceful-shutdown-runner';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
+import { setupPasskeysIPC } from '../features/passkeys/main/passkeys.ipc';
 import { getAppWindows, isOffscreenWindow } from './offscreen-window';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
@@ -441,6 +453,7 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerCollaborationAuthHandlers } from '../features/collaboration-auth/main/collaboration-auth.ipc';
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
+import { registerTabWindowHandlers } from './tab-windows.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import {
   handleInviteDeepLink,
@@ -709,6 +722,8 @@ const bootFlow = app.whenReady().then(async () => {
 
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
+  // Browser-panel passkeys (Linux): the frame preload must exist before any webview loads.
+  setupPasskeysIPC();
   setupMetaClipboardShortcuts();
   setupRecentAgentPageKeys();
 
@@ -1311,7 +1326,7 @@ const bootFlow = app.whenReady().then(async () => {
           const suggestedFilename = `intent-debug-${dateStr}-${timeStr}.zip`;
 
           // Show save dialog
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: suggestedFilename,
             filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });
@@ -1358,7 +1373,7 @@ const bootFlow = app.whenReady().then(async () => {
             const suggestedFilename = `intentd-sample-${dateStr}-${timeStr}.txt`;
 
             // Show save dialog
-            const { filePath, canceled } = await dialog.showSaveDialog({
+            const { filePath, canceled } = await showSaveDialog(undefined, {
               defaultPath: suggestedFilename,
               filters: [{ name: m.dialog_text_files_filter(), extensions: ['txt'] }],
             });
@@ -1663,10 +1678,18 @@ const bootFlow = app.whenReady().then(async () => {
   );
   setupPowerStateIPC();
   await setupConfigIPC();
+  registerFileDialogHandlers(); // In-app file chooser (INTENT_IN_APP_PICKER)
+  if (inAppFileDialogsEnabled()) {
+    // Website uploads in browser tabs use the in-app picker too.
+    void import('../features/browser/main/embedded-browser-cdp-service').then(
+      ({ embeddedBrowserCdp }) => embeddedBrowserCdp.setInAppFileChooser(pickFilesInApp),
+    );
+  }
   registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations
+  registerTabWindowHandlers(); // Before any frame restores: saved tab windows register here
 
   // These handlers are called immediately on startup, so register them synchronously
   setupProviderModelsIPC(); // Needed for providers:get-models

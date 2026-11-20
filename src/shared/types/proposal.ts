@@ -7,6 +7,7 @@ export const PROPOSAL_KINDS = [
   'settings-change',
   'specialist-edit',
   'bulk-op',
+  'rpc-call',
 ] as const;
 
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
@@ -131,12 +132,29 @@ export type BulkOperationProposal = BaseProposal<
   }
 >;
 
+/** One held call on an Assistant `rpc-call` card (§5.5 "Assistant RPC proposals"). */
+export interface RpcCallProposalCall {
+  index: number;
+  backend: { id: string; name: string; local?: boolean };
+  method: string;
+  class?: string;
+  summary?: string;
+  params: unknown;
+}
+
+/** Daemon-held Assistant calls; resolved only with `agent.resolveRpcProposal`. */
+export type RpcCallProposal = BaseProposal<
+  'rpc-call',
+  { operation: 'rpc.call'; proposalId: string; calls: RpcCallProposalCall[] }
+>;
+
 export type Proposal =
   | WorkspaceCreateProposal
   | WorkspaceTransferProposal
   | SettingsChangeProposal
   | SpecialistEditProposal
-  | BulkOperationProposal;
+  | BulkOperationProposal
+  | RpcCallProposal;
 
 export interface ProposalActionDetail {
   /** Workspace owning the proposal; captured by the rendering surface. */

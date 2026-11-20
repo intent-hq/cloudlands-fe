@@ -271,18 +271,6 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsTabGroupsEnabled' },
   },
   {
-    path: 'labs.cloudMachines',
-    label: 'E2B cloud machines (Labs)',
-    description:
-      'Offer cloud machines (E2B, Northflank, Agent37): set them up in Settings → Machines, list their sandboxes, and start agents on a new one. Needs Remote agents. A backend with a cloud machine already saved offers them even when disabled, and agents already on E2B keep showing.',
-    category: 'labs',
-    type: 'boolean',
-    source: 'local-storage',
-    storageKey: 'labs:cloudMachinesEnabled',
-    defaultValue: false,
-    apply: { kind: 'redux-action', action: 'userPreferences/setLabsCloudMachinesEnabled' },
-  },
-  {
     path: 'labs.sshMachineSetup',
     label: 'SSH machine setup (Labs)',
     description:
@@ -912,6 +900,11 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
 ] as const;
+
+/** @internal Test seam: scripts/check-labs-settings-toggles.test.ts compares its parse with this list. */
+export function listAppSettingDefinitions(): readonly AppSettingDefinition[] {
+  return APP_SETTING_DEFINITIONS;
+}
 
 export function findAppSettingDefinition(path: string): AppSettingDefinition | undefined {
   return APP_SETTING_DEFINITIONS.find((definition) => definition.path === path);

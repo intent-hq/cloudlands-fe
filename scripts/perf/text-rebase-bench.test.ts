@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: ./text-rebase-bench.mjs, ./text-rebase-bench-lib.mjs
+// @verify-changed-triggers: ./text-rebase-bench.mjs, ./text-rebase-bench-lib.mjs, ../script-args.mjs
 //
 // The orchestration of `pnpm perf:text-rebase` — worktree add/remove, runner
 // spawn, exit codes — exercised against a throwaway git repository under the OS
@@ -69,6 +69,10 @@ describe.skipIf(!gitAvailable)('perf:text-rebase CLI', () => {
         readFileSync(path.join(scriptsDir, name)),
       );
     }
+    writeFileSync(
+      path.join(repo, 'scripts/script-args.mjs'),
+      readFileSync(path.join(scriptsDir, '../script-args.mjs')),
+    );
     writeFileSync(path.join(repo, 'scripts/perf/fake-runner.mjs'), FAKE_RUNNER);
     writeFileSync(path.join(repo, 'src/marker.txt'), 'checked out\n');
     writeFileSync(path.join(repo, '.gitignore'), '.wt-*/\n');

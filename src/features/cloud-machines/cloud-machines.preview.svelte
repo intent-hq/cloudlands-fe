@@ -22,7 +22,7 @@
   export const preview = definePreview<Props>({
     id: 'cloud-machines',
     title:
-      'Cloud machines (E2B, Northflank, Agent37) in Settings (Machines, or Nodes with named entries)',
+      'Cloud machines (E2B, Northflank, Agent37, Vercel) in Settings (Machines, or Nodes with named entries)',
     defaultState: 'connected',
     states: {
       'add-menu': sceneState('add-menu'),
@@ -36,7 +36,6 @@
       'key-rejected': sceneState('key-rejected'),
       'remove-in-use': sceneState('remove-in-use'),
       unsupported: sceneState('unsupported'),
-      'labs-off': sceneState('labs-off'),
       entries: sceneState('entries'),
       'entries-add': sceneState('entries-add'),
       'entries-key-rejected': sceneState('entries-key-rejected'),
@@ -53,6 +52,11 @@
       'agent37-setup-vm': sceneState('agent37-setup-vm'),
       'agent37-setup-error': sceneState('agent37-setup-error'),
       'agent37-providers': sceneState('agent37-providers'),
+      'vercel-add-menu': sceneState('vercel-add-menu'),
+      'vercel-setup': sceneState('vercel-setup'),
+      'vercel-setup-image': sceneState('vercel-setup-image'),
+      'vercel-setup-error': sceneState('vercel-setup-error'),
+      'vercel-providers': sceneState('vercel-providers'),
       'start-on-providers': {
         props: { scene: 'start-on-providers' },
         setup: () => setup('providers'),
@@ -171,12 +175,15 @@
       initialCloudSetup={scene.startsWith('setup') ||
         scene === 'entries-add' ||
         scene.startsWith('northflank-setup') ||
-        scene.startsWith('agent37-setup')}
+        scene.startsWith('agent37-setup') ||
+        scene.startsWith('vercel-setup')}
       initialCloudProvider={scene.startsWith('northflank-setup')
         ? 'northflank'
         : scene.startsWith('agent37-setup')
           ? 'agent37'
-          : 'e2b'}
+          : scene.startsWith('vercel-setup')
+            ? 'vercel'
+            : 'e2b'}
       initialCloudDraft={scene === 'northflank-setup-filled' || scene === 'northflank-setup-error'
         ? {
             name: 'Agents EU',
@@ -190,12 +197,23 @@
               instanceType: 'vm',
               region: 'ap-south',
             }
-          : undefined}
+          : scene === 'vercel-setup-image' || scene === 'vercel-setup-error'
+            ? {
+                name: 'Vercel Pro',
+                apiKey: 'preview-token-not-real',
+                teamId: 'team_preview0000000000000000',
+                projectId: 'prj_preview000000000000000000',
+                ...(scene === 'vercel-setup-image' ? { image: 'acme/images/intent-node' } : {}),
+              }
+            : undefined}
       initialCloudEdit={scene === 'entries-edit' ? 'e2b' : undefined}
       initialAddMenuOpen={scene === 'add-menu' ||
         scene === 'add-cloud-menu' ||
-        scene === 'agent37-add-menu'}
-      initialAddCloudOpen={scene === 'add-cloud-menu' || scene === 'agent37-add-menu'}
+        scene === 'agent37-add-menu' ||
+        scene === 'vercel-add-menu'}
+      initialAddCloudOpen={scene === 'add-cloud-menu' ||
+        scene === 'agent37-add-menu' ||
+        scene === 'vercel-add-menu'}
     />
   {/if}
 </div>

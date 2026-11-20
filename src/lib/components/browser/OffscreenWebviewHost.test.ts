@@ -16,6 +16,8 @@ const {
   navigationStore,
   agentDrawingStore,
   dispatchMock,
+  pagesModeStore,
+  mainOwnedOffscreenPageMock,
 } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
   function miniWritable<T>(initial: T) {
@@ -46,8 +48,19 @@ const {
     ),
     agentDrawingStore: miniWritable<Record<string, true>>({}),
     dispatchMock: vi.fn(),
+    pagesModeStore: miniWritable<'unknown' | 'webview' | 'main'>('webview'),
+    mainOwnedOffscreenPageMock: vi.fn((_node: HTMLElement, _entry: { url: string }) => ({
+      destroy: () => {},
+    })),
   };
 });
+
+// Labs: main-owned browser pages. Off (`webview`) unless a test turns it on.
+vi.mock('./main-owned-browser-page', () => ({ browserPagesMode: pagesModeStore }));
+vi.mock('./main-owned-offscreen-action', () => ({
+  mainOwnedOffscreenPage: mainOwnedOffscreenPageMock,
+  closeClosedTabPages: () => ({}),
+}));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelLayoutWorkspaces: () => layoutsStore,
@@ -62,6 +75,12 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectBrowserTabRecoveryRequests: () => recoveryStore,
   selectBrowserTabNavigations: () => navigationStore,
   selectBrowserTabsAgentDrawing: () => agentDrawingStore,
+  selectIsDragging: () => ({
+    subscribe: (run: (value: boolean) => void) => {
+      run(false);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -129,6 +148,8 @@ describe('OffscreenWebviewHost', () => {
     recoveryStore.set({});
     navigationStore.set({});
     agentDrawingStore.set({});
+    pagesModeStore.set('webview');
+    mainOwnedOffscreenPageMock.mockClear();
     dispatchMock.mockClear();
     dispatchMock.mockImplementation((action) => {
       const initial = tabStateReducer(undefined, { type: '@@INIT' });
@@ -320,6 +341,41 @@ describe('OffscreenWebviewHost', () => {
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'panelLayout/updateTabBrowserUrl',
       payload: ['ws-bg', 'tab-bg', 'https://example.test/recovered'],
+    });
+    expect(recoveryStore.get()).toEqual({});
+  });
+
+  it('recovers a self-closed main-owned page on a blank page, not its closing URL', async () => {
+    pagesModeStore.set('main');
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    expect(container.querySelector('webview')).toBeNull();
+    expect(mainOwnedOffscreenPageMock).toHaveBeenCalledTimes(1);
+    expect(mainOwnedOffscreenPageMock.mock.calls[0]?.[1]).toMatchObject({
+      tabId: 'tab-bg',
+      url: 'https://example.test/tab-bg',
+    });
+    // The page called window.close(): the box now reads as a dead guest.
+    const old = container.querySelector('[data-main-owned-offscreen-page]')!;
+    Object.assign(old, {
+      getWebContentsId: () => 10,
+      getURL: () => {
+        throw new Error('The page closed');
+      },
+    });
+
+    recoveryStore.set({ 'tab-bg': 'req-1' });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-main-owned-offscreen-page]')).not.toBe(old),
+    );
+    expect(mainOwnedOffscreenPageMock).toHaveBeenCalledTimes(2);
+    // Like the <webview> path: boot the replacement on a neutral page and
+    // wait for main to send the requested URL.
+    expect(mainOwnedOffscreenPageMock.mock.calls[1]?.[1]).toMatchObject({
+      tabId: 'tab-bg',
+      url: 'about:blank',
     });
     expect(recoveryStore.get()).toEqual({});
   });

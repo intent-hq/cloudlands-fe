@@ -39,7 +39,8 @@ export function registerExternalEditorsHandlers(): void {
       async (event, { path }) => {
         try {
           // Import dialog here to avoid issues with module loading
-          const { BrowserWindow, dialog: electronDialog } = await import('electron');
+          const { BrowserWindow } = await import('electron');
+          const { showOpenDialog } = await import('../../../main/file-dialogs');
 
           // Platform-specific dialog configuration
           let dialogOptions: Electron.OpenDialogOptions;
@@ -85,9 +86,7 @@ export function registerExternalEditorsHandlers(): void {
           }
 
           const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-          const result = ownerWindow
-            ? await electronDialog.showOpenDialog(ownerWindow, dialogOptions)
-            : await electronDialog.showOpenDialog(dialogOptions);
+          const result = await showOpenDialog(ownerWindow, dialogOptions);
 
           if (result.canceled || result.filePaths.length === 0) {
             return { success: false, error: m.externalEditors_ipc_noApplicationSelected_error() };

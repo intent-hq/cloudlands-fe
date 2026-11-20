@@ -18,9 +18,15 @@
 
 import { app, session, systemPreferences } from 'electron';
 import { openExternal } from './open-external';
+import { isSystemBrowserDisabled } from './web-link-routing';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
+import {
+  BROWSER_PANEL_PARTITION,
+  BROWSER_PROTOCOLS,
+  WEBVIEW_BLINK_FEATURES,
+} from '../shared/constants';
+import { arePasskeysEnabled } from '../features/passkeys/main/passkeys.ipc';
 import {
   HUD_ROUTE_PREFIX,
   findExistingHudWindow,
@@ -266,6 +272,9 @@ function applyBrowserGuestWebPreferences(webPreferences: Electron.WebPreferences
   webPreferences.allowRunningInsecureContent = false;
   // A browser page never hosts its own <webview>
   webPreferences.webviewTag = false;
+  // Expose `document.modelContext` so pages can offer WebMCP tools to the
+  // agent browser's listTools / callTool actions.
+  webPreferences.enableBlinkFeatures = WEBVIEW_BLINK_FEATURES;
 }
 
 /**
@@ -359,6 +368,11 @@ export function setupWebviewSecurity(): void {
       // when the webview attaches (rather than at app startup).
       if (partition === BROWSER_PANEL_PARTITION) {
         setupBrowserPanelSession();
+        // The passkey frame preload must also reach iframes, so a cross-origin
+        // iframe gets a NotAllowedError from main instead of Chromium's own,
+        // UI-less WebAuthn. The guest stays sandboxed with context isolation
+        // and no Node.js; this only lets session preloads run in subframes.
+        if (arePasskeysEnabled()) webPreferences.nodeIntegrationInSubFrames = true;
       }
 
       logger.debug('Webview security settings enforced', {
@@ -441,7 +455,23 @@ export function setupWebviewSecurity(): void {
     let allowedHudPopupBackendId: string | null = null;
 
     // Handle new window creation (popups) from webviews and app windows
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition, postBody }) => {
+      // Intent OS: a plain new-tab link (target=_blank) opens as a browser tab in
+      // the app, not as a separate window. Scripted popups ('new-window', e.g.
+      // OAuth) and POST submissions (form/SAML, which a URL alone cannot carry)
+      // keep the popup window.
+      if (
+        isBrowserGuest(contents) &&
+        isSystemBrowserDisabled() &&
+        !postBody &&
+        (disposition === 'foreground-tab' || disposition === 'background-tab') &&
+        /^https?:/i.test(url)
+      ) {
+        openExternal(url).catch((err: Error) => {
+          logger.warn('Failed to open new-tab link in app', { error: err.message });
+        });
+        return { action: 'deny' };
+      }
       if (isBrowserGuest(contents)) {
         logger.debug('Webview requested new window', { url: url.substring(0, 100) });
 
@@ -743,7 +773,8 @@ async function grantMicrophoneAccess(): Promise<boolean> {
  *    are blocked as third-party cookies.
  *
  * 2. top-level-storage-access: Allows top-level sites to request cookie access on behalf
- *    of embedded content. Used by federated login (FedCM) and some SSO flows.
+ *    of embedded content. Used by some federated SSO flows. (FedCM itself is turned
+ *    off app-wide: Electron has no account chooser for it; see chromium-features.ts.)
  *
  * 3. clipboard-read/write: Standard copy/paste support.
  *

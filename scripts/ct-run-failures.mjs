@@ -25,6 +25,7 @@ import {
   parseCtJobs,
   requiredLaneLog,
 } from './ct-run-failures-lib.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 export const DEFAULT_REPO = 'intent-hq/cloudlands-fe';
 const RUN_URL = /\/actions\/runs\/(\d+)(?:[/?#]|$)/;
@@ -51,7 +52,8 @@ const ARTIFACT_GONE =
   /error downloading .*: HTTP (?:404|410)\b|no artifact matches any of the names or patterns provided|no valid artifacts found to download/;
 
 /** Parse argv (without node/script) into options; throws `UsageError`. */
-export function parseArgs(argv) {
+export function parseArgs(args) {
+  const argv = scriptArgs(args);
   const opts = {
     runId: undefined,
     repo: DEFAULT_REPO,

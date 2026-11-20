@@ -163,7 +163,7 @@ describe('client-identity (REV-2 main-client hello params)', () => {
       clientId: await getOrCreateClientId(),
       name: 'Intent Desktop',
       hostname: os.hostname(),
-      capabilities: { browserExec: true },
+      capabilities: { browserExec: true, backendRelay: 1 },
     });
     // The triple learned from the local daemon is absent until captured —
     // never defaulted, so the daemon's client row stays truthful.
@@ -191,7 +191,7 @@ describe('client-identity (REV-2 main-client hello params)', () => {
     // `hostname` is this process's OS hostname, not the daemon-reported one:
     // the daemon's row identifies the machine the APP runs on.
     expect(params.hostname).toBe(os.hostname());
-    expect(params.capabilities).toEqual({ browserExec: true });
+    expect(params.capabilities).toEqual({ browserExec: true, backendRelay: 1 });
   });
 
   it('drops an unknown deviceKind and a blank prettyHostname instead of forwarding them', async () => {

@@ -17,6 +17,7 @@
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { workspaceSurfaceLink } from '$features/navigation/link-source';
   import { notify } from '$lib/components/patterns/notify';
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
@@ -76,7 +77,12 @@
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
 
-  import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectFocusedPanel,
+    selectPanelLayoutRoot,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { openTabInOwnWindowRequested } from '$store/renderer/slices/tab-window/tab-window-slice';
+  import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
 
   // Onboarding
   import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
@@ -706,6 +712,14 @@
       // Switch to agents tab in TabbedSidebar (Activity tab was removed)
       appStore.dispatch(setSidebarActiveTab(workspaceId, 'agents'));
     },
+    onOpenTabWindow: () => {
+      if (!tabWindowsAvailable()) return;
+      const focused = selectFocusedPanel.select(appStore.state, panelLayoutId);
+      if (!focused?.activeTabId) return;
+      appStore.dispatch(
+        openTabInOwnWindowRequested(panelLayoutId, workspaceId, focused.activeTabId),
+      );
+    },
     onMaximizePanel: () => {
       // Toggle maximize: hide sidebar and dock for focus mode
       const state = appStore.state;
@@ -914,6 +928,7 @@
       bind:this={surfaceElement}
       class="h-full min-h-0 w-full overflow-hidden"
       data-workspace-surface={workspaceId}
+      use:workspaceSurfaceLink={workspaceId}
       data-loading={!$workspace}
     >
       <WorkspaceSurfaceLoadBoundary

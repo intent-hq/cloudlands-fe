@@ -30,6 +30,12 @@ const edge = vi.hoisted(() => ({
   opens: [] as string[],
   frames: undefined as unknown as EventEmitter,
 }));
+vi.mock('../../../../main/local-prefs', () => ({
+  getLocalPref: async () => undefined,
+  hasLocalPref: async () => false,
+  setLocalPref: async () => {},
+  deleteLocalPref: async () => {},
+}));
 vi.mock('../../../../main/window', async () => import('../../../../main/window-backend'));
 vi.mock('../client-identity', () => ({
   buildMainClientHelloParams: async () => ({ clientId: 'lifecycle-control' }),
@@ -250,6 +256,7 @@ beforeEach(() => {
   // This fixture joins main-pool owners only. The macOS keychain engine is
   // auxiliary and cannot produce a clean retirement receipt (intent#6837).
   Object.defineProperty(process, 'platform', { value: 'linux' });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
   vi.resetModules();
   vi.stubEnv('INTENTD_SOCKET', '/controlled-lifecycle.sock');
   edge.sockets = [];
@@ -273,14 +280,30 @@ beforeEach(() => {
   vi.mocked(ipcMain.handle).mockClear();
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
-afterEach(() => {
+async function cleanupPoolFixture() {
+  // Drain controlled storage/transport continuations, then execute pending
+  // reports and the Linux-inert keychain debounce while the pool still owns
+  // its clients. Never discard pending callbacks at the fixture boundary.
+  await vi.advanceTimersByTimeAsync(0);
+  await vi.runOnlyPendingTimersAsync();
   pool?.disposeAllBackendClients();
-  pool = undefined;
   for (const socket of edge.sockets) socket.originalClose?.();
-  edge.frames.removeAllListeners();
-  vi.unstubAllEnvs();
-  vi.useRealTimers();
-  Object.defineProperty(process, 'platform', { value: hostPlatform });
+  await vi.advanceTimersByTimeAsync(0);
+  const remainingTimers = vi.getTimerCount();
+  expect(remainingTimers).toBe(0);
+  return remainingTimers;
+}
+afterEach(async () => {
+  try {
+    await cleanupPoolFixture();
+  } finally {
+    pool = undefined;
+    for (const socket of edge.sockets) socket.originalClose?.();
+    edge.frames.removeAllListeners();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    Object.defineProperty(process, 'platform', { value: hostPlatform });
+  }
 });
 async function load(enrolled = true) {
   pool = await import('../backend.ipc');
@@ -2538,4 +2561,27 @@ describe('M original admission races', () => {
     expect(final.outcome).toBe('clean');
     expect((await member).outcome).toBe('clean');
   });
+});
+
+it('drains old fixture work before a fresh pool retires without late sockets', async () => {
+  const old = await load(false);
+  await connection(await old.pool.connectBackendClient('remote-A'));
+  const remainingTimers = await cleanupPoolFixture();
+  expect(edge.writes.some((write) => write.endsWith(':backends.report'))).toBe(true);
+  expect(remainingTimers).toBe(0);
+  const oldCount = edge.sockets.length;
+  expect(edge.sockets.every((socket) => socket.destroyed)).toBe(true);
+  vi.useRealTimers();
+  await settledTurn();
+  expect(edge.sockets).toHaveLength(oldCount);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+  vi.resetModules();
+  const current = await load();
+  await connection(current.pool.getLocalBackendClient());
+  await vi.advanceTimersByTimeAsync(0);
+  const receipt = await current.lifecycle.retire(fence());
+  expect(receipt.outcome).toBe('clean');
+  expect(edge.sockets).toHaveLength(oldCount + 1);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(edge.sockets).toHaveLength(oldCount + 1);
 });

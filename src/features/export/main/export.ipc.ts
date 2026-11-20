@@ -4,7 +4,8 @@
  * IPC handlers for exporting chat conversations to HTML files.
  */
 
-import { ipcMain, dialog } from 'electron';
+import { ipcMain } from 'electron';
+import { showSaveDialog } from '../../../main/file-dialogs';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
@@ -58,7 +59,7 @@ export function registerChatExportHandlers(): void {
           const suggestedFilename = `${validated.title}-${dateStr}.html`;
 
           // Show save dialog
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: suggestedFilename,
             filters: [{ name: m.dialog_html_files_filter(), extensions: ['html'] }],
           });

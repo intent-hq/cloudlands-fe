@@ -9,10 +9,7 @@ import {
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { store } from '$store/renderer/store';
-import {
-  selectLabsCloudMachinesEnabled,
-  selectLabsRemoteAgentsEnabled,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
 import { cloudProviderCopy } from './cloud-machines-format';
@@ -28,20 +25,17 @@ type State = typeof store.state;
 
 /**
  * Cloud setup, the sandbox list and the Start On row show while the Labs
- * "Remote agents" flag is on and the backend advertises `cloudMachines: 1`,
- * once "E2B cloud machines" is on or the backend has a saved entry (the flag
- * is kept per app). Agents already on a cloud machine render without it.
+ * "Remote agents" flag is on and the backend advertises `cloudMachines: 1`.
+ * Agents already on a cloud machine render without it.
  */
 export const selectCloudMachinesVisible = store.createSelector(
   (state) =>
     selectLabsRemoteAgentsEnabled.select(state) &&
     state.remoteMachines?.supported === true &&
-    state.cloudMachines?.supported === true &&
-    (selectLabsCloudMachinesEnabled.select(state) ||
-      Object.keys(state.cloudMachines?.providers ?? {}).length > 0),
+    state.cloudMachines?.supported === true,
 );
 
-/** The providers a new entry can use; Northflank and Agent37 need named entries. */
+/** The providers a new entry can use; all but E2B need named entries. */
 export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
   const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
   return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
@@ -155,7 +149,9 @@ export function startOnCloud(state: State): StartOnCloud | null {
           ? cloudProviderName(entry.provider)
           : entry.provider === 'northflank'
             ? m.cloudMachines_startOn_northflank_label({ name: entry.name })
-            : m.cloudMachines_startOn_agent37_label({ name: entry.name }),
+            : entry.provider === 'agent37'
+              ? m.cloudMachines_startOn_agent37_label({ name: entry.name })
+              : m.cloudMachines_startOn_vercel_label({ name: entry.name }),
     unavailableReason:
       entry.state === 'key-rejected' ? cloudProviderCopy(entry.provider).keyRejected : null,
     needsProfile: !cloudEntrySendsConfig(state, entry),

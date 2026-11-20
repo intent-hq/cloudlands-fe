@@ -22,6 +22,8 @@ export interface CloudFormDraft {
   projectId?: string;
   instanceType?: Agent37InstanceType;
   region?: Agent37Region;
+  teamId?: string;
+  image?: string;
 }
 
 /** The form key of an entry that is not saved yet. */

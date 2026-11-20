@@ -22,7 +22,11 @@ const NORTHFLANK_DASHBOARD_URL = 'https://app.northflank.com';
 /** The Agent37 dashboard: keys, wallet, instances and templates. */
 const AGENT37_DASHBOARD_URL = 'https://www.agent37.com/dashboard/cloud';
 
+/** Vercel's dashboard: it opens the team last used, with its projects and tokens. */
+const VERCEL_DASHBOARD_URL = 'https://vercel.com/dashboard';
+
 export function cloudDashboardUrl(provider: CloudProviderKind = 'e2b'): string {
+  if (provider === 'vercel') return VERCEL_DASHBOARD_URL;
   return provider === 'northflank'
     ? NORTHFLANK_DASHBOARD_URL
     : provider === 'agent37'
@@ -31,8 +35,8 @@ export function cloudDashboardUrl(provider: CloudProviderKind = 'e2b'): string {
 }
 
 /**
- * A provider's own words for its machines: E2B runs sandboxes, Northflank
- * services, Agent37 instances.
+ * A provider's own words for its machines: E2B and Vercel run sandboxes,
+ * Northflank services, Agent37 instances.
  */
 export function cloudProviderCopy(provider: CloudProviderKind) {
   switch (provider) {
@@ -67,6 +71,22 @@ export function cloudProviderCopy(provider: CloudProviderKind) {
         creating: m.cloudMachines_agent37_start_creating(),
         startFailed: m.cloudMachines_agent37_startFailure_title(),
         startUnknown: m.cloudMachines_agent37_startFailure_unknown_cause(),
+      };
+    case 'vercel':
+      return {
+        keyRejected: m.cloudMachines_vercel_state_tokenRejected_label(),
+        unreachable: m.cloudMachines_vercel_state_unreachable_label(),
+        ownerOnly: m.cloudMachines_vercel_error_ownerOnly(),
+        saved: m.cloudMachines_vercel_saved_toast(),
+        listTitle: m.cloudMachines_vercel_sandboxes_title(),
+        listSummary: m.cloudMachines_sandboxes_summary,
+        dashboard: m.cloudMachines_vercel_dashboard_label(),
+        dashboardOpen: m.cloudMachines_vercel_dashboardOpen_label(),
+        deleteTitle: m.cloudMachines_delete_confirmTitle,
+        deleteDescription: m.cloudMachines_vercel_delete_confirm_description(),
+        creating: m.cloudMachines_vercel_start_creating(),
+        startFailed: m.cloudMachines_vercel_startFailure_title(),
+        startUnknown: m.cloudMachines_vercel_startFailure_unknown_cause(),
       };
     default:
       return {
@@ -314,6 +334,60 @@ function agent37ErrorText(error: CloudMachineErrorData): { title: string; descri
   }
 }
 
+/** A Vercel error in its own words: its token, team, project and image. */
+function vercelErrorText(error: CloudMachineErrorData): { title: string; description: string } {
+  switch (error.code) {
+    case 'cloud-profile-required':
+      return {
+        title: m.cloudMachines_vercel_error_profileRequired_title(),
+        description: m.cloudMachines_vercel_error_profileRequired_description(),
+      };
+    case 'cloud-quota':
+      return {
+        title: m.cloudMachines_vercel_error_quota_title(),
+        description:
+          error.limit === 'plan'
+            ? m.cloudMachines_vercel_error_quotaPlan_description()
+            : error.limit === 'rate'
+              ? m.cloudMachines_vercel_error_quotaRate_description()
+              : m.cloudMachines_vercel_error_quotaConcurrency_description(),
+      };
+    case 'cloud-machine-unavailable': {
+      const unavailable = (description: string) => ({
+        title: m.cloudMachines_vercel_error_unavailable_title(),
+        description,
+      });
+      switch (error.reason) {
+        case 'not-configured':
+          return unavailable(m.cloudMachines_vercel_error_notConfigured_description());
+        case 'key-rejected':
+          return {
+            title: m.cloudMachines_vercel_error_keyRejected_title(),
+            description: m.cloudMachines_vercel_error_keyRejected_description(),
+          };
+        case 'project-missing':
+          return unavailable(m.cloudMachines_vercel_error_projectMissing_description());
+        case 'permission-denied':
+          return {
+            title: m.cloudMachines_vercel_error_permissionDenied_title(),
+            description: m.cloudMachines_vercel_error_permissionDenied_description(),
+          };
+        case 'template-missing':
+          return unavailable(m.cloudMachines_vercel_error_imageMissing_description());
+        case 'sandbox-lost':
+          return {
+            title: m.cloudMachines_vercel_error_sandboxLost_title(),
+            description: m.cloudMachines_vercel_error_sandboxLost_description(),
+          };
+        case 'bootstrap-failed':
+          return unavailable(m.cloudMachines_vercel_error_bootstrapFailed_description());
+        default:
+          return unavailable(m.cloudMachines_vercel_error_apiError_description());
+      }
+    }
+  }
+}
+
 /**
  * Title and description of a cloud error, for notices and form errors. The
  * error's own `provider` wins; else `provider`, the entry the caller shows.
@@ -328,6 +402,7 @@ export function cloudErrorText(
   const kind = error.provider ?? provider;
   if (kind === 'northflank') return northflankErrorText(error);
   if (kind === 'agent37') return agent37ErrorText(error);
+  if (kind === 'vercel') return vercelErrorText(error);
   switch (error.code) {
     case 'cloud-profile-required':
       return {
