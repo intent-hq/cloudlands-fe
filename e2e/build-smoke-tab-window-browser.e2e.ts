@@ -293,7 +293,7 @@ test.describe('Build Smoke — browser after a tab window', () => {
 /** Open the active browser tab `tabId` in its own window by the shortcut or the tab menu. */
 async function openInOwnWindow(tabId: string, how: 'shortcut' | 'menu'): Promise<void> {
   if (how === 'shortcut') {
-    await page.keyboard.press('Control+Shift+Enter');
+    await page.keyboard.press('ControlOrMeta+Shift+Enter');
     return;
   }
   // The tab's context menu (the tab bar item may be collapsed in a one-tab panel).
