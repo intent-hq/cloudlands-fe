@@ -205,6 +205,15 @@ describe('Labs settings toggle guard', () => {
     ).toEqual([expect.stringMatching(/:\d+ switch labs-browser-pages has no labs schema entry/)]);
   });
 
+  it('flags a Labs page entry whose kind is not a literal', () => {
+    const constantKind = toggle('labs-extra', 'setLabsExtraEnabled').map((line) =>
+      line.replace("kind: 'switch'", 'kind: SWITCH_KIND'),
+    );
+    expect(check({ schema: schema(tabGroups), page: page(tabGroupsSwitch, constantKind) })).toEqual(
+      [expect.stringMatching(/LabsSettings\.svelte:\d+ cannot read the kind `SWITCH_KIND`/)],
+    );
+  });
+
   it('counts a non-labs schema entry as no labs schema entry', () => {
     const themeSwitch = toggle('labs-theme', 'setPauseAnimations');
     expect(

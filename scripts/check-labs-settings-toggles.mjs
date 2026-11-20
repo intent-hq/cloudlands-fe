@@ -166,6 +166,30 @@ export function findLabsSettings(schemaText) {
 }
 
 const ID_PATTERN = /\bid:\s*(['"`])([^'"`]+)\1/;
+const ANY_KIND_PATTERN = /\bkind:\s*([^,}\s]+)/g;
+const LITERAL_PATTERN = /^(['"`])[^'"`]*\1$/;
+
+// Page `kind:` values that are not string literals (`kind: SWITCH_KIND`): the switch
+// scan reads literals only, so these would hide a switch. `{ value, line }`.
+export function findUnreadableKinds(pageText) {
+  const unreadable = [];
+  for (const [, script, offset] of scriptBlocks(pageText)) {
+    for (const match of script.matchAll(ANY_KIND_PATTERN)) {
+      if (!LITERAL_PATTERN.test(match[1])) {
+        unreadable.push({ value: match[1], line: lineOf(pageText, offset + match.index) });
+      }
+    }
+  }
+  return unreadable;
+}
+
+// `[block, script, offset of the script text in the page]` for every script block.
+const scriptBlocks = (pageText) =>
+  [...pageText.matchAll(SCRIPT_BLOCK_PATTERN)].map((block) => [
+    block[0],
+    block[1],
+    block.index + block[0].indexOf('>') + 1,
+  ]);
 
 const isShown = (own) => {
   if (!WHEN_PATTERN.test(own)) return true;
@@ -177,10 +201,7 @@ const isShown = (own) => {
 // `{ id, shown, actions: [{ creator, specifier }], line }` (`specifier` is null when the
 // creator is not a named import).
 export function findLabsSwitches(pageText) {
-  const blocks = [...pageText.matchAll(SCRIPT_BLOCK_PATTERN)].map((block) => ({
-    script: block[1],
-    offset: block.index + block[0].indexOf('>') + 1,
-  }));
+  const blocks = scriptBlocks(pageText).map(([, script, offset]) => ({ script, offset }));
   const imports = new Map(blocks.flatMap(({ script }) => [...namedImports(script)]));
   const switches = [];
   for (const { script, offset } of blocks) {
@@ -265,6 +286,11 @@ export function checkLabsSettingsToggles(
     } else if (typeof reason !== 'string' || !reason.trim()) {
       problems.push(`${entry} needs a reason why the setting stays hidden`);
     }
+  }
+  for (const { value, line } of findUnreadableKinds(page)) {
+    problems.push(
+      `${LABS_PAGE_SOURCE}:${line} cannot read the kind \`${value}\`; write the entry kind as a string literal`,
+    );
   }
   const listedSwitches = new Set();
   const matchable = settings.filter((setting) => setting.path && setting.actionCreator);
