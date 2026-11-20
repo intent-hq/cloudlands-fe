@@ -274,14 +274,14 @@
                 class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
               >
                 <DiscussionMessageBody
-                body={bodyParts.text}
-                workspaceId={workspaceId ?? ''}
-                {sourcePanelId}
-                {agentMentions}
-                {mentionNames}
-                {agentNames}
-                mode="text"
-              />
+                  body={bodyParts.text}
+                  workspaceId={workspaceId ?? ''}
+                  {sourcePanelId}
+                  {agentMentions}
+                  {mentionNames}
+                  {agentNames}
+                  mode="text"
+                />
               </p>{/if}
             {#if bodyParts.images.length}<div class:mt-2={!!bodyParts.text.trim()}>
                 <DiscussionMessageImages images={bodyParts.images} />

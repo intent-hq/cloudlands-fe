@@ -128,7 +128,7 @@
 </script>
 
 <div
-  class="flex h-[720px] w-full min-w-0 max-w-[420px] flex-col overflow-hidden rounded-[10px] border border-border bg-background"
+  class="flex h-180 w-full min-w-0 max-w-105 flex-col overflow-hidden rounded-lg border border-border bg-background"
 >
   <DiscussionThread
     {workspaceId}

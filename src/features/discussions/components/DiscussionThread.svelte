@@ -2,7 +2,6 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
-  import { Input } from '$lib/components/ui/input';
   import { composerMinHeight } from '$lib/components/chat/composer-height';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
@@ -15,13 +14,9 @@
     faXmark,
     faReply,
     faAt,
-    faImage,
   } from '@fortawesome/free-solid-svg-icons';
-  import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify } from '$lib/components/patterns/notify';
   import {
-    discussionImageMimeType,
     isDiscussionImageFile,
     joinDiscussionBody,
     splitDiscussionBody,
@@ -32,6 +27,8 @@
   import DiscussionAgentActivity from './DiscussionAgentActivity.svelte';
   import DiscussionSkeleton from './DiscussionSkeleton.svelte';
   import DiscussionMicrophone from './DiscussionMicrophone.svelte';
+  import DiscussionComposerImages from './DiscussionComposerImages.svelte';
+  import DiscussionImagePicker from './DiscussionImagePicker.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiscussionMentionPicker from './DiscussionMentionPicker.svelte';
   import {
@@ -45,10 +42,7 @@
     type DiscussionAgentMention,
     type DiscussionAgentNames,
   } from '../discussion-agent-mentions';
-  import {
-    discussionMessageParts,
-    discussionReplyFirstLine,
-  } from '../discussion-message-content';
+  import { discussionMessageParts, discussionReplyFirstLine } from '../discussion-message-content';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import {
     discussionActivityAnswered,
@@ -311,7 +305,6 @@
     onDraftChange(joinDiscussionBody(text, draftParts.images));
   }
   let uploads = $state<{ id: string; file: File }[]>([]);
-  let imageInput: HTMLInputElement | null = $state(null);
   async function attachImages(files: readonly File[]) {
     const target = workspaceId;
     const conversation = conversationId;
@@ -1024,36 +1017,12 @@
           onSelect={selectMention}
         />
       {/if}
-      {#if draftParts.images.length || uploads.length}
-        <div class="mb-2 flex flex-wrap gap-2" data-discussion-composer-images>
-          {#each draftParts.images as image (image.url)}
-            <AttachmentPreview
-              id={image.url}
-              name={image.name}
-              type={discussionImageMimeType(image.url)}
-              imageUrl={image.url}
-              variant="thumbnail"
-              thumbnailClass="size-14"
-              disabled={!(canCompose ?? canSend)}
-              onRemove={(canCompose ?? canSend) ? removeImage : undefined}
-            />
-          {/each}
-          {#each uploads as upload (upload.id)}
-            <div class="relative" aria-busy="true">
-              <AttachmentPreview
-                id={upload.id}
-                name={upload.file.name}
-                type={upload.file.type}
-                file={upload.file}
-                variant="thumbnail"
-                thumbnailClass="size-14 opacity-50"
-                disabled
-              />
-              <IntentMarkLoader size={16} class="absolute inset-0 m-auto" />
-            </div>
-          {/each}
-        </div>
-      {/if}
+      <DiscussionComposerImages
+        images={draftParts.images}
+        {uploads}
+        disabled={!(canCompose ?? canSend)}
+        onRemove={removeImage}
+      />
       <div class="flex min-w-0 flex-1 flex-col gap-1">
         <div class="relative">
           <!-- Negative margins keep padded highlights aligned with the textarea text. -->
@@ -1158,28 +1127,10 @@
                 onclick={toggleMentions}><Fa icon={faAt} size="sm" /></Button
               >
             {/if}
-            {#if workspaceId}
-              <Input
-                bind:ref={imageInput}
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                multiple
-                class="hidden"
-                onchange={(event: Event & { currentTarget: HTMLInputElement }) => {
-                  void attachImages([...(event.currentTarget.files ?? [])]);
-                  event.currentTarget.value = '';
-                }}
-              />
-              <Button
-                variant="ghost"
-                size="icon-sm"
+            {#if workspaceId}<DiscussionImagePicker
                 disabled={!(canCompose ?? canSend)}
-                aria-label={m.workspace_discussion_attachImage_label()}
-                tooltip={m.workspace_discussion_attachImage_label()}
-                onmousedown={(event) => event.preventDefault()}
-                onclick={() => imageInput?.click()}><Fa icon={faImage} size="sm" /></Button
-              >
-            {/if}
+                onSelect={(files) => void attachImages(files)}
+              />{/if}
             {#if composerActions}{@render composerActions()}{:else if workspaceId}
               <DiscussionReferencePicker
                 {workspaceId}
