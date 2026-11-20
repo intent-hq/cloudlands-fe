@@ -271,6 +271,9 @@ function applyBrowserGuestWebPreferences(webPreferences: Electron.WebPreferences
   webPreferences.allowRunningInsecureContent = false;
   // A browser page never hosts its own <webview>
   webPreferences.webviewTag = false;
+  // Expose `document.modelContext` so pages can offer WebMCP tools to the
+  // agent browser's listTools / callTool actions.
+  webPreferences.enableBlinkFeatures = WEBVIEW_BLINK_FEATURES;
 }
 
 /**
@@ -357,10 +360,6 @@ export function setupWebviewSecurity(): void {
       });
 
       applyBrowserGuestWebPreferences(webPreferences);
-
-      // Expose `document.modelContext` so pages can offer WebMCP tools to the
-      // agent browser's listTools / callTool actions.
-      webPreferences.enableBlinkFeatures = WEBVIEW_BLINK_FEATURES;
 
       // If this webview uses the browser panel partition, ensure its session
       // has the OAuth-friendly permission handlers configured.
