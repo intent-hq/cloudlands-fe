@@ -10,6 +10,8 @@
  */
 
 import type { FrameMachineSession, FrameSession } from '../shared/types/machine-rail';
+import type { PanelTab } from '../store/renderer/slices/panel-layout/panel-layout-types';
+import { isTabWindowId, tabWindowRoute, type TabWindowRecord } from '../shared/types/tab-window';
 
 export const WINDOW_FRAMES_VERSION = 1;
 
@@ -37,6 +39,57 @@ function readRoute(value: unknown): string | undefined {
   return typeof value === 'string' && value.startsWith('/') ? value : undefined;
 }
 
+/** Most characters in a saved id (workspace, layout, tab). */
+const MAX_SAVED_ID_LENGTH = 256;
+
+function readId(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_SAVED_ID_LENGTH
+    ? value
+    : null;
+}
+
+/**
+ * A saved tab window's record, or null when it is not one: a valid id, the
+ * workspace and layout it came from, and a tab with an id and a type. The
+ * tab's other fields are the renderer's own and pass through.
+ */
+function readTabWindow(value: unknown): TabWindowRecord | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { tabWindowId, workspaceId, sourceLayoutId, tab } = value as Record<string, unknown>;
+  if (!isTabWindowId(tabWindowId)) return null;
+  const workspace = readId(workspaceId);
+  const layout = readId(sourceLayoutId);
+  if (!workspace || !layout || typeof tab !== 'object' || tab === null) return null;
+  const { id, type } = tab as Record<string, unknown>;
+  if (!readId(id) || typeof type !== 'string' || type === '') return null;
+  const { tabWindowId: _marker, ...rest } = tab as PanelTab;
+  return { tabWindowId, workspaceId: workspace, sourceLayoutId: layout, tab: rest };
+}
+
+/**
+ * A saved tab window frame made safe to restore: one machine, on its tab
+ * window page, with its record. Null when the record or machine is not valid.
+ */
+function normalizeTabWindowFrame(
+  record: Record<string, unknown>,
+  bounds: Bounds,
+  filter: FrameSessionFilter,
+): FrameSession | null {
+  const tabWindow = readTabWindow(record.tabWindow);
+  if (!tabWindow || !Array.isArray(record.machines)) return null;
+  const first = record.machines[0] as Record<string, unknown> | undefined;
+  const id = first && typeof first === 'object' ? readId(first.id) : null;
+  if (!id || !filter.isSavedMachine(id)) return null;
+  const frame: FrameSession = {
+    bounds,
+    machines: [{ id, route: tabWindowRoute(tabWindow.tabWindowId) }],
+    selectedId: id,
+    tabWindow,
+  };
+  if (record.isFullScreen === true) frame.isFullScreen = true;
+  return frame;
+}
+
 /**
  * A frame made safe to restore, or null when nothing restorable is left: valid
  * bounds, only saved machines, no duplicates, routes that are app paths, and a
@@ -49,6 +102,7 @@ function normalizeFrameSession(raw: unknown, filter: FrameSessionFilter): FrameS
   const record = raw as Record<string, unknown>;
   const bounds = readBounds(record.bounds);
   if (!bounds || !Array.isArray(record.machines)) return null;
+  if (record.tabWindow !== undefined) return normalizeTabWindowFrame(record, bounds, filter);
   const machines: FrameMachineSession[] = [];
   for (const entry of record.machines) {
     if (typeof entry !== 'object' || entry === null) continue;
@@ -139,10 +193,19 @@ export function frameHolds(frame: FrameSession, machineId: string): boolean {
   return frame.machines.some((machine) => machine.id === machineId);
 }
 
-/** Frames to restore, the ones showing `activeId` first; the rest keep their saved order. */
+/**
+ * Frames to restore, the ones showing `activeId` first; the rest keep their
+ * saved order. Tab windows come last, in saved order: the frames their tabs
+ * go back to open first, and a tab window never becomes the main window.
+ */
 export function orderFramesForRestore(frames: FrameSession[], activeId: string): FrameSession[] {
+  const app = frames.filter((frame) => !frame.tabWindow);
   const isActive = (frame: FrameSession) => frame.selectedId === activeId;
-  return [...frames.filter(isActive), ...frames.filter((frame) => !isActive(frame))];
+  return [
+    ...app.filter(isActive),
+    ...app.filter((frame) => !isActive(frame)),
+    ...frames.filter((frame) => frame.tabWindow),
+  ];
 }
 
 /**

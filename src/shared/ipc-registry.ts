@@ -743,6 +743,30 @@ export const IPC_CHANNELS = {
     EVENT: 'browser-view:event',
   },
 
+  // Tab windows: a panel tab in a window of its own
+  TAB_WINDOW: {
+    /** Move a tab of the sender's window to a new tab window (renderer->main) */
+    OPEN: 'tab-window:open',
+    /** The sender's tab window record, or null (renderer->main) */
+    GET: 'tab-window:get',
+    /** The tab window's tab changed: title, URL, favicon (renderer->main) */
+    UPDATE: 'tab-window:update',
+    /** Move the sender's tab back to the window it came from (renderer->main) */
+    MOVE_BACK: 'tab-window:move-back',
+    /** Close the sender's tab for real, then its window (renderer->main) */
+    CLOSE_TAB: 'tab-window:close-tab',
+    /** Whether a tab window is open or restoring (renderer->main) */
+    IS_OPEN: 'tab-window:is-open',
+    /** Bring a tab window to the front (renderer->main) */
+    FOCUS: 'tab-window:focus',
+    /** Show a tab that came back from its window (main->renderer event) */
+    RETURN_TAB: 'tab-window:return-tab',
+    /** A tab in a tab window changed (main->renderer event) */
+    TAB_UPDATED: 'tab-window:tab-updated',
+    /** A tab in a tab window was closed there (main->renderer event) */
+    CLOSED_TAB: 'tab-window:closed-tab',
+  },
+
   // File Tracking
   FILE_TRACKING: {
     // Event emitted by agent file operations to trigger immediate UI update
@@ -1560,6 +1584,10 @@ export const EVENT_CHANNELS = [
   // SSH machine setup progress (main → renderer): steps, redacted log lines,
   // the host-key question and the outcome. Never a secret or the link.
   'machine-setup:ssh-event',
+  // Tab windows (main → the window a tab came from): it came back, changed, or closed there.
+  IPC_CHANNELS.TAB_WINDOW.RETURN_TAB,
+  IPC_CHANNELS.TAB_WINDOW.TAB_UPDATED,
+  IPC_CHANNELS.TAB_WINDOW.CLOSED_TAB,
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

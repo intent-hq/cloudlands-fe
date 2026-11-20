@@ -446,6 +446,7 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerCollaborationAuthHandlers } from '../features/collaboration-auth/main/collaboration-auth.ipc';
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
+import { registerTabWindowHandlers } from './tab-windows.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import {
   handleInviteDeepLink,
@@ -1673,6 +1674,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations
+  registerTabWindowHandlers(); // Before any frame restores: saved tab windows register here
 
   // These handlers are called immediately on startup, so register them synchronously
   setupProviderModelsIPC(); // Needed for providers:get-models

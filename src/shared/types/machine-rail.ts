@@ -8,6 +8,8 @@
  * connections list (`shared/types/connections.ts`), keyed by the same ids.
  */
 
+import type { TabWindowRecord } from './tab-window';
+
 export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
@@ -92,6 +94,8 @@ export interface FrameSession {
   /** Never empty. */
   machines: FrameMachineSession[];
   selectedId: string;
+  /** A tab window: one machine on its tab window page, showing this tab. */
+  tabWindow?: TabWindowRecord;
 }
 
 /** On-disk shape of window-frames.json. */

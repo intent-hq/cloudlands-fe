@@ -86,6 +86,8 @@ import {
   markFrameWindow,
   stampWindowWithBackend,
 } from './window-backend';
+import { getTabWindowSessions, isTabWindow, markTabWindow } from './tab-window-identity';
+import { tabWindowRoute, type TabWindowDisplayMode } from '../shared/types/tab-window';
 import {
   focusedFrame,
   frameMachines,
@@ -497,6 +499,11 @@ export function unmarkWindowSessionTeardown(): void {
   isQuitTeardownInProgress = false;
 }
 
+/** Whether an app-quit/update-install teardown is closing the windows. */
+export function isWindowSessionTeardown(): boolean {
+  return isQuitTeardownInProgress;
+}
+
 // Invoked when a window that is not a frame (a HUD) is explicitly closed while
 // another window survives and nothing else uses its non-local machine, so its
 // pooled JSON-RPC client (socket, reconnect timers, subscriptions) can be
@@ -546,6 +553,18 @@ function frameFromWindow(window: BrowserWindowType): FrameSession | null {
   }
   const rail = getMachineRailSession(window);
   if (!rail) return null;
+  if (isTabWindow(window)) {
+    // A tab window saves its one machine, its page and its tab.
+    const tabWindow = getTabWindowSessions()?.sessionFor(window);
+    if (!tabWindow) return null;
+    const id = rail.selectedId;
+    return withPlacement(window, {
+      bounds: window.getBounds(),
+      machines: [{ id, route: tabWindowRoute(tabWindow.tabWindowId) }],
+      selectedId: id,
+      tabWindow,
+    });
+  }
   const restored = restoredFrames.get(window);
   const restoredRoute = (id: string) => restored?.machines.find((m) => m.id === id)?.route;
   const machines: FrameMachineSession[] = rail.machineIds.map((id) => {
@@ -725,6 +744,10 @@ async function createFrameWindow(opts: {
   setDockIcon?: boolean;
   /** False keeps the frame hidden until the caller shows it. */
   show?: boolean;
+  /** A tab window (one panel tab): frame pickers skip it. */
+  tabWindow?: boolean;
+  /** Open maximized (a tab window on Windows and other Linux desktops). */
+  maximize?: boolean;
 }): Promise<OpenedFrame> {
   const iconPath = resolveIcon(opts.setDockIcon ?? opts.setAsMain);
   const window = await createConfiguredWindow({
@@ -735,6 +758,7 @@ async function createFrameWindow(opts: {
     webPreferences: buildFramePageWebPreferences(),
   });
   markFrameWindow(window);
+  if (opts.tabWindow) markTabWindow(window);
   registerChatWindow(window);
   forwardRendererConsoleToMainLog(window);
   if (opts.setAsMain) {
@@ -749,6 +773,7 @@ async function createFrameWindow(opts: {
   // frame saved fullscreen restores fullscreen, not windowed at screen-sized
   // bounds.
   if (opts.isFullScreen) window.setFullScreen(true);
+  else if (opts.maximize) window.maximize();
   // The rail owner loads the frame page itself, once the shown machine has loaded.
   const contents = openFrameMachines(window, opts.machines, opts.selectedId);
   return { window, contents };
@@ -779,6 +804,30 @@ export async function openMachineFrame(opts: {
     setAsMain: false,
     show: opts.show,
   });
+}
+
+/**
+ * Open a tab window: a frame on one machine at its tab window page, full
+ * screen or maximized as `mode` says, on the display of the focused window.
+ */
+export async function openTabWindowFrame(opts: {
+  machineId: string;
+  route: string;
+  mode: TabWindowDisplayMode;
+}): Promise<BrowserWindowType> {
+  const focused = BrowserWindow.getFocusedWindow();
+  const display = focused ? screen.getDisplayMatching(focused.getBounds()) : null;
+  const { workArea } = display ?? screen.getPrimaryDisplay();
+  const { window } = await createFrameWindow({
+    bounds: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height },
+    machines: [{ id: opts.machineId, route: opts.route }],
+    selectedId: opts.machineId,
+    isFullScreen: opts.mode === 'full-screen',
+    maximize: opts.mode === 'maximized',
+    setAsMain: false,
+    tabWindow: true,
+  });
+  return window;
 }
 
 /** Open a saved HUD pop-out, bound to the machine it was opened on. */
@@ -827,6 +876,7 @@ async function createWindowForFrame(
     restoredFrames.set(hud, frame);
     return hud;
   }
+  if (frame.tabWindow) return createTabWindowForFrame(frame, bounds);
   // The bare root route (older saved sessions) reopens on the bootstrap route.
   const machines = frame.machines.map((machine) =>
     machine.route === '/' ? { ...machine, route: DEFAULT_WINDOW_ROUTE } : machine,
@@ -841,6 +891,39 @@ async function createWindowForFrame(
   restoredFrames.set(window, frame);
   logger.info('Opened saved frame', { machines: frame.machines.length, isMain: setAsMain });
   return window;
+}
+
+/**
+ * Reopen a saved tab window. It registers with the tab window registry
+ * first, so the source window's restore sees it as open; a tab window that
+ * cannot come back (its tab is in another tab window) is skipped.
+ */
+async function createTabWindowForFrame(
+  frame: FrameSession,
+  bounds: FrameSession['bounds'],
+): Promise<BrowserWindowType | null> {
+  const record = frame.tabWindow;
+  const sessions = getTabWindowSessions();
+  if (!record || !sessions) return null;
+  const machineId = frame.selectedId;
+  if (!sessions.willRestore(record, machineId)) return null;
+  try {
+    const { window } = await createFrameWindow({
+      bounds,
+      machines: [{ id: machineId, route: tabWindowRoute(record.tabWindowId) }],
+      selectedId: machineId,
+      isFullScreen: frame.isFullScreen,
+      setAsMain: false,
+      tabWindow: true,
+    });
+    sessions.restored(window, record.tabWindowId);
+    restoredFrames.set(window, frame);
+    logger.info('Opened saved tab window');
+    return window;
+  } catch (error) {
+    sessions.restoreFailed(record.tabWindowId);
+    throw error;
+  }
 }
 
 /** Open a frame on one machine at `session.route` (a HUD route opens a HUD window). */
@@ -868,8 +951,10 @@ export async function createWindowForSession(
  */
 export async function restoreWindowsForBackend(toBackendId: string): Promise<void> {
   const parked = takeParkedFrames();
-  const frames = parked.filter((frame) => frameHolds(frame, toBackendId));
-  parkedFrames = parked.filter((frame) => !frames.includes(frame));
+  const held = parked.filter((frame) => frameHolds(frame, toBackendId));
+  parkedFrames = parked.filter((frame) => !held.includes(frame));
+  // Tab windows last: the frames their tabs go back to open first.
+  const frames = [...held.filter((f) => !f.tabWindow), ...held.filter((f) => f.tabWindow)];
   if (frames.length === 0) {
     logger.info('No saved frames for backend; opening a fresh window', { backendId: toBackendId });
     await createWindow(toBackendId);
@@ -880,7 +965,7 @@ export async function restoreWindowsForBackend(toBackendId: string): Promise<voi
     count: frames.length,
   });
   const isHud = (frame: FrameSession) => !!frame.machines[0].route?.startsWith(HUD_ROUTE_PREFIX);
-  const firstAppFrame = frames.findIndex((frame) => !isHud(frame));
+  const firstAppFrame = frames.findIndex((frame) => !isHud(frame) && !frame.tabWindow);
   for (let i = 0; i < frames.length; i++) {
     // Switching backends can restore app frames while its HUD is already open.
     if (isHud(frames[i]) && findExistingHudWindow(frames[i].machines[0].id)) continue;
@@ -905,6 +990,12 @@ export async function restoreAllBackendWindowSessions(
 ): Promise<boolean> {
   const frames = orderFramesForRestore(takeParkedFrames(), activeBackendId);
   parkedFrames = [];
+  // Saved tab windows count as open from the start: a source window whose
+  // layout restores before its tab window reopens must not take the tab back.
+  const sessions = getTabWindowSessions();
+  for (const frame of frames) {
+    if (frame.tabWindow) sessions?.willRestore(frame.tabWindow, frame.selectedId);
+  }
   const connectable = new Map<string, boolean>();
   const canConnect = async (id: string): Promise<boolean> => {
     let ok = connectable.get(id);
@@ -930,10 +1021,12 @@ export async function restoreAllBackendWindowSessions(
     const kept = keepFrameMachines(frame, (id) => usable.has(id));
     if (!kept) {
       parkedFrames.push(frame);
+      if (frame.tabWindow) sessions?.restoreFailed(frame.tabWindow.tabWindowId);
       continue;
     }
-    const window = await createWindowForFrame(kept, !restoredAny);
+    const window = await createWindowForFrame(kept, !restoredAny && !kept.tabWindow);
     if (window) restoredAny = true;
+    else if (kept.tabWindow) sessions?.restoreFailed(kept.tabWindow.tabWindowId);
   }
   if (restoredAny) logger.info('Restored saved frames', { count: frames.length });
   return restoredAny;
