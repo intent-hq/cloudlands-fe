@@ -32,6 +32,15 @@ export const recentAgentOpenRequested = createAction<[entry: RecentEntry]>(
   'recentAgents/openRequested',
 );
 
+/**
+ * Focus a browser or terminal tab a switcher entry named, from this window or through another
+ * machine's `connections:open`, once the workspace is shown: a tab it no longer holds leaves
+ * the list.
+ */
+export const recentTabFocusRequested = createAction<[workspaceId: string, tabId: string]>(
+  'recentAgents/tabFocusRequested',
+);
+
 /** This window's machine reported the workspace archived: its recent agents drop out. */
 export const recentAgentsWorkspaceArchived = createAction<[workspaceId: string]>(
   'recentAgents/workspaceArchived',

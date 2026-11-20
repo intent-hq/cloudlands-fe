@@ -17,7 +17,7 @@ export const selectRecentAgents = store.createSelector((state): RecentEntry[] =>
     .filter((entry) => {
       if (entry.kind === 'agent' || entry.connectionId !== local) return true;
       const layout = state.panelLayout.byWorkspaceId[entry.workspaceId];
-      if (layout?.restoreStatus !== 'restored') return true;
+      if (layout?.restoreStatus !== 'restored' && layout?.restoreStatus !== 'empty') return true;
       const tabs = [
         ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
         ...(layout.hiddenTabs ? getItems(layout.hiddenTabs) : []),

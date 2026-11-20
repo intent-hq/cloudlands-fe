@@ -41,6 +41,7 @@ import {
   recentAgentOpenRequested,
   recentAgentsReceived,
   recentAgentsWorkspaceArchived,
+  recentTabFocusRequested,
 } from '../recent-agents-slice';
 
 const logger = createLogger('RecentAgentsSaga');
@@ -227,8 +228,8 @@ const LAYOUT_WAIT_STEPS = 40;
 function* holdsTab(workspaceId: string, tabId: string): SagaGenerator<boolean | null> {
   for (let step = 0; step < LAYOUT_WAIT_STEPS; step += 1) {
     const status = yield* selectRestoreStatus.effect(workspaceId);
-    if (status === 'empty') return false;
-    if (status === 'restored') {
+    // `empty` stays set when tabs open in a workspace that had no saved layout.
+    if (status === 'restored' || status === 'empty') {
       const tabs = [
         ...(yield* selectAllTabs.effect(workspaceId)),
         ...(yield* selectHiddenTabs.effect(workspaceId)),
@@ -241,15 +242,16 @@ function* holdsTab(workspaceId: string, tabId: string): SagaGenerator<boolean | 
   return null;
 }
 
-/**
- * A switcher entry asked this window to focus a tab, from this window or through another
- * machine's `connections:open`: a tab its workspace no longer holds leaves the shared list.
- */
-function* handleFocusPanelTab(
-  action: ReturnType<typeof focusPanelTabRequested>,
-): SagaGenerator<void> {
+/** Focus the tab a switcher entry named, or drop the entry when its workspace lost the tab. */
+function* handleTabFocus(action: ReturnType<typeof recentTabFocusRequested>): SagaGenerator<void> {
   const [workspaceId, tabId] = action.payload;
-  if ((yield* call(holdsTab, workspaceId, tabId)) !== false) return;
+  const holds = yield* call(holdsTab, workspaceId, tabId);
+  if (holds !== false) {
+    yield* put(focusPanelTabRequested(workspaceId, tabId));
+    // The tab may already be the focused one, which brings no focus change: record it here.
+    if (holds) yield* call(recordFocusedTab, false);
+    return;
+  }
   const connectionId = yield* selectCurrentConnectionId.effect();
   if (!connectionId) return;
   try {
@@ -257,12 +259,6 @@ function* handleFocusPanelTab(
   } catch (error) {
     logger.warn('Could not forget a closed tab in recent agents', error);
   }
-}
-
-function* openLocalTab(entry: Extract<RecentEntry, { tabId: string }>): SagaGenerator<void> {
-  yield* call(handleNotificationNavigate, { workspaceId: entry.workspaceId, tabId: entry.tabId });
-  // The tab may already be the focused one, which brings no focus change: record it here.
-  if (yield* call(holdsTab, entry.workspaceId, entry.tabId)) yield* call(recordFocusedTab, false);
 }
 
 function* handleOpen(action: ReturnType<typeof recentAgentOpenRequested>): SagaGenerator<void> {
@@ -273,7 +269,7 @@ function* handleOpen(action: ReturnType<typeof recentAgentOpenRequested>): SagaG
       ? { workspaceId: entry.workspaceId, agentId: entry.agentId }
       : { workspaceId: entry.workspaceId, tabId: entry.tabId };
   if (entry.connectionId === connectionId && entry.kind !== 'agent') {
-    yield* call(openLocalTab, entry);
+    yield* call(handleNotificationNavigate, target);
     return;
   }
   if (entry.connectionId === connectionId) {
@@ -310,6 +306,6 @@ export function* recentAgentsSaga(): SagaGenerator<void> {
     takeEvery(workspaceDeleted, handleWorkspaceDeleted),
     takeEvery(recentAgentsWorkspaceArchived, handleWorkspaceArchived),
     takeEvery(recentAgentOpenRequested, handleOpen),
-    takeEvery(focusPanelTabRequested, handleFocusPanelTab),
+    takeEvery(recentTabFocusRequested, handleTabFocus),
   ]);
 }

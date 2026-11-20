@@ -22,10 +22,8 @@ import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import {
-  focusPanelTabRequested,
-  openAgentTabRequested,
-} from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { recentTabFocusRequested } from '$store/renderer/slices/recent-agents/recent-agents-slice';
 import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
 import {
   openWorkspaceFile,
@@ -143,7 +141,7 @@ export async function handleNotificationNavigate(
       appStore.dispatch(openAgentTabRequested(data.workspaceId, { agentId: data.agentId }));
     }
     if (data.tabId && generation === navigationGeneration) {
-      appStore.dispatch(focusPanelTabRequested(data.workspaceId, data.tabId));
+      appStore.dispatch(recentTabFocusRequested(data.workspaceId, data.tabId));
     }
     if (generation === navigationGeneration) openWorkspaceTarget(data);
   } catch (error) {
