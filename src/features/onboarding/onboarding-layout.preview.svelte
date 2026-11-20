@@ -32,6 +32,8 @@
     orchestrator?: 'machine' | 'no-machine';
     /** The provider picked on the welcome step (the Connect step's provider). */
     activeProvider?: string;
+    /** A fresh machine: no provider installed, or only OpenCode. */
+    fresh?: 'none' | 'opencode';
   }
   const ORCHESTRATOR_STEPS = [
     'requirements',
@@ -59,6 +61,8 @@
       welcome: { props: { step: 'welcome' } },
       'welcome-all-providers': { props: { step: 'welcome', allProviders: true } },
       'welcome-cursor': { props: { step: 'welcome', cursor: true } },
+      'welcome-nothing-installed': { props: { step: 'welcome', fresh: 'none' } },
+      'welcome-free-opencode': { props: { step: 'welcome', fresh: 'opencode' } },
       'welcome-cursor-unsupported': { props: { step: 'welcome', cursor: 'unsupported' } },
       forge: { props: { step: 'forge' } },
       'forge-gitlab-update-required': {
@@ -177,6 +181,7 @@
     cursor = false,
     orchestrator,
     activeProvider = 'claude-code',
+    fresh,
   }: Props = $props();
   const restoreOpen = untrack(() =>
     onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
@@ -390,13 +395,16 @@
       : entry,
   );
   appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
+  const seededFresh = untrack(() => fresh);
   for (const provider of seededProviders) {
-    const connected = fullCatalog
-      ? provider.id === 'codex' || provider.id === 'claude-code'
-      : provider.id !== 'opencode';
+    const connected = seededFresh
+      ? seededFresh === 'opencode' && provider.id === 'opencode'
+      : fullCatalog
+        ? provider.id === 'codex' || provider.id === 'claude-code'
+        : provider.id !== 'opencode';
     appStore.dispatch(
       checkSingleProviderSuccess(provider.id, {
-        available: connected || provider.id === 'auggie',
+        available: connected || (!seededFresh && provider.id === 'auggie'),
         authenticated: connected,
       }),
     );

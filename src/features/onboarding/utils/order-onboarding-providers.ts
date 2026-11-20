@@ -7,7 +7,8 @@
  *   3. Not detected — `available !== true`, or no status received yet.
  *
  * Within each tier, Anthropic (Claude Code) comes first, then OpenAI
- * (Codex), then the remaining providers in catalog order.
+ * (Codex), then the remaining providers in catalog order. A promoted
+ * provider (see `resolveFreeOnboardingProvider`) leads ahead of every tier.
  *
  * Tiers are computed from the last-known status only. In-flight refresh
  * flags are deliberately not an input: the agent-availability slice keeps
@@ -23,6 +24,28 @@ export interface OnboardingProviderTierStatus {
 }
 
 const PRIORITY_PROVIDER_IDS: readonly string[] = ['claude-code', 'codex'];
+
+/** OpenCode ships free models that need no sign-in. */
+export const FREE_ONBOARDING_PROVIDER_ID = 'opencode';
+
+/**
+ * The provider to promote as the free choice: OpenCode, once the first
+ * availability sweep has finished (`checked`) and found no other provider
+ * installed. Waiting for the sweep keeps the grid from reordering when a
+ * slower probe later finds Claude Code or Codex.
+ */
+export function resolveFreeOnboardingProvider(
+  providers: readonly { id: string }[],
+  statusMap: Record<string, OnboardingProviderTierStatus | undefined>,
+  checked: boolean,
+): string | undefined {
+  if (!checked) return undefined;
+  if (!providers.some((p) => p.id === FREE_ONBOARDING_PROVIDER_ID)) return undefined;
+  const otherInstalled = providers.some(
+    (p) => p.id !== FREE_ONBOARDING_PROVIDER_ID && statusMap[p.id]?.available === true,
+  );
+  return otherInstalled ? undefined : FREE_ONBOARDING_PROVIDER_ID;
+}
 
 /** Tier rank for a provider given its last-known status (1 = first). */
 export function getOnboardingProviderTier(
@@ -44,12 +67,16 @@ function priorityRank(id: string): number {
 export function orderOnboardingProviders<T extends { id: string }>(
   providers: readonly T[],
   statusMap: Record<string, OnboardingProviderTierStatus | undefined>,
+  options: { promotedProviderId?: string } = {},
 ): T[] {
   return providers
     .map((provider, index) => ({
       provider,
       index,
-      tier: getOnboardingProviderTier(statusMap[provider.id]),
+      tier:
+        provider.id === options.promotedProviderId
+          ? 0
+          : getOnboardingProviderTier(statusMap[provider.id]),
       priority: priorityRank(provider.id),
     }))
     .sort((a, b) => a.tier - b.tier || a.priority - b.priority || a.index - b.index)

@@ -4483,6 +4483,7 @@
   "onboarding_providerCard_requiresNpx_before": "需要 Node.js（npx）——",
   "onboarding_providerCard_selected_ariaLabel": "{name}（已選擇）",
   "onboarding_providerCard_selected_label": "已選擇",
+  "onboarding_providerCard_free_label": "免費",
   "onboarding_providerCard_use_ariaLabel": "使用 {name}",
   "onboarding_requirementsStep_checkAgain_label": "重新檢查",
   "onboarding_requirementsStep_checking_label": "正在檢查你機器上的 git 和 Node.js…",

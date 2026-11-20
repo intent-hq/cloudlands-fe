@@ -4483,6 +4483,7 @@
   "onboarding_providerCard_requiresNpx_before": "Requires Node.js (npx) —",
   "onboarding_providerCard_selected_ariaLabel": "{name} (selected)",
   "onboarding_providerCard_selected_label": "Selected",
+  "onboarding_providerCard_free_label": "Free",
   "onboarding_providerCard_use_ariaLabel": "Use {name}",
   "onboarding_requirementsStep_checkAgain_label": "Check again",
   "onboarding_requirementsStep_checking_label": "Checking for git and Node.js on your machine…",
