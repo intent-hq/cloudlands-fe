@@ -20,7 +20,13 @@ import {
 import CloudMachineRow from './CloudMachineRow.svelte';
 import CloudSandboxList from './CloudSandboxList.svelte';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { NEW_CLOUD_ENTRY, cloudMachineValidated } from './cloud-machines-slice';
+import {
+  NEW_CLOUD_ENTRY,
+  cloudConfigureKey,
+  cloudMachineOperationSettled,
+  cloudMachineOperationStarted,
+  cloudMachineValidated,
+} from './cloud-machines-slice';
 import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
@@ -771,14 +777,16 @@ describe('Vercel form', () => {
     expect(configured()).not.toHaveProperty('image');
   });
 
-  it('asks for an own image only on request, and sends it', async () => {
+  it('asks for an own image only on request, focuses it, and sends it', async () => {
     const view = renderForm();
     const form = formOf(view);
     expect(form.querySelector('input[data-vercel-image]')).toBeNull();
     await fireEvent.click(form.querySelector('[data-vercel-image-toggle]')!);
-    const image = await vi.waitFor(
-      () => form.querySelector('input[data-vercel-image]') as HTMLInputElement,
-    );
+    const image = await vi.waitFor(() => {
+      const input = form.querySelector('input[data-vercel-image]') as HTMLInputElement;
+      expect(document.activeElement).toBe(input);
+      return input;
+    });
     await fireEvent.input(form.querySelector('input[type="password"]')!, {
       target: { value: 'vercel_test' },
     });
@@ -815,7 +823,7 @@ describe('Vercel form', () => {
     expect(save.disabled).toBe(false);
   });
 
-  it('refuses an image with a tag, since Intent adds its own version', async () => {
+  it('refuses an image that is not team/project/repository or a bare repository', async () => {
     const own = {
       ...VERCEL_ENTRY,
       vercel: { ...VERCEL_ENTRY.vercel!, image: 'acme/images/intent-node' },
@@ -827,8 +835,17 @@ describe('Vercel form', () => {
     await fireEvent.input(image, { target: { value: 'acme/images/intent-node:0.212.0' } });
     expect(form.querySelector('[data-vercel-image-error]')).not.toBeNull();
     expect(save.disabled).toBe(true);
-    await fireEvent.input(image, { target: { value: 'acme/images/intent-node@sha256:abc' } });
-    expect(save.disabled).toBe(true);
+    for (const bad of [
+      'acme/images/intent-node@sha256:abc',
+      'acme/intent-node',
+      'vcr.vercel.com/acme/images',
+      'acme//intent-node',
+    ]) {
+      await fireEvent.input(image, { target: { value: bad } });
+      expect(save.disabled, bad).toBe(true);
+    }
+    await fireEvent.input(image, { target: { value: 'intent-node' } });
+    expect(save.disabled).toBe(false);
     await fireEvent.input(image, { target: { value: 'acme/images/intent-node' } });
     expect(form.querySelector('[data-vercel-image-error]')).toBeNull();
     expect(save.disabled).toBe(false);
@@ -860,6 +877,24 @@ describe('Vercel form', () => {
     await fireEvent.input(image, { target: { value: '' } });
     await fireEvent.submit(form);
     expect(configured()).toMatchObject({ image: '' });
+  });
+
+  it('explains that a team or project cannot change while the entry has sandboxes', async () => {
+    const view = renderForm(VERCEL_ENTRY);
+    store.dispatch(cloudMachineOperationStarted(cloudConfigureKey(VERCEL_ENTRY.id), 'saving'));
+    store.dispatch(
+      cloudMachineOperationSettled(cloudConfigureKey(VERCEL_ENTRY.id), {
+        message: 'raw backend text',
+        inUse: true,
+      }),
+    );
+    const error = await vi.waitFor(() => {
+      const node = view.container.querySelector('[data-cloud-save-error]');
+      expect(node).not.toBeNull();
+      return node!.textContent ?? '';
+    });
+    expect(error).not.toContain('raw backend text');
+    expect(error).toContain('sandboxes');
   });
 
   it('explains a missing project in plain words', () => {
