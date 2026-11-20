@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.0...v2.361.1) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** mute collapsed tool activity summaries ([#4847](https://github.com/intent-hq/cloudlands-fe/issues/4847)) ([b26cd11](https://github.com/intent-hq/cloudlands-fe/commit/b26cd11a2b595576c42c62c1408eea37dd647c3d))
+* **dock:** enable capture editing by default ([#4848](https://github.com/intent-hq/cloudlands-fe/issues/4848)) ([78c4a7c](https://github.com/intent-hq/cloudlands-fe/commit/78c4a7c9d381db3049d4c569a4f61043f7aa4131))
+
 ## [2.361.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.360.0...v2.361.0) (2026-11-20)
 
 
