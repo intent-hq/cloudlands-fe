@@ -51,7 +51,7 @@ export function arePasskeysEnabled(): boolean {
 export function setupPasskeysIPC(
   preloadPath = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../preload-build/preload/passkey-page.js',
+    '../../../preload-build/preload/passkey-page.js',
   ),
 ): void {
   if (process.platform !== 'linux' || service) return;
