@@ -148,6 +148,7 @@ export async function handleRelayCall(params: unknown, deps: RelayDeps): Promise
     return {
       error: {
         code: -32602,
+        // i18n-ignore (wire error for the daemon and agent, not UI copy)
         message: `This app has no saved connection for backend ${call.backendId}`,
         data: { code: 'unknown-backend' },
       },
