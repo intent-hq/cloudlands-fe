@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ESCAPE_TOKEN as FIXTURE_ESCAPE_TOKEN } from './check-fixture-protocol-versions.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 // Renderer source must reference daemon protocol features by method or field name,
 // never by a protocol-version literal. Protocol numbers are provisional until merge
@@ -117,7 +118,8 @@ export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT))
   return files;
 }
 
-export function main(argv = process.argv.slice(2), root = process.cwd()) {
+export function main(args, root = process.cwd()) {
+  const argv = scriptArgs(args);
   const unknown = argv.filter((argument) => argument !== '--print-hits');
   if (unknown.length) {
     console.error(

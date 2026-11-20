@@ -79,6 +79,7 @@ import {
   HELD_LOCK_ENV,
   lockTimeout,
 } from './verification-lock.mjs';
+import { scriptArgs } from './script-args.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -178,11 +179,9 @@ export function collectNonFontOsDeps({
 
 /**
  * Split the launcher's own flags from the args forwarded to `playwright test`.
- * pnpm forwards a literal `--` separator (`pnpm run test:ct -- --list`); drop it.
  */
 export function parseLauncherArgs(argv) {
-  const forwarded = [...argv];
-  if (forwarded[0] === '--') forwarded.shift();
+  const forwarded = scriptArgs(argv);
   const help = forwarded[0] === '--help' || forwarded[0] === '-h';
   let openReport = false;
   const rest = forwarded.filter((arg) => {

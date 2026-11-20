@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { scriptArgs } from './script-args.mjs';
 
 export const BASELINES_DIR = 'scripts/test-type-baselines';
 export const INCIDENTS = Object.freeze(['https://github.com/intent-hq/cloudlands-fe/pull/4751']);
@@ -337,10 +338,10 @@ export async function checkTestTypes({
   return { ok, lines };
 }
 
-export function parseArgs(argv) {
+export function parseArgs(args) {
+  const argv = scriptArgs(args);
   const options = { update: false, names: [] };
-  // pnpm 10 forwards the `--` in `pnpm run lint:test-types -- --update-baseline`.
-  for (let i = argv[0] === '--' ? 1 : 0; i < argv.length; i++) {
+  for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--update-baseline') options.update = true;
     else if (arg === '--project') options.names.push(argv[++i] ?? '');

@@ -18,6 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { scriptArgs } from './script-args.mjs';
 
 // ─── Severity levels ───────────────────────────────────────────────────────────
 
@@ -1520,7 +1521,7 @@ function parseArgs(argv) {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(scriptArgs());
 
   if (args.help) {
     printHelp();

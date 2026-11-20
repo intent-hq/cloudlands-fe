@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { scriptArgs } from './script-args.mjs';
 
 // Clients never cap the daemon protocol version (docs/protocol/versioning.md →
 // Compatibility Policy). Every protocol gate goes through the minimum-only helper in
@@ -98,7 +99,8 @@ export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT))
   return files;
 }
 
-export function main(argv = process.argv.slice(2), root = process.cwd()) {
+export function main(args, root = process.cwd()) {
+  const argv = scriptArgs(args);
   if (argv.length) {
     console.error(
       `Unknown argument(s): ${argv.join(' ')}\nUsage: node scripts/check-protocol-version-parsing.mjs`,

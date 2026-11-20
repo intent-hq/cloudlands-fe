@@ -2,6 +2,7 @@
 
 import CDP from 'chrome-remote-interface';
 import { pathToFileURL } from 'url';
+import { scriptArgs } from './script-args.mjs';
 
 const DEFAULT_PORT = Number(process.env.CDP_PORT || 9223);
 const DEFAULT_HOST = process.env.CDP_HOST || '127.0.0.1';
@@ -28,7 +29,8 @@ Start the app with CDP first: pnpm dev:cdp. The target list should be at
 http://127.0.0.1:<port>/json/list. For agent-browser, connect to the same port.`);
 }
 
-function parseArgs(argv) {
+function parseArgs(args) {
+  const argv = scriptArgs(args);
   const options = {
     host: DEFAULT_HOST,
     port: DEFAULT_PORT,
@@ -43,8 +45,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const readValue = () => argv[++i];
-    if (arg === '--') continue;
-    else if (arg === '--help' || arg === '-h') options.help = true;
+    if (arg === '--help' || arg === '-h') options.help = true;
     else if (arg === '--host') options.host = readValue() || options.host;
     else if (arg === '--port') options.port = Number(readValue() || options.port);
     else if (arg === '--count' || arg === '-n')
