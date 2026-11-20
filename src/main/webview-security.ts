@@ -448,13 +448,15 @@ export function setupWebviewSecurity(): void {
     let allowedHudPopupBackendId: string | null = null;
 
     // Handle new window creation (popups) from webviews and app windows
-    contents.setWindowOpenHandler(({ url, disposition }) => {
+    contents.setWindowOpenHandler(({ url, disposition, postBody }) => {
       // Intent OS: a plain new-tab link (target=_blank) opens as a browser tab in
       // the app, not as a separate window. Scripted popups ('new-window', e.g.
-      // OAuth) still get a window so their opener link keeps working.
+      // OAuth) and POST submissions (form/SAML, which a URL alone cannot carry)
+      // keep the popup window.
       if (
         isBrowserGuest(contents) &&
         isSystemBrowserDisabled() &&
+        !postBody &&
         (disposition === 'foreground-tab' || disposition === 'background-tab') &&
         /^https?:/i.test(url)
       ) {
