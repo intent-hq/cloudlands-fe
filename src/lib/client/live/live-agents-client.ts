@@ -45,6 +45,7 @@ import type {
 } from '../app-client';
 import { collectListPages } from '$shared/paged-list';
 import { backendRequest } from './backend-transport';
+import type { RpcProposalItem, RpcProposalResolution } from '$shared/types/rpc-proposal';
 import {
   parseSecretListing,
   type SecretAnswerResult,
@@ -932,6 +933,38 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (params.detail !== undefined) rpcParams.detail = params.detail;
     return runMutation('agent.resolveProposal', rpcParams);
+  }
+  async resolveRpcProposal(params: {
+    agentId: string;
+    workspaceId: string;
+    proposalId: string;
+    decision: 'approve' | 'reject';
+  }): Promise<RpcProposalResolution> {
+    try {
+      const result = await backendRequest<{
+        outcome?: string;
+        items?: RpcProposalItem[];
+        expired?: boolean;
+      }>(
+        'agent.resolveRpcProposal',
+        {
+          workspaceId: params.workspaceId,
+          agentId: params.agentId,
+          proposalId: params.proposalId,
+          decision: params.decision,
+        },
+        // The daemon bounds an approval run at 10 minutes; wait a little longer.
+        { timeoutMs: 11 * 60_000 },
+      );
+      return {
+        success: true,
+        outcome: result?.outcome === 'applied' ? 'applied' : 'dismissed',
+        items: Array.isArray(result?.items) ? result.items : [],
+        ...(result?.expired ? { expired: true } : {}),
+      };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
   async markSeen(params: {
     agentId: string;
