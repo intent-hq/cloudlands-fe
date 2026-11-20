@@ -113,9 +113,9 @@
     const element =
       target === 'chip'
         ? chipExpandButton
-        : root.querySelector<HTMLElement>(
-            '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button',
-          );
+        : (root.querySelector<HTMLElement>(
+            '[data-testid="secret-request-input"]:not([disabled])',
+          ) ?? root.querySelector<HTMLElement>('[data-testid="secret-request-card"] button'));
     if (element) {
       element.focus();
       focusAfter = null;

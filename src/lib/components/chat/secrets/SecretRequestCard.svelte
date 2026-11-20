@@ -9,7 +9,7 @@
    * enters the store, drafts, the chat composer or telemetry.
    */
   import Fa from 'svelte-fa';
-  import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faEye, faEyeSlash, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { InputMessage } from '$lib/components/ui/input-message';
@@ -63,13 +63,8 @@
   const open = $derived(shown === 'pending' || shown === 'checking');
   const canAnswer = $derived(shown === 'pending' && !busy);
   const failed = $derived(answer === 'failed' && shown === 'pending');
-  const note = $derived(
-    failed
-      ? m.chat_secretRequest_failed_error()
-      : showPrivacy
-        ? m.chat_secretRequest_privacy_description()
-        : null,
-  );
+  const hasNote = $derived(failed || showPrivacy);
+  const title = $derived(m.chat_secretRequest_title_label({ name: request.name }));
 
   // Drop the value once the request is answered or gone; a failed send keeps
   // it so the user can retry without pasting again.
@@ -111,13 +106,58 @@
 <div
   class="flex min-w-0 flex-col gap-2 rounded-(--radius-large) border border-border bg-card px-3 py-2.5 sm:px-4"
   role="group"
-  aria-label={m.chat_secretRequest_title_label({ name: request.name })}
+  aria-label={title}
   data-testid="secret-request-card"
   data-request-id={request.requestId}
   data-state={shown}
 >
   <div class="flex min-w-0 flex-col gap-0.5">
-    <p class="type-code font-medium text-foreground wrap-anywhere">{request.name}</p>
+    <div class="flex min-w-0 items-start gap-2">
+      <p class="min-w-0 flex-1 type-body font-medium text-foreground wrap-anywhere">{title}</p>
+      {#if open || shown === 'expired'}
+        <div class="-my-1 -mr-1.5 flex shrink-0 items-center">
+          {#if open && onHide}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              class="text-muted-foreground"
+              aria-label={m.chat_secretRequest_hide_label()}
+              onclick={onHide}
+              data-testid="secret-request-hide"
+            >
+              <Fa icon={faChevronDown} />
+            </Button>
+          {/if}
+          {#if open}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              class="text-muted-foreground"
+              aria-label={m.chat_secretRequest_dismiss_label()}
+              disabled={!canAnswer}
+              onclick={() => (confirmingDismiss = true)}
+              data-testid="secret-request-dismiss"
+            >
+              <Fa icon={faXmark} />
+            </Button>
+          {:else}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              class="text-muted-foreground"
+              aria-label={m.chat_secretRequest_dismiss_label()}
+              onclick={() => appStore.dispatch(secretRequestHidden(request.requestId))}
+              data-testid="secret-request-clear"
+            >
+              <Fa icon={faXmark} />
+            </Button>
+          {/if}
+        </div>
+      {/if}
+    </div>
     {#if open && request.reason}
       <p class="type-caption text-muted-foreground">{request.reason}</p>
     {/if}
@@ -127,99 +167,70 @@
       <Label for={`${uid}-value`} class="sr-only">
         {m.chat_secretRequest_value_label({ name: request.name })}
       </Label>
-      <div class="relative min-w-0">
-        <Input
-          id={`${uid}-value`}
-          type={revealed ? 'text' : 'password'}
-          autocomplete="off"
-          bind:value
-          disabled={!canAnswer}
-          placeholder={m.chat_secretRequest_value_placeholder()}
-          aria-describedby={note ? `${uid}-message` : undefined}
-          aria-invalid={failed || undefined}
-          class="pr-9"
-          onkeydown={handleKeydown}
-          data-testid="secret-request-input"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          class="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-          aria-label={revealed
-            ? m.chat_secretRequest_hide_ariaLabel()
-            : m.chat_secretRequest_show_ariaLabel()}
-          aria-pressed={revealed}
-          disabled={!canAnswer}
-          onclick={() => (revealed = !revealed)}
-          data-testid="secret-request-reveal"
-        >
-          <Fa icon={revealed ? faEyeSlash : faEye} />
-        </Button>
-      </div>
-      {#if note}
-        <InputMessage id={`${uid}-message`} tone={failed ? 'error' : 'helper'}>{note}</InputMessage>
-      {/if}
-    </div>
-    <div class="flex items-center justify-between gap-2">
-      <div class="-ml-3 flex min-w-0 items-center gap-1">
-        {#if onHide}
+      <div class="flex min-w-0 items-center gap-2">
+        <div class="relative min-w-0 flex-1">
+          <Input
+            id={`${uid}-value`}
+            type={revealed ? 'text' : 'password'}
+            autocomplete="off"
+            bind:value
+            disabled={!canAnswer}
+            placeholder={m.chat_secretRequest_value_placeholder()}
+            aria-describedby={hasNote ? `${uid}-message` : undefined}
+            aria-invalid={failed || undefined}
+            class="pr-9"
+            onkeydown={handleKeydown}
+            data-testid="secret-request-input"
+          />
           <Button
             type="button"
-            variant="ghost-light"
-            size="compact"
-            onclick={onHide}
-            data-testid="secret-request-hide"
+            variant="ghost"
+            size="icon-sm"
+            class="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+            aria-label={revealed
+              ? m.chat_secretRequest_hide_ariaLabel()
+              : m.chat_secretRequest_show_ariaLabel()}
+            aria-pressed={revealed}
+            disabled={!canAnswer}
+            onclick={() => (revealed = !revealed)}
+            data-testid="secret-request-reveal"
           >
-            {m.chat_secretRequest_hide_label()}
+            <Fa icon={revealed ? faEyeSlash : faEye} />
           </Button>
-        {/if}
+        </div>
         <Button
           type="button"
-          variant="ghost"
-          size="compact"
-          class="text-danger"
-          disabled={!canAnswer}
-          onclick={() => (confirmingDismiss = true)}
-          data-testid="secret-request-dismiss"
+          variant="primary"
+          class="shrink-0"
+          loading={busy}
+          disabled={!canAnswer || !value}
+          onclick={provide}
+          data-testid="secret-request-provide"
         >
-          {m.chat_secretRequest_dismiss_label()}
+          {m.chat_secretRequest_provide_label()}
         </Button>
       </div>
-      <Button
-        type="button"
-        variant="primary"
-        size="sm"
-        loading={busy}
-        disabled={!canAnswer || !value}
-        onclick={provide}
-        data-testid="secret-request-provide"
-      >
-        {m.chat_secretRequest_provide_label()}
-      </Button>
-    </div>
-  {:else}
-    <div class="flex items-center justify-between gap-2">
-      <p class="type-caption text-muted-foreground" role="status">
-        {shown === 'provided'
-          ? m.chat_secretRequest_provided_description()
-          : shown === 'declined'
-            ? m.chat_secretRequest_declined_description()
-            : m.chat_secretRequest_expired_description()}
-      </p>
-      {#if shown === 'expired'}
-        <Button
-          type="button"
-          variant="ghost"
-          size="compact"
-          class="-my-1.5 -mr-3 shrink-0"
-          onclick={() => appStore.dispatch(secretRequestHidden(request.requestId))}
-          data-testid="secret-request-clear"
+      {#if failed}
+        <InputMessage id={`${uid}-message`} tone="error">
+          {m.chat_secretRequest_failed_error()}
+        </InputMessage>
+      {:else if showPrivacy}
+        <InputMessage
+          id={`${uid}-message`}
+          class="text-[11px] leading-4 /* a11y-ignore: user-requested fine print */"
         >
-          {m.chat_secretRequest_dismiss_label()}
-        </Button>
+          {m.chat_secretRequest_privacy_description()}
+        </InputMessage>
       {/if}
     </div>
+  {:else}
+    <p class="type-caption text-muted-foreground" role="status">
+      {shown === 'provided'
+        ? m.chat_secretRequest_provided_description()
+        : shown === 'declined'
+          ? m.chat_secretRequest_declined_description()
+          : m.chat_secretRequest_expired_description()}
+    </p>
   {/if}
 </div>
 
