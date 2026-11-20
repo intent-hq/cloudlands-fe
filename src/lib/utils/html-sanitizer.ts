@@ -302,7 +302,9 @@ const purifyConfig = {
   }, [] as string[]),
   // Add data attributes for task lists
   ADD_ATTR: ['data-type', 'data-checked'],
-  ALLOW_DATA_ATTR: true,
+  // App code routes by data-* markers (data-workspace-*, data-panel-id, ...),
+  // so content may only carry the data attributes listed in ALLOWED_ATTR.
+  ALLOW_DATA_ATTR: false,
   KEEP_CONTENT: true,
   RETURN_DOM: false,
   RETURN_DOM_FRAGMENT: false,

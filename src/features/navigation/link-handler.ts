@@ -41,7 +41,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
-import { readLinkSource } from './link-source';
+import { findWorkspaceSurface, readLinkSource } from './link-source';
 
 const logger = new Logger('LinkHandler');
 
@@ -773,10 +773,7 @@ export function createLinkTooltipHandler(
       if (anchor === currentAnchor) return; // Already tracking this anchor
       currentAnchor = anchor;
 
-      const workspaceId =
-        options.workspaceId ??
-        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId ??
-        anchor.closest<HTMLElement>('[data-workspace-surface]')?.dataset.workspaceSurface;
+      const workspaceId = options.workspaceId ?? findWorkspaceSurface(anchor)?.workspaceId;
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {

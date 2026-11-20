@@ -3,6 +3,7 @@
  * Call `showLinkTooltip` / `hideLinkTooltip` from anywhere to control it.
  */
 import { captureIntegrationContext } from '$features/integrations-request-context';
+import { findWorkspaceSurface, surfaceWorkspaceId } from '$features/navigation/link-source';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import {
   classifyGitHubLinkPreviewError,
@@ -127,14 +128,13 @@ export function showLinkTooltip(
   stopAnchor?.();
   state.preview = { status: 'idle' };
 
-  const surface = anchor.closest<HTMLElement>('[data-workspace-surface]');
-  const originalWorkspace = workspaceId ?? surface?.dataset.workspaceSurface;
+  const surface = findWorkspaceSurface(anchor)?.element;
+  const originalWorkspace = workspaceId ?? (surface && surfaceWorkspaceId(surface));
   const originalHref = anchor.href;
   const current = () =>
     anchor.isConnected &&
     anchor.href === originalHref &&
-    (!surface ||
-      (surface.contains(anchor) && surface.dataset.workspaceSurface === originalWorkspace));
+    (!surface || (surface.contains(anchor) && surfaceWorkspaceId(surface) === originalWorkspace));
   const observer = new MutationObserver(() => {
     if (!current()) hideLinkTooltip();
   });

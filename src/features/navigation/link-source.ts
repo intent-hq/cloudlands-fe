@@ -19,6 +19,8 @@ const workspaceSurfaces = new WeakMap<Element, string>();
 
 export function workspaceSurfaceLink(node: Element, workspaceId: string) {
   const register = (id: string) => {
+    // The attribute is a styling/test marker and a mutation signal only; never read it for routing.
+    node.setAttribute('data-workspace-surface', id);
     if (id && id !== 'new') workspaceSurfaces.set(node, id);
     else workspaceSurfaces.delete(node);
   };
@@ -31,12 +33,20 @@ export function workspaceSurfaceLink(node: Element, workspaceId: string) {
   };
 }
 
-function readSurfaceWorkspaceId(element: Element | null | undefined): string | undefined {
+/** The registered workspace surface that contains `element`, if any. */
+export function findWorkspaceSurface(
+  element: Element | null | undefined,
+): { element: Element; workspaceId: string } | undefined {
   for (let node = element; node; node = node.parentElement) {
     const workspaceId = workspaceSurfaces.get(node);
-    if (workspaceId) return workspaceId;
+    if (workspaceId) return { element: node, workspaceId };
   }
   return undefined;
+}
+
+/** Current workspace of a surface returned by `findWorkspaceSurface`. */
+export function surfaceWorkspaceId(surface: Element): string | undefined {
+  return workspaceSurfaces.get(surface);
 }
 
 export function readLinkSource(
@@ -50,6 +60,6 @@ export function readLinkSource(
     panelId: element?.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId,
     assistantLayoutId: element?.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset
       .assistantLayoutId,
-    surfaceWorkspaceId: readSurfaceWorkspaceId(element),
+    surfaceWorkspaceId: findWorkspaceSurface(element)?.workspaceId,
   };
 }
