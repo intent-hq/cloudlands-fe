@@ -18,6 +18,7 @@
 
 import { app, session, systemPreferences } from 'electron';
 import { openExternal } from './open-external';
+import { isSystemBrowserDisabled } from './web-link-routing';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -454,7 +455,23 @@ export function setupWebviewSecurity(): void {
     let allowedHudPopupBackendId: string | null = null;
 
     // Handle new window creation (popups) from webviews and app windows
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition, postBody }) => {
+      // Intent OS: a plain new-tab link (target=_blank) opens as a browser tab in
+      // the app, not as a separate window. Scripted popups ('new-window', e.g.
+      // OAuth) and POST submissions (form/SAML, which a URL alone cannot carry)
+      // keep the popup window.
+      if (
+        isBrowserGuest(contents) &&
+        isSystemBrowserDisabled() &&
+        !postBody &&
+        (disposition === 'foreground-tab' || disposition === 'background-tab') &&
+        /^https?:/i.test(url)
+      ) {
+        openExternal(url).catch((err: Error) => {
+          logger.warn('Failed to open new-tab link in app', { error: err.message });
+        });
+        return { action: 'deny' };
+      }
       if (isBrowserGuest(contents)) {
         logger.debug('Webview requested new window', { url: url.substring(0, 100) });
 
