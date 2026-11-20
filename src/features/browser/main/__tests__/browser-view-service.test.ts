@@ -61,7 +61,7 @@ class FakeContents extends EventEmitter {
   captureEmpty = false;
   readonly capturePage = vi.fn(async (_rect?: unknown) => ({
     isEmpty: () => this.captureEmpty,
-    toDataURL: () => 'data:image/png;base64,AAAA',
+    toDataURL: (): string => 'data:image/png;base64,AAAA',
   }));
   getURL = () => this.loaded.at(-1) ?? '';
   isLoading = () => false;
