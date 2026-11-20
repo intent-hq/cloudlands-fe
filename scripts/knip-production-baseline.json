@@ -2170,8 +2170,7 @@
       "selectPanelColumnCountsByWorkspaceId",
       "selectPanelColumnStack",
       "selectPanelNavigatorItems",
-      "selectPanelRestoreStatusesByWorkspaceId",
-      "selectWorkspaceHasBrowserTabs"
+      "selectPanelRestoreStatusesByWorkspaceId"
     ],
     "src/store/renderer/slices/panel-layout/panel-layout-slice.ts": [
       "panel.MAX_SEEDED_CONTEXT_LINK_TABS",
