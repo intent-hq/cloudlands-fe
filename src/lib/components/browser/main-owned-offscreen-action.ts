@@ -15,7 +15,11 @@
 import { createLogger } from '$lib/utils/client-logger';
 import { selectMountedBrowserTabLeases } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { store as appStore } from '$store/renderer/store';
-import { attachMainOwnedPage, destroyMainOwnedPage } from './main-owned-browser-page';
+import {
+  attachMainOwnedPage,
+  destroyMainOwnedPage,
+  knownMainOwnedPages,
+} from './main-owned-browser-page';
 
 const logger = createLogger('MainOwnedOffscreenPage');
 
@@ -51,4 +55,30 @@ export function mainOwnedOffscreenPage(node: HTMLElement, entry: MainOwnedOffscr
       );
     },
   };
+}
+
+export interface ClosedTabPagesParams {
+  /** Main-owned pages are on in this run. */
+  enabled: boolean;
+  /** Browser tabs in this window's layouts. */
+  presentTabIds: ReadonlySet<string>;
+}
+
+/**
+ * Action on the off-screen host: close this renderer's pages for tabs that
+ * left every layout (closed, or their workspace was archived or deleted).
+ * Main-owned pages outlive their panel, so nothing else closes them.
+ */
+export function closeClosedTabPages(_node: HTMLElement, initial: ClosedTabPagesParams) {
+  const sweep = ({ enabled, presentTabIds }: ClosedTabPagesParams): void => {
+    if (!enabled) return;
+    for (const tabId of [...knownMainOwnedPages().keys()]) {
+      if (presentTabIds.has(tabId)) continue;
+      destroyMainOwnedPage(tabId).catch((error: unknown) =>
+        logger.debug('Could not close the page of a closed tab', { tabId, error }),
+      );
+    }
+  };
+  sweep(initial);
+  return { update: sweep };
 }

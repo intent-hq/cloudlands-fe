@@ -41,12 +41,8 @@
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { offscreenWebview } from './offscreen-webview-action';
   import { mainOwnedOffscreenPage } from './main-owned-offscreen-action';
-  import {
-    browserPagesMode,
-    destroyMainOwnedPage,
-    knownMainOwnedPages,
-    loadBrowserViewsLab,
-  } from './main-owned-browser-page';
+  import { browserPagesMode } from './main-owned-browser-page';
+  import { closeClosedTabPages } from './main-owned-offscreen-action';
   import { setBrowserViewTabDragging } from './browser-view-overlays';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
@@ -81,8 +77,6 @@
   // drives the main-owned page instead of a <webview>.
   const pagesMode$ = browserPagesMode;
   const mainOwned = $derived($pagesMode$ === 'main');
-  // Read once per window, at app start, before workspace panels mount.
-  void loadBrowserViewsLab();
   // A tab drag passes over browser boxes: native pages would catch the pointer.
   const isDragging$ = selectIsDragging();
   $effect(() => {
@@ -220,18 +214,9 @@
     });
   });
 
-  // Main-owned pages outlive their panel; close the page of a tab that left
-  // every layout (closed, or its workspace archived or deleted).
-  $effect(() => {
-    if (!mainOwned) return;
-    const present = new Set(decisions.map((decision) => decision.tabId));
-    for (const tabId of [...knownMainOwnedPages().keys()]) {
-      if (present.has(tabId)) continue;
-      void destroyMainOwnedPage(tabId).catch((error: unknown) =>
-        hostingLogger.debug('Could not close a closed tab page', { tabId, error }),
-      );
-    }
-  });
+  // Main-owned pages outlive their panel; the host closes the page of a tab
+  // that left every layout (closed, or its workspace archived or deleted).
+  const presentTabIds = $derived(new Set(decisions.map((decision) => decision.tabId)));
 
   const anyAgentDrawing = $derived(entries.some((entry) => $agentDrawing$[entry.tabId] === true));
 
@@ -280,6 +265,7 @@
   inert
   style:opacity={anyAgentDrawing ? undefined : PARKED_OPACITY}
   data-offscreen-webview-host
+  use:closeClosedTabPages={{ enabled: mainOwned, presentTabIds }}
   data-offscreen-excluded-workspaces={[...excludedWorkspaceIds].join(' ')}
 >
   {#each entries as entry (entry.tabId)}
