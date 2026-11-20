@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.2...v2.361.3) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.259 ([#4860](https://github.com/intent-hq/cloudlands-fe/issues/4860)) ([225704f](https://github.com/intent-hq/cloudlands-fe/commit/225704f7cc64d069c1881757d63adfb9b647ca4d))
+* **chat:** hide capture context across message previews ([#4849](https://github.com/intent-hq/cloudlands-fe/issues/4849)) ([e216ba2](https://github.com/intent-hq/cloudlands-fe/commit/e216ba257726a9c3836dc9b3a0d8ab1eefc04443))
+
 ## [2.361.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.1...v2.361.2) (2026-11-20)
 
 
