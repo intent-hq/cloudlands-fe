@@ -271,7 +271,9 @@
   let showOlder = $state(false);
   // The index search survives opening a conversation and Back; a full close clears it.
   let overviewQuery = $state('');
-  const overviewWorkspaceCount = $derived(workspaces.length);
+  const overviewWorkspaceCount = $derived(
+    workspaces.length + (showOlder ? olderWorkspaces.length : 0),
+  );
   const layout = $derived(
     getDockShellLayout(placement, {
       surfaceExpanded: shellMotion.surfaceExpanded,
@@ -282,7 +284,8 @@
       expandedHeight: shellMotion.openHeight,
       rowLimit,
       workspaceCount: overviewWorkspaceCount,
-      hasOlderWorkspaces: olderWorkspaces.length > 0,
+      railWorkspaceCount: workspaces.length,
+      hasOlderWorkspaces: !showOlder && olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
       intro: dockIntro.open,

@@ -31,6 +31,7 @@
 
   let {
     workspaces,
+    olderWorkspaces = [],
     viewportHeight,
     viewportWidth,
     theme,
@@ -553,6 +554,7 @@
       {machineError}
       onMachine={machineFixture ? switchMachine : undefined}
       {workspaces}
+      {olderWorkspaces}
       conversation={conversationFixture ? (conversationOverride ?? conversationContent) : undefined}
       conversationWorkspaceId={conversationController
         ? conversationController.workspaceId

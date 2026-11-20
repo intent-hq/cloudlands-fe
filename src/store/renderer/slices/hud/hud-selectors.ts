@@ -1491,7 +1491,9 @@ function dockBadgeKind(status: WorkspaceTabStatus | undefined): DockWorkspaceBad
   return 'none';
 }
 
-/** Workspace grouping, admitted and ordered only by confirmed human conversation. */
+const DOCK_MINIMUM_VISIBLE_WORKSPACES = 3;
+
+/** Keep recent human conversations and at least the three newest confirmed entries. */
 export const selectDockWorkspaces = store.createSelector(
   (state, age: 'recent' | 'older' = 'recent'): DockWorkspaceView[] => {
     const cards = selectHudWorkspaceCards.select(state);
@@ -1508,11 +1510,10 @@ export const selectDockWorkspaces = store.createSelector(
     for (const card of cards) {
       const workspace = workspacesById.get(card.workspaceId);
       if (!workspace || workspace.id === CHIEF_WORKSPACE_ID) continue;
+      const timestamp = state.hud.dockConversationAtByWorkspaceId[card.workspaceId];
       if (
-        !(age === 'older' ? isOlderDockConversation : isRecentDockConversation)(
-          state.hud.dockConversationAtByWorkspaceId[card.workspaceId],
-          state.hud.dockRecencyNow,
-        )
+        !isRecentDockConversation(timestamp, state.hud.dockRecencyNow) &&
+        !isOlderDockConversation(timestamp, state.hud.dockRecencyNow)
       )
         continue;
       const status = statuses[card.workspaceId];
@@ -1536,12 +1537,21 @@ export const selectDockWorkspaces = store.createSelector(
       });
     }
 
-    return [...groups.action, ...groups.unread, ...groups.active].sort(
+    const ordered = [...groups.action, ...groups.unread, ...groups.active].sort(
       (left, right) =>
         state.hud.dockConversationAtByWorkspaceId[String(right.workspace.id)] -
           state.hud.dockConversationAtByWorkspaceId[String(left.workspace.id)] ||
         String(left.workspace.id).localeCompare(String(right.workspace.id)),
     );
+    return ordered.filter((item, index) => {
+      const visible =
+        index < DOCK_MINIMUM_VISIBLE_WORKSPACES ||
+        isRecentDockConversation(
+          state.hud.dockConversationAtByWorkspaceId[String(item.workspace.id)],
+          state.hud.dockRecencyNow,
+        );
+      return age === 'older' ? !visible : visible;
+    });
   },
 );
 

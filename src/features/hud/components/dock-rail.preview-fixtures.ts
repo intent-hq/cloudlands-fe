@@ -29,6 +29,7 @@ export interface DockRailPreviewProps {
   /** Production selector supplied by the native-boundary conversation harness. */
   recordingOverride?: DockRecordingIndicator | null;
   workspaces: DockWorkspaceView[];
+  olderWorkspaces?: DockWorkspaceView[];
   viewportHeight: number;
   viewportWidth?: number;
   theme?: 'light' | 'dark';
