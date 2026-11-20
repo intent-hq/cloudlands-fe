@@ -4059,17 +4059,17 @@ describe('dock overview conversation age', () => {
   const ids = (state: StoreState, age?: 'recent' | 'older') =>
     selectDockWorkspaces.select(state, age).map(({ workspace }) => String(workspace.id));
 
-  it('keeps the recent default and partitions the exact 24-hour boundary without overlap', () => {
+  it('extends the recent window through the third conversation without overlap', () => {
     const state = conversations(
       ['old', 'boundary', 'just-recent', 'now'].map((id) => makeWorkspace(id)),
       { old: now - day - 1, boundary: now - day, 'just-recent': now - day + 1, now },
     );
-    expect(ids(state)).toEqual(['now', 'just-recent']);
+    expect(ids(state)).toEqual(['now', 'just-recent', 'boundary']);
     expect(ids(state, 'recent')).toEqual(ids(state));
-    expect(ids(state, 'older')).toEqual(['boundary', 'old']);
+    expect(ids(state, 'older')).toEqual(['old']);
   });
 
-  it('reveals only confirmed older human conversations in date order, never activity or invalid entries', () => {
+  it('fills the minimum with confirmed human conversations, never activity or invalid entries', () => {
     const row = (id: string, time: number, automated = false) => ({
       id,
       createdAt: new Date(time).toISOString(),
@@ -4111,7 +4111,30 @@ describe('dock overview conversation age', () => {
       nan: NaN,
       infinity: -Infinity,
     });
-    expect(ids(state)).toEqual([]);
-    expect(ids(state, 'older')).toEqual(['human-a', 'human-b', 'older']);
+    expect(ids(state)).toEqual(['human-a', 'human-b', 'older']);
+    expect(ids(state, 'older')).toEqual([]);
+  });
+
+  it.each([0, 1, 2, 3, 8])(
+    'shows up to three of %i entirely older conversations by default',
+    (count) => {
+      const ordered = Array.from({ length: count }, (_, index) => `old-${index}`);
+      const state = conversations(
+        [...ordered].reverse().map((id) => makeWorkspace(id)),
+        Object.fromEntries(ordered.map((id, index) => [id, now - (index + 2) * day])),
+      );
+      expect(ids(state)).toEqual(ordered.slice(0, 3));
+      expect(ids(state, 'older')).toEqual(ordered.slice(3));
+    },
+  );
+
+  it('keeps every conversation inside the recent window even when there are more than three', () => {
+    const recent = ['a', 'b', 'c', 'd'];
+    const state = conversations(
+      [...recent, 'older'].map((id) => makeWorkspace(id)),
+      { ...Object.fromEntries(recent.map((id, index) => [id, now - index])), older: now - 2 * day },
+    );
+    expect(ids(state)).toEqual(recent);
+    expect(ids(state, 'older')).toEqual(['older']);
   });
 });

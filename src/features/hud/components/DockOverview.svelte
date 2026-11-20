@@ -499,6 +499,7 @@
     background: hsl(var(--border));
   }
   .assistant-row {
+    display: flex;
     flex: none;
     min-height: 40px;
   }

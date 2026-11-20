@@ -41,6 +41,21 @@ describe('getDockShellLayout with the intro', () => {
   });
 });
 
+it('keeps edge landing height stable when the overview reveals older workspaces', () => {
+  const recent = getDockShellLayout(placement, {
+    ...input,
+    workspaceCount: 3,
+    hasOlderWorkspaces: true,
+  });
+  const history = getDockShellLayout(placement, {
+    ...input,
+    workspaceCount: 8,
+    railWorkspaceCount: 3,
+  });
+  expect(history.desiredHeight).toBeGreaterThan(recent.desiredHeight);
+  expect(history.railHeight).toBe(recent.railHeight);
+});
+
 describe('lifted shell helpers', () => {
   it('keeps the compact wing width formula', () => {
     expect([0, 1, 2, 3].map(dockCompactWingWidth)).toEqual([12, 24, 39, 54]);

@@ -17,7 +17,9 @@ interface DockShellLayoutInput {
   expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
-  /** Reserve history viewport room, including after the disclosure is removed. */
+  /** Edge entries stay on the recent list even when the overview reveals history. */
+  railWorkspaceCount?: number;
+  /** Reserve room for the collapsed list's history disclosure. */
   hasOlderWorkspaces?: boolean;
   compactWingWidth: number;
   hasFeedback: boolean;
@@ -73,6 +75,7 @@ export function getDockShellLayout(
     expandedHeight = null,
     rowLimit,
     workspaceCount,
+    railWorkspaceCount = workspaceCount,
     hasOlderWorkspaces = false,
     compactWingWidth,
     hasFeedback,
@@ -92,16 +95,18 @@ export function getDockShellLayout(
   const headerHeight = edge && recording ? 104 : (compactNotchSize?.height ?? 40);
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
   // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40), the search
-  // field and the frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
+  // field and the frame's 8 + 8 padding (12 + 8 when floating upward).
+  // Keep in step with DockOverview / DockCompanionContent.
   const overviewHeight =
     Math.min(workspaceCount, rowLimit) * 52 +
     7 +
     40 +
-    16 +
+    (floatingUp ? 20 : 16) +
     DOCK_OVERVIEW_SEARCH_HEIGHT +
     (hasOlderWorkspaces ? DOCK_OVERVIEW_HISTORY_HEIGHT : 0) +
     (intro ? DOCK_INTRO_HEIGHT : 0);
-  const railHeight = (edge ? headerHeight + 8 : 48) + (Math.min(workspaceCount, rowLimit) + 1) * 32;
+  const railHeight =
+    (edge ? headerHeight + 8 : 48) + (Math.min(railWorkspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging
     ? 224

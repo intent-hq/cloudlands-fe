@@ -129,7 +129,8 @@ export function useDockShellMotion(state: DockShellMotionState) {
         stopHeight(true);
         return;
       }
-      const from = openHeight ?? state.placement().surface.height;
+      // Native allocation can exceed the visible overview; start at its painted height.
+      const from = Math.min(state.placement().surface.height, openHeight ?? previous);
       if (target > from && state.placement().surface.height < target - 0.5) {
         heightLoop.cancel();
         openHeight = from;
