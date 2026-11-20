@@ -944,9 +944,26 @@
   .markdown-viewer :global(.markdown-image-frame) {
     position: relative;
     display: block;
+    width: min(var(--image-width), 100%);
     max-width: 100%;
     overflow: hidden;
     border-radius: 0.5rem;
+  }
+
+  /* Table columns size from content. An in-flow image lets the column grow to
+     the image's width and shrink no smaller than a readable minimum. */
+  .markdown-viewer :global(:is(td, th) .markdown-image-frame),
+  .markdown-viewer.chat-image-thumbnails :global(:is(td, th) .markdown-image-frame) {
+    width: fit-content;
+    max-width: none;
+  }
+
+  .markdown-viewer :global(:is(td, th) .markdown-image-frame > img) {
+    position: static;
+    width: var(--image-width);
+    min-width: min(var(--image-width), 10rem);
+    max-width: 100%;
+    height: auto;
   }
 
   .markdown-viewer :global(.markdown-image-frame > img) {
