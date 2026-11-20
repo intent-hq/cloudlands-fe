@@ -10,8 +10,12 @@
  */
 
 import type { FrameMachineSession, FrameSession } from '../shared/types/machine-rail';
-import type { PanelTab } from '../store/renderer/slices/panel-layout/panel-layout-types';
-import { isTabWindowId, tabWindowRoute, type TabWindowRecord } from '../shared/types/tab-window';
+import {
+  isTabWindowId,
+  tabWindowRoute,
+  type TabWindowRecord,
+  type TabWindowTab,
+} from '../shared/types/tab-window';
 
 export const WINDOW_FRAMES_VERSION = 1;
 
@@ -62,7 +66,7 @@ function readTabWindow(value: unknown): TabWindowRecord | null {
   if (!workspace || !layout || typeof tab !== 'object' || tab === null) return null;
   const { id, type } = tab as Record<string, unknown>;
   if (!readId(id) || typeof type !== 'string' || type === '') return null;
-  const { tabWindowId: _marker, ...rest } = tab as PanelTab;
+  const { tabWindowId: _marker, ...rest } = tab as TabWindowTab;
   return { tabWindowId, workspaceId: workspace, sourceLayoutId: layout, tab: rest };
 }
 

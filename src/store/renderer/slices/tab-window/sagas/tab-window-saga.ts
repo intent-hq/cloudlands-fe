@@ -43,6 +43,7 @@ import {
   type TabWindowIsOpenResult,
   type TabWindowRecord,
   type TabWindowReturnEvent,
+  type TabWindowTab,
   type TabWindowTabUpdatedEvent,
 } from '$shared/types/tab-window';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
@@ -145,7 +146,7 @@ function* ensureLayout(layoutId: string): SagaGenerator<void> {
 function* onTabReturned(event: TabWindowReturnEvent | null): SagaGenerator<void> {
   if (!event?.tab?.id) return;
   yield* call(ensureLayout, event.sourceLayoutId);
-  yield* put(tabReturnedFromWindow(event.sourceLayoutId, event.tab));
+  yield* put(tabReturnedFromWindow(event.sourceLayoutId, event.tab as PanelTab));
   if (event.reveal && routedWorkspaceId() !== event.workspaceId) {
     yield* call(showWorkspaceSaga, event.workspaceId);
   }
@@ -153,7 +154,8 @@ function* onTabReturned(event: TabWindowReturnEvent | null): SagaGenerator<void>
 
 function* onTabUpdated(event: TabWindowTabUpdatedEvent | null): SagaGenerator<void> {
   if (!event?.tab?.id) return;
-  const { sourceLayoutId: layoutId, tab } = event;
+  const { sourceLayoutId: layoutId } = event;
+  const tab = event.tab as PanelTab;
   const hidden = (yield* selectHiddenTabs.effect(layoutId)).find((t) => t.id === tab.id);
   if (!hidden?.tabWindowId) return;
   if (typeof tab.title === 'string' && tab.title !== hidden.title) {
@@ -254,7 +256,7 @@ function* sourceWindowSaga(): SagaGenerator<void> {
 /** The panel id of a tab window's one panel. */
 const TAB_WINDOW_PANEL_ID = 'tab-window-panel';
 
-function syncedFields(tab: PanelTab): string {
+function syncedFields(tab: TabWindowTab): string {
   return JSON.stringify([tab.title, tab.browserUrl, tab.browserRequestedUrl, tab.faviconUrl]);
 }
 
@@ -311,7 +313,7 @@ function* tabWindowSagaFor(tabWindowId: string): SagaGenerator<void> {
       panels: {
         [TAB_WINDOW_PANEL_ID]: {
           id: TAB_WINDOW_PANEL_ID,
-          tabs: [record.tab],
+          tabs: [record.tab as PanelTab],
           activeTabId: record.tab.id,
         },
       },

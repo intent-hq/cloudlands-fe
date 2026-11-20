@@ -12,7 +12,23 @@
  * tab window moves the tab back; only "Close tab" in its header closes it.
  */
 
-import type { PanelTab } from '../../store/renderer/slices/panel-layout/panel-layout-types';
+/**
+ * The panel tab a tab window shows. Structurally a subset of the renderer's
+ * `PanelTab` (this file is shared with the preload build, which cannot load
+ * the store types); the other tab fields pass through unchanged.
+ */
+export interface TabWindowTab {
+  id: string;
+  type: string;
+  title: string;
+  closable: boolean;
+  hasUnsavedChanges?: boolean;
+  /** Set only on the source window's hidden copy. */
+  tabWindowId?: string;
+  browserUrl?: string;
+  browserRequestedUrl?: string;
+  faviconUrl?: string;
+}
 
 /** Route prefix of a tab window's page; the id follows. */
 export const TAB_WINDOW_ROUTE_PREFIX = '/tab-window/';
@@ -73,7 +89,7 @@ export interface TabWindowRecord {
   /** The panel-layout key the tab came from (the workspace id outside column view). */
   sourceLayoutId: string;
   /** The tab, kept up to date by the tab window's renderer. */
-  tab: PanelTab;
+  tab: TabWindowTab;
 }
 
 /** `tab-window:open` params: move a tab of the sender's window to a window of its own. */
@@ -82,7 +98,7 @@ export interface TabWindowOpenParams {
   tabWindowId: string;
   workspaceId: string;
   sourceLayoutId: string;
-  tab: PanelTab;
+  tab: TabWindowTab;
 }
 
 /** `tab-window:open` result. */
@@ -97,7 +113,7 @@ export interface TabWindowGetResult {
 
 /** `tab-window:update` params: the tab window's tab changed (title, URL, favicon). */
 export interface TabWindowUpdateParams {
-  tab: PanelTab;
+  tab: TabWindowTab;
 }
 
 /** `tab-window:is-open` result. */
@@ -116,7 +132,7 @@ export interface TabWindowReturnEvent {
   tabWindowId: string;
   workspaceId: string;
   sourceLayoutId: string;
-  tab: PanelTab;
+  tab: TabWindowTab;
   /** The user moved it back: the window shows its workspace. A plain window close does not. */
   reveal: boolean;
 }
@@ -126,7 +142,7 @@ export interface TabWindowTabUpdatedEvent {
   tabWindowId: string;
   workspaceId: string;
   sourceLayoutId: string;
-  tab: PanelTab;
+  tab: TabWindowTab;
 }
 
 /** `tab-window:closed-tab` event (main → the source window): the tab was closed in its window. */
@@ -141,7 +157,7 @@ export interface TabWindowClosedTabEvent {
  * Whether a tab can move to its own window now. A file with unsaved changes
  * cannot: the second renderer would not have the draft.
  */
-export function canMoveTabToWindow(tab: Pick<PanelTab, 'type' | 'hasUnsavedChanges'>): boolean {
+export function canMoveTabToWindow(tab: Pick<TabWindowTab, 'type' | 'hasUnsavedChanges'>): boolean {
   return !tab.hasUnsavedChanges;
 }
 

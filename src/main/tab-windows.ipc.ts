@@ -21,8 +21,8 @@ import {
   type TabWindowGetResult,
   type TabWindowIsOpenResult,
   type TabWindowOpenResult,
+  type TabWindowTab,
 } from '../shared/types/tab-window';
-import type { PanelTab } from '../store/renderer/slices/panel-layout/panel-layout-types';
 import { frameToShow, rendererFor } from './frames';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { isTabWindow, setTabWindowSessions } from './tab-window-identity';
@@ -41,7 +41,7 @@ const IdSchema = z.string().min(1).max(256);
 const TabSchema = z
   .object({ id: IdSchema, type: z.string().min(1).max(64), title: z.string().max(4_096) })
   .passthrough()
-  .transform((tab) => tab as unknown as PanelTab);
+  .transform((tab) => tab as unknown as TabWindowTab);
 const TabWindowIdSchema = z.string().refine(isTabWindowId, 'Not a tab window id');
 
 const Schemas = {

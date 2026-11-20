@@ -23,7 +23,6 @@
 import type { BrowserWindow, WebContents } from 'electron';
 import { Logger } from '../shared/logger';
 import { IPC_CHANNELS } from '../shared/ipc-registry';
-import type { PanelTab } from '../store/renderer/slices/panel-layout/panel-layout-types';
 import {
   isTabWindowId,
   tabWindowRoute,
@@ -32,6 +31,7 @@ import {
   type TabWindowOpenParams,
   type TabWindowRecord,
   type TabWindowReturnEvent,
+  type TabWindowTab,
   type TabWindowTabUpdatedEvent,
 } from '../shared/types/tab-window';
 
@@ -81,7 +81,7 @@ interface Entry {
   closing: 'back' | 'close' | null;
 }
 
-function copyTab(tab: PanelTab): PanelTab {
+function copyTab(tab: TabWindowTab): TabWindowTab {
   return { ...tab };
 }
 
@@ -156,7 +156,7 @@ export class TabWindowRegistry {
   }
 
   /** The tab window's renderer reports its tab changed. The source keeps its hidden copy current. */
-  update(window: BrowserWindow, tab: PanelTab): void {
+  update(window: BrowserWindow, tab: TabWindowTab): void {
     const entry = this.entryForWindow(window);
     if (!entry || tab.id !== entry.record.tab.id) return;
     const { tabWindowId: _ignored, ...next } = tab;

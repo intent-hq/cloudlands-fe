@@ -2,8 +2,7 @@ import { EventEmitter } from 'events';
 import type { BrowserWindow, WebContents } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import { TabWindowRegistry, type TabWindowRegistryDeps } from '../tab-windows';
-import type { PanelTab } from '../../store/renderer/slices/panel-layout/panel-layout-types';
-import type { TabWindowRecord } from '../../shared/types/tab-window';
+import type { TabWindowRecord, TabWindowTab as PanelTab } from '../../shared/types/tab-window';
 
 vi.mock('../../shared/logger', () => ({
   Logger: class {
