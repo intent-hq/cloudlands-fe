@@ -93,7 +93,7 @@ export function togglePromptMicRecording(
     context.showHint(m.hardwareConsole_ptt_unavailable_message());
     return 'blocked';
   }
-  startPttRecording(context);
+  startPttRecording(context, 'prompt');
   ownedSession = getActivePttSessionToken();
   return ownedSession !== null ? 'started' : 'blocked';
 }

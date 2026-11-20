@@ -1,23 +1,23 @@
 /** @internal Test helper for the dock composer component specs. */
 import type { Locator } from '@playwright/test';
 
-/** Guard against a visible stop button hiding a clipped timer and unusable meter. */
+/** Guard against a visible stop pill hiding a clipped timer or an unusable meter. */
 export async function readDictationIndicators(component: Locator) {
-  const timer = component.locator('[data-dock-dictation-time]');
+  const timer = component.locator('[data-dock-media-footer] [data-dictation-elapsed]');
   return timer.evaluate((element) => {
     const footer = element.closest('[data-dock-media-footer]');
-    const waveform = footer?.querySelector('[data-dock-dictation-waveform]');
-    const gap = element.parentElement;
-    if (!footer || !waveform || !gap) return null;
+    const pill = element.closest('button');
+    const waveform = pill?.querySelector('[data-dictation-waveform]');
+    if (!footer || !pill || !waveform) return null;
     const range = document.createRange();
     range.selectNodeContents(element);
     const text = range.getBoundingClientRect();
-    const available = gap.getBoundingClientRect();
+    const available = pill.getBoundingClientRect();
     const bounds = footer.getBoundingClientRect();
     const meter = waveform.getBoundingClientRect();
-    const visibleSamples = Array.from(waveform.children).filter((sample) => {
-      const bar = sample.getBoundingClientRect();
-      return bar.width > 0 && bar.height > 0 && bar.left >= meter.left && bar.right <= meter.right;
+    const visibleBars = Array.from(waveform.children).filter((bar) => {
+      const box = bar.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && box.left >= meter.left && box.right <= meter.right;
     }).length;
     return {
       timerUnclipped:
@@ -26,8 +26,9 @@ export async function readDictationIndicators(component: Locator) {
         text.right <= available.right &&
         text.left >= bounds.left &&
         text.right <= bounds.right,
-      separate: meter.right <= text.left,
-      usefulHistory: visibleSamples >= 2,
+      separate: text.right <= meter.left,
+      meterInsidePill: meter.left >= available.left && meter.right <= available.right,
+      allBarsVisible: visibleBars === 5,
     };
   });
 }

@@ -145,7 +145,13 @@ const mockReduxState = vi.hoisted(
     workspaceAgents: { byWorkspaceId: Record<string, any> };
     providerSettings: { activeProviderId: string };
     readonly model: { defaultProviderId: string };
-    hardwareConsole: { pttRecording: boolean; voiceTranscribing: boolean };
+    hardwareConsole: {
+      pttRecording: boolean;
+      voiceTranscribing: boolean;
+      pttRecordingSource: string | null;
+      pttRecordingStartedAt: number | null;
+      pttInputLevels: number[];
+    };
     skills: {
       byWorkspaceId: Record<
         string,
@@ -182,7 +188,13 @@ const mockReduxState = vi.hoisted(
       return { defaultProviderId: this.providerSettings.activeProviderId };
     },
     // The composer mic button subscribes to these hardware-console flags
-    hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    hardwareConsole: {
+      pttRecording: false,
+      voiceTranscribing: false,
+      pttRecordingSource: null,
+      pttRecordingStartedAt: null,
+      pttInputLevels: [],
+    },
     skills: { byWorkspaceId: {} },
     // The oversized-attachment placement flow reads daemon locality to pick
     // the sourcePath fast path vs. the wire data variant
@@ -1982,6 +1994,9 @@ describe('SimpleRichInput mic-button focus retention', () => {
     removeMockSession('ws-1', 'agent-1');
     mockReduxState.hardwareConsole.pttRecording = false;
     mockReduxState.hardwareConsole.voiceTranscribing = false;
+    mockReduxState.hardwareConsole.pttRecordingSource = null;
+    mockReduxState.hardwareConsole.pttRecordingStartedAt = null;
+    mockReduxState.hardwareConsole.pttInputLevels = [];
     isComposerMicRecordingMock.mockReturnValue(false);
     toggleComposerMicRecordingMock.mockReturnValue('started');
     vi.unstubAllGlobals();
@@ -2008,11 +2023,28 @@ describe('SimpleRichInput mic-button focus retention', () => {
     const editor = screen.getByTestId('tiptap-editor');
     editor.focus();
 
-    await clickLikeABrowser(buttonByIcon('microphone')!);
+    await clickLikeABrowser(screen.getByTestId('composer-mic-button') as HTMLButtonElement);
 
     expect(document.activeElement).toBe(editor);
     expect(toggleComposerMicRecordingMock).toHaveBeenCalledTimes(1);
     expect(toggleComposerMicRecordingMock).toHaveBeenCalledWith(expect.any(Object), 'agent-1');
+  });
+
+  it('shows the live mic as a stop pill with the elapsed time and input level bars', () => {
+    vi.useFakeTimers({ now: 75_000, toFake: ['Date'] });
+    mockReduxState.hardwareConsole.pttRecording = true;
+    mockReduxState.hardwareConsole.pttRecordingSource = 'composer';
+    mockReduxState.hardwareConsole.pttRecordingStartedAt = 10_000;
+    mockReduxState.hardwareConsole.pttInputLevels = [0, 0.5, 1, 0.25, 0.75];
+    isComposerMicRecordingMock.mockReturnValue(true);
+    render(SimpleRichInput, { props: baseProps() });
+
+    const pill = screen.getByTestId('composer-mic-button');
+    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    expect(pill.querySelector('[data-dictation-elapsed]')?.textContent).toBe('1:05');
+    const bars = [...pill.querySelectorAll<HTMLElement>('[data-dictation-waveform] > span')];
+    expect(bars.map((bar) => bar.dataset.level)).toEqual(['0', '0.5', '1', '0.25', '0.75']);
+    vi.useRealTimers();
   });
 
   it('keeps editor focus when clicking cancel while transcribing', async () => {

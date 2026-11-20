@@ -38,6 +38,12 @@ export interface RadialPromptPickerState {
 }
 
 /** State for the hardware-console (Work Louder Micro) key assignments. */
+/**
+ * Surface that started a push-to-talk recording: the hardware voice key, the chat
+ * composer mic, the new-workspace prompt mic, or a discussion mic.
+ */
+export type PttRecordingSource = 'key' | 'composer' | 'prompt' | 'discussion';
+
 export interface HardwareConsoleState {
   /** Whether the hardware-console integration is enabled (device panel toggle). */
   enabled: boolean;
@@ -95,6 +101,12 @@ export interface HardwareConsoleState {
   actionHudLabel: string | null;
   /** True while a push-to-talk recording is in progress (transient, never persisted). */
   pttRecording: boolean;
+  /** Surface that started the live recording; `null` while idle (transient). */
+  pttRecordingSource: PttRecordingSource | null;
+  /** Epoch ms the live recording started; `null` while idle (transient). */
+  pttRecordingStartedAt: number | null;
+  /** Newest microphone bar levels (0–1, low → high frequency) of the live recording (transient). */
+  pttInputLevels: number[];
   /** True while a `voice.transcribe` request is in flight (transient, never persisted). */
   voiceTranscribing: boolean;
   /**

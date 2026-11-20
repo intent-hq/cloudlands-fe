@@ -93,7 +93,7 @@ export function toggleComposerMicRecording(
   }
   // startPttRecording clears any dangling capture, so the registration must
   // follow it — and only for a session that actually started.
-  startPttRecording(context);
+  startPttRecording(context, 'composer');
   ownedSession = getActivePttSessionToken();
   if (ownedSession !== null && agentId !== undefined) setComposerDictationTarget(agentId);
   return ownedSession !== null ? 'started' : 'blocked';

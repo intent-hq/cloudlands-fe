@@ -106,6 +106,8 @@ describe('togglePromptMicRecording', () => {
       'hardwareConsole/pttRecordingStopped',
       'hardwareConsole/pttRecordingFinished',
     ]);
+    const started = dispatched.find((a) => a.type === 'hardwareConsole/pttRecordingStarted');
+    expect((started?.payload as [{ source: string }])[0].source).toBe('prompt');
     expect(isPromptMicRecording()).toBe(false);
   });
 

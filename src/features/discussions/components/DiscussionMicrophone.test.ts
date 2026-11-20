@@ -12,7 +12,15 @@ const mocks = vi.hoisted(() => ({
   } as Record<string, unknown> | null,
 }));
 const target = writable(mocks.current);
-vi.mock('$store/renderer/store', () => ({ store: { state: {}, dispatch: vi.fn() } }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({
+      hardwareConsole: { pttRecordingStartedAt: null, pttInputLevels: [0.2, 0.8] },
+    }),
+  });
+});
 vi.mock('$store/renderer/slices/workspace-discussion/workspace-discussion-selectors', () => ({
   selectDiscussionTarget: Object.assign(() => target, { select: () => mocks.current }),
   selectDiscussionCanSend: { select: () => mocks.canCompose },
@@ -26,6 +34,7 @@ vi.mock('$features/hardware-console/voice/voice-setup-toast', () => ({
 }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: vi.fn() } }));
 vi.mock('../discussion-microphone', () => ({ createDiscussionMicrophone: mocks.create }));
+import { m } from '$shared/paraglide/messages.js';
 import DiscussionMicrophone from './DiscussionMicrophone.svelte';
 afterEach(() => {
   cleanup();
@@ -100,5 +109,22 @@ describe('discussion microphone destination lifetime', () => {
     cancel.mockClear();
     view.unmount();
     expect(cancel).toHaveBeenCalled();
+  });
+  it('turns into the live dictation pill while its recording runs, and a click stops it', async () => {
+    const { view } = setup();
+    const captured = mocks.create.mock.calls.at(-1)![0];
+    const { toggle } = mocks.create.mock.results.at(-1)!.value;
+    captured.onState('recording');
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-dictation-waveform]')).not.toBeNull(),
+    );
+    const pill = view.getByRole('button', { name: m.chat_richInput_micStop_label() });
+    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(pill);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    captured.onState('idle');
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-dictation-waveform]')).toBeNull(),
+    );
   });
 });

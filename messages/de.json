@@ -8423,7 +8423,6 @@
   "dock_composer_captured_placeholder": "Beschreibe, was geändert werden soll",
   "dock_composer_annotating_placeholder": "Klicke oder zeichne auf dem Bildschirm; jede Markierung erhält eine Nummer",
   "dock_composer_annotating_status": "Markieren",
-  "dock_composer_listening_status": "Zuhören",
   "dock_composer_recording_status": "Aufnahme",
   "dock_composer_capture_tooltip": "Bildschirm aufnehmen · {shortcut}",
   "dock_composer_captureWindow_tooltip": "Fenster aufnehmen · {shortcut}",

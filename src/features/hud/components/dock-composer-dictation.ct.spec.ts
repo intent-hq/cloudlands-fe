@@ -97,7 +97,9 @@ test('Send while dictating stops the microphone and sends every word exactly onc
 }) => {
   const { component, editor, submit } = await mountDock(mount);
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(
+    component.getByRole('button', { name: 'Stop dictating', exact: true }),
+  ).toBeVisible();
   await say(page, 'Fix the header spacing');
   await expect(editor.locator('[data-screen-interim]')).toContainText('Fix the header spacing');
   // Only live words exist: Send must still accept the first click.
@@ -108,7 +110,9 @@ test('Send while dictating stops the microphone and sends every word exactly onc
   expect((await harness(page)).sends).toHaveLength(1);
   // The box is empty after the send and nothing refills it.
   await expect(editor).toHaveText('');
-  await expect(component.getByText('Listening', { exact: true })).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'Stop dictating', exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test('Send keeps live words as typed text when the final transcript is late, without a second send', async ({
@@ -119,7 +123,9 @@ test('Send keeps live words as typed text when the final transcript is late, wit
   await editor.click();
   await page.keyboard.type('Note: ');
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(
+    component.getByRole('button', { name: 'Stop dictating', exact: true }),
+  ).toBeVisible();
   await say(page, 'the live words');
   await expect(editor.locator('[data-screen-interim]')).toContainText('the live words');
   await holdStops(page, true);
@@ -153,7 +159,9 @@ test('the caret follows dictated words from where the user placed it', async ({ 
   // DOM selection asynchronously, so poll its own state, not the DOM).
   await expect.poll(() => editorSelection(editor)).toBe(7);
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(
+    component.getByRole('button', { name: 'Stop dictating', exact: true }),
+  ).toBeVisible();
   await expect(editor).toBeFocused();
   await say(page, 'middle');
   await expect(editor.locator('[data-screen-interim]')).toContainText('middle');
@@ -185,9 +193,31 @@ test('the placeholder is hidden while dictation is live and under live words', a
   const { component, editor } = await mountDock(mount);
   await expect.poll(() => placeholderText(editor)).not.toBe('');
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(
+    component.getByRole('button', { name: 'Stop dictating', exact: true }),
+  ).toBeVisible();
   await expect.poll(() => placeholderText(editor)).toBe('');
   await say(page, 'Hello there');
   await expect(editor.locator('[data-screen-interim]')).toContainText('Hello there');
   expect(await placeholderText(editor)).toBe('');
+});
+
+test('the live mic is one stop pill with a timer and moving level bars, and no header label', async ({
+  mount,
+}) => {
+  const { component } = await mountDock(mount);
+  await component.getByRole('button', { name: /^Dictate/ }).click();
+  const pill = component.getByRole('button', { name: 'Stop dictating', exact: true });
+  await expect(pill.locator('[data-dictation-elapsed]')).toHaveText(/^\d+:\d{2}$/);
+  const bars = pill.locator('[data-dictation-waveform] > span');
+  await expect(bars).toHaveCount(5);
+  const heights = () =>
+    bars.evaluateAll((elements) => elements.map((bar) => bar.getBoundingClientRect().height));
+  const first = await heights();
+  await expect.poll(async () => (await heights()).join()).not.toBe(first.join());
+  await expect.poll(async () => Math.max(...(await heights()))).toBeGreaterThan(4);
+  await expect(component.getByText('Listening', { exact: true })).toHaveCount(0);
+  await pill.click();
+  await expect(component.locator('[data-dictation-waveform]')).toHaveCount(0);
+  await expect(component.getByRole('button', { name: /^Dictate/ })).toBeVisible();
 });

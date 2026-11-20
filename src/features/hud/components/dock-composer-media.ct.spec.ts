@@ -304,13 +304,16 @@ for (const mode of ['idle', 'captured', 'annotating', 'dictating', 'recording'] 
       previousRight = box.x + box.width;
     }
     if (mode === 'dictating') {
-      await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
+      await expect(
+        component.locator('[data-dock-media-footer] [data-dictation-elapsed]'),
+      ).toBeVisible();
       await expect
         .poll(() => readDictationIndicators(component))
         .toEqual({
           timerUnclipped: true,
           separate: true,
-          usefulHistory: true,
+          meterInsidePill: true,
+          allBarsVisible: true,
         });
     }
     await testInfo.attach(`composer-media-${mode}`, {

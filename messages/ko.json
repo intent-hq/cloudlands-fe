@@ -8423,7 +8423,6 @@
   "dock_composer_captured_placeholder": "변경할 내용을 설명하세요",
   "dock_composer_annotating_placeholder": "화면을 클릭하거나 그리면 각 표시에 번호가 붙습니다",
   "dock_composer_annotating_status": "주석 작성 중",
-  "dock_composer_listening_status": "듣는 중",
   "dock_composer_recording_status": "녹화 중",
   "dock_composer_capture_tooltip": "화면 캡처 · {shortcut}",
   "dock_composer_captureWindow_tooltip": "창 캡처 · {shortcut}",
