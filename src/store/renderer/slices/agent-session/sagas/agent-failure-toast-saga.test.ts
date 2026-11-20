@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   dismiss: vi.fn(),
   navigateToRoute: vi.fn(async () => {}),
   resolveKeySlot: vi.fn((workspaceId: string | undefined) => (workspaceId === 'ws-1' ? 3 : null)),
+  forwardToastWhenHidden: vi.fn(),
+}));
+vi.mock('$lib/utils/machine-toast-forward', () => ({
+  forwardToastWhenHidden: mocks.forwardToastWhenHidden,
 }));
 vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } }));
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -97,6 +101,8 @@ function state(overrides: Record<string, unknown> = {}) {
     model: { providerModels: {} },
     agentAvailability: { providerLoadingMap: {} },
     tabState: { currentTabId: null },
+    machineRail: { enabled: false, selectedId: '' },
+    connections: { windowBackendId: 'local' },
     ...overrides,
   };
 }
@@ -147,6 +153,29 @@ describe('agentFailureToastSaga', () => {
 
     expect(mocks.agentFailure).not.toHaveBeenCalled();
     expect(getAgentFailureEntry('agent-1')).toBeDefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('shows and forwards a current-workspace failure once while its machine is hidden', async () => {
+    const task = runSaga(
+      {
+        dispatch: vi.fn(),
+        getState: () =>
+          state({
+            tabState: { currentTabId: 'ws-1' },
+            machineRail: { enabled: true, selectedId: 'remote' },
+          }),
+      },
+      agentFailureToastSaga,
+    );
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'spawn failed', at: 1 });
+    await settle();
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'spawn failed', at: 1 });
+    await settle();
+
+    expect(lastToast('agent-failure:agent-1')).toBeDefined();
+    expect(mocks.forwardToastWhenHidden.mock.calls).toEqual([['error', 'Implementor failed']]);
     task.cancel();
     await task.toPromise();
   });

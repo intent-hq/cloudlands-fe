@@ -57,6 +57,8 @@ import {
 } from '../../provider-catalog/provider-catalog-selectors';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
+import { forwardToastWhenHidden } from '$lib/utils/machine-toast-forward';
+import { selectIsRailMachineShown } from '../../machine-rail/machine-rail-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
@@ -80,6 +82,9 @@ interface AgentToastState {
   /** Entry `at` of the last auth failure that triggered a forced provider
    *  auth-status refresh — one refresh per failure, not per re-render. */
   authRefreshedAt?: number;
+  /** Entry `at` of the last failure rendered, so a hidden machine forwards
+   *  each failure once rather than on every re-render. */
+  announcedAt?: number;
 }
 
 type FailureMessage =
@@ -216,10 +221,14 @@ function* renderEntry(
   const notify = yield* call(loadToastArtifacts);
   const { componentProps, authGuidance } = yield* call(buildToastProps, entry, state, emit);
   const currentWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
-  if (currentWorkspaceId === entry.workspaceId) {
+  const machineShown = yield* selectIsRailMachineShown.effect();
+  const announce = state.announcedAt !== entry.at;
+  state.announcedAt = entry.at;
+  if (machineShown && currentWorkspaceId === entry.workspaceId) {
     if (state.visible) notify.dismiss(toastId(entry.agentId));
     state.visible = false;
   } else {
+    if (announce) forwardToastWhenHidden('error', componentProps.title);
     notify.agentFailure(componentProps, {
       id: toastId(entry.agentId),
       duration: Number.POSITIVE_INFINITY,

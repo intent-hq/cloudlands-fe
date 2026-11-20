@@ -13,7 +13,10 @@
  * Fires for agents in ANY workspace — the daemon-events bridge feeds every
  * workspace's events through here without gating on the focused workspace.
  * Events for the current workspace tab skip the toast, regardless of which
- * conversation or panel is active or whether the window has focus.
+ * conversation or panel is active or whether the window has focus, unless this
+ * renderer's machine is not the one its window shows (machine rail). A hidden
+ * machine keeps the toast for when the user switches to it and also forwards
+ * it to the shown machine.
  * Suppression only skips the toast; it never marks the request handled, and
  * the session-field-derived surfaces (banner/badge) are untouched.
  * "Switch To" therefore routes cross-workspace: `goto(/workspace/{wsId})`
@@ -33,6 +36,7 @@
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { createLogger } from '$lib/utils/client-logger';
+import { forwardToastWhenHidden, isMachineShown } from '$lib/utils/machine-toast-forward';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('AgentAttentionToastService');
@@ -122,15 +126,19 @@ function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
 }
 
-/** Read tab state directly to keep this middleware-reachable module dependency-light. */
-function isCurrentWorkspace(workspaceId: string): boolean {
-  return appStore.state.tabState?.currentTabId === workspaceId;
+/**
+ * The user is looking at the workspace: it is the current tab of the machine
+ * on screen. Reads tab state directly to keep this middleware-reachable module
+ * dependency-light.
+ */
+function isViewingWorkspace(workspaceId: string): boolean {
+  return isMachineShown() && appStore.state.tabState?.currentTabId === workspaceId;
 }
 
 /**
  * True when the raising agent is muted: the payload stamp, else the tracked
  * session's `notificationsMuted` read straight off `appStore.state` (no
- * selector imports — same dependency-light rule as `isCurrentWorkspace`).
+ * selector imports — same dependency-light rule as `isViewingWorkspace`).
  */
 function isAgentMuted(request: AgentAttentionRequest): boolean {
   if (request.notificationsMuted === true) return true;
@@ -166,7 +174,7 @@ async function openAgentConversation(workspaceId: string, agentId: string): Prom
  * auto-dismisses (`duration: Infinity`).
  *
  * Skipped entirely when the raising agent is muted (see {@link isAgentMuted})
- * or when its workspace is already current (see {@link isCurrentWorkspace}).
+ * or when its workspace is already current (see {@link isViewingWorkspace}).
  * The skip does not dismiss an existing toast for the agent and does not mark
  * the request handled.
  */
@@ -176,7 +184,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
     logger.debug('Agent is muted — suppressing attention toast', { workspaceId, agentId });
     return;
   }
-  if (isCurrentWorkspace(workspaceId)) {
+  if (isViewingWorkspace(workspaceId)) {
     logger.debug('User is already viewing the workspace — suppressing attention toast', {
       workspaceId,
       agentId,
@@ -192,11 +200,12 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       getKeySlotResolver(),
     ]);
     if (pendingToastOperations.get(agentId) !== operation) return;
-    if (isCurrentWorkspace(workspaceId)) return;
+    if (isViewingWorkspace(workspaceId)) return;
     const title =
       kind === 'blocker'
         ? m.agent_attentionToast_blocker_title({ name: agentName })
         : m.agent_attentionToast_discussion_title({ name: agentName });
+    forwardToastWhenHidden('warning', title);
     notify.custom(AgentAttentionToast, {
       id: agentAttentionToastId(agentId),
       componentProps: {
@@ -253,7 +262,7 @@ export async function showWorkspaceAutoUnarchiveToast(
   notice: WorkspaceAutoUnarchiveNotice,
 ): Promise<void> {
   const { workspaceId, agentId, agentName } = notice;
-  if (isCurrentWorkspace(workspaceId)) return;
+  if (isViewingWorkspace(workspaceId)) return;
   const notify = await getToast();
   let title: string | undefined;
   try {
@@ -263,7 +272,7 @@ export async function showWorkspaceAutoUnarchiveToast(
   } catch (error) {
     logger.warn('Workspace title resolution failed — toast uses fallback', { workspaceId, error });
   }
-  if (isCurrentWorkspace(workspaceId)) return;
+  if (isViewingWorkspace(workspaceId)) return;
   notify.info(
     m.workspace_autoUnarchive_toast({
       title: title || m.workspace_page_space_title(),
