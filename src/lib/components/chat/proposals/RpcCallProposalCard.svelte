@@ -61,9 +61,9 @@
         {#if groups.length > 1}
           <p class="type-caption font-medium text-muted-foreground">{group.name}</p>
         {/if}
-        <ol class="space-y-2">
+        <div class="space-y-2">
           {#each group.calls as call (call.index)}
-            <li
+            <div
               class="min-w-0 rounded-(--radius-large) border border-border bg-muted/20 px-3 py-2.5"
               data-rpc-call={call.index}
             >
@@ -78,9 +78,9 @@
               <pre
                 class="type-caption mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-foreground"
                 data-rpc-params>{formatParams(call.params)}</pre>
-            </li>
+            </div>
           {/each}
-        </ol>
+        </div>
       </div>
     {/each}
   </div>
