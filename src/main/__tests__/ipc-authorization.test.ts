@@ -163,7 +163,7 @@ describe('browser-panel guest IPC authorization', () => {
   });
 
   it('allows a browser-panel webview hosted by an app window', async () => {
-    const handler = vi.fn(async () => 'ok');
+    const handler = vi.fn(async (_context: unknown) => 'ok');
     await expect(createBrowserPanelGuestIpcHandler(channel, handler)(guestEvent())).resolves.toBe(
       'ok',
     );
