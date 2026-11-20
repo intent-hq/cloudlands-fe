@@ -113,6 +113,21 @@ export const DEFAULT_VERCEL_IMAGE = 'sutterhill/intent-images/intent-node';
 export const VERCEL_TEAM_ID = /^team_[A-Za-z0-9]{1,64}$/u;
 export const VERCEL_PROJECT_ID = /^prj_[A-Za-z0-9]{1,64}$/u;
 
+const VERCEL_TEAM_SLUG = /^[a-z0-9-]+$/u;
+const VERCEL_IMAGE_SEGMENT = /^[a-z0-9][a-z0-9._-]*$/u;
+/**
+ * A Vercel registry repository without tag or digest: "<team slug>/<project>/<repository>",
+ * or "<repository>" in the entry's own project. A registry host or tag is refused.
+ */
+export function isVercelImage(image: string): boolean {
+  const segments = image.split('/');
+  return (
+    (segments.length === 1 || segments.length === 3) &&
+    segments.every((segment) => VERCEL_IMAGE_SEGMENT.test(segment)) &&
+    (segments.length === 1 || VERCEL_TEAM_SLUG.test(segments[0]!))
+  );
+}
+
 /** Vercel gives 2 GB per vCPU at every size, so a new entry knows them before a test. */
 export const VERCEL_SIZES: readonly CloudMachineSizeInfo[] = [
   { id: '2x4', vcpu: 2, memoryMiB: 4096 },

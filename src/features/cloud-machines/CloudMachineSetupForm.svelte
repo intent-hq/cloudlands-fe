@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import {
     Button,
     Input,
@@ -28,6 +28,7 @@
     VERCEL_SIZES,
     VERCEL_PROJECT_ID,
     VERCEL_TEAM_ID,
+    isVercelImage,
     DEFAULT_VERCEL_IMAGE,
     DEFAULT_CLOUD_MACHINE_SIZE,
     DEFAULT_IDLE_PAUSE_MINUTES,
@@ -199,8 +200,7 @@
   const projectInvalid = $derived(
     vercel && !!projectId.trim() && !VERCEL_PROJECT_ID.test(projectId.trim()),
   );
-  // The backend adds its own version tag, so a reference with a tag or digest is refused.
-  const imageInvalid = $derived(vercel && /[:@]/u.test(image.trim()));
+  const imageInvalid = $derived(vercel && !!image.trim() && !isVercelImage(image.trim()));
   const placeMissing = $derived(
     (northflank || vercel) &&
       (!projectId.trim() ||
@@ -288,8 +288,11 @@
     message: string;
     cloud?: Parameters<typeof cloudErrorText>[0];
     forbidden?: boolean;
+    inUse?: boolean;
   }) {
     if (failure.forbidden) return cloudProviderCopy(kind).ownerOnly;
+    // A new team or project while sandboxes run there.
+    if (failure.inUse && vercel) return m.cloudMachines_vercel_error_placeInUse();
     return failure.cloud ? cloudErrorText(failure.cloud, kind).description : failure.message;
   }
 
@@ -349,6 +352,12 @@
       ...(askName && (!provider || name.trim() !== provider.name) ? { name: name.trim() } : {}),
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : apiKeyFrom ? { apiKeyFrom } : {}),
     };
+  }
+
+  async function openImage() {
+    imageOpen = true;
+    await tick();
+    document.getElementById(`${uid}-image`)?.focus();
   }
 
   function resetTest() {
@@ -715,7 +724,7 @@
     </Select.Root>
 
     {#if vercel}
-      <Label for={imageOpen ? `${uid}-image` : undefined} class="self-start @xl:pt-2"
+      <Label for={imageOpen ? `${uid}-image` : `${uid}-image-toggle`} class="self-start @xl:pt-2"
         >{m.cloudMachines_vercel_form_image_label()}</Label
       >
       <div class="min-w-0 space-y-1">
@@ -737,7 +746,7 @@
           />
           {#if imageInvalid}
             <p id="{uid}-image-error" class="type-body text-danger" data-vercel-image-error>
-              {m.cloudMachines_vercel_form_image_tagged()}
+              {m.cloudMachines_vercel_form_image_invalid()}
             </p>
           {/if}
           <p id="{uid}-image-note" class="type-body text-muted-foreground">
@@ -751,8 +760,9 @@
               variant="link"
               size="sm"
               class="h-auto px-0"
+              id="{uid}-image-toggle"
               disabled={busy}
-              onclick={() => (imageOpen = true)}
+              onclick={openImage}
               data-vercel-image-toggle>{m.cloudMachines_vercel_form_image_use()}</Button
             >
           </p>
