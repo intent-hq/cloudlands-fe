@@ -153,6 +153,7 @@ describe('browser view IPC', () => {
     });
     await expect(invoke(CH.CREATE, next, CREATE)).resolves.toEqual({
       webContentsId: expect.any(Number),
+      existing: false,
     });
     expect(mocks.registerTab).toHaveBeenCalledWith('tab-1', expect.any(Number), 'ws-1');
 

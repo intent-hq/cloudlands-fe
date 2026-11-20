@@ -37,11 +37,15 @@ export function mainOwnedOffscreenPage(node: HTMLElement, entry: MainOwnedOffscr
     workspaceId: entry.workspaceId,
     url: entry.url,
     ...(entry.pinned === undefined ? {} : { pinned: entry.pinned }),
+    keepAlive: true,
   });
   return {
     destroy() {
+      const elsewhere = handle.elsewhere;
       handle.dispose();
-      if (isShownInAPanel(entry.tabId)) return;
+      // Another window's page, or a panel here shows the tab now: not ours to
+      // close. (Main also refuses to close a page from a window that does not own it.)
+      if (elsewhere || isShownInAPanel(entry.tabId)) return;
       destroyMainOwnedPage(entry.tabId).catch((error: unknown) =>
         logger.debug('Could not close an off-screen browser page', { tabId: entry.tabId, error }),
       );

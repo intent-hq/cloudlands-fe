@@ -101,8 +101,7 @@ export async function setBrowserViewsLabEnabled(enabled: boolean): Promise<void>
   if (!api) return;
   try {
     const result = (await api.invoke(CHANNELS.SET_LAB, { enabled })) as
-      | Partial<BrowserViewsLabState>
-      | undefined;
+      Partial<BrowserViewsLabState> | undefined;
     labStore.set({ enabled: result?.enabled === true, active: result?.active === true });
   } catch (error) {
     logger.warn('Could not save the browser pages Labs setting', { error });
@@ -136,9 +135,15 @@ export function createMainOwnedPage(request: {
   workspaceId: string;
   url: string;
   pinned?: boolean;
-}): Promise<{ webContentsId: number }> {
-  return invoke<{ webContentsId: number }>(CHANNELS.CREATE, request).then((result) => {
-    knownPages.set(request.tabId, request.workspaceId);
+  /** An off-screen host: never take the page from a window that has it. */
+  keepAlive?: boolean;
+}): Promise<{ webContentsId: number; existing?: boolean; elsewhere?: boolean }> {
+  return invoke<{ webContentsId: number; existing?: boolean; elsewhere?: boolean }>(
+    CHANNELS.CREATE,
+    request,
+  ).then((result) => {
+    // A page another window drives is that renderer's to close.
+    if (!result?.elsewhere) knownPages.set(request.tabId, request.workspaceId);
     return result;
   });
 }
@@ -259,6 +264,11 @@ export interface MainOwnedPageOptions {
   /** The URL a new page loads. A live page keeps its own URL. */
   url: string;
   pinned?: boolean;
+  /**
+   * Off-screen host: keep the page alive without taking it from another
+   * window. Without it, this window claims the page (main moves it here).
+   */
+  keepAlive?: boolean;
 }
 
 export interface MainOwnedPageHandle {
@@ -266,6 +276,8 @@ export interface MainOwnedPageHandle {
   readonly webview: EmbeddedBrowserWebview;
   /** Whether main has a live page for the tab. */
   readonly ready: boolean;
+  /** keepAlive only: the page lives in another window, which drives it. */
+  readonly elsewhere: boolean;
   /** Stop listening and take the page off screen. The page stays alive in main. */
   dispose(): void;
 }
@@ -307,6 +319,7 @@ export function attachMainOwnedPage(
   };
   let disposed = false;
   let ready = false;
+  let elsewhere = false;
   /** Loads started by loadURL, settled when the page stops loading. */
   let pendingLoads: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
 
@@ -472,24 +485,31 @@ export function attachMainOwnedPage(
 
   void (async () => {
     try {
-      const existing = await readMainOwnedPageState(tabId, options.workspaceId);
+      // Create, or claim a live page for this window (no reload), then read
+      // a live page's state for the tab's controls.
+      const created = await createMainOwnedPage({
+        tabId,
+        workspaceId: options.workspaceId,
+        url: options.url,
+        ...(options.pinned === undefined ? {} : { pinned: options.pinned }),
+        ...(options.keepAlive ? { keepAlive: true } : {}),
+      });
+      if (disposed) return;
+      if (created.elsewhere) {
+        elsewhere = true;
+        // Another window shows or keeps this page; it drives it.
+        logger.debug('Browser page lives in another window', { tabId });
+        return;
+      }
+      state.webContentsId = created.webContentsId;
+      const existing = created.existing ? await readMainOwnedPageState(tabId) : null;
       if (disposed) return;
       if (existing) {
-        state.webContentsId = existing.webContentsId;
         state.url = existing.url || state.url;
         state.canGoBack = existing.canGoBack;
         state.canGoForward = existing.canGoForward;
         state.zoomFactor = existing.zoomFactor;
         state.loading = existing.loading;
-      } else {
-        const created = await createMainOwnedPage({
-          tabId,
-          workspaceId: options.workspaceId,
-          url: options.url,
-          ...(options.pinned === undefined ? {} : { pinned: options.pinned }),
-        });
-        if (disposed) return;
-        state.webContentsId = created.webContentsId;
       }
       ready = true;
       markReady();
@@ -516,6 +536,9 @@ export function attachMainOwnedPage(
     webview: node as EmbeddedBrowserWebview,
     get ready() {
       return ready && !state.closed;
+    },
+    get elsewhere() {
+      return elsewhere;
     },
     dispose() {
       if (disposed) return;

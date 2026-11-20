@@ -67,6 +67,7 @@ const BrowserViewSchemas = {
     workspaceId: z.string().min(1).max(256),
     url: z.string().min(1).max(32_768),
     pinned: z.boolean().optional(),
+    keepAlive: z.boolean().optional(),
   }),
   tab: z.object({ tabId: TabIdSchema }),
   workspace: z.object({ workspaceId: z.string().min(1).max(256) }),
@@ -184,7 +185,10 @@ export function registerBrowserViewHandlers(): void {
           },
           binding.window,
           request.url,
-          request.pinned === undefined ? {} : { pinned: request.pinned },
+          {
+            ...(request.pinned === undefined ? {} : { pinned: request.pinned }),
+            ...(request.keepAlive ? { keepAlive: true } : {}),
+          },
         );
       },
       CHANNELS.CREATE,

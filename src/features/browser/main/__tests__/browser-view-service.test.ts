@@ -207,7 +207,8 @@ describe('BrowserViewService life cycle', () => {
     const window = new FakeWindow();
     const first = service.create(KEY, windowLike(window), 'https://a.test/');
     const second = service.create(KEY, windowLike(window), 'https://b.test/');
-    expect(second).toEqual(first);
+    expect(second).toEqual({ ...first, existing: true });
+    expect(first.existing).toBe(false);
     expect(deps.createView).toHaveBeenCalledTimes(1);
   });
 
@@ -728,5 +729,30 @@ describe('BrowserViewService renderer support', () => {
     service.detach('mounted');
     expect(service.keyOf('mid')).toBeUndefined();
     release?.();
+  });
+});
+
+describe('BrowserViewService window claims', () => {
+  it('moves a live page to a window that shows the tab, but not for a keep-alive request', () => {
+    const { service, views } = setup();
+    const first = new FakeWindow();
+    const second = new FakeWindow();
+    expect(service.create(KEY, windowLike(first), 'https://a.test/')).toEqual({
+      webContentsId: views[0].webContents.id,
+      existing: false,
+    });
+
+    expect(service.create(KEY, windowLike(second), 'https://a.test/', { keepAlive: true })).toEqual(
+      { webContentsId: views[0].webContents.id, existing: true, elsewhere: true },
+    );
+    expect(service.windowOf('tab-1')).toBe(first);
+
+    expect(service.create(KEY, windowLike(second), 'https://a.test/')).toEqual({
+      webContentsId: views[0].webContents.id,
+      existing: true,
+    });
+    expect(service.windowOf('tab-1')).toBe(second);
+    expect(views).toHaveLength(1);
+    expect(views[0].webContents.loaded).toEqual(['https://a.test/']);
   });
 });

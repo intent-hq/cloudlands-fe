@@ -28,7 +28,9 @@ beforeEach(() => {
       case CH.STATE:
         return { state: pageState };
       case CH.CREATE:
-        return { webContentsId: 41 };
+        return pageState
+          ? { webContentsId: pageState.webContentsId, existing: true }
+          : { webContentsId: 41, existing: false };
       case CH.COMMAND:
         if (payload.command.type === 'execute-javascript') return { value: 'done' };
         if (payload.command.type === 'capture') return { dataUrl: 'data:image/png;base64,AA' };
@@ -117,7 +119,9 @@ describe('attachMainOwnedPage', () => {
     const handle = page.attachMainOwnedPage(node, OPTIONS);
     await flush();
 
-    expect(invoke).not.toHaveBeenCalledWith(CH.CREATE, expect.anything());
+    // The create call claims the live page for this window; it does not load it.
+    expect(invoke).toHaveBeenCalledWith(CH.CREATE, OPTIONS);
+    expect(handle.webview.getWebContentsId()).toBe(7);
     expect(handle.webview.getURL?.()).toBe('https://live.test/b');
     expect(handle.webview.canGoBack()).toBe(true);
     expect(handle.webview.getZoomLevel()).toBeCloseTo(1);
@@ -260,9 +264,27 @@ describe('attachMainOwnedPage', () => {
     });
   });
 
+  it('leaves a page another window drives alone when it only keeps pages alive', async () => {
+    invoke.mockImplementation(async (channel) =>
+      channel === CH.CREATE ? { webContentsId: 9, existing: true, elsewhere: true } : {},
+    );
+    const page = await load();
+    const node = document.createElement('div');
+    const domReady = vi.fn();
+    node.addEventListener('dom-ready', domReady);
+    const handle = page.attachMainOwnedPage(node, { ...OPTIONS, keepAlive: true });
+    await flush();
+
+    expect(invoke).toHaveBeenCalledWith(CH.CREATE, { ...OPTIONS, keepAlive: true });
+    expect(invoke).not.toHaveBeenCalledWith(CH.STATE, expect.anything());
+    expect(domReady).not.toHaveBeenCalled();
+    expect(handle.elsewhere).toBe(true);
+    expect(handle.ready).toBe(false);
+    expect(page.knownMainOwnedPages().has('tab-1')).toBe(false);
+  });
+
   it('reports a create failure as a failed load', async () => {
-    invoke.mockImplementation(async (channel) => {
-      if (channel === CH.STATE) return { state: null };
+    invoke.mockImplementation(async () => {
       throw new Error('Browser views in main are off');
     });
     const page = await load();

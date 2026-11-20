@@ -105,6 +105,19 @@ export interface BrowserViewServiceDeps {
 export interface BrowserViewCreateOptions {
   /** An agent owns the tab: the off-screen cap never closes its page. */
   pinned?: boolean;
+  /**
+   * Only keep the page alive (an off-screen host). A page that lives in
+   * another window stays there: only a window that shows the tab claims it.
+   */
+  keepAlive?: boolean;
+}
+
+export interface BrowserViewCreateResult {
+  webContentsId: number;
+  /** The page was already alive (the renderer reads its state). */
+  existing: boolean;
+  /** keepAlive only: the page lives in another window, which drives it. */
+  elsewhere?: boolean;
 }
 
 interface Entry {
@@ -166,7 +179,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     window: BrowserWindow,
     url: string,
     options: BrowserViewCreateOptions = {},
-  ): { webContentsId: number } {
+  ): BrowserViewCreateResult {
     const existing = this.byTab.get(key.tabId);
     if (existing) {
       if (
@@ -176,8 +189,13 @@ export class BrowserViewService implements MainOwnedBrowserViews {
         throw new Error('This browser tab belongs to another workspace');
       }
       if (options.pinned !== undefined) existing.pinned = options.pinned;
-      if (existing.window !== window) this.moveToWindow(key.tabId, window);
-      return { webContentsId: existing.contents.id };
+      if (existing.window !== window) {
+        if (options.keepAlive && !existing.window.isDestroyed()) {
+          return { webContentsId: existing.contents.id, existing: true, elsewhere: true };
+        }
+        this.moveToWindow(key.tabId, window);
+      }
+      return { webContentsId: existing.contents.id, existing: true };
     }
     if (!this.deps.isNavigationAllowed(url)) throw new Error('This address cannot be opened');
     if (window.isDestroyed()) throw new Error('The window is closed');
@@ -215,7 +233,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       });
     });
     this.enforceDetachedCap(entry);
-    return { webContentsId: contents.id };
+    return { webContentsId: contents.id, existing: false };
   }
 
   /** Close a tab's page (tab closed). Idempotent. */
