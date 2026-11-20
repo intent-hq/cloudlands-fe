@@ -87,6 +87,8 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { isTabWindowRenderer } from '$lib/tab-window/tab-window-renderer';
+import { isTabWindowLayoutId } from '$shared/types/tab-window';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import type { ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import { createLogger } from '$lib/utils/client-logger';
@@ -799,6 +801,7 @@ function* onLayoutMutation(
   const layouts = yield* selectPanelLayoutWorkspaces.effect();
   const changed = changedWorkspaces(layouts);
   for (const wsId of changed) {
+    if (isTabWindowLayoutId(wsId)) continue;
     // Bootstrap settles a new workspace directly in the reducer. Observe
     // that transition here too; setRestoreStatus already has its own loader.
     if (
@@ -1247,6 +1250,9 @@ function* onConnectionStatus(
 }
 
 export function* browserTabRegistrySaga(): SagaGenerator<void> {
+  // A tab window's renderer never reports or syncs: the window its tab came
+  // from hosts the tab (a snapshot from here would drop every other tab).
+  if (isTabWindowRenderer()) return;
   syncedBackendId = null;
   syncedConnectionGeneration = null;
   registryForbidden = false;

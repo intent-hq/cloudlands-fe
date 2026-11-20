@@ -3059,7 +3059,8 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   const { wsId, tabId, timestamp, focus, newPanelId } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
-  if (!hiddenTab) return state;
+  // A tab in its own window stays there; the tab window saga brings that window up.
+  if (!hiddenTab || hiddenTab.tabWindowId) return state;
 
   if (focus) {
     const targetPanelId =
@@ -4772,7 +4773,7 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
   const { wsId, tabId, avoidPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
-  if (!hiddenTab) return state;
+  if (!hiddenTab || hiddenTab.tabWindowId) return state;
 
   const previousFocusedPanelId = ws.focusedPanelId;
   const order = getPanelOrder(ws.root);
@@ -4958,3 +4959,113 @@ panelLayoutReducer.with(
     return result;
   },
 );
+
+// ============================================================================
+// Tab windows (shared/types/tab-window.ts)
+// ============================================================================
+
+/**
+ * A tab moves to a window of its own. It leaves its panel and stays in this
+ * layout as a hidden copy marked with `tabWindowId`, so the browser tab
+ * registry and the agents' tab lists still see it, and it comes back in
+ * place. Never a close: nothing is ended, nothing enters recentlyClosed.
+ */
+export const tabMovedToWindow = createAction(
+  'panelLayout/tabMovedToWindow',
+  (wsId: string, tabId: string, tabWindowId: string, timestamp?: number) => ({
+    wsId,
+    tabId,
+    tabWindowId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * A tab came back from its window: show it in the focused panel with the
+ * same id, with the fields the window last reported. Works whether the
+ * hidden copy is still here (the usual case), the tab is already in a panel,
+ * or the copy is gone (a fresh layout): then the tab is added.
+ */
+export const tabReturnedFromWindow = createAction(
+  'panelLayout/tabReturnedFromWindow',
+  (wsId: string, tab: PanelTab, timestamp?: number, newPanelId?: string) => ({
+    wsId,
+    tab,
+    timestamp: timestamp ?? Date.now(),
+    newPanelId: newPanelId ?? generatePanelId(),
+  }),
+);
+
+panelLayoutReducer.with(tabMovedToWindow, (state, { payload }) => {
+  const { wsId, tabId, tabWindowId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const panelId = Object.keys(ws.panels).find((id) =>
+    ws.panels[id].tabs.some((tab) => tab.id === tabId),
+  );
+  if (!panelId) return state;
+  const panel = ws.panels[panelId];
+  const tabIndex = panel.tabs.findIndex((tab) => tab.id === tabId);
+  const moved = panel.tabs[tabIndex];
+  const tabs = panel.tabs.filter((tab) => tab.id !== tabId);
+  let activeTabId = panel.activeTabId;
+  if (activeTabId === tabId) {
+    const opener = tabs.find((candidate) => candidate.id === moved.openerTabId);
+    activeTabId = opener?.id ?? tabs[Math.min(tabIndex, tabs.length - 1)]?.id ?? null;
+  }
+  ws = saveToHistory(ws, timestamp);
+  ws = {
+    ...ws,
+    panels: { ...ws.panels, [panelId]: { ...clearTabAttention(panel, tabId), tabs, activeTabId } },
+    hiddenTabs: addItem(removeItem(ws.hiddenTabs, tabId), { ...moved, tabWindowId }),
+    focusHistory: ws.focusHistory.filter((entry) => entry.tabId !== tabId),
+    pendingFocusTabId: ws.pendingFocusTabId === tabId ? null : ws.pendingFocusTabId,
+    pendingPanelReveal: ws.pendingPanelReveal?.tabId === tabId ? null : ws.pendingPanelReveal,
+  };
+  // Undo/redo must not show the tab here while its window shows it.
+  return setWorkspaceState(state, wsId, purgeTabFromLayoutHistory(ws, tabId));
+});
+
+panelLayoutReducer.with(tabReturnedFromWindow, (state, { payload }) => {
+  const { wsId, timestamp, newPanelId } = payload;
+  const { tabWindowId: _window, ...returned } = payload.tab;
+  let ws = getWorkspaceState(state, wsId);
+  const hidden = getItem(ws.hiddenTabs, returned.id);
+  const tab: PanelTab = { ...hidden, ...returned };
+  if ('tabWindowId' in tab) delete tab.tabWindowId;
+  ws = { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, returned.id) };
+
+  const inPanel = Object.keys(ws.panels).find((id) =>
+    ws.panels[id].tabs.some((candidate) => candidate.id === tab.id),
+  );
+  const order = getPanelOrder(ws.root);
+  let targetPanelId =
+    inPanel ??
+    (ws.focusedPanelId && ws.panels[ws.focusedPanelId]
+      ? ws.focusedPanelId
+      : order.find((panelId) => ws.panels[panelId]));
+  ws = saveToHistory(ws, timestamp);
+  if (!targetPanelId) {
+    // A layout with no panel left: give the tab a new one.
+    targetPanelId = newPanelId;
+    ws = {
+      ...ws,
+      root: { type: 'panel', panelId: newPanelId },
+      panels: { [newPanelId]: { id: newPanelId, tabs: [], activeTabId: null } },
+    };
+  }
+  const panel = ws.panels[targetPanelId];
+  const tabs = inPanel
+    ? panel.tabs.map((candidate) => (candidate.id === tab.id ? tab : candidate))
+    : [...panel.tabs, tab];
+  ws = {
+    ...ws,
+    panels: {
+      ...ws.panels,
+      [targetPanelId]: { ...panel, tabs, activeTabId: tab.id, pristine: false },
+    },
+    focusedPanelId: targetPanelId,
+    pendingPanelReveal: createPanelRevealRequest(targetPanelId, tab.id, tab.id),
+  };
+  ws = addToFocusHistory(ws, targetPanelId, tab.id, timestamp);
+  return setWorkspaceState(state, wsId, ws);
+});

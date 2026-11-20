@@ -104,6 +104,12 @@ export interface PanelTab {
   emulatedSize?: { width: number; height: number };
   faviconUrl?: string;
   contextItemId?: string;
+  /**
+   * The tab is shown in a tab window of its own (shared/types/tab-window.ts).
+   * Set only on the hidden copy the source window keeps; it moves back in
+   * place when the tab window closes.
+   */
+  tabWindowId?: string;
 
   // Additional data for rendering
   data?: Record<string, unknown>;

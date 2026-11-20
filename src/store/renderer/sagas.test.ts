@@ -101,6 +101,7 @@ describe('renderer app saga registry', () => {
       'devicePasskeysSaga',
       'machineRailSaga',
       'browserViewsLabSaga',
+      'tabWindowSaga',
       'recentAgentsSaga',
       'autoUpdateSaga',
       'specialistsSaga',
