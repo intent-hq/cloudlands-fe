@@ -13,6 +13,7 @@ import {
   E2B_PROVIDER,
   GROUPED_SANDBOXES,
   TEAM_ENTRY,
+  VERCEL_ENTRY,
   setupCloudMachinesFixture,
   type CloudMachinesPreviewState,
 } from '../../test/cloud-machines-preview';
@@ -515,6 +516,21 @@ describe('Add cloud', () => {
     expect(without.queryByTestId('add-cloud-agent37')).toBeNull();
   });
 
+  it('offers Vercel only when the backend lists it', async () => {
+    seed('vercel-add-menu');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
+    expect((await view.findByTestId('add-cloud-vercel')).textContent).toContain('Vercel');
+    restore?.();
+    view.unmount();
+    seed('agent37-add-menu');
+    const without = render(DevicesSettings, {
+      initialAddMenuOpen: true,
+      initialAddCloudOpen: true,
+    });
+    expect(await without.findByTestId('add-cloud-agent37')).toBeTruthy();
+    expect(without.queryByTestId('add-cloud-vercel')).toBeNull();
+  });
+
   it('opens the Northflank form from the menu', async () => {
     seed('add-cloud-menu');
     const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
@@ -706,5 +722,129 @@ describe('Agent37 form', () => {
     expect(list?.getAttribute('aria-label')).toBe('Agent37 instances');
     expect(list?.textContent).toContain('Docker image builder');
     expect(list?.textContent).not.toContain('E2B');
+  });
+});
+
+describe('Vercel form', () => {
+  function renderForm(entry: typeof VERCEL_ENTRY | null = null) {
+    seed(entry ? 'vercel-providers' : 'vercel-setup');
+    return render(CloudMachineRow, {
+      entry,
+      newProvider: 'vercel',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+  }
+  const formOf = (view: ReturnType<typeof render>) =>
+    view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+  const configured = () =>
+    dispatched().find((action) => action.type === 'cloudMachines/configureRequested')
+      ?.payload[0] as Record<string, unknown> | undefined;
+
+  it('needs a token, team and project, with sizes and the Hobby session note before a test', async () => {
+    const view = renderForm();
+    const form = formOf(view);
+    expect(form.getAttribute('data-cloud-provider')).toBe('vercel');
+    expect(form.querySelector('[data-cloud-sizes-unknown]')).toBeNull();
+    expect(form.querySelector('[data-vercel-session-note]')?.textContent).toContain('45');
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    await fireEvent.input(form.querySelector('input[type="password"]')!, {
+      target: { value: 'vercel_test' },
+    });
+    await fireEvent.input(form.querySelector('input[data-vercel-team]')!, {
+      target: { value: ' team_abc ' },
+    });
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(form.querySelector('input[data-cloud-project]')!, {
+      target: { value: 'prj_abc' },
+    });
+    expect(save.disabled).toBe(false);
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({
+      provider: 'vercel',
+      apiKey: 'vercel_test',
+      teamId: 'team_abc',
+      projectId: 'prj_abc',
+      size: '4x8',
+    });
+    expect(configured()).not.toHaveProperty('image');
+  });
+
+  it('asks for an own image only on request, and sends it', async () => {
+    const view = renderForm();
+    const form = formOf(view);
+    expect(form.querySelector('input[data-vercel-image]')).toBeNull();
+    await fireEvent.click(form.querySelector('[data-vercel-image-toggle]')!);
+    const image = await vi.waitFor(
+      () => form.querySelector('input[data-vercel-image]') as HTMLInputElement,
+    );
+    await fireEvent.input(form.querySelector('input[type="password"]')!, {
+      target: { value: 'vercel_test' },
+    });
+    await fireEvent.input(form.querySelector('input[data-vercel-team]')!, {
+      target: { value: 'team_abc' },
+    });
+    await fireEvent.input(form.querySelector('input[data-cloud-project]')!, {
+      target: { value: 'prj_abc' },
+    });
+    await fireEvent.input(image, { target: { value: 'acme/images/intent-node:0.212.0' } });
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ image: 'acme/images/intent-node:0.212.0' });
+  });
+
+  it('sends no team, project or image from the edit form when they are unchanged', async () => {
+    const view = renderForm(VERCEL_ENTRY);
+    const form = formOf(view);
+    expect((form.querySelector('input[data-vercel-team]') as HTMLInputElement).value).toBe(
+      VERCEL_ENTRY.vercel!.teamId,
+    );
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ cloudMachineId: VERCEL_ENTRY.id });
+    for (const key of ['teamId', 'projectId', 'image', 'apiKey'])
+      expect(configured()).not.toHaveProperty(key);
+  });
+
+  it('goes back to the public image when an own image is cleared', async () => {
+    const own = {
+      ...VERCEL_ENTRY,
+      vercel: { ...VERCEL_ENTRY.vercel!, image: 'acme/images/intent-node:0.212.0' },
+    };
+    const view = renderForm(own);
+    const form = formOf(view);
+    const image = form.querySelector('input[data-vercel-image]') as HTMLInputElement;
+    expect(image.value).toBe('acme/images/intent-node:0.212.0');
+    await fireEvent.input(image, { target: { value: '' } });
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ image: '' });
+  });
+
+  it('explains a missing project in plain words', () => {
+    seed('vercel-setup-error');
+    const view = render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'vercel',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const error = view.container.querySelector('[data-cloud-key-error]')?.textContent ?? '';
+    expect(error).toContain('Vercel');
+    expect(error).toContain('project');
+    expect(error).not.toContain('404');
+  });
+
+  it("shows a Vercel entry's project, lists its sandboxes and links to the team on Vercel", () => {
+    seed('vercel-providers');
+    const view = render(DevicesSettings);
+    const row = view.container.querySelector(
+      `[data-cloud-machine-row="${VERCEL_ENTRY.id}"]`,
+    ) as HTMLElement;
+    expect(row.getAttribute('data-cloud-provider')).toBe('vercel');
+    expect(row.textContent).toContain('intent-agents');
+    const list = row.querySelector('[data-cloud-sandboxes]');
+    expect(list?.getAttribute('aria-label')).toBe('Vercel sandboxes');
+    expect(list?.textContent).toContain('Preview deployer');
+    expect(list?.querySelector('a[href="https://vercel.com/acme/intent-agents"]')).not.toBeNull();
   });
 });

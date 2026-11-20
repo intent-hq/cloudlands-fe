@@ -56,7 +56,21 @@ export type CloudMachinesPreviewState =
   | 'agent37-setup'
   | 'agent37-setup-vm'
   | 'agent37-setup-error'
-  | 'agent37-providers';
+  | 'agent37-providers'
+  | 'vercel-add-menu'
+  | 'vercel-setup'
+  | 'vercel-setup-image'
+  | 'vercel-setup-error'
+  | 'vercel-providers';
+
+/** Scenes of a backend that offers Vercel too. */
+const VERCEL_SCENES: readonly CloudMachinesPreviewState[] = [
+  'vercel-add-menu',
+  'vercel-setup',
+  'vercel-setup-image',
+  'vercel-setup-error',
+  'vercel-providers',
+];
 
 /** Scenes of a backend that offers Agent37 too. */
 const AGENT37_SCENES: readonly CloudMachinesPreviewState[] = [
@@ -75,6 +89,7 @@ const NORTHFLANK_SCENES: readonly CloudMachinesPreviewState[] = [
   'northflank-setup-error',
   'providers',
   ...AGENT37_SCENES,
+  ...VERCEL_SCENES,
 ];
 
 /** Scenes where the backend keeps named entries (`cloudMachineEntries: 1`). */
@@ -171,6 +186,34 @@ export const AGENT37_ENTRY: CloudMachineProvider = {
   agent37: { instanceType: 'vm', region: 'ap-south', diskGiB: 40 },
 };
 
+/** A Vercel entry: the team's sandboxes in one project, from Intent's public image. */
+export const VERCEL_ENTRY: CloudMachineProvider = {
+  id: 'vercel-7c1e9a3d5b20',
+  provider: 'vercel',
+  name: 'Vercel Pro',
+  state: 'ready',
+  template: 'sutterhill/intent-images/intent-node:0.212.0',
+  templateProject: '',
+  agentProviders: ['claude-code', 'codex'],
+  sizes: [
+    { id: '2x4', vcpu: 2, memoryMiB: 4096 },
+    { id: '4x8', vcpu: 4, memoryMiB: 8192 },
+    { id: '8x16', vcpu: 8, memoryMiB: 16384 },
+  ],
+  size: '4x8',
+  idlePauseMinutes: 10,
+  pausedDeleteDays: 7,
+  configuredAt: '2026-11-19T08:00:00.000Z',
+  checkedAt: '2026-11-19T09:00:00.000Z',
+  vercel: {
+    teamId: 'team_preview0000000000000000',
+    projectId: 'prj_preview000000000000000000',
+    image: '',
+    teamSlug: 'acme',
+    projectName: 'intent-agents',
+  },
+};
+
 const WORKSPACES = [
   { id: 'ws-ci', title: 'Fix flaky CI' },
   { id: 'ws-docs', title: 'Protocol docs' },
@@ -228,6 +271,11 @@ export const NORTHFLANK_SANDBOXES: RemoteMachine[] = [
 export const AGENT37_SANDBOXES: RemoteMachine[] = [
   sandbox('a37-1', 'Docker image builder', 'ws-ci', 'Clément', 'running', 14 * 60, AGENT37_ENTRY),
   sandbox('a37-2', 'Benchmark runner', 'ws-perf', 'Sam', 'paused', 31 * 60, AGENT37_ENTRY),
+];
+
+export const VERCEL_SANDBOXES: RemoteMachine[] = [
+  sandbox('vc-1', 'Preview deployer', 'ws-docs', 'Clément', 'running', 6 * 60, VERCEL_ENTRY),
+  sandbox('vc-2', 'Bundle size checker', 'ws-perf', 'Sam', 'paused', 22 * 60, VERCEL_ENTRY),
 ];
 
 export const TEAM_SANDBOXES: RemoteMachine[] = [
@@ -305,22 +353,27 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
     state === 'entries-key-rejected' ? { ...TEAM_ENTRY, state: 'key-rejected' } : TEAM_ENTRY;
   const northflank = NORTHFLANK_SCENES.includes(state);
   const agent37 = AGENT37_SCENES.includes(state);
+  const vercel = VERCEL_SCENES.includes(state);
   // The menu and setup scenes start from E2B alone, so Northflank (or Agent37) is the one added.
   const northflankProviders =
     state === 'providers'
       ? [E2B_PROVIDER, NORTHFLANK_ENTRY]
       : state === 'agent37-providers'
         ? [E2B_PROVIDER, NORTHFLANK_ENTRY, AGENT37_ENTRY]
-        : [E2B_PROVIDER];
+        : state === 'vercel-providers'
+          ? [E2B_PROVIDER, VERCEL_ENTRY]
+          : [E2B_PROVIDER];
   store.dispatch(
     cloudMachinesLoaded({
       supported: state !== 'unsupported',
       entries,
       ...(northflank
         ? {
-            providerKinds: (agent37
-              ? ['e2b', 'northflank', 'agent37']
-              : ['e2b', 'northflank']) satisfies CloudProviderKind[],
+            providerKinds: (vercel
+              ? ['e2b', 'northflank', 'agent37', 'vercel']
+              : agent37
+                ? ['e2b', 'northflank', 'agent37']
+                : ['e2b', 'northflank']) satisfies CloudProviderKind[],
           }
         : {}),
       providers: northflank
@@ -337,7 +390,9 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
           ? [...E2B_SANDBOXES.slice(0, 1), ...NORTHFLANK_SANDBOXES]
           : state === 'agent37-providers'
             ? [...E2B_SANDBOXES.slice(0, 1), ...NORTHFLANK_SANDBOXES, ...AGENT37_SANDBOXES]
-            : []
+            : state === 'vercel-providers'
+              ? [...E2B_SANDBOXES.slice(0, 1), ...VERCEL_SANDBOXES]
+              : []
         : entries
           ? state === 'entries-single' || state === 'entries-edit'
             ? E2B_SANDBOXES
@@ -390,6 +445,21 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
           status: 403,
           provider: 'agent37',
           action: 'read-template',
+        },
+      }),
+    );
+  }
+  if (state === 'vercel-setup-error') {
+    store.dispatch(cloudMachineOperationStarted(cloudValidateKey(NEW_CLOUD_ENTRY), 'testing'));
+    store.dispatch(
+      cloudMachineOperationSettled(cloudValidateKey(NEW_CLOUD_ENTRY), {
+        message: 'Vercel answered 404 for project prj_preview000000000000000000',
+        cloud: {
+          code: 'cloud-machine-unavailable',
+          reason: 'project-not-found',
+          retryable: false,
+          status: 404,
+          provider: 'vercel',
         },
       }),
     );

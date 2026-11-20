@@ -25,6 +25,7 @@ import {
   E2B_PROVIDER,
   E2B_SANDBOXES,
   AGENT37_ENTRY,
+  VERCEL_ENTRY,
   NORTHFLANK_ENTRY,
   NORTHFLANK_SANDBOXES,
   TEAM_ENTRY,
@@ -628,5 +629,84 @@ describe('cloud machines saga — Agent37', () => {
       provider: 'agent37',
       cloudMachineId: AGENT37_ENTRY.id,
     });
+  });
+});
+
+describe('cloud machines saga — Vercel', () => {
+  const CAPS = {
+    remoteMachines: 1,
+    cloudMachines: 1,
+    cloudMachineEntries: 1,
+    cloudMachineProviders: 1,
+  };
+  const TOKEN = 'vercel-token-do-not-store-me';
+
+  function seedProviders() {
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'vercel'],
+        providers: [E2B_PROVIDER, VERCEL_ENTRY],
+        machines: [],
+        readAt: 1,
+      }),
+    );
+  }
+
+  it('creates a Vercel entry with its token, team, project and image, and keeps no token', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: VERCEL_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({
+        provider: 'vercel',
+        name: 'Vercel Pro',
+        apiKey: TOKEN,
+        teamId: 'team_abc',
+        projectId: 'prj_abc',
+        image: 'acme/images/intent-node:0.212.0',
+        size: '8x16',
+        instanceType: 'vm',
+      }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'vercel',
+      name: 'Vercel Pro',
+      apiKey: TOKEN,
+      teamId: 'team_abc',
+      projectId: 'prj_abc',
+      image: 'acme/images/intent-node:0.212.0',
+      size: '8x16',
+    });
+    expect(JSON.stringify(store.state)).not.toContain(TOKEN);
+  });
+
+  it('sends an empty image to go back to the public one', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: VERCEL_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(cloudMachinesConfigureRequested({ cloudMachineId: VERCEL_ENTRY.id, image: '' }));
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'vercel',
+      cloudMachineId: VERCEL_ENTRY.id,
+      image: '',
+    });
+  });
+
+  it('sends no Vercel members to another provider', async () => {
+    const mock = backend(CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: E2B_PROVIDER }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({ cloudMachineId: 'e2b', teamId: 'team_x', image: 'x' }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({ provider: 'e2b', cloudMachineId: 'e2b' });
   });
 });
