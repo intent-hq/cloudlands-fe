@@ -26,7 +26,7 @@
   aria-pressed="true"
   {...rest}
 >
-  <Fa icon={faStop} size="xs" />
+  <Fa icon={faStop} size={14} />
   <DictationMeter levels={$levels$} startedAt={$startedAt$} />
 </Button>
 
