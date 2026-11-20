@@ -40,7 +40,11 @@ export interface DockMediaJobContext {
   isCurrent(): boolean;
   onDispose(listener: () => void): () => void;
 }
-import { requestRouted } from '../../backend/main/transfer-connections';
+import {
+  shouldUseTransferConnection,
+  withTransferConnection,
+} from '../../backend/main/transfer-connections';
+import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger('DockMediaOutput');
 const timingLogger = new Logger('DockSendTiming');
@@ -130,6 +134,8 @@ interface Job {
   child?: ChildProcessWithoutNullStreams;
   stopped: boolean;
   done?: Promise<void>;
+  stopSourceRead?: () => void;
+  sourceReadDone?: Promise<void>;
   stopWatching: () => void;
   expiry: ReturnType<typeof setTimeout>;
 }
@@ -277,6 +283,8 @@ export async function releaseDockMediaJob(sessionId: string, id: string): Promis
   job.stopped = true;
   clearTimeout(job.expiry);
   job.stopWatching();
+  job.stopSourceRead?.();
+  await job.sourceReadDone;
   if (job.child && job.child.exitCode === null && job.child.signalCode === null) {
     job.child.kill('SIGTERM');
     const force = setTimeout(() => job.child?.kill('SIGKILL'), 2000);
@@ -321,29 +329,58 @@ async function copySource(
   )
     throw new Error('media-source-missing');
   const chunks: Buffer[] = [];
-  for (let offset = 0; offset < info.size;) {
-    current();
-    const length = Math.min(1024 * 1024, info.size - offset);
-    const chunk = await requestRouted<{ size: number; bytesRead: number; content: string }>(
-      client,
-      'file.readChunk',
-      {
-        workspaceId: context.scope.workspaceId,
-        path: source.path,
-        offset,
-        length,
+  async function readChunks(connection: Pick<JsonRpcClient, 'request'>): Promise<void> {
+    for (let offset = 0; offset < info.size;) {
+      current();
+      const length = Math.min(1024 * 1024, info.size - offset);
+      const chunk = await connection.request<{ size: number; bytesRead: number; content: string }>(
+        'file.readChunk',
+        {
+          workspaceId: context.scope.workspaceId,
+          path: source.path,
+          offset,
+          length,
+        },
+        { timeoutMs: 30_000 },
+      );
+      current();
+      if (
+        chunk.size !== info.size ||
+        chunk.bytesRead !== length ||
+        typeof chunk.content !== 'string'
+      )
+        throw new Error('media-source-changed');
+      const bytes = Buffer.from(chunk.content, 'base64');
+      if (bytes.length !== length) throw new Error('media-source-incomplete');
+      chunks.push(bytes);
+      offset += length;
+    }
+  }
+  const config = client.getConfig();
+  if (shouldUseTransferConnection('file.readChunk', config)) {
+    // One original is one transfer, not one TLS/WebSocket handshake per MiB.
+    // The existing pool still owns backend retirement, bounds and socket cleanup.
+    await withTransferConnection(
+      config,
+      async (connection) => {
+        current();
+        let finish!: () => void;
+        job.sourceReadDone = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        job.stopSourceRead = () => connection.release();
+        try {
+          await readChunks(connection);
+        } finally {
+          job.stopSourceRead = undefined;
+          finish();
+          job.sourceReadDone = undefined;
+        }
       },
-      { timeoutMs: 30_000 },
       context.backendId,
     );
-    current();
-    if (chunk.size !== info.size || chunk.bytesRead !== length || typeof chunk.content !== 'string')
-      throw new Error('media-source-changed');
-    const bytes = Buffer.from(chunk.content, 'base64');
-    if (bytes.length !== length) throw new Error('media-source-incomplete');
-    chunks.push(bytes);
-    offset += length;
-  }
+  } else await readChunks(client);
+  current();
   const file = path.join(job.directory, 'source.mp4');
   await writeFile(file, Buffer.concat(chunks), { flag: 'wx', mode: 0o600 });
   current();

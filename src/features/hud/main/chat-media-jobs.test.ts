@@ -21,7 +21,12 @@ const fixture = vi.hoisted(() => ({
   exports: 0,
   heldCopy: null as Promise<void> | null,
   copyEntered: (() => {}) as () => void,
+  configRead: (() => {}) as () => void,
   childReady: (() => {}) as () => void,
+  sourceBytes: Buffer.from('synthetic'),
+  transport: 'uds' as 'uds' | 'wss',
+  chunkRequests: [] as Array<{ offset: number; length: number }>,
+  failChunk: -1,
 }));
 vi.mock('electron', async () => {
   return {
@@ -52,13 +57,31 @@ vi.mock('../../../shared/logger', () => ({
 }));
 vi.mock('../../backend/main/backend.ipc', () => {
   const client = {
+    getConfig: () => {
+      fixture.configRead();
+      return fixture.transport === 'uds'
+        ? { transport: 'uds', socketPath: '/synthetic/daemon.sock' }
+        : { transport: 'wss', host: 'synthetic.invalid', port: 5181, token: 'synthetic' };
+    },
     getRepositoryConnection: () => fixture.connection,
     getAcknowledgedHello: () => ({ server: { capabilities: {} } }),
     onRepositoryConnectionEvent: (listener: (...args: any[]) => void) => {
       fixture.observers.add(listener);
       return () => fixture.observers.delete(listener);
     },
-    request: async (method: string) => {
+    request: async (method: string, params?: { offset: number; length: number }) => {
+      if (method === 'file.readChunk') {
+        fixture.chunkRequests.push(params!);
+        fixture.copyEntered();
+        await fixture.heldCopy;
+        if (fixture.chunkRequests.length - 1 === fixture.failChunk) throw new Error('chunk failed');
+        const bytes = fixture.sourceBytes.subarray(params!.offset, params!.offset + params!.length);
+        return {
+          size: fixture.sourceBytes.length,
+          bytesRead: bytes.length,
+          content: bytes.toString('base64'),
+        };
+      }
       if (method === 'principal.me')
         return {
           id: 'principal',
@@ -86,21 +109,13 @@ vi.mock('../../backend/main/backend.ipc', () => {
           attachmentId: 'attachment',
           path: fixture.media!.source.path,
           exists: true,
-          size: 9,
+          size: fixture.sourceBytes.length,
         };
       throw new Error(`Unexpected fixture method: ${method}`);
     },
   };
   return { getBackendClientForId: () => client };
 });
-vi.mock('../../backend/main/transfer-connections', () => ({
-  requestRouted: async (_client: unknown, method: string) => {
-    expect(method).toBe('file.readChunk');
-    fixture.copyEntered();
-    await fixture.heldCopy;
-    return { size: 9, bytesRead: 9, content: Buffer.from('synthetic').toString('base64') };
-  },
-}));
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
@@ -133,6 +148,16 @@ import {
 import { registerChatWindow } from '../../../main/chat-window-identity';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import {
+  __getActiveTransferCountForTesting,
+  __resetTransferConnectionsForTesting,
+  __setTransferClientFactoryForTesting,
+  acquireTransferConnection,
+  disposeTransferConnectionsForBackend,
+  MAX_TRANSFER_CONNECTIONS,
+} from '../../backend/main/transfer-connections';
+import { getBackendClientForId } from '../../backend/main/backend.ipc';
+import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 
 class WindowFixture extends EventEmitter {
   webContents = Object.assign(new EventEmitter(), {
@@ -180,7 +205,12 @@ beforeEach(async () => {
   fixture.exports = 0;
   fixture.heldCopy = null;
   fixture.copyEntered = () => {};
+  fixture.configRead = () => {};
   fixture.childReady = () => {};
+  fixture.sourceBytes = Buffer.from('synthetic');
+  fixture.transport = 'uds';
+  fixture.chunkRequests = [];
+  fixture.failChunk = -1;
   fixture.media = {
     source: {
       id: 'source',
@@ -246,6 +276,8 @@ afterEach(async () => {
     expect(fixture.children.size).toBe(0);
     expect(fixture.observers.size).toBe(0);
   } finally {
+    __resetTransferConnectionsForTesting();
+    __setTransferClientFactoryForTesting(null);
     for (const child of fixture.children) {
       const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
       child.kill('SIGKILL');
@@ -258,6 +290,162 @@ afterEach(async () => {
 });
 
 describe('actual offline media job adoption and cancellation', () => {
+  function remoteTransfers() {
+    fixture.transport = 'wss';
+    const disposed: ReturnType<typeof vi.fn>[] = [];
+    __setTransferClientFactoryForTesting(() => {
+      let stopped = false;
+      let rejectPending!: (error: Error) => void;
+      const retired = new Promise<never>((_, reject) => {
+        rejectPending = reject;
+      });
+      void retired.catch(() => {});
+      const dispose = vi.fn(() => {
+        stopped = true;
+        rejectPending(new Error('transfer retired'));
+      });
+      disposed.push(dispose);
+      return {
+        on() {},
+        start() {},
+        dispose,
+        request: (method: string, params: unknown) =>
+          stopped
+            ? Promise.reject(new Error('transfer retired'))
+            : Promise.race([getBackendClientForId('backend').request(method, params), retired]),
+      } as unknown as JsonRpcClient;
+    });
+    return disposed;
+  }
+
+  it('copies a remote original over one transfer connection across all chunks', async () => {
+    const disposed = remoteTransfers();
+    fixture.sourceBytes = Buffer.alloc(2 * 1024 * 1024 + 17, 0x61);
+    const jobId = randomUUID();
+    const result = await control({ action: 'export', request: request(jobId) });
+    expect(result.ok).toBe(true);
+    expect(await readFile(result.value.video.sourcePath)).toEqual(fixture.sourceBytes);
+    expect(fixture.chunkRequests.map(({ offset }) => offset)).toEqual([
+      0,
+      1024 * 1024,
+      2 * 1024 * 1024,
+    ]);
+    expect(disposed).toHaveLength(1);
+    expect(disposed[0]).toHaveBeenCalledTimes(1);
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+    await release(jobId);
+  });
+
+  it('keeps local source reads on the existing daemon socket', async () => {
+    const factory = vi.fn(() => {
+      throw new Error('unexpected remote transfer');
+    });
+    __setTransferClientFactoryForTesting(factory);
+    const job = await exportJob();
+    expect(factory).not.toHaveBeenCalled();
+    expect(fixture.chunkRequests).toEqual([
+      {
+        workspaceId: 'workspace',
+        path: fixture.media!.source.path,
+        offset: 0,
+        length: 9,
+      },
+    ]);
+    await release(job.jobId);
+  });
+
+  it('releases the whole remote source lease on a later chunk failure', async () => {
+    const disposed = remoteTransfers();
+    fixture.sourceBytes = Buffer.alloc(2 * 1024 * 1024 + 17);
+    fixture.failChunk = 1;
+    const result = await control({ action: 'export', request: request(randomUUID()) });
+    expect(result.ok).toBe(false);
+    expect(fixture.chunkRequests).toHaveLength(2);
+    expect(disposed).toHaveLength(1);
+    expect(disposed[0]).toHaveBeenCalledTimes(1);
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+    expect(await dirs()).toEqual([]);
+  });
+
+  it.each(['cancel', 'backend', 'owner'] as const)(
+    'joins and releases a remote source read on %s retirement',
+    async (reason) => {
+      const disposed = remoteTransfers();
+      let resume!: () => void;
+      fixture.heldCopy = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const entered = new Promise<void>((resolve) => {
+        fixture.copyEntered = resolve;
+      });
+      const id = randomUUID();
+      const pending = control({ action: 'export', request: request(id) });
+      await entered;
+      try {
+        if (reason === 'cancel') await release(id);
+        else if (reason === 'backend') disposeTransferConnectionsForBackend('backend');
+        else stampWindowWithBackend(window as unknown as BrowserWindow, 'backend');
+        expect(__getActiveTransferCountForTesting()).toBe(0);
+        expect((await pending).ok).toBe(false);
+      } finally {
+        resume();
+        await pending;
+        await release(id);
+      }
+      expect(disposed).toHaveLength(1);
+      expect(disposed[0]).toHaveBeenCalledTimes(1);
+      expect(fixture.chunkRequests).toHaveLength(1);
+      expect(fixture.exports).toBe(0);
+      expect(await dirs()).toEqual([]);
+      if (reason === 'owner') {
+        expect(await control({ action: 'export', request: request(randomUUID()) })).toEqual({
+          ok: false,
+          error: 'unavailable',
+        });
+        expect(disposed).toHaveLength(1);
+      }
+    },
+  );
+
+  it('refuses a cancelled source after FIFO admission without disturbing unrelated transfers', async () => {
+    const disposed = remoteTransfers();
+    const config = getBackendClientForId('backend').getConfig();
+    const blockers = await Promise.all(
+      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () =>
+        acquireTransferConnection(config, 'unrelated'),
+      ),
+    );
+    const queued = new Promise<void>((resolve) => {
+      fixture.configRead = resolve;
+    });
+    const id = randomUUID();
+    const pending = control({ action: 'export', request: request(id) });
+    try {
+      await queued;
+      expect(disposed).toHaveLength(MAX_TRANSFER_CONNECTIONS);
+      expect(fixture.chunkRequests).toEqual([]);
+      await release(id);
+      expect(__getActiveTransferCountForTesting()).toBe(MAX_TRANSFER_CONNECTIONS);
+      for (const dispose of disposed) expect(dispose).not.toHaveBeenCalled();
+      blockers[0].release();
+      expect((await pending).ok).toBe(false);
+      expect(disposed).toHaveLength(MAX_TRANSFER_CONNECTIONS + 1);
+      expect(disposed[0]).toHaveBeenCalledTimes(1);
+      expect(disposed[MAX_TRANSFER_CONNECTIONS]).toHaveBeenCalledTimes(1);
+      for (const dispose of disposed.slice(1, MAX_TRANSFER_CONNECTIONS))
+        expect(dispose).not.toHaveBeenCalled();
+      expect(__getActiveTransferCountForTesting()).toBe(MAX_TRANSFER_CONNECTIONS - 1);
+      expect(fixture.chunkRequests).toEqual([]);
+      expect(fixture.exports).toBe(0);
+      expect(await dirs()).toEqual([]);
+    } finally {
+      for (const blocker of blockers) blocker.release();
+      await pending;
+      await release(id);
+    }
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+    for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+  });
   it('adopts the same completed session job once and releases its output idempotently', async () => {
     const job = await exportJob();
     expect(await adopt(job.jobId)).toEqual({ ok: true, value: true });
