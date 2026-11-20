@@ -2,7 +2,15 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 
-export async function createMockChild(servers, child) {
+export function createMockChild(servers, child) {
+  return callWorkspaceApi(servers, {
+    code: `return await ws.agent.create(${JSON.stringify(child.name)}, ${JSON.stringify(child.prompt)}, { provider: "mock" });`,
+    summary: 'Create packaged smoke fixture child',
+  });
+}
+
+/** One `workspace_api` call through the parent's bridge; `call` is `{ code, summary }`. */
+export async function callWorkspaceApi(servers, call) {
   const matches = servers.filter((server) => server.name === 'workspace-mcp');
   if (
     matches.length !== 1 ||
@@ -64,10 +72,7 @@ export async function createMockChild(servers, child) {
     );
     const result = await request('tools/call', {
       name: 'workspace_api',
-      arguments: {
-        code: `return await ws.agent.create(${JSON.stringify(child.name)}, ${JSON.stringify(child.prompt)}, { provider: "mock" });`,
-        summary: 'Create packaged smoke fixture child',
-      },
+      arguments: { code: call.code, summary: call.summary },
     });
     if (result.isError) throw new Error(JSON.stringify(result));
     return result;

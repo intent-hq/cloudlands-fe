@@ -11,7 +11,9 @@
 
   interface Dismiss {
     label: string;
-    tooltip: string;
+    tooltip?: string;
+    /** `neutral` for a non-destructive action such as Skip. */
+    tone?: 'danger' | 'neutral';
     onDismiss: () => void;
     testId?: string;
   }
@@ -69,7 +71,7 @@
       <Button
         variant="ghost"
         size="compact"
-        class="text-danger"
+        class={dismiss.tone === 'neutral' ? undefined : 'text-danger'}
         title={dismiss.tooltip}
         onclick={dismiss.onDismiss}
         data-testid={dismiss.testId}
