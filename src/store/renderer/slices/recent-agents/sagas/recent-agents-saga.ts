@@ -15,17 +15,14 @@ import {
   type SelectorChannelPayload,
 } from '@themislib/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import {
-  RECENT_AGENTS_CHANGED_EVENT,
-  recentEntryKey,
-  type RecentEntry,
-} from '$shared/recent-agents';
+import { RECENT_AGENTS_CHANGED_EVENT, type RecentEntry } from '$shared/recent-agents';
 import { routedWorkspaceId } from '../../../utils/routed-workspace-id';
+import { focusPanelTabRequested } from '../../app-layout/app-layout-slice';
 import {
   selectActiveTab,
   selectAllTabs,
@@ -72,8 +69,8 @@ const requests = {
   forgetWorkspace: async (connectionId: string, workspaceId: string): Promise<void> => {
     await getApi()?.invoke(RECENT_AGENTS.FORGET_WORKSPACE, { connectionId, workspaceId });
   },
-  forgetEntry: async (key: string): Promise<void> => {
-    await getApi()?.invoke(RECENT_AGENTS.FORGET_ENTRY, { key });
+  forgetTab: async (connectionId: string, workspaceId: string, tabId: string): Promise<void> => {
+    await getApi()?.invoke(RECENT_AGENTS.FORGET_TAB, { connectionId, workspaceId, tabId });
   },
 };
 
@@ -220,28 +217,52 @@ function* handleWorkspaceArchived(
   yield* call(forgetWorkspace, action.payload[0]);
 }
 
-/** Whether the restored layout of `workspaceId` no longer holds `tabId`. */
-function* isTabGone(workspaceId: string, tabId: string): SagaGenerator<boolean> {
-  if ((yield* selectRestoreStatus.effect(workspaceId)) !== 'restored') return false;
-  const tabs = [
-    ...(yield* selectAllTabs.effect(workspaceId)),
-    ...(yield* selectHiddenTabs.effect(workspaceId)),
-  ];
-  return !tabs.some((tab) => tab.id === tabId);
+const LAYOUT_WAIT_STEP_MS = 250;
+const LAYOUT_WAIT_STEPS = 40;
+
+/**
+ * Whether the layout of `workspaceId` holds `tabId`, once it has restored (a window opened for
+ * the switcher restores it after the request); null when it does not settle in time.
+ */
+function* holdsTab(workspaceId: string, tabId: string): SagaGenerator<boolean | null> {
+  for (let step = 0; step < LAYOUT_WAIT_STEPS; step += 1) {
+    const status = yield* selectRestoreStatus.effect(workspaceId);
+    if (status === 'empty') return false;
+    if (status === 'restored') {
+      const tabs = [
+        ...(yield* selectAllTabs.effect(workspaceId)),
+        ...(yield* selectHiddenTabs.effect(workspaceId)),
+      ];
+      return tabs.some((tab) => tab.id === tabId);
+    }
+    if (status === 'invalid') return null;
+    yield* delay(LAYOUT_WAIT_STEP_MS);
+  }
+  return null;
+}
+
+/**
+ * A switcher entry asked this window to focus a tab, from this window or through another
+ * machine's `connections:open`: a tab its workspace no longer holds leaves the shared list.
+ */
+function* handleFocusPanelTab(
+  action: ReturnType<typeof focusPanelTabRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, tabId] = action.payload;
+  if ((yield* call(holdsTab, workspaceId, tabId)) !== false) return;
+  const connectionId = yield* selectCurrentConnectionId.effect();
+  if (!connectionId) return;
+  try {
+    yield* call(requests.forgetTab, connectionId, workspaceId, tabId);
+  } catch (error) {
+    logger.warn('Could not forget a closed tab in recent agents', error);
+  }
 }
 
 function* openLocalTab(entry: Extract<RecentEntry, { tabId: string }>): SagaGenerator<void> {
   yield* call(handleNotificationNavigate, { workspaceId: entry.workspaceId, tabId: entry.tabId });
-  if (yield* call(isTabGone, entry.workspaceId, entry.tabId)) {
-    try {
-      yield* call(requests.forgetEntry, recentEntryKey(entry));
-    } catch (error) {
-      logger.warn('Could not forget a closed tab in recent agents', error);
-    }
-    return;
-  }
   // The tab may already be the focused one, which brings no focus change: record it here.
-  yield* call(recordFocusedTab, false);
+  if (yield* call(holdsTab, entry.workspaceId, entry.tabId)) yield* call(recordFocusedTab, false);
 }
 
 function* handleOpen(action: ReturnType<typeof recentAgentOpenRequested>): SagaGenerator<void> {
@@ -289,5 +310,6 @@ export function* recentAgentsSaga(): SagaGenerator<void> {
     takeEvery(workspaceDeleted, handleWorkspaceDeleted),
     takeEvery(recentAgentsWorkspaceArchived, handleWorkspaceArchived),
     takeEvery(recentAgentOpenRequested, handleOpen),
+    takeEvery(focusPanelTabRequested, handleFocusPanelTab),
   ]);
 }

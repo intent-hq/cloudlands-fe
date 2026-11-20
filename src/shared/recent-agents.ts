@@ -134,9 +134,20 @@ export function recordRecentVisit(
   return [recorded, ...entries.filter((entry) => recentEntryKey(entry) !== key)].slice(0, limit);
 }
 
-/** Drops the entry with `key`, e.g. a tab that no longer exists. */
-export function removeRecentEntry(entries: readonly RecentEntry[], key: string): RecentEntry[] {
-  return entries.filter((entry) => recentEntryKey(entry) !== key);
+/** Drops one connection's browser or terminal entry for a tab its workspace no longer holds. */
+export function removeRecentTab(
+  entries: readonly RecentEntry[],
+  connectionId: string,
+  workspaceId: string,
+  tabId: string,
+): RecentEntry[] {
+  return entries.filter(
+    (entry) =>
+      entry.kind === 'agent' ||
+      entry.connectionId !== connectionId ||
+      entry.workspaceId !== workspaceId ||
+      entry.tabId !== tabId,
+  );
 }
 
 /** Drops one connection's entries for a workspace it reported deleted or archived. */

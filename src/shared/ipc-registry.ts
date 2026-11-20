@@ -1242,8 +1242,8 @@ export const IPC_CHANNELS = {
     LIST: 'recent-agents:list',
     RECORD: 'recent-agents:record',
     FORGET_WORKSPACE: 'recent-agents:forget-workspace',
-    // Renderer → main: drop one entry, e.g. a browser or terminal tab that is gone.
-    FORGET_ENTRY: 'recent-agents:forget-entry',
+    // Renderer → main: drop a browser or terminal tab its workspace no longer holds.
+    FORGET_TAB: 'recent-agents:forget-tab',
     CHANGED: 'recent-agents:changed',
     // Main → renderer: the switcher chord, or the release of its modifier, pressed
     // in a page of the browser panel, whose keys never reach the app's document

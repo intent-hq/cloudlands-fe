@@ -6,7 +6,7 @@ import {
   recentEntryKey,
   recordRecentVisit,
   removeRecentAgentWorkspace,
-  removeRecentEntry,
+  removeRecentTab,
   visibleRecentAgents,
   type PageInput,
   type RecentEntry,
@@ -113,14 +113,27 @@ describe('recordRecentVisit with tabs', () => {
   });
 });
 
-describe('removeRecentEntry', () => {
-  it('drops only the entry with that key', () => {
-    const gone = tab({ kind: 'terminal', tabId: 'gone' });
-    const list = [entry(), gone, tab()];
+describe('removeRecentTab', () => {
+  it('drops only that connection’s tab in that workspace, and never an agent', () => {
+    const list = [
+      entry({ agentId: 'gone' }),
+      tab({ kind: 'terminal', tabId: 'gone' }),
+      tab({ tabId: 'gone', workspaceId: 'ws-2' }),
+      tab({ tabId: 'gone', connectionId: 'remote' }),
+      tab(),
+    ];
 
-    expect(ids(removeRecentEntry(list, recentEntryKey(gone)))).toEqual([
-      'agent-1',
-      'browser:tab-1',
+    expect(
+      removeRecentTab(list, 'local', 'ws-1', 'gone').map((item) => [
+        id(item),
+        item.workspaceId,
+        item.connectionId,
+      ]),
+    ).toEqual([
+      ['gone', 'ws-1', 'local'],
+      ['browser:gone', 'ws-2', 'local'],
+      ['browser:gone', 'ws-1', 'remote'],
+      ['browser:tab-1', 'ws-1', 'local'],
     ]);
   });
 });

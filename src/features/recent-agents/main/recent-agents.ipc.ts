@@ -10,7 +10,7 @@ import {
   RecentAgentPageChordSchema,
   RecentAgentVisitSchema,
   RecentAgentWorkspaceSchema,
-  RecentEntryKeySchema,
+  RecentTabSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
@@ -25,7 +25,7 @@ import {
   parseRecentAgents,
   recordRecentVisit,
   removeRecentAgentWorkspace,
-  removeRecentEntry,
+  removeRecentTab,
   type RecentEntry,
   pageKeyToForward,
 } from '../../../shared/recent-agents';
@@ -118,15 +118,15 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
     ),
   );
   ipcMain.handle(
-    RECENT_AGENTS.FORGET_ENTRY,
+    RECENT_AGENTS.FORGET_TAB,
     createValidatedHandler(
-      RecentEntryKeySchema,
-      async (_event, { key }) =>
+      RecentTabSchema,
+      async (_event, { connectionId, workspaceId, tabId }) =>
         change((list) => {
-          const next = removeRecentEntry(list, key);
+          const next = removeRecentTab(list, connectionId, workspaceId, tabId);
           return next.length === list.length ? list : next;
         }),
-      RECENT_AGENTS.FORGET_ENTRY,
+      RECENT_AGENTS.FORGET_TAB,
     ),
   );
 }

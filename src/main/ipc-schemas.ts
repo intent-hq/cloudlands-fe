@@ -805,7 +805,13 @@ export const RecentAgentVisitSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
-export const RecentEntryKeySchema = z.object({ key: z.string().min(1).max(2048) }).strict();
+export const RecentTabSchema = z
+  .object({
+    connectionId: RecentAgentIdSchema,
+    workspaceId: RecentAgentIdSchema,
+    tabId: RecentAgentIdSchema,
+  })
+  .strict();
 
 export const RecentAgentPageChordSchema = z.object({ binding: z.string().max(128) }).strict();
 

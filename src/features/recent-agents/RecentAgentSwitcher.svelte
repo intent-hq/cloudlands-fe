@@ -18,6 +18,7 @@
   import { recentAgentOpenRequested } from '$store/renderer/slices/recent-agents/recent-agents-slice';
   import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { routedWorkspaceId } from '$store/renderer/utils/routed-workspace-id';
   import RecentAgentSwitcherView from './RecentAgentSwitcherView.svelte';
   import {
     isSwitcherModifierKeyUp,
@@ -56,9 +57,12 @@
 
   function isShown(entry: RecentEntry): boolean {
     if (entry.connectionId !== $currentConnectionId$) return false;
+    // Outside a workspace route (Home, Settings) only the viewed chat counts: the tab strip
+    // keeps the last workspace's focused tab, which is not on screen.
+    const routed = routedWorkspaceId();
+    if (!routed) return entry.kind === 'agent' && entry.agentId === $viewedAgentId$;
     const shown = $shownTab$;
-    // Outside a workspace (the home Assistant) only the viewed chat counts.
-    if (!shown) return entry.kind === 'agent' && entry.agentId === $viewedAgentId$;
+    if (!shown || entry.workspaceId !== routed) return false;
     return entry.kind === 'agent'
       ? shown.type === 'agent' && shown.agentId === entry.agentId
       : shown.id === entry.tabId;
