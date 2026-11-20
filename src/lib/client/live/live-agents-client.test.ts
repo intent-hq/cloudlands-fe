@@ -1157,6 +1157,52 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect('detail' in (backend.requests[0]!.params as Record<string, unknown>)).toBe(false);
   });
 
+  it('resolveRpcProposal sends the decision and returns the per-call items', async () => {
+    const items = [
+      { index: 0, backend: 'local', method: 'workspace.archive', status: 'done', result: {} },
+      { index: 1, backend: 'local', method: 'workspace.archive', status: 'skipped' },
+    ];
+    backend.onRequest('agent.resolveRpcProposal', () => ({
+      success: true,
+      proposalId: 'rpc-1',
+      outcome: 'applied',
+      items,
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.resolveRpcProposal({
+      agentId: 'agent-1',
+      workspaceId: '__chief__',
+      proposalId: 'rpc-1',
+      decision: 'approve',
+    });
+    expect(result).toEqual({ success: true, outcome: 'applied', items });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.resolveRpcProposal',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'agent-1',
+        proposalId: 'rpc-1',
+        decision: 'approve',
+      },
+    });
+  });
+
+  it('resolveRpcProposal folds a daemon refusal into {success:false,error}', async () => {
+    backend.onRequest('agent.resolveRpcProposal', () => {
+      throw new BackendError(buildErrorPayload('BACKEND_ERROR', 'Conflict', { rpcCode: -32005 }));
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.resolveRpcProposal({
+      agentId: 'agent-1',
+      workspaceId: '__chief__',
+      proposalId: 'rpc-1',
+      decision: 'reject',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('resolveProposal forwards the applied outcome with detail on the wire', async () => {
     backend.onRequest('agent.resolveProposal', () => ({ success: true }));
     const client = new LiveAgentsClient();
