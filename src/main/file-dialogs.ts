@@ -19,7 +19,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { app, BrowserWindow, dialog, ipcMain, session as electronSession } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  session as electronSession,
+  webContents as electronWebContents,
+} from 'electron';
 import type {
   OpenDialogOptions,
   OpenDialogReturnValue,
@@ -42,6 +49,8 @@ import { Logger } from '../shared/logger';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getShownRendererWebContents, getWindowForWebContents } from './window-backend';
 import { routeSessionDownloads } from './in-app-downloads';
+import { armPopupFileChooser } from './popup-file-choosers';
+import { resolvePickerHost, type PickerHostGraph } from './picker-host';
 
 const logger = new Logger('FileDialogs');
 
@@ -133,6 +142,34 @@ interface PendingRequest {
 
 const pending = new Map<string, PendingRequest>();
 
+/** App renderers running InAppFileDialogHost (announced over HOST_READY). */
+const pickerHosts = new Set<number>();
+
+const electronPickerGraph: PickerHostGraph<WebContents> = {
+  isHost: (contents) => !contents.isDestroyed() && pickerHosts.has(contents.id),
+  embedderOf: (contents) => contents.hostWebContents ?? undefined,
+  openerOf: (contents) => {
+    const opener = contents.opener;
+    if (!opener) return undefined;
+    try {
+      return electronWebContents.fromFrame(opener) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  },
+  shownRendererOf: (contents) => {
+    const window = getWindowForWebContents(contents);
+    return window ? getShownRendererWebContents(window) : undefined;
+  },
+};
+
+/** The app renderer that shows the picker for a page, or `null` (then cancel). */
+function pickerHostFor(contents: WebContents | undefined): WebContents | null {
+  return contents && !contents.isDestroyed()
+    ? resolvePickerHost(contents, electronPickerGraph)
+    : null;
+}
+
 function ownerFor(win: OwnerWindow): BrowserWindow | null {
   const candidate =
     win && !win.isDestroyed()
@@ -152,11 +189,30 @@ function requestInAppDialog(win: OwnerWindow, body: InAppRequestBody): Promise<s
   return requestInAppDialogIn(getShownRendererWebContents(owner), body);
 }
 
+/**
+ * Show the request in the app renderer for `page` (resolved through
+ * embedder, opener and window). A page with no such renderer, like a website
+ * popup whose opener is gone, cancels instead of messaging the website.
+ */
+
 function requestInAppDialogIn(
   contents: WebContents,
   body: InAppRequestBody,
 ): Promise<string[] | null> {
-  if (contents.isDestroyed()) return Promise.resolve(null);
+  const host = pickerHostFor(contents);
+  if (!host) {
+    logger.warn('No app renderer can show the in-app file dialog; cancelling', {
+      kind: body.kind,
+    });
+    return Promise.resolve(null);
+  }
+  return requestInAppDialogInHost(host, body);
+}
+
+function requestInAppDialogInHost(
+  contents: WebContents,
+  body: InAppRequestBody,
+): Promise<string[] | null> {
   const id = randomUUID();
   return new Promise((resolve) => {
     const settle = (paths: string[] | null) => {
@@ -193,9 +249,9 @@ const fileDialogs = createFileDialogs({
 });
 
 /**
- * Show the in-app open picker in one specific renderer (the app renderer that
- * shows a browser tab), for choosers main intercepts itself. Resolves the
- * chosen paths, or `null` on cancel.
+ * Show the in-app open picker for a chooser main intercepted itself, in the
+ * app renderer behind `contents` (a browser tab's host, or a popup's opener
+ * chain). Resolves the chosen paths, or `null` on cancel.
  */
 export function pickFilesInApp(
   contents: WebContents,
@@ -207,6 +263,22 @@ export function pickFilesInApp(
     multiple: options.multiple,
     extensions: extensionsFromAccept(options.accept),
   }).then((paths) => (paths && !options.multiple ? paths.slice(0, 1) : paths));
+}
+
+/**
+ * Ask where a download from `contents` goes, with the in-app Save picker in
+ * its app renderer. `null` when the user cancels or no app renderer can ask.
+ */
+async function saveFileInApp(
+  contents: WebContents | undefined,
+  defaultFileName: string,
+): Promise<string | null> {
+  if (!contents) return null;
+  const paths = await requestInAppDialogIn(contents, {
+    kind: 'save',
+    defaultPath: defaultFileName,
+  });
+  return paths?.[0] ?? null;
 }
 
 /** Open chooser: native, or the in-app picker under INTENT_IN_APP_PICKER=1. */
@@ -318,17 +390,36 @@ function requirePendingRequest(sender: WebContents): void {
 export function registerFileDialogHandlers(): void {
   const channels = IPC_CHANNELS.IN_APP_FILE_DIALOG;
 
-  // Downloads (website links, browser tabs) otherwise open the native Save dialog.
   if (inAppFileDialogsEnabled()) {
-    const ownerForDownload = (contents: WebContents | undefined) => {
-      const host = contents?.hostWebContents ?? contents;
-      return host && !host.isDestroyed() ? getWindowForWebContents(host) : null;
-    };
-    routeSessionDownloads(electronSession.defaultSession, ownerForDownload, showSaveDialog);
+    // Downloads (website links, browser tabs, popups) otherwise open the native
+    // Save dialog; the picker shows in the app renderer behind the page.
+    routeSessionDownloads(electronSession.defaultSession, saveFileInApp);
     app.on('web-contents-created', (_event, contents) => {
-      routeSessionDownloads(contents.session, ownerForDownload, showSaveDialog);
+      routeSessionDownloads(contents.session, saveFileInApp);
+      // Website popup windows are no browser tab, so arm their choosers here.
+      if (contents.getType() === 'window') {
+        contents.on('dom-ready', () => {
+          if (contents.opener) armPopupFileChooser(contents, pickFilesInApp);
+        });
+      }
     });
   }
+
+  ipcMain.handle(
+    channels.HOST_READY,
+    createSafeValidatedHandler(
+      z.unknown(),
+      async (event) => {
+        const sender = event.sender;
+        if (!pickerHosts.has(sender.id)) {
+          pickerHosts.add(sender.id);
+          sender.once('destroyed', () => pickerHosts.delete(sender.id));
+        }
+        return { ok: true };
+      },
+      channels.HOST_READY,
+    ),
+  );
 
   ipcMain.handle(
     channels.RESPOND,

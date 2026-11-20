@@ -619,6 +619,8 @@ export const IPC_CHANNELS = {
     LIST_DIRECTORY: 'in-app-file-dialog:list-directory',
     CREATE_DIRECTORY: 'in-app-file-dialog:create-directory',
     PICK_FILES: 'in-app-file-dialog:pick-files',
+    /** An app renderer that can show the picker announces itself (renderer->main). */
+    HOST_READY: 'in-app-file-dialog:host-ready',
   },
 
   // Voice (local OS transcription — macOS Speech.framework helper)

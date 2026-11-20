@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({}));
 
-import { routeDownloadThroughInAppPicker, type StagedDownload } from './in-app-downloads';
+import {
+  routeDownloadThroughInAppPicker,
+  routeSessionDownloads,
+  type StagedDownload,
+} from './in-app-downloads';
 
 class FakeDownload extends EventEmitter {
   savePath = '';
@@ -108,5 +112,21 @@ describe('routeDownloadThroughInAppPicker', () => {
     expect(path.dirname(item.savePath)).toBe(staging);
     expect(path.basename(item.savePath).endsWith('-passwd')).toBe(true);
     await routed;
+  });
+});
+
+describe('routeSessionDownloads', () => {
+  it('asks for the page that started the download and cancels when it cannot', async () => {
+    const session = new EventEmitter();
+    const popup = { id: 42 };
+    const askSavePath = vi.fn(async () => null);
+    routeSessionDownloads(session as never, askSavePath, staging);
+    routeSessionDownloads(session as never, askSavePath, staging);
+    expect(session.listenerCount('will-download')).toBe(1);
+
+    const item = new FakeDownload('popup.pdf');
+    session.emit('will-download', {}, item, popup);
+    await vi.waitFor(() => expect(item.cancel).toHaveBeenCalledOnce());
+    expect(askSavePath).toHaveBeenCalledWith(popup, 'popup.pdf');
   });
 });

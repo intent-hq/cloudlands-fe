@@ -41,6 +41,14 @@ describe('inAppFileDialogSaga', () => {
     expect(task.isRunning()).toBe(false);
   });
 
+  it('announces itself to main as a picker host', async () => {
+    const { task, invoke } = start(true);
+    await settle();
+    expect(invoke).toHaveBeenCalledWith('in-app-file-dialog:host-ready', {});
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('queues main requests and sends answers back', async () => {
     const { task, channel, dispatched, invoke, push } = start(true);
     await settle();
@@ -57,6 +65,7 @@ describe('inAppFileDialogSaga', () => {
     channel.put(inAppFileDialogAnswered('r2', []));
     await settle();
     expect(invoke.mock.calls).toEqual([
+      ['in-app-file-dialog:host-ready', {}],
       ['in-app-file-dialog:respond', { id: 'r1', paths: ['/home/me/a.zip'] }],
       ['in-app-file-dialog:respond', { id: 'r2', paths: null }],
     ]);
@@ -71,7 +80,7 @@ describe('inAppFileDialogSaga', () => {
     expect(() => structuredClone(reactive)).toThrow();
     channel.put(inAppFileDialogAnswered('r3', reactive));
     await settle();
-    const sent = invoke.mock.calls[0][1];
+    const sent = invoke.mock.calls.at(-1)?.[1];
     expect(() => structuredClone(sent)).not.toThrow();
     expect(sent).toEqual({ id: 'r3', paths: ['/a.png', '/b.png'] });
     task.cancel();

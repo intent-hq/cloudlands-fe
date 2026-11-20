@@ -14,7 +14,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { BrowserWindow, DownloadItem, Session, WebContents } from 'electron';
+import type { DownloadItem, Session, WebContents } from 'electron';
 
 import { Logger } from '../shared/logger';
 
@@ -90,27 +90,23 @@ const routedSessions = new WeakSet<Session>();
 
 /**
  * Route `session`'s downloads through the in-app Save picker (once per
- * session). `ownerFor` names the window whose picker asks.
+ * session). `askSavePath` resolves the destination for a download started by
+ * `contents`, or `null` to cancel it.
  */
 export function routeSessionDownloads(
   session: Session,
-  ownerFor: (contents: WebContents | undefined) => BrowserWindow | null,
-  showSaveDialog: (
-    win: BrowserWindow | null,
-    options: { defaultPath: string },
-  ) => Promise<{ canceled: boolean; filePath?: string }>,
+  askSavePath: (
+    contents: WebContents | undefined,
+    defaultFileName: string,
+  ) => Promise<string | null>,
+  stagingDir: string = path.join(os.tmpdir(), 'intent-downloads'),
 ): void {
   if (routedSessions.has(session)) return;
   routedSessions.add(session);
-  const stagingDir = path.join(os.tmpdir(), 'intent-downloads');
   session.on('will-download', (_event, item, contents) => {
-    const owner = ownerFor(contents);
     void routeDownloadThroughInAppPicker(item, {
       stagingDir,
-      askSavePath: async (defaultFileName) => {
-        const result = await showSaveDialog(owner, { defaultPath: defaultFileName });
-        return result.canceled || !result.filePath ? null : result.filePath;
-      },
+      askSavePath: (defaultFileName) => askSavePath(contents, defaultFileName),
     }).catch((error: unknown) => {
       logger.warn('Download through the in-app picker failed', {
         error: error instanceof Error ? error.message : String(error),

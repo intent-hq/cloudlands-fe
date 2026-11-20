@@ -54,6 +54,19 @@ export function* inAppFileDialogSaga(): SagaGenerator<void> {
         },
       },
     );
+    // Tell main this renderer can show the picker (main never sends a request
+    // to a page that has not announced itself, e.g. a website popup).
+    try {
+      yield* call(
+        [window.electronAPI, window.electronAPI.invoke],
+        IPC_CHANNELS.IN_APP_FILE_DIALOG.HOST_READY,
+        {},
+      );
+    } catch (error) {
+      logger.warn('could not register as the in-app file dialog host', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     yield* call(() => new Promise<never>(() => {}));
   } finally {
     if (yield* cancelled()) disposeInputs();
