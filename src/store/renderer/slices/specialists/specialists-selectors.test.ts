@@ -172,12 +172,12 @@ describe('specialists selectors', () => {
       expect(modalIds).toContain('vulnerability-scanner');
     });
 
-    it('keeps Maintenance Coordinator pickable as a standard specialist with the ralph avatar', () => {
+    it('keeps Maintainer pickable as a standard specialist with the ralph avatar', () => {
       const coordinator = SPECIALISTS.find(({ id }) => id === 'maintenance-coordinator');
       const modalIds = filterModalPickableSpecialists(SPECIALISTS, true).map(({ id }) => id);
 
       expect(coordinator).toMatchObject({
-        name: 'Maintenance Coordinator',
+        name: 'Maintainer',
         icon: 'ralph',
         promptUnavailable: true,
       });
