@@ -38,7 +38,9 @@ const paraglidePaths = {
 // sidecar hash, not mtimes, decides freshness, intent-hq/intent#4621), and
 // `watchChange` recompiles on catalog edits for HMR. Upstream's
 // `paraglideVitePlugin` is not used: it writes into the outdir on its own,
-// racing the publisher (intent-hq/intent#4565).
+// racing the publisher (intent-hq/intent#4565). Dev scripts generate first: a
+// `buildStart` write lands after the dev watcher starts and mid-warm-up, so
+// modules end up importing two copies of the same file (one with `?t=`).
 const reuseGeneratedParaglide = ({ ensure = ensureRepoParaglide } = {}) => ({
   name: 'reuse-generated-paraglide',
   enforce: 'pre',
