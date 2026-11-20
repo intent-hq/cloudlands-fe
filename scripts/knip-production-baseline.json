@@ -102,8 +102,7 @@
     ],
     "src/features/backend/main/client-identity.ts": [
       "DESKTOP_CLIENT_NAME",
-      "__resetLocalHostIdentityForTesting",
-      "getClientHostIdentity"
+      "__resetLocalHostIdentityForTesting"
     ],
     "src/features/backend/main/connections-store.ts": [
       "connectionsStore.LOCAL_CONNECTION_LABEL"
@@ -2655,9 +2654,6 @@
     ],
     "src/features/backend/main/backend-connection.ts": [
       "RaceAttempt"
-    ],
-    "src/features/backend/main/client-identity.ts": [
-      "ClientHostIdentity"
     ],
     "src/features/backend/main/desktop-connections-store.ts": [
       "connectionsStore.ConnectionRecord"
