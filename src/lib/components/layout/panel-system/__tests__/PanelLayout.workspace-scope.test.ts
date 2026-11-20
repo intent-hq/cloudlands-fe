@@ -1,8 +1,9 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { dispatchMock, readableSelector } = vi.hoisted(() => ({
+const { dispatchMock, executeActionMock, readableSelector } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  executeActionMock: vi.fn(),
   readableSelector: (value: unknown) =>
     Object.assign(
       () => ({ subscribe: (listener: (next: unknown) => void) => (listener(value), () => {}) }),
@@ -66,7 +67,8 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 vi.mock('$features/layout/panel-keyboard-shortcuts.svelte', () => ({
   createPanelKeyboardShortcuts: () => ({
     handleKeyDown: () => false,
-    executeAction: vi.fn(),
+    executeAction: executeActionMock,
+    syncZoom: vi.fn(),
     cleanup: vi.fn(),
     leaderActive: false,
     showPanelNumbers: false,
@@ -131,5 +133,40 @@ describe('PanelLayout workspace-scoped layout lifecycle', () => {
     expect(dispatchMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ payload: ['ws-redux-b'] }),
     );
+  });
+});
+
+describe('PanelLayout keyboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    Object.defineProperty(window.navigator, 'platform', { configurable: true, value: 'Linux' });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves Mod+Shift+Enter to "Open in own window": it never zooms the panel', () => {
+    render(PanelLayout, { props: { workspaceId: 'ws-component-a' } });
+    const keydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(keydown);
+
+    expect(executeActionMock).not.toHaveBeenCalledWith('zoom-toggle');
+    expect(keydown.defaultPrevented).toBe(false);
   });
 });

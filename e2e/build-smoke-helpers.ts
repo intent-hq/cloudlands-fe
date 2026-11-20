@@ -254,6 +254,8 @@ export interface LaunchOptions {
   extraArgs?: string[];
   /** Extra environment variables passed to the app */
   extraEnv?: Record<string, string>;
+  /** FE-only local prefs (`local-prefs.json` in userData) seeded before launch, e.g. a Labs switch. */
+  localPrefs?: Record<string, unknown>;
 }
 
 /**
@@ -274,6 +276,13 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   const executablePath = findPackagedApp();
 
   const profile = mkdtempSync(join(tmpdir(), 'ip-'));
+  if (options.localPrefs) {
+    mkdirSync(join(profile, 'electron'), { recursive: true });
+    writeFileSync(
+      join(profile, 'electron', 'local-prefs.json'),
+      JSON.stringify(options.localPrefs),
+    );
+  }
   const app = await electron.launch({
     timeout: 60_000,
     executablePath,
