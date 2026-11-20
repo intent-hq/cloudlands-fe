@@ -32,24 +32,35 @@
 {/snippet}
 
 {#if hasPlatform || providers.length > 0}
-  <TooltipRich align="start" class="inline rounded-sm focus-visible:-outline-offset-1">
+  <TooltipRich
+    align="start"
+    class="inline rounded-sm focus-visible:-outline-offset-1"
+    contentContainerClass="px-4! py-3!"
+  >
     {#snippet content()}
-      <div class="flex flex-col gap-2">
-        {#if platform}
-          <MachinePlatformIcon {platform} labeled />
-        {:else if platformFallback}
-          <span>{platformFallback}</span>
+      <div class="flex min-w-36 flex-col gap-3">
+        {#if hasPlatform}
+          <div class="flex flex-col gap-1.5">
+            <span class="type-caption font-medium text-muted-foreground">
+              {m.settings_devices_operatingSystem_label()}
+            </span>
+            {#if platform}
+              <MachinePlatformIcon {platform} labeled />
+            {:else}
+              <span>{platformFallback}</span>
+            {/if}
+          </div>
         {/if}
         {#if providers.length > 0}
-          <div class={cn('flex flex-col gap-1', hasPlatform && 'border-t border-border pt-2')}>
-            <span id={providersLabelId} class="text-muted-foreground">
-              {m.settings_devices_providers_ariaLabel()}
+          <div class={cn('flex flex-col gap-1.5', hasPlatform && 'border-t border-border pt-3')}>
+            <span id={providersLabelId} class="type-caption font-medium text-muted-foreground">
+              {m.settings_devices_providers_label()}
             </span>
-            <div role="list" aria-labelledby={providersLabelId} class="flex flex-col gap-1">
+            <div role="list" aria-labelledby={providersLabelId} class="flex flex-col gap-1.5">
               {#each providers as entry (entry.id)}
                 <span role="listitem" class="flex min-w-0 items-start gap-2">
                   <span
-                    class="first-line-icon w-3.5 shrink-0 justify-center text-muted-foreground [&_svg]:m-0"
+                    class="first-line-icon w-3.5 text-muted-foreground [&_svg]:m-0"
                     aria-hidden="true"
                   >
                     {#if hasProviderIcon(entry.id)}
