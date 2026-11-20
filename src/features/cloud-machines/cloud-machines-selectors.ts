@@ -41,7 +41,7 @@ export const selectCloudMachinesVisible = store.createSelector(
       Object.keys(state.cloudMachines?.providers ?? {}).length > 0),
 );
 
-/** The providers a new entry can use; Northflank and Agent37 need named entries. */
+/** The providers a new entry can use; all but E2B need named entries. */
 export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
   const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
   return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
@@ -155,7 +155,9 @@ export function startOnCloud(state: State): StartOnCloud | null {
           ? cloudProviderName(entry.provider)
           : entry.provider === 'northflank'
             ? m.cloudMachines_startOn_northflank_label({ name: entry.name })
-            : m.cloudMachines_startOn_agent37_label({ name: entry.name }),
+            : entry.provider === 'agent37'
+              ? m.cloudMachines_startOn_agent37_label({ name: entry.name })
+              : m.cloudMachines_startOn_vercel_label({ name: entry.name }),
     unavailableReason:
       entry.state === 'key-rejected' ? cloudProviderCopy(entry.provider).keyRejected : null,
     needsProfile: !cloudEntrySendsConfig(state, entry),

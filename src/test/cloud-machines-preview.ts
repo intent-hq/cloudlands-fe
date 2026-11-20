@@ -208,9 +208,7 @@ export const VERCEL_ENTRY: CloudMachineProvider = {
   vercel: {
     teamId: 'team_preview0000000000000000',
     projectId: 'prj_preview000000000000000000',
-    image: '',
-    teamSlug: 'acme',
-    projectName: 'intent-agents',
+    image: 'sutterhill/intent-images/intent-node',
   },
 };
 
@@ -456,7 +454,7 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
         message: 'Vercel answered 404 for project prj_preview000000000000000000',
         cloud: {
           code: 'cloud-machine-unavailable',
-          reason: 'project-not-found',
+          reason: 'project-missing',
           retryable: false,
           status: 404,
           provider: 'vercel',

@@ -44,7 +44,7 @@ import {
 } from './cloud-machines-slice';
 import { cloudProviderCopy, sandboxLabel } from './cloud-machines-format';
 
-/** The key (E2B, Agent37) or token (Northflank), pasted or copied, and the provider's own members. */
+/** The key (E2B, Agent37) or token (Northflank, Vercel), pasted or copied, and the provider's own members. */
 function secretParams(
   provider: CloudProviderKind,
   input: CloudMachineConfigureInput,
@@ -54,7 +54,12 @@ function secretParams(
   return {
     ...(entries && input.apiKeyFrom && !input.apiKey ? { apiKeyFrom: input.apiKeyFrom } : {}),
     ...(input.apiKey ? { apiKey: input.apiKey } : {}),
-    ...(provider === 'northflank' && input.projectId ? { projectId: input.projectId } : {}),
+    ...((provider === 'northflank' || provider === 'vercel') && input.projectId
+      ? { projectId: input.projectId }
+      : {}),
+    ...(provider === 'vercel' && input.teamId ? { teamId: input.teamId } : {}),
+    // "" is meaningful: back to Intent's public image.
+    ...(provider === 'vercel' && input.image !== undefined ? { image: input.image } : {}),
     ...(provider === 'agent37' && input.instanceType ? { instanceType: input.instanceType } : {}),
     ...(provider === 'agent37' && input.region ? { region: input.region } : {}),
   };
@@ -230,13 +235,17 @@ function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaG
           ? sandboxes > 0
             ? m.cloudMachines_agent37_remove_entryWithInstances_description()
             : m.cloudMachines_agent37_remove_entry_description()
-          : entries
+          : kind === 'vercel'
             ? sandboxes > 0
-              ? m.cloudMachines_remove_entryWithSandboxes_description()
-              : m.cloudMachines_remove_entry_description()
-            : sandboxes > 0
-              ? m.cloudMachines_remove_confirmWithSandboxes_description()
-              : m.cloudMachines_remove_confirm_description(),
+              ? m.cloudMachines_vercel_remove_entryWithSandboxes_description()
+              : m.cloudMachines_vercel_remove_entry_description()
+            : entries
+              ? sandboxes > 0
+                ? m.cloudMachines_remove_entryWithSandboxes_description()
+                : m.cloudMachines_remove_entry_description()
+              : sandboxes > 0
+                ? m.cloudMachines_remove_confirmWithSandboxes_description()
+                : m.cloudMachines_remove_confirm_description(),
     confirmLabel: m.cloudMachines_remove_label(),
     destructive: true,
   });

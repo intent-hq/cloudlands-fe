@@ -425,6 +425,8 @@
   "cloudMachines_startOn_northflank_label": "*",
   "cloudMachines_northflank_form_region_label": ["de"],
   "cloudMachines_startOn_agent37_label": "*",
+  "cloudMachines_startOn_vercel_label": "*",
+  "cloudMachines_vercel_form_image_label": ["de", "fr"],
   "cloudMachines_agent37_form_region_label": ["de"],
   "cloudMachines_agent37_region_apSouth": ["de"],
   "cloudMachines_agent37_form_type_label": ["fr"],

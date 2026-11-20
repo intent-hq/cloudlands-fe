@@ -666,7 +666,7 @@ describe('cloud machines saga — Vercel', () => {
         apiKey: TOKEN,
         teamId: 'team_abc',
         projectId: 'prj_abc',
-        image: 'acme/images/intent-node:0.212.0',
+        image: 'acme/images/intent-node',
         size: '8x16',
         instanceType: 'vm',
       }),
@@ -678,7 +678,7 @@ describe('cloud machines saga — Vercel', () => {
       apiKey: TOKEN,
       teamId: 'team_abc',
       projectId: 'prj_abc',
-      image: 'acme/images/intent-node:0.212.0',
+      image: 'acme/images/intent-node',
       size: '8x16',
     });
     expect(JSON.stringify(store.state)).not.toContain(TOKEN);

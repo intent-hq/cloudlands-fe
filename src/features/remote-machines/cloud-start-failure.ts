@@ -134,8 +134,8 @@ function details(
 }
 
 /**
- * Northflank's and Agent37's words on the same tone and actions: their errors
- * name services or instances, tokens, projects and wallets, never E2B sandboxes.
+ * Northflank's, Agent37's and Vercel's words on the same tone and actions: their
+ * errors name their machines, tokens, projects and wallets, never E2B's.
  */
 function providerCopy(
   failure: PlacementFailure,

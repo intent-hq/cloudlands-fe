@@ -777,23 +777,13 @@ describe('Vercel entries', () => {
     expect(cloudProviderOfEntryId(VERCEL_ENTRY.id)).toBe('vercel');
   });
 
-  it('reads missing Vercel settings as empty, so the public image is used', () => {
+  it("reads missing Vercel settings as empty, on Intent's public image", () => {
     const parsed = parseCloudMachineProvider({ ...VERCEL_ENTRY, vercel: { image: 42 } });
     expect(parsed?.vercel).toEqual({
       teamId: '',
       projectId: '',
-      image: '',
-      teamSlug: '',
-      projectName: '',
+      image: 'sutterhill/intent-images/intent-node',
     });
-  });
-
-  it("links to the entry's team and project on Vercel, else to the Vercel dashboard", () => {
-    expect(cloudDashboardUrl('vercel', VERCEL_ENTRY)).toBe('https://vercel.com/acme/intent-agents');
-    expect(
-      cloudDashboardUrl('vercel', { ...VERCEL_ENTRY, vercel: { ...VERCEL_ENTRY.vercel!, projectName: '' } }),
-    ).toBe('https://vercel.com/acme');
-    expect(cloudDashboardUrl('vercel')).toBe('https://vercel.com/dashboard');
   });
 
   it('places a Vercel entry with the provider-neutral target', () => {
@@ -822,28 +812,26 @@ describe('Vercel entries', () => {
     expect(location?.name).toBe('Vercel');
   });
 
-  it('explains Vercel errors in its own words: token, team, project, image, quota, session cap', () => {
+  it('explains Vercel errors in its own words: token, team, project, image, plan', () => {
     const vercel = { provider: 'vercel' as const, retryable: false };
     const unavailable = (reason: string) =>
       cloudErrorText({ code: 'cloud-machine-unavailable', reason, ...vercel }).description;
-    expect(unavailable('key-rejected')).toBe(m.cloudMachines_vercel_error_keyRejected_description());
-    expect(unavailable('team-not-found')).toBe(
-      m.cloudMachines_vercel_error_teamNotFound_description(),
+    expect(unavailable('key-rejected')).toBe(
+      m.cloudMachines_vercel_error_keyRejected_description(),
     );
-    expect(unavailable('project-not-found')).toBe(
-      m.cloudMachines_vercel_error_projectNotFound_description(),
+    expect(unavailable('permission-denied')).toBe(
+      m.cloudMachines_vercel_error_permissionDenied_description(),
     );
-    expect(unavailable('image-missing')).toBe(
+    expect(unavailable('project-missing')).toBe(
+      m.cloudMachines_vercel_error_projectMissing_description(),
+    );
+    expect(unavailable('template-missing')).toBe(
       m.cloudMachines_vercel_error_imageMissing_description(),
     );
-    const quota = (limit: string) => cloudErrorText({ code: 'cloud-quota', limit, ...vercel });
-    expect(quota('concurrency').description).toBe(
-      m.cloudMachines_vercel_error_quotaConcurrency_description(),
+    expect(cloudErrorText({ code: 'cloud-quota', limit: 'plan', ...vercel }).description).toBe(
+      m.cloudMachines_vercel_error_quotaPlan_description(),
     );
-    expect(quota('session').description).toBe(
-      m.cloudMachines_vercel_error_quotaSession_description(),
-    );
-    for (const reason of ['key-rejected', 'team-not-found', 'project-not-found', 'api-error']) {
+    for (const reason of ['key-rejected', 'permission-denied', 'project-missing', 'api-error']) {
       const text = cloudErrorText(
         { code: 'cloud-machine-unavailable', reason, retryable: false },
         'vercel',
@@ -852,7 +840,7 @@ describe('Vercel entries', () => {
     }
   });
 
-  it('sends a wrong team or project to Settings with the Vercel link, and retries a busy Vercel', () => {
+  it('sends a missing project or image to Settings with Open Vercel, and retries a busy Vercel', () => {
     const fail = (data: object) =>
       cloudStartFailureView(
         placementFailure(
@@ -863,22 +851,24 @@ describe('Vercel entries', () => {
       );
     const project = fail({
       code: 'cloud-machine-unavailable',
-      reason: 'project-not-found',
+      reason: 'project-missing',
       retryable: false,
       provider: 'vercel',
     });
     expect(project).toMatchObject({ provider: 'vercel', tone: 'warning', dashboard: true });
     expect(project?.actions).toEqual(['settings']);
-    expect(project?.cause).toBe(m.cloudMachines_vercel_error_projectNotFound_description());
+    expect(project?.cause).toBe(m.cloudMachines_vercel_error_projectMissing_description());
     const image = fail({
       code: 'cloud-machine-unavailable',
-      reason: 'image-missing',
+      reason: 'template-missing',
       retryable: false,
       provider: 'vercel',
     });
     expect(image).toMatchObject({ tone: 'warning', actions: ['settings'] });
+    expect(image?.cause).toBe(m.cloudMachines_vercel_error_imageMissing_description());
     const rate = fail({ code: 'cloud-quota', limit: 'rate', retryable: true, provider: 'vercel' });
     expect(rate?.actions[0]).toBe('retry');
+    expect(cloudDashboardUrl('vercel')).toBe('https://vercel.com/dashboard');
   });
 
   it('picks the next free default name for Vercel', () => {

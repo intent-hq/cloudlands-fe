@@ -736,7 +736,7 @@ describe('Vercel form', () => {
       onClose: () => {},
     });
   }
-  const formOf = (view: ReturnType<typeof render>) =>
+  const formOf = (view: { container: HTMLElement }) =>
     view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
   const configured = () =>
     dispatched().find((action) => action.type === 'cloudMachines/configureRequested')
@@ -788,14 +788,38 @@ describe('Vercel form', () => {
     await fireEvent.input(form.querySelector('input[data-cloud-project]')!, {
       target: { value: 'prj_abc' },
     });
-    await fireEvent.input(image, { target: { value: 'acme/images/intent-node:0.212.0' } });
+    await fireEvent.input(image, { target: { value: 'acme/images/intent-node' } });
     await fireEvent.submit(form);
-    expect(configured()).toMatchObject({ image: 'acme/images/intent-node:0.212.0' });
+    expect(configured()).toMatchObject({ image: 'acme/images/intent-node' });
+  });
+
+  it('refuses team and project IDs that Vercel would not accept', async () => {
+    const view = renderForm();
+    const form = formOf(view);
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    await fireEvent.input(form.querySelector('input[type="password"]')!, {
+      target: { value: 'vercel_test' },
+    });
+    await fireEvent.input(form.querySelector('input[data-vercel-team]')!, {
+      target: { value: 'acme' },
+    });
+    await fireEvent.input(form.querySelector('input[data-cloud-project]')!, {
+      target: { value: 'prj_abc' },
+    });
+    expect(form.querySelectorAll('[data-vercel-id-error]')).toHaveLength(1);
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(form.querySelector('input[data-vercel-team]')!, {
+      target: { value: 'team_abc' },
+    });
+    expect(form.querySelector('[data-vercel-id-error]')).toBeNull();
+    expect(save.disabled).toBe(false);
   });
 
   it('sends no team, project or image from the edit form when they are unchanged', async () => {
     const view = renderForm(VERCEL_ENTRY);
     const form = formOf(view);
+    // The public image reads as no image of the entry's own.
+    expect(form.querySelector('input[data-vercel-image]')).toBeNull();
     expect((form.querySelector('input[data-vercel-team]') as HTMLInputElement).value).toBe(
       VERCEL_ENTRY.vercel!.teamId,
     );
@@ -808,12 +832,12 @@ describe('Vercel form', () => {
   it('goes back to the public image when an own image is cleared', async () => {
     const own = {
       ...VERCEL_ENTRY,
-      vercel: { ...VERCEL_ENTRY.vercel!, image: 'acme/images/intent-node:0.212.0' },
+      vercel: { ...VERCEL_ENTRY.vercel!, image: 'acme/images/intent-node' },
     };
     const view = renderForm(own);
     const form = formOf(view);
     const image = form.querySelector('input[data-vercel-image]') as HTMLInputElement;
-    expect(image.value).toBe('acme/images/intent-node:0.212.0');
+    expect(image.value).toBe('acme/images/intent-node');
     await fireEvent.input(image, { target: { value: '' } });
     await fireEvent.submit(form);
     expect(configured()).toMatchObject({ image: '' });
@@ -834,17 +858,16 @@ describe('Vercel form', () => {
     expect(error).not.toContain('404');
   });
 
-  it("shows a Vercel entry's project, lists its sandboxes and links to the team on Vercel", () => {
+  it('lists the sandboxes of a Vercel entry, with Open Vercel', () => {
     seed('vercel-providers');
     const view = render(DevicesSettings);
     const row = view.container.querySelector(
       `[data-cloud-machine-row="${VERCEL_ENTRY.id}"]`,
     ) as HTMLElement;
     expect(row.getAttribute('data-cloud-provider')).toBe('vercel');
-    expect(row.textContent).toContain('intent-agents');
     const list = row.querySelector('[data-cloud-sandboxes]');
     expect(list?.getAttribute('aria-label')).toBe('Vercel sandboxes');
     expect(list?.textContent).toContain('Preview deployer');
-    expect(list?.querySelector('a[href="https://vercel.com/acme/intent-agents"]')).not.toBeNull();
+    expect(list?.querySelector('a[href="https://vercel.com/dashboard"]')).not.toBeNull();
   });
 });

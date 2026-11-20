@@ -1,5 +1,5 @@
 <!--
-  The chat's failure card for an agent on E2B or Northflank that couldn't start, in the
+  The chat's failure card for an agent on a cloud machine that couldn't start, in the
   standard turn-failure layout: plain title and cause, what happens to the
   queued message, the most helpful action filled and the rest quiet, and the
   backend's detail under Details.
