@@ -45,30 +45,31 @@ export const devicePasskeyDeleteFinished = createAction<[credentialId: string, o
 );
 
 export const devicePasskeysReducer = createReducer<DevicePasskeysState>(initialState);
-devicePasskeysReducer
-  // Only a retry after an error shows loading; the first list keeps the tab hidden.
-  .with(devicePasskeysRequested, (state) =>
-    state.status === 'error' ? { ...state, status: 'loading' } : state,
-  )
-  .with(devicePasskeysLoaded, (state, { payload: [result] }) => {
-    if (!result.available) return { ...initialState, status: 'unavailable' };
-    if ('error' in result) return { ...state, status: 'error', deleteFailedId: null };
-    return {
-      ...state,
-      status: 'ready',
-      credentials: createCollection<PasskeyDeviceCredential, 'credentialId'>(
-        'credentialId',
-        result.credentials,
-      ),
-      deleteFailedId: null,
-    };
-  })
-  .with(devicePasskeyDeleteRequested, (state, { payload: [credentialId] }) =>
-    state.deletingIds.includes(credentialId)
-      ? state
-      : { ...state, deletingIds: [...state.deletingIds, credentialId], deleteFailedId: null },
-  )
-  .with(devicePasskeyDeleteFinished, (state, { payload: [credentialId, ok] }) => ({
+// Only a retry after an error shows loading; the first list keeps the tab hidden.
+devicePasskeysReducer.with(devicePasskeysRequested, (state) =>
+  state.status === 'error' ? { ...state, status: 'loading' } : state,
+);
+devicePasskeysReducer.with(devicePasskeysLoaded, (state, { payload: [result] }) => {
+  if (!result.available) return { ...initialState, status: 'unavailable' };
+  if ('error' in result) return { ...state, status: 'error', deleteFailedId: null };
+  return {
+    ...state,
+    status: 'ready',
+    credentials: createCollection<PasskeyDeviceCredential, 'credentialId'>(
+      'credentialId',
+      result.credentials,
+    ),
+    deleteFailedId: null,
+  };
+});
+devicePasskeysReducer.with(devicePasskeyDeleteRequested, (state, { payload: [credentialId] }) =>
+  state.deletingIds.includes(credentialId)
+    ? state
+    : { ...state, deletingIds: [...state.deletingIds, credentialId], deleteFailedId: null },
+);
+devicePasskeysReducer.with(
+  devicePasskeyDeleteFinished,
+  (state, { payload: [credentialId, ok] }) => ({
     ...state,
     deletingIds: state.deletingIds.filter((id) => id !== credentialId),
     credentials: ok
@@ -78,7 +79,8 @@ devicePasskeysReducer
         )
       : state.credentials,
     deleteFailedId: ok ? null : credentialId,
-  }));
+  }),
+);
 
 export function devicePasskeysView(state: DevicePasskeysState): DevicePasskeysView {
   return {
