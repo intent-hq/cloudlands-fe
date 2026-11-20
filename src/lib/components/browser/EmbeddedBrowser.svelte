@@ -358,6 +358,16 @@
     });
 
     if (decision.shouldLoad && decision.targetUrl) {
+      // A main-owned page outlives this component and keeps its own URL. A
+      // layout restore briefly gives registry-held tabs a blank URL, then the
+      // saved one: neither may navigate or reload the live page.
+      if (
+        untrack(() => mainOwned) &&
+        (decision.targetUrl === 'about:blank' ||
+          decision.targetUrl === untrack(() => safeWebviewUrl()))
+      ) {
+        return;
+      }
       displayUrl = decision.targetUrl;
       loadUrl(decision.targetUrl);
     }
