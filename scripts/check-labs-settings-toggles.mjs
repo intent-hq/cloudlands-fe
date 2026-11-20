@@ -10,6 +10,8 @@ import { pathToFileURL } from 'node:url';
 // action creator named by the entry's `redux-action` apply plan, imported from that
 // action's slice module (`userPreferences/setX` → `setX` from `…/user-preferences-slice`).
 // A switch with a `when` gate counts only when the gate is one of SHOWN_SWITCH_GATES.
+// The reverse holds too: every Labs switch needs a labs schema entry, so the assistant
+// can read and propose the setting it changes.
 export const SCRIPT_PATH = 'scripts/check-labs-settings-toggles.mjs';
 export const SCHEMA_SOURCE = 'src/shared/app-settings-schema.ts';
 export const LABS_PAGE_SOURCE = 'src/lib/components/settings/LabsSettings.svelte';
@@ -21,6 +23,13 @@ export const HIDDEN_LABS_SETTINGS = Object.freeze({});
 // `when: () => <gate>` values that still show the switch to the users the setting is
 // for (the setting's description names the platform limit, e.g. "Desktop app only").
 export const SHOWN_SWITCH_GATES = Object.freeze(['desktop']);
+
+// Labs switches that deliberately have no labs schema entry: switch `id` → one-line
+// reason. Stale entries (no such switch, or one that now has an entry) fail the check.
+export const UNLISTED_LABS_SWITCHES = Object.freeze({
+  'labs-browser-pages-in-main':
+    'saved by the Electron main process and applied after a restart, so settings proposals cannot read or change it (cloudlands-fe#4828)',
+});
 
 const LABS_CATEGORY_PATTERN = /category:\s*(['"`])labs\1/g;
 const SWITCH_KIND_PATTERN = /kind:\s*(['"`])switch\1/g;
@@ -156,37 +165,62 @@ export function findLabsSettings(schemaText) {
   return settings;
 }
 
+const ID_PATTERN = /\bid:\s*(['"`])([^'"`]+)\1/;
+
 const isShown = (own) => {
   if (!WHEN_PATTERN.test(own)) return true;
   const gate = SHOWN_WHEN_PATTERN.exec(own)?.[1];
   return gate !== undefined && SHOWN_SWITCH_GATES.includes(gate);
 };
 
-// Action creator → import specifier (null when not imported) for every shown
-// `kind: 'switch'` entry in the Labs page's script blocks.
-export function findLabsSwitchActions(pageText) {
-  const scripts = [...pageText.matchAll(SCRIPT_BLOCK_PATTERN)].map(([, script]) => script);
-  const imports = new Map(scripts.flatMap((script) => [...namedImports(script)]));
-  const actions = new Map();
-  for (const script of scripts) {
+// Every `kind: 'switch'` entry in the Labs page's script blocks:
+// `{ id, shown, actions: [{ creator, specifier }], line }` (`specifier` is null when the
+// creator is not a named import).
+export function findLabsSwitches(pageText) {
+  const blocks = [...pageText.matchAll(SCRIPT_BLOCK_PATTERN)].map((block) => ({
+    script: block[1],
+    offset: block.index + block[0].indexOf('>') + 1,
+  }));
+  const imports = new Map(blocks.flatMap(({ script }) => [...namedImports(script)]));
+  const switches = [];
+  for (const { script, offset } of blocks) {
     const spans = objectSpans(script);
     for (const match of script.matchAll(SWITCH_KIND_PATTERN)) {
       const entry = innermostSpan(spans, match.index);
-      if (!entry || !isShown(ownProperties(script, spans, entry))) continue;
-      for (const dispatch of script.slice(entry.start, entry.end + 1).matchAll(DISPATCH_PATTERN)) {
-        actions.set(dispatch[1], imports.get(dispatch[1]) ?? null);
-      }
+      if (!entry) continue;
+      const own = ownProperties(script, spans, entry);
+      const actions = [...script.slice(entry.start, entry.end + 1).matchAll(DISPATCH_PATTERN)].map(
+        ([, creator]) => ({ creator, specifier: imports.get(creator) ?? null }),
+      );
+      switches.push({
+        id: ID_PATTERN.exec(own)?.[2] ?? null,
+        shown: isShown(own),
+        actions,
+        line: lineOf(pageText, offset + entry.start),
+      });
     }
   }
-  return actions;
+  return switches;
 }
 
+const dispatchesSetting = (labsSwitch, setting) =>
+  labsSwitch.actions.some(
+    ({ creator, specifier }) =>
+      creator === setting.actionCreator &&
+      specifier !== null &&
+      moduleName(specifier) === setting.sliceModule,
+  );
+
 // Problems with the Labs schema entries and their switches, one message per violation.
-export function checkLabsSettingsToggles({ schema, page }, hidden = HIDDEN_LABS_SETTINGS) {
+export function checkLabsSettingsToggles(
+  { schema, page },
+  { hidden = HIDDEN_LABS_SETTINGS, unlisted = UNLISTED_LABS_SWITCHES } = {},
+) {
   const problems = [];
   const settings = findLabsSettings(schema);
-  const switchActions = findLabsSwitchActions(page);
-  if (switchActions.size === 0) {
+  const switches = findLabsSwitches(page);
+  const shownSwitches = switches.filter((labsSwitch) => labsSwitch.shown);
+  if (switches.length === 0) {
     problems.push(
       `found no switch entries in ${LABS_PAGE_SOURCE}; update the parser in ${SCRIPT_PATH}`,
     );
@@ -212,8 +246,7 @@ export function checkLabsSettingsToggles({ schema, page }, hidden = HIDDEN_LABS_
       }
       continue;
     }
-    const specifier = switchActions.get(setting.actionCreator);
-    if (specifier && moduleName(specifier) === setting.sliceModule) {
+    if (shownSwitches.some((labsSwitch) => dispatchesSetting(labsSwitch, setting))) {
       withSwitch.add(setting.path);
     } else if (!Object.hasOwn(hidden, setting.path)) {
       problems.push(
@@ -231,6 +264,30 @@ export function checkLabsSettingsToggles({ schema, page }, hidden = HIDDEN_LABS_
       problems.push(`${entry} is stale: ${settingPath} has a switch in Settings → Labs`);
     } else if (typeof reason !== 'string' || !reason.trim()) {
       problems.push(`${entry} needs a reason why the setting stays hidden`);
+    }
+  }
+  const listedSwitches = new Set();
+  const matchable = settings.filter((setting) => setting.path && setting.actionCreator);
+  for (const labsSwitch of switches) {
+    const name = labsSwitch.id ?? 'without an id';
+    if (matchable.some((setting) => dispatchesSetting(labsSwitch, setting))) {
+      listedSwitches.add(labsSwitch.id);
+    } else if (!labsSwitch.id || !Object.hasOwn(unlisted, labsSwitch.id)) {
+      problems.push(
+        `${LABS_PAGE_SOURCE}:${labsSwitch.line} switch ${name} has no labs schema entry ` +
+          `(expected a \`category: 'labs'\` entry in ${SCHEMA_SOURCE} whose redux-action it dispatches)`,
+      );
+    }
+  }
+  const switchIds = new Set(switches.map((labsSwitch) => labsSwitch.id));
+  for (const [id, reason] of Object.entries(unlisted)) {
+    const entry = `UNLISTED_LABS_SWITCHES['${id}']`;
+    if (!switchIds.has(id)) {
+      problems.push(`${entry} is stale: there is no such switch in ${LABS_PAGE_SOURCE}`);
+    } else if (listedSwitches.has(id)) {
+      problems.push(`${entry} is stale: ${id} has a labs schema entry`);
+    } else if (typeof reason !== 'string' || !reason.trim()) {
+      problems.push(`${entry} needs a reason why the switch has no schema entry`);
     }
   }
   return problems;
@@ -253,8 +310,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         '',
         `Every \`category: 'labs'\` entry in ${SCHEMA_SOURCE} needs a switch in`,
         `${LABS_PAGE_SOURCE}; without one, users cannot turn the feature on or find out`,
-        'why it is missing (cloudlands-fe#4811). Add the switch, or add a',
-        `HIDDEN_LABS_SETTINGS entry with a one-line reason in ${SCRIPT_PATH}.`,
+        'why it is missing (cloudlands-fe#4811). Every Labs switch also needs a labs schema',
+        'entry, so the assistant can read and propose it. Add the switch or entry, or add a',
+        `HIDDEN_LABS_SETTINGS / UNLISTED_LABS_SWITCHES entry with a one-line reason in ${SCRIPT_PATH}.`,
       ].join('\n'),
     );
     process.exit(1);
