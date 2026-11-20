@@ -24,6 +24,7 @@ import {
   cloudMachineValidated,
   cloudMachinesLoaded,
 } from './cloud-machines-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('$features/desktop/desktop-agent-navigation', () => ({ navigateToDesktopAgent }));
@@ -66,6 +67,15 @@ describe('Add machine', () => {
     const view = render(DevicesSettings);
     await opensWizardDirectly(view);
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
+  });
+
+  it('offers no cloud provider while Remote agents is off', async () => {
+    seed('add-cloud-menu');
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
+    expect(await view.findByTestId('add-machine-menu')).toBeTruthy();
+    expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
+    expect(view.queryByTestId('add-cloud-northflank')).toBeNull();
   });
 
   it('offers every cloud provider the backend lists before any cloud machine is saved', async () => {

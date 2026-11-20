@@ -47,7 +47,11 @@ import {
   setupCloudMachinesFixture,
 } from '../../test/cloud-machines-preview';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
-import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
+import {
+  selectRemoteMachine,
+  selectStartOnOptions,
+} from '$features/remote-machines/remote-machines-selectors';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   providerProfilesLoaded,
   setProviderEnabled,
@@ -494,6 +498,36 @@ describe('Start On entry names', () => {
         m.cloudMachines_startOn_entry_label({ name: 'Team project' }),
       ],
     ]);
+  });
+});
+
+describe('Remote agents off', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('offers no cloud machine in Start On', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    expect(startOnCloud(store.state)).toBeNull();
+  });
+
+  it('still shows an agent already on E2B, with its sandbox state', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    const sandbox = E2B_SANDBOXES[2]!;
+    const location = agentMachineLocation(
+      {
+        id: 'a-paused',
+        nodeName: 'E2B',
+        nodeId: sandbox.id,
+        placement: { target: 'e2b', checkout: 'isolated' },
+      } as AgentSession,
+      selectRemoteMachine.select(store.state, sandbox.id),
+    );
+    expect(location?.cloud?.state).toBe('paused');
   });
 });
 
