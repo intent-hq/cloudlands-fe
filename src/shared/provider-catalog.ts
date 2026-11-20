@@ -36,6 +36,8 @@ const ProviderCatalogEntrySchema = z
     // Daemon-authoritative historical identities. Absence provides no alias mapping.
     legacyAliases: z.array(z.string().min(1)).optional(),
     loginCommandHint: z.string().optional(),
+    // `loginCommandHint` run from the npm fallback package, for a provider used through npx.
+    npxLoginCommandHint: z.string().optional(),
     loginDocsUrl: z.string().optional(),
     authErrorPatterns: z.array(z.string()).optional(),
     requiresEnvVar: z.string().optional(),

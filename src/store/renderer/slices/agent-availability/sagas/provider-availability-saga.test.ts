@@ -24,6 +24,11 @@ import {
   providerAvailabilitySaga,
 } from './provider-availability-saga';
 import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from '../../provider-catalog/provider-catalog-slice';
+import {
   closeTerminalOverlay,
   openTerminalOverlay,
   selectScript,
@@ -126,6 +131,56 @@ describe('providerAvailabilitySaga', () => {
       await task.toPromise();
     }
   });
+
+  it.each([
+    { runs: 'through npx', viaNpx: true, command: 'npx -y opencode-ai@1.19.6 auth login' },
+    { runs: 'installed', viaNpx: false, command: 'opencode auth login' },
+  ])(
+    'logs in to OpenCode with the daemon command when it runs $runs',
+    async ({ viaNpx, command }) => {
+      mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'opencode-login-terminal' });
+      const providerCatalog = providerCatalogReducer(
+        providerCatalogInitialState,
+        providerCatalogLoaded({
+          providers: [
+            {
+              id: 'opencode',
+              displayName: 'OpenCode',
+              shortName: 'OpenCode',
+              command: 'opencode',
+              canBeDisabled: true,
+              visible: true,
+              loginCommandHint: 'opencode auth login',
+              npxLoginCommandHint: 'npx -y opencode-ai@1.19.6 auth login',
+            },
+          ],
+        }),
+      );
+      const agentAvailability = {
+        ...initialState,
+        providerStatusMap: {
+          opencode: { available: true, authenticated: false, ...(viaNpx ? { viaNpx } : {}) },
+        },
+      };
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => channel.put(action));
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ agentAvailability, providerCatalog }) },
+        providerAvailabilitySaga,
+      );
+      const request = providerLoginRequested('opencode');
+      try {
+        channel.put(request);
+        await request.promise;
+        expect(mocks.invoke.mock.calls).toEqual([
+          ['terminal:createWithCommand', { workspaceId: '__root__', command, interactive: true }],
+        ]);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
   it('coalesces panel focus refreshes and removes listeners on close and teardown', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));

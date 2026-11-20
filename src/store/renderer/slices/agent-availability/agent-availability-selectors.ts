@@ -14,6 +14,12 @@ import type { ProviderStatus } from './agent-availability-types';
 /** One stable map per catalog collection, so consumers see a stable reference. */
 const orchestratorStatusMaps = new WeakMap<object, Record<string, ProviderStatus>>();
 
+/** Whether a provider runs from its npm package through npx (not an installed CLI). */
+export const selectProviderRunsViaNpx = store.createSelector(
+  (state, providerId: string): boolean =>
+    state.agentAvailability.providerStatusMap[providerId]?.viaNpx === true,
+);
+
 /**
  * Per-provider status. On an orchestrator the backend runs no provider CLI
  * and checks none (`host.providerDiscovery` → no providers), yet every

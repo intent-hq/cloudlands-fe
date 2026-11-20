@@ -225,7 +225,11 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
   const cursor = cursorStatusFromDiscovery(discovery);
-  const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
+  const codex = withBundledCli(
+    { available: tool(PROVIDER_BINARIES.codex).available === true },
+    discovery,
+    'codex',
+  );
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
   const cortex: ProviderStatus = { available: tool(PROVIDER_BINARIES.cortex).available === true };
@@ -233,14 +237,14 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   // fallback — warn when the CLI is present but neither can run.
   if (
     codex.available &&
+    !codex.viaNpx &&
     tool(CODEX_ACP_BINARY).available !== true &&
     tool('npx').available !== true
   ) {
     codex.warning = CODEX_ADAPTER_MISSING_WARNING;
   }
-  const opencode: ProviderStatus = {
-    available: tool(PROVIDER_BINARIES.opencode).available === true,
-  };
+  const opencodeInstalled = tool(PROVIDER_BINARIES.opencode).available === true;
+  const opencode: ProviderStatus = { available: opencodeInstalled };
   const pi: ProviderStatus = { available: tool(PROVIDER_BINARIES.pi).available === true };
   const droid: ProviderStatus = { available: tool(PROVIDER_BINARIES.droid).available === true };
   const grok: ProviderStatus = { available: tool(PROVIDER_BINARIES.grok).available === true };
@@ -249,7 +253,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   // directly); local-only, so available ⇒ authenticated (the daemon's
   // managed server injects its own API key).
   const unsloth: ProviderStatus = {
-    available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
+    available: opencodeInstalled && tool(PROVIDER_BINARIES.unsloth).available === true,
   };
   if (unsloth.available) unsloth.authenticated = true;
 
@@ -278,7 +282,12 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     cursor,
   };
   for (const [key, id] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
-    withVersion(providers[key as keyof typeof providers], discovery, id);
+    const status = providers[key as keyof typeof providers];
+    // Not installed but runnable from its npm package: available through npx.
+    if (!status.available && withNpxFallback(status, discovery, id).available) {
+      withAuth(status, authVerdicts[id]);
+    }
+    withVersion(status, discovery, id);
   }
 
   return {
@@ -308,6 +317,50 @@ function providerStatusFromDiscovery(
 ): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === providerId);
   return { available: row?.installed === true && !row.gatedOff };
+}
+
+/**
+ * Claude Code / Codex with no installed CLI (discovery `cliResolved: false`):
+ * launches run Intent's bundled CLI when the row has `hasNpxFallback` and npx
+ * is usable, so the provider is available through npx; otherwise nothing can
+ * launch. An installed CLI keeps its status untouched.
+ */
+function withBundledCli(
+  status: ProviderStatus,
+  discovery: ProviderDiscoverySnapshot,
+  providerId: string,
+): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === providerId);
+  if (!row || row.gatedOff || row.cliResolved !== false) return status;
+  const runnable =
+    row.hasNpxFallback === true &&
+    Boolean(discovery.npx?.resolvedPath) &&
+    discovery.npx?.versionOk === true;
+  status.available = runnable;
+  if (runnable) {
+    status.viaNpx = true;
+    status.hasNpxFallback = true;
+  }
+  return status;
+}
+
+/**
+ * A provider that is not installed but runs from its npm package through a
+ * usable npx (discovery `hasNpxFallback`, today OpenCode) is available via npx.
+ */
+function withNpxFallback(
+  status: ProviderStatus,
+  discovery: ProviderDiscoverySnapshot,
+  providerId: string,
+): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === providerId);
+  if (!row?.hasNpxFallback || row.gatedOff) return status;
+  status.hasNpxFallback = true;
+  if (!status.available && discovery.npx?.resolvedPath && discovery.npx.versionOk) {
+    status.available = true;
+    status.viaNpx = true;
+  }
+  return status;
 }
 
 /** Attach the discovered CLI version (display-only) to an available provider. */
@@ -346,6 +399,7 @@ function claudeCodeStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): Pr
     discovery,
     'claude-code',
   );
+  withBundledCli(status, discovery, 'claude-code');
   if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
     status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
@@ -508,10 +562,8 @@ async function checkSingleProviderStatus(
   if (providerId === 'auggie') {
     const check = await checkAuggie();
     const status: ProviderStatus = { available: check.available === true };
-    if (status.available) {
-      return withAuth(status, await checkAuth());
-    }
-    return status;
+    if (!status.available) withNpxFallback(status, await fetchProviderDiscovery(), providerId);
+    return status.available ? withAuth(status, await checkAuth()) : status;
   }
   if (providerId === 'mock') {
     return checkMockProvider();
@@ -539,8 +591,16 @@ async function checkSingleProviderStatus(
     // npx-missing/too-old guidance still renders when codex is unavailable
     // (the UI gates that guidance on `hasNpxFallback && !available`).
     status.hasNpxFallback = true;
+    if (!status.available) {
+      withBundledCli(status, await fetchProviderDiscovery(), providerId);
+      if (status.available) return withAuth(status, await checkAuth());
+    }
   }
-  if (!status.available) return status;
+  if (!status.available) {
+    // Not installed: runnable from its npm package through npx (OpenCode, Grok, Droid).
+    withNpxFallback(status, await fetchProviderDiscovery(), providerId);
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
 
   if (providerId === 'cortex') {
     // No auth surface — the daemon's providerAuthStatus sweep does not
@@ -580,6 +640,10 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
 interface ProviderDiscoveryEntry {
   id: string;
   installed: boolean;
+  /** Not installed, the provider still runs from its npm package through npx. */
+  hasNpxFallback?: boolean;
+  /** Whether the real CLI an adapter launches was found (Claude Code, Codex). */
+  cliResolved?: boolean;
   gatedOff?: string;
   resolvedPath?: string | null;
   npxOnly?: boolean;

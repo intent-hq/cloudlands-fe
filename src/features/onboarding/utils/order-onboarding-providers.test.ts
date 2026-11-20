@@ -148,6 +148,15 @@ describe('resolveFreeOnboardingProvider', () => {
     expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
   });
 
+  it('keeps OpenCode promoted when others only run through npx', () => {
+    const statusMap = {
+      'claude-code': { available: true, authenticated: false, viaNpx: true },
+      codex: { available: true, authenticated: false, viaNpx: true },
+      opencode: { available: true, authenticated: true, viaNpx: true },
+    };
+    expect(resolveFreeOnboardingProvider(catalog, statusMap, true)).toBe('opencode');
+  });
+
   it('does not promote while the first check is still running', () => {
     expect(resolveFreeOnboardingProvider(catalog, {}, false)).toBeUndefined();
   });

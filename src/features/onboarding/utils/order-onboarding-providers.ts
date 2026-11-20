@@ -19,6 +19,8 @@
  */
 export interface OnboardingProviderTierStatus {
   available?: boolean;
+  /** Runs from its npm package through npx, not an installed CLI. */
+  viaNpx?: boolean;
   /** Tri-state auth verdict: true / false / undefined (unknown). */
   authenticated?: boolean;
 }
@@ -31,7 +33,7 @@ const FREE_ONBOARDING_PROVIDER_ID = 'opencode';
 /**
  * The provider to promote as the free choice: OpenCode, once the first
  * availability sweep has finished (`checked`) and found no other provider
- * installed. Waiting for the sweep keeps the grid from reordering when a
+ * installed (running one through npx does not count). Waiting for the sweep keeps the grid from reordering when a
  * slower probe later finds Claude Code or Codex.
  */
 export function resolveFreeOnboardingProvider(
@@ -42,7 +44,10 @@ export function resolveFreeOnboardingProvider(
   if (!checked) return undefined;
   if (!providers.some((p) => p.id === FREE_ONBOARDING_PROVIDER_ID)) return undefined;
   const otherInstalled = providers.some(
-    (p) => p.id !== FREE_ONBOARDING_PROVIDER_ID && statusMap[p.id]?.available === true,
+    (p) =>
+      p.id !== FREE_ONBOARDING_PROVIDER_ID &&
+      statusMap[p.id]?.available === true &&
+      statusMap[p.id]?.viaNpx !== true,
   );
   return otherInstalled ? undefined : FREE_ONBOARDING_PROVIDER_ID;
 }

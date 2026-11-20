@@ -33,6 +33,7 @@ import {
   selectHasCheckedOnce,
   selectProviderCheckEpochMap,
   selectProviderLoadingMap,
+  selectProviderRunsViaNpx,
   selectIsAnyProviderLoading,
   selectProviderDiscoveryRevision,
   selectProviderModelsRefreshPending,
@@ -227,9 +228,15 @@ function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProvi
 
 type LoginAction = ReturnType<typeof providerLoginRequested>;
 
-/** Only the daemon catalog's login command runs, never a caller string. */
+/**
+ * Only the daemon catalog's login command runs, never a caller string. A
+ * provider used through npx logs in through npx too.
+ */
 function* resolveLoginCommand(providerId: string) {
   const entry = yield* select(selectProviderCatalogEntry.select, providerId);
+  if (entry?.npxLoginCommandHint && (yield* selectProviderRunsViaNpx.effect(providerId))) {
+    return entry.npxLoginCommandHint;
+  }
   if (entry?.loginCommandHint) return entry.loginCommandHint;
   return providerId === 'claude-code' ? 'claude auth login' : undefined;
 }
