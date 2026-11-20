@@ -81,6 +81,15 @@
     selectUpdateChannel,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { isUpdateChannel } from '$features/auto-update/types';
+  import DevicePasskeysSettings from '$features/passkeys/DevicePasskeysSettings.svelte';
+  import {
+    selectDevicePasskeys,
+    selectDevicePasskeysAvailable,
+  } from '$store/renderer/slices/device-passkeys/device-passkeys-selectors';
+  import {
+    devicePasskeyDeleteRequested,
+    devicePasskeysRequested,
+  } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
 
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
@@ -120,6 +129,8 @@
   // intent-web serves this page and owns the machines list: there is no
   // keychain sync and no mobile pairing on that host.
   const hostManagesConnections$ = selectHostManagesConnections();
+  const devicePasskeys$ = selectDevicePasskeys();
+  const devicePasskeysAvailable$ = selectDevicePasskeysAvailable();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -194,12 +205,16 @@
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
     if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
     if ($hostManagesConnections$) tabs.push('mobile');
+    if (!$devicePasskeysAvailable$) tabs.push('passkeys');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'collaboration' || activeTab === 'mobile' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' ||
+        activeTab === 'mobile' ||
+        (activeTab === 'passkeys' && $devicePasskeys$.status === 'unavailable') ||
+        $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -331,6 +346,13 @@
     // Build-time constant — the app version is FE-only (audit row 11), not a
     // daemon surface.
     appVersion = __APP_VERSION__;
+  });
+
+  // Device passkeys (Linux browser panel): the list also decides whether the tab shows.
+  onMount(() => {
+    if (isElectronPlatform() && /linux/i.test(navigator.userAgent)) {
+      appStore.dispatch(devicePasskeysRequested());
+    }
   });
 
   // Track supported-device presence for the Hardware section gate.
@@ -551,6 +573,15 @@
           <div id="collaboration" class="scroll-mt-20">
             {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
+        {/if}
+
+        {#if activeTab === 'passkeys' && $devicePasskeysAvailable$}
+          <DevicePasskeysSettings
+            state={$devicePasskeys$}
+            onRetry={() => appStore.dispatch(devicePasskeysRequested())}
+            onDelete={(credentialId) =>
+              appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
+          />
         {/if}
 
         <!-- Hidden specialist editor destination -->

@@ -100,6 +100,7 @@ import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
+import { devicePasskeysSaga } from './slices/device-passkeys/sagas/device-passkeys-saga';
 import { machineRailSaga } from './slices/machine-rail/sagas/machine-rail-saga';
 import { recentAgentsSaga } from './slices/recent-agents/sagas/recent-agents-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
@@ -246,6 +247,7 @@ export const sagas = [
   dockConversationSaga,
   themeSaga,
   powerSaga,
+  devicePasskeysSaga,
   machineRailSaga,
   recentAgentsSaga,
   autoUpdateSaga,

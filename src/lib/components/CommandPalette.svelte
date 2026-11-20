@@ -31,6 +31,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectDevicePasskeysAvailable } from '$store/renderer/slices/device-passkeys/device-passkeys-selectors';
   import {
     selectLabsMultiplayerEnabled,
     selectLabsTabGroupsEnabled,
@@ -147,6 +148,7 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const devicePasskeysAvailable$ = selectDevicePasskeysAvailable();
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
@@ -165,6 +167,7 @@
       ...getSettingsPaletteCommands({
         isCollaboratorOnlyClient: $isCollaboratorOnlyClient$,
         multiplayerEnabled: $labsMultiplayerEnabled$,
+        devicePasskeysAvailable: $devicePasskeysAvailable$,
       }),
     ].filter(
       (command) =>

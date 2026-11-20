@@ -7,6 +7,7 @@
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
   import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
+  import KeyIcon from 'phosphor-svelte/lib/KeyIcon';
   import PaintBrushIcon from 'phosphor-svelte/lib/PaintBrushIcon';
   import PlugsConnectedIcon from 'phosphor-svelte/lib/PlugsConnectedIcon';
   import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
@@ -88,6 +89,13 @@
       icon: KeyboardIcon,
       get label() {
         return m.settings_sidebar_input_label();
+      },
+    },
+    {
+      id: 'passkeys',
+      icon: KeyIcon,
+      get label() {
+        return m.settings_sidebar_passkeys_label();
       },
     },
     {

@@ -345,12 +345,18 @@ export const IPC_CHANNELS = {
     PAGE_GET: 'passkeys:page-get',
     /** Browser-panel frame preload → main (invoke): the page aborted its request. */
     PAGE_CANCEL: 'passkeys:page-cancel',
+    /** Browser-panel frame preload → main (invoke): platform authenticator availability. */
+    PAGE_CAPABILITIES: 'passkeys:page-capabilities',
     /** Main → host renderer: show or update the passkey dialog. */
     DIALOG_SHOW: 'passkeys:dialog-show',
     /** Main → host renderer: close the passkey dialog. */
     DIALOG_CLOSE: 'passkeys:dialog-close',
     /** Host renderer → main (invoke): the user answered the passkey dialog. */
     DIALOG_RESPOND: 'passkeys:dialog-respond',
+    /** App renderer → main (invoke): list device passkeys (Settings → Passkeys). */
+    DEVICE_LIST: 'passkeys:device-list',
+    /** App renderer → main (invoke): delete one device passkey. */
+    DEVICE_DELETE: 'passkeys:device-delete',
   },
 
   // Window Management

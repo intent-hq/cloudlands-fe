@@ -13,6 +13,7 @@ const validTabs: SettingsTab[] = [
   'setup',
   'advanced',
   'input',
+  'passkeys',
   'specialists',
 ];
 
@@ -49,6 +50,7 @@ const hashToTab: Record<string, SettingsTab> = {
   'collaboration-joined-instances': 'collaboration',
   'collaboration-machine-name': 'collaboration',
   'host-membership': 'collaboration',
+  passkeys: 'passkeys',
   voice: 'input',
   'keyboard-shortcuts': 'input',
   'git-workspace': 'setup',

@@ -4,7 +4,7 @@
   party that main validated against the frame origin.
 -->
 <script lang="ts">
-  import { faKey, faMobileScreenButton } from '@fortawesome/free-solid-svg-icons';
+  import { faKey, faLaptop, faMobileScreenButton } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { ContentDialog } from '$lib/components/patterns/confirm';
@@ -48,6 +48,29 @@
     if (view?.step !== 'pin') pin = '';
   });
 
+  // Device PIN waits count down here; the helper does not send a second prompt.
+  let retryUntil = $state(0);
+  let now = $state(Date.now());
+  $effect(() => {
+    const wait = view?.step === 'pin' && view.kind === 'device' ? view.retryAfterMs : undefined;
+    if (typeof wait !== 'number') {
+      retryUntil = 0;
+      return;
+    }
+    now = Date.now();
+    retryUntil = now + wait;
+    const timer = setInterval(() => {
+      now = Date.now();
+      if (now >= retryUntil) clearInterval(timer);
+    }, 250);
+    return () => clearInterval(timer);
+  });
+  const retrySeconds = $derived(Math.max(0, Math.ceil((retryUntil - now) / 1000)));
+  const pinBlocked = $derived(
+    view?.step === 'pin' &&
+      (view.kind === 'device' ? retrySeconds > 0 : typeof view.retryAfterMs === 'number'),
+  );
+
   $effect(() => {
     const data = view?.step === 'qr' ? view.data : '';
     if (!data) {
@@ -87,6 +110,16 @@
         return m.passkeys_dialog_alreadyRegistered_error();
       case 'unavailable':
         return m.passkeys_dialog_unavailable_error();
+      case 'device-locked':
+        return m.passkeys_dialog_deviceLocked_error();
+      case 'device-already-registered':
+        return m.passkeys_dialog_deviceAlreadyRegistered_error();
+      case 'device-no-passkey':
+        return m.passkeys_dialog_deviceNoPasskey_error({ site: payload?.rpId ?? '' });
+      case 'device-old-pin-wrong':
+        return m.passkeys_dialog_deviceOldPinWrong_error();
+      case 'device-failed':
+        return m.passkeys_dialog_deviceFailed_error();
       default:
         return m.passkeys_dialog_failed_error();
     }
@@ -118,7 +151,10 @@
               : m.passkeys_dialog_starting_description();
         }
       case 'pin':
-        return m.passkeys_dialog_pin_description();
+        if (view.kind === 'usb') return m.passkeys_dialog_pin_description();
+        return view.oldPin
+          ? m.passkeys_dialog_deviceOldPin_description()
+          : m.passkeys_dialog_devicePin_description();
       case 'choose-account':
         return m.passkeys_dialog_chooseAccount_description();
       case 'error':
@@ -126,9 +162,23 @@
     }
   });
 
+  const pinLabel = $derived(
+    view?.step === 'pin' && view.kind === 'device'
+      ? view.oldPin
+        ? m.passkeys_dialog_deviceOldPin_label()
+        : m.passkeys_dialog_devicePin_label()
+      : m.passkeys_dialog_pin_label(),
+  );
+
   const pinError = $derived.by(() => {
     if (view?.step !== 'pin') return undefined;
-    if (typeof view.retryAfterMs === 'number') return m.passkeys_dialog_pinRetryAfter_error();
+    if (view.kind === 'device') {
+      if (retrySeconds > 0) {
+        return m.passkeys_dialog_devicePinWait_error({ seconds: retrySeconds });
+      }
+    } else if (typeof view.retryAfterMs === 'number') {
+      return m.passkeys_dialog_pinRetryAfter_error();
+    }
     if (!view.wrongPin) return undefined;
     if (typeof view.attemptsLeft === 'number') {
       return view.attemptsLeft === 1
@@ -147,6 +197,16 @@
           ? m.passkeys_dialog_bluetoothMissing_description()
           : undefined;
     return [
+      ...(view.device
+        ? [
+            {
+              id: 'device' as PasskeyTransport,
+              label: m.passkeys_dialog_thisDevice_label(),
+              note: undefined,
+              icon: faLaptop,
+            },
+          ]
+        : []),
       {
         id: 'hybrid' as PasskeyTransport,
         label: m.passkeys_dialog_phone_label(),
@@ -225,17 +285,23 @@
         <IntentMarkLoader size={20} />
       </div>
     {:else if view.step === 'pin'}
-      <form id="passkey-pin-form" onsubmit={submitPin}>
+      <form id="passkey-pin-form" class="flex flex-col gap-3" onsubmit={submitPin}>
         <Input
           bind:value={pin}
           type="password"
+          inputmode={view.kind === 'device' ? 'numeric' : undefined}
           autocomplete="off"
-          aria-label={m.passkeys_dialog_pin_label()}
-          placeholder={m.passkeys_dialog_pin_label()}
+          aria-label={pinLabel}
+          placeholder={pinLabel}
           error={pinError}
-          disabled={typeof view.retryAfterMs === 'number'}
+          disabled={pinBlocked}
           autofocus
         />
+        {#if view.firstPasskey}
+          <p class="type-caption text-muted-foreground" data-testid="passkey-pin-advice">
+            {m.passkeys_dialog_devicePinAdvice_description()}
+          </p>
+        {/if}
       </form>
     {:else if view.step === 'choose-account'}
       <ListView
@@ -263,7 +329,7 @@
             variant="primary"
             type="submit"
             form="passkey-pin-form"
-            disabled={!pin || typeof view.retryAfterMs === 'number'}
+            disabled={!pin || pinBlocked}
           >
             {m.passkeys_dialog_continue_label()}
           </Button>

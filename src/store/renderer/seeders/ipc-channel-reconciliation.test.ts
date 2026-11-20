@@ -505,6 +505,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // real preload bridge (passkey-dialog-service.ts). Main shows the dialog only
   // in Electron; a mock bridge would invent an authenticator outcome.
   'passkeys:dialog-respond',
+  // Settings → Passkeys reads and deletes device passkeys in the main-owned
+  // helper (device-passkeys-client.ts). Without the preload bridge the client
+  // reports device passkeys unavailable; a mock would invent stored keys.
+  'passkeys:device-list',
+  'passkeys:device-delete',
   // Experimental dock Labs setting: main owns and persists it and pushes
   // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
   // stays off; a mock bridge would create a second source of truth.
