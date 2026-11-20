@@ -15,8 +15,8 @@ export function startInputLevelMeter(
 ): () => void {
   const AudioContextCtor = (globalThis as { AudioContext?: typeof AudioContext }).AudioContext;
   if (typeof AudioContextCtor !== 'function') return () => {};
-  let context: AudioContext;
-  let source: MediaStreamAudioSourceNode;
+  let context: AudioContext | undefined;
+  let source: MediaStreamAudioSourceNode | undefined;
   let analyser: AnalyserNode;
   try {
     context = new AudioContextCtor();
@@ -28,19 +28,25 @@ export function startInputLevelMeter(
     analyser.maxDecibels = -25;
     source.connect(analyser);
   } catch {
+    // A partly built graph must not outlive the recording.
+    source?.disconnect();
+    void context?.close().catch(() => {});
     return () => {};
   }
+  if (!context || !source) return () => {};
+  const liveContext = context;
+  const liveSource = source;
   const bins = new Uint8Array(analyser.frequencyBinCount);
   const timer = setInterval(() => {
     analyser.getByteFrequencyData(bins);
-    onLevels(spectrumBands(bins, context.sampleRate));
+    onLevels(spectrumBands(bins, liveContext.sampleRate));
   }, SAMPLE_INTERVAL_MS);
   let stopped = false;
   return () => {
     if (stopped) return;
     stopped = true;
     clearInterval(timer);
-    source.disconnect();
-    void context.close().catch(() => {});
+    liveSource.disconnect();
+    void liveContext.close().catch(() => {});
   };
 }

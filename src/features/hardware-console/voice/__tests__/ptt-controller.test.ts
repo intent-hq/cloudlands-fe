@@ -473,6 +473,25 @@ describe('live input levels', () => {
     expect(levelActions(dispatched)).toHaveLength(0);
   });
 
+  it('closes a partly built audio graph when its setup fails', async () => {
+    vi.stubGlobal(
+      'AudioContext',
+      class extends FakeAudioContext {
+        override createMediaStreamSource(): never {
+          throw new Error('no source');
+        }
+      },
+    );
+    const { context, dispatched } = makeContext();
+    startPttRecording(context);
+    await settle();
+    expect(FakeAudioContext.instances[0]?.closed).toBe(true);
+    await advance(PTT_MIN_RECORDING_MS);
+    stopPttRecording();
+    expect(finishedPayload(dispatched)).toBeDefined();
+    expect(levelActions(dispatched)).toHaveLength(0);
+  });
+
   it('records without levels where Web Audio is unavailable', async () => {
     vi.stubGlobal('AudioContext', undefined);
     const { context, dispatched } = makeContext();
