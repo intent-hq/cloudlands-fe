@@ -1185,6 +1185,8 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         proposalId: 'rpc-1',
         decision: 'approve',
       },
+      // Covers the daemon's 10-minute approval run bound.
+      options: { timeoutMs: 660_000 },
     });
   });
 
