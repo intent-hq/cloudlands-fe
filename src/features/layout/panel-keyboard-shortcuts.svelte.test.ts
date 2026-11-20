@@ -455,6 +455,44 @@ describe('fixed-column panel keyboard shortcuts', () => {
     },
   );
 
+  it('never zooms on Mod+Shift+Enter: that key opens the tab in its own window', () => {
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac: false,
+    });
+    const keydown = event('Enter', { ctrlKey: true, shiftKey: true });
+
+    expect(shortcuts.handleKeyDown(keydown)).toBe(false);
+    expect(keydown.defaultPrevented).toBe(false);
+    expect(shortcuts.zoomedPanelId).toBeNull();
+    shortcuts.cleanup();
+  });
+
+  it('ends a zoom when focus moves to a panel the zoom hides', () => {
+    const shortcuts = createPanelKeyboardShortcuts(() => manager);
+    shortcuts.executeAction('zoom-toggle');
+    expect(shortcuts.zoomedPanelId).toBe('p1');
+
+    // Focus stays on the zoomed panel: the zoom stays.
+    shortcuts.syncZoom('p1', ['p1', 'p2']);
+    expect(shortcuts.zoomedPanelId).toBe('p1');
+
+    // A new browser opened in p2 (or its sidebar row clicked) focuses p2.
+    shortcuts.syncZoom('p2', ['p1', 'p2']);
+    expect(shortcuts.zoomedPanelId).toBeNull();
+    expect(shortcuts.isZoomed).toBe(false);
+    shortcuts.cleanup();
+  });
+
+  it('ends a zoom whose panel is gone', () => {
+    const shortcuts = createPanelKeyboardShortcuts(() => manager);
+    shortcuts.executeAction('zoom-toggle');
+
+    shortcuts.syncZoom('p1', ['p2']);
+
+    expect(shortcuts.zoomedPanelId).toBeNull();
+    shortcuts.cleanup();
+  });
+
   it('leaves legacy pane aliases and native zoom reset unhandled', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
       isMac: true,

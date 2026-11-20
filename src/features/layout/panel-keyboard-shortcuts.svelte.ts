@@ -292,6 +292,18 @@ export function createPanelKeyboardShortcuts(
     logger.debug('Zoom reset');
   }
 
+  /**
+   * Zoom hides every panel but the zoomed one. End it when focus moves to
+   * another panel (a tab opened, revealed or clicked there) or the zoomed
+   * panel is gone, so focus never lands on a hidden panel.
+   */
+  function syncZoom(focusedPanelId: string | null, panelIds: readonly string[]) {
+    const zoomed = state.zoomedPanelId;
+    if (zoomed === null && !state.isZoomed) return;
+    if (zoomed !== null && zoomed === focusedPanelId && panelIds.includes(zoomed)) return;
+    resetZoom();
+  }
+
   function equalizeAllSizes(layoutManager: PanelLayoutManager) {
     // Reset all split sizes to equal
     const wsState = selectPanelLayoutWorkspace.select(appStore.state, layoutManager.workspaceId);
@@ -504,6 +516,7 @@ export function createPanelKeyboardShortcuts(
     deactivateLeader,
     executeAction,
     focusPanelByIndex,
+    syncZoom,
     cleanup,
   };
 }

@@ -845,6 +845,12 @@
     { onFocusAdjacentColumn: (direction) => focusAdjacentColumn(direction) },
   );
 
+  // Zoom shows only the focused panel: it ends when focus moves to a panel it
+  // hides (a tab opened or revealed there) or the zoomed panel is gone.
+  $effect(() => {
+    keyboardShortcuts.syncZoom($focusedPanelId$, $panelIds$);
+  });
+
   // Register keyboard shortcuts in cache so they can be accessed from outside
   $effect(() => {
     if (!active) return;
@@ -1352,9 +1358,6 @@
     return true;
   }
 
-  const isMac =
-    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-
   // Keyboard shortcuts
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape' && ownsDraggedPane()) {
@@ -1363,25 +1366,9 @@
       return;
     }
     if (!active) return;
-    // First, let the leader key system handle it
-    if (keyboardShortcuts.handleKeyDown(e)) {
-      return;
-    }
-
-    // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
-    // On Win/Linux, "Mod" is Ctrl.
-    const isMod = isMac ? e.metaKey : e.ctrlKey;
-
-    // Note: Mod+/ for keyboard shortcuts cheat sheet is handled globally in +layout.svelte
-    // Do NOT add a handler here or it will toggle twice (once per handler)
-
-    // Mod+Shift+Enter - Toggle zoom on focused panel (alternative)
-    if (isMod && e.shiftKey && e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      keyboardShortcuts.executeAction('zoom-toggle');
-      return;
-    }
+    // The leader key system. Mod+/ (shortcut cheat sheet) is handled globally in
+    // +layout.svelte, and Mod+Shift+Enter is `panel.tab-window`: no handler here.
+    keyboardShortcuts.handleKeyDown(e);
   }
 
   // Use capture phase for panel-specific shortcuts.
