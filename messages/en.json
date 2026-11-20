@@ -8471,6 +8471,8 @@
   "settings_labs_plainFolders_description": "Create new workspaces as plain folders without Git. Existing plain-folder workspaces keep working when this is off.",
   "settings_labs_tabGroups_label": "Tab groups",
   "settings_labs_tabGroups_description": "Group workspace tabs into named, colored groups. Your groups are kept but hidden when this is off.",
+  "settings_labs_browserPagesInMain_label": "Browser pages in the main process",
+  "settings_labs_browserPagesInMain_description": "Run browser tabs as native pages that keep their state when they move between windows. Applies after you restart Intent.",
   "settings_machineRail_label": "Machine rail",
   "settings_machineRail_description": "Show a rail of your machines at the side of the window, so you can switch between them.",
   "remoteMachines_actionsFor_ariaLabel": "Actions for {name}",

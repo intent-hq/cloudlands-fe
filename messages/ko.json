@@ -8471,6 +8471,8 @@
   "settings_labs_plainFolders_description": "새 작업 공간을 Git 없는 일반 폴더로 만듭니다. 꺼도 기존 일반 폴더 작업 공간은 계속 작동합니다.",
   "settings_labs_tabGroups_label": "탭 그룹",
   "settings_labs_tabGroups_description": "작업 공간 탭을 이름과 색이 있는 그룹으로 묶습니다. 끄면 그룹은 유지되지만 숨겨집니다.",
+  "settings_labs_browserPagesInMain_label": "메인 프로세스의 브라우저 페이지",
+  "settings_labs_browserPagesInMain_description": "브라우저 탭을 네이티브 페이지로 실행하여 창 사이를 이동해도 상태가 유지됩니다. Intent를 다시 시작한 후 적용됩니다.",
   "settings_machineRail_label": "컴퓨터 레일",
   "settings_machineRail_description": "창 옆에 컴퓨터 레일을 표시하여 컴퓨터 사이를 전환할 수 있게 합니다.",
   "remoteMachines_actionsFor_ariaLabel": "{name} 작업",

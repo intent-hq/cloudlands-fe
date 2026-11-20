@@ -8471,6 +8471,8 @@
   "settings_labs_plainFolders_description": "新しいワークスペースを Git なしのプレーンフォルダーとして作成します。オフにしても既存のプレーンフォルダーのワークスペースは引き続き動作します。",
   "settings_labs_tabGroups_label": "タブグループ",
   "settings_labs_tabGroups_description": "ワークスペースのタブを名前と色の付いたグループにまとめます。オフにするとグループは保持されたまま非表示になります。",
+  "settings_labs_browserPagesInMain_label": "メインプロセスのブラウザーページ",
+  "settings_labs_browserPagesInMain_description": "ブラウザータブをネイティブページとして実行し、ウィンドウ間で移動しても状態を保持します。Intent の再起動後に適用されます。",
   "settings_machineRail_label": "マシンレール",
   "settings_machineRail_description": "ウィンドウの横にマシンのレールを表示し、マシンを切り替えられるようにします。",
   "remoteMachines_actionsFor_ariaLabel": "{name} の操作",
