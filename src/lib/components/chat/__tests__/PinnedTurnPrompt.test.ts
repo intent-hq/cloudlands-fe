@@ -1,3 +1,8 @@
+import {
+  buildDockEvidenceContext,
+  buildDockEvidenceMetadata,
+  emptyDockEvidence,
+} from '$shared/dock-evidence';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -24,7 +29,10 @@ function returnButton() {
     .at(-1)!;
 }
 
-function message(text: string, metadata?: Record<string, unknown>): AgentMessage {
+function message(
+  text: string,
+  metadata?: Record<string, unknown>,
+): AgentMessage & { contentBlocks: NonNullable<AgentMessage['contentBlocks']> } {
   return {
     id: 'trigger',
     role: 'user',
@@ -269,4 +277,50 @@ describe('pinned response trigger', () => {
       expect(button.textContent).not.toContain('layout-reference.txt');
     },
   );
+});
+
+describe('pinned capture prompt', () => {
+  const evidence = emptyDockEvidence('pinned-capture');
+  const context = { workspaceId: 'w', agentId: 'a', appUrl: 'intent://local/workspace/w' };
+  const prefix = buildDockEvidenceContext(evidence, context);
+  const metadata = { ...buildDockEvidenceMetadata(evidence, context), edited_captures: [] };
+  it.each(['prose', 'image', 'recording'] as const)(
+    'shows %s and keeps activation/description meaningful',
+    async (kind) => {
+      const source = message(
+        kind === 'prose' ? `${prefix}\n\nReview this capture` : prefix,
+        metadata,
+      );
+      if (kind === 'image') source.contentBlocks.push({ type: 'image', attachmentId: 'image' });
+      if (kind === 'recording')
+        source.contentBlocks.push({
+          type: 'file',
+          attachmentId: 'video',
+          fileName: 'recording.mp4',
+          mimeType: 'video/mp4',
+        });
+      const expected =
+        kind === 'prose'
+          ? 'Review this capture'
+          : kind === 'image'
+            ? m.chat_chatMessage_attachedImage_fallback({ number: '1' })
+            : 'recording.mp4';
+      const before = JSON.stringify(source);
+      const onActivate = vi.fn();
+      render(PinnedTurnPrompt, { props: { message: source, onActivate } });
+      expect(screen.getByTestId('pinned-user-prompt-text').textContent?.trim()).toBe(expected);
+      const descriptionId = returnButton().getAttribute('aria-describedby');
+      expect(descriptionId).toBeTruthy();
+      expect(document.getElementById(descriptionId!)?.textContent).toBe(expected);
+      await fireEvent.click(returnButton());
+      expect(onActivate).toHaveBeenCalledOnce();
+      expect(JSON.stringify(source)).toBe(before);
+    },
+  );
+  it('preserves a copied header without producer metadata', () => {
+    render(PinnedTurnPrompt, { props: { message: message(prefix), onActivate: vi.fn() } });
+    expect(screen.getByTestId('pinned-user-prompt-text').textContent).toContain(
+      '[Screen evidence:',
+    );
+  });
 });

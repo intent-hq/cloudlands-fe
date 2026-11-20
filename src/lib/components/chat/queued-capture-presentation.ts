@@ -1,11 +1,9 @@
 import {
-  consumeEditedCaptureEnvelope,
-  dockCaptureDisplayCandidates,
   editedCaptureCards,
   type CaptureResource,
   type EditedCapture,
 } from '$lib/utils/dock-evidence-display';
-import { consumeDockEvidencePrefix } from '$lib/utils/parseStoredMessage';
+import { captureMessagePresentation } from '$lib/utils/capture-message-presentation';
 type QueueResource = Omit<CaptureResource, 'type'> & { type?: string };
 
 interface CaptureDisplay {
@@ -16,38 +14,8 @@ interface CaptureDisplay {
 /** Display only: exact producer metadata owns its adjacent envelopes. Resource
  * joins remain separately required for cards, never for hiding generated text. */
 export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
-  const original = { text: group.content, captures: [] };
-  const candidates = dockCaptureDisplayCandidates(group.messageMetadata);
-  // Inspect Screen without trusting it yet: only an exact adjacent Edited
-  // envelope from one contribution can vouch for the pair.
-  const screen = consumeDockEvidencePrefix(group.content, { trusted: true });
-  const text = screen?.remaining ?? group.content;
-  const matches = candidates.flatMap((metadata) => {
-    const envelope = consumeEditedCaptureEnvelope(text, metadata);
-    return envelope ? [{ metadata, envelope }] : [];
-  });
-  if (matches.length !== 1) {
-    // Ordinary screenshots have no Edited envelope. Only the unit's own
-    // provenance (or a genuinely singleton batch) may own its Screen prefix;
-    // a candidate inside a mixed batch cannot vouch for another member's text.
-    const own = group.messageMetadata;
-    const single =
-      own?.type === 'dock_screen_evidence' ||
-      (Array.isArray(own?.mergedMessageMetadata) && own.mergedMessageMetadata.length === 1);
-    if (
-      matches.length === 0 &&
-      screen &&
-      single &&
-      candidates.length === 1 &&
-      (candidates[0].edited_captures === undefined ||
-        (Array.isArray(candidates[0].edited_captures) &&
-          candidates[0].edited_captures.length === 0)) &&
-      !text.startsWith('[Edited capture outputs]') // i18n-ignore (persisted producer marker)
-    )
-      return { text: screen.remaining, captures: [] };
-    return original;
-  }
-  const { metadata, envelope } = matches[0];
+  const display = captureMessagePresentation(group.content, group.messageMetadata);
+  if (!display.captureMetadata) return { text: display.text, captures: [] };
   // Queue arrays own the resource kind; contradictory explicit tags are refused.
   const blocks: CaptureResource[] = [
     ...(group.imageBlocks ?? [])
@@ -57,7 +25,7 @@ export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
       .filter((b) => b.type === undefined || b.type === 'file')
       .map((b) => ({ ...b, type: 'file' })),
   ];
-  return { text: envelope.remaining, captures: editedCaptureCards(metadata, blocks) };
+  return { text: display.text, captures: editedCaptureCards(display.captureMetadata, blocks) };
 }
 
 interface CaptureUnit {

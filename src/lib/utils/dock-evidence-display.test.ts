@@ -1,3 +1,8 @@
+import { getPlainTextMessagePreview } from '$lib/components/chat/chat-message-navigation';
+import { extractSearchableContent, findChatSearchMatches } from '$lib/components/chat/chat-search';
+import { getChiefThreadTitle } from '$store/renderer/slices/sidebar-nav/chief-thread-title';
+import { getPresentedUserMessageText } from './user-message-presentation';
+import type { AgentMessage } from '$shared/types';
 import { prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { createPendingEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -590,5 +595,83 @@ describe('ordinary screenshot queue display', () => {
         queuedCaptureGroup({ ...group, deliveryGroups: [unit, { content: 'Other' }] }, unit),
       ).text,
     ).toBe(content);
+  });
+});
+
+describe('capture context across human message previews', () => {
+  const ordinary = { type: 'dock_screen_evidence', version: 1, images: [], edited_captures: [] };
+  const source = (content: string, meta?: Record<string, unknown>): AgentMessage => ({
+    id: 'preview-capture',
+    role: 'user',
+    timestamp: '2026-11-20T12:00:00Z',
+    contentBlocks: [
+      { type: 'text', text: content },
+      { type: 'image', attachmentId: 'frame-1', mimeType: 'image/png' },
+      { type: 'file', attachmentId: 'video-1', fileName: 'recording.mp4', mimeType: 'video/mp4' },
+    ],
+    metadata: meta,
+  });
+  const preview = (message: AgentMessage) => [
+    getPlainTextMessagePreview(message),
+    extractSearchableContent(message),
+    getChiefThreadTitle({ name: 'New chat', messages: [message] }),
+  ];
+  it.each([
+    ['ordinary', `${screen}\n\nReview this capture`, ordinary],
+    ['edited recording', `${screen}\n\n${prefix}\n\nReview this capture`, metadata],
+    ['singleton', `${screen}\n\nReview this capture`, { mergedMessageMetadata: [ordinary] }],
+  ])(
+    'shares trusted %s display text without changing edit or stored data',
+    (_name, content, meta) => {
+      const message = source(content as string, meta as Record<string, unknown>);
+      const before = JSON.stringify(message);
+      expect(preview(message)).toEqual([
+        'Review this capture',
+        'Review this capture',
+        'Review this capture',
+      ]);
+      expect(findChatSearchMatches([message], 'Screen evidence', new Map())).toEqual([]);
+      expect(findChatSearchMatches([message], 'Review this capture', new Map())).toHaveLength(1);
+      expect(getPresentedUserMessageText(message)).toBe(content);
+      expect(JSON.stringify(message)).toBe(before);
+      if (meta === metadata) {
+        const parsed = parseStoredMessage(getPresentedUserMessageText(message), {
+          trustedEvidence: true,
+          metadata,
+          blocks,
+        });
+        expect(parsed.userMessage).toBe('Review this capture');
+        expect(parsed.contextItems.map((item) => item.metadata?.kind)).toEqual([
+          'dock_screen_evidence',
+          'dock_edited_captures',
+        ]);
+      }
+    },
+  );
+  it('retains literal, mixed, malformed and non-prefix capture-looking prose', () => {
+    for (const [content, meta] of [
+      [`${screen}\n\nLiteral header`, undefined],
+      [`${screen}\n\nMixed`, { mergedMessageMetadata: [ordinary, {}] }],
+      [`${screen}\n\n[Edited capture outputs]\n{bad}\n\nUser`, ordinary],
+      [`Leading prose\n\n${screen}`, ordinary],
+    ] as const) {
+      const message = source(content, meta);
+      expect(extractSearchableContent(message)).toBe(content);
+      expect(getChiefThreadTitle({ name: '', messages: [message] })).toBe(content);
+      expect(getPlainTextMessagePreview(message)).toContain('Screen evidence');
+    }
+  });
+  it('does not manufacture preview prose for attachment-only messages or replace explicit names', () => {
+    const message = source(screen, ordinary);
+    expect(getPlainTextMessagePreview(message)).toBe('');
+    expect(extractSearchableContent(message)).toBe('');
+    expect(getChiefThreadTitle({ name: 'New chat', messages: [message] })).toBe('New chat');
+    expect(
+      getChiefThreadTitle({
+        name: 'My chosen title',
+        nameExplicitlySet: true,
+        messages: [message],
+      }),
+    ).toBe('My chosen title');
   });
 });
