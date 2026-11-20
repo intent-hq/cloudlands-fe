@@ -46,6 +46,7 @@
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
+  import { sourcePathForFile } from '$lib/in-app-file-inputs';
   import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 
   const INITIAL_AGENT_SPECIALIST_ID = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
@@ -341,10 +342,7 @@
       } else {
         // Stage path-only; no resolvable path (e.g. clipboard bytes) is an
         // immediate failed pill that blocks create until removed.
-        const sourcePath =
-          (
-            window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
-          ).electronAPI?.getPathForFile?.(file) ?? '';
+        const sourcePath = sourcePathForFile(file);
         const fileName = file.name || `pasted-file-${Date.now()}`;
         stagedContextItems = [
           ...stagedContextItems,

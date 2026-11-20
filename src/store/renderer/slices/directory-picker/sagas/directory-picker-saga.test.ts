@@ -516,4 +516,34 @@ describe('directoryPickerSaga', () => {
     expect(mocks.request.mock.calls).toEqual([['host.listDirectory', { path: '/pending' }]]);
     expect(dispatched).toEqual([]);
   });
+
+  it('lists and creates through main, not the daemon, for the local source', async () => {
+    const invoke = vi.fn(async (_channel: string, params: { path?: string }) =>
+      listing(params.path ?? '/home/me'),
+    );
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const { send, dispatched, task } = harness({ source: 'local' });
+
+      send(loadDirectoryRequested('/home/me/code'));
+      await settle();
+      send(createDirectoryRequested('/home/me/code/new'));
+      await settle();
+
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(invoke.mock.calls.map(([channel, params]) => [channel, params])).toEqual([
+        ['in-app-file-dialog:list-directory', { path: '/home/me/code' }],
+        ['in-app-file-dialog:create-directory', { path: '/home/me/code/new' }],
+        ['in-app-file-dialog:list-directory', { path: '/home/me/code/new' }],
+      ]);
+      expect(dispatched[0]).toEqual({
+        type: 'directoryPicker/listingLoaded',
+        payload: ['/home/me/code', listing('/home/me/code')],
+      });
+      task.cancel();
+      await task.toPromise();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

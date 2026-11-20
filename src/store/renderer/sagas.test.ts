@@ -121,6 +121,7 @@ describe('renderer app saga registry', () => {
       'collaborationAuthSaga',
       'mcpSettingsSaga',
       'directoryPickerSaga',
+      'inAppFileDialogSaga',
       'statsReadSaga',
       'pluginsSettingsSaga',
       'prMonitorSaga',

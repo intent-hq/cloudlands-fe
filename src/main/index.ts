@@ -146,6 +146,12 @@ setTimeout(() => {
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol, session } from 'electron';
+import {
+  inAppFileDialogsEnabled,
+  pickFilesInApp,
+  registerFileDialogHandlers,
+  showSaveDialog,
+} from './file-dialogs';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
@@ -1319,7 +1325,7 @@ const bootFlow = app.whenReady().then(async () => {
           const suggestedFilename = `intent-debug-${dateStr}-${timeStr}.zip`;
 
           // Show save dialog
-          const { filePath, canceled } = await dialog.showSaveDialog({
+          const { filePath, canceled } = await showSaveDialog(undefined, {
             defaultPath: suggestedFilename,
             filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });
@@ -1366,7 +1372,7 @@ const bootFlow = app.whenReady().then(async () => {
             const suggestedFilename = `intentd-sample-${dateStr}-${timeStr}.txt`;
 
             // Show save dialog
-            const { filePath, canceled } = await dialog.showSaveDialog({
+            const { filePath, canceled } = await showSaveDialog(undefined, {
               defaultPath: suggestedFilename,
               filters: [{ name: m.dialog_text_files_filter(), extensions: ['txt'] }],
             });
@@ -1670,6 +1676,13 @@ const bootFlow = app.whenReady().then(async () => {
   );
   setupPowerStateIPC();
   await setupConfigIPC();
+  registerFileDialogHandlers(); // In-app file chooser (INTENT_IN_APP_PICKER)
+  if (inAppFileDialogsEnabled()) {
+    // Website uploads in browser tabs use the in-app picker too.
+    void import('../features/browser/main/embedded-browser-cdp-service').then(
+      ({ embeddedBrowserCdp }) => embeddedBrowserCdp.setInAppFileChooser(pickFilesInApp),
+    );
+  }
   registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations

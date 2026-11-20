@@ -176,9 +176,6 @@
     "src/features/browser/main/browser-exec-reverse.ts": [
       "BROWSER_EXEC_METHOD"
     ],
-    "src/features/browser/main/embedded-browser-cdp-service.ts": [
-      "AGENT_DRAWING_IDLE_MS"
-    ],
     "src/features/browser/main/workspace-forward-cleanup.service.ts": [
       "__resetWorkspaceForwardCleanupForTesting"
     ],

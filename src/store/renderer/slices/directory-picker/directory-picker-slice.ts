@@ -50,7 +50,16 @@ export interface DirectoryPickerListing {
   favorites?: DirectoryPickerListingFavorite[];
 }
 
+/**
+ * Whose filesystem the picker lists: the daemon host (`host.listDirectory`) or,
+ * for the in-app replacement of native file dialogs, the frontend host through
+ * the main process (`in-app-file-dialog:list-directory`).
+ */
+export type DirectoryPickerSource = 'daemon' | 'local';
+
 export type DirectoryPickerState = {
+  /** Filesystem the next listing and folder creation go to. */
+  source: DirectoryPickerSource;
   /** Loaded listing for the current path, or `null` before the first load. */
   listing: DirectoryPickerListing | null;
   /** True while a `host.listDirectory` request is in flight. */
@@ -74,6 +83,7 @@ export type DirectoryPickerState = {
 };
 
 export const initialState: DirectoryPickerState = {
+  source: 'daemon',
   listing: null,
   loading: false,
   error: null,
@@ -133,6 +143,11 @@ export const createDirectoryFailed = createAction<[requestedPath: string, error:
 
 /** Clear the create-directory inline hint. */
 export const clearCreateDirectoryError = createAction('directoryPicker/clearCreateDirectoryError');
+
+/** Choose the filesystem the picker lists; the modal sets it before each load. */
+export const directoryPickerSourceSet = createAction<[source: DirectoryPickerSource]>(
+  'directoryPicker/sourceSet',
+);
 
 /** Reset back to the initial state — dispatched when the modal closes. */
 export const resetDirectoryPicker = createAction('directoryPicker/reset');
@@ -213,4 +228,7 @@ directoryPickerReducer.with(clearCreateDirectoryError, (state) => ({
   ...state,
   createError: null,
 }));
+directoryPickerReducer.with(directoryPickerSourceSet, (state, { payload: [source] }) =>
+  state.source === source ? state : { ...state, source },
+);
 directoryPickerReducer.with(resetDirectoryPicker, () => initialState);

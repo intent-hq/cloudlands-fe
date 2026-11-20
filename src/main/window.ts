@@ -158,6 +158,7 @@ export function buildRendererWebPreferences(): Electron.WebPreferences {
     contextIsolation: true,
     nodeIntegration: false,
     webviewTag: true,
+    additionalArguments: process.env.INTENT_IN_APP_PICKER === '1' ? ['--intent-in-app-picker'] : [],
   };
 }
 

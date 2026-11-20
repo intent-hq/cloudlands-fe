@@ -58,6 +58,10 @@ declare global {
         data?: any;
         timestamp: string;
       }) => void;
+      /** Host path of a dropped or natively picked File ('' when it has none). */
+      getPathForFile?: (file: File) => string;
+      /** Intent OS: native file choosers do not work, use the in-app picker. */
+      preferInAppPicker?: boolean;
       platform: string;
       arch: string;
       versions: {

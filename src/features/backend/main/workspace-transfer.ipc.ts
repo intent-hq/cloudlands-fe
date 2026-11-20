@@ -13,7 +13,8 @@
 
 import { createWriteStream, promises as fs } from 'node:fs';
 import type { WriteStream } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
+import { BrowserWindow, ipcMain, webContents } from 'electron';
+import { showSaveDialog as showFileSaveDialog } from '../../../main/file-dialogs';
 import { m } from '$shared/paraglide/messages.js';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -81,7 +82,7 @@ async function createTargetClient(connectionId: string): Promise<TargetClientHan
 }
 
 async function showSaveDialog(defaultFileName: string): Promise<string | undefined> {
-  const { filePath, canceled } = await dialog.showSaveDialog({
+  const { filePath, canceled } = await showFileSaveDialog(undefined, {
     defaultPath: defaultFileName,
     filters: [{ name: 'Zip archive', extensions: ['zip'] }], // i18n-ignore (file-type filter name)
   });

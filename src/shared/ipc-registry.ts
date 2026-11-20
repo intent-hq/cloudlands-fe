@@ -608,6 +608,21 @@ export const IPC_CHANNELS = {
     OPEN: 'dialog:open',
   },
 
+  // In-app file dialogs (INTENT_IN_APP_PICKER, Intent OS). Main pushes REQUEST
+  // to the shown renderer (also in EVENT_CHANNELS); the renderer lists the
+  // frontend host's folders with LIST_DIRECTORY / CREATE_DIRECTORY while that
+  // request is open and answers with RESPOND. PICK_FILES backs renderer file
+  // inputs: main runs the in-app open dialog and returns the picked files.
+  IN_APP_FILE_DIALOG: {
+    REQUEST: 'in-app-file-dialog:request',
+    RESPOND: 'in-app-file-dialog:respond',
+    LIST_DIRECTORY: 'in-app-file-dialog:list-directory',
+    CREATE_DIRECTORY: 'in-app-file-dialog:create-directory',
+    PICK_FILES: 'in-app-file-dialog:pick-files',
+    /** An app renderer that can show the picker announces itself (renderer->main). */
+    HOST_READY: 'in-app-file-dialog:host-ready',
+  },
+
   // Voice (local OS transcription — macOS Speech.framework helper)
   VOICE: {
     /** Whether the local OS transcription engine is available on this host */
@@ -1339,6 +1354,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.IN_APP_FILE_DIALOG.REQUEST,
   IPC_CHANNELS.DOCK_CONTEXT.CHANGED,
   IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED,
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,

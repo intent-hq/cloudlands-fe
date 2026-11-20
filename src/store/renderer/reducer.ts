@@ -67,6 +67,7 @@ import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo
 import { importableSessionsReducer } from './slices/importable-sessions/importable-sessions-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
+import { inAppFileDialogReducer } from './slices/in-app-file-dialog/in-app-file-dialog-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
@@ -202,6 +203,7 @@ export const reducers = {
   importableSessions: importableSessionsReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
+  inAppFileDialog: inAppFileDialogReducer,
   linearAuth: linearAuthReducer,
   identity: identityReducer,
   voiceSettings: voiceSettingsReducer,
