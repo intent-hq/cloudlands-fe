@@ -8634,6 +8634,7 @@
                     contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
                     actionBarEndClassName={COMPOSER_INSET_CLASS}
                     edgeDocked
+                    enableScreenshotCapture
                     externalDropTarget
                     requiresModelSwitchConfirmation={!canChangeProvider}
                     providerId={inputProviderId}

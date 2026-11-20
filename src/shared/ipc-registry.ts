@@ -410,6 +410,10 @@ export const IPC_CHANNELS = {
     CLOSE: 'chat-media:close',
   },
 
+  CHAT_SCREENSHOT: {
+    CONTROL: 'chat-screenshot:control',
+  },
+
   DOCK_EVIDENCE: {
     BEGIN: 'dock-evidence:begin',
     CAPTURE: 'dock-evidence:capture',

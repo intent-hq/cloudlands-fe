@@ -78,7 +78,7 @@ export interface DockEvidenceDependencies {
   settle(ms?: number): Promise<void>;
   capture(display: Display): Promise<CapturedImage>;
   captureVisible?(
-    window: BrowserWindow,
+    window: BrowserWindow | null,
     display: Display,
     excluded: BrowserWindow[],
     windowIds: number[],
@@ -122,6 +122,7 @@ const MAX_PNG_BYTES = 30 * 1024 * 1024;
 export class DockEvidenceSessions {
   private active: Session | null = null;
   private capturing: Session | null = null;
+  private capturingChat = false;
   private exclusions: () => BrowserWindow[] = () => [];
   private exclusionIds: () => number[] = () => [];
 
@@ -261,7 +262,7 @@ export class DockEvidenceSessions {
       return existing.source === source && existing.promise
         ? existing.promise
         : Promise.resolve(unavailable());
-    if (this.capturing) return Promise.resolve(unavailable());
+    if (this.capturing || this.capturingChat) return Promise.resolve(unavailable());
     if (session.requests.size >= 256) return Promise.resolve({ ok: false, error: 'limit' });
     const promise = this.captureOnce(session, request).then(
       (result) => (this.current(session) ? result : unavailable()),
@@ -273,6 +274,54 @@ export class DockEvidenceSessions {
       for (const entry of cached.slice(0, Math.max(0, cached.length - 4))) entry.promise = null;
     });
     return promise;
+  }
+
+  async captureForChat(
+    display: Display,
+    mode: DockCaptureMode,
+    signal: AbortSignal,
+  ): Promise<DockNativeResult<Pick<DockCapturedPixels, 'base64' | 'mimeType'>>> {
+    if (this.capturing || this.capturingChat || signal.aborted)
+      return { ok: false, error: 'unavailable' };
+    if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
+    this.capturingChat = true;
+    try {
+      const dock = this.deps.dock();
+      const overlays = this.exclusions().filter((window) => !window.isDestroyed());
+      const overlayIds = this.exclusionIds();
+      let image: CapturedImage;
+      if (mode !== 'fullscreen') {
+        if (!this.deps.captureSelection) return { ok: false, error: 'unavailable' };
+        const exclude = [...overlays, ...(dock && !dock.isDestroyed() ? [dock] : [])];
+        const windowIds = exclude
+          .map((window) => cgWindowIdFromMediaSourceId(window.getMediaSourceId()))
+          .filter((id): id is number => id !== null);
+        const result = await this.deps.captureSelection(
+          mode,
+          [...new Set([...windowIds, ...overlayIds])],
+          signal,
+        );
+        if (!result.ok) return result;
+        image = result.value;
+      } else {
+        const result = await this.deps.captureVisible?.(dock, display, overlays, overlayIds);
+        if (result?.ok) {
+          const { base64, mimeType } = result.value;
+          return { ok: true, value: { base64, mimeType } };
+        }
+        if (result && result.detail !== 'os-version') return result;
+        if (signal.aborted || overlayIds.length || overlays.some((window) => window.isVisible()))
+          return { ok: false, error: 'unavailable' };
+        image = await this.deps.capture(display);
+      }
+      if (!image.png.length) return { ok: false, error: 'failed' };
+      if (image.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
+      return { ok: true, value: { base64: image.png.toString('base64'), mimeType: 'image/png' } };
+    } catch {
+      return { ok: false, error: this.deps.permissionDenied() ? 'permission' : 'failed' };
+    } finally {
+      this.capturingChat = false;
+    }
   }
 
   private async captureOnce(
@@ -612,7 +661,7 @@ export const dockEvidenceSessions = new DockEvidenceSessions({
   captureVisible: async (window, display, excluded, windowIds) => {
     if (process.platform !== 'darwin')
       return { ok: false, error: 'unavailable', detail: 'os-version' };
-    const ids = [window, ...excluded].map((surface) =>
+    const ids = [...(window && !window.isDestroyed() ? [window] : []), ...excluded].map((surface) =>
       cgWindowIdFromMediaSourceId(surface.getMediaSourceId()),
     );
     if (ids.some((id) => id === null)) return { ok: false, error: 'unavailable' };

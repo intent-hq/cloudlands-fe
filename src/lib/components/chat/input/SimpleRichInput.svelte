@@ -10,12 +10,20 @@
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
+  import { electronAPI } from '$lib/electron-bridge';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { base64ToBlob } from '$lib/utils/image-actions';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import DockComposerCapturePicker from '$features/hud/components/DockComposerCapturePicker.svelte';
   import type { Workspace } from '$shared/types';
   import type {
     EditorScreenReference,
     DockEvidenceInsertion,
     DockInsertionPart,
     DockReferenceEdit,
+    DockCaptureMode,
+    DockCapturedPixels,
+    DockNativeResult,
   } from '$shared/dock-evidence';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -187,6 +195,7 @@
     maxComposerHeight?: number;
     /** Render as the inset ChatPanel composer surface. */
     edgeDocked?: boolean;
+    enableScreenshotCapture?: boolean;
     /** Toast after images are added; compact hosts rely on the staged thumbnail. */
     announceAddedImages?: boolean;
     /** Tooltip explaining an enabled composer's Send that is disabled only by an empty draft. */
@@ -272,6 +281,7 @@
     pendingContent = false,
     submitPending = false,
     disabled = false,
+    enableScreenshotCapture = false,
     editableWhileDisabled = false,
     inputLocked = false,
     workspace,
@@ -425,6 +435,35 @@
   const participation$ = selectWorkspaceParticipationContext(workspaceIdStore);
   const creation$ = selectWorkspaceCreationVisible();
   const admitted = $derived(workspace?.id ? !!$participation$ : $creation$);
+  const screenshotAvailable = $derived(enableScreenshotCapture && admitted && isElectronPlatform());
+  const screenshotModesAvailable = $derived(
+    screenshotAvailable && electronAPI().platform === 'darwin',
+  );
+  let screenshotMode = $state<DockCaptureMode>('fullscreen');
+  let screenshotRevision = $state(0);
+  let screenshotRequest = $state.raw<{
+    workspaceId: string | undefined;
+    agentId: string | undefined;
+    aborter: AbortController;
+  } | null>(null);
+  const screenshotLabels = $derived({
+    capture: m.dock_composer_screenshotAction_label(),
+    captureMode: {
+      window: m.dock_composer_captureWindow_label(),
+      region: m.dock_composer_captureRegion_label(),
+    },
+    captureModes: {
+      fullscreen: m.dock_composer_captureFullscreen_label(),
+      window: m.dock_composer_captureWindow_label(),
+      region: m.dock_composer_captureRegion_label(),
+    },
+    captureOptions: m.dock_composer_captureModes_ariaLabel(),
+    actionHints: { capture: { label: m.dock_composer_screenshotAction_label() } },
+  });
+
+  $effect(() => {
+    if (screenshotRequest && !isCurrentScreenshot(screenshotRequest)) cancelScreenshot();
+  });
 
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
@@ -432,6 +471,7 @@
   let canSend = $derived(
     admitted &&
       (value.trim() || contextItems.length > 0 || hasInlineImages || pendingContent) &&
+      !screenshotRequest &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -579,6 +619,7 @@
   }
 
   export function clear() {
+    cancelScreenshot();
     if (tiptap?.clear) {
       tiptap.clear();
     }
@@ -913,6 +954,7 @@
 
   onDestroy(() => {
     disposed = true;
+    cancelScreenshot();
     lifetimeAborter.abort();
     for (const aborter of placementAborters.values()) aborter.abort();
     placementAborters.clear();
@@ -1056,6 +1098,68 @@
 
   function handleFileSelect() {
     fileInput?.click();
+  }
+
+  function isCurrentScreenshot(request: NonNullable<typeof screenshotRequest>): boolean {
+    return (
+      !disposed &&
+      screenshotRequest === request &&
+      screenshotAvailable &&
+      !disabled &&
+      !inputLocked &&
+      request.workspaceId === workspace?.id &&
+      request.agentId === agentId
+    );
+  }
+
+  function cancelScreenshot(): void {
+    screenshotRequest?.aborter.abort();
+    screenshotRequest = null;
+  }
+
+  async function takeScreenshot(mode: DockCaptureMode): Promise<void> {
+    if (screenshotRequest || !screenshotAvailable || disabled || inputLocked || disposed) return;
+    const request = { workspaceId: workspace?.id, agentId, aborter: new AbortController() };
+    const requestId = crypto.randomUUID();
+    const channel = IPC_CHANNELS.CHAT_SCREENSHOT.CONTROL;
+    const api = electronAPI();
+    const name = 'screenshot.png';
+    const cancelNative = () =>
+      void api.invoke(channel, { action: 'cancel', requestId }).catch(() => {});
+    const { signal } = request.aborter;
+    screenshotMode = mode;
+    screenshotRequest = request;
+    signal.addEventListener('abort', cancelNative, { once: true });
+    try {
+      const result: DockNativeResult<Pick<DockCapturedPixels, 'base64' | 'mimeType'>> =
+        await api.invoke(channel, { action: 'capture', requestId, mode });
+      if (!isCurrentScreenshot(request)) return;
+      if (!result.ok) {
+        if (result.detail === 'cancelled') return;
+        notify.error(
+          result.error === 'permission'
+            ? m.dock_composer_screenPermission_tooltip()
+            : result.error === 'limit'
+              ? m.chat_richInput_filesTooLarge_error({ names: name })
+              : m.browser_embedded_screenshotFailed_error(),
+        );
+        return;
+      }
+      const { base64, mimeType } = result.value;
+      const file = new File([base64ToBlob(base64, mimeType)], name, { type: mimeType });
+      const attached = await processImageFiles([file], signal);
+      if (attached && isCurrentScreenshot(request)) screenshotRevision += 1;
+    } catch (error) {
+      if (!isCurrentScreenshot(request)) return;
+      logger.warn('Could not attach screenshot', { error });
+      notify.error(m.browser_embedded_screenshotFailed_error());
+    } finally {
+      signal.removeEventListener('abort', cancelNative);
+      if (screenshotRequest === request) {
+        screenshotRequest = null;
+        void restoreComposerFocus();
+      }
+    }
   }
 
   async function handleFileChange(e: Event) {
@@ -1207,7 +1311,7 @@
    * Process dropped/pasted files: images become context items (attachment
    * flow), non-image files are placed into the workspace via the daemon.
    */
-  async function processImageFiles(files: File[]) {
+  async function processImageFiles(files: File[], signal = lifetimeAborter.signal) {
     if (disposed) return;
     // Images travel as attachment-reference blocks (monorepo#3338), so the
     // composer cap matches the daemon's 30 MiB reference-image limit. The
@@ -1245,15 +1349,16 @@
     if (disposed) return;
     const items = await imageFilesToContextItems(imageFiles, {
       maxBytes,
-      signal: lifetimeAborter.signal,
+      signal,
       announceSuccess: announceAddedImages,
     });
-    if (disposed) return;
+    if (disposed || signal.aborted) return;
     for (const item of items) {
       if (disposed) return;
       contextItems = [...contextItems, item];
       oncontextAdd?.(item);
     }
+    return items.length > 0;
   }
 
   /**
@@ -2104,6 +2209,24 @@
           </Menu.Root>
         </div>
 
+        {#if screenshotAvailable}
+          <DockComposerCapturePicker
+            surface="chat"
+            state={{
+              captureMode: screenshotMode,
+              captureModesAvailable: screenshotModesAvailable,
+              capturePending: !!screenshotRequest,
+              captureRevision: screenshotRevision,
+              captureTooltip: screenshotRequest
+                ? m.dock_composer_capturePending_label()
+                : undefined,
+            }}
+            labels={screenshotLabels}
+            disabled={disabled || inputLocked}
+            onCapture={() => void takeScreenshot(screenshotMode)}
+            onSelect={(mode) => void takeScreenshot(mode)}
+          />
+        {/if}
         {#if micTranscribing}
           <TooltipShortcut
             label={m.chat_richInput_micCancelTranscribing_label()}

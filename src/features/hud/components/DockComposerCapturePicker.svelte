@@ -13,13 +13,30 @@
     state: media,
     labels,
     disabled = false,
+    surface = 'notch',
     onCapture,
     onSelect,
     onAlert,
   }: {
-    state: DockComposerMediaState;
-    labels: DockComposerMediaLabels;
+    state: Pick<
+      DockComposerMediaState,
+      | 'captureMode'
+      | 'captureModesAvailable'
+      | 'captureRevision'
+      | 'capturePending'
+      | 'captureDisabled'
+      | 'captureTooltip'
+      | 'alerts'
+    >;
+    labels: Pick<
+      DockComposerMediaLabels,
+      'capture' | 'captureModes' | 'captureMode' | 'captureOptions'
+    > & {
+      captureLimit?: string;
+      actionHints?: Pick<NonNullable<DockComposerMediaLabels['actionHints']>, 'capture'>;
+    };
     disabled?: boolean;
+    surface?: 'notch' | 'chat';
     onCapture: () => void;
     onSelect?: (mode: DockComposerCaptureMode) => void;
     onAlert?: () => void;
@@ -130,7 +147,7 @@
   bind:ref={trigger}
   variant="ghost-light"
   size="icon-sm"
-  class="media-button capture-button"
+  class={surface === 'notch' ? 'media-button capture-button' : 'relative'}
   disabled={blocked}
   aria-label={modeLabel}
   aria-haspopup={pickable ? 'menu' : undefined}
@@ -140,7 +157,7 @@
   data-capture-mode={mode}
   {tooltip}
   {tooltipShortcut}
-  tooltipContentClass="dock-chrome-tooltip"
+  tooltipContentClass={surface === 'notch' ? 'dock-chrome-tooltip' : undefined}
   tooltipDisabled={open}
   onpointerenter={enter}
   onpointerleave={leave}
@@ -206,6 +223,7 @@
     heading={labels.actionHints?.capture.label}
     shortcut={labels.actionHints?.capture.shortcut}
     focusChecked={keyboardOpen}
+    {surface}
     onSelect={choose}
     onpointerenter={() => clearTimeout(closeTimer)}
     onpointerleave={leave}
