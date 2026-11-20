@@ -35,6 +35,10 @@
     toggleSelectedTab,
     type TabId,
   } from '../multi-select-sidebar-tabs';
+  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
+  import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { m } from '$shared/paraglide/messages.js';
   import { getSidebarFlyout } from './sidebar-flyout-context';
 
@@ -69,6 +73,13 @@
   const unread$ = selectWorkspaceHasUnreadForegroundAgents(workspaceId$);
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
   const mainAgent = $derived(resolveExistingWorkspaceDefaultAgent($agents$, workspaceId));
+  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceId$);
+  const terminals$ = selectTerminalsForWorkspace(workspaceId$);
+  const scripts$ = selectWorkspaceScriptEntries(workspaceId$);
+  const shellInUse = $derived(
+    (!$collaborator$ && $terminals$.length > 0) ||
+      $scripts$.some((script) => isLiveScriptStatus(script.runtime.status)),
+  );
   const tabs = $derived(
     TAB_DEFINITIONS.filter(
       ({ id }) =>
@@ -169,11 +180,15 @@
   {#snippet children()}
     {#snippet trigger(tab: SectionTab)}
       {@const unread = tab.id === 'agents' && $unread$}
+      {@const inUse =
+        (tab.id === 'browser' && $hasBrowserTabs$) || (tab.id === 'shell' && shellInUse)}
       <Tabs.Trigger
         value={tab.id}
         aria-label={unread
           ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label: tab.label })
-          : tab.label}
+          : inUse
+            ? m.workspace_multiSelectSidebar_tabInUse_ariaLabel({ label: tab.label })
+            : tab.label}
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
         class={cn(
           'relative min-w-0 gap-0 px-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
@@ -254,6 +269,12 @@
             aria-hidden="true"
             data-sidebar-tab-unread-dot
           ></span>
+        {:else if inUse}
+          <span
+            class="sidebar-tab-in-use absolute top-1.5 right-1.5 size-1.5 rounded-full bg-muted-foreground"
+            aria-hidden="true"
+            data-sidebar-tab-in-use-dot
+          ></span>
         {/if}
       </Tabs.Trigger>
     {/snippet}
@@ -308,7 +329,8 @@
   }
 
   @media (forced-colors: active) {
-    .sidebar-tab-unread {
+    .sidebar-tab-unread,
+    .sidebar-tab-in-use {
       background-color: CanvasText;
     }
   }

@@ -55,6 +55,7 @@ describe('SettingsSidebarNav', () => {
     'display',
     'app-behavior',
     'input',
+    'passkeys',
     'agent-behavior',
     'providers',
     'connections',

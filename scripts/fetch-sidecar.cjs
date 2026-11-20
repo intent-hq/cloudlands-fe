@@ -19,6 +19,9 @@
  *
  * Flags: --force re-fetches even when the staged sidecar already matches the pin.
  *
+ * Linux intentd archives also carry libexec/intent-passkey (the browser-panel
+ * passkey helper) and its LGPL text; both are staged next to intentd when present.
+ *
  * Idempotent: a stamp file (resources/sidecar/.intentd-fetch-stamp.json) records what
  * was staged; matching version+target+staged-binary-hash skips the download.
  */
@@ -243,6 +246,17 @@ async function main() {
     fs.mkdirSync(DEST_DIR, { recursive: true });
     fs.copyFileSync(extractedBin, destBin);
     if (process.platform !== 'win32') fs.chmodSync(destBin, 0o755);
+    for (const name of ['intent-passkey', 'intent-passkey.LGPL-2.1.txt']) {
+      const extra = findFile(extractDir, name);
+      const dest = path.join(DEST_DIR, name);
+      if (!extra) {
+        fs.rmSync(dest, { force: true });
+        continue;
+      }
+      fs.copyFileSync(extra, dest);
+      if (name === 'intent-passkey') fs.chmodSync(dest, 0o755);
+      console.log(`Staged ${name} from ${assetName}`);
+    }
     fs.writeFileSync(
       STAMP_FILE,
       `${JSON.stringify(

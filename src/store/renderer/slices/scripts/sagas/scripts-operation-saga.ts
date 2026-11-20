@@ -472,7 +472,22 @@ function* updateDefinition(
       throw new Error(m.scripts_pendingChange_error());
     }
     if (isLiveScriptStatus(current.runtime?.status)) {
-      throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
+      // A daemon advertising scriptAutoStartInPlace keeps the run on an autoStart-only upsert.
+      const autoStartOnly =
+        updates.autoStart !== undefined &&
+        Object.entries(updates).every(([key, value]) => key === 'autoStart' || value === undefined);
+      const keepsRun =
+        autoStartOnly && (yield* call(() => scriptDefinitionTransport.keepsRunOnAutoStartUpsert()));
+      if (!keepsRun) {
+        throw new Error(m.scripts_client_updateRunning_error({ name: current.name }));
+      }
+      // An unchanged value would reach the daemon as a full replacement and stop the run.
+      if (updates.autoStart === current.autoStart) {
+        yield* put(action.success(current));
+        yield* finishWorkflow(workspaceId, consumer, 'success', current);
+        settled = true;
+        return;
+      }
     }
     const result = yield* call(() =>
       scriptDefinitionTransport.upsert(workspaceId, scriptId, {

@@ -28,6 +28,7 @@ test('keeps Back, grouped settings and specialists in one keyboard sequence', as
     'display',
     'app-behavior',
     'input',
+    'passkeys',
     'setup',
     'advanced',
   ];

@@ -16,6 +16,9 @@ const live = await vi.hoisted(async () => {
     people: writable([]),
     invites: writable<WorkspaceInvite[]>([]),
     plainFolder: writable(false),
+    hasBrowserTabs: writable(false),
+    terminals: writable<{ id: string }[]>([]),
+    scripts: writable<{ id: string; runtime: { status: string } }[]>([]),
     dispatch: vi.fn(),
   };
 });
@@ -42,6 +45,18 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceCollaborator: () => live.collaborator,
   selectWorkspaceSavedScriptContext: () => live.scriptContext,
   selectIsPlainFolderWorkspace: () => live.plainFolder,
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectWorkspaceHasBrowserTabs: () => live.hasBrowserTabs,
+}));
+
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
+  selectTerminalsForWorkspace: () => live.terminals,
+}));
+
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectWorkspaceScriptEntries: () => live.scripts,
 }));
 
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
@@ -73,6 +88,9 @@ beforeEach(() => {
   live.people.set([]);
   live.invites.set([]);
   live.plainFolder.set(false);
+  live.hasBrowserTabs.set(false);
+  live.terminals.set([]);
+  live.scripts.set([]);
   live.dispatch.mockClear();
 });
 
@@ -236,5 +254,42 @@ describe('build-smoke Agents tab selector contract', () => {
     expect(live.dispatch.mock.calls).toEqual([
       [setMultiSelectSidebarSelectedTabs('workspace', ['agents'])],
     ]);
+  });
+});
+
+describe('sidebar in-use dots', () => {
+  const dot = (view: { container: HTMLElement }, tabId: string) =>
+    view.container.querySelector(
+      `[data-sidebar-section-tab="${tabId}"] [data-sidebar-tab-in-use-dot]`,
+    );
+
+  it('marks Browser while the workspace has browser tabs', async () => {
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    expect(dot(view, 'browser')).toBeNull();
+    live.hasBrowserTabs.set(true);
+    await waitFor(() => expect(dot(view, 'browser')).not.toBeNull());
+    expect(dot(view, 'shell')).toBeNull();
+  });
+
+  it('marks Shell for an open terminal or a live script, not an idle one', async () => {
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    live.scripts.set([{ id: 'build', runtime: { status: 'exited' } }]);
+    await waitFor(() => expect(dot(view, 'shell')).toBeNull());
+    live.scripts.set([{ id: 'dev', runtime: { status: 'running' } }]);
+    await waitFor(() => expect(dot(view, 'shell')).not.toBeNull());
+    live.scripts.set([]);
+    await waitFor(() => expect(dot(view, 'shell')).toBeNull());
+    live.terminals.set([{ id: 'terminal-1' }]);
+    await waitFor(() => expect(dot(view, 'shell')).not.toBeNull());
+  });
+
+  it('ignores raw terminals a collaborator cannot open', async () => {
+    live.collaborator.set(true);
+    live.terminals.set([{ id: 'terminal-1' }]);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-sidebar-section-tab="shell"]')).not.toBeNull(),
+    );
+    expect(dot(view, 'shell')).toBeNull();
   });
 });

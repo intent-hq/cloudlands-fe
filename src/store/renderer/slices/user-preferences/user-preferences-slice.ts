@@ -87,8 +87,6 @@ export type UserPreferencesState = {
   /** Offers plain-folder (git-optional) creation only; existing plain-folder workspaces keep working when off. */
   labsPlainFolderWorkspacesEnabled: boolean;
   labsTabGroupsEnabled: boolean;
-  /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
-  labsCloudMachinesEnabled: boolean;
   /** Labs: Set up a new machine over SSH (desktop app only). */
   labsSshMachineSetupEnabled: boolean;
   /**
@@ -176,7 +174,6 @@ export const initialState: UserPreferencesStoreState = {
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsTabGroupsEnabled: false,
-  labsCloudMachinesEnabled: false,
   labsSshMachineSetupEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
@@ -508,17 +505,6 @@ export const setLabsTabGroupsEnabled = labsTabGroupsPreference.setAction;
 
 export const toggleLabsTabGroups = labsTabGroupsPreference.toggleAction;
 
-const labsCloudMachinesPreference = createBooleanPreference<UserPreferencesStoreState>({
-  sliceName: 'userPreferences',
-  field: 'labsCloudMachinesEnabled',
-  setActionName: 'setLabsCloudMachinesEnabled',
-  toggleActionName: 'toggleLabsCloudMachines',
-});
-
-export const setLabsCloudMachinesEnabled = labsCloudMachinesPreference.setAction;
-
-export const toggleLabsCloudMachines = labsCloudMachinesPreference.toggleAction;
-
 const labsSshMachineSetupPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsSshMachineSetupEnabled',
@@ -665,7 +651,6 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
-labsCloudMachinesPreference.register(userPreferencesReducer);
 labsSshMachineSetupPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({

@@ -1986,6 +1986,14 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         verb = m.chat_toolClassifier_list_label();
         subject = 'browser tabs';
         break;
+      case 'listTools':
+        verb = m.chat_toolClassifier_list_label();
+        subject = 'page tools';
+        break;
+      case 'callTool':
+        verb = m.chat_toolClassifier_run_label();
+        subject = primaryAction.name ? truncate(safeStr(primaryAction.name), 60) : 'page tool';
+        break;
       case 'focusTab':
         verb = m.chat_toolClassifier_focus_label();
         subject = 'tab';

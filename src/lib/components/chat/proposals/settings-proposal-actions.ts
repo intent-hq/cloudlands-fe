@@ -45,7 +45,6 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsTabGroupsEnabled,
-  selectLabsCloudMachinesEnabled,
   selectLabsSshMachineSetupEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
@@ -105,7 +104,6 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsTabGroupsEnabled,
-  setLabsCloudMachinesEnabled,
   setLabsSshMachineSetupEnabled,
   setLanguagePreference,
   setNotificationEnabled,
@@ -333,8 +331,6 @@ async function readCurrentSettingValue(
       return selectLabsPlainFolderWorkspacesEnabled.select(state);
     case 'labs.tabGroups':
       return selectLabsTabGroupsEnabled.select(state);
-    case 'labs.cloudMachines':
-      return selectLabsCloudMachinesEnabled.select(state);
     case 'labs.sshMachineSetup':
       return selectLabsSshMachineSetupEnabled.select(state);
     case 'workspaceList.showArchived':
@@ -461,10 +457,6 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'labs.tabGroups':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setLabsTabGroupsEnabled(value));
-      return true;
-    case 'labs.cloudMachines':
-      if (typeof value !== 'boolean') return false;
-      appStore.dispatch(setLabsCloudMachinesEnabled(value));
       return true;
     case 'labs.sshMachineSetup':
       if (typeof value !== 'boolean') return false;

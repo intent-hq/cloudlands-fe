@@ -11,7 +11,12 @@
  * A view is in one of three places in its window (design §2.3, §2.4):
  * - shown: above the machine view at the reported box;
  * - parked: below the machine view at its last real size, painting with
- *   background throttling off, while a drawing hold (agent screenshot or
+ *   background throttling off, inside a 1×1 clipping holder view. The
+ *   machine view is transparent where the app is (the frame page paints
+ *   the backdrop under it), so a page parked unclipped would show through
+ *   translucent areas; clipped, at most one page pixel is under it, and the
+ *   page still paints and captures at full size (a 0×0 holder stops CDP
+ *   screenshots), while a drawing hold (agent screenshot or
  *   agent activity) needs frames from a page that is not on screen. A view
  *   in no window does not paint, and Electron 44 has no capturer count;
  * - detached: in no window. It still runs JS and answers CDP evaluate.
@@ -20,13 +25,16 @@
  * not reload and the CDP tabId → webContentsId mapping does not change.
  */
 
-import type { BrowserWindow, WebContents, WebContentsView } from 'electron';
+import type { BrowserWindow, View, WebContents, WebContentsView } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { classifyBrowserViewShortcut } from '../../../shared/browser-view-shortcuts';
 import type {
   BrowserViewCommand,
+  BrowserViewCommandResult,
   BrowserViewEventMessage,
   BrowserViewPageEvent,
   BrowserViewRect,
+  BrowserViewState,
 } from '../../../shared/types/browser-view';
 import type { MainOwnedBrowserViews } from './embedded-browser-cdp-service';
 
@@ -38,6 +46,16 @@ const DEFAULT_PARKED_SIZE = { width: 1280, height: 800 } as const;
 /** Zoom factors a page accepts (Chromium's own range). */
 const MIN_PAGE_ZOOM = 0.25;
 const MAX_PAGE_ZOOM = 5;
+
+/**
+ * Pages kept alive off screen before the oldest is closed (the `<webview>`
+ * path's MAX_OFFSCREEN_WEBVIEWS). Pinned (agent-owned) pages and pages in a
+ * drawing hold do not count and are never closed by the cap.
+ */
+const DEFAULT_MAX_DETACHED_VIEWS = 8;
+
+/** Console messages from the app's own page scripts (element picker). */
+const APP_CONSOLE_PREFIX = '__INTENT_';
 
 export interface BrowserViewKey {
   backendId: string;
@@ -51,6 +69,8 @@ export type BrowserViewPlacement = 'shown' | 'parked' | 'detached';
 export interface BrowserViewServiceDeps {
   /** Construct the page's view (production: `new WebContentsView`). */
   createView(webPreferences: Electron.WebPreferences): WebContentsView;
+  /** Construct the clipping holder a parked page sits in (production: `new View`). */
+  createParkingHolder(): View;
   /** Constructor preferences shared with `<webview>` guests (webview-security). */
   webPreferences(): Electron.WebPreferences;
   /** Apply the guest navigation, popup and permission rules (webview-security). */
@@ -74,6 +94,30 @@ export interface BrowserViewServiceDeps {
    * are destroyed.
    */
   onWindowClosing?(window: BrowserWindow, tabIds: string[]): void;
+  /** macOS key rules for app shortcuts typed in a page (default: this platform). */
+  isMac?: boolean;
+  /** Off-screen pages kept before the oldest closes (default DEFAULT_MAX_DETACHED_VIEWS). */
+  maxDetached?: number;
+  /** Clock for the off-screen cap (tests). */
+  now?: () => number;
+}
+
+export interface BrowserViewCreateOptions {
+  /** An agent owns the tab: the off-screen cap never closes its page. */
+  pinned?: boolean;
+  /**
+   * Only keep the page alive (an off-screen host). A page that lives in
+   * another window stays there: only a window that shows the tab claims it.
+   */
+  keepAlive?: boolean;
+}
+
+export interface BrowserViewCreateResult {
+  webContentsId: number;
+  /** The page was already alive (the renderer reads its state). */
+  existing: boolean;
+  /** keepAlive only: the page lives in another window, which drives it. */
+  elsewhere?: boolean;
 }
 
 interface Entry {
@@ -85,10 +129,19 @@ interface Entry {
   rect: BrowserViewRect | null;
   /** Whether the renderer wants the page on screen. */
   visible: boolean;
+  /** A renderer has the tab mounted (shown or not): the off-screen cap skips it. */
+  slotMounted: boolean;
   /** Last real size on screen, in window pixels (the parked size). */
   size: { width: number; height: number };
   /** Drawing holds in progress. */
   holds: number;
+  /** The 1×1 clipping view a parked page sits in (made on first park). */
+  holder: View | null;
+  /** Agent-owned: exempt from the off-screen cap. */
+  pinned: boolean;
+  /** When the page last left the screen (for the off-screen cap). */
+  hiddenSince: number;
+  title: string;
   placement: BrowserViewPlacement;
   dispose: () => void;
 }
@@ -121,7 +174,12 @@ export class BrowserViewService implements MainOwnedBrowserViews {
    * reports a box). Creating a tab that exists returns its page; from
    * another window, the page moves there.
    */
-  create(key: BrowserViewKey, window: BrowserWindow, url: string): { webContentsId: number } {
+  create(
+    key: BrowserViewKey,
+    window: BrowserWindow,
+    url: string,
+    options: BrowserViewCreateOptions = {},
+  ): BrowserViewCreateResult {
     const existing = this.byTab.get(key.tabId);
     if (existing) {
       if (
@@ -130,8 +188,14 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       ) {
         throw new Error('This browser tab belongs to another workspace');
       }
-      if (existing.window !== window) this.moveToWindow(key.tabId, window);
-      return { webContentsId: existing.contents.id };
+      if (options.pinned !== undefined) existing.pinned = options.pinned;
+      if (existing.window !== window) {
+        if (options.keepAlive && !existing.window.isDestroyed()) {
+          return { webContentsId: existing.contents.id, existing: true, elsewhere: true };
+        }
+        this.moveToWindow(key.tabId, window);
+      }
+      return { webContentsId: existing.contents.id, existing: true };
     }
     if (!this.deps.isNavigationAllowed(url)) throw new Error('This address cannot be opened');
     if (window.isDestroyed()) throw new Error('The window is closed');
@@ -146,8 +210,13 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       window,
       rect: null,
       visible: false,
+      slotMounted: false,
       size: { ...DEFAULT_PARKED_SIZE },
       holds: 0,
+      holder: null,
+      pinned: options.pinned === true,
+      hiddenSince: this.now(),
+      title: '',
       placement: 'detached',
       dispose: () => {},
     };
@@ -163,7 +232,8 @@ export class BrowserViewService implements MainOwnedBrowserViews {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    return { webContentsId: contents.id };
+    this.enforceDetachedCap(entry);
+    return { webContentsId: contents.id, existing: false };
   }
 
   /** Close a tab's page (tab closed). Idempotent. */
@@ -194,6 +264,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     if (!entry) return;
     if (rect) entry.rect = { ...rect };
     entry.visible = visible;
+    entry.slotMounted = true;
     this.place(entry, true);
   }
 
@@ -202,7 +273,9 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     const entry = this.byTab.get(tabId);
     if (!entry) return;
     entry.visible = false;
+    entry.slotMounted = false;
     this.place(entry, false);
+    this.enforceDetachedCap(entry);
   }
 
   /**
@@ -216,6 +289,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     this.removeFromWindow(entry);
     entry.window = window;
     entry.visible = false;
+    entry.slotMounted = false;
     entry.rect = null;
     this.observeWindow(window);
     this.place(entry, false);
@@ -238,8 +312,14 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     });
   }
 
-  /** Run a command from the tab's controls. Returns the find request id for `find`. */
-  command(tabId: string, command: BrowserViewCommand): { requestId?: number } {
+  /**
+   * Run a command from the tab's controls. `find` returns its request id;
+   * `execute-javascript` and `capture` return a promise of their result.
+   */
+  command(
+    tabId: string,
+    command: BrowserViewCommand,
+  ): BrowserViewCommandResult | Promise<BrowserViewCommandResult> {
     const entry = this.byTab.get(tabId);
     if (!entry || entry.contents.isDestroyed()) throw new Error('This browser tab is closed');
     const contents = entry.contents;
@@ -284,9 +364,61 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       case 'open-devtools':
         contents.openDevTools({ mode: 'detach' });
         return {};
+      case 'toggle-devtools':
+        if (contents.isDevToolsOpened()) contents.closeDevTools();
+        else contents.openDevTools({ mode: 'detach' });
+        return {};
       case 'focus':
         contents.focus();
         return {};
+      case 'set-audio-muted':
+        contents.setAudioMuted(command.muted);
+        return {};
+      case 'execute-javascript':
+        return contents.executeJavaScript(command.code).then((value: unknown) => ({ value }));
+      case 'capture':
+        return this.capture(entry, command.rect);
+    }
+  }
+
+  /** A page's current state, for a renderer that starts showing a live page. */
+  stateOf(tabId: string): BrowserViewState | undefined {
+    const entry = this.byTab.get(tabId);
+    if (!entry || entry.contents.isDestroyed()) return undefined;
+    const contents = entry.contents;
+    const history = contents.navigationHistory;
+    return {
+      webContentsId: contents.id,
+      url: contents.getURL(),
+      title: entry.title,
+      loading: contents.isLoading(),
+      canGoBack: history.canGoBack(),
+      canGoForward: history.canGoForward(),
+      zoomFactor: contents.getZoomFactor(),
+    };
+  }
+
+  /**
+   * Capture the page. A page that is not on screen is parked for the
+   * capture, because a detached page does not paint.
+   */
+  private async capture(
+    entry: Entry,
+    rect: BrowserViewRect | undefined,
+  ): Promise<BrowserViewCommandResult> {
+    const release = entry.placement === 'shown' ? undefined : this.holdDrawing(entry.contents.id);
+    try {
+      const image = rect
+        ? await entry.contents.capturePage({
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          })
+        : await entry.contents.capturePage();
+      return { dataUrl: image.isEmpty() ? '' : image.toDataURL() };
+    } finally {
+      release?.();
     }
   }
 
@@ -356,6 +488,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     const previous = entry.placement;
     const children = window.contentView;
     try {
+      if (previous === 'parked' && next !== 'parked') this.unpark(entry);
       if (next === 'shown' && entry.rect && machine) {
         const bounds = toWindowRect(entry.rect, machine.getZoomFactor());
         view.setBounds(bounds);
@@ -366,11 +499,15 @@ export class BrowserViewService implements MainOwnedBrowserViews {
         if (previous !== 'shown' || raise) children.addChildView(view);
         view.setVisible(true);
       } else if (next === 'parked') {
+        if (previous === 'shown') children.removeChildView(view);
+        const holder = (entry.holder ??= this.deps.createParkingHolder());
+        holder.setBounds({ x: 0, y: 0, width: 1, height: 1 });
+        // Index 0: under the machine view.
+        if (previous !== 'parked') children.addChildView(holder, 0);
         view.setBounds({ x: 0, y: 0, ...entry.size });
-        // Index 0: under the machine view, which covers it fully.
-        if (previous !== 'parked') children.addChildView(view, 0);
+        if (previous !== 'parked') holder.addChildView(view);
         view.setVisible(true);
-      } else if (previous !== 'detached') {
+      } else if (previous === 'shown') {
         children.removeChildView(view);
       }
       // Parking turns throttling off. Leaving it turns throttling back on only
@@ -381,6 +518,10 @@ export class BrowserViewService implements MainOwnedBrowserViews {
         contents.backgroundThrottling = true;
       }
       entry.placement = next;
+      if (previous !== 'detached' && next === 'detached') {
+        entry.hiddenSince = this.now();
+        this.enforceDetachedCap(entry);
+      }
     } catch (error) {
       logger.warn('Could not place a browser view', {
         tabId: entry.key.tabId,
@@ -390,12 +531,49 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     }
   }
 
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /**
+   * Close the oldest off-screen pages over the cap. Pinned pages, held
+   * pages and `keep` (the page that just changed) are never closed.
+   */
+  private enforceDetachedCap(keep: Entry): void {
+    const max = this.deps.maxDetached ?? DEFAULT_MAX_DETACHED_VIEWS;
+    const hidden = [...this.byTab.values()].filter(
+      (entry) =>
+        entry.placement === 'detached' && !entry.pinned && !entry.slotMounted && entry.holds === 0,
+    );
+    let excess = hidden.length - max;
+    if (excess <= 0) return;
+    const oldestFirst = hidden
+      .filter((entry) => entry !== keep)
+      .sort((a, b) => a.hiddenSince - b.hiddenSince);
+    for (const entry of oldestFirst) {
+      if (excess <= 0) break;
+      excess--;
+      logger.info('Closing an off-screen browser page over the cap', { tabId: entry.key.tabId });
+      this.destroy(entry.key.tabId);
+      this.emit(entry, { type: 'closed-offscreen' });
+    }
+  }
+
+  /** Take a parked page out of its holder and the holder out of the window. */
+  private unpark(entry: Entry): void {
+    const holder = entry.holder;
+    if (!holder) return;
+    holder.removeChildView(entry.view);
+    if (!entry.window.isDestroyed()) entry.window.contentView.removeChildView(holder);
+  }
+
   private removeFromWindow(entry: Entry): void {
     if (entry.placement === 'detached') return;
     const wasParked = entry.placement === 'parked';
     entry.placement = 'detached';
     try {
-      if (!entry.window.isDestroyed()) entry.window.contentView.removeChildView(entry.view);
+      if (wasParked) this.unpark(entry);
+      else if (!entry.window.isDestroyed()) entry.window.contentView.removeChildView(entry.view);
       if (wasParked && entry.holds === 0 && !entry.contents.isDestroyed()) {
         entry.contents.backgroundThrottling = true;
       }
@@ -449,28 +627,32 @@ export class BrowserViewService implements MainOwnedBrowserViews {
   /** Forward the page's events to its renderer; returns the disposer. */
   private forwardPageEvents(entry: Entry): () => void {
     const contents = entry.contents;
-    const navigated = (url: string): void => {
+    const navigated = (url: string, inPage: boolean): void => {
       const history = contents.navigationHistory;
       this.emit(entry, {
         type: 'navigated',
         url,
         canGoBack: history.canGoBack(),
         canGoForward: history.canGoForward(),
+        ...(inPage ? { inPage: true } : {}),
       });
     };
     const listeners: Array<[string, (...args: any[]) => void]> = [
       ['did-start-loading', () => this.emit(entry, { type: 'loading', loading: true })],
       ['did-stop-loading', () => this.emit(entry, { type: 'loading', loading: false })],
-      ['did-navigate', (_event: unknown, url: string) => navigated(url)],
+      ['did-navigate', (_event: unknown, url: string) => navigated(url, false)],
       [
         'did-navigate-in-page',
         (_event: unknown, url: string, isMainFrame: boolean) => {
-          if (isMainFrame) navigated(url);
+          if (isMainFrame) navigated(url, true);
         },
       ],
       [
         'page-title-updated',
-        (_event: unknown, title: string) => this.emit(entry, { type: 'title', title }),
+        (_event: unknown, title: string) => {
+          entry.title = title;
+          this.emit(entry, { type: 'title', title });
+        },
       ],
       [
         'page-favicon-updated',
@@ -529,6 +711,30 @@ export class BrowserViewService implements MainOwnedBrowserViews {
           }),
       ],
       ['focus', () => this.emit(entry, { type: 'focused' })],
+      [
+        'console-message',
+        (details: { level?: unknown; message?: unknown }) => {
+          const message = typeof details?.message === 'string' ? details.message : '';
+          // Errors feed the console badge (count only); app messages drive the picker.
+          if (message.startsWith(APP_CONSOLE_PREFIX)) {
+            this.emit(entry, { type: 'console-message', level: 'info', message });
+          } else if (details?.level === 'error') {
+            this.emit(entry, { type: 'console-message', level: 'error', message: '' });
+          }
+        },
+      ],
+      [
+        'before-input-event',
+        (event: Electron.Event, input: Electron.Input) => {
+          const shortcut = classifyBrowserViewShortcut(
+            input,
+            this.deps.isMac ?? process.platform === 'darwin',
+          );
+          if (!shortcut) return;
+          event.preventDefault();
+          this.emit(entry, { type: 'shortcut', shortcut });
+        },
+      ],
     ];
     const emitter = contents as unknown as NodeJS.EventEmitter;
     for (const [name, listener] of listeners) emitter.on(name, listener);
@@ -538,6 +744,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
       this.forget(entry);
       this.removeFromWindow(entry);
       this.deps.cdp.unregisterTab(entry.key.tabId);
+      this.emit(entry, { type: 'page-closed' });
     };
     contents.once('destroyed', onDestroyed);
     return () => {

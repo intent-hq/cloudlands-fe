@@ -337,6 +337,28 @@ export const IPC_CHANNELS = {
     DISMISS: 'invite-notice:dismiss',
   },
 
+  // Browser panel passkeys (Linux). Payload contracts live in src/shared/ipc/passkeys.ts.
+  PASSKEYS: {
+    /** Browser-panel frame preload → main (invoke): navigator.credentials.create. */
+    PAGE_CREATE: 'passkeys:page-create',
+    /** Browser-panel frame preload → main (invoke): navigator.credentials.get. */
+    PAGE_GET: 'passkeys:page-get',
+    /** Browser-panel frame preload → main (invoke): the page aborted its request. */
+    PAGE_CANCEL: 'passkeys:page-cancel',
+    /** Browser-panel frame preload → main (invoke): platform authenticator availability. */
+    PAGE_CAPABILITIES: 'passkeys:page-capabilities',
+    /** Main → host renderer: show or update the passkey dialog. */
+    DIALOG_SHOW: 'passkeys:dialog-show',
+    /** Main → host renderer: close the passkey dialog. */
+    DIALOG_CLOSE: 'passkeys:dialog-close',
+    /** Host renderer → main (invoke): the user answered the passkey dialog. */
+    DIALOG_RESPOND: 'passkeys:dialog-respond',
+    /** App renderer → main (invoke): list device passkeys (Settings → Passkeys). */
+    DEVICE_LIST: 'passkeys:device-list',
+    /** App renderer → main (invoke): delete one device passkey. */
+    DEVICE_DELETE: 'passkeys:device-delete',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',
@@ -707,6 +729,8 @@ export const IPC_CHANNELS = {
     CREATE: 'browser-view:create',
     /** Close a tab's page: the tab closed (renderer->main) */
     DESTROY: 'browser-view:destroy',
+    /** A tab's live page state, or null when main has no page for it (renderer->main) */
+    STATE: 'browser-view:state',
     /** Close every page of a workspace: archived or deleted (renderer->main) */
     DESTROY_WORKSPACE: 'browser-view:destroy-workspace',
     /** The tab's box in CSS pixels and whether it is on screen (renderer->main) */

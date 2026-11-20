@@ -125,6 +125,7 @@ import MagicWandIcon from 'phosphor-svelte/lib/MagicWandIcon';
 import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
 import MagnifyingGlassMinusIcon from 'phosphor-svelte/lib/MagnifyingGlassMinusIcon';
 import MagnifyingGlassPlusIcon from 'phosphor-svelte/lib/MagnifyingGlassPlusIcon';
+import DeviceMobileIcon from 'phosphor-svelte/lib/DeviceMobileIcon';
 import MicrophoneIcon from 'phosphor-svelte/lib/MicrophoneIcon';
 import MinusIcon from 'phosphor-svelte/lib/MinusIcon';
 import MoonIcon from 'phosphor-svelte/lib/MoonIcon';
@@ -353,6 +354,7 @@ const iconComponents: Record<string, Component<any>> = {
   'magnifying-glass-plus': MagnifyingGlassPlusIcon,
   message: ChatIcon,
   microphone: MicrophoneIcon,
+  'mobile-screen-button': DeviceMobileIcon,
   minus: MinusIcon,
   moon: MoonIcon,
   'note-sticky': NoteIcon,
@@ -584,6 +586,7 @@ export const faMagnifyingGlassPlus = icon('magnifying-glass-plus');
 export const faMessage = icon('message');
 export const faMicrophone = icon('microphone');
 export const faMinus = icon('minus');
+export const faMobileScreenButton = icon('mobile-screen-button');
 export const faMoon = icon('moon');
 export const faNoteSticky = icon('note-sticky');
 export const faPalette = icon('palette');

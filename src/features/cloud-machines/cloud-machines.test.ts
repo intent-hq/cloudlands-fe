@@ -50,11 +50,10 @@ import {
 } from '../../test/cloud-machines-preview';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import {
-  selectEffectiveStartOn,
   selectRemoteMachine,
   selectStartOnOptions,
 } from '$features/remote-machines/remote-machines-selectors';
-import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   providerProfilesLoaded,
   setProviderEnabled,
@@ -476,20 +475,9 @@ describe('an agent on E2B', () => {
   });
 });
 
-describe('Labs flag', () => {
+describe('Start On entry names', () => {
   let restore: () => void = () => {};
   afterEach(() => restore());
-
-  it('keeps a saved cloud machine in Start On while the flag is off', () => {
-    store.init();
-    restore = setupCloudMachinesFixture('connected');
-    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
-    store.dispatch(setLabsCloudMachinesEnabled(false));
-    expect(selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud')).toBe(
-      true,
-    );
-    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_E2B);
-  });
 
   it('names a single entry called "E2B" just E2B in Start On', () => {
     store.init();
@@ -514,10 +502,24 @@ describe('Labs flag', () => {
       ],
     ]);
   });
+});
 
-  it('still shows an agent already on E2B, with its sandbox state, while the flag is off', () => {
+describe('Remote agents off', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('offers no cloud machine in Start On', () => {
     store.init();
-    restore = setupCloudMachinesFixture('labs-off');
+    restore = setupCloudMachinesFixture('providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    expect(startOnCloud(store.state)).toBeNull();
+  });
+
+  it('still shows an agent already on E2B, with its sandbox state', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
     const sandbox = E2B_SANDBOXES[2]!;
     const location = agentMachineLocation(
       {

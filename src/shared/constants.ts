@@ -365,6 +365,9 @@ export const BROWSER_PROTOCOLS = {
  */
 export const BROWSER_PANEL_PARTITION = 'persist:browser-panel';
 
+/** Blink features enabled in embedded browser guests (`WebMCP` exposes `document.modelContext`). */
+export const WEBVIEW_BLINK_FEATURES = 'WebMCP';
+
 // ============================================================================
 // PATTERNS & VALIDATION
 // ============================================================================

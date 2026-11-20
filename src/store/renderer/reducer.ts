@@ -31,6 +31,7 @@ import { multiPanelContextReducer } from './slices/multi-panel-context/multi-pan
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
 import { powerReducer } from './slices/power/power-slice';
+import { devicePasskeysReducer } from './slices/device-passkeys/device-passkeys-slice';
 import { machineRailReducer } from './slices/machine-rail/machine-rail-slice';
 import { recentAgentsReducer } from './slices/recent-agents/recent-agents-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
@@ -169,6 +170,7 @@ export const reducers = {
   pip: pipReducer,
   dockConversation: dockConversationReducer,
   power: powerReducer,
+  devicePasskeys: devicePasskeysReducer,
   machineRail: machineRailReducer,
   recentAgents: recentAgentsReducer,
   specialists: specialistsReducer,
