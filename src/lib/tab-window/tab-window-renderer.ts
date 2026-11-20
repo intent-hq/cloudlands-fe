@@ -18,4 +18,3 @@ export function currentTabWindowId(): string | null {
 export function isTabWindowRenderer(): boolean {
   return currentTabWindowId() !== null;
 }
-

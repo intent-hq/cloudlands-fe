@@ -240,7 +240,9 @@ function* sourceWindowSaga(): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<TabWindowTabUpdatedEvent | null>(
     CHANNELS.TAB_UPDATED,
     onTabUpdated,
-    { bufferPolicy: { kind: 'sliding', limit: 50, rationale: 'Only the latest tab state matters.' } },
+    {
+      bufferPolicy: { kind: 'sliding', limit: 50, rationale: 'Only the latest tab state matters.' },
+    },
   );
   yield* takeEveryFromElectronChannel<TabWindowClosedTabEvent | null>(
     CHANNELS.CLOSED_TAB,

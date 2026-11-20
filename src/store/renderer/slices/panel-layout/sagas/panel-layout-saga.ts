@@ -332,11 +332,11 @@ function storageKey(wsId: string, backendId: string): string {
 function isValidWorkspaceId(wsId: string | null | undefined): wsId is string {
   return Boolean(
     wsId &&
-      wsId !== 'new' &&
-      wsId !== 'undefined' &&
-      !wsId.startsWith('optimistic-') &&
-      // A tab window's one-tab layout is never saved or restored.
-      !isTabWindowLayoutId(wsId),
+    wsId !== 'new' &&
+    wsId !== 'undefined' &&
+    !wsId.startsWith('optimistic-') &&
+    // A tab window's one-tab layout is never saved or restored.
+    !isTabWindowLayoutId(wsId),
   );
 }
 
