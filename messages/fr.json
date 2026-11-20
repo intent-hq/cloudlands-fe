@@ -8843,6 +8843,7 @@
   "cloudMachines_vercel_form_image_use": "Utiliser la vôtre",
   "cloudMachines_vercel_form_image_placeholder": "Par exemple acme/images/intent-node",
   "cloudMachines_vercel_form_image_note": "Un dépôt du registre Vercel, sans tag : équipe/projet/dépôt, ou un dépôt de ce projet. Intent ajoute sa version comme tag. Laissez vide pour utiliser l'image publique d'Intent.",
+  "cloudMachines_vercel_form_image_tagged": "Retirez le tag : Intent ajoute sa propre version.",
   "cloudMachines_vercel_form_privacy": "Les agents sur Vercel tournent sur les serveurs de Vercel : votre code, vos clés de fournisseur et la sortie des agents y vont. Toute personne pouvant lancer des agents sur {backend} peut les démarrer sur Vercel avec ce jeton.",
   "cloudMachines_vercel_error_ownerOnly": "Seul le propriétaire de ce backend peut modifier Vercel.",
   "cloudMachines_vercel_error_unavailable_title": "Vercel indisponible",

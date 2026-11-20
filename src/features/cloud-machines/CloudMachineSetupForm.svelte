@@ -199,9 +199,12 @@
   const projectInvalid = $derived(
     vercel && !!projectId.trim() && !VERCEL_PROJECT_ID.test(projectId.trim()),
   );
+  // The backend adds its own version tag, so a reference with a tag or digest is refused.
+  const imageInvalid = $derived(vercel && /[:@]/u.test(image.trim()));
   const placeMissing = $derived(
     (northflank || vercel) &&
-      (!projectId.trim() || (vercel && (!teamId.trim() || teamInvalid || projectInvalid))),
+      (!projectId.trim() ||
+        (vercel && (!teamId.trim() || teamInvalid || projectInvalid || imageInvalid))),
   );
   let instanceType = $state<Agent37InstanceType>(
     untrack(() => initialDraft?.instanceType ?? entry?.agent37?.instanceType ?? 'default'),
@@ -726,9 +729,17 @@
             bind:value={image}
             disabled={busy}
             oninput={resetTest}
-            aria-describedby="{uid}-image-note"
+            aria-invalid={imageInvalid ? 'true' : undefined}
+            aria-describedby={imageInvalid
+              ? `${uid}-image-error ${uid}-image-note`
+              : `${uid}-image-note`}
             data-vercel-image
           />
+          {#if imageInvalid}
+            <p id="{uid}-image-error" class="type-body text-danger" data-vercel-image-error>
+              {m.cloudMachines_vercel_form_image_tagged()}
+            </p>
+          {/if}
           <p id="{uid}-image-note" class="type-body text-muted-foreground">
             {m.cloudMachines_vercel_form_image_note()}
           </p>

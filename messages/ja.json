@@ -8843,6 +8843,7 @@
   "cloudMachines_vercel_form_image_use": "独自のイメージを使う",
   "cloudMachines_vercel_form_image_placeholder": "例: acme/images/intent-node",
   "cloudMachines_vercel_form_image_note": "Vercel レジストリのリポジトリ (タグなし): チーム/プロジェクト/リポジトリ、またはこのプロジェクトのリポジトリ。Intent が自身のバージョンをタグとして付けます。空のままにすると Intent の公開イメージを使います。",
+  "cloudMachines_vercel_form_image_tagged": "タグは付けないでください。Intent が自身のバージョンを付けます。",
   "cloudMachines_vercel_form_privacy": "Vercel 上のエージェントは Vercel のサーバーで動作し、コード、プロバイダーキー、エージェントの出力がそこに送られます。{backend} でエージェントを実行できる人は誰でも、このトークンで Vercel 上にエージェントを起動できます。",
   "cloudMachines_vercel_error_ownerOnly": "Vercel を変更できるのはこのバックエンドのオーナーだけです。",
   "cloudMachines_vercel_error_unavailable_title": "Vercel を利用できません",

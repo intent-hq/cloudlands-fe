@@ -8843,6 +8843,7 @@
   "cloudMachines_vercel_form_image_use": "직접 지정",
   "cloudMachines_vercel_form_image_placeholder": "예: acme/images/intent-node",
   "cloudMachines_vercel_form_image_note": "태그 없는 Vercel 레지스트리 저장소: 팀/프로젝트/저장소 또는 이 프로젝트의 저장소. Intent가 자신의 버전을 태그로 붙입니다. 비워 두면 Intent 공개 이미지를 사용합니다.",
+  "cloudMachines_vercel_form_image_tagged": "태그는 빼세요. Intent가 자신의 버전을 붙입니다.",
   "cloudMachines_vercel_form_privacy": "Vercel의 에이전트는 Vercel 서버에서 실행됩니다. 코드, 공급자 키, 에이전트 출력이 그곳으로 전송됩니다. {backend}에서 에이전트를 실행할 수 있는 사람은 누구나 이 토큰으로 Vercel에서 에이전트를 시작할 수 있습니다.",
   "cloudMachines_vercel_error_ownerOnly": "이 백엔드의 소유자만 Vercel을 변경할 수 있습니다.",
   "cloudMachines_vercel_error_unavailable_title": "Vercel을 사용할 수 없음",

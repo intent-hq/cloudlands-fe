@@ -8843,6 +8843,7 @@
   "cloudMachines_vercel_form_image_use": "使用你自己的",
   "cloudMachines_vercel_form_image_placeholder": "例如 acme/images/intent-node",
   "cloudMachines_vercel_form_image_note": "Vercel 镜像仓库中的仓库，不带标签：团队/项目/仓库，或此项目中的仓库。Intent 会把自己的版本作为标签。留空则使用 Intent 的公共镜像。",
+  "cloudMachines_vercel_form_image_tagged": "请去掉标签：Intent 会添加自己的版本。",
   "cloudMachines_vercel_form_privacy": "Vercel 上的代理运行在 Vercel 的服务器上：你的代码、提供商密钥和代理输出都会发送到那里。任何能在 {backend} 上运行代理的人都可以用此令牌在 Vercel 上启动代理。",
   "cloudMachines_vercel_error_ownerOnly": "只有此后端的所有者才能更改 Vercel。",
   "cloudMachines_vercel_error_unavailable_title": "Vercel 不可用",
