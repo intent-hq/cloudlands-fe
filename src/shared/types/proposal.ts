@@ -186,10 +186,6 @@ export function isBulkOperationProposal(proposal: Proposal): proposal is BulkOpe
   return proposal.kind === 'bulk-op';
 }
 
-export function isRpcCallProposal(proposal: Proposal): proposal is RpcCallProposal {
-  return proposal.kind === 'rpc-call';
-}
-
 export function isProposal(value: unknown): value is Proposal {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<Proposal>;

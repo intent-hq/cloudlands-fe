@@ -945,12 +945,17 @@ export class LiveAgentsClient implements AgentsClient {
         outcome?: string;
         items?: RpcProposalItem[];
         expired?: boolean;
-      }>('agent.resolveRpcProposal', {
-        workspaceId: params.workspaceId,
-        agentId: params.agentId,
-        proposalId: params.proposalId,
-        decision: params.decision,
-      });
+      }>(
+        'agent.resolveRpcProposal',
+        {
+          workspaceId: params.workspaceId,
+          agentId: params.agentId,
+          proposalId: params.proposalId,
+          decision: params.decision,
+        },
+        // The daemon bounds an approval run at 10 minutes; wait a little longer.
+        { timeoutMs: 11 * 60_000 },
+      );
       return {
         success: true,
         outcome: result?.outcome === 'applied' ? 'applied' : 'dismissed',
