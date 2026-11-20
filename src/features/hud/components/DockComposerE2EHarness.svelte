@@ -81,6 +81,7 @@
     shell,
     legacyPickDraft = false,
     nativePlacementFixture = false,
+    desktopEditorFixture = false,
     warmMedia = false,
   }: {
     width?: number;
@@ -88,6 +89,8 @@
     shell?: DockRailPreviewProps;
     legacyPickDraft?: boolean;
     nativePlacementFixture?: boolean;
+    /** Test-only Electron identity for the mocked desktop editor IPC boundary. */
+    desktopEditorFixture?: boolean;
     warmMedia?: boolean;
   } = $props();
   const recording$ = selectDockRecordingIndicator();
@@ -184,6 +187,11 @@
     // The local sidecar places a native clip by host path; the wire fixture only
     // accepts bytes, so answer that one placement here (no file is read).
     const api = window.electronAPI!;
+    if (desktopEditorFixture) {
+      // The ordinary CT bridge remains web. This explicit native fixture has no OS access;
+      // only its platform identity differs, and fixture.dispose restores the previous bridge.
+      Object.assign(api.versions, { electron: '42.0.0-ct-desktop' });
+    }
     const invoke = api.invoke;
     let clipPlacements = 0;
     let holdPlacements = false;

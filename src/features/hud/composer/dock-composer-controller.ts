@@ -13,7 +13,7 @@ import { dockRecordingShortcut } from '../components/dock-recording-toolbar';
 import { get, writable, type Readable } from 'svelte/store';
 import { store as appStore } from '$store/renderer/store';
 import {
-  dockCaptureEditorPreviewEnabled,
+  dockCaptureEditorEnabled,
   dockRecordingEditorRequest,
   openDockCaptureEditor,
 } from '$features/hud/media-editor/open-capture-editor';
@@ -416,8 +416,8 @@ export function createDockComposerController(
       const image = imageFor(id);
       if (image) dispatch(dockEvidenceAnnotationToggleRequested(workspaceId, agentId, image.id));
     },
-    // Internal preview: a finished recording opens in the capture editor.
-    ...(dockCaptureEditorPreviewEnabled()
+    // Finished desktop captures open in the capture editor.
+    ...(dockCaptureEditorEnabled()
       ? {
           onEdit: (id: string) => {
             const view = evidence();

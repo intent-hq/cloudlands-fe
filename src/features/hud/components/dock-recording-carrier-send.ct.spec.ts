@@ -443,17 +443,27 @@ test('dock prepares one owner-local recording before Send without early placemen
   });
 });
 
-test('owned recording editor review prepares the committed default before Attach and typing', async ({
+test('recording editor review without a preview flag prepares the committed default before Attach and typing', async ({
   mount,
   page,
 }, info) => {
   const component = await mount(ComposerE2EHarness, {
-    props: { warmMedia: true, shell: dockRailPreview.states.notch.props },
+    props: {
+      warmMedia: true,
+      shell: dockRailPreview.states.notch.props,
+      desktopEditorFixture: true,
+    },
   });
   await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
   await page.evaluate(() =>
     (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockActivated' }),
   );
+  expect(await page.evaluate(() => window.electronAPI?.versions?.electron)).toBe(
+    '42.0.0-ct-desktop',
+  );
+  expect(
+    await page.evaluate(() => localStorage.getItem('intent.dock.captureEditorPreview')),
+  ).toBeNull();
   await recordWithMark(page, component, true);
   expect(await editRecording(page)).toBe(true);
   await page.evaluate(() => {
@@ -466,7 +476,7 @@ test('owned recording editor review prepares the committed default before Attach
       saved: null,
     };
     const review = document.createElement('button');
-    review.textContent = 'Synthetic native editor';
+    review.textContent = 'Editor IPC stand-in (browser test)';
     document.body.append(review);
     review.focus();
     h.store.dispatch({
@@ -474,7 +484,6 @@ test('owned recording editor review prepares the committed default before Attach
       payload: [d.workspaceId, d.agentId, clip.id, null, media],
     });
     h.native.endNatively();
-    localStorage.setItem('intent.dock.captureEditorPreview', '1');
     const api = (window as any).electronAPI,
       prior = api.invoke.bind(api);
     (window as any).__warmReview = {};
@@ -503,11 +512,14 @@ test('owned recording editor review prepares the committed default before Attach
     const h = (window as any).__dockComposerE2E;
     return {
       opened: !!(window as any).__warmReview.openId,
+      previewFlag: localStorage.getItem('intent.dock.captureEditorPreview'),
+      editorIpc: 'mocked; no native editor window',
       focusedInComposer: !!document.activeElement?.closest('[data-dock-conversation]'),
       calls: h.calls,
     };
   });
   expect(before.opened).toBe(true);
+  expect(before.previewFlag).toBeNull();
   expect(before.focusedInComposer).toBe(false);
   expect(
     before.calls.filter(
