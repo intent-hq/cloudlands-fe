@@ -329,13 +329,13 @@ describe('TabWindowRegistry', () => {
       });
 
     it.each([
-      ['another machine', { backendId: 'remote-1' }, 'another workspace'],
-      ['another workspace', { workspaceId: 'ws-2' }, 'another workspace'],
+      ['another machine', { backendId: 'remote-1', workspaceId: 'ws-1' }, 'another workspace'],
+      ['another workspace', { backendId: 'local', workspaceId: 'ws-2' }, 'another workspace'],
     ] as const)('refuses a page of %s and leaves it alone', async (_label, owner, message) => {
       const ctx = owned(owner);
       ctx.deps.browserPageOwner = vi.fn(() => ({
-        backendId: owner.backendId ?? 'local',
-        workspaceId: owner.workspaceId ?? 'ws-1',
+        backendId: owner.backendId,
+        workspaceId: owner.workspaceId,
         window: asWindow(ctx.source),
       }));
       await expect(openBrowserTab(ctx)).rejects.toThrow(message);
