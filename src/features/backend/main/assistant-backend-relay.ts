@@ -153,8 +153,20 @@ export async function handleRelayCall(params: unknown, deps: RelayDeps): Promise
       },
     };
   }
+  let client: JsonRpcClient;
   try {
-    const client = await deps.clientFor(connectionId);
+    client = await deps.clientFor(connectionId);
+  } catch (error) {
+    // Nothing was sent: the call certainly did not run.
+    return {
+      error: {
+        code: -32603,
+        message: error instanceof Error ? error.message : String(error),
+        data: { code: 'relay-unreachable' },
+      },
+    };
+  }
+  try {
     const result = await client.request(call.method, call.params, { timeoutMs: call.timeoutMs });
     return { result: result ?? null };
   } catch (error) {
@@ -166,12 +178,13 @@ export async function handleRelayCall(params: unknown, deps: RelayDeps): Promise
       };
       return { error: shape };
     }
-    logger.warn('Relayed call failed', { backendId: call.backendId, method: call.method });
+    // Sent, but no reply (timeout or the connection dropped): it may have run.
+    logger.warn('Relayed call lost its reply', { backendId: call.backendId, method: call.method });
     return {
       error: {
         code: -32603,
         message: error instanceof Error ? error.message : String(error),
-        data: { code: 'relay-unreachable' },
+        data: { code: 'relay-outcome-unknown' },
       },
     };
   }

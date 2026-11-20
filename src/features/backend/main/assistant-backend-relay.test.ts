@@ -90,4 +90,25 @@ describe('assistant backend relay', () => {
     )) as { error: { data: { code: string } } };
     expect(unknown.error.data.code).toBe('unknown-backend');
   });
+
+  it('separates "never sent" from "sent but no reply"', async () => {
+    const unreachable = (await handleRelayCall(
+      { backendId: 'fp:AA:BB', method: 'workspace.archive', params: {}, timeoutMs: 1 },
+      {
+        ...deps({}),
+        clientFor: vi.fn(async () => {
+          throw new Error('connect failed');
+        }),
+      },
+    )) as { error: { data: { code: string } } };
+    expect(unreachable.error.data.code).toBe('relay-unreachable');
+    const request = vi.fn(async () => {
+      throw new Error('Request timed out: workspace.archive');
+    });
+    const lost = (await handleRelayCall(
+      { backendId: 'fp:AA:BB', method: 'workspace.archive', params: {}, timeoutMs: 1 },
+      deps({ request } as Partial<JsonRpcClient>),
+    )) as { error: { data: { code: string } } };
+    expect(lost.error.data.code).toBe('relay-outcome-unknown');
+  });
 });
