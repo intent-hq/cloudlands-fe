@@ -4,6 +4,8 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** Short rows the decision affects, e.g. the agents an action interrupts. */
+  items?: { label: string; detail?: string }[];
   onConfirm?: () => void | Promise<void>;
 }
 

@@ -20,10 +20,18 @@ import {
   delay,
   put,
   race,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
+import { confirm } from '$lib/components/patterns/confirm';
+import {
+  UNSLOTH_SWITCH_CONFIRM_KEY,
+  unslothModelSwitchFromError,
+  withoutUnslothSwitchConfirmation,
+  type UnslothModelSwitchRefusal,
+} from '$shared/unsloth-model-switch';
 
 import { agentClient } from '$features/agent/agent.client';
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
@@ -489,7 +497,10 @@ function* dispatchToLifecycle(
     yield* put(chatSendFailed(agentId, m.agent_chatSend_historyFailed_error()));
     return;
   }
-  const recordedAttempt = buildRecordedAttempt(content, options);
+  const recordedAttempt = buildRecordedAttempt(content, {
+    ...options,
+    messageMetadata: withoutUnslothSwitchConfirmation(options.messageMetadata),
+  });
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
   if (!skipQueueCheck && isResponding) {
     if (!submission) yield* put(clearChatDraft(wsId, agentId));
@@ -500,7 +511,7 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
         ...(options.messageMetadata !== undefined
-          ? { messageMetadata: options.messageMetadata }
+          ? { messageMetadata: withoutUnslothSwitchConfirmation(options.messageMetadata) }
           : {}),
       };
       // Captured BEFORE the wire call: an authoritative snapshot folded while
@@ -615,9 +626,71 @@ function* dispatchToLifecycle(
   } catch (error) {
     if (!(yield* mutationIsCurrent(agentId, ownership))) return;
     if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;
-    yield* settle('uncertain');
+    // The Unsloth switch refusal is a known pre-send refusal: nothing persisted.
+    const unslothSwitch = unslothModelSwitchFromError(error);
+    yield* settle(unslothSwitch ? 'rejected' : 'uncertain');
     yield* put(chatSendFailed(agentId, yield* sendFailureMessage(agentId, error)));
+    if (unslothSwitch)
+      yield* spawn(confirmUnslothSwitchAndResend, agentId, wsId, unslothSwitch, ownership);
   }
+}
+
+/**
+ * The managed Unsloth server holds one model (PROTOCOL §5.5). Ask before a
+ * send loads another one and unloads it for the listed agents; on confirm,
+ * resend the refused message once with the confirmation flag.
+ */
+function* confirmUnslothSwitchAndResend(
+  agentId: string,
+  wsId: string,
+  refusal: UnslothModelSwitchRefusal,
+  ownership: ReturnType<typeof captureAgentMutationOwnership>,
+): SagaGenerator<void> {
+  const refused = yield* selectChatLastAttemptedMessage.effect(agentId);
+  if (!refused) return;
+  const accepted = yield* call(confirm, {
+    title: m.agent_unslothSwitch_confirm_title(),
+    description:
+      refusal.agents.length === 1
+        ? m.agent_unslothSwitch_confirmDescription_one({ model: refusal.requestedModel })
+        : m.agent_unslothSwitch_confirmDescription_many({
+            model: refusal.requestedModel,
+            count: refusal.agents.length,
+          }),
+    items: refusal.agents.map((agent) => ({
+      label: agent.agentName,
+      ...(agent.workspaceTitle ? { detail: agent.workspaceTitle } : {}),
+    })),
+    confirmLabel: m.agent_unslothSwitch_confirm_label(),
+    destructive: true,
+  });
+  // The confirmation covers only the refused attempt, for the same owner: a
+  // newer send or retry, or an ownership change, voids it.
+  if (!accepted || !(yield* mutationIsCurrent(agentId, ownership))) return;
+  if ((yield* selectChatLastAttemptedMessage.effect(agentId)) !== refused) return;
+  // The user confirmed loading this model; a model change since then voids it.
+  const model = refused.options?.model ?? (yield* selectAgentSession.effect(agentId))?.model;
+  if (model !== refusal.requestedModel) return;
+  const admission = yield* call(prepareSubmissionRetry, agentId, wsId, refused);
+  if (!admission || (admission !== 'legacy' && !admission.isCurrent())) return;
+  // Resend through the agent's command queue, once, with the confirmation.
+  yield* put(
+    sendMessage(agentId, {
+      wsId,
+      text: refused.text,
+      imageBlocks: refused.options?.imageBlocks,
+      fileBlocks: refused.options?.fileBlocks,
+      noteIds: refused.options?.noteIds,
+      model: refusal.requestedModel,
+      messageMetadata: { ...refused.options?.messageMetadata, [UNSLOTH_SWITCH_CONFIRM_KEY]: true },
+      ...(admission !== 'legacy'
+        ? {
+            userAppMessageId: admission.submission.appMessageId,
+            submission: { scope: admission.scope, id: admission.submission.id },
+          }
+        : {}),
+    }),
+  );
 }
 
 /**
@@ -627,6 +700,7 @@ function* dispatchToLifecycle(
  * their message.
  */
 function* sendFailureMessage(agentId: string, error: unknown): SagaGenerator<string> {
+  if (unslothModelSwitchFromError(error)) return m.agent_unslothSwitch_notSent_error();
   const replacement = providerReplacementFromError(error);
   if (!replacement) {
     const message = error instanceof Error ? error.message : String(error);

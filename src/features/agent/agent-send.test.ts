@@ -1093,4 +1093,27 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     ).toHaveLength(1);
     expect(staged.display().conversation[0].status).toBe('uncertain');
   });
+
+  it('retires a submission the daemon refused for an Unsloth model switch', async () => {
+    const staged = stage();
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        throw Object.assign(new Error('switch needs confirmation'), {
+          data: {
+            code: 'unsloth-model-switch-confirmation-required',
+            currentModel: 'unsloth/Qwen3-4B-GGUF',
+            requestedModel: 'unsloth/gemma-3-27b-it-GGUF',
+            agents: [],
+          },
+        });
+      return {};
+    });
+    await expect(
+      sendMessage(AGENT, staged.submission.content, workspace(), staged.options),
+    ).rejects.toMatchObject({ data: { code: 'unsloth-model-switch-confirmation-required' } });
+    // A known pre-send refusal is rejected, not uncertain, so a confirmed
+    // resend can admit a fresh submission.
+    expect(staged.display().conversation).toEqual([]);
+  });
 });

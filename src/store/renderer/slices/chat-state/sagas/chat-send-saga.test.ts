@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   // the failed turn has no renderer-side record to resend (wake-started
   // turns, or after a reload; intent-hq/intent#7226).
   agentRetry: vi.fn(),
+  confirm: vi.fn(),
+  prepareRetry: vi.fn(),
   // Image pre-upload (monorepo#3338): default maps each inline block to a
   // deterministic reference block; individual tests override to assert the
   // failure path.
@@ -38,6 +40,14 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: mocks.confirm }));
+// Pass-through by default; the global-store-backed helper is stubbed only
+// where a test needs a fresh submission admission.
+vi.mock('$features/agent/chat-submission-retry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/agent/chat-submission-retry')>();
+  mocks.prepareRetry.mockImplementation(actual.prepareSubmissionRetry);
+  return { ...actual, prepareSubmissionRetry: mocks.prepareRetry };
+});
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { info: mocks.toastInfo, error: mocks.toastError },
 }));
@@ -84,6 +94,7 @@ import {
   agentSessionStopChatRequested,
   bulkUpsertSessions,
   initialState as sessionInitialState,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   agentQueueReducer,
@@ -122,7 +133,7 @@ import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
-import { selectChatError } from '../chat-state-selectors';
+import { selectChatError, selectChatLastAttemptedMessage } from '../chat-state-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { chatSendSaga } from './chat-send-saga';
 import { admitChatMessage } from '$features/agent/chat-submission';
@@ -985,6 +996,186 @@ describe('chatSendSaga', () => {
     expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, expected()));
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  describe('Unsloth model switch confirmation', () => {
+    async function switchRefusal() {
+      const { BackendError } = await import('$lib/client/live/backend-transport-types');
+      return new BackendError({
+        code: 'invalid_params',
+        rpcCode: -32602,
+        message: 'switching the Unsloth server unloads the model for 2 other agents',
+        data: {
+          code: 'unsloth-model-switch-confirmation-required',
+          currentModel: 'unsloth/Qwen3-4B-GGUF',
+          requestedModel: 'unsloth/gemma-3-27b-it-GGUF',
+          agents: [
+            {
+              agentId: 'agent-a',
+              agentName: 'Planner',
+              workspaceId: 'ws-a',
+              workspaceTitle: 'Dark mode',
+            },
+            {
+              agentId: 'agent-b',
+              agentName: 'Reviewer',
+              workspaceId: 'ws-b',
+              workspaceTitle: null,
+            },
+          ],
+        },
+      });
+    }
+
+    it('asks before switching, naming the affected agents, then resends confirmed', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValueOnce(undefined);
+      mocks.confirm.mockResolvedValue(true);
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }));
+      run.channel.put(
+        sendMessage(AGENT, { wsId: WS, text: 'next turn', messageMetadata: { source: 'chat' } }),
+      );
+      // The confirmed resend is a fresh command on the agent's queue; the
+      // store feeds dispatched actions back to the saga.
+      const resend = await vi.waitFor(() => {
+        const action = run.dispatch.mock.calls
+          .map(([dispatched]) => dispatched)
+          .find((dispatched) => dispatched.type === sendMessage.type);
+        expect(action).toBeDefined();
+        return action;
+      });
+      run.channel.put(resend);
+      await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(2));
+
+      const [request] = mocks.confirm.mock.calls[0];
+      expect(request.items).toEqual([
+        { label: 'Planner', detail: 'Dark mode' },
+        { label: 'Reviewer' },
+      ]);
+      const [, content, , resent] = mocks.send.mock.calls[1];
+      expect(content).toBe('next turn');
+      expect(resent.messageMetadata).toEqual({
+        source: 'chat',
+        confirmUnslothModelSwitch: true,
+      });
+      expect(mocks.send.mock.calls[0][3].messageMetadata).toEqual({ source: 'chat' });
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('rejects a refused submission and resends it under a fresh admission', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal());
+      mocks.confirm.mockResolvedValue(true);
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }), undefined, {
+        id: WS,
+        name: 'Workspace',
+        path: '/repo',
+        myRole: 'owner',
+      } as Workspace);
+      const payload = { wsId: WS, text: 'next turn' };
+      const admitted = admitChatMessage(
+        {
+          get state() {
+            return run.state();
+          },
+          dispatch: run.dispatch,
+        },
+        AGENT,
+        payload,
+      );
+      expect(admitted).not.toBeNull();
+      mocks.prepareRetry.mockResolvedValueOnce({
+        isCurrent: () => true,
+        scope: admitted!.scope,
+        submission: { id: 'fresh-submission', appMessageId: 'fresh-app-message' },
+      });
+      run.channel.put(
+        sendMessage(AGENT, {
+          ...payload,
+          submission: { scope: admitted!.scope, id: admitted!.submission.id },
+        }),
+      );
+      await vi.waitFor(() => expect(mocks.prepareRetry).toHaveBeenCalledTimes(1));
+
+      const [, , refused] = mocks.prepareRetry.mock.calls[0];
+      expect(refused.submission?.outcome).toBe('rejected');
+      expect(selectChatLastAttemptedMessage.select(run.state(), AGENT)).toBe(refused);
+      const resend = await vi.waitFor(() => {
+        const action = run.dispatch.mock.calls
+          .map(([dispatched]) => dispatched)
+          .find((dispatched) => dispatched.type === sendMessage.type);
+        expect(action).toBeDefined();
+        return action;
+      });
+      expect(resend.payload.payload).toMatchObject({
+        text: 'next turn',
+        userAppMessageId: 'fresh-app-message',
+        submission: { id: 'fresh-submission' },
+        messageMetadata: { confirmUnslothModelSwitch: true },
+      });
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('does not resend once a newer message replaced the refused one', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValue(undefined);
+      let answer: (accepted: boolean) => void = () => {};
+      mocks.confirm.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
+      const run = harness();
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'something else' }));
+      await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(2));
+
+      answer(true);
+      await settle();
+      await settle();
+      expect(mocks.send).toHaveBeenCalledTimes(2);
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === sendMessage.type)).toBe(
+        false,
+      );
+      expect(
+        mocks.send.mock.calls.some(
+          ([, , , options]) => options?.messageMetadata?.confirmUnslothModelSwitch,
+        ),
+      ).toBe(false);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('does not resend when the agent model changed while the dialog was open', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal()).mockResolvedValue(undefined);
+      let answer: (accepted: boolean) => void = () => {};
+      mocks.confirm.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
+      const run = harness(session({ model: 'unsloth/gemma-3-27b-it-GGUF' }));
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      run.dispatch(updateSession(AGENT, { model: 'unsloth/Llama-3.2-3B-GGUF' }));
+
+      answer(true);
+      await settle();
+      await settle();
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === sendMessage.type)).toBe(
+        false,
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('leaves the message unsent when the user cancels', async () => {
+      mocks.send.mockRejectedValueOnce(await switchRefusal());
+      mocks.confirm.mockResolvedValue(false);
+      const run = harness();
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(mocks.send).toHaveBeenCalledTimes(1);
+      expect(run.dispatch.mock.calls.some(([action]) => action.type === chatSendFailed.type)).toBe(
+        true,
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    });
   });
 
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {

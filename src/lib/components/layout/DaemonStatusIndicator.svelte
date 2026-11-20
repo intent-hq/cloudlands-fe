@@ -91,7 +91,7 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
-  import { formatTransportLabel } from '$lib/utils/daemon-status-format';
+  import { formatTransportLabel, formatUptime } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
   import {
     faPlus,
@@ -109,6 +109,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { selectPausedCloudSandboxCount } from '$features/cloud-machines/cloud-machines-selectors';
   import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
+  import UnslothServerSubmenu from './UnslothServerSubmenu.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
@@ -118,7 +119,6 @@
     selectDaemonStatusCheckFailure,
     selectDaemonVersionComparison,
     selectUnslothStatus,
-    selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     agentMemoryBreakdownClosed,
@@ -167,7 +167,6 @@
   const statusCheckFailure$ = selectDaemonStatusCheckFailure();
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
-  const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectBackendConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
@@ -304,23 +303,6 @@
       : m.layout_daemonStatus_versionAhead_tooltip(params);
   });
 
-  // Format uptime from seconds to human-readable string
-  function formatUptime(seconds: number | undefined): string {
-    if (seconds === undefined) return m.layout_daemonStatus_unknown_label();
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${secs}s`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${secs}s`;
-    } else {
-      return `${secs}s`;
-    }
-  }
-
   // Compute live uptime: base uptime + elapsed time since lastUpdated. While
   // degraded the freshness note promises the details are from the last
   // successful check, so the uptime stays at that check's value instead of
@@ -381,14 +363,6 @@
       liveUptimeSeconds = undefined;
     }
   });
-
-  // Short model label for the unsloth row: the repo name without the org
-  // prefix (e.g. "unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
-  const unslothModelLabel = $derived(
-    $unslothStatus$?.repoId
-      ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId)
-      : '',
-  );
 
   // Compact machine name shown next to the status dot when this window's
   // connection is remote (name only, no host:port — same preference order as
@@ -877,110 +851,23 @@
                     {m.layout_daemonStatus_noStats_label()}
                   </div>
                 {/if}
-
-                <!-- Managed Unsloth server (only when one is running) -->
-                {#if $unslothStatus$?.running}
-                  <div class="h-px bg-border my-1"></div>
-
-                  <Header class="pt-1 pb-0.5" size={6}
-                    >{m.layout_daemonStatus_unslothServer_header()}</Header
-                  >
-
-                  <!-- Model (HF repo id, shortened) -->
-                  {#if $unslothStatus$.repoId}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
-                      <Tooltip side="left" contentClass="z-[10001]">
-                        {#snippet content()}
-                          <span>{$unslothStatus$.repoId}</span>
-                        {/snippet}
-                        <span class="text-xs truncate max-w-32">{unslothModelLabel}</span>
-                      </Tooltip>
-                    </div>
-                  {/if}
-
-                  <!-- Phase -->
-                  {#if $unslothStatus$.phase}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
-                      <span
-                        class={cn(
-                          'text-xs',
-                          $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
-                        )}
-                      >
-                        {$unslothStatus$.phase}
-                      </span>
-                    </div>
-                  {/if}
-
-                  <!-- Port -->
-                  {#if $unslothStatus$.port !== undefined}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
-                      <span class="tabular-nums text-xs">{$unslothStatus$.port}</span>
-                    </div>
-                  {/if}
-
-                  <!-- Uptime -->
-                  {#if $unslothStatus$.uptimeSecs !== undefined}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                      <span class="tabular-nums text-xs" aria-live="off"
-                        >{formatUptime($unslothStatus$.uptimeSecs)}</span
-                      >
-                    </div>
-                  {/if}
-
-                  <!-- CPU (process tree) -->
-                  {#if $unslothStatus$.cpuPercent !== undefined}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                      <span class="tabular-nums text-xs" aria-live="off"
-                        >{formatCpu($unslothStatus$.cpuPercent)}</span
-                      >
-                    </div>
-                  {/if}
-
-                  <!-- Memory (process tree) -->
-                  {#if $unslothStatus$.memoryBytes !== undefined}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                      <span class="tabular-nums text-xs" aria-live="off"
-                        >{formatMemory($unslothStatus$.memoryBytes)}</span
-                      >
-                    </div>
-                  {/if}
-
-                  <!-- Attached agents (omitted when the agent manager is not attached) -->
-                  {#if $unslothStatus$.attachedAgentCount !== undefined}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span
-                      >
-                      <span class="tabular-nums text-xs">{$unslothStatus$.attachedAgentCount}</span>
-                    </div>
-                  {/if}
-
-                  <!-- Stop action -->
-                  <Menu.Separator />
-                  <Menu.Item
-                    destructive
-                    disabled={$unslothStopping$}
-                    onSelect={() => {
-                      dropdownOpen = false;
-                      stopUnslothDialogOpen = true;
-                    }}
-                  >
-                    {$unslothStopping$
-                      ? m.layout_daemonStatus_stopUnsloth_stopping_label()
-                      : m.layout_daemonStatus_stopUnsloth_action_label()}
-                  </Menu.Item>
-                {/if}
               </div>
             {/if}
           </section>
         </Menu.SubContent>
       </Menu.Sub>
+
+      <!-- Managed Unsloth server (only when one is running) -->
+      {#if $health$ !== 'down' && $unslothStatus$?.running}
+        <UnslothServerSubmenu
+          status={$unslothStatus$}
+          {menuAnchor}
+          onStop={() => {
+            dropdownOpen = false;
+            stopUnslothDialogOpen = true;
+          }}
+        />
+      {/if}
 
       <!-- Multi-backend devices list + final Devices CTA -->
       <div class="h-px bg-border my-1"></div>
