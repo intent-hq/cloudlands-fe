@@ -7,7 +7,7 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import type { PasskeyDeviceCredential, PasskeyDeviceListResult } from '$shared/ipc/passkeys';
 
-export type DevicePasskeysStatus = 'unknown' | 'loading' | 'ready' | 'error' | 'unavailable';
+type DevicePasskeysStatus = 'unknown' | 'loading' | 'ready' | 'error' | 'unavailable';
 
 /** What Settings → Passkeys renders. */
 export interface DevicePasskeysView {
