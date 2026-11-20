@@ -101,6 +101,7 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
  * Channels that web pages in the browser panel may invoke (through the
  * passkey frame preload). Closed list: every other channel admits app
  * renderers only. The handlers still check the frame origin and RP ID.
+ * @internal Exported for the authorization tests.
  */
 export const BROWSER_PANEL_GUEST_IPC_CHANNELS: ReadonlySet<string> = new Set([
   IPC_CHANNELS.PASSKEYS.PAGE_CREATE,
@@ -145,7 +146,10 @@ export function createAuthorizedIpcHandler<T extends (...args: any[]) => any>(
   }) as T;
 }
 
-/** A handler for a {@link BROWSER_PANEL_GUEST_IPC_CHANNELS} channel: browser-panel webviews only. */
+/**
+ * A handler for a {@link BROWSER_PANEL_GUEST_IPC_CHANNELS} channel: browser-panel webviews only.
+ * @internal Exported for the authorization tests.
+ */
 export function createBrowserPanelGuestIpcHandler<T extends (...args: any[]) => any>(
   channel: string,
   handler: T,
