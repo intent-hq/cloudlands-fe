@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hiddenHomeRepositories,
   isHomeRepositoryHidden,
   newestHomeRepositoryWorkspace,
+  readdedHomeRepositories,
   revivedHomeRepositories,
 } from './home-hidden-repos';
 
@@ -41,5 +43,34 @@ describe('hidden Home repositories', () => {
     ];
     expect(revivedHomeRepositories(hidden, repos)).toEqual(['acme/web']);
     expect(revivedHomeRepositories(hidden, repos.slice(0, 1))).toEqual([]);
+  });
+});
+
+// Failure cases: a deleted folder still lists under Hidden, never comes back when
+// added again, or comes back from a stale recent list that still had it.
+describe('removed Home folders', () => {
+  const workspaces = [at('2026-11-01T10:00:00Z')];
+  const newest = newestHomeRepositoryWorkspace(workspaces);
+  const folder = { key: '/repos/tools', label: 'tools', repoPath: '/repos/tools', workspaces };
+  const github = { key: 'acme/app', label: 'acme/app', repoPath: '/repos/app', workspaces };
+  const hidden = { [folder.key]: newest, [github.key]: newest };
+
+  it('leaves a removed folder out of the Hidden section', () => {
+    expect(hiddenHomeRepositories(hidden, [folder, github], [folder.key])).toEqual([github]);
+    expect(hiddenHomeRepositories(hidden, [folder, github])).toEqual([github, folder]);
+  });
+
+  it('brings a removed folder back when it is added again', () => {
+    const known = [{ path: '/repos/tools', addedAt: '2026-11-05T00:00:00Z' }];
+    expect(readdedHomeRepositories(hidden, [folder.key], [folder, github], known)).toEqual([
+      folder.key,
+    ]);
+  });
+
+  it('ignores a recent list entry from before the removal', () => {
+    const stale = [{ path: '/repos/tools', addedAt: '2026-10-01T00:00:00Z' }];
+    expect(readdedHomeRepositories(hidden, [folder.key], [folder], stale)).toEqual([]);
+    const fresh = [{ path: '/repos/app', addedAt: '2026-11-05T00:00:00Z' }];
+    expect(readdedHomeRepositories(hidden, [folder.key], [folder, github], fresh)).toEqual([]);
   });
 });

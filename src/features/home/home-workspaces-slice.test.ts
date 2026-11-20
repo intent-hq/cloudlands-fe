@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
 import { recentRepositoryRemovalFailed } from '$store/renderer/slices/known-repos/known-repos-slice';
 import {
+  homeHiddenReposSynced,
+  homeRepositoriesUnhidden,
   homeRepositoryHidden,
+  homeRepositoryRemoved,
   homeWorkspacesReducer,
   resetHomeWorkspaceView,
   setHomePreviewAgent,
@@ -60,6 +63,26 @@ describe('home workspaces hidden repositories', () => {
     expect(hidden.hiddenRepos).toEqual({ '/repos/tools': 5 });
     const restored = reduce(hidden, recentRepositoryRemovalFailed('/repos/tools', '/repos/tools'));
     expect(restored.hiddenRepos).toEqual({});
+  });
+
+  it('records a deleted folder as removed, and forgets it when unhidden or refused', () => {
+    const removed = reduce(initial(), homeRepositoryRemoved('/repos/tools', 5));
+    expect(removed.hiddenRepos).toEqual({ '/repos/tools': 5 });
+    expect(removed.removedRepos).toEqual(['/repos/tools']);
+    expect(reduce(removed, homeRepositoriesUnhidden(['/repos/tools'])).removedRepos).toEqual([]);
+    const refused = reduce(removed, recentRepositoryRemovalFailed('/repos/tools', '/repos/tools'));
+    expect(refused.hiddenRepos).toEqual({});
+    expect(refused.removedRepos).toEqual([]);
+    expect(reduce(removed, homeRepositoryHidden('/repos/tools', 6)).removedRepos).toEqual([]);
+  });
+
+  it('syncs removed folders from another window', () => {
+    const scoped = reduce(initial(), updateHomeWorkspaceView({ persistenceScope: 'scope' }));
+    const synced = reduce(
+      scoped,
+      homeHiddenReposSynced('scope', { '/repos/tools': 5 }, ['/repos/tools', '/repos/gone']),
+    );
+    expect(synced.removedRepos).toEqual(['/repos/tools']);
   });
 
   it('keeps hidden repositories when a refused removal hid nothing', () => {

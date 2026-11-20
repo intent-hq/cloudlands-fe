@@ -40,6 +40,11 @@ export interface HomePersistenceDocument {
    * workspace brings the repository back. Additive and omitted when empty.
    */
   hiddenRepos?: Record<string, number>;
+  /**
+   * Hidden local folders the user deleted: they stay out of the Hidden section too.
+   * Always a subset of `hiddenRepos`. Additive and omitted when empty.
+   */
+  removedRepos?: string[];
 }
 /** Bounded personal state; new set-asides are refused (not evicted) at capacity. */
 export const HOME_SET_ASIDE_CAPACITY = 1000;
@@ -158,15 +163,30 @@ export function normalizeHomeHiddenRepos(value: unknown): Record<string, number>
       hidden[key] = Math.floor(newest);
   return hidden;
 }
+export function normalizeHomeRemovedRepos(
+  value: unknown,
+  hiddenRepos: Record<string, number>,
+): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (key): key is string => typeof key === 'string' && Object.hasOwn(hiddenRepos, key),
+      ),
+    ),
+  ];
+}
 function homeDocument(
   configuration: HomeConfiguration,
   setAside: Record<string, HomeSetAsideRecord>,
   hiddenRepos: Record<string, number>,
+  removedRepos: string[],
 ): HomePersistenceDocument {
   return {
     configuration,
     ...(Object.keys(setAside).length > 0 ? { setAside } : {}),
     ...(Object.keys(hiddenRepos).length > 0 ? { hiddenRepos } : {}),
+    ...(removedRepos.length > 0 ? { removedRepos } : {}),
   };
 }
 export function homePersistenceKey(backendId: string, principalId: string): string {
@@ -180,25 +200,31 @@ export function readHomePersistence(value: unknown): HomePersistenceDocument {
   // savedViews, activeSavedViewId and workspaceIds fields entirely.
   // Never import an unscoped key into a newly authenticated account.
   const configuration = normalizeHomeConfiguration(raw.configuration ?? raw.settings ?? raw);
+  const hiddenRepos = normalizeHomeHiddenRepos(raw.hiddenRepos);
   return homeDocument(
     configuration,
     normalizeHomeSetAside(raw.setAside),
-    normalizeHomeHiddenRepos(raw.hiddenRepos),
+    hiddenRepos,
+    normalizeHomeRemovedRepos(raw.removedRepos, hiddenRepos),
   );
 }
-// Version 2 stays: older builds ignore the additive `setAside` and `hiddenRepos` fields.
+// Version 2 stays: older builds ignore the additive `setAside`, `hiddenRepos` and
+// `removedRepos` fields (they list removed folders under Hidden).
 export function persistedHomeState<
   T extends HomeConfiguration & {
     setAside?: Record<string, HomeSetAsideRecord>;
     hiddenRepos?: Record<string, number>;
+    removedRepos?: string[];
   },
 >(state: T): HomePersistenceDocument & { version: 2 } {
+  const hiddenRepos = normalizeHomeHiddenRepos(state.hiddenRepos);
   return {
     version: 2,
     ...homeDocument(
       normalizeHomeConfiguration(state),
       normalizeHomeSetAside(state.setAside),
-      normalizeHomeHiddenRepos(state.hiddenRepos),
+      hiddenRepos,
+      normalizeHomeRemovedRepos(state.removedRepos, hiddenRepos),
     ),
   };
 }

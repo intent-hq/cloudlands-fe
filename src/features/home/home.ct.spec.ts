@@ -782,3 +782,17 @@ test('Home sidebar deletes local folders and hides GitHub repositories', async (
   await expect(page.getByRole('menuitem', { name: 'Delete', exact: true })).toHaveCount(0);
   await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
 });
+
+test('Home sidebar removes a deleted local folder that still has workspaces', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview, { props: { scenario: 'repository-labels' } });
+  const sidebar = component.locator('.home-sidebar-content');
+  const local = sidebar.getByRole('button', { name: 'local-tools', exact: true });
+  await local.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+  await expect(local).toHaveCount(0);
+  await expect(sidebar.getByRole('button', { name: /^Hidden/ })).toHaveCount(0);
+  await expect(component.getByRole('option', { name: /local-tools/ }).first()).toBeVisible();
+});

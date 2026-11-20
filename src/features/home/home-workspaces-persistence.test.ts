@@ -125,6 +125,7 @@ it('keeps hidden sidebar repositories across reloads', () => {
     readHomePersistence(persistedHomeState({ ...stored.configuration, ...stored })).hiddenRepos,
   ).toEqual(stored.hiddenRepos);
   expect(readHomePersistence({ configuration: {} })).not.toHaveProperty('hiddenRepos');
+  expect(readHomePersistence({ configuration: {} })).not.toHaveProperty('removedRepos');
   const many = Object.fromEntries(
     Array.from({ length: HOME_HIDDEN_REPOS_CAPACITY + 1 }, (_, index) => [`repo-${index}`, index]),
   );
@@ -132,4 +133,18 @@ it('keeps hidden sidebar repositories across reloads', () => {
   expect(Object.keys(kept)).toHaveLength(HOME_HIDDEN_REPOS_CAPACITY);
   expect(kept).not.toHaveProperty('repo-0');
   expect(kept).toHaveProperty(`repo-${HOME_HIDDEN_REPOS_CAPACITY}`);
+});
+
+// Removed folders survive reload, but only while their hidden record does.
+it('keeps removed sidebar folders across reloads', () => {
+  const stored = readHomePersistence({
+    version: 2,
+    configuration: {},
+    hiddenRepos: { '/home/me/plain': 5, 'acme/app': 6 },
+    removedRepos: ['/home/me/plain', '/home/me/gone', 7, '/home/me/plain'],
+  });
+  expect(stored.removedRepos).toEqual(['/home/me/plain']);
+  expect(
+    readHomePersistence(persistedHomeState({ ...stored.configuration, ...stored })).removedRepos,
+  ).toEqual(['/home/me/plain']);
 });

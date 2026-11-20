@@ -4,8 +4,13 @@ import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import { removeRecentRepository } from '$store/renderer/slices/known-repos/known-repos-slice';
+import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
 import { newestHomeRepositoryWorkspace } from './home-hidden-repos';
-import { homeRepositoriesUnhidden, homeRepositoryHidden } from './home-workspaces-slice';
+import {
+  homeRepositoriesUnhidden,
+  homeRepositoryHidden,
+  homeRepositoryRemoved,
+} from './home-workspaces-slice';
 
 export interface HomeRepositoryMenuOptions {
   repo: RepositoryGroup;
@@ -30,8 +35,8 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
     options.onClose();
     action();
   };
-  const hide = () =>
-    store.dispatch(homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)));
+  const newest = () => newestHomeRepositoryWorkspace(repo.workspaces);
+  const hide = () => store.dispatch(homeRepositoryHidden(repo.key, newest()));
   return [
     ...(options.canCreate
       ? [
@@ -60,9 +65,22 @@ export function createHomeRepositoryMenu(options: HomeRepositoryMenuOptions): Si
             disabled: !options.loaded,
             onClick: then(() => {
               options.onLeave();
-              // Existing workspaces would keep the folder listed, so it is also hidden.
+              // Existing workspaces would keep the folder listed, so it is also removed
+              // from the sidebar; the workspaces stay in All repos.
               const hidden = repo.workspaces.length > 0;
-              if (hidden) hide();
+              // Recording the folder's add time too keeps a stale folder list in another
+              // window from reading as a re-add (see readdedHomeRepositories).
+              const added = selectKnownRepos
+                .select(store.state)
+                .find((known) => known.path === repo.repoPath)?.addedAt;
+              const addedAt = added ? Date.parse(added) : 0;
+              if (hidden)
+                store.dispatch(
+                  homeRepositoryRemoved(
+                    repo.key,
+                    Math.max(newest(), Number.isFinite(addedAt) ? addedAt : 0),
+                  ),
+                );
               if (repo.repoPath)
                 store.dispatch(
                   hidden

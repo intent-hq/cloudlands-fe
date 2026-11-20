@@ -25,6 +25,7 @@ import { homeWorkspacePersistenceSaga } from './home-workspaces-saga';
 import {
   homeRepositoriesUnhidden,
   homeRepositoryHidden,
+  homeRepositoryRemoved,
   homeWorkspacesReducer,
   updateHomeWorkspaceView,
 } from './home-workspaces-slice';
@@ -138,6 +139,20 @@ describe('Home persistence behavior', () => {
     b.dispatch(homeRepositoriesUnhidden(['acme/app']));
     await settle();
     expect(JSON.parse(mocks.values.get(key)!)).not.toHaveProperty('hiddenRepos');
+    a.task.cancel();
+    b.task.cancel();
+  });
+  it('keeps a folder another window removed when this window saves its view', async () => {
+    const key = homePersistenceKey('one', 'alice');
+    const a = harness(key);
+    const b = harness(key);
+    await settle();
+    a.dispatch(homeRepositoryRemoved('/repos/tools', 5));
+    await settle();
+    b.dispatch(updateHomeWorkspaceView({ query: 'stale window' }));
+    await settle();
+    expect(JSON.parse(mocks.values.get(key)!).removedRepos).toEqual(['/repos/tools']);
+    expect(b.state().homeWorkspaces.removedRepos).toEqual(['/repos/tools']);
     a.task.cancel();
     b.task.cancel();
   });
