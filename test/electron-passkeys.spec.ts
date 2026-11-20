@@ -13,6 +13,7 @@ import {
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type Server } from 'node:http';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
@@ -63,14 +64,22 @@ test.beforeAll(async () => {
         outDir: bundleDir,
         emptyOutDir: false,
         minify: false,
-        rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: fileName } },
+        rollupOptions: {
+          external: ['electron'],
+          output: { format: 'cjs', entryFileNames: fileName },
+        },
       },
     });
   await bundle(resolve('src/features/passkeys/main/passkeys.ipc.ts'), 'passkeys-main.cjs');
   await bundle(resolve('src/preload/passkey-page.ts'), 'passkey-page.js');
   await chmod(join(fixture, 'fake-sidecar.cjs'), 0o755);
 
-  const swa = readFileSync(resolve('node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js'));
+  const swa = readFileSync(
+    join(
+      createRequire(import.meta.url).resolve('@simplewebauthn/browser'),
+      '../../dist/bundle/index.umd.min.js',
+    ),
+  );
   guestServer = createHttpServer((req, res) => {
     const port = String((guestServer.address() as { port: number }).port);
     res.setHeader('Cache-Control', 'no-store');
@@ -189,7 +198,9 @@ async function close(launched: Launched | undefined) {
 
 function guest<T = unknown>(app: ElectronApplication, code: string): Promise<T> {
   return app.evaluate(async ({ webContents }, script) => {
-    const view = webContents.getAllWebContents().find((contents) => contents.getType() === 'webview');
+    const view = webContents
+      .getAllWebContents()
+      .find((contents) => contents.getType() === 'webview');
     if (!view) throw new Error('No guest webview');
     return view.executeJavaScript(script);
   }, code) as Promise<T>;
@@ -230,7 +241,10 @@ async function shoot(page: Page, name: string) {
       document.documentElement.classList.remove('light', 'dark');
       document.documentElement.classList.add(next);
     }, theme);
-    await dialog.screenshot({ path: join(artifacts, `${name}--${theme}.png`), animations: 'disabled' });
+    await dialog.screenshot({
+      path: join(artifacts, `${name}--${theme}.png`),
+      animations: 'disabled',
+    });
   }
   await page.evaluate(() => {
     document.documentElement.classList.remove('dark');
@@ -326,13 +340,15 @@ test.describe.serial('browser-panel passkeys', () => {
       id: Buffer.from('cred-usb').toString('base64url'),
       userHandle: Buffer.from('user-1').toString('base64url'),
       clientData: { type: 'webauthn.get', challenge: result.challenge, crossOrigin: false },
-      json: { type: 'public-key', response: { userHandle: Buffer.from('user-1').toString('base64url') } },
+      json: {
+        type: 'public-key',
+        response: { userHandle: Buffer.from('user-1').toString('base64url') },
+      },
     });
     const requests = sidecarRequests(log);
-    expect(requests.filter((request) => request.method === 'pin').map((r) => r.params.pin)).toEqual([
-      '0000',
-      '1234',
-    ]);
+    expect(requests.filter((request) => request.method === 'pin').map((r) => r.params.pin)).toEqual(
+      ['0000', '1234'],
+    );
     expect(requests.find((request) => request.method === 'choose')?.params.index).toBe(1);
   });
 
@@ -358,7 +374,11 @@ test.describe.serial('browser-panel passkeys', () => {
     const requests = sidecarRequests(log);
     const ceremony = requests.filter((request) => request.method === 'get').at(-1)!;
     await expect
-      .poll(() => sidecarRequests(log).some((r) => r.method === 'cancel' && r.params.ceremony === ceremony.id))
+      .poll(() =>
+        sidecarRequests(log).some(
+          (r) => r.method === 'cancel' && r.params.ceremony === ceremony.id,
+        ),
+      )
       .toBe(true);
   });
 
@@ -403,7 +423,10 @@ test.describe.serial('browser-panel passkeys', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('dialog')).toContainText('locked after too many wrong PINs');
     await shoot(page, '6-error-pin-locked');
-    expect(await settled(app, 'locked')).toMatchObject({ state: 'rejected', name: 'NotAllowedError' });
+    expect(await settled(app, 'locked')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });

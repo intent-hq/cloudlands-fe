@@ -24,7 +24,7 @@ const logger = new Logger('Passkeys');
 const CHANNELS = IPC_CHANNELS.PASSKEYS;
 const BINARY_NAME = 'intent-passkey';
 
-export function resolvePasskeyBinaryPath(
+function resolvePasskeyBinaryPath(
   env: NodeJS.ProcessEnv = process.env,
   resourcesPath: string | undefined = process.resourcesPath,
   appPath: string = app.getAppPath(),

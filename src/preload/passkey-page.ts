@@ -26,7 +26,6 @@ const bridge: PasskeyPageBridge = {
  * not reference anything outside its own body.
  */
 export function installPasskeyShim(bridge: PasskeyPageBridge): void {
-  /* eslint-disable @typescript-eslint/no-explicit-any -- page-world WebAuthn shapes */
   const w = globalThis as any;
   const container = w.CredentialsContainer?.prototype;
   if (!container || typeof w.PublicKeyCredential !== 'function') return;
@@ -290,7 +289,6 @@ export function installPasskeyShim(bridge: PasskeyPageBridge): void {
       configurable: true,
     });
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 contextBridge.executeInMainWorld({ func: installPasskeyShim, args: [bridge] });

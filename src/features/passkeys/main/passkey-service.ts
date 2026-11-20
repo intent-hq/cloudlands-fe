@@ -32,8 +32,14 @@ import {
 const logger = new Logger('Passkeys');
 const CHANNELS = IPC_CHANNELS.PASSKEYS;
 
-const base64url = z.string().regex(/^[A-Za-z0-9_-]*$/).max(16_384);
-const descriptor = z.object({ id: base64url, transports: z.array(z.string().max(32)).max(8).optional() });
+const base64url = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]*$/)
+  .max(16_384);
+const descriptor = z.object({
+  id: base64url,
+  transports: z.array(z.string().max(32)).max(8).optional(),
+});
 const optionalText = z.string().max(256).optional();
 
 const CreateRequestSchema = z.object({
@@ -41,7 +47,11 @@ const CreateRequestSchema = z.object({
   publicKey: z.object({
     challenge: base64url.min(1),
     rp: z.object({ id: optionalText, name: z.string().max(256) }),
-    user: z.object({ id: base64url.min(1), name: z.string().max(256), displayName: z.string().max(256) }),
+    user: z.object({
+      id: base64url.min(1),
+      name: z.string().max(256),
+      displayName: z.string().max(256),
+    }),
     pubKeyCredParams: z.array(z.object({ type: z.string(), alg: z.number().int() })).max(32),
     excludeCredentials: z.array(descriptor).max(256).optional(),
     authenticatorSelection: z

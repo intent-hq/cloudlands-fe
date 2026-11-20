@@ -36,7 +36,10 @@ export interface ClientDataExpectation {
  * v1 has no cross-origin frames, so `crossOrigin` must be false and
  * `topOrigin` absent.
  */
-export function clientDataMatches(clientDataJSON: Buffer, expected: ClientDataExpectation): boolean {
+export function clientDataMatches(
+  clientDataJSON: Buffer,
+  expected: ClientDataExpectation,
+): boolean {
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(clientDataJSON.toString('utf8')) as Record<string, unknown>;

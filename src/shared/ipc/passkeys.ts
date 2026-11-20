@@ -20,7 +20,7 @@
 
 export type PasskeyTransport = 'hybrid' | 'usb';
 
-export interface PasskeyCredentialDescriptor {
+interface PasskeyCredentialDescriptor {
   id: string;
   transports?: string[];
 }
@@ -48,20 +48,6 @@ export interface PasskeyPageGetOptions {
   allowCredentials?: PasskeyCredentialDescriptor[];
   userVerification?: string;
   timeout?: number;
-}
-
-export interface PasskeyPageCreateRequest {
-  requestId: string;
-  publicKey: PasskeyPageCreateOptions;
-}
-
-export interface PasskeyPageGetRequest {
-  requestId: string;
-  publicKey: PasskeyPageGetOptions;
-}
-
-export interface PasskeyPageCancelRequest {
-  requestId: string;
 }
 
 export interface PasskeyCreatedCredential {
@@ -103,7 +89,7 @@ export type PasskeyPageResult =
 
 export type PasskeyCeremonyKind = 'create' | 'get';
 
-export type PasskeyHybridAvailability = 'available' | 'bluetooth-off' | 'bluetooth-missing';
+type PasskeyHybridAvailability = 'available' | 'bluetooth-off' | 'bluetooth-missing';
 
 export type PasskeyProgress =
   | 'starting'
@@ -122,7 +108,7 @@ export type PasskeyErrorReason =
   | 'unavailable'
   | 'failed';
 
-export interface PasskeyAccount {
+interface PasskeyAccount {
   index: number;
   userName: string;
   userDisplayName: string;

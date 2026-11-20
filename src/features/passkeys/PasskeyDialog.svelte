@@ -55,7 +55,6 @@
       return;
     }
     let current = true;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- renders the QR the dialog already holds; nothing is fetched
     void import('qrcode')
       .then(({ default: QRCode }) => QRCode.toDataURL(data, { width: 512, margin: 2 }))
       .then((url) => {

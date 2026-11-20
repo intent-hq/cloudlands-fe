@@ -2,7 +2,8 @@ const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 
 const [profile, url, bundleDir] = process.argv.slice(2);
-if (!profile || !url || !bundleDir) throw new Error('profile, host URL and bundle dir are required');
+if (!profile || !url || !bundleDir)
+  throw new Error('profile, host URL and bundle dir are required');
 app.setPath('userData', profile);
 app.setPath('sessionData', profile);
 
