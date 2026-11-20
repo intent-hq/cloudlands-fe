@@ -81,6 +81,7 @@ import {
   buildMainClientHelloParams,
   getOrCreateClientId,
   persistClientId,
+  getClientHostIdentity,
   getLocalMachineName,
   setLocalHostIdentity,
 } from './client-identity';
@@ -149,6 +150,13 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import {
+  buildBackendsReport,
+  registerBackendRelayHandler,
+  sendBackendsReport,
+  type LocalBackendFacts,
+  type RelayDeps,
+} from './assistant-backend-relay';
 import {
   requestDesktopPermissions,
   requestLocalDesktopPermissions,
@@ -1616,6 +1624,78 @@ export function getBackendClient(): JsonRpcClient {
   return getLocalBackendClient();
 }
 
+// ============================================================================
+// Assistant remote backends: report this app's backends, relay calls
+// ============================================================================
+
+let localBackendFacts: LocalBackendFacts | null = null;
+let backendsReportTimer: ReturnType<typeof setTimeout> | null = null;
+const pendingReportTargets = new Set<JsonRpcClient>();
+
+const assistantRelayDeps: RelayDeps = {
+  list: () => connectionsStore.list(),
+  localFacts: () => localBackendFacts,
+  clientFor: (connectionId) =>
+    connectionId === LOCAL_CONNECTION_ID
+      ? Promise.resolve(getLocalBackendClient())
+      : connectBackendClient(connectionId),
+};
+
+async function refreshLocalBackendFacts(): Promise<void> {
+  try {
+    const status = await getLocalBackendClient().request<{
+      fingerprint?: unknown;
+      port?: unknown;
+      version?: unknown;
+    }>('system.status');
+    const fingerprint = typeof status?.fingerprint === 'string' ? status.fingerprint : '';
+    if (!fingerprint) return;
+    const host = getClientHostIdentity();
+    localBackendFacts = {
+      name: getLocalMachineName() ?? host.hostname,
+      host: host.hostname,
+      port: typeof status?.port === 'number' ? status.port : 0,
+      fingerprint,
+      ...(typeof status?.version === 'string' ? { daemonVersion: status.version } : {}),
+    };
+  } catch {
+    // Without its fingerprint the local daemon is simply not reported.
+  }
+}
+
+/** Debounced `backends.report` to `targets` (every owner client when omitted). */
+function scheduleBackendsReport(targets?: JsonRpcClient[]): void {
+  ensureBackendsReportSubscriptions();
+  const clients =
+    targets ??
+    [...backendClients.values()].filter((client) => !invitedClientCredentials.has(client));
+  for (const client of clients) pendingReportTargets.add(client);
+  if (backendsReportTimer) return;
+  backendsReportTimer = setTimeout(() => {
+    backendsReportTimer = null;
+    const targetsNow = [...pendingReportTargets];
+    pendingReportTargets.clear();
+    void (async () => {
+      await refreshLocalBackendFacts();
+      const report = buildBackendsReport(
+        await connectionsStore.list(),
+        (id) => backendClients.get(id)?.getStatus() === 'connected',
+        localBackendFacts,
+      );
+      await Promise.all(targetsNow.map((client) => sendBackendsReport(client, report)));
+    })();
+  }, 500);
+}
+
+let backendsReportSubscribed = false;
+/** Re-report on every saved-connection change and backend status change. */
+function ensureBackendsReportSubscriptions(): void {
+  if (backendsReportSubscribed) return;
+  backendsReportSubscribed = true;
+  connectionsStore.onConnectionsMutated(() => scheduleBackendsReport());
+  backendStatusForwarder.on('status', () => scheduleBackendsReport());
+}
+
 /** Return a live pooled client by connection id, without creating one. */
 export function getBackendClientForConnection(id: string): JsonRpcClient | undefined {
   return backendClients.get(id);
@@ -2157,6 +2237,7 @@ function createAdditionalBackendClient(
               hello?.server?.capabilities?.collaborationIdentity === 1;
           }
           handleHelloProtocolVersion(helloProtocolVersion, meta);
+          if (!invitedCredential) scheduleBackendsReport([instance]);
           // #3649: log each connected daemon's build identity once at INFO, keyed
           // by connection id so multi-backend setups record every daemon build.
           logDaemonHelloBuild(result, id);
@@ -2391,6 +2472,8 @@ function createAdditionalBackendClient(
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   registerDesktopExecReverseHandler(instance, id);
+  // Owner connections only: a guest credential never reports or relays.
+  if (!invitedCredential) registerBackendRelayHandler(instance, assistantRelayDeps);
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   poolLifecycle?.members.set(instance, { id });
