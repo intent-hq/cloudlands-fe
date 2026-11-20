@@ -165,6 +165,21 @@ export const selectPttRecording = store.createSelector(
   (state) => state.hardwareConsole.pttRecording,
 );
 
+/** True while the hardware voice key's own recording is live (the floating HUD meter). */
+export const selectPttKeyRecording = store.createSelector(
+  (state) => state.hardwareConsole.pttRecording && state.hardwareConsole.pttRecordingSource === 'key',
+);
+
+/** Start time of the live push-to-talk recording; `null` while idle. */
+export const selectPttRecordingStartedAt = store.createSelector(
+  (state) => state.hardwareConsole.pttRecordingStartedAt,
+);
+
+/** Newest microphone bar levels of the live push-to-talk recording. */
+export const selectPttInputLevels = store.createSelector(
+  (state) => state.hardwareConsole.pttInputLevels,
+);
+
 /** True while a `voice.transcribe` request is in flight (mic-button spinner). */
 export const selectVoiceTranscribing = store.createSelector(
   (state) => state.hardwareConsole.voiceTranscribing,

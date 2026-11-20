@@ -266,14 +266,14 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   // 5 Dictating with shape reference chips
   await chooseTool(page, 'box');
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(component.getByRole('button', { name: 'Stop dictating', exact: true })).toBeVisible();
   await say(page, 'Closer, but this');
   await gesture(page, 'box', { x: card.x, y: card.y, w: card.w, h: card.h }, null);
   await say(page, ' still has the old shadow, and this one');
   await gesture(page, 'box', { x: save.x, y: save.y, w: save.w, h: save.h }, null);
   await say(page, ' drops its hover');
   await expect(component.locator('[data-screen-interim]')).toBeVisible();
-  await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
+  await expect(component.locator('[data-dock-media-footer] [data-dictation-elapsed]')).toBeVisible();
   await screen(page, 5);
 
   // Stop: finals commit in place with their chips.
@@ -576,7 +576,7 @@ test('closing retires transient media and preserves words and completed captures
   const tiles = component.locator('[data-dock-media-attachments] .tile');
   await expect(tiles).toHaveCount(1);
   await component.getByRole('button', { name: /^Dictate/ }).click();
-  await expect(component.getByText('Listening', { exact: true })).toBeVisible();
+  await expect(component.getByRole('button', { name: 'Stop dictating', exact: true })).toBeVisible();
   await say(page, 'Keep these known words');
   await expect(component.locator('[data-screen-interim]')).toContainText('Keep these known words');
   await record.click();

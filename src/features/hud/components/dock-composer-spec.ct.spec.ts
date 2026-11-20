@@ -108,7 +108,7 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
       await component.locator('[data-dock-media-attachments] .tile button').first().focus();
       await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
     }
-    if (screen === 5) await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
+    if (screen === 5) await expect(component.locator('[data-dock-media-footer] [data-dictation-elapsed]')).toBeVisible();
     if (screen === 6)
       await expect(component.getByRole('button', { name: 'Stop recording' })).toBeVisible();
     // Let fonts and images settle before the artifact.

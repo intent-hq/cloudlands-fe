@@ -8,6 +8,8 @@
  * Pure web code — no Electron imports, no store imports.
  */
 
+import { startInputLevelMeter } from './input-level-meter';
+
 /** Hard recording cap: the recorder auto-stops after this long. */
 export const PTT_MAX_RECORDING_MS = 120_000;
 
@@ -38,6 +40,8 @@ export interface VoiceRecorderOptions extends VoiceRecorderCallbacks {
    * device degrades to the default instead of failing the recording.
    */
   deviceId?: string | null;
+  /** Live microphone bar levels (0–1, low → high frequency) while recording. */
+  onLevels?: (levels: number[]) => void;
 }
 
 export type VoiceRecorderState = 'idle' | 'starting' | 'recording' | 'stopped';
@@ -80,6 +84,8 @@ export class VoiceRecorder {
   private readonly now: () => number;
   private readonly callbacks: VoiceRecorderCallbacks;
   private readonly deviceId: string | null;
+  private readonly onLevels: ((levels: number[]) => void) | undefined;
+  private stopMeter: (() => void) | null = null;
 
   private currentState: VoiceRecorderState = 'idle';
   private recorder: MediaRecorder | null = null;
@@ -97,6 +103,7 @@ export class VoiceRecorder {
     this.now = options.now ?? Date.now;
     this.callbacks = { onFinished: options.onFinished, onError: options.onError };
     this.deviceId = options.deviceId ?? null;
+    this.onLevels = options.onLevels;
   }
 
   get state(): VoiceRecorderState {
@@ -133,6 +140,7 @@ export class VoiceRecorder {
     this.startedAt = this.now();
     this.currentState = 'recording';
     this.maxTimer = setTimeout(() => this.stop(), this.maxDurationMs);
+    if (this.onLevels) this.stopMeter = startInputLevelMeter(stream, this.onLevels);
     return 'recording';
   }
 
@@ -176,6 +184,8 @@ export class VoiceRecorder {
   private teardown(): void {
     if (this.maxTimer !== null) clearTimeout(this.maxTimer);
     this.maxTimer = null;
+    this.stopMeter?.();
+    this.stopMeter = null;
     if (this.recorder) {
       this.recorder.ondataavailable = null;
       this.recorder.onstop = null;

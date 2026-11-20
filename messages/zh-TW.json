@@ -8423,7 +8423,6 @@
   "dock_composer_captured_placeholder": "描述需要變更的內容",
   "dock_composer_annotating_placeholder": "點擊或在螢幕上繪製，每個標記都會獲得編號",
   "dock_composer_annotating_status": "正在標註",
-  "dock_composer_listening_status": "正在聆聽",
   "dock_composer_recording_status": "正在錄製",
   "dock_composer_capture_tooltip": "擷取螢幕 · {shortcut}",
   "dock_composer_captureWindow_tooltip": "擷取視窗 · {shortcut}",

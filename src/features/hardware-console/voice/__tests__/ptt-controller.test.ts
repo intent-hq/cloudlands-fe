@@ -353,3 +353,133 @@ describe('recording session (trigger-agnostic API)', () => {
     ).toHaveLength(2);
   });
 });
+
+const startedPayload = (dispatched: { type: string; payload?: unknown }[]) => {
+  const action = dispatched.find((a) => a.type === 'hardwareConsole/pttRecordingStarted');
+  return (action?.payload as [Record<string, unknown>] | undefined)?.[0];
+};
+
+describe('session source', () => {
+  it('labels a voice-key gesture session as the hardware key', () => {
+    const { context, dispatched } = makeContext();
+    handleVoiceKeyDown(context);
+    expect(startedPayload(dispatched)).toMatchObject({ source: 'key' });
+    expect(typeof startedPayload(dispatched)?.startedAt).toBe('number');
+  });
+
+  it('labels a session with the surface that started it', () => {
+    const { context, dispatched } = makeContext();
+    startPttRecording(context, 'composer');
+    expect(startedPayload(dispatched)).toMatchObject({ source: 'composer' });
+  });
+});
+
+class FakeAnalyser {
+  fftSize = 2048;
+  smoothingTimeConstant = 0.8;
+  minDecibels = -100;
+  maxDecibels = -30;
+  get frequencyBinCount() {
+    return this.fftSize / 2;
+  }
+  getByteFrequencyData(array: Uint8Array): void {
+    array.fill(FakeAudioContext.loudness);
+  }
+}
+
+class FakeAudioContext {
+  static instances: FakeAudioContext[] = [];
+  static loudness = 220;
+  readonly sampleRate = 48_000;
+  closed = false;
+  sourceDisconnected = false;
+  constructor() {
+    FakeAudioContext.instances.push(this);
+  }
+  createAnalyser() {
+    return new FakeAnalyser();
+  }
+  createMediaStreamSource() {
+    return {
+      connect: () => {},
+      disconnect: () => {
+        this.sourceDisconnected = true;
+      },
+    };
+  }
+  close() {
+    this.closed = true;
+    return Promise.resolve();
+  }
+}
+
+describe('live input levels', () => {
+  const levelActions = (dispatched: { type: string; payload?: unknown }[]) =>
+    dispatched.filter((a) => a.type === 'hardwareConsole/pttInputLevelsChanged');
+
+  beforeEach(() => {
+    FakeAudioContext.instances = [];
+    FakeAudioContext.loudness = 220;
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+  });
+
+  it('streams microphone spectrum bands while recording', async () => {
+    const { context, dispatched } = makeContext();
+    startPttRecording(context, 'composer');
+    await settle();
+    await advance(500);
+    const levels = levelActions(dispatched);
+    expect(levels.length).toBeGreaterThan(2);
+    const [bands] = levels.at(-1)!.payload as [number[]];
+    expect(bands).toHaveLength(5);
+    expect(bands.every((value) => value > 0.5 && value <= 1)).toBe(true);
+  });
+
+  it('closes the audio graph and stops levels when the session ends', async () => {
+    const { context, dispatched } = makeContext();
+    startPttRecording(context);
+    await settle();
+    await advance(PTT_MIN_RECORDING_MS);
+    stopPttRecording();
+    const count = levelActions(dispatched).length;
+    expect(FakeAudioContext.instances[0]?.closed).toBe(true);
+    expect(FakeAudioContext.instances[0]?.sourceDisconnected).toBe(true);
+    await advance(500);
+    expect(levelActions(dispatched)).toHaveLength(count);
+  });
+
+  it('closes the audio graph when the session is cancelled', async () => {
+    const { context } = makeContext();
+    startPttRecording(context);
+    await settle();
+    cancelPttRecording(context);
+    expect(FakeAudioContext.instances[0]?.closed).toBe(true);
+  });
+
+  it('still records when the audio graph cannot be built', async () => {
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          throw new Error('no audio');
+        }
+      },
+    );
+    const { context, dispatched } = makeContext();
+    startPttRecording(context);
+    await advance(PTT_MIN_RECORDING_MS);
+    stopPttRecording();
+    expect(finishedPayload(dispatched)).toBeDefined();
+    expect(levelActions(dispatched)).toHaveLength(0);
+  });
+
+  it('records without levels where Web Audio is unavailable', async () => {
+    vi.stubGlobal('AudioContext', undefined);
+    const { context, dispatched } = makeContext();
+    startPttRecording(context);
+    await advance(PTT_MIN_RECORDING_MS);
+    stopPttRecording();
+    expect(finishedPayload(dispatched)).toBeDefined();
+    expect(levelActions(dispatched)).toHaveLength(0);
+  });
+});

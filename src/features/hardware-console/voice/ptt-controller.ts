@@ -27,11 +27,13 @@
 import { m } from '$shared/paraglide/messages.js';
 import { loadVoiceInputDevicePreference } from '$features/voice/voice-input-device-preference';
 import {
+  pttInputLevelsChanged,
   pttRecordingFinished,
   pttRecordingStarted,
   pttRecordingStopped,
   pttSendRequested,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import type { PttRecordingSource } from '$store/renderer/slices/hardware-console/hardware-console-types';
 import { clearComposerDictationTarget } from './composer-dictation-target';
 import { VoiceGestureDecoder, type VoiceGestureStopReason } from './gesture-decoder';
 import { clearPromptDictationTarget } from './prompt-dictation-target';
@@ -127,8 +129,14 @@ export function handleVoiceKeyUp(context: PttContext): void {
   if (pressedKeyCount === 0) decoder.keyUp();
 }
 
-/** Start a recording session (no-op while one is live). */
-export function startPttRecording(context: PttContext): void {
+/**
+ * Start a recording session (no-op while one is live). `source` names the surface that
+ * started it, which decides where its live meter shows.
+ */
+export function startPttRecording(
+  context: PttContext,
+  source: PttRecordingSource = 'key',
+): void {
   if (activeRecorder !== null) return;
   // A prompt dictation target only applies to the recording it was
   // registered for (at that session's stop). One left dangling — the
@@ -146,6 +154,9 @@ export function startPttRecording(context: PttContext): void {
     // constraint semantics mean an unplugged device degrades to the system
     // default.
     deviceId: loadVoiceInputDevicePreference(),
+    onLevels: (levels) => {
+      if (activeRecorder === recorder) context.dispatch(pttInputLevelsChanged(levels));
+    },
     onFinished: (result) => {
       if (activeRecorder === recorder) activeRecorder = null;
       const outcome = pendingOutcome ?? { stopReason: 'auto-stop' as const, autoSend: false };
@@ -182,7 +193,7 @@ export function startPttRecording(context: PttContext): void {
     },
   });
   activeRecorder = recorder;
-  context.dispatch(pttRecordingStarted());
+  context.dispatch(pttRecordingStarted({ source, startedAt: Date.now() }));
   void recorder.start().then((outcome) => {
     if (outcome === 'recording') return;
     if (activeRecorder === recorder) activeRecorder = null;

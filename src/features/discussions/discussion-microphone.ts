@@ -98,7 +98,7 @@ export function createDiscussionMicrophone(options: {
         options.context.dispatch(action);
         if (typed.type === pttRecordingStopped.type && active()) options.onState('idle');
       },
-    });
+    }, 'discussion');
     ownedSession = getActivePttSessionToken();
     if (!ownedSession) options.onState('idle');
   }

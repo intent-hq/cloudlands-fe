@@ -71,7 +71,6 @@ export function createDockComposerLabels(
     },
     stopDictating: m.dock_composer_stopDictating_tooltip(),
     annotating: m.dock_composer_annotating_status(),
-    listening: m.dock_composer_listening_status(),
     recording: m.dock_composer_recording_status(),
     markUp: m.dock_composer_markUp_label(),
     remove: m.chat_contextChip_remove_label(),

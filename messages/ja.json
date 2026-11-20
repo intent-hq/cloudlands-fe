@@ -8423,7 +8423,6 @@
   "dock_composer_captured_placeholder": "変更したい内容を説明",
   "dock_composer_annotating_placeholder": "画面をクリックまたは描画すると、各マークに番号が付きます",
   "dock_composer_annotating_status": "注釈中",
-  "dock_composer_listening_status": "聞き取り中",
   "dock_composer_recording_status": "録画中",
   "dock_composer_capture_tooltip": "画面をキャプチャ · {shortcut}",
   "dock_composer_captureWindow_tooltip": "ウインドウをキャプチャ · {shortcut}",

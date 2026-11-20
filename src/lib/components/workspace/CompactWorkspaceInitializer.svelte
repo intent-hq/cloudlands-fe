@@ -128,6 +128,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { fade, slide } from '$lib/motion';
   import Button from '../ui/button/button.svelte';
+  import DictationStopButton from '$features/voice/components/DictationStopButton.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
@@ -3729,20 +3730,14 @@
                     <IntentMarkLoader size={16} />
                   </Button>
                 {:else if micRecording}
-                  <Button
+                  <DictationStopButton
                     type="button"
-                    size="icon"
-                    variant="ghost"
                     onclick={handleMicClick}
                     tooltip={m.chat_richInput_micStop_label()}
                     tooltipSide="top"
                     aria-label={m.chat_richInput_micStop_label()}
-                    aria-pressed="true"
-                    class="text-danger animate-pulse"
                     data-testid="initializer-mic-button"
-                  >
-                    <Fa icon={faMicrophone} />
-                  </Button>
+                  />
                 {:else}
                   <Button
                     type="button"

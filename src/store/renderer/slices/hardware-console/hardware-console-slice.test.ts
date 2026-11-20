@@ -20,6 +20,7 @@ import {
   keyPinsReconciled,
   markKeySlotUnassigned,
   pinWorkspaceToKey,
+  pttInputLevelsChanged,
   pttRecordingStarted,
   pttRecordingStopped,
   setActionKeyMapping,
@@ -374,6 +375,33 @@ describe('hardwareConsoleReducer', () => {
 
     const stopped = hardwareConsoleReducer(started, pttRecordingStopped());
     expect(stopped.pttRecording).toBe(false);
+  });
+
+  it('records who started the push-to-talk session, when, and its live input levels', () => {
+    const started = hardwareConsoleReducer(
+      initialState,
+      pttRecordingStarted({ source: 'composer', startedAt: 1_000 }),
+    );
+    expect(started.pttRecordingSource).toBe('composer');
+    expect(started.pttRecordingStartedAt).toBe(1_000);
+    expect(started.pttInputLevels).toEqual([]);
+
+    const live = hardwareConsoleReducer(started, pttInputLevelsChanged([0.2, 0.9, 0.4]));
+    expect(live.pttInputLevels).toEqual([0.2, 0.9, 0.4]);
+
+    const stopped = hardwareConsoleReducer(live, pttRecordingStopped());
+    expect(stopped.pttRecordingSource).toBeNull();
+    expect(stopped.pttRecordingStartedAt).toBeNull();
+    expect(stopped.pttInputLevels).toEqual([]);
+  });
+
+  it('defaults an unlabeled push-to-talk start to the hardware voice key', () => {
+    const started = hardwareConsoleReducer(initialState, pttRecordingStarted());
+    expect(started.pttRecordingSource).toBe('key');
+  });
+
+  it('ignores input levels that arrive outside a recording', () => {
+    expect(hardwareConsoleReducer(initialState, pttInputLevelsChanged([0.5]))).toBe(initialState);
   });
 
   it('returns the same state for redundant push-to-talk updates', () => {

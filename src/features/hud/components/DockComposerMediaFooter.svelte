@@ -4,6 +4,7 @@
   import { fade } from '$lib/motion';
   import DockComposerIcon from './DockComposerIcon.svelte';
   import DockComposerCapturePicker from './DockComposerCapturePicker.svelte';
+  import DictationMeter from '$features/voice/components/DictationMeter.svelte';
   import type { DockComposerMediaFooterProps } from './dock-composer-media-presentation';
 
   let {
@@ -23,11 +24,6 @@
 
   const alerts = $derived(state.alerts ?? {});
 
-  const samples = $derived(
-    state.inputLevels
-      .slice(-28)
-      .map((sample) => Math.max(0, Math.min(1, Number.isFinite(sample) ? sample : 0))),
-  );
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let holdStarted = false;
   let suppressClick = false;
@@ -68,19 +64,7 @@
 
 <div class="media-footer" class:embedded={!model && !send} data-dock-media-footer>
   {#if model}<div class="model">{@render model()}</div>{/if}
-  <div class="flex-gap" data-dictating={state.dictating || undefined}>
-    {#if state.dictating}
-      <div class="waveform" aria-hidden="true" data-dock-dictation-waveform>
-        {#each samples as sample, index}
-          <span
-            style:height={`${2 + sample * 20}px`}
-            style:opacity={0.35 + (0.65 * (index + 1)) / samples.length}
-          ></span>
-        {/each}
-      </div>
-      <span class="timer" data-dock-dictation-time>{state.dictationTime}</span>
-    {/if}
-  </div>
+  <div class="flex-gap"></div>
   <div class="controls">
     <DockComposerCapturePicker
       {state}
@@ -93,7 +77,7 @@
     <Button
       variant="ghost-light"
       size="icon-sm"
-      class="media-button recording-button"
+      class="media-button recording-button pill-button"
       data-recording={state.recording || undefined}
       disabled={disabled || state.recordingDisabled || state.recordingPending}
       aria-label={state.recording
@@ -131,7 +115,7 @@
     <Button
       variant="ghost-light"
       size="icon-sm"
-      class="media-button mic-button"
+      class="media-button mic-button pill-button"
       data-recording={state.dictating || undefined}
       disabled={disabled || state.dictationDisabled || state.dictationPending}
       aria-label={state.dictating
@@ -166,7 +150,17 @@
       }}
     >
       {#if alerts.mic}<span class="alert-dot" aria-hidden="true"></span>{/if}
-      <DockComposerIcon glyph={state.dictating ? 'stop' : 'mic'} />
+      <!-- Live: the pill widens to stop, elapsed time and level bars (the record pill's shape). -->
+      {#key state.dictating}
+        <span class="record-glyph" in:fade|global={{ tier: 'fast' }}>
+          {#if state.dictating}
+            <DockComposerIcon glyph="stop" size={16} /><DictationMeter
+              elapsed={state.dictationTime}
+              levels={state.inputLevels}
+            />
+          {:else}<DockComposerIcon glyph="mic" />{/if}
+        </span>
+      {/key}
     </Button>
   </div>
   {#if send}<div class="send">{@render send()}</div>{/if}
@@ -196,31 +190,6 @@
     justify-content: end;
     gap: 6px;
     overflow: hidden;
-  }
-  .flex-gap[data-dictating] {
-    /* Reserve a readable timer and several samples; the model label gives way
-       first. This is also the minimum size advertised to the shared action row. */
-    flex-shrink: 0;
-    min-width: calc(4ch + 32px);
-    padding-inline: 4px;
-    font-size: var(--text-caption-size);
-    color: hsl(var(--capture-active));
-  }
-  .waveform {
-    display: flex;
-    flex: 1 1 18px;
-    width: 18px;
-    min-width: 18px;
-    align-items: center;
-    justify-content: end;
-    gap: 2.5px;
-    height: 24px;
-    overflow: hidden;
-  }
-  .waveform span {
-    flex: 0 0 2px;
-    border-radius: 1px;
-    background: currentColor;
   }
   .timer {
     flex: none;
@@ -254,15 +223,15 @@
     border-radius: 8px;
     color: hsl(var(--muted-foreground));
   }
-  /* The pill widens from 30px to its content: only this button sizes per frame. */
-  .media-footer :global(.recording-button) {
+  /* A live pill widens from 30px to its content: only these buttons size per frame. */
+  .media-footer :global(.pill-button) {
     interpolate-size: allow-keywords;
     transition:
       width var(--spring-moderate) var(--spring-moderate-ease),
       padding var(--spring-moderate) var(--spring-moderate-ease),
       background-color var(--spring-fast) var(--spring-fast-ease);
   }
-  .media-footer :global(.recording-button[data-recording]) {
+  .media-footer :global(.pill-button[data-recording]) {
     width: auto;
     padding-inline: 8px 10px;
   }
@@ -272,7 +241,7 @@
     gap: 6px;
   }
   @container style(--motion-reduced: 1) {
-    .media-footer :global(.recording-button) {
+    .media-footer :global(.pill-button) {
       transition: none;
     }
   }

@@ -14,7 +14,7 @@
     questions?: Snippet;
     /** False while the person has hidden the question card (it stays collapsed above the composer). */
     questionsExpanded?: boolean;
-    mediaStatus?: { kind: 'annotating' | 'listening' | 'recording'; label: string };
+    mediaStatus?: { kind: 'annotating' | 'recording'; label: string };
     agentId: string | null;
     agents: DockConversationAgent[];
     workspaceTitle: string;

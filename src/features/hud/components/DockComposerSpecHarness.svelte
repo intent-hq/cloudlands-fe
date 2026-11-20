@@ -102,11 +102,9 @@
   const mediaStatus = $derived(
     screen === 4
       ? { kind: 'annotating' as const, label: labels.annotating }
-      : screen === 5
-        ? { kind: 'listening' as const, label: labels.listening }
-        : screen === 6
-          ? { kind: 'recording' as const, label: labels.recording }
-          : undefined,
+      : screen === 6
+        ? { kind: 'recording' as const, label: labels.recording }
+        : undefined,
   );
 
   onMount(() => {

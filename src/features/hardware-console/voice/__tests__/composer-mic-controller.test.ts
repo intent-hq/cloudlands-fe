@@ -104,6 +104,8 @@ describe('toggleComposerMicRecording', () => {
       'hardwareConsole/pttRecordingStopped',
       'hardwareConsole/pttRecordingFinished',
     ]);
+    const started = dispatched.find((a) => a.type === 'hardwareConsole/pttRecordingStarted');
+    expect((started?.payload as [{ source: string }])[0].source).toBe('composer');
     const finished = dispatched.find((a) => a.type === 'hardwareConsole/pttRecordingFinished');
     const payload = (finished?.payload as [{ stopReason: string; autoSend: boolean }])[0];
     expect(payload.stopReason).toBe('manual');

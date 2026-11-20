@@ -80,7 +80,7 @@ function settingsPaneFor(
 
 /** Panel header status: one live capture at a time, recording first. */
 export interface DockComposerMediaStatus {
-  kind: 'annotating' | 'listening' | 'recording';
+  kind: 'annotating' | 'recording';
   label: string;
 }
 
@@ -249,13 +249,12 @@ export function buildDockComposerMedia(input: {
           : {}),
       })),
   ];
+  // Dictation shows on the live mic pill itself, never as a header status.
   const mediaStatus: DockComposerMediaStatus | undefined = view.recording
     ? { kind: 'recording', label: labels.recording }
-    : view.dictation
-      ? { kind: 'listening', label: labels.listening }
-      : view.annotating
-        ? { kind: 'annotating', label: labels.annotating }
-        : undefined;
+    : view.annotating
+      ? { kind: 'annotating', label: labels.annotating }
+      : undefined;
   return {
     mediaStatus,
     ...(settingsPane ? { settingsPane } : {}),

@@ -3,27 +3,15 @@
  * projects the composer's own button state (the same expressions as
  * `DockComposerMediaFooter`) into the compact, localized form the overlay shows.
  */
-import { formatNumber } from '$lib/i18n/format';
+import { formatElapsedClock } from '$features/voice/utils/format-elapsed-clock';
 import type { DockAnnotationMediaState } from '$shared/dock-annotation';
 import type {
   DockComposerMediaLabels,
   DockComposerMediaState,
 } from '$features/hud/components/dock-composer-media-presentation';
 
-/**
- * m:ss (h:mm:ss from one hour) with the canonical locale-aware number formatter
- * (the composer's timer).
- */
-export function formatDockElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  const two = (value: number) =>
-    formatNumber(value, { minimumIntegerDigits: 2, useGrouping: false });
-  const rest = two(seconds % 60);
-  if (seconds < 3600)
-    return `${formatNumber(Math.floor(seconds / 60), { useGrouping: false })}:${rest}`;
-  const hours = formatNumber(Math.floor(seconds / 3600), { useGrouping: false });
-  return `${hours}:${two(Math.floor(seconds / 60) % 60)}:${rest}`;
-}
+/** The composer's timer format (shared with every dictation meter). */
+export const formatDockElapsed = formatElapsedClock;
 
 export function dockAnnotationBarMedia(
   state: DockComposerMediaState,

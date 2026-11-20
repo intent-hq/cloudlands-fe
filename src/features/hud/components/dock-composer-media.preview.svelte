@@ -65,7 +65,6 @@
     dictate: 'Dictate · hold to talk',
     stopDictating: 'Stop dictating',
     annotating: 'Annotating',
-    listening: 'Listening',
     recording: 'Recording',
     markUp: 'Mark up',
     edit: 'Edit',
@@ -188,16 +187,9 @@
   >
     <!-- This fixture proves presentation callbacks only, not the editor/session integration. -->
     <div class="preview-status" role="status">
-      {#if mediaState.recording || mediaState.dictating || mediaState.annotationActive}
-        <span
-          class="status-dot"
-          data-live={mediaState.recording || mediaState.dictating || undefined}
-        ></span>
-        {mediaState.recording
-          ? labels.recording
-          : mediaState.dictating
-            ? labels.listening
-            : labels.annotating}
+      {#if mediaState.recording || mediaState.annotationActive}
+        <span class="status-dot" data-live={mediaState.recording || undefined}></span>
+        {mediaState.recording ? labels.recording : labels.annotating}
       {/if}
     </div>
     <div class="composer">

@@ -32,6 +32,7 @@ import type {
   EncoderEffortFeedback,
   HardwareConsoleEncoderBehavior,
   HardwareConsoleState,
+  PttRecordingSource,
   RadialPromptPickerState,
 } from './hardware-console-types';
 
@@ -61,6 +62,9 @@ export const initialState: HardwareConsoleState = {
   encoderEffortFeedback: null,
   actionHudLabel: null,
   pttRecording: false,
+  pttRecordingSource: null,
+  pttRecordingStartedAt: null,
+  pttInputLevels: [],
   voiceTranscribing: false,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
@@ -171,8 +175,17 @@ export const encoderHudHidden = createAction('hardwareConsole/encoderHudHidden')
 export const actionHudShown = createAction<[label: string]>('hardwareConsole/actionHudShown');
 /** Action HUD timed out: hide it. */
 export const actionHudHidden = createAction('hardwareConsole/actionHudHidden');
-/** Push-to-talk keydown: microphone recording began (HUD + LED indicators on). */
-export const pttRecordingStarted = createAction('hardwareConsole/pttRecordingStarted');
+/**
+ * A push-to-talk recording began (live meter + LED indicators on). The session names the
+ * surface that started it; an unlabeled start is the hardware voice key.
+ */
+export const pttRecordingStarted = createAction<
+  [session?: { source: PttRecordingSource; startedAt: number }]
+>('hardwareConsole/pttRecordingStarted');
+/** Newest microphone bar levels of the live push-to-talk recording. */
+export const pttInputLevelsChanged = createAction<[levels: number[]]>(
+  'hardwareConsole/pttInputLevelsChanged',
+);
 /** Push-to-talk recording ended (release, auto-stop, error, or cancel): indicators off. */
 export const pttRecordingStopped = createAction('hardwareConsole/pttRecordingStopped');
 /**
@@ -365,13 +378,29 @@ hardwareConsoleReducer.with(actionHudHidden, (state) => {
   if (state.actionHudLabel === null) return state;
   return { ...state, actionHudLabel: null };
 });
-hardwareConsoleReducer.with(pttRecordingStarted, (state) => {
+hardwareConsoleReducer.with(pttRecordingStarted, (state, { payload: [session] }) => {
   if (state.pttRecording) return state;
-  return { ...state, pttRecording: true };
+  return {
+    ...state,
+    pttRecording: true,
+    pttRecordingSource: session?.source ?? 'key',
+    pttRecordingStartedAt: session?.startedAt ?? null,
+    pttInputLevels: [],
+  };
+});
+hardwareConsoleReducer.with(pttInputLevelsChanged, (state, { payload: [levels] }) => {
+  if (!state.pttRecording) return state;
+  return { ...state, pttInputLevels: levels };
 });
 hardwareConsoleReducer.with(pttRecordingStopped, (state) => {
   if (!state.pttRecording) return state;
-  return { ...state, pttRecording: false };
+  return {
+    ...state,
+    pttRecording: false,
+    pttRecordingSource: null,
+    pttRecordingStartedAt: null,
+    pttInputLevels: [],
+  };
 });
 hardwareConsoleReducer.with(voiceTranscriptionStarted, (state) => {
   if (state.voiceTranscribing) return state;

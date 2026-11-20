@@ -25,7 +25,6 @@ export interface DockComposerMediaLabels {
   dictate: string;
   stopDictating: string;
   annotating: string;
-  listening: string;
   recording: string;
   markUp: string;
   remove: string;
