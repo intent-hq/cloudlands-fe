@@ -12,6 +12,7 @@ import {
 import { appClient, localMachineClient } from '$lib/client';
 import type { ServerPairingInfo } from '$lib/client/app-client';
 import { readSelfPairing } from '$features/devices/self-pairing';
+import { turnTunnelOnByDefault } from './tunnel-default';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -201,6 +202,11 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       if (enabled !== intent.enabled) error = m.settings_wsApi_startListenerError();
       values = { enabled };
       yield* put(settingsFormRequestProgressed(request, values));
+      if (enabled && intent.enabled) {
+        const tunnelError = yield* call(turnTunnelOnByDefault, appClient);
+        if (tunnelError && (yield* requestCurrent(request, context)))
+          yield* call(notify.error, m.settings_tunnel_enableError({ error: tunnelError }));
+      }
       if (enabled) values = yield* loadMobile(request, context);
       else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
     } else if (intent.kind === 'load') {
