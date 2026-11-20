@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.361.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.1...v2.361.2) (2026-11-20)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.258 ([#4854](https://github.com/intent-hq/cloudlands-fe/issues/4854)) ([890480c](https://github.com/intent-hq/cloudlands-fe/commit/890480c68994febb66574e9688743726bee1c166))
+* **machine-rail:** send toasts from background machines ([#4778](https://github.com/intent-hq/cloudlands-fe/issues/4778)) ([6d1d798](https://github.com/intent-hq/cloudlands-fe/commit/6d1d7987d6db47eda3b97ab032c73c978b21cf67))
+* **navigation:** open ⌘-clicked links in the app from views that pass no workspace ([#4851](https://github.com/intent-hq/cloudlands-fe/issues/4851)) ([a9579d8](https://github.com/intent-hq/cloudlands-fe/commit/a9579d800f2c0e45558eb8fd3496ed1e8eeec025))
+
 ## [2.361.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.0...v2.361.1) (2026-11-20)
 
 
