@@ -1437,7 +1437,7 @@ const defaultWindowHooks: BackendWindowHooks = {
   },
   async showAgent(backendId, agent) {
     const { showAgentInBackendWindow } = await import('../../../main/window');
-    showAgentInBackendWindow(backendId, agent.workspaceId, agent.agentId);
+    showAgentInBackendWindow(backendId, agent);
   },
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {

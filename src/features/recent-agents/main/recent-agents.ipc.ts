@@ -1,5 +1,5 @@
 /**
- * Recent agents belong to the desktop app, not to one window or machine: main keeps one list
+ * Recent agents (with browser and terminal tabs) belong to the desktop app, not to one window or machine: main keeps one list
  * for every window, persists it in local prefs (never synced) and pushes the whole list to
  * every renderer after each change.
  */
@@ -10,6 +10,7 @@ import {
   RecentAgentPageChordSchema,
   RecentAgentVisitSchema,
   RecentAgentWorkspaceSchema,
+  RecentEntryKeySchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
@@ -22,27 +23,28 @@ import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { shortcutDefault } from '../../../shared/keyboard-shortcut-bindings';
 import {
   parseRecentAgents,
-  recordRecentAgentVisit,
+  recordRecentVisit,
   removeRecentAgentWorkspace,
-  type RecentAgentEntry,
+  removeRecentEntry,
+  type RecentEntry,
   pageKeyToForward,
 } from '../../../shared/recent-agents';
 
 const RECENT_AGENTS = IPC_CHANNELS.RECENT_AGENTS;
 const EmptySchema = z.object({}).optional();
 
-let entries: RecentAgentEntry[] | null = null;
+let entries: RecentEntry[] | null = null;
 /** The switcher chord browser-panel pages forward; renderers report the user's binding. */
 let pageChord = shortcutDefault('navigation.recent-agents');
 /** Changes apply one at a time, each to the list the previous one left. */
 let queue: Promise<unknown> = Promise.resolve();
 
-async function current(): Promise<RecentAgentEntry[]> {
+async function current(): Promise<RecentEntry[]> {
   entries ??= parseRecentAgents(await getLocalPref('recentAgents'));
   return entries;
 }
 
-function broadcast(list: RecentAgentEntry[]): void {
+function broadcast(list: RecentEntry[]): void {
   for (const window of getAppWindows()) {
     if (window.isDestroyed()) continue;
     for (const renderer of getRendererWebContents(window)) {
@@ -51,9 +53,7 @@ function broadcast(list: RecentAgentEntry[]): void {
   }
 }
 
-function change(
-  apply: (list: RecentAgentEntry[]) => RecentAgentEntry[],
-): Promise<RecentAgentEntry[]> {
+function change(apply: (list: RecentEntry[]) => RecentEntry[]): Promise<RecentEntry[]> {
   const run = queue.then(async () => {
     const before = await current();
     const next = apply(before);
@@ -89,7 +89,7 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
       RecentAgentVisitSchema,
       async (event, { viewed, ...visit }) => {
         if (viewed && !isWindowInUse(event.sender)) return current();
-        return change((list) => recordRecentAgentVisit(list, { ...visit, visitedAt: now() }));
+        return change((list) => recordRecentVisit(list, { ...visit, visitedAt: now() }));
       },
       RECENT_AGENTS.RECORD,
     ),
@@ -115,6 +115,18 @@ export function setupRecentAgentsIPC(now: () => number = Date.now): void {
           return next.length === list.length ? list : next;
         }),
       RECENT_AGENTS.FORGET_WORKSPACE,
+    ),
+  );
+  ipcMain.handle(
+    RECENT_AGENTS.FORGET_ENTRY,
+    createValidatedHandler(
+      RecentEntryKeySchema,
+      async (_event, { key }) =>
+        change((list) => {
+          const next = removeRecentEntry(list, key);
+          return next.length === list.length ? list : next;
+        }),
+      RECENT_AGENTS.FORGET_ENTRY,
     ),
   );
 }

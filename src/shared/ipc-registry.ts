@@ -1236,12 +1236,14 @@ export const IPC_CHANNELS = {
   // the per-window list and selection; CHANGED is a main→renderer push (also
   // in EVENT_CHANNELS). Types: `shared/types/machine-rail.ts`.
   // Recent agents: the app-wide list of opened agent conversations behind the
-  // recent-agent switcher. Main owns and persists it; CHANGED is a main→renderer
+  // recent-agent switcher, plus browser and terminal tabs. Main owns and persists it; CHANGED is a main→renderer
   // push of the whole list (also in EVENT_CHANNELS). Types: `shared/recent-agents.ts`.
   RECENT_AGENTS: {
     LIST: 'recent-agents:list',
     RECORD: 'recent-agents:record',
     FORGET_WORKSPACE: 'recent-agents:forget-workspace',
+    // Renderer → main: drop one entry, e.g. a browser or terminal tab that is gone.
+    FORGET_ENTRY: 'recent-agents:forget-entry',
     CHANGED: 'recent-agents:changed',
     // Main → renderer: the switcher chord, or the release of its modifier, pressed
     // in a page of the browser panel, whose keys never reach the app's document

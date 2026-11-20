@@ -3,15 +3,21 @@ import {
   pageKeyToForward,
   parseRecentAgents,
   RECENT_AGENTS_LIMIT,
-  recordRecentAgentVisit,
+  recentEntryKey,
+  recordRecentVisit,
   removeRecentAgentWorkspace,
+  removeRecentEntry,
   visibleRecentAgents,
   type PageInput,
-  type RecentAgentEntry,
+  type RecentEntry,
 } from './recent-agents';
+
+type RecentAgentEntry = Extract<RecentEntry, { kind: 'agent' }>;
+type RecentTabEntry = Exclude<RecentEntry, RecentAgentEntry>;
 
 function entry(overrides: Partial<RecentAgentEntry> = {}): RecentAgentEntry {
   return {
+    kind: 'agent',
     connectionId: 'local',
     workspaceId: 'ws-1',
     workspaceTitle: 'Workspace one',
@@ -22,15 +28,33 @@ function entry(overrides: Partial<RecentAgentEntry> = {}): RecentAgentEntry {
   };
 }
 
-describe('recordRecentAgentVisit', () => {
+function tab(overrides: Partial<RecentTabEntry> = {}): RecentTabEntry {
+  return {
+    kind: 'browser',
+    connectionId: 'local',
+    workspaceId: 'ws-1',
+    workspaceTitle: 'Workspace one',
+    tabId: 'tab-1',
+    title: 'Page',
+    url: 'http://localhost:3000/',
+    visitedAt: 1,
+    ...overrides,
+  };
+}
+
+const ids = (entries: readonly RecentEntry[]) =>
+  entries.map((item) => (item.kind === 'agent' ? item.agentId : `${item.kind}:${item.tabId}`));
+const id = (item: RecentEntry) => ids([item])[0];
+
+describe('recordRecentVisit', () => {
   it('moves a revisited agent to the front without duplicating it', () => {
     const a = entry({ agentId: 'a', visitedAt: 3 });
     const b = entry({ agentId: 'b', visitedAt: 2 });
     const c = entry({ agentId: 'c', visitedAt: 1 });
 
-    const next = recordRecentAgentVisit([a, b, c], entry({ agentId: 'c', visitedAt: 4 }));
+    const next = recordRecentVisit([a, b, c], entry({ agentId: 'c', visitedAt: 4 }));
 
-    expect(next.map((item) => [item.agentId, item.visitedAt])).toEqual([
+    expect(next.map((item) => [id(item), item.visitedAt])).toEqual([
       ['c', 4],
       ['a', 3],
       ['b', 2],
@@ -39,17 +63,14 @@ describe('recordRecentAgentVisit', () => {
 
   it('keeps one entry per connection and agent, so the same agent id on two machines stays apart', () => {
     const local = entry({ agentId: 'shared', connectionId: 'local' });
-    const next = recordRecentAgentVisit(
-      [local],
-      entry({ agentId: 'shared', connectionId: 'remote' }),
-    );
+    const next = recordRecentVisit([local], entry({ agentId: 'shared', connectionId: 'remote' }));
 
     expect(next.map((item) => item.connectionId)).toEqual(['remote', 'local']);
   });
 
   it('keeps the earlier workspace title when the visit does not know it yet', () => {
     const earlier = entry({ workspaceTitle: 'Known title' });
-    const next = recordRecentAgentVisit([earlier], entry({ workspaceTitle: null, visitedAt: 2 }));
+    const next = recordRecentVisit([earlier], entry({ workspaceTitle: null, visitedAt: 2 }));
 
     expect(next[0]).toMatchObject({ workspaceTitle: 'Known title', visitedAt: 2 });
   });
@@ -58,11 +79,49 @@ describe('recordRecentAgentVisit', () => {
     const full = Array.from({ length: RECENT_AGENTS_LIMIT }, (_, index) =>
       entry({ agentId: `agent-${index}` }),
     );
-    const next = recordRecentAgentVisit(full, entry({ agentId: 'newest' }));
+    const next = recordRecentVisit(full, entry({ agentId: 'newest' }));
 
     expect(next).toHaveLength(RECENT_AGENTS_LIMIT);
-    expect(next[0]?.agentId).toBe('newest');
-    expect(next.some((item) => item.agentId === `agent-${RECENT_AGENTS_LIMIT - 1}`)).toBe(false);
+    expect(next[0] && id(next[0])).toBe('newest');
+    expect(next.some((item) => id(item) === `agent-${RECENT_AGENTS_LIMIT - 1}`)).toBe(false);
+  });
+});
+
+describe('recordRecentVisit with tabs', () => {
+  it('keeps agents, browser tabs and terminals in one most-recent-first order', () => {
+    let list = recordRecentVisit([], entry({ agentId: 'a', visitedAt: 1 }));
+    list = recordRecentVisit(list, tab({ tabId: 'web', visitedAt: 2 }));
+    list = recordRecentVisit(list, tab({ kind: 'terminal', tabId: 'shell', visitedAt: 3 }));
+    list = recordRecentVisit(list, tab({ tabId: 'web', title: 'Renamed', visitedAt: 4 }));
+
+    expect(ids(list)).toEqual(['browser:web', 'terminal:shell', 'a']);
+    expect(list[0]).toMatchObject({ title: 'Renamed', visitedAt: 4 });
+  });
+
+  it('keeps a browser and a terminal with the same tab id, and the same tab id in two workspaces, apart', () => {
+    let list = recordRecentVisit([], tab({ tabId: 'same' }));
+    list = recordRecentVisit(list, tab({ kind: 'terminal', tabId: 'same' }));
+    list = recordRecentVisit(list, tab({ tabId: 'same', workspaceId: 'ws-2' }));
+
+    expect(new Set(list.map(recentEntryKey)).size).toBe(3);
+  });
+
+  it('does not let a tab id collide with an agent id', () => {
+    const list = recordRecentVisit([entry({ agentId: 'x' })], tab({ tabId: 'x' }));
+
+    expect(list).toHaveLength(2);
+  });
+});
+
+describe('removeRecentEntry', () => {
+  it('drops only the entry with that key', () => {
+    const gone = tab({ kind: 'terminal', tabId: 'gone' });
+    const list = [entry(), gone, tab()];
+
+    expect(ids(removeRecentEntry(list, recentEntryKey(gone)))).toEqual([
+      'agent-1',
+      'browser:tab-1',
+    ]);
   });
 });
 
@@ -74,9 +133,7 @@ describe('removeRecentAgentWorkspace', () => {
       entry({ agentId: 'c', workspaceId: 'gone', connectionId: 'remote' }),
     ];
 
-    expect(
-      removeRecentAgentWorkspace(entries, 'local', 'gone').map((item) => item.agentId),
-    ).toEqual(['b', 'c']);
+    expect(removeRecentAgentWorkspace(entries, 'local', 'gone').map(id)).toEqual(['b', 'c']);
   });
 });
 
@@ -84,9 +141,7 @@ describe('visibleRecentAgents', () => {
   it('hides entries of connections that are no longer saved', () => {
     const entries = [entry({ agentId: 'a' }), entry({ agentId: 'b', connectionId: 'forgotten' })];
 
-    expect(visibleRecentAgents(entries, new Set(['local'])).map((item) => item.agentId)).toEqual([
-      'a',
-    ]);
+    expect(visibleRecentAgents(entries, new Set(['local'])).map(id)).toEqual(['a']);
   });
 });
 
@@ -100,10 +155,29 @@ describe('parseRecentAgents', () => {
       entry({ agentId: 'c', workspaceTitle: null }),
     ];
 
-    expect(parseRecentAgents(stored).map((item) => [item.agentId, item.visitedAt])).toEqual([
+    expect(parseRecentAgents(stored).map((item) => [id(item), item.visitedAt])).toEqual([
       ['a', 1],
       ['c', 1],
     ]);
+  });
+
+  it('reads entries stored before tabs were listed as agents', () => {
+    const { kind: _kind, ...legacy } = entry({ agentId: 'old' });
+
+    expect(parseRecentAgents([legacy])).toEqual([entry({ agentId: 'old' })]);
+  });
+
+  it('keeps whole tab entries and skips tab entries missing their tab id, title or a known kind', () => {
+    const stored = [
+      tab({ tabId: 'web' }),
+      tab({ kind: 'terminal', tabId: 'shell', url: undefined }),
+      { ...tab({ tabId: 'no-title' }), title: 7 },
+      { ...tab(), tabId: '' },
+      { ...tab({ tabId: 'odd' }), kind: 'notebook' },
+      { ...tab({ tabId: 'bad-url' }), url: 42 },
+    ];
+
+    expect(ids(parseRecentAgents(stored))).toEqual(['browser:web', 'terminal:shell']);
   });
 
   it('reads anything but an array as an empty list', () => {

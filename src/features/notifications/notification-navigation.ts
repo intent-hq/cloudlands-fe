@@ -22,7 +22,10 @@ import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import {
+  focusPanelTabRequested,
+  openAgentTabRequested,
+} from '$store/renderer/slices/app-layout/app-layout-slice';
 import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
 import {
   openWorkspaceFile,
@@ -43,6 +46,8 @@ export interface NotificationNavigatePayload {
   chief?: boolean;
   /** Exact conversation to select in the target workspace or Assistant. */
   agentId?: string;
+  /** A browser or terminal panel tab to focus in the target workspace (the recent switcher). */
+  tabId?: string;
   workspaceTarget?: WorkspaceWindowTarget;
   discussion?: { target: DiscussionTarget; messageId: string };
 }
@@ -136,6 +141,9 @@ export async function handleNotificationNavigate(
     if (!(await openAndShowWorkspace(data.workspaceId))) return;
     if (data.agentId && generation === navigationGeneration) {
       appStore.dispatch(openAgentTabRequested(data.workspaceId, { agentId: data.agentId }));
+    }
+    if (data.tabId && generation === navigationGeneration) {
+      appStore.dispatch(focusPanelTabRequested(data.workspaceId, data.tabId));
     }
     if (generation === navigationGeneration) openWorkspaceTarget(data);
   } catch (error) {

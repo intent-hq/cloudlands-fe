@@ -1,6 +1,6 @@
 /**
- * Recent agents: the agent conversations the user opened on this device, most recent first,
- * across every saved connection. Main owns the list (one per app, shared by every window, not
+ * Recent agents: the agent conversations, browser tabs and terminals the user opened on this
+ * device, most recent first, across every saved connection. Main owns the list (one per app, shared by every window, not
  * synced across devices); these pure helpers keep it, as the iOS app's agent history does.
  */
 
@@ -10,17 +10,34 @@ import {
   type ShortcutKeyboardEvent,
 } from './keyboard-shortcut-bindings';
 
-/** One opened agent conversation, keyed by its connection and agent. */
-export interface RecentAgentEntry {
+interface RecentEntryBase {
   connectionId: string;
   workspaceId: string;
   /** Null when the workspace title was not known at the visit. */
   workspaceTitle: string | null;
-  agentId: string;
-  agentName: string;
   /** Epoch milliseconds of the latest visit. */
   visitedAt: number;
 }
+
+/** One opened agent conversation, keyed by its connection and agent. */
+interface RecentAgentEntry extends RecentEntryBase {
+  kind: 'agent';
+  agentId: string;
+  agentName: string;
+}
+
+/** One focused browser or terminal panel tab, keyed by its connection, workspace and tab. */
+interface RecentTabEntry extends RecentEntryBase {
+  kind: 'browser' | 'terminal';
+  tabId: string;
+  title: string;
+  /** Browser tabs: the page URL, when known. */
+  url?: string;
+  faviconUrl?: string;
+}
+
+/** What the switcher lists: agents, browser tabs and terminals, most recent first. */
+export type RecentEntry = RecentAgentEntry | RecentTabEntry;
 
 /** @internal */
 export const RECENT_AGENTS_LIMIT = 30;
@@ -93,34 +110,41 @@ export function pageKeyToForward(
   return null;
 }
 
-export function recentAgentKey(entry: Pick<RecentAgentEntry, 'connectionId' | 'agentId'>): string {
-  return `${entry.connectionId}/${entry.agentId}`;
+export function recentEntryKey(entry: RecentEntry): string {
+  return entry.kind === 'agent'
+    ? `${entry.connectionId}/${entry.agentId}`
+    : `${entry.connectionId}/${entry.workspaceId}/${entry.kind}:${entry.tabId}`;
 }
 
 /**
  * Moves `visit` to the front. A visit made before the workspace list loaded keeps the title an
  * earlier visit recorded.
  */
-export function recordRecentAgentVisit(
-  entries: readonly RecentAgentEntry[],
-  visit: RecentAgentEntry,
+export function recordRecentVisit(
+  entries: readonly RecentEntry[],
+  visit: RecentEntry,
   limit: number = RECENT_AGENTS_LIMIT,
-): RecentAgentEntry[] {
-  const key = recentAgentKey(visit);
-  const previous = entries.find((entry) => recentAgentKey(entry) === key);
+): RecentEntry[] {
+  const key = recentEntryKey(visit);
+  const previous = entries.find((entry) => recentEntryKey(entry) === key);
   const recorded =
     visit.workspaceTitle === null && previous
       ? { ...visit, workspaceTitle: previous.workspaceTitle }
       : visit;
-  return [recorded, ...entries.filter((entry) => recentAgentKey(entry) !== key)].slice(0, limit);
+  return [recorded, ...entries.filter((entry) => recentEntryKey(entry) !== key)].slice(0, limit);
+}
+
+/** Drops the entry with `key`, e.g. a tab that no longer exists. */
+export function removeRecentEntry(entries: readonly RecentEntry[], key: string): RecentEntry[] {
+  return entries.filter((entry) => recentEntryKey(entry) !== key);
 }
 
 /** Drops one connection's entries for a workspace it reported deleted or archived. */
 export function removeRecentAgentWorkspace(
-  entries: readonly RecentAgentEntry[],
+  entries: readonly RecentEntry[],
   connectionId: string,
   workspaceId: string,
-): RecentAgentEntry[] {
+): RecentEntry[] {
   return entries.filter(
     (entry) => entry.connectionId !== connectionId || entry.workspaceId !== workspaceId,
   );
@@ -128,9 +152,9 @@ export function removeRecentAgentWorkspace(
 
 /** Entries whose connection is still saved; forgotten connections drop out. */
 export function visibleRecentAgents(
-  entries: readonly RecentAgentEntry[],
+  entries: readonly RecentEntry[],
   savedConnectionIds: ReadonlySet<string>,
-): RecentAgentEntry[] {
+): RecentEntry[] {
   return entries.filter((entry) => savedConnectionIds.has(entry.connectionId));
 }
 
@@ -138,39 +162,63 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-/** Reads a stored or received entry; null when it is not a whole entry. */
-function parseRecentAgentEntry(value: unknown): RecentAgentEntry | null {
+function optionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === 'string';
+}
+
+/**
+ * Reads a stored or received entry; null when it is not a whole entry. Entries stored before
+ * the switcher listed tabs have no `kind` and read as agents.
+ */
+function parseRecentEntry(value: unknown): RecentEntry | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   if (
     !nonEmptyString(raw.connectionId) ||
     !nonEmptyString(raw.workspaceId) ||
-    !nonEmptyString(raw.agentId) ||
-    typeof raw.agentName !== 'string' ||
     !(raw.workspaceTitle === null || typeof raw.workspaceTitle === 'string') ||
     typeof raw.visitedAt !== 'number' ||
     !Number.isFinite(raw.visitedAt)
   )
     return null;
-  return {
+  const base = {
     connectionId: raw.connectionId,
     workspaceId: raw.workspaceId,
     workspaceTitle: raw.workspaceTitle,
-    agentId: raw.agentId,
-    agentName: raw.agentName,
     visitedAt: raw.visitedAt,
+  };
+  const kind = raw.kind ?? 'agent';
+  if (kind === 'agent') {
+    if (!nonEmptyString(raw.agentId) || typeof raw.agentName !== 'string') return null;
+    return { kind, ...base, agentId: raw.agentId, agentName: raw.agentName };
+  }
+  if (
+    (kind !== 'browser' && kind !== 'terminal') ||
+    !nonEmptyString(raw.tabId) ||
+    typeof raw.title !== 'string' ||
+    !optionalString(raw.url) ||
+    !optionalString(raw.faviconUrl)
+  )
+    return null;
+  return {
+    kind,
+    ...base,
+    tabId: raw.tabId,
+    title: raw.title,
+    ...(raw.url ? { url: raw.url } : {}),
+    ...(raw.faviconUrl ? { faviconUrl: raw.faviconUrl } : {}),
   };
 }
 
 /** The stored list: whole entries only, one per key, at most `RECENT_AGENTS_LIMIT`. */
-export function parseRecentAgents(value: unknown): RecentAgentEntry[] {
+export function parseRecentAgents(value: unknown): RecentEntry[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
-  const entries: RecentAgentEntry[] = [];
+  const entries: RecentEntry[] = [];
   for (const item of value) {
-    const entry = parseRecentAgentEntry(item);
-    if (!entry || seen.has(recentAgentKey(entry))) continue;
-    seen.add(recentAgentKey(entry));
+    const entry = parseRecentEntry(item);
+    if (!entry || seen.has(recentEntryKey(entry))) continue;
+    seen.add(recentEntryKey(entry));
     entries.push(entry);
     if (entries.length === RECENT_AGENTS_LIMIT) break;
   }

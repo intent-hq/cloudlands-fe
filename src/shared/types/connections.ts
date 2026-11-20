@@ -495,10 +495,11 @@ export interface ConnectionTunnelResult {
 }
 
 /** `connections:open` params. */
-/** An agent to open in a backend's window once it shows. */
+/** An agent, or a browser or terminal panel tab, to open in a backend's window once it shows. */
 export interface ConnectionAgentTarget {
   workspaceId: string;
-  agentId: string;
+  agentId?: string;
+  tabId?: string;
 }
 
 export interface OpenConnectionParams {

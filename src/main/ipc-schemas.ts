@@ -776,17 +776,36 @@ export const MachineRailMachineSchema = z.object({ id: z.string().min(1).max(256
 
 const RecentAgentIdSchema = z.string().min(1).max(512);
 
-export const RecentAgentVisitSchema = z
-  .object({
-    connectionId: RecentAgentIdSchema,
-    workspaceId: RecentAgentIdSchema,
-    workspaceTitle: z.string().max(1024).nullable(),
-    agentId: RecentAgentIdSchema,
-    agentName: z.string().max(1024),
-    /** A chat that came on screen: main records it only for the window in use. */
-    viewed: z.boolean().optional(),
-  })
-  .strict();
+const RecentVisitBase = {
+  connectionId: RecentAgentIdSchema,
+  workspaceId: RecentAgentIdSchema,
+  workspaceTitle: z.string().max(1024).nullable(),
+  /** A chat or tab that came on screen: main records it only for the window in use. */
+  viewed: z.boolean().optional(),
+};
+
+export const RecentAgentVisitSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...RecentVisitBase,
+      kind: z.literal('agent'),
+      agentId: RecentAgentIdSchema,
+      agentName: z.string().max(1024),
+    })
+    .strict(),
+  z
+    .object({
+      ...RecentVisitBase,
+      kind: z.enum(['browser', 'terminal']),
+      tabId: RecentAgentIdSchema,
+      title: z.string().max(1024),
+      url: z.string().max(4096).optional(),
+      faviconUrl: z.string().max(4096).optional(),
+    })
+    .strict(),
+]);
+
+export const RecentEntryKeySchema = z.object({ key: z.string().min(1).max(2048) }).strict();
 
 export const RecentAgentPageChordSchema = z.object({ binding: z.string().max(128) }).strict();
 
@@ -1215,10 +1234,15 @@ export const ConnectionsSetTunnelSchema = ConnectionsGetTunnelSchema.extend({
 
 export const ConnectionsOpenSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
-  /** Open this agent in the backend's window once it shows (the recent-agent switcher). */
+  /** Open this agent or tab in the backend's window once it shows (the recent-agent switcher). */
   agent: z
-    .object({ workspaceId: z.string().min(1).max(512), agentId: z.string().min(1).max(512) })
+    .object({
+      workspaceId: z.string().min(1).max(512),
+      agentId: z.string().min(1).max(512).optional(),
+      tabId: z.string().min(1).max(512).optional(),
+    })
     .strict()
+    .refine((target) => (target.agentId === undefined) !== (target.tabId === undefined))
     .optional(),
 });
 

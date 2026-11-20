@@ -16,7 +16,11 @@ import {
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
-import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
+import {
+  focusBrowserTabRequested,
+  focusPanelTabRequested,
+  openAgentTabRequested,
+} from '../app-layout-slice';
 
 function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
   const [workspaceId, detail] = action.payload;
@@ -64,32 +68,54 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
   yield* put(openAction);
 }
 
-function* focusBrowserTab(
-  action: ReturnType<typeof focusBrowserTabRequested>,
-): SagaGenerator<void> {
-  const [workspaceId, tabId, , agentDriven] = action.payload;
-  if (!workspaceId || !tabId) return;
+/**
+ * Make `tabId` the active tab of its panel and focus that panel, restoring the
+ * tab first when it is hidden. Returns the focus action, or null when no
+ * matching tab exists.
+ */
+function* showPanelTab(
+  workspaceId: string,
+  tabId: string,
+  matches: (tab: PanelTab) => boolean,
+): SagaGenerator<ReturnType<typeof focusPanel> | null> {
+  const isTarget = (tab: PanelTab) => tab.id === tabId && matches(tab);
   let panels = yield* selectPanels.effect(workspaceId);
-  let target = Object.entries(panels).find(([, panel]) =>
-    panel.tabs.some((tab) => tab.id === tabId && tab.type === 'browser'),
-  );
+  let target = Object.entries(panels).find(([, panel]) => panel.tabs.some(isTarget));
   if (!target) {
     // A hidden (user-closed) agent-owned tab: focusTab is the explicit
     // reveal path (monorepo#2857) — restore it into a panel, then focus.
     const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
-    if (!hiddenTabs.some((tab) => tab.id === tabId && tab.type === 'browser')) return;
+    if (!hiddenTabs.some(isTarget)) return null;
     yield* put(restoreHiddenTab(workspaceId, tabId));
     panels = yield* selectPanels.effect(workspaceId);
-    target = Object.entries(panels).find(([, panel]) =>
-      panel.tabs.some((tab) => tab.id === tabId && tab.type === 'browser'),
-    );
-    if (!target) return;
+    target = Object.entries(panels).find(([, panel]) => panel.tabs.some(isTarget));
+    if (!target) return null;
   }
 
   const [panelId] = target;
   yield* put(setActiveTab(workspaceId, tabId, panelId));
   const focusAction = focusPanel(workspaceId, panelId);
   yield* put(focusAction);
+  return focusAction;
+}
+
+function* focusPanelTab(action: ReturnType<typeof focusPanelTabRequested>): SagaGenerator<void> {
+  const [workspaceId, tabId] = action.payload;
+  if (workspaceId && tabId) yield* call(showPanelTab, workspaceId, tabId, () => true);
+}
+
+function* focusBrowserTab(
+  action: ReturnType<typeof focusBrowserTabRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, tabId, , agentDriven] = action.payload;
+  if (!workspaceId || !tabId) return;
+  const focusAction = yield* call(
+    showPanelTab,
+    workspaceId,
+    tabId,
+    (tab: PanelTab) => tab.type === 'browser',
+  );
+  if (!focusAction) return;
   // An agent-driven focus for a workspace this window is not displaying
   // (focusTab / showTab on a background workspace) keeps its layout-state
   // effects — active tab, focused panel — but skips the actual UI reveal
@@ -102,4 +128,5 @@ function* focusBrowserTab(
 export function* appLayoutNavigationSaga(): SagaGenerator<void> {
   yield* takeEvery(openAgentTabRequested, openAgentTab);
   yield* takeEvery(focusBrowserTabRequested, focusBrowserTab);
+  yield* takeEvery(focusPanelTabRequested, focusPanelTab);
 }

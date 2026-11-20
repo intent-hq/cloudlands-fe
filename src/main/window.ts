@@ -18,7 +18,7 @@ import {
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { getMainWindow, setMainWindow } from './state';
-import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+import { LOCAL_CONNECTION_ID, type ConnectionAgentTarget } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import {
@@ -1110,24 +1110,28 @@ export function showWorkspaceInBackendWindow(backendId: string, workspaceId: str
 }
 
 /**
- * Show `agentId` of `workspaceId` in a frame holding `backendId`, as
+ * Show an agent or panel tab of a workspace in a frame holding `backendId`, as
  * {@link showWorkspaceInBackendWindow} shows a workspace: the queued link opens
- * the workspace and then the agent, as a notification click does. Returns false
- * when no frame holds the machine.
+ * the workspace and then the agent or tab, as a notification click does. Returns
+ * false when no frame holds the machine.
  */
 export function showAgentInBackendWindow(
   backendId: string,
-  workspaceId: string,
-  agentId: string,
+  { workspaceId, agentId, tabId }: ConnectionAgentTarget,
 ): boolean {
   const target = showInFrame(backendId);
   if (!target?.contents) {
-    logger.warn('No window for backend to show agent in', { backendId, workspaceId, agentId });
+    logger.warn('No window for backend to show agent in', {
+      backendId,
+      workspaceId,
+      agentId,
+      tabId,
+    });
     return false;
   }
   queueDeepLinkForRenderer(target.contents, {
     type: 'notification',
-    params: { workspaceId, agentId },
+    params: { workspaceId, ...(agentId ? { agentId } : {}), ...(tabId ? { tabId } : {}) },
   });
   bringToFront(target.window);
   return true;
