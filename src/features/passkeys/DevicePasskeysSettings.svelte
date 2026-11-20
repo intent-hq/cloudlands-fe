@@ -8,7 +8,7 @@
   import Fa from 'svelte-fa';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { DestructiveConfirm } from '$lib/components/patterns/confirm';
-  import { SettingsSection } from '$lib/components/patterns/settings';
+  import { defineSettings, SettingsForm } from '$lib/components/patterns/settings';
   import { Button, IntentMarkLoader } from '$lib/components/patterns/settings/custom-controls';
   import { formatDate } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -50,6 +50,29 @@
       : null,
   );
 
+  const schema = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'passkeys',
+          title: m.passkeys_settings_title(),
+          description: m.passkeys_settings_description(),
+          entries: [
+            {
+              id: 'passkeys-list',
+              kind: 'custom',
+              layout: 'full-width',
+              label: m.passkeys_settings_list_ariaLabel(),
+              class: 'p-0',
+              busy: passkeys.status === 'loading',
+              error: failedEntry ? m.passkeys_settings_deleteFailed_error() : undefined,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
   function askDelete(entry: PasskeyDeviceCredential) {
     pending = entry;
     confirmOpen = true;
@@ -61,13 +84,7 @@
   }
 </script>
 
-<SettingsSection
-  id="passkeys"
-  title={m.passkeys_settings_title()}
-  description={m.passkeys_settings_description()}
-  busy={passkeys.status === 'loading'}
-  error={failedEntry ? m.passkeys_settings_deleteFailed_error() : undefined}
->
+{#snippet list()}
   {#if passkeys.status === 'loading'}
     <div class="flex justify-center px-6 py-6 text-muted-foreground">
       <IntentMarkLoader size={20} />
@@ -128,7 +145,9 @@
       {/snippet}
     </ListView>
   {/if}
-</SettingsSection>
+{/snippet}
+
+<SettingsForm {schema} custom={{ 'passkeys-list': list }} />
 
 {#if pending}
   <DestructiveConfirm
