@@ -1618,6 +1618,8 @@ describe('WebSocketApiSettings', () => {
         ]);
         expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
           { path: 'server.bindAddress', value: ['0.0.0.0'] },
+        ]);
+        expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(3, [
           { path: 'server.tunnel.enabled', value: true },
         ]);
       });
@@ -1675,6 +1677,41 @@ describe('WebSocketApiSettings', () => {
       await fireEvent.click(screen.getByRole('switch'));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_wsApi_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
+    });
+
+    it('a tunnel that fails to turn on keeps the bind default and toggle', async () => {
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          enabled: false,
+          bindAddress: ['127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      await renderExpandedSettings();
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('tailcat missing'));
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      expect(mocks.mockSettingsUpdate.mock.calls).toEqual([
+        [[{ path: 'server.wsApi.enabled', value: true }]],
+        [[{ path: 'server.bindAddress', value: ['0.0.0.0'] }]],
+        [[{ path: 'server.tunnel.enabled', value: true }]],
+      ]);
       expect(
         screen
           .getByRole('switch', { name: m.settings_wsApi_enable_label() })

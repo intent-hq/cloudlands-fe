@@ -5808,6 +5808,7 @@
   "settings_theme_label": "Tema",
   "settings_theme_light": "Claro",
   "settings_theme_system": "Sistema",
+  "settings_tunnel_enableError": "No se pudo activar el túnel Tailcat: {error}",
   "settings_tunnel_enable_description": "Permite tráfico seguro y cifrado entre tus dispositivos.",
   "settings_tunnel_enable_label": "Activar túnel Tailcat",
   "settings_tunnel_github_link": "Más información en GitHub",

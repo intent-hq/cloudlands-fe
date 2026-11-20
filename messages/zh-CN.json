@@ -5808,6 +5808,7 @@
   "settings_theme_label": "主题",
   "settings_theme_light": "浅色",
   "settings_theme_system": "系统",
+  "settings_tunnel_enableError": "无法启用 Tailcat 隧道：{error}",
   "settings_tunnel_enable_description": "允许设备之间进行安全的加密通信。",
   "settings_tunnel_enable_label": "启用 Tailcat 隧道",
   "settings_tunnel_github_link": "在 GitHub 上了解更多",

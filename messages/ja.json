@@ -5808,6 +5808,7 @@
   "settings_theme_label": "テーマ",
   "settings_theme_light": "ライト",
   "settings_theme_system": "システム",
+  "settings_tunnel_enableError": "Tailcat トンネルを有効にできませんでした: {error}",
   "settings_tunnel_enable_description": "デバイス間の安全な暗号化通信を可能にします。",
   "settings_tunnel_enable_label": "Tailcat トンネルを有効にする",
   "settings_tunnel_github_link": "GitHub で詳細を見る",
