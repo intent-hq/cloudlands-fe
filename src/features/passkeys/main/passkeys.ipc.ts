@@ -13,6 +13,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { app, ipcMain, session } from 'electron';
 import { BROWSER_PANEL_PARTITION } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
@@ -49,7 +50,10 @@ export function arePasskeysEnabled(): boolean {
 
 /** `preloadPath` lets the isolated Electron test load the compiled preload from its bundle. */
 export function setupPasskeysIPC(
-  preloadPath = path.join(__dirname, '../../../preload-build/preload/passkey-page.js'),
+  preloadPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../../preload-build/preload/passkey-page.js',
+  ),
 ): void {
   if (process.platform !== 'linux' || service) return;
   if (process.env.INTENT_BROWSER_PASSKEYS !== '1') return;
