@@ -7,7 +7,9 @@ import { pathToFileURL } from 'node:url';
 // for a settings proposal, so a user who never turned it on cannot reach the feature
 // or find out why: the "E2B cloud machines" flag hid Add cloud in Settings → Machines
 // (cloudlands-fe#4811, #4826). A switch matches an entry when its `set` dispatches the
-// action creator named by the entry's `redux-action` apply plan.
+// action creator named by the entry's `redux-action` apply plan, imported from that
+// action's slice module (`userPreferences/setX` → `setX` from `…/user-preferences-slice`).
+// A switch with a `when` gate counts only when the gate is one of SHOWN_SWITCH_GATES.
 export const SCRIPT_PATH = 'scripts/check-labs-settings-toggles.mjs';
 export const SCHEMA_SOURCE = 'src/shared/app-settings-schema.ts';
 export const LABS_PAGE_SOURCE = 'src/lib/components/settings/LabsSettings.svelte';
@@ -16,6 +18,10 @@ export const LABS_PAGE_SOURCE = 'src/lib/components/settings/LabsSettings.svelte
 // Stale entries (no such labs entry, or one that now has a switch) fail the check.
 export const HIDDEN_LABS_SETTINGS = Object.freeze({});
 
+// `when: () => <gate>` values that still show the switch to the users the setting is
+// for (the setting's description names the platform limit, e.g. "Desktop app only").
+export const SHOWN_SWITCH_GATES = Object.freeze(['desktop']);
+
 const LABS_CATEGORY_PATTERN = /category:\s*(['"`])labs\1/g;
 const SWITCH_KIND_PATTERN = /kind:\s*(['"`])switch\1/g;
 const PATH_PATTERN = /\bpath:\s*(['"`])([^'"`]+)\1/;
@@ -23,7 +29,33 @@ const APPLY_PATTERN = /\bapply:/;
 const APPLY_KIND_PATTERN = /\bkind:\s*(['"`])([^'"`]+)\1/;
 const ACTION_PATTERN = /\baction:\s*(['"`])([^'"`]+)\1/;
 const DISPATCH_PATTERN = /dispatch\(\s*([A-Za-z_$][\w$]*)\s*\(/g;
-const SCRIPT_BLOCK_PATTERN = /<script\b[^>]*>([\s\S]*?)<\/script>/;
+const SCRIPT_BLOCK_PATTERN = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
+const WHEN_PATTERN = /\bwhen:/;
+const SHOWN_WHEN_PATTERN = /\bwhen:\s*\(\)\s*=>\s*([\w$]+)\s*(?:,|$)/m;
+const IMPORT_PATTERN = /\bimport\s*\{([^}]*)\}\s*from\s*(['"])([^'"]+)\2/g;
+
+const sliceModuleOf = (action) =>
+  `${action
+    .slice(0, action.indexOf('/'))
+    .replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-slice`;
+const moduleName = (specifier) =>
+  specifier.slice(specifier.lastIndexOf('/') + 1).replace(/\.[cm]?[jt]s$/, '');
+
+// Local name → module specifier for every named import in a script block.
+function namedImports(script) {
+  const imports = new Map();
+  for (const [, names, , specifier] of script.matchAll(IMPORT_PATTERN)) {
+    for (const name of names.split(',')) {
+      const local = name
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop();
+      if (local) imports.set(local, specifier);
+    }
+  }
+  return imports;
+}
 
 const lineOf = (content, index) => content.slice(0, index).split('\n').length;
 
@@ -85,13 +117,24 @@ function ownProperties(text, spans, object) {
   return own;
 }
 
-// Every `category: 'labs'` schema entry: `{ path, applyKind, actionCreator, line }`.
+// Every `category: 'labs'` schema entry: `{ path, applyKind, action, actionCreator, line }`.
+// A match outside any object (the scanner lost track of the source) has a null `path`.
 export function findLabsSettings(schemaText) {
   const spans = objectSpans(schemaText);
   const settings = [];
   for (const match of schemaText.matchAll(LABS_CATEGORY_PATTERN)) {
     const entry = innermostSpan(spans, match.index);
-    if (!entry) continue;
+    if (!entry) {
+      settings.push({
+        path: null,
+        applyKind: null,
+        action: null,
+        actionCreator: null,
+        sliceModule: null,
+        line: lineOf(schemaText, match.index),
+      });
+      continue;
+    }
     const own = ownProperties(schemaText, spans, entry);
     const pathMatch = PATH_PATTERN.exec(own);
     const applyMatch = APPLY_PATTERN.exec(own);
@@ -104,23 +147,35 @@ export function findLabsSettings(schemaText) {
     settings.push({
       path: pathMatch?.[2] ?? null,
       applyKind: APPLY_KIND_PATTERN.exec(applyText)?.[2] ?? null,
+      action,
       actionCreator: action ? action.slice(action.lastIndexOf('/') + 1) : null,
+      sliceModule: action?.includes('/') ? sliceModuleOf(action) : null,
       line: lineOf(schemaText, entry.start + (pathMatch?.index ?? 0)),
     });
   }
   return settings;
 }
 
-// Action creators dispatched by the `kind: 'switch'` entries of the Labs page.
+const isShown = (own) => {
+  if (!WHEN_PATTERN.test(own)) return true;
+  const gate = SHOWN_WHEN_PATTERN.exec(own)?.[1];
+  return gate !== undefined && SHOWN_SWITCH_GATES.includes(gate);
+};
+
+// Action creator → import specifier (null when not imported) for every shown
+// `kind: 'switch'` entry in the Labs page's script blocks.
 export function findLabsSwitchActions(pageText) {
-  const script = SCRIPT_BLOCK_PATTERN.exec(pageText)?.[1] ?? '';
-  const spans = objectSpans(script);
-  const actions = new Set();
-  for (const match of script.matchAll(SWITCH_KIND_PATTERN)) {
-    const entry = innermostSpan(spans, match.index);
-    if (!entry) continue;
-    for (const dispatch of script.slice(entry.start, entry.end + 1).matchAll(DISPATCH_PATTERN)) {
-      actions.add(dispatch[1]);
+  const scripts = [...pageText.matchAll(SCRIPT_BLOCK_PATTERN)].map(([, script]) => script);
+  const imports = new Map(scripts.flatMap((script) => [...namedImports(script)]));
+  const actions = new Map();
+  for (const script of scripts) {
+    const spans = objectSpans(script);
+    for (const match of script.matchAll(SWITCH_KIND_PATTERN)) {
+      const entry = innermostSpan(spans, match.index);
+      if (!entry || !isShown(ownProperties(script, spans, entry))) continue;
+      for (const dispatch of script.slice(entry.start, entry.end + 1).matchAll(DISPATCH_PATTERN)) {
+        actions.set(dispatch[1], imports.get(dispatch[1]) ?? null);
+      }
     }
   }
   return actions;
@@ -142,7 +197,8 @@ export function checkLabsSettingsToggles({ schema, page }, hidden = HIDDEN_LABS_
     const at = `${SCHEMA_SOURCE}:${setting.line}`;
     if (!setting.path) {
       problems.push(
-        `${at} labs entry has no readable \`path\`; update the parser in ${SCRIPT_PATH}`,
+        `${at} cannot read the labs entry (no enclosing object or \`path\`); ` +
+          `update the parser in ${SCRIPT_PATH}`,
       );
       continue;
     }
@@ -156,12 +212,14 @@ export function checkLabsSettingsToggles({ schema, page }, hidden = HIDDEN_LABS_
       }
       continue;
     }
-    if (switchActions.has(setting.actionCreator)) {
+    const specifier = switchActions.get(setting.actionCreator);
+    if (specifier && moduleName(specifier) === setting.sliceModule) {
       withSwitch.add(setting.path);
     } else if (!Object.hasOwn(hidden, setting.path)) {
       problems.push(
         `${at} ${setting.path} has no switch in Settings → Labs ` +
-          `(expected a switch in ${LABS_PAGE_SOURCE} whose set dispatches ${setting.actionCreator})`,
+          `(expected a shown switch in ${LABS_PAGE_SOURCE} whose set dispatches ` +
+          `${setting.actionCreator} imported from a ${setting.sliceModule} module)`,
       );
     }
   }

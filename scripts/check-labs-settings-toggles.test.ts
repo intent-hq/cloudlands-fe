@@ -8,6 +8,7 @@ import {
   findLabsSwitchActions,
   readSources,
 } from './check-labs-settings-toggles.mjs';
+import { listAppSettingDefinitions } from '../src/shared/app-settings-schema';
 
 function definition(path: string, category: string, apply: string) {
   return [
@@ -47,9 +48,19 @@ function toggle(id: string, action: string, extra: string[] = []) {
   ];
 }
 
+const USER_PREFERENCES_SLICE = '$store/renderer/slices/user-preferences/user-preferences-slice';
+
 const page = (...entries: string[][]) =>
   [
     '<script lang="ts">',
+    `  import { ${[
+      ...entries
+        .flat()
+        .join('\n')
+        .matchAll(/dispatch\((\w+)\(/g),
+    ]
+      .map(([, name]) => name)
+      .join(', ')} } from '${USER_PREFERENCES_SLICE}';`,
     '  const schema = $derived(',
     '    defineSettings({',
     "      sections: [{ id: 'labs', entries: [",
@@ -76,7 +87,9 @@ describe('Labs settings toggle guard', () => {
       {
         path: 'labs.tabGroups',
         applyKind: 'redux-action',
+        action: 'userPreferences/setLabsTabGroupsEnabled',
         actionCreator: 'setLabsTabGroupsEnabled',
+        sliceModule: 'user-preferences-slice',
         line: 13,
       },
     ]);
@@ -91,9 +104,33 @@ describe('Labs settings toggle guard', () => {
       ),
     );
     expect([...findLabsSwitchActions(text)]).toEqual([
-      'setLabsTabGroupsEnabled',
-      'setLabsSshMachineSetupEnabled',
+      ['setLabsTabGroupsEnabled', USER_PREFERENCES_SLICE],
+      ['setLabsSshMachineSetupEnabled', USER_PREFERENCES_SLICE],
     ]);
+  });
+
+  it('does not count a switch whose action comes from another slice', () => {
+    const otherSlice = page(tabGroupsSwitch).replace(
+      USER_PREFERENCES_SLICE,
+      '$store/renderer/slices/tab-groups/tab-groups-slice',
+    );
+    expect(checkLabsSettingsToggles({ schema: schema(tabGroups), page: otherSlice }, {})).toEqual([
+      expect.stringMatching(/labs\.tabGroups has no switch .*user-preferences-slice/),
+    ]);
+  });
+
+  it('counts a desktop-only switch but not one gated on another flag', () => {
+    const desktopOnly = toggle('labs-tab-groups', 'setLabsTabGroupsEnabled', [
+      'when: () => desktop,',
+    ]);
+    expect(
+      checkLabsSettingsToggles({ schema: schema(tabGroups), page: page(desktopOnly) }, {}),
+    ).toEqual([]);
+    const gated = toggle('labs-tab-groups', 'setLabsTabGroupsEnabled', ['when: () => $otherLab$,']);
+    const shown = toggle('labs-ssh', 'setLabsSshMachineSetupEnabled');
+    expect(
+      checkLabsSettingsToggles({ schema: schema(tabGroups), page: page(gated, shown) }, {}),
+    ).toEqual([expect.stringMatching(/labs\.tabGroups has no switch/)]);
   });
 
   it('passes when every labs schema entry has a Labs switch', () => {
@@ -183,9 +220,58 @@ describe('Labs settings toggle guard', () => {
     ).toContainEqual(expect.stringMatching(/found no switch entries/));
   });
 
-  it('passes on the current schema and Labs page', () => {
+  it('reads an apply plan written over several lines', () => {
+    const multiLine = definition(
+      'labs.tabGroups',
+      'labs',
+      "{\n      kind: 'redux-action',\n      action: 'userPreferences/setLabsTabGroupsEnabled',\n    }",
+    );
+    expect(
+      checkLabsSettingsToggles({ schema: schema(multiLine), page: page(tabGroupsSwitch) }, {}),
+    ).toEqual([]);
+  });
+
+  it('flags a labs category it cannot place in a schema entry', () => {
+    const loose = `${schema(tabGroups)}\ncategory: 'labs',`;
+    expect(checkLabsSettingsToggles({ schema: loose, page: page(tabGroupsSwitch) }, {})).toEqual([
+      expect.stringMatching(/app-settings-schema\.ts:\d+ cannot read the labs entry/),
+    ]);
+  });
+
+  it('does not count a switch that is never shown', () => {
+    const hiddenSwitch = toggle('labs-tab-groups', 'setLabsTabGroupsEnabled', [
+      'when: () => false,',
+    ]);
+    const shown = toggle('labs-ssh', 'setLabsSshMachineSetupEnabled');
+    expect(
+      checkLabsSettingsToggles({ schema: schema(tabGroups), page: page(hiddenSwitch, shown) }, {}),
+    ).toEqual([expect.stringMatching(/labs\.tabGroups has no switch/)]);
+  });
+
+  it('reads switches after a module script block', () => {
+    const withModule = `<script module lang="ts">\n  export const id = 'labs';\n</script>\n${page(tabGroupsSwitch)}`;
+    expect(checkLabsSettingsToggles({ schema: schema(tabGroups), page: withModule }, {})).toEqual(
+      [],
+    );
+  });
+
+  it('reads every labs entry the schema module defines', () => {
     const sources = readSources(process.cwd());
-    expect(findLabsSettings(sources.schema).length).toBeGreaterThan(0);
-    expect(checkLabsSettingsToggles(sources, HIDDEN_LABS_SETTINGS)).toEqual([]);
+    const defined = listAppSettingDefinitions()
+      .filter((setting) => setting.category === 'labs')
+      .map((setting) => ({
+        path: setting.path,
+        action: setting.apply.kind === 'redux-action' ? setting.apply.action : null,
+      }));
+    const parsed = findLabsSettings(sources.schema).map((setting) => ({
+      path: setting.path,
+      action: setting.action,
+    }));
+    expect(defined.length).toBeGreaterThan(0);
+    expect(parsed).toEqual(defined);
+  });
+
+  it('passes on the current schema and Labs page', () => {
+    expect(checkLabsSettingsToggles(readSources(process.cwd()), HIDDEN_LABS_SETTINGS)).toEqual([]);
   });
 });

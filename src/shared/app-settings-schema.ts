@@ -901,6 +901,11 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   },
 ] as const;
 
+/** @internal Test seam: scripts/check-labs-settings-toggles.test.ts compares its parse with this list. */
+export function listAppSettingDefinitions(): readonly AppSettingDefinition[] {
+  return APP_SETTING_DEFINITIONS;
+}
+
 export function findAppSettingDefinition(path: string): AppSettingDefinition | undefined {
   return APP_SETTING_DEFINITIONS.find((definition) => definition.path === path);
 }
