@@ -11,16 +11,36 @@ function bins(fill: (hz: number) => number, count = BIN_COUNT): Uint8Array {
 
 describe('spectrumBands', () => {
   it('returns one value per dictation bar', () => {
-    expect(spectrumBands(bins(() => 128), SAMPLE_RATE)).toHaveLength(DICTATION_BAR_COUNT);
+    expect(
+      spectrumBands(
+        bins(() => 128),
+        SAMPLE_RATE,
+      ),
+    ).toHaveLength(DICTATION_BAR_COUNT);
   });
 
   it('keeps silence and the room-noise floor flat', () => {
-    expect(spectrumBands(bins(() => 0), SAMPLE_RATE)).toEqual([0, 0, 0, 0, 0]);
-    expect(spectrumBands(bins(() => 30), SAMPLE_RATE)).toEqual([0, 0, 0, 0, 0]);
+    expect(
+      spectrumBands(
+        bins(() => 0),
+        SAMPLE_RATE,
+      ),
+    ).toEqual([0, 0, 0, 0, 0]);
+    expect(
+      spectrumBands(
+        bins(() => 30),
+        SAMPLE_RATE,
+      ),
+    ).toEqual([0, 0, 0, 0, 0]);
   });
 
   it('saturates a full-scale signal at 1', () => {
-    expect(spectrumBands(bins(() => 255), SAMPLE_RATE)).toEqual([1, 1, 1, 1, 1]);
+    expect(
+      spectrumBands(
+        bins(() => 255),
+        SAMPLE_RATE,
+      ),
+    ).toEqual([1, 1, 1, 1, 1]);
   });
 
   it('orders bands low to high frequency', () => {

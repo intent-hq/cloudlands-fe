@@ -58,47 +58,50 @@ export function createDiscussionMicrophone(options: {
     const attempt = ++generation;
     const active = () => generation === attempt && options.isActive();
     options.onState('recording');
-    startPttRecording({
-      showHint: options.context.showHint,
-      dispatch(action) {
-        const typed = action as { type: string };
-        if (typed.type === pttRecordingFinished.type) {
-          if (!active()) return;
-          ownedSession = null;
-          options.onState('transcribing');
-          const [recording] = (action as ReturnType<typeof pttRecordingFinished>).payload;
-          void runTranscriptionFlow(recording, {
-            target: {
-              workspaceId: options.workspaceId,
-              isActive: active,
-              insertText: (text) => {
-                if (active()) options.onTranscript(text);
+    startPttRecording(
+      {
+        showHint: options.context.showHint,
+        dispatch(action) {
+          const typed = action as { type: string };
+          if (typed.type === pttRecordingFinished.type) {
+            if (!active()) return;
+            ownedSession = null;
+            options.onState('transcribing');
+            const [recording] = (action as ReturnType<typeof pttRecordingFinished>).payload;
+            void runTranscriptionFlow(recording, {
+              target: {
+                workspaceId: options.workspaceId,
+                isActive: active,
+                insertText: (text) => {
+                  if (active()) options.onTranscript(text);
+                },
+                onStarted: (callback) => {
+                  cancelTranscription = callback;
+                },
+                onFinished: () => {
+                  if (!active()) return;
+                  cancelTranscription = undefined;
+                  options.onState('idle');
+                },
               },
-              onStarted: (callback) => {
-                cancelTranscription = callback;
-              },
-              onFinished: () => {
+            })
+              .catch(() => {
+                if (active())
+                  options.context.showHint(m.hardwareConsole_voice_transcribeFailed_error());
+              })
+              .finally(() => {
                 if (!active()) return;
                 cancelTranscription = undefined;
                 options.onState('idle');
-              },
-            },
-          })
-            .catch(() => {
-              if (active())
-                options.context.showHint(m.hardwareConsole_voice_transcribeFailed_error());
-            })
-            .finally(() => {
-              if (!active()) return;
-              cancelTranscription = undefined;
-              options.onState('idle');
-            });
-          return;
-        }
-        options.context.dispatch(action);
-        if (typed.type === pttRecordingStopped.type && active()) options.onState('idle');
+              });
+            return;
+          }
+          options.context.dispatch(action);
+          if (typed.type === pttRecordingStopped.type && active()) options.onState('idle');
+        },
       },
-    }, 'discussion');
+      'discussion',
+    );
     ownedSession = getActivePttSessionToken();
     if (!ownedSession) options.onState('idle');
   }

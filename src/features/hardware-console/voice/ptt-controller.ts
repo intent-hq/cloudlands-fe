@@ -133,10 +133,7 @@ export function handleVoiceKeyUp(context: PttContext): void {
  * Start a recording session (no-op while one is live). `source` names the surface that
  * started it, which decides where its live meter shows.
  */
-export function startPttRecording(
-  context: PttContext,
-  source: PttRecordingSource = 'key',
-): void {
+export function startPttRecording(context: PttContext, source: PttRecordingSource = 'key'): void {
   if (activeRecorder !== null) return;
   // A prompt dictation target only applies to the recording it was
   // registered for (at that session's stop). One left dangling — the

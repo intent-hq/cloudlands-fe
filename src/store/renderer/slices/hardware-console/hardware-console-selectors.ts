@@ -167,7 +167,8 @@ export const selectPttRecording = store.createSelector(
 
 /** True while the hardware voice key's own recording is live (the floating HUD meter). */
 export const selectPttKeyRecording = store.createSelector(
-  (state) => state.hardwareConsole.pttRecording && state.hardwareConsole.pttRecordingSource === 'key',
+  (state) =>
+    state.hardwareConsole.pttRecording && state.hardwareConsole.pttRecordingSource === 'key',
 );
 
 /** Start time of the live push-to-talk recording; `null` while idle. */

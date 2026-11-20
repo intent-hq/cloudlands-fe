@@ -41,11 +41,17 @@
   let tick = 0;
   const timer = setInterval(() => {
     tick += 1;
-    const syllable = Math.max(0, Math.sin(tick * 0.35) * 0.6 + Math.sin(tick * 0.14 + 1) * 0.5 + 0.2);
+    const syllable = Math.max(
+      0,
+      Math.sin(tick * 0.35) * 0.6 + Math.sin(tick * 0.14 + 1) * 0.5 + 0.2,
+    );
     store.dispatch(
       pttInputLevelsChanged(
         Array.from({ length: 5 }, (_, band) =>
-          Math.min(1, gain * syllable * (1 - band * 0.12) * (0.75 + 0.25 * Math.sin(tick + band * 1.7))),
+          Math.min(
+            1,
+            gain * syllable * (1 - band * 0.12) * (0.75 + 0.25 * Math.sin(tick + band * 1.7)),
+          ),
         ),
       ),
     );

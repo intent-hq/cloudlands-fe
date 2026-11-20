@@ -12,7 +12,9 @@ test('narrow production composer retains a readable dictation timer and waveform
   const editor = component.locator(editorSelector);
   await expect(editor).toHaveAttribute('contenteditable', 'true');
   await editor.fill('Keep this unsent.');
-  await expect(component.locator('[data-dock-media-footer] [data-dictation-elapsed]')).toBeVisible();
+  await expect(
+    component.locator('[data-dock-media-footer] [data-dictation-elapsed]'),
+  ).toBeVisible();
   await expect
     .poll(() => readDictationIndicators(component))
     .toEqual({
