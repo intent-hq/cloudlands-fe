@@ -130,7 +130,7 @@ function invoke<T>(channel: string, payload: unknown): Promise<T> {
 }
 
 /** Create (or reuse) a tab's page in this window. */
-export function createMainOwnedPage(request: {
+function createMainOwnedPage(request: {
   tabId: string;
   workspaceId: string;
   url: string;
@@ -154,7 +154,7 @@ export function destroyMainOwnedPage(tabId: string): Promise<void> {
   return invoke<unknown>(CHANNELS.DESTROY, { tabId }).then(() => undefined);
 }
 
-export function readMainOwnedPageState(
+function readMainOwnedPageState(
   tabId: string,
   workspaceId?: string,
 ): Promise<BrowserViewState | null> {
@@ -179,7 +179,7 @@ export function detachMainOwnedPage(tabId: string): Promise<unknown> {
   return invoke(CHANNELS.DETACH, { tabId });
 }
 
-export function commandMainOwnedPage(
+function commandMainOwnedPage(
   tabId: string,
   command: BrowserViewCommand,
 ): Promise<BrowserViewCommandResult> {
@@ -214,7 +214,7 @@ function ensureChannel(): void {
 }
 
 /** Listen to one tab's page events. Returns the unsubscribe function. */
-export function onMainOwnedPageEvent(tabId: string, listener: PageListener): () => void {
+function onMainOwnedPageEvent(tabId: string, listener: PageListener): () => void {
   ensureChannel();
   let set = listeners.get(tabId);
   if (!set) {
@@ -229,19 +229,12 @@ export function onMainOwnedPageEvent(tabId: string, listener: PageListener): () 
   };
 }
 
-/**
- * @internal Test seam: deliver a page event as if main sent it.
- */
-export function deliverMainOwnedPageEventForTest(message: BrowserViewEventMessage): void {
-  for (const listener of listeners.get(message.tabId) ?? []) listener(message.event);
-}
-
 // ---------------------------------------------------------------------------
 // The `<webview>`-shaped adapter
 // ---------------------------------------------------------------------------
 
 /** The `<webview>` console protocol message for an app shortcut typed in the page. */
-export function shortcutConsoleMessage(shortcut: BrowserViewShortcut): string {
+function shortcutConsoleMessage(shortcut: BrowserViewShortcut): string {
   switch (shortcut.action) {
     case 'close-tab':
       return '__INTENT_CLOSE_TAB__';

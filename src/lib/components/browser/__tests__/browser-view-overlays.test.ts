@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BROWSER_VIEW_OVERLAY_SELECTOR, coveredSlots } from '../browser-view-overlays';
+import { coveredSlots } from '../browser-view-overlays';
 
 function box(element: HTMLElement, rect: { x: number; y: number; width: number; height: number }) {
   element.getBoundingClientRect = () =>
@@ -35,7 +35,6 @@ describe('coveredSlots', () => {
     document.body.append(slot, other);
     const menu = overlay({ x: 450, y: 120, width: 100, height: 100 });
 
-    expect(menu.matches(BROWSER_VIEW_OVERLAY_SELECTOR)).toBe(true);
     expect(coveredSlots([slot, other], [menu], false)).toEqual(new Set([slot]));
   });
 

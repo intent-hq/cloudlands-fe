@@ -12,7 +12,7 @@
  */
 
 /** App overlays that can open over a browser box. */
-export const BROWSER_VIEW_OVERLAY_SELECTOR = [
+const BROWSER_VIEW_OVERLAY_SELECTOR = [
   '[data-bits-floating-content-wrapper]',
   '[role="menu"]',
   '[role="listbox"]',
