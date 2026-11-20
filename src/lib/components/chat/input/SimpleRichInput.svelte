@@ -12,9 +12,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { electronAPI } from '$lib/electron-bridge';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
-  import { base64ToBlob } from '$lib/utils/image-actions';
+  import { base64ByteSize } from '$lib/utils/image-actions';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import DockComposerCapturePicker from '$features/hud/components/DockComposerCapturePicker.svelte';
+  import ChatScreenshotEditor from './ChatScreenshotEditor.svelte';
   import type { Workspace } from '$shared/types';
   import type {
     EditorScreenReference,
@@ -22,7 +23,7 @@
     DockInsertionPart,
     DockReferenceEdit,
     DockCaptureMode,
-    DockCapturedPixels,
+    ChatScreenshotPixels,
     DockNativeResult,
   } from '$shared/dock-evidence';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -439,8 +440,12 @@
   const screenshotModesAvailable = $derived(
     screenshotAvailable && electronAPI().platform === 'darwin',
   );
+  const imageMaxBytes = $derived(
+    workspace?.id === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES,
+  );
   let screenshotMode = $state<DockCaptureMode>('fullscreen');
   let screenshotRevision = $state(0);
+  let screenshotReview = $state.raw<{ id: string; pixels: ChatScreenshotPixels } | null>(null);
   let screenshotRequest = $state.raw<{
     workspaceId: string | undefined;
     agentId: string | undefined;
@@ -448,10 +453,6 @@
   } | null>(null);
   const screenshotLabels = $derived({
     capture: m.dock_composer_screenshotAction_label(),
-    captureMode: {
-      window: m.dock_composer_captureWindow_label(),
-      region: m.dock_composer_captureRegion_label(),
-    },
     captureModes: {
       fullscreen: m.dock_composer_captureFullscreen_label(),
       window: m.dock_composer_captureWindow_label(),
@@ -1115,6 +1116,16 @@
   function cancelScreenshot(): void {
     screenshotRequest?.aborter.abort();
     screenshotRequest = null;
+    screenshotReview = null;
+  }
+
+  async function attachScreenshot(file: File): Promise<boolean> {
+    const request = screenshotRequest;
+    if (!request || !isCurrentScreenshot(request)) return false;
+    const attached = await processImageFiles([file], request.aborter.signal);
+    if (!attached || !isCurrentScreenshot(request)) return false;
+    cancelScreenshot();
+    return true;
   }
 
   async function takeScreenshot(mode: DockCaptureMode): Promise<void> {
@@ -1131,8 +1142,11 @@
     screenshotRequest = request;
     signal.addEventListener('abort', cancelNative, { once: true });
     try {
-      const result: DockNativeResult<Pick<DockCapturedPixels, 'base64' | 'mimeType'>> =
-        await api.invoke(channel, { action: 'capture', requestId, mode });
+      const result: DockNativeResult<ChatScreenshotPixels> = await api.invoke(channel, {
+        action: 'capture',
+        requestId,
+        mode,
+      });
       if (!isCurrentScreenshot(request)) return;
       if (!result.ok) {
         if (result.detail === 'cancelled') return;
@@ -1145,17 +1159,19 @@
         );
         return;
       }
-      const { base64, mimeType } = result.value;
-      const file = new File([base64ToBlob(base64, mimeType)], name, { type: mimeType });
-      const attached = await processImageFiles([file], signal);
-      if (attached && isCurrentScreenshot(request)) screenshotRevision += 1;
+      if (base64ByteSize(result.value.base64) > imageMaxBytes) {
+        notify.error(m.chat_richInput_filesTooLarge_error({ names: name }));
+        return;
+      }
+      screenshotRevision += 1;
+      screenshotReview = { id: requestId, pixels: result.value };
     } catch (error) {
       if (!isCurrentScreenshot(request)) return;
       logger.warn('Could not attach screenshot', { error });
       notify.error(m.browser_embedded_screenshotFailed_error());
     } finally {
       signal.removeEventListener('abort', cancelNative);
-      if (screenshotRequest === request) {
+      if (screenshotRequest === request && !screenshotReview) {
         screenshotRequest = null;
         void restoreComposerFocus();
       }
@@ -1317,9 +1333,6 @@
     // composer cap matches the daemon's 30 MiB reference-image limit. The
     // chief virtual workspace has no attachment registry — its images stay
     // inline, so it keeps the legacy 10 MB inline-frame cap.
-    const maxBytes =
-      workspace?.id === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES;
-
     const imageFiles: File[] = [];
     const notified = new Set<'disabled' | 'limit'>();
     for (const file of files) {
@@ -1348,7 +1361,7 @@
 
     if (disposed) return;
     const items = await imageFilesToContextItems(imageFiles, {
-      maxBytes,
+      maxBytes: imageMaxBytes,
       signal,
       announceSuccess: announceAddedImages,
     });
@@ -2215,14 +2228,15 @@
             state={{
               captureMode: screenshotMode,
               captureModesAvailable: screenshotModesAvailable,
-              capturePending: !!screenshotRequest,
+              capturePending: !!screenshotRequest && !screenshotReview,
               captureRevision: screenshotRevision,
-              captureTooltip: screenshotRequest
-                ? m.dock_composer_capturePending_label()
-                : undefined,
+              captureTooltip:
+                screenshotRequest && !screenshotReview
+                  ? m.dock_composer_capturePending_label()
+                  : undefined,
             }}
             labels={screenshotLabels}
-            disabled={disabled || inputLocked}
+            disabled={disabled || inputLocked || !!screenshotReview}
             onCapture={() => void takeScreenshot(screenshotMode)}
             onSelect={(mode) => void takeScreenshot(mode)}
           />
@@ -2361,6 +2375,21 @@
   onConfirm={() => settleModelSwitchDialog(true)}
   onCancel={() => settleModelSwitchDialog(false)}
 />
+
+{#if screenshotReview}
+  {#key screenshotReview.id}
+    <ChatScreenshotEditor
+      id={screenshotReview.id}
+      workspaceId={workspace?.id ?? ''}
+      agentId={agentId ?? ''}
+      pixels={screenshotReview.pixels}
+      maxBytes={imageMaxBytes}
+      onAttach={attachScreenshot}
+      onDelete={cancelScreenshot}
+      onFocusReturn={() => void restoreComposerFocus()}
+    />
+  {/key}
+{/if}
 
 <style>
   .rich-input-container {

@@ -25,6 +25,7 @@ import {
 } from '../../../main/window-backend';
 import type {
   DockCapturedPixels,
+  ChatScreenshotPixels,
   DockCaptureMode,
   DockNativeResult,
 } from '../../../shared/dock-evidence';
@@ -280,7 +281,7 @@ export class DockEvidenceSessions {
     display: Display,
     mode: DockCaptureMode,
     signal: AbortSignal,
-  ): Promise<DockNativeResult<Pick<DockCapturedPixels, 'base64' | 'mimeType'>>> {
+  ): Promise<DockNativeResult<ChatScreenshotPixels>> {
     if (this.capturing || this.capturingChat || signal.aborted)
       return { ok: false, error: 'unavailable' };
     if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
@@ -306,8 +307,8 @@ export class DockEvidenceSessions {
       } else {
         const result = await this.deps.captureVisible?.(dock, display, overlays, overlayIds);
         if (result?.ok) {
-          const { base64, mimeType } = result.value;
-          return { ok: true, value: { base64, mimeType } };
+          const { base64, mimeType, width, height } = result.value;
+          return { ok: true, value: { base64, mimeType, width, height } };
         }
         if (result && result.detail !== 'os-version') return result;
         if (signal.aborted || overlayIds.length || overlays.some((window) => window.isVisible()))
@@ -316,7 +317,15 @@ export class DockEvidenceSessions {
       }
       if (!image.png.length) return { ok: false, error: 'failed' };
       if (image.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
-      return { ok: true, value: { base64: image.png.toString('base64'), mimeType: 'image/png' } };
+      return {
+        ok: true,
+        value: {
+          base64: image.png.toString('base64'),
+          mimeType: 'image/png',
+          width: image.width,
+          height: image.height,
+        },
+      };
     } catch {
       return { ok: false, error: this.deps.permissionDenied() ? 'permission' : 'failed' };
     } finally {

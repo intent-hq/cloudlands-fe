@@ -1435,6 +1435,11 @@ export interface DockCapturedPixels {
   image?: DockEvidenceImage;
 }
 
+export type ChatScreenshotPixels = Pick<
+  DockCapturedPixels,
+  'base64' | 'mimeType' | 'width' | 'height'
+>;
+
 /**
  * Server capabilities observed from the acknowledged hello of one backend
  * connection. Valid only while that connection (backend id + generation) is

@@ -1,6 +1,7 @@
 <script lang="ts" module>
   export type DockComposerGlyph =
     | 'viewfinder'
+    | 'camera'
     | 'window'
     | 'region'
     | 'video'
@@ -26,6 +27,7 @@
   import type { Component } from 'svelte';
   import AppWindowIcon from 'phosphor-svelte/lib/AppWindowIcon';
   import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
+  import CameraIcon from 'phosphor-svelte/lib/CameraIcon';
   import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
   import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
   import CursorIcon from 'phosphor-svelte/lib/CursorIcon';
@@ -52,6 +54,7 @@
 
   const icons: Record<DockComposerGlyph, Component<Record<string, unknown>>> = {
     viewfinder: ScanIcon,
+    camera: CameraIcon,
     window: AppWindowIcon,
     region: RectangleDashedIcon,
     video: VideoCameraIcon,
