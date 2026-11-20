@@ -45,6 +45,32 @@ const fixture = resolve('test/fixtures/browser-lifetime');
  * covered the observed destruction latency when no probe hung.
  */
 const GUEST_TEARDOWN_TIMEOUT_MS = 20_000;
+/** A page offering two WebMCP tools; `add_item` changes the DOM so a call is observable. */
+const WEBMCP_ADD_ITEM_SCHEMA = {
+  type: 'object',
+  properties: { text: { type: 'string' } },
+  required: ['text'],
+};
+const WEBMCP_PAGE = `<!doctype html><title>WebMCP fixture</title><ul id="items"></ul><script>
+  window.documentMarker = crypto.randomUUID();
+  document.modelContext.registerTool({
+    name: 'add_item',
+    description: 'Add a to-do item',
+    inputSchema: ${JSON.stringify(WEBMCP_ADD_ITEM_SCHEMA)},
+    execute: async ({ text }) => {
+      const item = document.createElement('li');
+      item.textContent = text;
+      document.querySelector('#items').append(item);
+      return { content: [{ type: 'text', text: 'Added ' + text }] };
+    },
+  });
+  document.modelContext.registerTool({
+    name: 'always_fails',
+    description: 'Throws',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => { throw new Error('fixture tool failure'); },
+  });
+</script>`;
 test.beforeAll(async () => {
   // Owns the cold-start cost (bundle + dependency pre-bundle) for every test.
   test.setTimeout(90_000);
@@ -56,6 +82,7 @@ test.beforeAll(async () => {
     [
       `export { embeddedBrowserCdp } from ${JSON.stringify(resolve('src/features/browser/main/embedded-browser-cdp-service.ts'))};`,
       `export { executeActions } from ${JSON.stringify(resolve('src/features/browser/main/browser-action-executor.ts'))};`,
+      `export { WEBVIEW_BLINK_FEATURES } from ${JSON.stringify(resolve('src/shared/constants.ts'))};`,
     ].join('\n'),
   );
   await build({
@@ -113,6 +140,11 @@ test.beforeAll(async () => {
     },
   });
   guestServer = createHttpServer((req, res) => {
+    if (req.url?.startsWith('/webmcp?')) {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(WEBMCP_PAGE);
+      return;
+    }
     const respond = () => {
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Cache-Control', 'no-store');
@@ -1190,3 +1222,80 @@ for (const owned of [false, true]) {
     }
   });
 }
+
+test('WebMCP tools registered by a page are listed and called through browser actions', async ({}, testInfo) => {
+  test.setTimeout(120_000);
+  const { app, page, profile } = await launch(true);
+  const observations: any[] = [];
+  const exec = (actions: object[], agentId = 'fixture-agent') =>
+    app.evaluate(
+      (_electron, { actions, agentId }) =>
+        (globalThis as any).lifetimeExecute({ actions, tabId: 'A-1' }, undefined, agentId, 'A'),
+      { actions, agentId },
+    );
+  try {
+    await ready(app, 'A-1');
+    const url = `${guestUrl}/webmcp?tab=A-1`;
+    const navigation = await app.evaluate(
+      (_electron, url) => (globalThis as any).lifetimeNavigate('A-1', url, 'fixture-agent'),
+      url,
+    );
+    expect(navigation).toMatchObject({ success: true });
+
+    let listed: any;
+    await expect
+      .poll(async () => {
+        listed = await exec([{ action: 'listTools' }]);
+        return listed.results[0].result?.tools?.map((tool: any) => tool.name);
+      })
+      .toEqual(['add_item', 'always_fails']);
+    observations.push({ label: 'listTools', result: listed });
+    expect(listed.results[0].warning).toBeUndefined();
+    expect(listed.results[0].result.tools[0]).toMatchObject({
+      name: 'add_item',
+      description: 'Add a to-do item',
+      inputSchema: WEBMCP_ADD_ITEM_SCHEMA,
+      origin: new URL(guestUrl).origin,
+    });
+
+    const called = await exec([
+      { action: 'callTool', name: 'add_item', input: { text: 'Buy milk' } },
+      {
+        action: 'evaluate',
+        expression: '[...document.querySelectorAll("#items li")].map((li) => li.textContent)',
+      },
+    ]);
+    const [added, items] = called.results;
+    const [failed] = (await exec([{ action: 'callTool', name: 'always_fails' }])).results;
+    const [missing] = (await exec([{ action: 'callTool', name: 'missing_tool' }])).results;
+    observations.push({ label: 'callTool', results: [added, items, failed, missing] });
+    expect(added).toMatchObject({
+      action: 'callTool',
+      success: true,
+      result: { content: [{ type: 'text', text: 'Added Buy milk' }] },
+    });
+    expect(items.result).toEqual(['Buy milk']);
+    expect(failed).toMatchObject({ action: 'callTool', success: false });
+    // Chromium reports a throwing tool as a generic invocation failure, not the page's message.
+    expect(failed.error).toContain('always_fails');
+    expect(failed.error).toContain('invocation failed');
+    expect(missing).toMatchObject({ action: 'callTool', success: false });
+    expect(missing.error).toContain('add_item');
+
+    const foreign = await exec(
+      [{ action: 'callTool', name: 'add_item', input: { text: 'Not mine' } }],
+      'other-agent',
+    );
+    observations.push({ label: 'foreign callTool', result: foreign });
+    expect(foreign.results[0]).toMatchObject({ success: false, errorCode: 'not-owner' });
+    expect(
+      (
+        await exec([
+          { action: 'evaluate', expression: 'document.querySelectorAll("#items li").length' },
+        ])
+      ).results[0].result,
+    ).toBe(1);
+  } finally {
+    await teardown(app, page, profile, observations, testInfo);
+  }
+});
