@@ -203,6 +203,7 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
           workspaceId: params.workspaceId,
           ...(params.chief === 'true' ? { chief: true } : {}),
           ...(params.agentId ? { agentId: params.agentId } : {}),
+          ...(params.tabId ? { tabId: params.tabId } : {}),
         });
       }
       break;

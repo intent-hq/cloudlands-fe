@@ -3,7 +3,7 @@
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import {
     matchSwitcherChord,
-    type RecentAgentEntry,
+    type RecentEntry,
     type RecentAgentPageKey,
   } from '$shared/recent-agents';
   import { onRecentAgentPageKey } from './page-key-forwarding';
@@ -11,10 +11,14 @@
     selectConnectedIds,
     selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { selectRecentAgents } from '$store/renderer/slices/recent-agents/recent-agents-selectors';
+  import {
+    selectRecentAgents,
+    selectShownPanelTab,
+  } from '$store/renderer/slices/recent-agents/recent-agents-selectors';
   import { recentAgentOpenRequested } from '$store/renderer/slices/recent-agents/recent-agents-slice';
   import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { routedWorkspaceId } from '$store/renderer/utils/routed-workspace-id';
   import RecentAgentSwitcherView from './RecentAgentSwitcherView.svelte';
   import {
     isSwitcherModifierKeyUp,
@@ -31,27 +35,37 @@
   const currentConnectionId$ = selectCurrentConnectionId();
   const connectedIds$ = selectConnectedIds();
   const viewedAgentId$ = selectCurrentlyViewedAgentId();
+  const shownTab$ = selectShownPanelTab();
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 
   let switcher = $state<SwitcherState>(SWITCHER_CLOSED);
   /** The list as it was when the switcher opened; pushes do not reorder it mid-switch. */
-  let entries = $state<RecentAgentEntry[]>([]);
+  let entries = $state<RecentEntry[]>([]);
   let held: ReturnType<typeof switcherHeldModifiers> = null;
   let returnFocus: HTMLElement | null = null;
   let listbox = $state<HTMLElement | null>(null);
 
   const selectedIndex = $derived(switcher.open ? switcher.index : -1);
 
-  function isOffline(entry: RecentAgentEntry): boolean {
+  function isOffline(entry: RecentEntry): boolean {
     return (
       entry.connectionId !== $currentConnectionId$ && !$connectedIds$.includes(entry.connectionId)
     );
   }
 
-  function isShown(entry: RecentAgentEntry): boolean {
-    return entry.connectionId === $currentConnectionId$ && entry.agentId === $viewedAgentId$;
+  function isShown(entry: RecentEntry): boolean {
+    if (entry.connectionId !== $currentConnectionId$) return false;
+    // Outside a workspace route (Home, Settings) only the viewed chat counts: the tab strip
+    // keeps the last workspace's focused tab, which is not on screen.
+    const routed = routedWorkspaceId();
+    if (!routed) return entry.kind === 'agent' && entry.agentId === $viewedAgentId$;
+    const shown = $shownTab$;
+    if (!shown || entry.workspaceId !== routed) return false;
+    return entry.kind === 'agent'
+      ? shown.type === 'agent' && shown.agentId === entry.agentId
+      : shown.id === entry.tabId;
   }
 
   function apply(event: SwitcherEvent): void {

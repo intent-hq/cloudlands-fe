@@ -24,6 +24,11 @@ export const focusBrowserTabRequested = createAction<
   [wsId: string, tabId: string, pin?: boolean, agentDriven?: boolean]
 >('appLayout/focusBrowserTabRequested');
 
+/** Show and focus a panel tab of any type (restoring it when hidden): the recent switcher. */
+export const focusPanelTabRequested = createAction<[wsId: string, tabId: string]>(
+  'appLayout/focusPanelTabRequested',
+);
+
 export const commandPaletteNewFileRequested = createAction<[wsId: string]>(
   'appLayout/commandPaletteNewFileRequested',
 );

@@ -19,6 +19,7 @@ for (const channel of [
   RECENT_AGENTS.LIST,
   RECENT_AGENTS.RECORD,
   RECENT_AGENTS.FORGET_WORKSPACE,
+  RECENT_AGENTS.FORGET_TAB,
   RECENT_AGENTS.SET_PAGE_CHORD,
 ] as const) {
   registerMockIpcHandler(channel, async (arg) => {

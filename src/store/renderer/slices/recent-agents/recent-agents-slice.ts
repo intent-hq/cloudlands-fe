@@ -12,25 +12,33 @@ import {
   createCollection,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
-import { recentAgentKey, type RecentAgentEntry } from '$shared/recent-agents';
+import { recentEntryKey, type RecentEntry } from '$shared/recent-agents';
 
-/** An entry with its `connectionId/agentId` key, so the slice can hold a Collection. */
-type KeyedRecentAgent = RecentAgentEntry & { key: string };
+/** An entry with its `recentEntryKey`, so the slice can hold a Collection. */
+type KeyedRecentEntry = RecentEntry & { key: string };
 
 export interface RecentAgentsSliceState {
   /** Most recent first: the Collection keeps main's order. */
-  entries: Collection<KeyedRecentAgent, 'key'>;
+  entries: Collection<KeyedRecentEntry, 'key'>;
 }
 
 const initialState: RecentAgentsSliceState = { entries: createCollection('key', []) };
 
 /** The list from `recent-agents:list`, a request reply, or a `recent-agents:changed` push. */
-export const recentAgentsReceived =
-  createAction<[entries: RecentAgentEntry[]]>('recentAgents/received');
+export const recentAgentsReceived = createAction<[entries: RecentEntry[]]>('recentAgents/received');
 
-/** Open an entry from the switcher: its connection, then its workspace and agent. */
-export const recentAgentOpenRequested = createAction<[entry: RecentAgentEntry]>(
+/** Open an entry from the switcher: its connection, then its workspace and agent or tab. */
+export const recentAgentOpenRequested = createAction<[entry: RecentEntry]>(
   'recentAgents/openRequested',
+);
+
+/**
+ * Focus a browser or terminal tab a switcher entry named, from this window or through another
+ * machine's `connections:open`, once the workspace is shown: a tab it no longer holds leaves
+ * the list.
+ */
+export const recentTabFocusRequested = createAction<[workspaceId: string, tabId: string]>(
+  'recentAgents/tabFocusRequested',
 );
 
 /** This window's machine reported the workspace archived: its recent agents drop out. */
@@ -42,6 +50,6 @@ export const recentAgentsReducer = createReducer<RecentAgentsSliceState>(initial
 recentAgentsReducer.with(recentAgentsReceived, (_state, { payload: [entries] }) => ({
   entries: createCollection(
     'key',
-    entries.map((entry) => ({ ...entry, key: recentAgentKey(entry) })),
+    entries.map((entry) => ({ ...entry, key: recentEntryKey(entry) })),
   ),
 }));

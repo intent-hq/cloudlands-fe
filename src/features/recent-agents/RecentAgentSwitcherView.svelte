@@ -1,14 +1,14 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
-  import { recentAgentKey, type RecentAgentEntry } from '$shared/recent-agents';
+  import { recentEntryKey, type RecentEntry } from '$shared/recent-agents';
   import RecentAgentCard from './RecentAgentCard.svelte';
 
   interface Props {
-    entries: RecentAgentEntry[];
+    entries: RecentEntry[];
     selectedIndex: number;
     /** This window's machine: its entries show live status. */
     currentConnectionId: string;
-    isOffline: (entry: RecentAgentEntry) => boolean;
+    isOffline: (entry: RecentEntry) => boolean;
     onpoint: (index: number) => void;
     onchoose: (index: number) => void;
     listbox?: HTMLElement | null;
@@ -60,7 +60,7 @@
     aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
     class="overlay-surface pointer-events-auto flex max-w-full gap-2 overflow-x-auto bg-popover p-2 text-popover-foreground outline-none"
   >
-    {#each entries as entry, index (recentAgentKey(entry))}
+    {#each entries as entry, index (recentEntryKey(entry))}
       <RecentAgentCard
         {entry}
         id={optionId(index)}

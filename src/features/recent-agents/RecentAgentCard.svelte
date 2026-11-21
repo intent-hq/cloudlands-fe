@@ -1,18 +1,21 @@
 <script lang="ts">
+  import { faTerminal } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { selectConnectionLabel } from '$features/remote-machines/remote-machines-selectors';
+  import BrowserFavicon from '$lib/components/layout/panel-system/BrowserFavicon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { menuItem } from '$lib/components/ui/menu';
   import { formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { RecentAgentEntry } from '$shared/recent-agents';
+  import type { RecentEntry } from '$shared/recent-agents';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   interface Props {
-    entry: RecentAgentEntry;
+    entry: RecentEntry;
     id: string;
     selected: boolean;
     /** The entry lives on this window's machine, so its live status is known here. */
@@ -26,15 +29,30 @@
   let { entry, id, selected, local, offline, onpoint, onchoose }: Props = $props();
 
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; the card is keyed by its entry
-  const session$ = selectAgentSession(entry.agentId);
+  const agentId = entry.kind === 'agent' ? entry.agentId : '';
+  const session$ = selectAgentSession(agentId);
   // svelte-ignore state_referenced_locally - selector readables must be created at component init; the card is keyed by its entry
   const machineLabel$ = selectConnectionLabel(entry.connectionId);
 
-  const session = $derived(local ? $session$ : undefined);
+  const session = $derived(local && entry.kind === 'agent' ? $session$ : undefined);
   const avatarState = $derived(session ? getAvatarStateForSession(session) : null);
-  const name = $derived(
-    session?.name || entry.agentName || m.recentAgents_switcher_untitled_label(),
-  );
+
+  function host(url: string | undefined): string {
+    if (!url) return '';
+    try {
+      return new URL(url).host;
+    } catch {
+      return '';
+    }
+  }
+
+  const name = $derived.by(() => {
+    if (entry.kind === 'agent')
+      return session?.name || entry.agentName || m.recentAgents_switcher_untitled_label();
+    if (entry.kind === 'browser')
+      return entry.title || host(entry.url) || m.layout_tabTypes_browser_title();
+    return entry.title || m.layout_tabTypes_terminal_title();
+  });
   const specialist = $derived(session?.metadata?.specialist ?? null);
 </script>
 
@@ -58,10 +76,18 @@
   onclick={onchoose}
 >
   <span class="flex w-full min-w-0 items-center gap-2">
-    {#if avatarState}
-      <AgentAvatarWithState agentId={entry.agentId} {specialist} state={avatarState} />
+    {#if entry.kind === 'browser'}
+      <span class="flex size-5 shrink-0 items-center justify-center">
+        <BrowserFavicon faviconUrl={entry.faviconUrl} />
+      </span>
+    {:else if entry.kind === 'terminal'}
+      <span class="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+        <Fa icon={faTerminal} size="sm" />
+      </span>
+    {:else if avatarState}
+      <AgentAvatarWithState {agentId} {specialist} state={avatarState} />
     {:else}
-      <AgentAvatar agentId={entry.agentId} {specialist} />
+      <AgentAvatar {agentId} {specialist} />
     {/if}
     <span class="min-w-0 truncate type-body font-medium! text-foreground">{name}</span>
   </span>
