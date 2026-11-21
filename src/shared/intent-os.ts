@@ -27,13 +27,9 @@ export function isIntentOs(env: Env = process.env): boolean {
   return env.INTENT_OS === '1';
 }
 
-/**
- * Single-purpose switches that `INTENT_OS=1` implies. `INTENT_BROWSER_PASSKEYS`
- * is not one: its bridge serves `<webview>` pages only, and Intent OS opens
- * browser pages in the main process by default, where every passkey request
- * would fail. Set it on its own to test passkeys with that Labs setting off.
- */
-export type IntentOsImpliedSwitch = 'INTENT_NO_SYSTEM_BROWSER' | 'INTENT_IN_APP_PICKER';
+/** Single-purpose switches that `INTENT_OS=1` implies. */
+export type IntentOsImpliedSwitch =
+  'INTENT_NO_SYSTEM_BROWSER' | 'INTENT_IN_APP_PICKER' | 'INTENT_BROWSER_PASSKEYS';
 
 /** Whether `name` is on: set to `1` itself, or implied by `INTENT_OS=1`. */
 export function intentOsSwitchOn(name: IntentOsImpliedSwitch, env: Env = process.env): boolean {

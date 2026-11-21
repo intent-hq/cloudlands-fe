@@ -8,7 +8,11 @@ import {
 } from './intent-os';
 import { tabWindowDisplayMode } from './types/tab-window';
 
-const IMPLIED: IntentOsImpliedSwitch[] = ['INTENT_NO_SYSTEM_BROWSER', 'INTENT_IN_APP_PICKER'];
+const IMPLIED: IntentOsImpliedSwitch[] = [
+  'INTENT_NO_SYSTEM_BROWSER',
+  'INTENT_IN_APP_PICKER',
+  'INTENT_BROWSER_PASSKEYS',
+];
 
 describe('isIntentOs', () => {
   it('is on only for INTENT_OS=1', () => {
