@@ -292,4 +292,34 @@ describe('autocompleteSettingsSaga', () => {
     expect(getState().enabled).toBe(true);
     task.cancel();
   });
+
+  it('turns off before removing the active key even when removal was queued while off', async () => {
+    mocks.load.mockResolvedValue({
+      ...snapshot,
+      enabled: false,
+      service: 'openrouter',
+      keyConfigured: { kilo: true, openrouter: true },
+    });
+    let finishService: () => void = () => {};
+    mocks.setService.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishService = resolve)),
+    );
+    const { dispatch, getState, task } = await ready();
+    dispatch(changeAutocompleteService('kilo'));
+    dispatch(changeAutocompleteEnabled(true));
+    dispatch(clearAutocompleteKey('kilo', false));
+    finishService();
+    await vi.waitFor(() => expect(mocks.clearKey).toHaveBeenCalledWith('kilo'));
+    const enableCalls = mocks.setEnabled.mock.calls.map(([v]) => v);
+    expect(enableCalls).toEqual([true, false]);
+    expect(mocks.setEnabled.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.clearKey.mock.invocationCallOrder[0],
+    );
+    expect(getState()).toMatchObject({
+      enabled: false,
+      service: 'kilo',
+      keyConfigured: { kilo: false },
+    });
+    task.cancel();
+  });
 });

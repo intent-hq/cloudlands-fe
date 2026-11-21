@@ -154,9 +154,11 @@ function* saveKeyWorker(action: ReturnType<typeof saveAutocompleteKey>): SagaGen
 }
 
 function* clearKeyWorker(action: ReturnType<typeof clearAutocompleteKey>): SagaGenerator<void> {
-  const [service, disableFirst] = action.payload;
-  if (disableFirst) {
-    // Off first: a request between the key delete and the switch-off would go keyless.
+  const [service] = action.payload;
+  const current = yield* selectAutocompleteSettings.effect();
+  if (current.enabled && current.service === service) {
+    // Decided from settled state, not the view's flag: removing the active key
+    // while on must switch off first, or requests would go keyless.
     yield* call(persistEnabled, false);
     if ((yield* selectAutocompleteSettings.effect()).enabled) return;
   }

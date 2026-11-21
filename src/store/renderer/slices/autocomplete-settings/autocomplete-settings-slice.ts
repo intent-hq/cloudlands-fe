@@ -47,7 +47,10 @@ export const saveAutocompleteKey = createAction<
   [service: AutocompleteService, apiKey: string, enableAfter: boolean]
 >('autocompleteSettings/saveKey');
 
-/** Delete a stored key; with `disableFirst`, turn autocomplete off before deleting it. */
+/**
+ * Delete a stored key. The saga turns autocomplete off first whenever the key
+ * is the active one at run time; `disableFirst` is the view's expectation only.
+ */
 export const clearAutocompleteKey = createAction<
   [service: AutocompleteService, disableFirst: boolean]
 >('autocompleteSettings/clearKey');
