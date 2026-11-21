@@ -21,6 +21,8 @@ export type WebSocketApiIntent =
   | { kind: 'port'; port: number; connectionId: string }
   | { kind: 'listen'; ips: string[]; tunnel: boolean; connectionId: string }
   | { kind: 'tunnel'; connectionId: string }
+  /** With `context`, the connected (remote) backend's relay; else this machine's. */
+  | { kind: 'relay'; url: string; connectionId: string; context?: string }
   | { kind: 'rotate'; connectionId: string }
   | { kind: 'publish'; connectionId: string }
   | {
@@ -45,4 +47,8 @@ export type WebSocketApiSnapshot = {
   tunnelOnly: boolean;
   tunnelSupported: boolean;
   tcAddress: string;
+  /** `server.tunnel.derpUrl` is a setting on this daemon. */
+  relaySupported: boolean;
+  /** The saved relay map URL; "" uses the default relays. */
+  relayUrl: string;
 };

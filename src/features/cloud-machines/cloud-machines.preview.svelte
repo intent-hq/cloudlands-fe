@@ -31,6 +31,7 @@
       'setup-key-rejected': sceneState('setup-key-rejected'),
       connected: sceneState('connected'),
       'connected-no-sandboxes': sceneState('connected-no-sandboxes'),
+      relay: sceneState('relay'),
       'sandboxes-grouped': sceneState('sandboxes-grouped'),
       'sandboxes-collapsed': sceneState('sandboxes-collapsed'),
       'key-rejected': sceneState('key-rejected'),

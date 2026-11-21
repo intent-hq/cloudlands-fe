@@ -33,6 +33,7 @@
     | 'e2b-sandbox-lost'
     | 'e2b-template-missing'
     | 'e2b-key-rejected'
+    | 'e2b-relay-unreachable'
     | 'agent37-no-capacity'
     | 'agent37-wallet'
     | 'vercel-project-missing'
@@ -85,6 +86,8 @@
       'e2b-sandbox-lost': sceneState('e2b-sandbox-lost'),
       'e2b-template-missing': sceneState('e2b-template-missing'),
       'e2b-key-rejected': sceneState('e2b-key-rejected'),
+      // The self-hosted relay in server.tunnel.derpUrl did not answer: Settings and Retry.
+      'e2b-relay-unreachable': sceneState('e2b-relay-unreachable'),
       // An agent on an Agent37 entry: no room in its region, then an empty wallet.
       'agent37-no-capacity': sceneState('agent37-no-capacity'),
       'agent37-wallet': sceneState('agent37-wallet'),
@@ -373,6 +376,11 @@
       code: 'remote-launch-failed',
       detail:
         'template intent/intent-node-4x8:0.240.0 not found in project intent. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"template-missing","retryable":false}',
+    },
+    'e2b-relay-unreachable': {
+      code: 'remote-launch-failed',
+      detail:
+        'the sandbox could not reach the relay in https://relay.example.com/derpmap.json; it was deleted. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"relay-unreachable","retryable":true,"relayUrl":"https://relay.example.com/derpmap.json"}',
     },
     'agent37-no-capacity': {
       code: 'remote-launch-failed',

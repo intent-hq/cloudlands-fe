@@ -177,6 +177,28 @@ export function hourlyCostLabel(size: string): string | null {
   return hourly === null ? null : m.cloudMachines_size_hourly({ amount: usd.format(hourly) });
 }
 
+/** The host of a relay map URL, or the URL itself when it does not parse. */
+function relayHost(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * The relay an entry's running sandboxes use; null without one, since a paused
+ * sandbox picks up the current setting only at its next resume.
+ */
+export function cloudEntryRelayLabel(sandboxes: readonly RemoteMachine[]): string | null {
+  const sandbox = sandboxes.find((row) => row.cloud?.state === 'running');
+  if (!sandbox?.cloud) return null;
+  const url = sandbox.cloud.relayUrl;
+  return url
+    ? m.cloudMachines_relay_host({ host: relayHost(url) })
+    : m.cloudMachines_relay_default();
+}
+
 /** Sandboxes of one workspace; `key` is the workspace id, or "" for Other. */
 export interface SandboxGroup {
   key: string;
@@ -399,6 +421,13 @@ export function cloudErrorText(
   title: string;
   description: string;
 } {
+  if (error.code === 'cloud-machine-unavailable' && error.reason === 'relay-unreachable')
+    return {
+      title: m.cloudMachines_error_relayUnreachable_title(),
+      description: error.relayUrl
+        ? m.cloudMachines_error_relayUnreachable_description({ host: relayHost(error.relayUrl) })
+        : m.cloudMachines_error_relayUnreachable_noHost_description(),
+    };
   const kind = error.provider ?? provider;
   if (kind === 'northflank') return northflankErrorText(error);
   if (kind === 'agent37') return agent37ErrorText(error);

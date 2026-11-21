@@ -449,5 +449,7 @@
   "cloudMachines_sandboxes_group_ariaLabel_one": ["fr", "es"],
   "cloudMachines_sandboxes_group_ariaLabel_many": ["fr", "es"],
   "sessionImport_tab_label": ["fr"],
-  "recentAgents_switcher_statusTime_label": "*"
+  "recentAgents_switcher_statusTime_label": "*",
+  "cloudMachines_relay_host": ["de"],
+  "settings_tunnel_relay_label": ["de"]
 }

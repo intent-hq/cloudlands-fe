@@ -1,5 +1,5 @@
 <!--
-  Settings → a cloud entry: its live sandboxes (Northflank services, Agent37 instances), of everyone who runs agents on
+  Settings → a cloud entry: its live sandboxes (Northflank services, Agent37 instances) and the relay they use, of everyone who runs agents on
   this backend, grouped by workspace (running first), with who started each,
   uptime, Pause and Delete. Uptime advances locally between reads while a sandbox runs.
 -->
@@ -27,6 +27,7 @@
   import { cloudMachineDeleteRequested, cloudMachinePauseRequested } from './cloud-machines-slice';
   import {
     cloudDashboardUrl,
+    cloudEntryRelayLabel,
     cloudErrorText,
     formatUptime,
     groupSandboxesByWorkspace,
@@ -63,6 +64,7 @@
 
   const running = $derived(sandboxes.filter((row) => row.cloud?.state === 'running').length);
   const paused = $derived(sandboxes.filter((row) => row.cloud?.state === 'paused').length);
+  const relay = $derived(cloudEntryRelayLabel(sandboxes));
 
   function stateBadge(state: string): { label: string; color: BadgeColor } {
     switch (state) {
@@ -115,6 +117,8 @@
   <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1">
     <p class="type-body text-muted-foreground">
       {copy.listSummary({ running: String(running), paused: String(paused) })}
+      {#if relay}<span aria-hidden="true">·</span>
+        <span class="whitespace-nowrap" data-cloud-relay>{relay}</span>{/if}
     </p>
     <Button
       variant="link"
