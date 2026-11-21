@@ -139,10 +139,11 @@
   let relayLinked = $state(false);
   $effect(() => {
     const read = () => {
-      relayLinked = window.location.hash === '#tunnel-relay';
-      if (relayLinked) advancedExpanded = true;
+      if (window.location.hash !== '#tunnel-relay') return;
+      advancedExpanded = true;
+      relayLinked = true;
     };
-    read();
+    untrack(read);
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   });
