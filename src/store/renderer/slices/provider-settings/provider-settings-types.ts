@@ -102,7 +102,7 @@ export type ProviderProfileSetup = {
   profileId?: string;
   /** Different login: the `~/…` folder saved on the profile. */
   folder?: string;
-  /** Codex sign-in uses `codex login --device-auth` (daemon is not the app's sidecar). */
+  /** Codex sign-in uses `codex login --device-auth`. */
   deviceAuth?: boolean;
   /** Claude identity reported once signed in. */
   email?: string;

@@ -325,11 +325,8 @@ describe('Different login setup', () => {
     );
   });
 
-  it('runs codex login locally and codex login --device-auth on any other daemon', async () => {
-    for (const [appOwned, command] of [
-      [true, 'codex login'],
-      [false, 'codex login --device-auth'],
-    ] as const) {
+  it('runs codex login --device-auth on the app sidecar and on any other daemon', async () => {
+    for (const appOwned of [true, false]) {
       const h = harness({ appOwned });
       task = h.task;
       h.setCreated(savedProfile('p1', 'codex', []));
@@ -346,12 +343,12 @@ describe('Different login setup', () => {
       const terminal = h.log.find(([step]) => step === 'openTerminal');
       expect(terminal).toEqual([
         'openTerminal',
-        command,
+        'codex login --device-auth',
         { CODEX_HOME: '/home/me/intent/profiles/codex/work-k3f9' },
       ]);
       // The folder never rides inside the command string.
       expect(terminal![1]).not.toContain('CODEX_HOME');
-      expect(selectProviderProfileSetups.select(h.state()).s1.deviceAuth).toBe(!appOwned);
+      expect(selectProviderProfileSetups.select(h.state()).s1.deviceAuth).toBe(true);
       task.cancel();
     }
   });

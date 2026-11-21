@@ -67,7 +67,7 @@ afterEach(() => {
 
 it.each([
   ['claude-code', 'CLAUDE_CONFIG_DIR', '~/.claude-work', 'claude auth login'],
-  ['codex', 'CODEX_HOME', '~/.codex-work', 'codex login'],
+  ['codex', 'CODEX_HOME', '~/.codex-work', 'codex login --device-auth'],
 ] as const)(
   '%s sign-in reaches daemon terminal.create with its folder env',
   async (base, key, folder, command) => {

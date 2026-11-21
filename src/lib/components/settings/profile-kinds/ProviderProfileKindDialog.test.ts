@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import ProviderProfileKindDialog from './ProviderProfileKindDialog.svelte';
-import { previewProfileFolder, signInCommand } from './profile-kind-mock';
+import { previewProfileFolder } from './profile-kind-mock';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
@@ -153,12 +153,6 @@ describe('profile-kind mock helpers', () => {
     expect(previewProfileFolder('codex', 'Work account', 'k3f9')).toBe(
       '~/intent/profiles/codex/work-account-k3f9',
     );
-  });
-
-  it('builds plain sign-in commands', () => {
-    expect(signInCommand('claude', true)).toBe('claude auth login');
-    expect(signInCommand('codex', false)).toBe('codex login');
-    expect(signInCommand('codex', true)).toBe('codex login --device-auth');
   });
 });
 

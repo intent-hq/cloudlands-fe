@@ -407,11 +407,9 @@ export function isSecretWellFormed(
 
 /**
  * The plain terminal sign-in command; the folder variable goes in the
- * terminal's `env`, never in this string. Codex ChatGPT sign-in uses device
- * auth unless the daemon is the app's own sidecar (the browser callback to the
- * daemon host's localhost can't reach a remote daemon).
+ * terminal's `env`, never in this string. Codex ChatGPT sign-in always uses
+ * device auth: the browser flow's localhost callback can't reach a remote daemon.
  */
-export function loginCommand(provider: ProfileProvider, isDaemonAppOwned: boolean): string {
-  if (provider === 'claude') return 'claude auth login';
-  return isDaemonAppOwned ? 'codex login' : 'codex login --device-auth';
+export function loginCommand(provider: ProfileProvider): string {
+  return provider === 'claude' ? 'claude auth login' : 'codex login --device-auth';
 }

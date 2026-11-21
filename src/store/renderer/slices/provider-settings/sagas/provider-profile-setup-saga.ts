@@ -82,7 +82,6 @@ import {
   selectRemoteReadyProfilesSupported,
 } from '../provider-settings-selectors';
 import { takeStagedProfileEnv } from '../provider-profiles-state';
-import { selectIsDaemonAppOwned } from '../../daemon-health/daemon-health-selectors';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { closeTerminalOverlay, openTerminalOverlay } from '../../terminals/terminals-slice';
 import { selectWorkspaceTerminalState } from '../../terminals/terminals-selectors';
@@ -256,8 +255,7 @@ function* signIn(
   profile: ProviderProfile,
   folder: string,
 ) {
-  const appOwned = yield* selectIsDaemonAppOwned.effect();
-  const deviceAuth = provider === 'codex' && !appOwned;
+  const deviceAuth = provider === 'codex';
   yield* put(changed(setupId, { phase: 'openingTerminal', deviceAuth, failure: undefined }));
   let expanded: string;
   try {
@@ -271,7 +269,7 @@ function* signIn(
   }
   let terminalId: string;
   try {
-    terminalId = yield* call([deps, deps.openTerminal], loginCommand(provider, appOwned), {
+    terminalId = yield* call([deps, deps.openTerminal], loginCommand(provider), {
       [folderVariableFor(provider)]: expanded,
     });
   } catch (error) {

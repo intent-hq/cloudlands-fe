@@ -462,10 +462,8 @@ describe('isJwtShaped', () => {
 
 describe('loginCommand', () => {
   it('returns the plain sign-in command for each provider', () => {
-    expect(loginCommand('claude', true)).toBe('claude auth login');
-    expect(loginCommand('claude', false)).toBe('claude auth login');
-    expect(loginCommand('codex', true)).toBe('codex login');
-    expect(loginCommand('codex', false)).toBe('codex login --device-auth');
+    expect(loginCommand('claude')).toBe('claude auth login');
+    expect(loginCommand('codex')).toBe('codex login --device-auth');
   });
 });
 
