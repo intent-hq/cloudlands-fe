@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import { faExternalLinkAlt, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import {
     selectIsWorkspaceHostLocal,
     selectWorkspaceById,
@@ -108,6 +109,9 @@
   // lives on the daemon host, i.e. not a remote (SSH) workspace
   // (monorepo#2171).
   const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
+  // Intent OS has no file manager and no external editors.
+  const canOpenExternalEditors = hasCapability('externalEditors');
+  const canRevealInFileManager = hasCapability('systemFileManager');
 
   function getResolvedWorkspace() {
     return $workspaceById;
@@ -967,16 +971,20 @@
           <p class="text-sm">
             {m.editor_codeEditor_fileTooLarge_description({ size: formatFileSize(contentSize) })}
           </p>
-          {#if resolvedWorkspaceId && filePath && $isWorkspaceHostLocal$}
+          {#if resolvedWorkspaceId && filePath && $isWorkspaceHostLocal$ && (canOpenExternalEditors || canRevealInFileManager)}
             <div class="mt-4 flex items-center justify-center gap-2">
-              <Button variant="secondary" size="sm" onclick={openInVSCode}>
-                <Fa icon={faExternalLinkAlt} class="mr-2" />
-                {m.editor_codeEditor_openInVsCode_label()}
-              </Button>
-              <Button variant="ghost" size="sm" onclick={revealInFolder}>
-                <Fa icon={faFolderOpen} class="mr-2" />
-                {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
-              </Button>
+              {#if canOpenExternalEditors}
+                <Button variant="secondary" size="sm" onclick={openInVSCode}>
+                  <Fa icon={faExternalLinkAlt} class="mr-2" />
+                  {m.editor_codeEditor_openInVsCode_label()}
+                </Button>
+              {/if}
+              {#if canRevealInFileManager}
+                <Button variant="ghost" size="sm" onclick={revealInFolder}>
+                  <Fa icon={faFolderOpen} class="mr-2" />
+                  {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
+                </Button>
+              {/if}
             </div>
           {/if}
         </div>

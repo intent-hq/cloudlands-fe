@@ -62,6 +62,7 @@ declare global {
       getPathForFile?: (file: File) => string;
       /** Intent OS: native file choosers do not work, use the in-app picker. */
       preferInAppPicker?: boolean;
+      intentOs?: boolean;
       platform: string;
       arch: string;
       versions: {

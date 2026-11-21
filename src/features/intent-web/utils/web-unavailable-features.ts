@@ -27,6 +27,7 @@ export type WebUnavailableFeature =
 export const CAPABILITY_FEATURES: Record<keyof PlatformCapabilities, WebUnavailableFeature> = {
   browserPanel: 'browserPanel',
   shellIntegration: 'openInEditor',
+  systemFileManager: 'openInEditor',
   externalEditors: 'openInEditor',
   nativeDialogs: 'filePickers',
   ssh: 'filePickers',

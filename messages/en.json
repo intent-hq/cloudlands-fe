@@ -8269,6 +8269,7 @@
   "workspace_share_turnOnSharing_label": "Turn on sharing",
   "notifications_discussion_mention_title": "{name} mentioned you",
   "notifications_discussion_open_label": "Open discussion",
+  "notifications_inApp_open_label": "Open",
   "desktop_consent_failed": "Desktop control could not start",
   "chat_queuedMessages_sendAllUnsupported_error": "Sending queued messages together requires a newer backend. Use the individual Send now buttons.",
   "desktop_overlay_openAgent_ariaLabel": "Open controlling agent",

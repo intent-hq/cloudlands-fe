@@ -1,4 +1,5 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
+import { isIntentOs } from '../intent-os';
 
 const TRANSPARENT_WINDOW_BACKGROUND = '#00000000';
 const DARK_WINDOW_BACKGROUND = '#0a0a0a';
@@ -24,9 +25,10 @@ export function setWindowTranslucencyEnabled(enabled: boolean): void {
 /**
  * Main-process mirror of the "Auto-hide menu bar" preference (Linux and
  * Windows). Seeded from local prefs before the first window opens and kept
- * current by `window:set-menu-bar-auto-hide`.
+ * current by `window:set-menu-bar-auto-hide`. Unsaved, it is on for Intent OS
+ * (the renderer has the same default), so its first window opens without one.
  */
-let menuBarAutoHideEnabled = menuBarHiddenByEnvironment();
+let menuBarAutoHideEnabled = menuBarHiddenByEnvironment() || isIntentOs();
 
 /**
  * `INTENT_HIDE_MENU_BAR=1` keeps the menu bar auto-hidden regardless of the

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   backend: vi.fn(),
   sound: vi.fn(() => Promise.resolve()),
   navigate: vi.fn(() => Promise.resolve()),
+  notifyInfo: vi.fn(),
   on: vi.fn(),
   offById: vi.fn(),
   callbacks: {} as Record<string, (data?: any) => void>,
@@ -25,6 +26,10 @@ vi.mock('$features/notifications/notification-sound-gate', () => ({
 vi.mock('$features/notifications/notification-navigation', () => ({
   handleNotificationNavigate: mocks.navigate,
 }));
+vi.mock('$lib/components/patterns/notify', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/components/patterns/notify')>();
+  return { ...actual, notify: { ...actual.notify, info: mocks.notifyInfo } };
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
@@ -213,6 +218,56 @@ describe('notification sagas', () => {
       ['notification:show', 'id:notification:show'],
       ['notification:navigate', 'id:notification:navigate'],
     ]);
+  });
+
+  it('shows an in-app notification main sent for Intent OS; Open routes like the banner click', async () => {
+    mocks.isElectron.mockReturnValue(true);
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, notificationIpcSaga);
+    mocks.callbacks['notification:show']({
+      title: 'My Space - Implementor',
+      body: 'Finished',
+      inApp: true,
+      navigateTarget: { workspaceId: 'ws-1' },
+    });
+    await flush();
+    expect(mocks.sound).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyInfo).toHaveBeenCalledTimes(1);
+    const [title, options] = mocks.notifyInfo.mock.calls[0] as unknown as [
+      string,
+      { description?: string; action?: { onClick: () => void } },
+    ];
+    expect(title).toBe('My Space - Implementor');
+    expect(options.description).toBe('Finished');
+    options.action?.onClick();
+    expect(mocks.navigate.mock.calls).toEqual([[{ workspaceId: 'ws-1' }]]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('shows no toast for a sound-only or frontmost notification:show', async () => {
+    mocks.isElectron.mockReturnValue(true);
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, notificationIpcSaga);
+    mocks.callbacks['notification:show']({ title: 'Sound only', body: 'Finished' });
+    mocks.callbacks['notification:show']({
+      title: 'Frontmost',
+      navigateTarget: { workspaceId: 'ws-1' },
+    });
+    await flush();
+    expect(mocks.sound).toHaveBeenCalledTimes(2);
+    expect(mocks.notifyInfo).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('shows an in-app test notification without an Open action', async () => {
+    mocks.isElectron.mockReturnValue(true);
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, notificationIpcSaga);
+    mocks.callbacks['notification:show']({ title: 'Agent', body: 'Test', inApp: true });
+    await flush();
+    const [, options] = mocks.notifyInfo.mock.calls[0] as unknown as [string, { action?: unknown }];
+    expect(options.action).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
   });
 
   it('does not let a native sound failure block click navigation', async () => {

@@ -12,6 +12,8 @@
  * tab window moves the tab back; only "Close tab" in its header closes it.
  */
 
+import { isIntentOs } from '../intent-os';
+
 /**
  * The panel tab a tab window shows. Structurally a subset of the renderer's
  * `PanelTab` (this file is shared with the preload build, which cannot load
@@ -165,7 +167,7 @@ export function tabWindowDisplayMode(
   if (platform === 'darwin') return 'full-screen';
   if (platform === 'linux') {
     const desktop = (env.XDG_CURRENT_DESKTOP ?? '').toLowerCase();
-    if (env.INTENT_OS === '1' || !!env.SWAYSOCK || desktop.split(':').includes('sway')) {
+    if (isIntentOs(env) || !!env.SWAYSOCK || desktop.split(':').includes('sway')) {
       return 'full-screen';
     }
   }

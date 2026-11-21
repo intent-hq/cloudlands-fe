@@ -8269,6 +8269,7 @@
   "workspace_share_turnOnSharing_label": "開啟共享",
   "notifications_discussion_mention_title": "{name} 提及了你",
   "notifications_discussion_open_label": "開啟討論",
+  "notifications_inApp_open_label": "開啟",
   "desktop_consent_failed": "無法啟動桌面控制",
   "chat_queuedMessages_sendAllUnsupported_error": "一起傳送佇列訊息需要較新的後端。請使用每則訊息的「立即傳送」按鈕。",
   "desktop_overlay_openAgent_ariaLabel": "開啟控制中的代理",

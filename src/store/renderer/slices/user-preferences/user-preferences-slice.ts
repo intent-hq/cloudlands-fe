@@ -6,6 +6,7 @@ import {
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
+import { isIntentOsRenderer } from '$lib/utils/intent-os-renderer';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 import { isChatContentWidth, type ChatContentWidth } from '$shared/chat-content-width';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
@@ -166,7 +167,8 @@ export const initialState: UserPreferencesStoreState = {
   chatContentWidth: 'full',
   collapseToolRuns: true,
   shellTransparencyEnabled: true,
-  menuBarAutoHide: false,
+  // Unsaved, on for Intent OS (main mirrors the same default).
+  menuBarAutoHide: isIntentOsRenderer(),
   reduceMotionOnBattery: false,
   pauseAnimationsWhenUnfocused: false,
   labsSettingsVisible: false,

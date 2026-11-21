@@ -22,7 +22,16 @@ export interface PlatformCapabilities {
   nativeDialogs: boolean;
   /** Shell integration: reveal in Finder, open external URLs (`shell:*` IPC). */
   shellIntegration: boolean;
-  /** Opening paths in external editors/terminals (`external-editors:*`, `vscode:open`, …). */
+  /**
+   * Reveal a path in the system file manager (`shell:showItemInFolder`) or
+   * open it with the system default app (`shell:openPath`). Off on Intent OS,
+   * which has neither.
+   */
+  systemFileManager: boolean;
+  /**
+   * Opening paths in external editors/terminals (`external-editors:*`,
+   * `vscode:open`, …). Off on Intent OS, which has none.
+   */
   externalEditors: boolean;
   /** Embedded browser panel backed by <webview> + CDP (`browser:*` IPC). */
   browserPanel: boolean;
@@ -93,14 +102,19 @@ export function expectsElectronPreloadBridge(userAgent?: string): boolean {
   return isElectronRuntime(userAgent) && buildTarget !== 'web';
 }
 
-/** Capability profile for a given platform. */
-export function capabilitiesForPlatform(platform: Platform): PlatformCapabilities {
+/** Capability profile for a given platform; Intent OS drops desktop integrations it lacks. */
+export function capabilitiesForPlatform(
+  platform: Platform,
+  { intentOs = false }: { intentOs?: boolean } = {},
+): PlatformCapabilities {
   const electron = platform === 'electron';
+  const desktopIntegration = electron && !intentOs;
   return {
     windowChrome: electron,
     nativeDialogs: electron,
     shellIntegration: electron,
-    externalEditors: electron,
+    systemFileManager: desktopIntegration,
+    externalEditors: desktopIntegration,
     browserPanel: electron,
     autoUpdate: electron,
     deeplinks: electron,
@@ -109,9 +123,20 @@ export function capabilitiesForPlatform(platform: Platform): PlatformCapabilitie
   };
 }
 
+/**
+ * Intent OS, as main passes it through the preload. Same check as
+ * `isIntentOsRenderer` in ./intent-os-renderer.ts, inlined because this
+ * module must compile alone without imports (platform-capabilities-build test).
+ */
+function onIntentOs(): boolean {
+  if (typeof window === 'undefined') return false;
+  const api = (window as { electronAPI?: { intentOs?: unknown } }).electronAPI;
+  return api?.intentOs === true;
+}
+
 /** Capability profile for the current environment. */
 export function getCapabilities(): PlatformCapabilities {
-  return capabilitiesForPlatform(getPlatform());
+  return capabilitiesForPlatform(getPlatform(), { intentOs: onIntentOs() });
 }
 
 /** Check a single capability for the current environment. */

@@ -8269,6 +8269,7 @@
   "workspace_share_turnOnSharing_label": "Freigabe einschalten",
   "notifications_discussion_mention_title": "{name} hat dich erwähnt",
   "notifications_discussion_open_label": "Diskussion öffnen",
+  "notifications_inApp_open_label": "Öffnen",
   "desktop_consent_failed": "Die Desktopsteuerung konnte nicht gestartet werden",
   "chat_queuedMessages_sendAllUnsupported_error": "Zum gemeinsamen Senden vorgemerkter Nachrichten ist ein neueres Backend erforderlich. Verwenden Sie die einzelnen Schaltflächen „Jetzt senden“.",
   "desktop_overlay_openAgent_ariaLabel": "Steuernden Agenten öffnen",

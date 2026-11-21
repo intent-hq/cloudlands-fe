@@ -8269,6 +8269,7 @@
   "workspace_share_turnOnSharing_label": "Activar el uso compartido",
   "notifications_discussion_mention_title": "{name} te ha mencionado",
   "notifications_discussion_open_label": "Abrir conversación",
+  "notifications_inApp_open_label": "Abrir",
   "desktop_consent_failed": "No se pudo iniciar el control del escritorio",
   "chat_queuedMessages_sendAllUnsupported_error": "Enviar juntos los mensajes en cola requiere un backend más reciente. Usa los botones individuales Enviar ahora.",
   "desktop_overlay_openAgent_ariaLabel": "Abrir el agente que controla",

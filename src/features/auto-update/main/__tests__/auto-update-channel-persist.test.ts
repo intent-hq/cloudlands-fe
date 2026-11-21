@@ -110,6 +110,41 @@ describe('AutoUpdateService channel persistence', () => {
     expect(state.channel).toBe('alpha');
   });
 
+  describe('Intent OS (INTENT_OS=1)', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('defaults to alpha when nothing is saved', async () => {
+      vi.stubEnv('INTENT_OS', '1');
+      const { autoUpdateService } = await import('../auto-update.service');
+      await autoUpdateService.initialize();
+      expect(autoUpdateService.getState().channel).toBe('alpha');
+    });
+
+    it.each([
+      [{ updateChannel: 'stable' }, 'stable'],
+      [{ updateChannel: 'disabled' }, 'disabled'],
+      [{ betaUpdatesEnabled: false }, 'stable'],
+    ])('keeps the saved choice %j', async (saved, channel) => {
+      vi.stubEnv('INTENT_OS', '1');
+      await fs.writeFile(
+        path.join(testUserDataPath, 'local-prefs.json'),
+        JSON.stringify(saved),
+        'utf8',
+      );
+      const { autoUpdateService } = await import('../auto-update.service');
+      await autoUpdateService.initialize();
+      expect(autoUpdateService.getState().channel).toBe(channel);
+    });
+
+    it('stays on stable when nothing is saved outside Intent OS', async () => {
+      const { autoUpdateService } = await import('../auto-update.service');
+      await autoUpdateService.initialize();
+      expect(autoUpdateService.getState().channel).toBe('stable');
+    });
+  });
+
   it("a persisted 'disabled' channel round-trips on init and never points the feed", async () => {
     const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
     await fs.writeFile(prefsPath, JSON.stringify({ updateChannel: 'disabled' }), 'utf8');

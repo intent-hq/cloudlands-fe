@@ -11,6 +11,7 @@ import {
   isElectronRuntime,
   type PlatformCapabilities,
 } from './platform-capabilities';
+import { isIntentOsRenderer } from './intent-os-renderer';
 
 const ELECTRON_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
@@ -65,11 +66,27 @@ describe('platform-capabilities', () => {
       }
     });
 
+    it('drops the file manager and external editors on Intent OS, and nothing else', () => {
+      const caps = capabilitiesForPlatform('electron', { intentOs: true });
+      const off = Object.entries(caps)
+        .filter(([, value]) => !value)
+        .map(([key]) => key);
+      expect(off.sort()).toEqual(['externalEditors', 'systemFileManager']);
+    });
+
+    it('reads Intent OS from the preload bridge only', () => {
+      expect(isIntentOsRenderer({ electronAPI: { intentOs: true } })).toBe(true);
+      expect(isIntentOsRenderer({ electronAPI: { intentOs: 'true' } })).toBe(false);
+      expect(isIntentOsRenderer({ electronAPI: {} })).toBe(false);
+      expect(isIntentOsRenderer({})).toBe(false);
+    });
+
     it('exposes the expected capability keys', () => {
       const expected: Array<keyof PlatformCapabilities> = [
         'windowChrome',
         'nativeDialogs',
         'shellIntegration',
+        'systemFileManager',
         'externalEditors',
         'browserPanel',
         'autoUpdate',
@@ -78,6 +95,21 @@ describe('platform-capabilities', () => {
         'ssh',
       ];
       expect(Object.keys(capabilitiesForPlatform('web')).sort()).toEqual([...expected].sort());
+    });
+  });
+
+  describe('Intent OS from the preload bridge', () => {
+    it('turns off the file manager and external editors for this renderer', () => {
+      const api = (window as unknown as { electronAPI: { intentOs?: boolean } }).electronAPI;
+      expect(hasCapability('externalEditors')).toBe(true);
+      api.intentOs = true;
+      try {
+        expect(hasCapability('externalEditors')).toBe(false);
+        expect(hasCapability('systemFileManager')).toBe(false);
+        expect(hasCapability('shellIntegration')).toBe(true);
+      } finally {
+        delete api.intentOs;
+      }
     });
   });
 

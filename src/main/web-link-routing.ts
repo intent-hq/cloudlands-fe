@@ -4,14 +4,15 @@
  * opener in ./open-external.ts acts on them.
  */
 
+import { intentOsSwitchOn } from '../shared/intent-os';
 import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '../shared/types/branded-ids';
 
-/** Intent OS starts Intent with this variable set to `1`: it has no system browser. */
-const NO_SYSTEM_BROWSER_ENV = 'INTENT_NO_SYSTEM_BROWSER';
-
-/** Whether the system browser is unavailable, so web links must stay in Intent. */
+/**
+ * Whether the system browser is unavailable, so web links must stay in Intent:
+ * `INTENT_NO_SYSTEM_BROWSER=1`, or Intent OS (`INTENT_OS=1`), which has none.
+ */
 export function isSystemBrowserDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[NO_SYSTEM_BROWSER_ENV] === '1';
+  return intentOsSwitchOn('INTENT_NO_SYSTEM_BROWSER', env);
 }
 
 /** Whether `url` is an http(s) URL. */

@@ -105,6 +105,25 @@ describe('local-prefs', () => {
     expect(await getDockLabEnabledLocalPref()).toBe(false);
   });
 
+  it('hides the dock by default on Intent OS, and a saved choice wins', async () => {
+    vi.stubEnv('INTENT_OS', '1');
+    try {
+      const { getDockEnabledLocalPref, setDockEnabledLocalPref } = await import('../local-prefs');
+      expect(await getDockEnabledLocalPref()).toBe(false);
+      await setDockEnabledLocalPref(true);
+      expect(await getDockEnabledLocalPref()).toBe(true);
+      await setDockEnabledLocalPref(false);
+      expect(await getDockEnabledLocalPref()).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('shows the dock by default outside Intent OS', async () => {
+    const { getDockEnabledLocalPref } = await import('../local-prefs');
+    expect(await getDockEnabledLocalPref()).toBe(true);
+  });
+
   it('getLocalPref returns undefined for missing file/key', async () => {
     const { getLocalPref, hasLocalPref } = await import('../local-prefs');
     expect(await getLocalPref('featureCodes')).toBeUndefined();

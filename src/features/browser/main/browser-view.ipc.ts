@@ -10,6 +10,7 @@ import { app, ipcMain, View, WebContentsView, type IpcMainInvokeEvent } from 'el
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
+import { intentOsBooleanDefault } from '../../../shared/intent-os';
 import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../../../main/machine-rail-state';
 import {
   notifyMainOwnedBrowserPageMoved,
@@ -114,10 +115,18 @@ function requireService(): BrowserViewService {
   return service;
 }
 
-/** Read the saved Labs setting. A read failure keeps it off. */
+/**
+ * Read the saved Labs setting. Unsaved, it is off, except on Intent OS (tab
+ * windows need it); a saved value wins, so turning it off in Labs sticks. A
+ * read failure keeps it off.
+ */
 async function loadBrowserViewLab(): Promise<void> {
   try {
-    labEnabled = (await getLocalPref<boolean>('browserViewsInMainEnabled')) === true;
+    labEnabled = intentOsBooleanDefault(
+      await getLocalPref<unknown>('browserViewsInMainEnabled'),
+      false,
+      true,
+    );
   } catch {
     labEnabled = false;
   }

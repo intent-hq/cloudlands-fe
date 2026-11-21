@@ -32,3 +32,28 @@ describe('applyMenuBarAutoHide', () => {
     expect(window.setAutoHideMenuBar).not.toHaveBeenCalled();
   });
 });
+
+describe('menu bar auto-hide default on Intent OS', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function freshAppearance() {
+    vi.resetModules();
+    return import('./window-appearance');
+  }
+
+  it('opens the first window without a menu bar, and the user turning it off sticks', async () => {
+    vi.stubEnv('INTENT_OS', '1');
+    const appearance = await freshAppearance();
+    expect(appearance.getWindowTitleBarOptions('linux').autoHideMenuBar).toBe(true);
+    appearance.setMenuBarAutoHideEnabled(false);
+    expect(appearance.getWindowTitleBarOptions('linux').autoHideMenuBar).toBeUndefined();
+  });
+
+  it('opens with the menu bar outside Intent OS', async () => {
+    const appearance = await freshAppearance();
+    expect(appearance.getWindowTitleBarOptions('linux').autoHideMenuBar).toBeUndefined();
+  });
+});
