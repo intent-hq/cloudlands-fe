@@ -1,6 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  lineOf,
+  parseSource,
+  propertyName,
+  stringValue,
+  svelteMarkupText,
+  ts,
+  unwrapExpression,
+  walk,
+} from './source-ast-lib.mjs';
 
 // Non-test source must not request `agent.list` without a `scope` / `retiredOnly`
 // option. An unscoped read serves every non-retired session of the workspace: at 459
@@ -25,6 +35,7 @@ export const REMEDIATION_HINT = [
   'Bound the read: `agent.get { agentId }` for known ids, `agent.listActive {}` for liveness,',
   'or pass `scope` (a `topLevel` / `delegated` / `background` literal, or a variable) or',
   '`retiredOnly: true` to list one bin — `scope: undefined` / `retiredOnly: false` are still unscoped.',
+  'A request in Svelte markup cannot be read: move it into the `<script>` block.',
   'An unscoped list serves every session of the workspace and exceeded the 1 MiB frame budget',
   'at 459 sessions (intent-hq/intent#5531).',
   `A deliberate exception is an ALLOWLIST entry in ${SCRIPT_PATH} with a one-line justification.`,
@@ -33,171 +44,121 @@ export const REMEDIATION_HINT = [
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const TEST_PATH_PATTERN =
   /(?:^|\/)(?:__tests__|test|mocks)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:ct|visual)\.spec\./;
-const QUOTES = new Set(["'", '"', '`']);
-// Wire form: the `'agent.list'` literal as a call argument (`request('agent.list', …)`,
-// including a generic `request<T>(\n 'agent.list', …)`). Wrapper form: a direct
-// `.agents.list(` / `.agents.listWithMeta(`, the method reference passed to a saga
-// `call(appClient.agents.list, …)`, and the saga tuple `[appClient.agents, appClient.agents.list]`.
-const WIRE_LITERAL_PATTERN = /(['"`])agent\.list\1/g;
-const WRAPPER_PATTERN = /\.agents\.(?:list|listWithMeta)\s*(?=[(\],])/g;
-// A call is bounded by an unquoted option property (`{ … , key … }`) whose value is
-// statically a bin: `retiredOnly: true`, or `scope` as a literal from SCOPE_VALUES
-// (`'topLevel' as const` included), a variable or member path (`scope: bin`,
-// `scope: props.scope`), or the shorthand `{ scope }`. `retiredOnly: false` / a variable
-// `retiredOnly`, `scope: undefined` / `null` / `''` / an unknown literal, and either word
-// inside a string literal or another key (`scoped`) do not bound the read.
-const OPTION_KEY_PATTERN = /^(?:scope|retiredOnly)(?![\w$])/;
-const OPTION_VALUE_PATTERN = /^\s*:\s*/;
-const OPTION_SHORTHAND_PATTERN = /^\s*[,}]/;
-const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
+const WIRE_METHOD = 'agent.list';
+const WRAPPER_METHODS = new Set(['list', 'listWithMeta']);
 const SCOPE_VALUES = new Set(['topLevel', 'delegated', 'background']);
-const UNBOUNDED_IDENTIFIERS = new Set(['undefined', 'null']);
-const OPENERS = new Set(['(', '[', '{']);
-const CLOSERS = new Set([')', ']', '}']);
-const MAX_ARGUMENT_SPAN = 4000;
+// Cheap text filter: a file that cannot contain a request is not parsed.
+const CANDIDATE_PATTERN = /agent\.list|agents\s*\??\.\s*list/;
+// Svelte markup is not parsed, so any request there fails closed.
+const MARKUP_REQUEST_PATTERN = /(['"`])agent\.list\1|\.agents\s*\??\.\s*list(?:WithMeta)?\b/g;
 
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
 
 export const isScannedPath = (filePath) =>
   SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !TEST_PATH_PATTERN.test(filePath);
 
-// End (exclusive) of the string or template literal opening at `start`. A quoted string
-// left open at a newline ends there, so stray markup apostrophes cannot swallow a file.
-function literalEnd(text, start) {
-  const quote = text[start];
-  for (let i = start + 1; i < text.length; i += 1) {
-    const char = text[i];
-    if (char === '\\') i += 1;
-    else if (char === quote) return i + 1;
-    else if (char === '\n' && quote !== '`') return i;
+// The arguments that follow `node` in the call it is passed to, looking through one
+// array literal (the saga tuple `[client.agents, client.agents.list]`); null when `node`
+// is not a call argument.
+function followingArguments(node) {
+  const parent = node.parent;
+  if (ts.isCallExpression(parent) && parent.arguments.includes(node)) {
+    return parent.arguments.slice(parent.arguments.indexOf(node) + 1);
   }
-  return text.length;
+  if (ts.isArrayLiteralExpression(parent)) {
+    const rest = parent.elements.slice(parent.elements.indexOf(node) + 1);
+    return [...rest, ...(followingArguments(parent) ?? [])];
+  }
+  return null;
 }
 
-// Line comments, block comments, and Svelte HTML comments are blanked (newlines kept)
-// so a documented example cannot trigger the gate — or satisfy the scope check — and
-// line numbers stay accurate. String and template literals are walked rather than
-// pattern-matched so a `//` inside one (`"https://…"`) never opens a comment that would
-// blank a request later on the same line.
-function blankComments(text) {
-  const parts = [];
-  let kept = 0;
-  let i = 0;
-  const closeAt = (token, from) => {
-    const at = text.indexOf(token, from);
-    return at === -1 ? text.length : at + token.length;
-  };
-  const blankTo = (end) => {
-    parts.push(text.slice(kept, i), text.slice(i, end).replace(/[^\n]/g, ' '));
-    kept = i = end;
-  };
-  while (i < text.length) {
-    const char = text[i];
-    if (char === '/' && text[i + 1] === '/') {
-      const newline = text.indexOf('\n', i);
-      blankTo(newline === -1 ? text.length : newline);
-    } else if (char === '/' && text[i + 1] === '*') blankTo(closeAt('*/', i + 2));
-    else if (text.startsWith('<!--', i)) blankTo(closeAt('-->', i + 4));
-    else if (char === '\\') i += 2;
-    else if (QUOTES.has(char)) i = literalEnd(text, i);
-    else i += 1;
+// The option arguments of a request, or null when the node is not one. A wire request
+// is the `'agent.list'` literal as a call argument; a wrapper request is
+// `<client>.agents.list` / `.listWithMeta`, called directly or passed by reference (a
+// saga `call(fn, …)`, `call([context, fn], …)` or `call({ context, fn }, …)`). A
+// wrapper reference used any other way has no visible options and counts as unscoped.
+function requestOptions(node) {
+  if (ts.isStringLiteralLike(node)) {
+    return node.text === WIRE_METHOD ? followingArguments(node) : null;
   }
-  parts.push(text.slice(kept));
-  return parts.join('');
+  if (
+    !ts.isPropertyAccessExpression(node) ||
+    !WRAPPER_METHODS.has(node.name.text) ||
+    !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== 'agents'
+  ) {
+    return null;
+  }
+  const parent = node.parent;
+  if (ts.isCallExpression(parent) && parent.expression === node) return [...parent.arguments];
+  if (
+    ts.isPropertyAssignment(parent) &&
+    propertyName(parent) === 'fn' &&
+    ts.isObjectLiteralExpression(parent.parent)
+  ) {
+    return followingArguments(parent.parent) ?? [];
+  }
+  return followingArguments(node) ?? [];
 }
 
-const previousToken = (text, index) => {
-  for (let i = index - 1; i >= 0; i -= 1) if (!/\s/.test(text[i])) return text[i];
-  return '';
-};
+const isKeywordLiteral = (node) =>
+  [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(
+    node.kind,
+  );
 
-const nextToken = (text, index) => {
-  for (let i = index; i < text.length; i += 1) if (!/\s/.test(text[i])) return text[i];
-  return '';
-};
+// Whether an option property statically bounds the read: `retiredOnly: true`, or `scope`
+// as a SCOPE_VALUES literal (`as const` included), the shorthand `{ scope }`, or any
+// other expression (`scope: bin`, `scope: props.scope`) except `undefined` or another
+// literal.
+function isBoundingOption(property) {
+  const name = ts.isIdentifier(property.name) ? property.name.text : null;
+  if (ts.isShorthandPropertyAssignment(property)) return name === 'scope';
+  if (!ts.isPropertyAssignment(property)) return false;
+  const value = unwrapExpression(property.initializer);
+  if (name === 'retiredOnly') return value.kind === ts.SyntaxKind.TrueKeyword;
+  if (name !== 'scope') return false;
+  const literal = stringValue(value);
+  if (literal !== null) return SCOPE_VALUES.has(literal);
+  if (ts.isIdentifier(value)) return value.text !== 'undefined';
+  return (
+    !ts.isLiteralExpression(value) && !ts.isTemplateExpression(value) && !isKeywordLiteral(value)
+  );
+}
 
-// The argument text of the call the match belongs to: from `start` until the bracket
-// depth drops to `stopDepth` (one enclosing `)` for a literal argument or a saga tuple,
-// the method's own `(`…`)` for a direct call). Unbalanced text ends at the span cap.
-function argumentSpan(text, start, stopDepth) {
-  let depth = 0;
-  const end = Math.min(text.length, start + MAX_ARGUMENT_SPAN);
-  for (let i = start; i < end; i += 1) {
-    const char = text[i];
-    if (OPENERS.has(char)) depth += 1;
-    else if (CLOSERS.has(char)) {
-      depth -= 1;
-      if (depth === stopDepth) return text.slice(start, i);
+const isBoundingObject = (node) =>
+  ts.isObjectLiteralExpression(node) && node.properties.some(isBoundingOption);
+
+// Whether any option argument, or an object nested in one, carries a bounding property.
+const hasBoundingOption = (options) =>
+  options.some((option) => {
+    let bounded = isBoundingObject(option);
+    walk(option, (node) => {
+      bounded ||= isBoundingObject(node);
+      return !bounded;
+    });
+    return bounded;
+  });
+
+// Every unscoped request in one file: `{ line, text }` per offending call. A `.svelte`
+// file is read through its script blocks; a request in its markup is always reported.
+export function findUnscopedAgentListRequests(content, filePath = 'source.ts') {
+  if (!CANDIDATE_PATTERN.test(content)) return [];
+  const lines = content.split('\n');
+  const hit = (line) => ({ line, text: lines[line - 1].trim() });
+  const hits = [];
+  walk(parseSource(content, filePath), (node) => {
+    const options = requestOptions(node);
+    if (options && !hasBoundingOption(options)) {
+      hits.push(hit(lineOf(ts.isPropertyAccessExpression(node) ? node.expression.name : node)));
+    }
+  });
+  if (filePath.endsWith('.svelte')) {
+    const markup = svelteMarkupText(content);
+    for (const match of markup.matchAll(MARKUP_REQUEST_PATTERN)) {
+      hits.push(hit(markup.slice(0, match.index).split('\n').length));
     }
   }
-  return text.slice(start, end);
-}
-
-const isWireRequest = (text, match) =>
-  ['(', ','].includes(previousToken(text, match.index)) &&
-  nextToken(text, match.index + match[0].length) !== ':';
-
-// Whether the option value starting at `rest` statically bounds the read (see the
-// OPTION_* rule above). `rest` begins right after the property key.
-function isBoundingOption(key, rest) {
-  if (key === 'retiredOnly') return /^\s*:\s*true(?![\w$])/.test(rest);
-  if (OPTION_SHORTHAND_PATTERN.test(rest)) return true;
-  const separator = OPTION_VALUE_PATTERN.exec(rest);
-  if (!separator) return false;
-  const value = rest.slice(separator[0].length);
-  if (QUOTES.has(value[0])) {
-    const end = literalEnd(value, 0);
-    return value[end - 1] === value[0] && SCOPE_VALUES.has(value.slice(1, end - 1));
-  }
-  const identifier = IDENTIFIER_PATTERN.exec(value);
-  return identifier !== null && !UNBOUNDED_IDENTIFIERS.has(identifier[0]);
-}
-
-// Whether the argument text carries a bounding `scope` / `retiredOnly` option property.
-// String and template literals are skipped so a value merely containing the word never
-// counts; a key counts only in property position (after `{` or `,`).
-function hasBoundingOption(args) {
-  let i = 0;
-  while (i < args.length) {
-    const char = args[i];
-    if (char === '\\') i += 2;
-    else if (QUOTES.has(char)) i = literalEnd(args, i);
-    else {
-      const key = OPTION_KEY_PATTERN.exec(args.slice(i))?.[0];
-      if (
-        key &&
-        ['{', ','].includes(previousToken(args, i)) &&
-        isBoundingOption(key, args.slice(i + key.length))
-      ) {
-        return true;
-      }
-      i += 1;
-    }
-  }
-  return false;
-}
-
-// Every unscoped request in one file: `{ line, text }` per offending call.
-export function findUnscopedAgentListRequests(content) {
-  const text = blankComments(content);
-  const spans = [];
-  for (const match of text.matchAll(WIRE_LITERAL_PATTERN)) {
-    if (!isWireRequest(text, match)) continue;
-    spans.push([match.index, argumentSpan(text, match.index + match[0].length, -1)]);
-  }
-  for (const match of text.matchAll(WRAPPER_PATTERN)) {
-    const after = match.index + match[0].length;
-    const next = text[after];
-    const start = next === '(' ? after + 1 : after;
-    spans.push([match.index, argumentSpan(text, start, next === ']' ? -2 : -1)]);
-  }
-  return spans
-    .filter(([, args]) => !hasBoundingOption(args))
-    .map(([index]) => {
-      const line = text.slice(0, index).split('\n').length;
-      return { line, text: content.split('\n')[line - 1].trim() };
-    })
-    .sort((a, b) => a.line - b.line);
+  return hits.sort((a, b) => a.line - b.line);
 }
 
 // Hits in non-allowlisted files plus allowlist entries that no longer match anything.
@@ -207,7 +168,7 @@ export function checkAgentListScope(files, allowlist = ALLOWLIST) {
   for (const file of files) {
     const filePath = normalize(file.path);
     if (!isScannedPath(filePath)) continue;
-    const requests = findUnscopedAgentListRequests(file.content);
+    const requests = findUnscopedAgentListRequests(file.content, filePath);
     if (!requests.length) continue;
     if (Object.hasOwn(allowlist, filePath)) matched.add(filePath);
     else hits.push(...requests.map((request) => ({ path: filePath, ...request })));

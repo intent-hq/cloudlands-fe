@@ -288,11 +288,49 @@ describe('Labs settings toggle guard', () => {
     expect(check({ schema: schema(multiLine), page: page(tabGroupsSwitch) }, {})).toEqual([]);
   });
 
-  it('flags a labs category it cannot place in a schema entry', () => {
+  it('flags a schema or Labs page it cannot parse', () => {
     const loose = `${schema(tabGroups)}\ncategory: 'labs',`;
     expect(check({ schema: loose, page: page(tabGroupsSwitch) }, {})).toEqual([
-      expect.stringMatching(/app-settings-schema\.ts:\d+ cannot read the labs entry/),
+      expect.stringMatching(/app-settings-schema\.ts:13 cannot parse:/),
     ]);
+    const broken = page(tabGroupsSwitch).replace('</script>', '  const = ;\n</script>');
+    expect(check({ schema: schema(tabGroups), page: broken }, {})).toEqual([
+      expect.stringMatching(/LabsSettings\.svelte:\d+ cannot parse:/),
+    ]);
+  });
+
+  it('reads entries after a regex literal holding braces and quotes (cloudlands-fe#4840)', () => {
+    const withRegex = schema(tabGroups).replace(
+      'const APP_SETTING_DEFINITIONS',
+      'const KEY_PATTERN = /^[{"\']+$/;\nconst APP_SETTING_DEFINITIONS',
+    );
+    expect(findLabsSettings(withRegex).map((setting) => setting.path)).toEqual(['labs.tabGroups']);
+    const pageWithRegex = page(tabGroupsSwitch).replace(
+      '  const schema',
+      "  const quoted = /[`'}]/;\n  const schema",
+    );
+    expect(findLabsSwitches(pageWithRegex).map((labsSwitch) => labsSwitch.id)).toEqual([
+      'labs-tab-groups',
+    ]);
+  });
+
+  it('flags a schema category or labs path that is not a literal', () => {
+    const constantCategory = definition(
+      'labs.tabGroups',
+      'labs',
+      redux('setLabsTabGroupsEnabled'),
+    ).map((line) => line.replace("category: 'labs'", 'category: LABS_CATEGORY'));
+    expect(
+      check({ schema: schema(constantCategory), page: page(tabGroupsSwitch) }, {}),
+    ).toContainEqual(
+      expect.stringMatching(/app-settings-schema\.ts:\d+ cannot read the category `LABS_CATEGORY`/),
+    );
+    const constantPath = tabGroups.map((line) =>
+      line.replace("path: 'labs.tabGroups'", 'path: TAB_GROUPS_PATH'),
+    );
+    expect(check({ schema: schema(constantPath), page: page(tabGroupsSwitch) }, {})).toContainEqual(
+      expect.stringMatching(/app-settings-schema\.ts:\d+ cannot read the labs entry/),
+    );
   });
 
   it('does not count a switch that is never shown', () => {
