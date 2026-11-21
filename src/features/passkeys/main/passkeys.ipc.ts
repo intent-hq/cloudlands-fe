@@ -1,6 +1,6 @@
 /**
- * Browser-panel passkeys (Linux, opt-in while unfinished: `INTENT_BROWSER_PASSKEYS=1`, or
- * Intent OS `INTENT_OS=1` while it is tested there). Registers the WebAuthn frame preload on the
+ * Browser-panel passkeys (Linux, opt-in while unfinished: `INTENT_BROWSER_PASSKEYS=1`; not
+ * implied by `INTENT_OS=1`, see src/shared/intent-os.ts). Registers the WebAuthn frame preload on the
  * `persist:browser-panel` session and the IPC handlers that run ceremonies
  * through the bundled `intent-passkey` helper. Without the helper (other
  * platforms, or a build that does not bundle it) nothing is registered and
@@ -17,7 +17,6 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, ipcMain, session } from 'electron';
 import { BROWSER_PANEL_PARTITION } from '../../../shared/constants';
-import { intentOsSwitchOn } from '../../../shared/intent-os';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
 import {
@@ -62,7 +61,7 @@ export function setupPasskeysIPC(
   ),
 ): void {
   if (process.platform !== 'linux' || service) return;
-  if (!intentOsSwitchOn('INTENT_BROWSER_PASSKEYS')) return;
+  if (process.env.INTENT_BROWSER_PASSKEYS !== '1') return;
   const binary = resolvePasskeyBinaryPath();
   if (!binary) {
     logger.info('intent-passkey is not bundled; the browser panel keeps native WebAuthn');
