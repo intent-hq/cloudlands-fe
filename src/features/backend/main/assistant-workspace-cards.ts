@@ -19,6 +19,13 @@ import { JsonRpcError } from './json-rpc-errors';
 
 const WORKSPACE_READ_TIMEOUT_MS = 10_000;
 
+export interface WorkspaceCardsDeps extends RelayDeps {
+  /** Whether this app already holds a client for the connection. */
+  hasClient(connectionId: string): boolean;
+  /** Close a client that only this read opened. */
+  release(connectionId: string): void;
+}
+
 export interface OpenBackendWorkspaceDeps {
   relay: RelayDeps;
   open(connectionId: string, workspaceId: string): Promise<OpenConnectionResult>;
@@ -44,16 +51,22 @@ function workspaceRow(result: unknown): Record<string, unknown> | null {
  */
 export async function readBackendWorkspaceCards(
   params: WorkspaceCardsParams,
-  deps: RelayDeps,
+  deps: WorkspaceCardsDeps,
 ): Promise<WorkspaceCardsResult> {
   const connectionId = await connectionForBackend(params.backendId, deps);
   if (!connectionId) return { status: 'unknown-backend' };
   const machineName = await machineNameFor(connectionId, deps);
+  // A card must not leave a client reconnecting to a machine nothing else uses.
+  const opened = connectionId !== LOCAL_CONNECTION_ID && !deps.hasClient(connectionId);
+  const unreachable = (): WorkspaceCardsResult => {
+    if (opened) deps.release(connectionId);
+    return { status: 'unreachable', machineName };
+  };
   let client;
   try {
     client = await deps.clientFor(connectionId);
   } catch {
-    return { status: 'unreachable', machineName };
+    return unreachable();
   }
   const ids = [...new Set(params.workspaceIds)];
   const reads = await Promise.allSettled(
@@ -62,7 +75,7 @@ export async function readBackendWorkspaceCards(
     ),
   );
   if (reads.some((read) => read.status === 'rejected' && !(read.reason instanceof JsonRpcError))) {
-    return { status: 'unreachable', machineName };
+    return unreachable();
   }
   const workspaces = reads
     .map((read) => (read.status === 'fulfilled' ? workspaceRow(read.value) : null))

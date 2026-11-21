@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { RelayDeps } from './assistant-backend-relay';
-import { openBackendWorkspace, readBackendWorkspaceCards } from './assistant-workspace-cards';
+import {
+  openBackendWorkspace,
+  readBackendWorkspaceCards,
+  type WorkspaceCardsDeps,
+} from './assistant-workspace-cards';
 import type { JsonRpcClient } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
 
@@ -15,11 +19,17 @@ const studio = {
 
 const local = { name: 'MacBook', host: 'macbook', port: 7777, fingerprint: 'ff:ee' };
 
-function deps(request: JsonRpcClient['request'], clientFor?: RelayDeps['clientFor']): RelayDeps {
+function deps(
+  request: JsonRpcClient['request'],
+  clientFor?: RelayDeps['clientFor'],
+  liveClients: string[] = [],
+): WorkspaceCardsDeps {
   return {
     list: async () => [studio],
     localFacts: () => local,
     clientFor: clientFor ?? vi.fn(async () => ({ request }) as unknown as JsonRpcClient),
+    hasClient: (id) => liveClients.includes(id),
+    release: vi.fn(),
   };
 }
 
@@ -117,6 +127,37 @@ describe('readBackendWorkspaceCards', () => {
       status: 'unreachable',
       machineName: 'Mac Studio',
     });
+  });
+});
+
+describe('readBackendWorkspaceCards connection lifetime', () => {
+  const timedOut = vi.fn(async () => {
+    throw new Error('Request timed out');
+  }) as unknown as JsonRpcClient['request'];
+  const params = { backendId: 'fp:AA:BB', workspaceIds: ['ws-1'] };
+
+  it('closes the connection it opened for an unreachable machine', async () => {
+    const d = deps(timedOut);
+
+    await readBackendWorkspaceCards(params, d);
+
+    expect(d.release).toHaveBeenCalledWith('studio');
+  });
+
+  it('keeps a connection that was already open', async () => {
+    const d = deps(timedOut, undefined, ['studio']);
+
+    await readBackendWorkspaceCards(params, d);
+
+    expect(d.release).not.toHaveBeenCalled();
+  });
+
+  it('never closes the local daemon connection', async () => {
+    const d = deps(timedOut);
+
+    await readBackendWorkspaceCards({ backendId: 'fp:FF:EE', workspaceIds: ['ws-1'] }, d);
+
+    expect(d.release).not.toHaveBeenCalled();
   });
 });
 

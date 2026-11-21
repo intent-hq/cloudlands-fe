@@ -239,7 +239,7 @@ import {
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
 import { getRendererWebContents } from '../../../main/window-backend';
-import { windowMachines } from '../../../main/frames';
+import { isMachineInUse, windowMachines } from '../../../main/frames';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -5697,7 +5697,15 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.WORKSPACE_CARDS,
     createValidatedHandler(
       ConnectionsWorkspaceCardsSchema,
-      async (_event, params) => readBackendWorkspaceCards(params, assistantRelayDeps),
+      async (_event, params) =>
+        readBackendWorkspaceCards(params, {
+          ...assistantRelayDeps,
+          hasClient: (id) => getBackendClientForConnection(id) !== undefined,
+          // A window may have opened for the machine while the read waited.
+          release: (id) => {
+            if (!isMachineInUse(id)) disconnectBackendClient(id);
+          },
+        }),
       CONNECTIONS.WORKSPACE_CARDS,
     ),
   );
