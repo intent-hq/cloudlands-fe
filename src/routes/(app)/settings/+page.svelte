@@ -28,6 +28,7 @@
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
+  import AutocompleteSettings from '$lib/components/settings/AutocompleteSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
@@ -1000,6 +1001,8 @@
               </section>
             </div>
           </div>
+
+          <AutocompleteSettings />
 
           <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
