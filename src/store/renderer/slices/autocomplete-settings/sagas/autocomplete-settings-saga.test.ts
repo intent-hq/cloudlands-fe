@@ -196,4 +196,28 @@ describe('autocompleteSettingsSaga', () => {
     expect(getState()).toMatchObject({ enabled: true, keyConfigured: { kilo: true } });
     task.cancel();
   });
+
+  it('turns off before switching to keyless Kilo', async () => {
+    mocks.load.mockResolvedValue({ ...snapshot, enabled: true, service: 'openrouter' });
+    const { dispatch, getState, task } = await ready();
+    dispatch(changeAutocompleteService('kilo', true));
+    await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
+    expect(mocks.setEnabled).toHaveBeenCalledWith(false);
+    expect(mocks.setEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setService.mock.invocationCallOrder[0],
+    );
+    expect(getState()).toMatchObject({ enabled: false, service: 'kilo' });
+    task.cancel();
+  });
+
+  it('keeps the old service when turning off fails', async () => {
+    mocks.load.mockResolvedValue({ ...snapshot, enabled: true, service: 'openrouter' });
+    mocks.setEnabled.mockRejectedValueOnce(new Error('nope'));
+    const { dispatch, getState, task } = await ready();
+    dispatch(changeAutocompleteService('kilo', true));
+    await vi.waitFor(() => expect(getState().error).not.toBeNull());
+    expect(mocks.setService).not.toHaveBeenCalled();
+    expect(getState()).toMatchObject({ enabled: true, service: 'openrouter' });
+    task.cancel();
+  });
 });

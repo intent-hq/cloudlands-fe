@@ -60,7 +60,7 @@
     /** The key field is open for this service (bindable for previews). */
     keyInputFor?: AutocompleteService | null;
     onEnabledChange: (enabled: boolean) => void;
-    onServiceChange: (service: AutocompleteService) => void;
+    onServiceChange: (service: AutocompleteService, disableFirst?: boolean) => void;
     onModelChange: (model: AutocompleteModel) => void;
     onSaveKey: (service: AutocompleteService, apiKey: string, enableAfter: boolean) => void;
     onClearKey: (service: AutocompleteService, disableAfter: boolean) => void;
@@ -122,15 +122,15 @@
     const wasPending = pendingEnable;
     pendingEnable = false;
     keyInputFor = null;
-    onServiceChange(value);
     if (wasPending) {
+      onServiceChange(value);
       // Nothing was persisted yet: re-run the switch gate for the new service.
       if (decideEnable(value, keyConfigured) === 'enable') onEnabledChange(true);
       else if (value === 'kilo') confirmOpen = true;
       return;
     }
     const decision = decideServiceChange(enabled, value, keyConfigured);
-    if (decision.disable) onEnabledChange(false);
+    onServiceChange(value, decision.disable);
     if (decision.confirmKilo) confirmOpen = true;
     if (decision.askKey) openKeyInput(value);
   }

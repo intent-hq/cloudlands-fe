@@ -72,9 +72,14 @@ function* changeEnabledWorker(
 function* changeServiceWorker(
   action: ReturnType<typeof changeAutocompleteService>,
 ): SagaGenerator<void> {
-  const [service] = action.payload;
+  const [service, disableFirst = false] = action.payload;
   const previous = (yield* selectAutocompleteSettings.effect()).service;
   if (previous === service) return;
+  if (disableFirst) {
+    // Off first: the new service must not run until its gate passes.
+    yield* call(persistEnabled, false);
+    if ((yield* selectAutocompleteSettings.effect()).enabled) return;
+  }
   yield* put(setAutocompleteSettingsError(null));
   yield* put(setAutocompleteServiceValue(service));
   try {

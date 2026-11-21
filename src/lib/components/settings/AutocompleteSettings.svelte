@@ -39,7 +39,8 @@
           busyService={$settings$.busyService}
           error={$settings$.error}
           onEnabledChange={(enabled) => appStore.dispatch(changeAutocompleteEnabled(enabled))}
-          onServiceChange={(service) => appStore.dispatch(changeAutocompleteService(service))}
+          onServiceChange={(service, disableFirst) =>
+            appStore.dispatch(changeAutocompleteService(service, disableFirst))}
           onModelChange={(model) => appStore.dispatch(changeAutocompleteModel(model))}
           onSaveKey={(service, apiKey, enableAfter) =>
             appStore.dispatch(saveAutocompleteKey(service, apiKey, enableAfter))}

@@ -31,9 +31,10 @@ export const changeAutocompleteEnabled = createAction<[enabled: boolean]>(
 );
 
 /** Persist `autocomplete.service` (optimistic, rolls back on failure). */
-export const changeAutocompleteService = createAction<[service: AutocompleteService]>(
-  'autocompleteSettings/changeService',
-);
+/** Change the service; with `disableFirst`, turn autocomplete off first and keep the old service if that fails. */
+export const changeAutocompleteService = createAction<
+  [service: AutocompleteService, disableFirst?: boolean]
+>('autocompleteSettings/changeService');
 
 /** Persist `autocomplete.model` (optimistic, rolls back on failure). */
 export const changeAutocompleteModel = createAction<[model: AutocompleteModel]>(
