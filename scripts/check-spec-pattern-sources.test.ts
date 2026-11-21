@@ -92,6 +92,16 @@ describe('spec pattern sources guard', () => {
       'const glob = `${dir}/**/*.ct.spec.ts`;',
       'ctSuffix',
     ],
+    [
+      'root regex after a closing parenthesis',
+      'if (ok) /^test\\/.*\\.spec\\.ts$/.test(file);',
+      'rootPattern',
+    ],
+    [
+      'ROOT_ suffix constant as const',
+      "const ROOT_SPEC_SUFFIX = '.spec.ts' as const;",
+      'rootConstant',
+    ],
   ])('flags %s', (_name, line, rule) => {
     expect(rules(line)).toEqual([rule]);
   });

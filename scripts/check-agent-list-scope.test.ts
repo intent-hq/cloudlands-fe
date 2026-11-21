@@ -40,6 +40,9 @@ describe('agent.list scope guard', () => {
       'request after a block-comment opener in a string',
       'const s = "/*"; request(\'agent.list\', {})',
     ],
+    ['spread options only', "await request('agent.list', { ...base });"],
+    ['saga context call', 'yield call({ context: c.agents, fn: c.agents.list }, workspaceId);'],
+    ['wrapper stored in a variable', 'const listAgents = appClient.agents.listWithMeta;'],
     ['retiredOnly: false', "await request('agent.list', { workspaceId, retiredOnly: false });"],
     ['retiredOnly variable', 'yield call(appClient.agents.list, workspaceId, { retiredOnly });'],
     ['scope: undefined', "await request('agent.list', { workspaceId, scope: undefined });"],
@@ -75,6 +78,12 @@ describe('agent.list scope guard', () => {
       '});',
     ],
     ['scoped saga tuple', "yield call([c.agents, c.agents.list], id, { scope: 'background' });"],
+    ['scope after a spread', "await client.agents.list({ ...opts, scope: 'topLevel' });"],
+    ['a member of a listed array', 'const count = data.agents.list.length;'],
+    [
+      'scoped saga context call',
+      "yield* call({ context: c.agents, fn: c.agents.listWithMeta }, id, { scope: 'topLevel' as const });",
+    ],
     [
       'scope literal as const',
       "await request('agent.list', { workspaceId, scope: 'topLevel' as const });",
@@ -95,9 +104,36 @@ describe('agent.list scope guard', () => {
     ['block comment', '/* request(`agent.list`, { workspaceId }) */'],
     ['URL in a line comment', "// see https://x — request('agent.list', { workspaceId })"],
     ['line comment after a URL string', 'const u = "https://x"; // request(\'agent.list\', {})'],
-    ['Svelte HTML comment', "<!-- request('agent.list', { workspaceId }) -->"],
+    [
+      'scope after a regex holding a quote',
+      "await request('agent.list', { re: /\"/, scope: 'topLevel', note: \"\" });",
+    ],
+    ['line comment after a regex holding a quote', "const re = /\"/; // request('agent.list', {})"],
   ])('ignores %s', (_name, ...lines) => {
     expect(findUnscopedAgentListRequests(lines.join('\n'))).toEqual([]);
+  });
+
+  it('reads Svelte script blocks and fails closed on requests in markup', () => {
+    const component = (markup: string) =>
+      [
+        '<script lang="ts">',
+        "  const scoped = () => client.agents.list(ws, { scope: 'topLevel' });",
+        '  const unscoped = () => client.agents.list(ws);',
+        '</script>',
+        "<!-- request('agent.list', { workspaceId }) -->",
+        markup,
+      ].join('\n');
+    expect(findUnscopedAgentListRequests(component('<p>Agents</p>'), 'A.svelte')).toEqual([
+      { line: 3, text: 'const unscoped = () => client.agents.list(ws);' },
+    ]);
+    expect(
+      findUnscopedAgentListRequests(component('<p>{data.agents.list.length}</p>'), 'A.svelte'),
+    ).toHaveLength(1);
+    const inMarkup = "<button onclick={() => client.agents.list(ws, { scope: 'topLevel' })} />";
+    expect(findUnscopedAgentListRequests(component(inMarkup), 'A.svelte')).toEqual([
+      { line: 3, text: 'const unscoped = () => client.agents.list(ws);' },
+      { line: 6, text: inMarkup },
+    ]);
   });
 
   it('does not let a scope option in a comment satisfy the check', () => {

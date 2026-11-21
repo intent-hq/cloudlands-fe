@@ -141,6 +141,61 @@ describe('renderer-owned menu accelerators guard', () => {
     ]);
   });
 
+  it('reads an item whose handler holds a regex with a brace', () => {
+    const withRegex = validMenu.replace(
+      'click: () => { focused.close(); },',
+      "click: () => { focused.close(title.replace(/[{]/g, '')); },",
+    );
+    expect(checkMenuAccelerators(withRegex)).toEqual([]);
+  });
+
+  it('flags an accelerator it cannot read and checks every branch of a conditional chord', () => {
+    const constant = validMenu.replace(
+      "accelerator: 'CmdOrCtrl+]',",
+      'accelerator: NEXT_TAB_CHORD,',
+    );
+    expect(checkMenuAccelerators(constant)).toEqual([
+      expect.stringMatching(
+        /menu_select_next_tab\) cannot read the accelerator `NEXT_TAB_CHORD`; write each chord as a string literal/,
+      ),
+    ]);
+    const conditional = validMenu.replace(
+      "accelerator: 'CmdOrCtrl+Shift+N',",
+      "accelerator: isMac ? 'CmdOrCtrl+Shift+N' : 'CmdOrCtrl+PageUp',",
+    );
+    expect(checkMenuAccelerators(conditional)).toEqual([
+      expect.stringMatching(/menu_new_window\) claims CmdOrCtrl\+PageUp, which the renderer owns/),
+    ]);
+    const closeWindow = validMenu.replace(
+      'label: m.menu_close_window(),',
+      'label: m.menu_close_window(),\n        accelerator: closeChord,',
+    );
+    expect(checkMenuAccelerators(closeWindow)).toEqual([
+      expect.stringMatching(/menu_close_window\) must not carry an accelerator \(has closeChord\)/),
+      expect.stringMatching(/menu_close_window\) cannot read the accelerator `closeChord`/),
+    ]);
+  });
+
+  it('checks every branch of a conditional chord on a renderer-owned item', () => {
+    const conditional = (chord: string) =>
+      validMenu.replace(
+        "accelerator: 'CmdOrCtrl+Alt+N',",
+        `accelerator: isMac ? 'CmdOrCtrl+Alt+N' : '${chord}',`,
+      );
+    expect(checkMenuAccelerators(conditional('CmdOrCtrl+Alt+N'))).toEqual([]);
+    expect(checkMenuAccelerators(conditional('CmdOrCtrl+Alt+M'))).toEqual([
+      expect.stringMatching(
+        /menu_new_note\) shows isMac \? 'CmdOrCtrl\+Alt\+N' : 'CmdOrCtrl\+Alt\+M', expected CmdOrCtrl\+Alt\+N/,
+      ),
+    ]);
+  });
+
+  it('flags a menu source it cannot parse', () => {
+    expect(checkMenuAccelerators(`${validMenu}\nconst = ;`)).toContainEqual(
+      expect.stringMatching(/src\/main\/index\.ts:\d+ cannot parse:/),
+    );
+  });
+
   it('passes on the current main-process menu', () => {
     expect(checkMenuAccelerators(readMenuSource(process.cwd()))).toEqual([]);
   });

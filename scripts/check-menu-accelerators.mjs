@@ -1,6 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  findObjectLiterals,
+  lineOf,
+  ownProperty,
+  parseErrors,
+  parseSource,
+  propertyValue,
+  stringValue,
+  ts,
+  unwrapExpression,
+} from './source-ast-lib.mjs';
 
 // The application menu shows the chords the renderer owns (tab navigation, pane
 // creation) without registering them as native accelerators: a registered chord
@@ -30,74 +41,102 @@ export const FORBIDDEN_ACCELERATORS = Object.freeze([
   'CmdOrCtrl+PageDown',
 ]);
 
-const LABEL_PATTERN = /label:\s*m\.(\w+)\(\)/g;
-const ACCELERATOR_PATTERN = /accelerator:\s*(['"`])([^'"`]*)\1/;
-const ACCELERATORS_PATTERN = new RegExp(ACCELERATOR_PATTERN.source, 'g');
-const REGISTER_PATTERN = /registerAccelerator:\s*false\b/;
-
-const lineOf = (content, index) => content.slice(0, index).split('\n').length;
-
-// The `{ … }` object literal enclosing `index`: walk back to the unmatched `{`, then
-// forward to its `}`. Menu items never nest another object with a `label:` key, so
-// the innermost enclosing object is the item.
-function enclosingObject(text, index) {
-  let depth = 0;
-  let start = -1;
-  for (let i = index; i >= 0; i -= 1) {
-    const char = text[i];
-    if (char === '}') depth += 1;
-    else if (char === '{') {
-      if (depth === 0) {
-        start = i;
-        break;
-      }
-      depth -= 1;
-    }
-  }
-  if (start === -1) return null;
-  depth = 0;
-  for (let i = start; i < text.length; i += 1) {
-    const char = text[i];
-    if (char === '{') depth += 1;
-    else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return null;
+// The message key of a `label: m.<key>(…)` item, or null.
+function labelKey(item) {
+  const label = unwrapExpression(propertyValue(item, 'label'));
+  if (!label || !ts.isCallExpression(label)) return null;
+  const callee = label.expression;
+  return ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'm'
+    ? callee.name.text
+    : null;
 }
 
-// Every `label: m.<key>()` menu item: `{ key, accelerator, registersAccelerator, line }`.
+// The chord expressions an accelerator value can take: both branches of a conditional.
+function acceleratorLeaves(value) {
+  const expression = unwrapExpression(value);
+  if (ts.isConditionalExpression(expression)) {
+    return [...acceleratorLeaves(expression.whenTrue), ...acceleratorLeaves(expression.whenFalse)];
+  }
+  return [expression];
+}
+
+// Every `accelerator:` property with its item and value: `{ item, property, value }`.
+const acceleratorProperties = (source) =>
+  findObjectLiterals(source, 'accelerator').map((item) => ({
+    item,
+    property: ownProperty(item, 'accelerator'),
+    value: propertyValue(item, 'accelerator'),
+  }));
+
+// Every `label: m.<key>()` menu item: `{ key, accelerator, chords, readable,
+// registersAccelerator, line }`. `accelerator` is the chord, the source text of a
+// non-literal value, or null; `chords` holds each branch of a conditional; `readable` is
+// false when a branch is not a string literal.
 export function findMenuItems(content) {
-  const items = [];
-  for (const match of content.matchAll(LABEL_PATTERN)) {
-    const item = enclosingObject(content, match.index);
-    if (!item) continue;
-    items.push({
-      key: match[1],
-      accelerator: ACCELERATOR_PATTERN.exec(item)?.[2] ?? null,
-      registersAccelerator: !REGISTER_PATTERN.test(item),
-      line: lineOf(content, match.index),
-    });
-  }
-  return items;
+  const source = parseSource(content, MENU_SOURCE);
+  return findObjectLiterals(source, 'label').flatMap((item) => {
+    const key = labelKey(item);
+    if (!key) return [];
+    const value = propertyValue(item, 'accelerator');
+    const chords = value ? acceleratorLeaves(value).map((leaf) => stringValue(leaf)) : [];
+    const registers = unwrapExpression(propertyValue(item, 'registerAccelerator'));
+    return [
+      {
+        key,
+        accelerator: stringValue(value) ?? value?.getText() ?? null,
+        chords,
+        readable: chords.every((chord) => chord !== null),
+        registersAccelerator: registers?.kind !== ts.SyntaxKind.FalseKeyword,
+        line: lineOf(ownProperty(item, 'label')),
+      },
+    ];
+  });
 }
 
-// Every `accelerator: '<chord>'` declaration, whatever item declares it (a role-only
+// Every literal chord an `accelerator:` declares, whatever item declares it (a role-only
 // item has no `label: m.<key>()`, so `key` is null): `{ key, accelerator, line }`.
 export function findAccelerators(content) {
-  return [...content.matchAll(ACCELERATORS_PATTERN)].map((match) => {
-    const item = enclosingObject(content, match.index);
-    return {
-      key: item ? (new RegExp(LABEL_PATTERN.source).exec(item)?.[1] ?? null) : null,
-      accelerator: match[2],
-      line: lineOf(content, match.index),
-    };
-  });
+  return acceleratorProperties(parseSource(content, MENU_SOURCE)).flatMap(
+    ({ item, property, value }) =>
+      (value ? acceleratorLeaves(value) : [])
+        .filter((leaf) => stringValue(leaf) !== null)
+        .map((leaf) => ({
+          key: labelKey(item),
+          accelerator: stringValue(leaf),
+          line: lineOf(property),
+        })),
+  );
+}
+
+// Accelerators the check cannot read: a chord that is not a string literal (or a
+// conditional of them) could claim a renderer-owned chord unseen. `{ key, value, line }`.
+export function findUnreadableAccelerators(content) {
+  return acceleratorProperties(parseSource(content, MENU_SOURCE)).flatMap(
+    ({ item, property, value }) => {
+      const unreadable = value
+        ? acceleratorLeaves(value).some((leaf) => stringValue(leaf) === null)
+        : true;
+      return unreadable
+        ? [
+            {
+              key: labelKey(item),
+              value: value?.getText() ?? 'accelerator',
+              line: lineOf(property),
+            },
+          ]
+        : [];
+    },
+  );
 }
 
 // Problems with the menu source, one message per violated rule.
 export function checkMenuAccelerators(content) {
+  const errors = parseErrors(parseSource(content, MENU_SOURCE));
+  if (errors.length) {
+    return errors.map(({ line, message }) => `${MENU_SOURCE}:${line} cannot parse: ${message}`);
+  }
   const items = findMenuItems(content);
   const problems = [];
   const at = (item) => `${MENU_SOURCE}:${item.line} (${item.key ?? 'unlabelled item'})`;
@@ -107,7 +146,9 @@ export function checkMenuAccelerators(content) {
       problems.push(`missing menu item \`${key}\` (expected accelerator ${accelerator})`);
       continue;
     }
-    if (item.accelerator !== accelerator) {
+    const showsChord =
+      item.chords.length > 0 && item.chords.every((chord) => chord === accelerator);
+    if (item.readable && !showsChord) {
       problems.push(`${at(item)} shows ${item.accelerator ?? 'no chord'}, expected ${accelerator}`);
     }
     if (item.registersAccelerator) {
@@ -130,6 +171,12 @@ export function checkMenuAccelerators(content) {
     if (FORBIDDEN_ACCELERATORS.includes(declared.accelerator)) {
       problems.push(`${at(declared)} claims ${declared.accelerator}, which the renderer owns`);
     }
+  }
+  for (const unreadable of findUnreadableAccelerators(content)) {
+    problems.push(
+      `${at(unreadable)} cannot read the accelerator \`${unreadable.value}\`; ` +
+        'write each chord as a string literal',
+    );
   }
   return problems;
 }
