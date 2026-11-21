@@ -70,7 +70,7 @@ export interface ParsedContent {
     rawSource?: string;
     fenceStart?: number;
     fenceClosed?: boolean;
-    workspaceCardData?: { workspaceIds: string[] };
+    workspaceCardData?: WorkspaceCardData;
     navLinkData?: { target: string; label?: string };
     videoData?: {
       source: Extract<VideoSource, { kind: 'workspace' }>;
@@ -154,8 +154,41 @@ const COMBINED_SPECIAL_REGEX =
   /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|`{3,}workspace\s*\n[\s\S]*?^`{3,}\s*$|^@@@workspace[ \t]*\n[\s\S]*?^@@@[ \t]*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
 
 const WORKSPACE_LINK_PREFIX = 'intent://local/workspace/';
+const LOCAL_BACKEND_ID = 'local';
 
-function parseWorkspaceCardIds(body: string): string[] {
+/** One card line: a workspace, on another machine when `backendId` is set. */
+export interface WorkspaceCardRef {
+  workspaceId: string;
+  /** The Assistant's `ws.rpc.backends()` id; absent for this machine. */
+  backendId?: string;
+}
+
+interface WorkspaceCardData {
+  workspaceIds: string[];
+  /** Every line in order; present only when a line names another machine. */
+  refs?: WorkspaceCardRef[];
+}
+
+/** A `{workspace-id}@{backend-id}` line names a workspace on another machine. */
+function toWorkspaceCardRef(line: string): WorkspaceCardRef | null {
+  const at = line.indexOf('@');
+  if (at < 0) return { workspaceId: line };
+  const workspaceId = line.slice(0, at).trim();
+  if (!workspaceId) return null;
+  const backendId = line.slice(at + 1).trim();
+  return backendId && backendId !== LOCAL_BACKEND_ID ? { workspaceId, backendId } : { workspaceId };
+}
+
+function parseWorkspaceCardData(body: string): WorkspaceCardData | null {
+  const refs = parseWorkspaceCardLines(body)
+    .map(toWorkspaceCardRef)
+    .filter((ref): ref is WorkspaceCardRef => ref !== null);
+  if (refs.length === 0) return null;
+  const workspaceIds = refs.map((ref) => ref.workspaceId);
+  return refs.some((ref) => ref.backendId) ? { workspaceIds, refs } : { workspaceIds };
+}
+
+function parseWorkspaceCardLines(body: string): string[] {
   return body
     .split('\n')
     .map((line) => line.trim())
@@ -627,12 +660,12 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   if (/^`{3,}workspace/.test(blockText)) {
     const match = blockText.match(/`{3,}workspace\s*\n([\s\S]*?)^`{3,}\s*$/m);
     if (match) {
-      const workspaceIds = parseWorkspaceCardIds(match[1]);
-      if (workspaceIds.length === 0) return { type: 'text', content: blockText };
+      const workspaceCardData = parseWorkspaceCardData(match[1]);
+      if (!workspaceCardData) return { type: 'text', content: blockText };
       return {
         type: 'workspace_card',
         content: match[1],
-        metadata: { workspaceCardData: { workspaceIds } },
+        metadata: { workspaceCardData },
       };
     }
   }
@@ -640,17 +673,15 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   if (blockText.startsWith('@@@workspace')) {
     const match = blockText.match(/^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/m);
     if (match) {
-      const workspaceIds = parseWorkspaceCardIds(match[1]);
-      if (workspaceIds.length === 0) {
+      const workspaceCardData = parseWorkspaceCardData(match[1]);
+      if (!workspaceCardData) {
         return { type: 'text', content: blockText };
       }
 
       return {
         type: 'workspace_card',
         content: match[1],
-        metadata: {
-          workspaceCardData: { workspaceIds },
-        },
+        metadata: { workspaceCardData },
       };
     }
   }
@@ -1345,6 +1376,7 @@ export function groupParsedBlocks(blocks: ParsedContent[]): RenderBlock[] {
 
 function workspaceCardIsCoveredByIds(block: ParsedContent, ids: ReadonlySet<string>): boolean {
   if (block.type !== 'workspace_card') return false;
+  if (block.metadata?.workspaceCardData?.refs?.some((ref) => ref.backendId)) return false;
   const workspaceIds = block.metadata?.workspaceCardData?.workspaceIds ?? [];
   return workspaceIds.length > 0 && workspaceIds.every((workspaceId) => ids.has(workspaceId));
 }

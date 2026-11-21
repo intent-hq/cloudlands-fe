@@ -23,16 +23,65 @@
     selectWorkspaceForegroundAgentIds,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectRemoteWorkspaceCardEntries } from '$store/renderer/slices/remote-workspace-cards/remote-workspace-cards-selectors';
+  import {
+    remoteWorkspaceCardKey,
+    remoteWorkspaceCardsRequested,
+    remoteWorkspaceOpenRequested,
+  } from '$store/renderer/slices/remote-workspace-cards/remote-workspace-cards-slice';
+  import type { WorkspaceCardRef } from '$lib/utils/messageParser';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceIds: string[];
+    /** Every line in order, when one names a workspace on another machine. */
+    refs?: WorkspaceCardRef[];
     workspaceId?: string;
   }
 
-  let { workspaceIds, workspaceId: sourceWorkspaceId }: Props = $props();
+  let { workspaceIds, refs, workspaceId: sourceWorkspaceId }: Props = $props();
   let workspacesById = $state<Record<string, Workspace | undefined>>({});
+  const remoteEntries = selectRemoteWorkspaceCardEntries();
+
+  let cardRefs = $derived<WorkspaceCardRef[]>(
+    refs ?? workspaceIds.map((workspaceId) => ({ workspaceId })),
+  );
+  let localWorkspaceIds = $derived(
+    cardRefs.filter((ref) => !ref.backendId).map((ref) => ref.workspaceId),
+  );
+  let remoteIdsByBackend = $derived.by(() => {
+    const byBackend = new Map<string, string[]>();
+    for (const ref of cardRefs) {
+      if (!ref.backendId) continue;
+      byBackend.set(ref.backendId, [...(byBackend.get(ref.backendId) ?? []), ref.workspaceId]);
+    }
+    return byBackend;
+  });
+
+  $effect(() => {
+    for (const [backendId, ids] of remoteIdsByBackend) {
+      appStore.dispatch(remoteWorkspaceCardsRequested(backendId, ids));
+    }
+  });
+
+  function refKey(ref: WorkspaceCardRef): string {
+    return ref.backendId ? remoteWorkspaceCardKey(ref.backendId, ref.workspaceId) : ref.workspaceId;
+  }
+
+  function openRemoteWorkspace(backendId: string, workspaceId: string) {
+    appStore.dispatch(remoteWorkspaceOpenRequested(backendId, workspaceId));
+  }
+
+  function getRemoteOverflowMenuItems(backendId: string, workspaceId: string): SidebarMenuEntry[] {
+    return [
+      {
+        id: 'open',
+        label: m.chat_chatWorkspaceCard_menu_open_label(),
+        onClick: () => openRemoteWorkspace(backendId, workspaceId),
+      },
+    ];
+  }
 
   function blockContextMenuCapture(node: HTMLElement) {
     const handleContextMenu = (event: MouseEvent) => {
@@ -50,7 +99,7 @@
   }
 
   $effect(() => {
-    const ids = workspaceIds;
+    const ids = localWorkspaceIds;
     const initialState = appStore.state;
     workspacesById = Object.fromEntries(
       ids.map((workspaceId) => [
@@ -146,35 +195,82 @@
   }
 </script>
 
-{#if workspaceIds.length > 0}
+{#snippet unavailable(text: string)}
+  <div class="rounded-md border border-border bg-muted/10 px-3 py-2 text-left">
+    <div class="text-xs text-subtle">{text}</div>
+  </div>
+{/snippet}
+
+{#if cardRefs.length > 0}
   <div class="my-3 flex w-full flex-col gap-2" use:blockContextMenuCapture>
-    {#each workspaceIds as workspaceId (workspaceId)}
-      {@const workspace = workspacesById[workspaceId]}
-      {#if workspace}
-        <WorkspaceCard
-          {workspace}
-          variant="compact"
-          isolateHoverReveal
-          class="mx-0 rounded-md border border-border bg-background/40"
-          onClick={(event) => handleWorkspaceClick(workspaceId, event)}
-        >
-          {#snippet actions()}
-            <SidebarOverflowMenu
-              items={getOverflowMenuItems(workspaceId)}
-              orientation="vertical"
-              class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-              ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
-                name: workspace.title || m.workspace_links_untitled_label(),
-              })}
-            />
-          {/snippet}
-        </WorkspaceCard>
-      {:else}
-        <div class="rounded-md border border-border bg-muted/10 px-3 py-2 text-left">
-          <div class="text-xs text-subtle">
-            {m.chat_chatWorkspaceCard_notFound_label()}
+    {#each cardRefs as ref (refKey(ref))}
+      {#if ref.backendId}
+        {@const backendId = ref.backendId}
+        {@const entry = $remoteEntries[refKey(ref)]}
+        {#if entry?.status === 'found'}
+          <WorkspaceCard
+            workspace={entry.workspace}
+            variant="compact"
+            isolateHoverReveal
+            hoverPreview={false}
+            trailingLabel={entry.machineName || undefined}
+            class="mx-0 rounded-md border border-border bg-background/40"
+            onClick={() => openRemoteWorkspace(backendId, ref.workspaceId)}
+          >
+            {#snippet actions()}
+              <SidebarOverflowMenu
+                items={getRemoteOverflowMenuItems(backendId, ref.workspaceId)}
+                orientation="vertical"
+                class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+                ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
+                  name: entry.workspace.title || m.workspace_links_untitled_label(),
+                })}
+              />
+            {/snippet}
+          </WorkspaceCard>
+        {:else if entry?.status === 'unknown-backend'}
+          {@render unavailable(m.chat_chatWorkspaceCard_machineNotAdded_label())}
+        {:else if entry?.status === 'unreachable'}
+          {@render unavailable(
+            m.chat_chatWorkspaceCard_machineUnreachable_label({
+              machine: entry.machineName || m.chat_chatWorkspaceCard_anotherMachine_label(),
+            }),
+          )}
+        {:else if entry?.status === 'missing'}
+          {@render unavailable(m.chat_chatWorkspaceCard_notFound_label())}
+        {:else}
+          <div
+            class="animate-pulse rounded-md border border-border bg-muted/10 px-3 py-2"
+            aria-busy="true"
+          >
+            <div class="invisible text-xs">&nbsp;</div>
           </div>
-        </div>
+        {/if}
+      {:else}
+        {@const workspaceId = ref.workspaceId}
+        {@const workspace = workspacesById[workspaceId]}
+        {#if workspace}
+          <WorkspaceCard
+            {workspace}
+            variant="compact"
+            isolateHoverReveal
+            class="mx-0 rounded-md border border-border bg-background/40"
+            onClick={(event) => handleWorkspaceClick(workspaceId, event)}
+          >
+            {#snippet actions()}
+              <SidebarOverflowMenu
+                items={getOverflowMenuItems(workspaceId)}
+                orientation="vertical"
+                class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+                ariaLabel={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
+                  name: workspace.title || m.workspace_links_untitled_label(),
+                })}
+              />
+            {/snippet}
+          </WorkspaceCard>
+        {:else}
+          {@render unavailable(m.chat_chatWorkspaceCard_notFound_label())}
+        {/if}
       {/if}
     {/each}
   </div>

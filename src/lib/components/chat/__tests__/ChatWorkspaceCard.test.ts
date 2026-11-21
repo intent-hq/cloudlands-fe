@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
+import type { WorkspaceCardRef } from '$lib/utils/messageParser';
+import {
+  remoteWorkspaceCardKey,
+  remoteWorkspaceCardsRequested,
+  remoteWorkspaceOpenRequested,
+} from '$store/renderer/slices/remote-workspace-cards/remote-workspace-cards-slice';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -39,7 +45,10 @@ const mocks = vi.hoisted(() => {
     workspaceSubscribers.get(workspaceId)?.forEach((run) => run(value));
   };
 
+  const remote: { store?: { set(value: Record<string, unknown>): void } } = {};
+
   return {
+    remote,
     dispatch,
     goto,
     openWorkspaceInNewWindow,
@@ -89,6 +98,16 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
     select: (_state: unknown, workspaceId: string) => mocks.foregroundAgentIds[workspaceId] ?? [],
   },
 }));
+
+vi.mock(
+  '$store/renderer/slices/remote-workspace-cards/remote-workspace-cards-selectors',
+  async () => {
+    const { writable } = await import('svelte/store');
+    const entries = writable<Record<string, unknown>>({});
+    mocks.remote.store = entries;
+    return { selectRemoteWorkspaceCardEntries: () => entries };
+  },
+);
 
 vi.mock('$lib/components/ui/tooltip', async () => ({
   Tooltip: (await import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default,
@@ -182,9 +201,9 @@ const workspace = (id: string, title: string): Workspace => ({
   repositoryName: 'intent',
 });
 
-async function renderWorkspaceCard(workspaceIds = ['ws-1']) {
+async function renderWorkspaceCard(workspaceIds = ['ws-1'], refs?: WorkspaceCardRef[]) {
   const ChatWorkspaceCard = (await import('../ChatWorkspaceCard.svelte')).default;
-  return render(ChatWorkspaceCard, { props: { workspaceIds } });
+  return render(ChatWorkspaceCard, { props: { workspaceIds, ...(refs ? { refs } : {}) } });
 }
 
 async function openMenu() {
@@ -481,5 +500,87 @@ describe('ChatWorkspaceCard overflow menu', () => {
       await screen.findByRole('button', { name: 'Workspace actions for Untitled' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /untitled-workspace/i })).toBeNull();
+  });
+});
+
+describe('ChatWorkspaceCard on another machine', () => {
+  const studio = 'fp:AB:CD';
+  const refs: WorkspaceCardRef[] = [
+    { workspaceId: 'ws-1' },
+    { workspaceId: 'remote-1', backendId: studio },
+    { workspaceId: 'remote-2', backendId: studio },
+  ];
+
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.goto.mockClear();
+    mocks.workspaces['ws-1'] = workspace('ws-1', 'Archive Cleanup');
+    mocks.remote.store?.set({});
+  });
+
+  it('asks once per machine for its workspaces and keeps local cards local', async () => {
+    await renderWorkspaceCard(['ws-1', 'remote-1', 'remote-2'], refs);
+
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        remoteWorkspaceCardsRequested(studio, ['remote-1', 'remote-2']),
+      ),
+    );
+    expect(screen.getByText('Archive Cleanup')).toBeTruthy();
+  });
+
+  it('shows the machine beside the title and opens the workspace there', async () => {
+    mocks.remote.store?.set({
+      [remoteWorkspaceCardKey(studio, 'remote-1')]: {
+        status: 'found',
+        machineName: 'Mac Studio',
+        workspace: workspace('remote-1', 'Safari Fix'),
+        loadedAt: 1,
+      },
+    });
+    await renderWorkspaceCard(['remote-1'], [{ workspaceId: 'remote-1', backendId: studio }]);
+
+    await fireEvent.click(await screen.findByText('Safari Fix'));
+
+    expect(screen.getByText('Mac Studio')).toBeTruthy();
+    expect(mocks.dispatch).toHaveBeenCalledWith(remoteWorkspaceOpenRequested(studio, 'remote-1'));
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
+  it('offers only Open for a workspace on another machine', async () => {
+    mocks.remote.store?.set({
+      [remoteWorkspaceCardKey(studio, 'remote-1')]: {
+        status: 'found',
+        machineName: 'Mac Studio',
+        workspace: workspace('remote-1', 'Archive Cleanup'),
+        loadedAt: 1,
+      },
+    });
+    await renderWorkspaceCard(['remote-1'], [{ workspaceId: 'remote-1', backendId: studio }]);
+    await screen.findByText('Mac Studio');
+
+    await openMenu();
+
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'Open',
+    ]);
+  });
+
+  it.each([
+    [{ status: 'unknown-backend', loadedAt: 1 }, m.chat_chatWorkspaceCard_machineNotAdded_label()],
+    [
+      { status: 'unreachable', machineName: 'Mac Studio', loadedAt: 1 },
+      m.chat_chatWorkspaceCard_machineUnreachable_label({ machine: 'Mac Studio' }),
+    ],
+    [
+      { status: 'missing', machineName: 'Mac Studio', loadedAt: 1 },
+      m.chat_chatWorkspaceCard_notFound_label(),
+    ],
+  ])('explains a card it cannot show (%o)', async (entry, text) => {
+    mocks.remote.store?.set({ [remoteWorkspaceCardKey(studio, 'remote-1')]: entry });
+    await renderWorkspaceCard(['remote-1'], [{ workspaceId: 'remote-1', backendId: studio }]);
+
+    expect(await screen.findByText(text)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /workspace actions/i })).toBeNull();
   });
 });

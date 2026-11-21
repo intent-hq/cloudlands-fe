@@ -32,6 +32,7 @@ import type {
   OpenConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
+  WorkspaceCardsResult,
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
   PublishSelfResult,
@@ -107,6 +108,8 @@ const FORWARDED_DEVICE_CHANNELS = [
   CONNECTION_CHANNELS.PAIR_LINK_INSPECT,
   CONNECTION_CHANNELS.PAIR_LINK_COMMIT,
   CONNECTION_CHANNELS.PAIR_LINK_DISCARD,
+  CONNECTION_CHANNELS.WORKSPACE_CARDS,
+  CONNECTION_CHANNELS.OPEN_WORKSPACE,
 ] as const;
 
 for (const channel of FORWARDED_DEVICE_CHANNELS) {
@@ -120,6 +123,12 @@ for (const channel of FORWARDED_DEVICE_CHANNELS) {
       const { id } = arg as OpenConnectionParams;
       return { status: 'opened', id } satisfies OpenConnectionResult;
     }
+    // No main process holds saved machines: every other machine reads as not added.
+    if (
+      channel === CONNECTION_CHANNELS.WORKSPACE_CARDS ||
+      channel === CONNECTION_CHANNELS.OPEN_WORKSPACE
+    )
+      return { status: 'unknown-backend' } satisfies WorkspaceCardsResult;
     // No main process to test a pair link or hold its credential: nothing is kept.
     if (channel === CONNECTION_CHANNELS.PAIR_LINK_DISCARD) return { ok: true };
     if (

@@ -146,3 +146,43 @@ describe('workspace card proposal dedupe', () => {
     expect(result[0].type).toBe('workspace_card');
   });
 });
+
+describe('workspace cards on another machine', () => {
+  it('reads `id@backend` lines as workspaces on that backend, in order', () => {
+    const result = parseAgentMessage(
+      '```workspace\nlocal-space\nremote-space@fp:AB:CD\n`other-space@addr:studio.local:7443`\n```',
+    );
+
+    expect(result[0].type).toBe('workspace_card');
+    expect(result[0].metadata?.workspaceCardData).toEqual({
+      workspaceIds: ['local-space', 'remote-space', 'other-space'],
+      refs: [
+        { workspaceId: 'local-space' },
+        { workspaceId: 'remote-space', backendId: 'fp:AB:CD' },
+        { workspaceId: 'other-space', backendId: 'addr:studio.local:7443' },
+      ],
+    });
+  });
+
+  it('treats `@local` and a trailing `@` as this machine', () => {
+    const result = parseAgentMessage('@@@workspace\nspace-a@local\nspace-b@\n@@@');
+
+    expect(result[0].metadata?.workspaceCardData).toEqual({
+      workspaceIds: ['space-a', 'space-b'],
+    });
+  });
+
+  it('drops a line with a backend but no workspace id', () => {
+    const result = parseAgentMessage('@@@workspace\n@fp:AB\nspace-a\n@@@');
+
+    expect(result[0].metadata?.workspaceCardData).toEqual({ workspaceIds: ['space-a'] });
+  });
+
+  it('keeps a card for another machine even when a local proposal has the same id', () => {
+    const blocks = groupParsedBlocks(parseAgentMessage('@@@workspace\npr-review-5@fp:AB\n@@@'));
+
+    const result = filterWorkspaceCardsCoveredByIds(blocks, new Set(['pr-review-5']));
+
+    expect(result).toHaveLength(1);
+  });
+});

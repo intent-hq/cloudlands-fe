@@ -515,6 +515,35 @@ export type OpenConnectionResult =
   /** The daemon is a node: no window opened (it only runs agents for other backends). */
   | { status: 'node'; id: string };
 
+/**
+ * `connections:workspace-cards` params: workspaces the Assistant named on
+ * another machine. `backendId` is the Assistant's `ws.rpc.backends()` id (the
+ * Keychain machine identity, `fp:…`, `addr:…` or `tc:…`).
+ */
+export interface WorkspaceCardsParams {
+  backendId: string;
+  workspaceIds: string[];
+}
+
+/**
+ * `connections:workspace-cards` result. `workspaces` holds the raw daemon
+ * rows found; an id missing from it was not found on that machine.
+ */
+export type WorkspaceCardsResult =
+  | { status: 'ok'; machineName: string; workspaces: Record<string, unknown>[] }
+  /** This app has no saved connection for the machine. */
+  | { status: 'unknown-backend' }
+  | { status: 'unreachable'; machineName: string };
+
+/** `connections:open-workspace` params. */
+export interface OpenBackendWorkspaceParams {
+  backendId: string;
+  workspaceId: string;
+}
+
+/** `connections:open-workspace` result. */
+export type OpenBackendWorkspaceResult = OpenConnectionResult | { status: 'unknown-backend' };
+
 /** `connections:forget` params. */
 export interface ForgetConnectionParams {
   id: string;

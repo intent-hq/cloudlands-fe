@@ -126,6 +126,7 @@ import { settingsProposalHistoryReducer } from './slices/settings-proposal-histo
 import { specialistProposalHistoryReducer } from './slices/specialist-proposal-history/specialist-proposal-history-slice';
 import { proposalLifecycleReducer } from './slices/proposal-lifecycle/proposal-lifecycle-slice';
 import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-lookup-slice';
+import { remoteWorkspaceCardsReducer } from './slices/remote-workspace-cards/remote-workspace-cards-slice';
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
@@ -263,6 +264,7 @@ export const reducers = {
   specialistProposalHistory: specialistProposalHistoryReducer,
   proposalLifecycle: proposalLifecycleReducer,
   prBranchLookup: prBranchLookupReducer,
+  remoteWorkspaceCards: remoteWorkspaceCardsReducer,
   daemonHealth: daemonHealthReducer,
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
