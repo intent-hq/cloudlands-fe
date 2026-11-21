@@ -129,6 +129,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   ...[
     ['voice', 'Voice Dictation', 'Voice dictation settings.', 'input'],
     ['keyboard-shortcuts', 'Keyboard Shortcuts', 'Keyboard shortcuts reference.', 'input'],
+    ['autocomplete', 'Autocomplete', 'Suggest as you type: service, model and API keys.', 'input'],
     ['mcp-servers', 'MCP Servers', 'MCP server configuration.', 'connections'],
     ['plugins', 'Plugins', 'App-wide Agent Plugins.', 'connections'],
     ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'setup'],
