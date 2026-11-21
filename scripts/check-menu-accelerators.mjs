@@ -70,22 +70,24 @@ const acceleratorProperties = (source) =>
     value: propertyValue(item, 'accelerator'),
   }));
 
-// Every `label: m.<key>()` menu item: `{ key, accelerator, readable, registersAccelerator,
-// line }`. `accelerator` is the chord, the source text of a non-literal value, or null;
-// `readable` is false for a non-literal value.
+// Every `label: m.<key>()` menu item: `{ key, accelerator, chords, readable,
+// registersAccelerator, line }`. `accelerator` is the chord, the source text of a
+// non-literal value, or null; `chords` holds each branch of a conditional; `readable` is
+// false when a branch is not a string literal.
 export function findMenuItems(content) {
   const source = parseSource(content, MENU_SOURCE);
   return findObjectLiterals(source, 'label').flatMap((item) => {
     const key = labelKey(item);
     if (!key) return [];
     const value = propertyValue(item, 'accelerator');
-    const chord = stringValue(value);
+    const chords = value ? acceleratorLeaves(value).map((leaf) => stringValue(leaf)) : [];
     const registers = unwrapExpression(propertyValue(item, 'registerAccelerator'));
     return [
       {
         key,
-        accelerator: chord ?? value?.getText() ?? null,
-        readable: !value || chord !== null,
+        accelerator: stringValue(value) ?? value?.getText() ?? null,
+        chords,
+        readable: chords.every((chord) => chord !== null),
         registersAccelerator: registers?.kind !== ts.SyntaxKind.FalseKeyword,
         line: lineOf(ownProperty(item, 'label')),
       },
@@ -144,7 +146,9 @@ export function checkMenuAccelerators(content) {
       problems.push(`missing menu item \`${key}\` (expected accelerator ${accelerator})`);
       continue;
     }
-    if (item.readable && item.accelerator !== accelerator) {
+    const showsChord =
+      item.chords.length > 0 && item.chords.every((chord) => chord === accelerator);
+    if (item.readable && !showsChord) {
       problems.push(`${at(item)} shows ${item.accelerator ?? 'no chord'}, expected ${accelerator}`);
     }
     if (item.registersAccelerator) {

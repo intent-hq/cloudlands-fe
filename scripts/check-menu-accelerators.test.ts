@@ -176,6 +176,20 @@ describe('renderer-owned menu accelerators guard', () => {
     ]);
   });
 
+  it('checks every branch of a conditional chord on a renderer-owned item', () => {
+    const conditional = (chord: string) =>
+      validMenu.replace(
+        "accelerator: 'CmdOrCtrl+Alt+N',",
+        `accelerator: isMac ? 'CmdOrCtrl+Alt+N' : '${chord}',`,
+      );
+    expect(checkMenuAccelerators(conditional('CmdOrCtrl+Alt+N'))).toEqual([]);
+    expect(checkMenuAccelerators(conditional('CmdOrCtrl+Alt+M'))).toEqual([
+      expect.stringMatching(
+        /menu_new_note\) shows isMac \? 'CmdOrCtrl\+Alt\+N' : 'CmdOrCtrl\+Alt\+M', expected CmdOrCtrl\+Alt\+N/,
+      ),
+    ]);
+  });
+
   it('flags a menu source it cannot parse', () => {
     expect(checkMenuAccelerators(`${validMenu}\nconst = ;`)).toContainEqual(
       expect.stringMatching(/src\/main\/index\.ts:\d+ cannot parse:/),
