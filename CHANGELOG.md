@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.365.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.364.1...v2.365.0) (2026-11-21)
+
+
+### 🚀 Features
+
+* **intent-os:** one INTENT_OS=1 switch for every Intent OS behavior ([#4876](https://github.com/intent-hq/cloudlands-fe/issues/4876)) ([de4549b](https://github.com/intent-hq/cloudlands-fe/commit/de4549bd73eaa1e88236086041c3bad25b7793a7))
+
+
+### 🐛 Bug Fixes
+
+* **settings:** move machine details into a name tooltip ([#4883](https://github.com/intent-hq/cloudlands-fe/issues/4883)) ([9d2796c](https://github.com/intent-hq/cloudlands-fe/commit/9d2796c986e682b59000f21526bacd38d465ad9d))
+
 ## [2.364.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.364.0...v2.364.1) (2026-11-21)
 
 
