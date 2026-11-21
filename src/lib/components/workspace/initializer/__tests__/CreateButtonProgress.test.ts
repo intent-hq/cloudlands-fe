@@ -4,7 +4,9 @@
  * CreateButtonProgress: live daemon-driven stage label + 2px bottom bar on
  * the Create button. Before any frame arrives (sawFrame false) the fallback
  * label renders and no bar exists; frames flip it to a phase label and a
- * determinate bar without a visible percentage. The bar is monotonic.
+ * determinate bar. The label never carries a percentage: the percent (and the
+ * download size and rate while cloning) sits in a caption under the button.
+ * The bar is monotonic.
  * Rendered through a harness that mounts the real Button via
  * `children`, so the bar's placement relative to the Button's internal slots
  * (a sibling overlay, never inside the label slot) is observable.
@@ -148,5 +150,89 @@ describe('CreateButtonProgress', () => {
     const bar = screen.getByTestId('create-progress-bar');
     expect(bar.getAttribute('style')).toContain('width: 100%');
     expect(bar.getAttribute('aria-valuenow')).toBe('100');
+  });
+
+  it('shows no progress detail before the first frame (timed fallback)', () => {
+    render(CreateButtonProgress, {
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
+    });
+    expect(screen.queryByTestId('create-progress-detail')).toBeNull();
+  });
+
+  it('shows the percent under the button once frames arrive', async () => {
+    render(CreateButtonProgress, {
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
+    });
+
+    dispatchToSlice(
+      workspaceCreateProgressReceived(PID, {
+        phase: 'submodules',
+        percent: 78,
+        message: 'Cloning submodules (3/12)',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe('78%');
+    });
+    expect(screen.getByTestId('create-progress-label').textContent).toContain('Submodules (3/12)…');
+  });
+
+  it('adds the download size and rate while git reports them', async () => {
+    render(CreateButtonProgress, {
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
+    });
+
+    dispatchToSlice(
+      workspaceCreateProgressReceived(PID, {
+        phase: 'receiving',
+        percent: 42,
+        message: 'Receiving objects: 60%',
+        transfer: {
+          receivedObjects: 60_000,
+          totalObjects: 100_000,
+          receivedBytes: 123_400_000,
+          bytesPerSecond: 5_700_000,
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe(
+        '42% · 123.4 MB · 5.7 MB/s',
+      );
+    });
+  });
+
+  it('follows an orchestrator create to the first agent on its machine', async () => {
+    render(CreateButtonProgress, {
+      props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
+    });
+    const sequence = [
+      { phase: 'cache', percent: 5, label: 'Preparing cache…' },
+      { phase: 'receiving', percent: 40, label: 'Cloning repository…' },
+      {
+        phase: 'submodules',
+        percent: 80,
+        message: 'Cloning submodules (2/3)',
+        label: 'Submodules (2/3)…',
+      },
+      { phase: 'finalizing', percent: 95, label: 'Finalizing workspace…' },
+      {
+        phase: 'agent',
+        percent: 97,
+        message: 'Starting agent on intent-home...',
+        label: 'Starting agent on intent-home…',
+      },
+    ];
+    for (const { label, ...frame } of sequence) {
+      dispatchToSlice(workspaceCreateProgressReceived(PID, frame));
+      await waitFor(() => {
+        expect(screen.getByTestId('create-progress-label').textContent).toContain(label);
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe(
+          `${frame.percent}%`,
+        );
+      });
+    }
   });
 });

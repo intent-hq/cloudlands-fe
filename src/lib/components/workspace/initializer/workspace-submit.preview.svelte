@@ -32,6 +32,26 @@
         { phase: 'complete', percent: 100 },
       ],
     },
+    {
+      title: 'On an orchestrator',
+      entries: [
+        {
+          phase: 'receiving',
+          percent: 42,
+          message: 'Receiving objects: 60%',
+          transfer: {
+            receivedObjects: 612_000,
+            totalObjects: 1_020_000,
+            receivedBytes: 1_234_000_000,
+            bytesPerSecond: 18_400_000,
+          },
+        },
+        { phase: 'submodules', percent: 78, message: 'Cloning submodules (3/12)' },
+        { phase: 'cache', percent: 85, message: 'Repository cache ready' },
+        { phase: 'agent', percent: 97, message: 'Starting agent on Mac Studio...' },
+        { phase: 'agent', percent: 97 },
+      ],
+    },
   ];
   const frames = [...groups.flatMap((group) => group.entries), { phase: 'unknown', percent: 37 }];
   const progressId = (index: number) => `button-state-reference-${index}`;
@@ -156,13 +176,15 @@
             creating
             label={m.workspace_compactInitializer_progressCache_label({}, { locale: 'de' })}
           />
-          <CreateButtonProgress
-            class="w-full"
-            progressId={progressId(8)}
-            fallbackLabel={fallbackLabels[0]}
-          >
-            {#snippet children(label)}{@render button(label)}{/snippet}
-          </CreateButtonProgress>
+          {#each [8, 14, 17] as frameIndex}
+            <CreateButtonProgress
+              class="w-full"
+              progressId={progressId(frameIndex)}
+              fallbackLabel={fallbackLabels[0]}
+            >
+              {#snippet children(label)}{@render button(label)}{/snippet}
+            </CreateButtonProgress>
+          {/each}
           <WorkspaceCreateButton
             creating
             label={m.workspace_compactInitializer_progressSubmodulesCounted_label({
@@ -174,7 +196,7 @@
       {/each}
     </div>
   {:else}
-    <div class="grid grid-cols-1 gap-8 min-[900px]:grid-cols-3">
+    <div class="grid grid-cols-1 gap-8 min-[900px]:grid-cols-4">
       <div class="min-w-0 space-y-6">
         <section class="grid gap-3">
           <h2 class="type-body font-medium">Ready</h2>
@@ -210,7 +232,11 @@
             {#each group.entries as _entry, index}
               <CreateButtonProgress
                 class="w-full"
-                progressId={progressId(groupIndex === 0 ? index : groups[0].entries.length + index)}
+                progressId={progressId(
+                  groups
+                    .slice(0, groupIndex)
+                    .reduce((sum, prior) => sum + prior.entries.length, 0) + index,
+                )}
                 fallbackLabel={fallbackLabels[0]}
               >
                 {#snippet children(label)}{@render button(label)}{/snippet}
