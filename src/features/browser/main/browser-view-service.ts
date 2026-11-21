@@ -36,6 +36,10 @@ import type {
   BrowserViewRect,
   BrowserViewState,
 } from '../../../shared/types/browser-view';
+import type {
+  BrowserPanelPageOwner,
+  MainOwnedBrowserPageOwners,
+} from '../../../main/browser-panel-pages';
 import type { MainOwnedBrowserViews } from './embedded-browser-cdp-service';
 
 const logger = new Logger('BrowserViewService');
@@ -94,6 +98,8 @@ export interface BrowserViewServiceDeps {
    * are destroyed.
    */
   onWindowClosing?(window: BrowserWindow, tabIds: string[]): void;
+  /** A page moved to another window (a passkey ceremony in it ends). */
+  onPageMoved?(webContentsId: number): void;
   /** macOS key rules for app shortcuts typed in a page (default: this platform). */
   isMac?: boolean;
   /** Off-screen pages kept before the oldest closes (default DEFAULT_MAX_DETACHED_VIEWS). */
@@ -162,7 +168,7 @@ export function toWindowRect(rect: BrowserViewRect, zoomFactor: number): Electro
   };
 }
 
-export class BrowserViewService implements MainOwnedBrowserViews {
+export class BrowserViewService implements MainOwnedBrowserViews, MainOwnedBrowserPageOwners {
   private readonly byTab = new Map<string, Entry>();
   private readonly byContents = new Map<number, Entry>();
   private readonly observedWindows = new WeakSet<BrowserWindow>();
@@ -295,6 +301,7 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     this.place(entry, false);
     // The workspace binding follows the new host renderer.
     this.deps.cdp.registerTab(tabId, entry.contents.id, entry.key.workspaceId);
+    this.deps.onPageMoved?.(entry.contents.id);
   }
 
   /**
@@ -449,6 +456,21 @@ export class BrowserViewService implements MainOwnedBrowserViews {
     const entry = this.byContents.get(webContentsId);
     if (!entry || entry.window.isDestroyed()) return undefined;
     return this.deps.machineViewFor(entry.window, entry.key.backendId) ?? undefined;
+  }
+
+  // MainOwnedBrowserPageOwners (the passkey seam)
+
+  /**
+   * The machine view of the window that has the page now, and whether the
+   * page is on screen. Null for a page this service did not make, a closed
+   * page, a closed window, or a window with no renderer for the machine.
+   */
+  pageOwner(webContentsId: number): BrowserPanelPageOwner | null {
+    const entry = this.byContents.get(webContentsId);
+    if (!entry || entry.contents.isDestroyed() || entry.window.isDestroyed()) return null;
+    const host = this.deps.machineViewFor(entry.window, entry.key.backendId);
+    if (!host || host.isDestroyed()) return null;
+    return { host, shown: entry.placement === 'shown' };
   }
 
   holdDrawing(webContentsId: number): (() => void) | undefined {

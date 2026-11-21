@@ -11,6 +11,10 @@ import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../../../main/machine-rail-state';
+import {
+  notifyMainOwnedBrowserPageMoved,
+  setMainOwnedBrowserPageOwners,
+} from '../../../main/browser-panel-pages';
 import { rendererFor, shownMachine } from '../../../main/frames';
 import {
   buildBrowserViewWebPreferences,
@@ -138,9 +142,12 @@ export function registerBrowserViewHandlers(): void {
     shownMachine,
     cdp: embeddedBrowserCdp,
     send: (target, message) => target.send(CHANNELS.EVENT, message),
+    onPageMoved: notifyMainOwnedBrowserPageMoved,
   });
   service = views;
   embeddedBrowserCdp.setMainOwnedBrowserViews(views);
+  // Passkeys in main-owned pages: the guest IPC guard reads page owners here.
+  setMainOwnedBrowserPageOwners(views);
   const appEvents: NodeJS.EventEmitter = app;
   appEvents.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, (window: Electron.BrowserWindow) => {
     views.handleShownMachineChanged(window);

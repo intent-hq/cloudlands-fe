@@ -18,6 +18,10 @@ import { app, ipcMain, session } from 'electron';
 import { BROWSER_PANEL_PARTITION } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
+import {
+  browserPanelPageOwner,
+  onMainOwnedBrowserPageMoved,
+} from '../../../main/browser-panel-pages';
 import { createAuthorizedIpcHandler } from '../../../main/ipc-authorization';
 import { PasskeySidecar } from './passkey-sidecar';
 import { PasskeyService } from './passkey-service';
@@ -63,7 +67,10 @@ export function setupPasskeysIPC(
     return;
   }
   const browserSession = () => session.fromPartition(BROWSER_PANEL_PARTITION);
-  const active = new PasskeyService(new PasskeySidecar(binary), browserSession);
+  const active = new PasskeyService(new PasskeySidecar(binary), browserSession, {
+    ownerOf: browserPanelPageOwner,
+    onMoved: onMainOwnedBrowserPageMoved,
+  });
   service = active;
   browserSession().registerPreloadScript({
     id: 'intent-passkeys',

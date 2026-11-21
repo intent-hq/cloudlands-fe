@@ -756,3 +756,65 @@ describe('BrowserViewService window claims', () => {
     expect(views[0].webContents.loaded).toEqual(['https://a.test/']);
   });
 });
+
+describe('BrowserViewService page owners (passkeys)', () => {
+  it('reports the machine view of the window that has the page, and whether it is shown', () => {
+    const { service } = setup();
+    const window = new FakeWindow();
+    const { webContentsId } = service.create(KEY, windowLike(window), 'https://a.test/');
+
+    expect(service.pageOwner(webContentsId)).toEqual({ host: window.machine, shown: false });
+    service.setPlacement('tab-1', RECT, true);
+    expect(service.pageOwner(webContentsId)).toEqual({ host: window.machine, shown: true });
+    // Parked for a drawing hold: alive, not on screen.
+    service.setPlacement('tab-1', RECT, false);
+    const release = service.holdDrawing(webContentsId)!;
+    expect(service.placementOf('tab-1')).toBe('parked');
+    expect(service.pageOwner(webContentsId)?.shown).toBe(false);
+    release();
+    // Another machine shown in the window: off screen.
+    service.setPlacement('tab-1', RECT, true);
+    window.shown = 'other';
+    service.setPlacement('tab-1', RECT, true);
+    expect(service.pageOwner(webContentsId)?.shown).toBe(false);
+  });
+
+  it('knows no owner for contents it did not make, a closed page, or a closed window', () => {
+    const { service } = setup();
+    expect(service.pageOwner(new FakeContents().id)).toBeNull();
+
+    const window = new FakeWindow();
+    const first = service.create(KEY, windowLike(window), 'https://a.test/').webContentsId;
+    const second = service.create(
+      { ...KEY, tabId: 'tab-2' },
+      windowLike(window),
+      'https://b.test/',
+    ).webContentsId;
+    service.destroy('tab-1');
+    expect(service.pageOwner(first)).toBeNull();
+    window.destroyed = true;
+    expect(service.pageOwner(second)).toBeNull();
+  });
+
+  it('knows no owner when the window has no renderer for the page machine', () => {
+    const { service } = setup({ machineViewFor: () => null });
+    const { webContentsId } = service.create(KEY, windowLike(new FakeWindow()), 'https://a.test/');
+    expect(service.pageOwner(webContentsId)).toBeNull();
+  });
+
+  it('follows a move to another window and announces it', () => {
+    const onPageMoved = vi.fn();
+    const { service } = setup({ onPageMoved });
+    const main = new FakeWindow();
+    const tab = new FakeWindow();
+    const { webContentsId } = service.create(KEY, windowLike(main), 'https://a.test/');
+    service.setPlacement('tab-1', RECT, true);
+
+    service.moveToWindow('tab-1', windowLike(tab));
+    expect(onPageMoved).toHaveBeenCalledExactlyOnceWith(webContentsId);
+    expect(service.pageOwner(webContentsId)).toEqual({ host: tab.machine, shown: false });
+    // A move to the window it is already in is no move.
+    service.moveToWindow('tab-1', windowLike(tab));
+    expect(onPageMoved).toHaveBeenCalledOnce();
+  });
+});

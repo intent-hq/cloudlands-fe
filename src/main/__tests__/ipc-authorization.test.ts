@@ -1,4 +1,4 @@
-import type { IpcMainInvokeEvent } from 'electron';
+import type { IpcMainInvokeEvent, WebContents } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
@@ -24,6 +24,13 @@ import {
   IpcAuthorizationError,
   isTrustedRendererUrl,
 } from '../ipc-authorization';
+import {
+  type BrowserPanelPageOwner,
+  browserPanelPageOwner,
+  notifyMainOwnedBrowserPageMoved,
+  onMainOwnedBrowserPageMoved,
+  setMainOwnedBrowserPageOwners,
+} from '../browser-panel-pages';
 
 /** What an authorized handler receives: an IPC event or the branded bridge context. */
 type PrivilegedIpcContext =
@@ -170,7 +177,8 @@ describe('browser-panel guest IPC authorization', () => {
   });
 
   it('rejects an app window, the browser bridge, and webviews in other sessions', async () => {
-    await reject(appEvent(), 'unexpected sender');
+    // An app window passes the type check (main-owned pages are 'window' too) and fails on its session.
+    await reject(appEvent(), 'unexpected session');
     await reject(createTrustedBrowserBridgeIpcContext(), 'browser bridge cannot act as a web page');
     await reject(
       guestEvent({ sender: { session: electronMocks.defaultSession } }),
@@ -180,7 +188,7 @@ describe('browser-panel guest IPC authorization', () => {
   });
 
   it('rejects a guest whose host is not a trusted app window', async () => {
-    await reject(guestEvent({ sender: { hostWebContents: null } }), 'webview has no app host');
+    await reject(guestEvent({ sender: { hostWebContents: null } }), 'page has no app host');
     await reject(
       guestEvent({ host: { getURL: () => 'https://evil.example/' } }),
       'unexpected host URL',
@@ -195,5 +203,190 @@ describe('browser-panel guest IPC authorization', () => {
     await expect(
       createAuthorizedIpcHandler('passkeys:device-list', vi.fn())(guestEvent()),
     ).rejects.toEqual(expect.objectContaining({ reason: 'unexpected sender' }));
+  });
+});
+
+/** A main-owned page (WebContentsView) whose owner BrowserViewService reports. */
+function mainOwnedEvent(
+  overrides: {
+    host?: Record<string, unknown>;
+    sender?: Record<string, unknown>;
+    frame?: Record<string, unknown>;
+    shown?: boolean;
+    known?: boolean;
+  } = {},
+) {
+  const host = {
+    isDestroyed: () => false,
+    getType: () => 'window',
+    getURL: () => 'app://workspaces/',
+    session: electronMocks.defaultSession,
+    ...overrides.host,
+  };
+  const sender = {
+    id: 4242,
+    isDestroyed: () => false,
+    // A WebContentsView reports 'window'.
+    getType: () => 'window',
+    session: electronMocks.browserPanelSession,
+    // A main-owned page has no webview host; a planted one must not count.
+    hostWebContents: null,
+    ...overrides.sender,
+  };
+  const pageOwner = vi.fn((id: number): BrowserPanelPageOwner | null =>
+    overrides.known === false || id !== 4242
+      ? null
+      : { host: host as unknown as WebContents, shown: overrides.shown ?? true },
+  );
+  setMainOwnedBrowserPageOwners({ pageOwner });
+  // The owner renderer is its window's own contents (a machine view passes the same check).
+  electronMocks.fromWebContents.mockImplementation((contents: unknown) =>
+    contents === host ? { isDestroyed: () => false, webContents: host } : null,
+  );
+  const event = {
+    sender,
+    senderFrame: { isDestroyed: () => false, url: 'https://example.com/', ...overrides.frame },
+  } as any;
+  return { event, host, pageOwner };
+}
+
+describe('browser-panel guest IPC authorization for main-owned pages', () => {
+  beforeEach(() => {
+    electronMocks.fromWebContents.mockReset();
+    setMainOwnedBrowserPageOwners(null);
+  });
+  const channel = 'passkeys:page-get';
+  const reject = async (context: unknown, reason: string) =>
+    expect(createBrowserPanelGuestIpcHandler(channel, vi.fn())(context as any)).rejects.toEqual(
+      expect.objectContaining({ reason }),
+    );
+
+  it('allows a main-owned page that a trusted app renderer owns, looked up by its id', async () => {
+    const { event, pageOwner } = mainOwnedEvent();
+    const handler = vi.fn(async (_context: unknown, _request?: unknown) => 'ok');
+    // The request names another page; the owner comes from the sender only.
+    await expect(
+      createBrowserPanelGuestIpcHandler(channel, handler)(event, { webContentsId: 1 }),
+    ).resolves.toBe('ok');
+    expect(pageOwner).toHaveBeenCalledExactlyOnceWith(4242);
+  });
+
+  it('rejects a view or popup window that BrowserViewService did not make', async () => {
+    // Another WebContentsView, an OAuth popup or a sign-in window in this session: all 'window'.
+    await reject(mainOwnedEvent({ known: false }).event, 'page has no app host');
+    // A planted webview-style host does not stand in for the service's answer.
+    const { event, host } = mainOwnedEvent({ known: false });
+    event.sender.hostWebContents = host;
+    await reject(event, 'page has no app host');
+  });
+
+  it('rejects every main-owned page before BrowserViewService is connected', async () => {
+    const { event } = mainOwnedEvent();
+    setMainOwnedBrowserPageOwners(null);
+    await reject(event, 'page has no app host');
+  });
+
+  it('rejects a main-owned view in another partition', async () => {
+    await reject(
+      mainOwnedEvent({ sender: { session: electronMocks.defaultSession } }).event,
+      'unexpected session',
+    );
+  });
+
+  it('rejects a destroyed view or frame', async () => {
+    await reject(
+      mainOwnedEvent({ sender: { isDestroyed: () => true } }).event,
+      'unexpected sender',
+    );
+    await reject(mainOwnedEvent({ frame: { isDestroyed: () => true } }).event, 'frame is gone');
+    const { event } = mainOwnedEvent();
+    event.senderFrame = null;
+    await reject(event, 'frame is gone');
+  });
+
+  it('rejects a page whose owner is not a trusted app renderer', async () => {
+    await reject(
+      mainOwnedEvent({ host: { isDestroyed: () => true } }).event,
+      'page has no app host',
+    );
+    await reject(
+      mainOwnedEvent({ host: { getType: () => 'webview' } }).event,
+      'page has no app host',
+    );
+    await reject(
+      mainOwnedEvent({ host: { getURL: () => 'https://evil.example/' } }).event,
+      'unexpected host URL',
+    );
+    await reject(mainOwnedEvent({ host: { session: {} } }).event, 'unexpected session');
+    const { event } = mainOwnedEvent();
+    electronMocks.fromWebContents.mockReturnValue(null);
+    await reject(event, 'sender is not an app window');
+  });
+
+  it('admits an owned page that is off screen (cancel and capabilities still answer)', async () => {
+    const handler = vi.fn(async (_context: unknown) => 'ok');
+    await expect(
+      createBrowserPanelGuestIpcHandler(channel, handler)(mainOwnedEvent({ shown: false }).event),
+    ).resolves.toBe('ok');
+  });
+
+  it('rejects other WebContents types', async () => {
+    for (const type of ['backgroundPage', 'browserView', 'remote', 'offscreen']) {
+      await reject(mainOwnedEvent({ sender: { getType: () => type } }).event, 'unexpected sender');
+    }
+  });
+
+  it('keeps app-only passkey channels closed to main-owned pages', async () => {
+    for (const appChannel of [
+      'passkeys:device-list',
+      'passkeys:device-delete',
+      'passkeys:dialog-respond',
+    ]) {
+      const { event } = mainOwnedEvent();
+      // A top-level page frame: the app guard then stops it on its session.
+      event.sender.mainFrame = event.senderFrame;
+      await expect(createAuthorizedIpcHandler(appChannel, vi.fn())(event)).rejects.toEqual(
+        expect.objectContaining({ reason: 'unexpected session' }),
+      );
+    }
+  });
+});
+
+describe('browser-panel page owners', () => {
+  beforeEach(() => setMainOwnedBrowserPageOwners(null));
+
+  it('answers a webview from its host and a main-owned page from the service', () => {
+    const host = {};
+    const webview = {
+      isDestroyed: () => false,
+      getType: () => 'webview',
+      session: electronMocks.browserPanelSession,
+      hostWebContents: host,
+    } as any;
+    expect(browserPanelPageOwner(webview)).toEqual({ host, shown: true });
+
+    const page = { ...webview, id: 7, getType: () => 'window', hostWebContents: host };
+    expect(browserPanelPageOwner(page)).toBeNull();
+    const owner = { host: {}, shown: false };
+    setMainOwnedBrowserPageOwners({ pageOwner: (id) => (id === 7 ? (owner as any) : null) });
+    expect(browserPanelPageOwner(page)).toBe(owner);
+    expect(browserPanelPageOwner({ ...page, session: electronMocks.defaultSession })).toBeNull();
+    expect(browserPanelPageOwner({ ...page, isDestroyed: () => true })).toBeNull();
+    expect(browserPanelPageOwner({ ...page, getType: () => 'offscreen' })).toBeNull();
+  });
+
+  it('tells listeners about moves until they stop listening', () => {
+    const first = vi.fn();
+    const second = vi.fn(() => {
+      throw new Error('listener failed');
+    });
+    const stop = onMainOwnedBrowserPageMoved(first);
+    const stopSecond = onMainOwnedBrowserPageMoved(second);
+    notifyMainOwnedBrowserPageMoved(7);
+    stop();
+    notifyMainOwnedBrowserPageMoved(8);
+    stopSecond();
+    expect(first).toHaveBeenCalledExactlyOnceWith(7);
+    expect(second).toHaveBeenCalledTimes(2);
   });
 });
