@@ -5,7 +5,9 @@
  */
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 
+/** @internal Exported for tests. */
 export const AUTOCOMPLETE_CONVERSATION_CHARS = 2000;
+/** @internal Exported for tests. */
 export const AUTOCOMPLETE_CONTEXT_MAX_CHARS = 4000;
 /** Room left for the suggested-prompt list under the wire cap. */
 const PROMPTS_MAX_CHARS = AUTOCOMPLETE_CONTEXT_MAX_CHARS - AUTOCOMPLETE_CONVERSATION_CHARS - 2;

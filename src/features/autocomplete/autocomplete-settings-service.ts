@@ -19,12 +19,12 @@ import {
   type AutocompleteService,
 } from './autocomplete-settings-constants';
 
-export const AUTOCOMPLETE_ENABLED_SETTING_PATH = 'autocomplete.enabled';
-export const AUTOCOMPLETE_SERVICE_SETTING_PATH = 'autocomplete.service';
-export const AUTOCOMPLETE_MODEL_SETTING_PATH = 'autocomplete.model';
+const AUTOCOMPLETE_ENABLED_SETTING_PATH = 'autocomplete.enabled';
+const AUTOCOMPLETE_SERVICE_SETTING_PATH = 'autocomplete.service';
+const AUTOCOMPLETE_MODEL_SETTING_PATH = 'autocomplete.model';
 
 /** Sensitive daemon settings paths backing the per-service API keys. */
-export const AUTOCOMPLETE_API_KEY_SETTING_PATHS: Record<AutocompleteService, string> = {
+const AUTOCOMPLETE_API_KEY_SETTING_PATHS: Record<AutocompleteService, string> = {
   kilo: 'autocomplete.kilo.apiKey',
   openrouter: 'autocomplete.openrouter.apiKey',
 };

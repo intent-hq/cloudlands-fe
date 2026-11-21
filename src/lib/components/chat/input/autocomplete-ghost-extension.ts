@@ -17,7 +17,7 @@ import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { consumeGhost } from '$features/autocomplete/utils/ghost-consumption';
 
-export const autocompleteGhostPluginKey = new PluginKey<string | null>('autocompleteGhost');
+const autocompleteGhostPluginKey = new PluginKey<string | null>('autocompleteGhost');
 
 /** Transaction meta marking the Tab-accept insertion. */
 export const AUTOCOMPLETE_GHOST_ACCEPTED = 'autocompleteGhostAccepted';
@@ -25,7 +25,7 @@ export const AUTOCOMPLETE_GHOST_ACCEPTED = 'autocompleteGhostAccepted';
 /** The `<kbd>` hint is a key name, not translatable copy. */
 const ACCEPT_KEY_LABEL = 'Tab'; // i18n-ignore (key name)
 
-export function ghostDocText(doc: ProseMirrorNode): string {
+function ghostDocText(doc: ProseMirrorNode): string {
   return doc.textBetween(0, doc.content.size, '\n', '￼');
 }
 
@@ -63,7 +63,7 @@ export function setAutocompleteGhost(view: EditorView, ghost: string | null): vo
 }
 
 /** Insert the ghost at the end of the draft. */
-export function acceptAutocompleteGhost(view: EditorView): boolean {
+function acceptAutocompleteGhost(view: EditorView): boolean {
   const ghost = getAutocompleteGhost(view.state);
   if (!ghost || !isCaretAtDocEnd(view.state)) return false;
   const end = Selection.atEnd(view.state.doc).head;

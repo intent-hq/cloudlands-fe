@@ -11,7 +11,7 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('Autocomplete');
 
-/** Daemon upstream timeout is 4 s; leave room for the round trip. */
+/** Daemon upstream timeout is 4 s; leave room for the round trip. @internal Exported for tests. */
 export const AUTOCOMPLETE_REQUEST_TIMEOUT_MS = 6000;
 const COMPLETION_MAX_CHARS = 200;
 

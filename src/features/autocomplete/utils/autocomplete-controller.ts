@@ -12,10 +12,12 @@
  * supplies a snapshot reader, the request function and a ghost setter.
  */
 
+/** @internal Exported for tests. */
 export const AUTOCOMPLETE_DEBOUNCE_MS = 250;
-export const AUTOCOMPLETE_MIN_CHARS = 5;
-export const AUTOCOMPLETE_TEXT_MAX_CHARS = 2000;
+const AUTOCOMPLETE_MIN_CHARS = 5;
+const AUTOCOMPLETE_TEXT_MAX_CHARS = 2000;
 
+/** @internal Exported for tests. */
 export interface AutocompleteSnapshot {
   /** Draft text as serialized for sending. */
   text: string;
@@ -25,6 +27,7 @@ export interface AutocompleteSnapshot {
   menuOpen: boolean;
 }
 
+/** @internal Exported for tests. */
 export function shouldRequestAutocomplete(snapshot: AutocompleteSnapshot): boolean {
   return (
     snapshot.caretAtEnd &&
