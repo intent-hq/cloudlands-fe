@@ -52,6 +52,7 @@ export const initialState: DaemonHealthState = {
   unslothStatus: null,
   unslothPolling: false,
   unslothStopping: false,
+  unslothStoppingRepoId: null,
   unslothStopError: null,
   agentMemoryUsage: null,
   agentMemoryUsageFetching: false,
@@ -207,10 +208,14 @@ export const unslothStatusSuccess = createAction<[payload: UnslothStatusWirePayl
 export const unslothStatusFailure = createAction('daemonHealth/unslothStatusFailure');
 
 /**
- * User confirmed stopping the managed unsloth server. The middleware invokes
- * unsloth.stop and re-polls unsloth.status when it resolves.
+ * User confirmed stopping a managed unsloth server: the one for `repoId`, or
+ * every server when omitted. The caller decides `repoId` from the status when
+ * the dialog opened. The middleware invokes unsloth.stop and re-polls
+ * unsloth.status when it resolves.
  */
-export const stopUnslothRequested = createAction('daemonHealth/stopUnslothRequested');
+export const stopUnslothRequested = createAction<[repoId?: string]>(
+  'daemonHealth/stopUnslothRequested',
+);
 
 /**
  * unsloth.stop resolved (`{ stopped: boolean }` — false is a no-op, not an
@@ -495,15 +500,20 @@ daemonHealthReducer.with(unslothStatusFailure, (state) => {
   // connection loss) means we no longer know the server state.
   return { ...state, unslothPolling: false, unslothStatus: null };
 });
-daemonHealthReducer.with(stopUnslothRequested, (state) => {
-  return { ...state, unslothStopping: true, unslothStopError: null };
+daemonHealthReducer.with(stopUnslothRequested, (state, { payload: [repoId] }) => {
+  return {
+    ...state,
+    unslothStopping: true,
+    unslothStoppingRepoId: repoId ?? null,
+    unslothStopError: null,
+  };
 });
 daemonHealthReducer.with(stopUnslothSucceeded, (state) => {
   // The middleware's follow-up unsloth.status re-poll refreshes the status.
-  return { ...state, unslothStopping: false };
+  return { ...state, unslothStopping: false, unslothStoppingRepoId: null };
 });
 daemonHealthReducer.with(stopUnslothFailed, (state, { payload: [error] }) => {
-  return { ...state, unslothStopping: false, unslothStopError: error };
+  return { ...state, unslothStopping: false, unslothStoppingRepoId: null, unslothStopError: error };
 });
 daemonHealthReducer.with(agentMemoryBreakdownClosed, (state) => {
   // Closing acts as a cancellation: a fetch that resolves late must not

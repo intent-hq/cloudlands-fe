@@ -174,6 +174,19 @@ interface DaemonRemoteLinks {
   machines: number;
 }
 
+/** One managed Unsloth server in `unsloth.status.servers` (one per model). */
+export interface UnslothServerWirePayload {
+  repoId?: string;
+  port?: number;
+  pid?: number;
+  uptimeSecs?: number;
+  phase?: string;
+  cpuPercent?: number;
+  memoryBytes?: number;
+  /** Tracked agents spawned on this server's model. */
+  attachedAgentCount?: number;
+}
+
 /**
  * unsloth.status wire payload (intentd traits.rs / PROTOCOL §5.37):
  * `{ running, repoId?, port?, pid?, uptimeSecs?, phase?, cpuPercent?,
@@ -202,6 +215,13 @@ export interface UnslothStatusWirePayload {
   memoryBytes?: number;
   /** Currently-tracked agents spawned with the unsloth provider. Omitted when the agent manager is not attached. */
   attachedAgentCount?: number;
+  /**
+   * Every running server, most recently used first; the top-level fields
+   * describe the first one. Older daemons omit it and run one server.
+   */
+  servers?: UnslothServerWirePayload[];
+  /** `unsloth.stop` honours `repoId`; older daemons omit it and stop every server. */
+  stopByModel?: boolean;
 }
 
 /**
@@ -422,6 +442,8 @@ export interface DaemonHealthState {
   unslothPolling: boolean;
   /** True while an unsloth.stop request is in flight. */
   unslothStopping: boolean;
+  /** The model that stop targets; null while every server stops. */
+  unslothStoppingRepoId: string | null;
   /** Error string when the last unsloth.stop request failed. */
   unslothStopError: string | null;
   /**

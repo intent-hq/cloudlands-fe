@@ -5,25 +5,49 @@
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { selectUnslothStopping } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import type { UnslothStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
+  import {
+    selectUnslothStopping,
+    selectUnslothStoppingRepoId,
+  } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import type { UnslothServerWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
   import { formatCpu, formatMemory } from './DaemonStatusIndicator.svelte';
 
   let {
     status,
+    serverCount = 1,
+    stopsAll = false,
     menuAnchor,
     onStop,
   }: {
-    status: UnslothStatusWirePayload;
+    status: UnslothServerWirePayload;
+    /** Running servers; with more than one, each row names its model. */
+    serverCount?: number;
+    /** The daemon cannot stop one model, so stop ends every server. */
+    stopsAll?: boolean;
     menuAnchor: HTMLElement | null;
     onStop: () => void;
   } = $props();
 
   const stopping$ = selectUnslothStopping();
+  const stoppingRepoId$ = selectUnslothStoppingRepoId();
+  // A one-model stop leaves the other rows running.
+  const stoppingThis = $derived(
+    $stopping$ && ($stoppingRepoId$ === null || $stoppingRepoId$ === status.repoId),
+  );
+  const multiple = $derived(serverCount > 1);
 
   // The repo name without the org prefix ("unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
   const modelLabel = $derived(
     status.repoId ? (status.repoId.split('/').pop() ?? status.repoId) : '',
+  );
+
+  // "unsloth/Qwen3.5-9B-GGUF" → "Qwen3.5-9B"
+  const shortModel = $derived(modelLabel.replace(/-GGUF$/i, ''));
+
+  const header = $derived(
+    multiple && shortModel
+      ? m.layout_daemonStatus_unslothModel_label({ model: shortModel })
+      : m.layout_daemonStatus_unslothServer_header(),
   );
 
   function formatPhase(phase: string): string {
@@ -43,11 +67,16 @@
 
   const phaseLabel = $derived(status.phase ? formatPhase(status.phase) : null);
 
-  const summaryLabel = $derived(
-    phaseLabel
-      ? m.layout_daemonStatus_unslothSummary_label({ status: phaseLabel })
-      : m.layout_daemonStatus_unslothServer_header(),
-  );
+  const summaryLabel = $derived.by(() => {
+    if (!phaseLabel) return header;
+    if (multiple && shortModel) {
+      return m.layout_daemonStatus_unslothModelSummary_label({
+        model: shortModel,
+        status: phaseLabel,
+      });
+    }
+    return m.layout_daemonStatus_unslothSummary_label({ status: phaseLabel });
+  });
 </script>
 
 <Menu.Sub>
@@ -65,10 +94,8 @@
     collisionPadding={8}
     class="min-w-56 w-max max-w-80 px-0"
   >
-    <section aria-label={m.layout_daemonStatus_unslothServer_header()} aria-live="off">
-      <Header class="px-3 pt-1.5 pb-1" size={6}
-        >{m.layout_daemonStatus_unslothServer_header()}</Header
-      >
+    <section aria-label={header} aria-live="off">
+      <Header class="px-3 pt-1.5 pb-1" size={6}>{header}</Header>
       <div class="px-3 py-2 space-y-1.5">
         {#if status.repoId}
           <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
@@ -135,10 +162,13 @@
         {/if}
 
         <Menu.Separator />
+        <!-- One stop at a time: the saga drops a second request. -->
         <Menu.Item destructive disabled={$stopping$} onSelect={onStop}>
-          {$stopping$
+          {stoppingThis
             ? m.layout_daemonStatus_stopUnsloth_stopping_label()
-            : m.layout_daemonStatus_stopUnsloth_action_label()}
+            : stopsAll
+              ? m.layout_daemonStatus_stopUnsloth_stopAll_label()
+              : m.layout_daemonStatus_stopUnsloth_action_label()}
         </Menu.Item>
       </div>
     </section>

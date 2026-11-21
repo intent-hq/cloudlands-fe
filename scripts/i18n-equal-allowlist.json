@@ -171,6 +171,8 @@
   "layout_daemonStatus_status_label": ["de"],
   "layout_daemonStatus_transport_label": ["de", "fr"],
   "layout_daemonStatus_unslothSummary_label": "*",
+  "layout_daemonStatus_unslothModelSummary_label": ["de", "es", "ko"],
+  "layout_daemonStatus_unslothModel_label": ["de", "es", "ko"],
   "layout_daemonStatus_version_label": ["de", "fr"],
   "layout_layoutHeader_presetWithShortcut_tooltip": ["de", "fr", "es"],
   "layout_navigation_commit_title": ["de", "fr", "es"],

@@ -70,6 +70,7 @@ describe('daemonHealthReducer', () => {
       unslothStatus: null,
       unslothPolling: false,
       unslothStopping: false,
+      unslothStoppingRepoId: null,
       unslothStopError: null,
       agentMemoryUsage: null,
       agentMemoryUsageFetching: false,
