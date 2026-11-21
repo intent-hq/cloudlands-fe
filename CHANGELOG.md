@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.364.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.364.0...v2.364.1) (2026-11-21)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.263 ([#4884](https://github.com/intent-hq/cloudlands-fe/issues/4884)) ([174db50](https://github.com/intent-hq/cloudlands-fe/commit/174db508bb697ca5caf5a3ac93c88fc95e73c9bd))
+* **passkeys:** allow passkeys in main-owned browser pages ([#4881](https://github.com/intent-hq/cloudlands-fe/issues/4881)) ([0121433](https://github.com/intent-hq/cloudlands-fe/commit/0121433c88c6018fd0eaef5e0262e08c2fd95341))
+
 ## [2.364.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.363.0...v2.364.0) (2026-11-21)
 
 
