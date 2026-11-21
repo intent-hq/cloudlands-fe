@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.367.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.366.0...v2.367.0) (2026-11-21)
+
+
+### 🚀 Features
+
+* **workspace:** show create percent and the first agent's start in New workspace ([#4894](https://github.com/intent-hq/cloudlands-fe/issues/4894)) ([c842cb4](https://github.com/intent-hq/cloudlands-fe/commit/c842cb46358112304715c6af3dab4157080d3d88))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.266 ([#4902](https://github.com/intent-hq/cloudlands-fe/issues/4902)) ([844413b](https://github.com/intent-hq/cloudlands-fe/commit/844413b1a9a2b5027459a3b6ecf403349ca35b2f))
+
 ## [2.366.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.365.2...v2.366.0) (2026-11-21)
 
 
