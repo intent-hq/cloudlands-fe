@@ -1,5 +1,6 @@
 import { BrowserWindow, session } from 'electron';
 import { BROWSER_PANEL_PARTITION } from '../shared/constants';
+import { browserPanelPageOwner } from './browser-panel-pages';
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 import { isMachineViewOf } from './window-backend';
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron';
@@ -98,8 +99,8 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
 }
 
 /**
- * Channels that web pages in the browser panel may invoke (through the
- * passkey frame preload). Closed list: every other channel admits app
+ * Channels that web pages in the browser panel (`<webview>` guests and
+ * main-owned pages) may invoke (through the passkey frame preload). Closed list: every other channel admits app
  * renderers only. The handlers still check the frame origin and RP ID.
  * @internal Exported for the authorization tests.
  */
@@ -117,7 +118,10 @@ function assertBrowserPanelGuestIpcContext(context: unknown, channel: string): v
   const event = context as IpcMainInvokeEvent;
   const sender = event?.sender;
   const senderFrame = event?.senderFrame;
-  if (!sender || sender.isDestroyed() || sender.getType() !== 'webview') {
+  const type = sender && !sender.isDestroyed() ? sender.getType() : null;
+  // A `<webview>` guest, or a main-owned page (a WebContentsView reports
+  // 'window'); browserPanelPageOwner admits only pages BrowserViewService made.
+  if (type !== 'webview' && type !== 'window') {
     throw new IpcAuthorizationError(channel, 'unexpected sender');
   }
   if (sender.session !== session.fromPartition(BROWSER_PANEL_PARTITION)) {
@@ -126,9 +130,10 @@ function assertBrowserPanelGuestIpcContext(context: unknown, channel: string): v
   if (!senderFrame || senderFrame.isDestroyed()) {
     throw new IpcAuthorizationError(channel, 'frame is gone');
   }
-  const host = sender.hostWebContents;
+  // The owner comes from main's records (webview host, BrowserViewService), never from the page.
+  const host = browserPanelPageOwner(sender)?.host;
   if (!host || host.isDestroyed() || host.getType() !== 'window') {
-    throw new IpcAuthorizationError(channel, 'webview has no app host');
+    throw new IpcAuthorizationError(channel, 'page has no app host');
   }
   assertAppRenderer(host, channel);
   if (!isTrustedRendererUrl(host.getURL())) {
@@ -147,7 +152,8 @@ export function createAuthorizedIpcHandler<T extends (...args: any[]) => any>(
 }
 
 /**
- * A handler for a {@link BROWSER_PANEL_GUEST_IPC_CHANNELS} channel: browser-panel webviews only.
+ * A handler for a {@link BROWSER_PANEL_GUEST_IPC_CHANNELS} channel: browser-panel pages only
+ * (`<webview>` guests and main-owned pages owned by a trusted app renderer).
  * @internal Exported for the authorization tests.
  */
 export function createBrowserPanelGuestIpcHandler<T extends (...args: any[]) => any>(

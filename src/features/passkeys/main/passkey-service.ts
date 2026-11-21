@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IpcMainInvokeEvent, Session, WebContents, WebFrameMain } from 'electron';
 import { z } from 'zod';
+import type { BrowserPanelPageOwner } from '../../../main/browser-panel-pages';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import type {
@@ -140,6 +141,16 @@ interface Ceremony {
   closed: boolean;
   resolve: (result: PasskeyPageResult) => void;
   dispose: () => void;
+  /** Stops listening for page moves (on close: a move also closes an error dialog). */
+  stopMoveWatch: () => void;
+}
+
+/** Who owns a browser-panel page now (`main/browser-panel-pages.ts`). */
+export interface PasskeyPageOwners {
+  /** The page's owner from main's records, or null for anything but a live browser-panel page. */
+  ownerOf(contents: WebContents): BrowserPanelPageOwner | null;
+  /** Calls `listener` when a main-owned page moves to another window; returns the disposer. */
+  onMoved(listener: (webContentsId: number) => void): () => void;
 }
 
 function failure(name: PasskeyPageErrorName, message: string): PasskeyPageResult {
@@ -170,8 +181,10 @@ function deviceCredential(entry: SidecarDeviceCredential): PasskeyDeviceCredenti
 }
 
 /**
- * Runs WebAuthn ceremonies for browser-panel webviews: one at a time per
- * webview, with the Intent dialog in the window that hosts the webview.
+ * Runs WebAuthn ceremonies for browser-panel pages (`<webview>` guests and
+ * main-owned pages): one at a time per page, with the Intent dialog in the
+ * app renderer that owns the page. A main-owned page that moves to another
+ * window ends its ceremony (AbortError) and closes the dialog.
  */
 export class PasskeyService {
   private readonly byId = new Map<string, Ceremony>();
@@ -180,6 +193,7 @@ export class PasskeyService {
   constructor(
     private readonly sidecar: PasskeySidecar,
     private readonly browserSession: () => Session,
+    private readonly pages: PasskeyPageOwners,
   ) {}
 
   async handlePage(
@@ -195,10 +209,13 @@ export class PasskeyService {
     const { requestId, publicKey } = parsed.data;
 
     const guest = event.sender;
-    const host = guest.hostWebContents;
-    if (!this.isBrowserPanelGuest(guest) || !host) {
+    const owner = this.ownerOf(guest);
+    if (!owner) {
       return failure('NotAllowedError', 'Passkeys are available only in the browser panel.');
     }
+    // A page that is not on screen (parked, detached) cannot open a dialog.
+    if (!owner.shown) return failure('NotAllowedError', 'The page is not on screen.');
+    const host = owner.host;
     const frame = event.senderFrame;
     if (!frame || frame.isDestroyed()) {
       return failure('NotAllowedError', 'The document is not active.');
@@ -247,6 +264,7 @@ export class PasskeyService {
         closed: false,
         resolve,
         dispose: () => {},
+        stopMoveWatch: () => {},
       };
       // Track the document before the helper starts, so an abort, navigation
       // or removal while it starts still ends this ceremony.
@@ -279,7 +297,7 @@ export class PasskeyService {
   /** `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable` for a browser-panel page. */
   async handlePageCapabilities(event: IpcMainInvokeEvent): Promise<PasskeyPageCapabilities> {
     const none = { platformAuthenticator: false };
-    if (!this.isBrowserPanelGuest(event.sender)) return none;
+    if (!this.ownerOf(event.sender)) return none;
     const frame = event.senderFrame;
     if (!frame || frame.isDestroyed()) return none;
     if (!checkFrameOrigin(frame.origin, sameOriginWithAncestors(frame)).ok) return none;
@@ -348,6 +366,10 @@ export class PasskeyService {
     const response = parsed.data;
     const ceremony = this.byId.get(response.ceremonyId);
     if (!ceremony || ceremony.host !== event.sender) return;
+    if (this.movedAway(ceremony)) {
+      this.abort(ceremony, 'AbortError', 'The page moved to another window.');
+      return;
+    }
 
     if (response.action === 'cancel') {
       if (ceremony.settled) this.close(ceremony);
@@ -382,8 +404,19 @@ export class PasskeyService {
     this.sidecar.dispose();
   }
 
-  private isBrowserPanelGuest(contents: WebContents): boolean {
-    return contents.getType() === 'webview' && contents.session === this.browserSession();
+  /** The owner of a browser-panel page (`<webview>` guest or main-owned page), or null. */
+  private ownerOf(contents: WebContents): BrowserPanelPageOwner | null {
+    if (contents.isDestroyed()) return null;
+    const type = contents.getType();
+    // 'window': a main-owned page (WebContentsView); the owner lookup rejects any other.
+    if (type !== 'webview' && type !== 'window') return null;
+    if (contents.session !== this.browserSession()) return null;
+    return this.pages.ownerOf(contents);
+  }
+
+  /** The page now belongs to another renderer (or none) than the one showing the dialog. */
+  private movedAway(ceremony: Ceremony): boolean {
+    return this.ownerOf(ceremony.guest)?.host !== ceremony.host;
   }
 
   /** True when the device store has no passkeys yet; a failed list shows no advice. */
@@ -419,8 +452,17 @@ export class PasskeyService {
     const frameCheck = setInterval(() => {
       if (ceremony.frame.isDestroyed() || ceremony.frame.detached) {
         this.abort(ceremony, 'AbortError', 'The document was removed.');
+      } else if (this.movedAway(ceremony)) {
+        // Backstop for a move that sent no notice.
+        this.abort(ceremony, 'AbortError', 'The page moved to another window.');
       }
     }, FRAME_CHECK_MS);
+    const guestId = ceremony.guest.id;
+    ceremony.stopMoveWatch = this.pages.onMoved((webContentsId) => {
+      if (webContentsId === guestId) {
+        this.abort(ceremony, 'AbortError', 'The page moved to another window.');
+      }
+    });
     ceremony.guest.on('did-start-navigation', onNavigate);
     ceremony.guest.once('destroyed', onGone);
     ceremony.host.once('destroyed', onGone);
@@ -625,6 +667,7 @@ export class PasskeyService {
     this.byId.delete(ceremony.id);
     if (ceremony.closed) return;
     ceremony.closed = true;
+    ceremony.stopMoveWatch();
     if (ceremony.shown && !ceremony.host.isDestroyed()) {
       ceremony.host.send(CHANNELS.DIALOG_CLOSE, { ceremonyId: ceremony.id });
     }

@@ -70,8 +70,8 @@ test.beforeAll(async () => {
         },
       },
     });
-  await bundle(resolve('src/main/ipc-authorization.ts'), 'ipc-authorization.cjs');
-  await bundle(resolve('src/features/passkeys/main/passkeys.ipc.ts'), 'passkeys-main.cjs');
+  // One bundle: the guard, PasskeyService and BrowserViewService share one page-owner seam.
+  await bundle(resolve('test/fixtures/passkeys/main-entry.ts'), 'main-under-test.cjs');
   await bundle(resolve('src/preload/passkey-page.ts'), 'passkey-page.js');
   await chmod(join(fixture, 'fake-sidecar.cjs'), 0o755);
 
@@ -203,14 +203,36 @@ async function close(launched: Launched | undefined) {
   }
 }
 
-function guest<T = unknown>(app: ElectronApplication, code: string): Promise<T> {
-  return app.evaluate(async ({ webContents }, script) => {
-    const view = webContents
-      .getAllWebContents()
-      .find((contents) => contents.getType() === 'webview');
-    if (!view) throw new Error('No guest webview');
-    return view.executeJavaScript(script);
-  }, code) as Promise<T>;
+/** Runs `code` in the `<webview>` guest, or in the page with webContents id `pageId`. */
+function guest<T = unknown>(app: ElectronApplication, code: string, pageId?: number): Promise<T> {
+  return app.evaluate(
+    async ({ webContents }, [script, id]) => {
+      const view =
+        id === undefined
+          ? webContents.getAllWebContents().find(
+              (contents) =>
+                // Later fixture windows host an about:blank webview.
+                contents.getType() === 'webview' && !contents.getURL().startsWith('about:'),
+            )
+          : webContents.fromId(id);
+      if (!view) throw new Error('No guest page');
+      return view.executeJavaScript(script);
+    },
+    [code, pageId] as const,
+  ) as Promise<T>;
+}
+
+/** Calls a control of test/fixtures/passkeys/main.cjs in the main process. */
+function fixtureMain<T = unknown>(
+  app: ElectronApplication,
+  control: string,
+  ...args: unknown[]
+): Promise<T> {
+  return app.evaluate(
+    (_electron, [name, values]) =>
+      (globalThis as any).passkeyFixtureMain[name as string](...(values as unknown[])),
+    [control, args] as const,
+  ) as Promise<T>;
 }
 
 type PageResult = {
@@ -221,11 +243,19 @@ type PageResult = {
   value?: Record<string, any>;
 };
 
-async function settled(app: ElectronApplication, name: string): Promise<PageResult> {
+async function settled(
+  app: ElectronApplication,
+  name: string,
+  pageId?: number,
+): Promise<PageResult> {
   let result: PageResult | undefined;
   await expect
     .poll(async () => {
-      result = await guest<PageResult>(app, `window.passkeyPage.result(${JSON.stringify(name)})`);
+      result = await guest<PageResult>(
+        app,
+        `window.passkeyPage.result(${JSON.stringify(name)})`,
+        pageId,
+      );
       return result?.state;
     })
     .not.toBe('pending');
@@ -381,10 +411,11 @@ test.describe.serial('browser-panel passkeys', () => {
         pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
       },
     });
+    // The app window is not in the browser-panel session.
     expect(create).toContain(
-      'Unauthorized IPC invocation on passkeys:page-create: unexpected sender',
+      'Unauthorized IPC invocation on passkeys:page-create: unexpected session',
     );
-    expect(await invoke('passkeys:page-capabilities')).toContain('unexpected sender');
+    expect(await invoke('passkeys:page-capabilities')).toContain('unexpected session');
     expect(await invoke('passkeys:device-list')).toBe('resolved');
     expect(
       sidecarRequests(log)
@@ -766,5 +797,181 @@ test.describe.serial('Settings → Passkeys without device passkeys', () => {
       .poll(() => page.evaluate(() => (window as any).passkeySettings.status()))
       .toBe('unavailable');
     expect(sidecarRequests(log).map((request) => request.method)).toEqual(['hello']);
+  });
+});
+
+test.describe.serial('passkeys in main-owned browser pages', () => {
+  let launched: Launched | undefined;
+  let pageId = 0;
+  test.beforeAll(async () => {
+    test.setTimeout(120_000);
+    launched = await launch();
+    pageId = await fixtureMain<number>(launched.app, 'openPage', 'tab-main', guestUrl);
+    await expect
+      .poll(() => guest(launched!.app, 'typeof window.passkeyPage', pageId))
+      .toBe('object');
+  });
+  test.afterAll(async () => close(launched));
+
+  const page = (windowIndex = 0): Page => {
+    if (windowIndex === 0) return launched!.page;
+    const found = launched!.app.windows().find((p) => p.url().includes(`window=${windowIndex}`));
+    if (!found) throw new Error(`No fixture window ${windowIndex}`);
+    return found;
+  };
+  const dialogIn = (windowIndex = 0) => page(windowIndex).getByRole('dialog');
+
+  test('the page is a WebContentsView guest that the preload shims', async () => {
+    const { app } = launched!;
+    expect(
+      await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.getType(), pageId),
+    ).toBe('window');
+    expect(await guest(app, 'window.passkeyPage.shimmed()', pageId)).toBe(true);
+    expect(await guest(app, 'window.passkeyPage.capabilities()', pageId)).toMatchObject({
+      capabilities: { hybridTransport: true, passkeyPlatformAuthenticator: false },
+    });
+  });
+
+  test('create round trip through a phone (QR), dialog in the owner window', async () => {
+    const { app, log } = launched!;
+    await guest(app, `window.passkeyPage.start('mo-create', 'create')`, pageId);
+    await expect(dialogIn()).toContainText('Create a passkey for localhost');
+    await page().getByText('Phone or tablet').click();
+    await expect(
+      page().getByRole('img', { name: 'QR code to scan with your phone' }),
+    ).toBeVisible();
+    await writeFile(`${log}.proceed`, '');
+    const result = await settled(app, 'mo-create', pageId);
+    expect(result.state).toBe('resolved');
+    await expect(dialogIn()).toHaveCount(0);
+    expect(result.value).toMatchObject({
+      isAttestation: true,
+      clientData: {
+        type: 'webauthn.create',
+        challenge: result.challenge,
+        origin: guestUrl.slice(0, -1),
+        crossOrigin: false,
+      },
+    });
+    expect(
+      sidecarRequests(log)
+        .filter((r) => r.method === 'create')
+        .at(-1)?.params,
+    ).toMatchObject({ transport: 'hybrid', origin: guestUrl.slice(0, -1), rpId: 'localhost' });
+  });
+
+  test('the RP ID check still runs for a main-owned page', async () => {
+    const { app, log } = launched!;
+    const before = sidecarRequests(log).length;
+    await guest(
+      app,
+      `window.passkeyPage.start('mo-spoof', 'create', { rpId: 'example.com' })`,
+      pageId,
+    );
+    expect(await settled(app, 'mo-spoof', pageId)).toMatchObject({
+      state: 'rejected',
+      name: 'SecurityError',
+    });
+    expect(sidecarRequests(log).slice(before)).toEqual([]);
+    await expect(dialogIn()).toHaveCount(0);
+  });
+
+  test('rejects a browser-panel WebContentsView that BrowserViewService did not make', async () => {
+    const { app, log } = launched!;
+    const rogueId = await fixtureMain<number>(app, 'openRogue', guestUrl);
+    await expect.poll(() => guest(app, 'typeof window.passkeyPage', rogueId)).toBe('object');
+    const before = sidecarRequests(log).length;
+    await guest(app, `window.passkeyPage.start('rogue', 'get')`, rogueId);
+    expect(await settled(app, 'rogue', rogueId)).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+    expect(await guest(app, 'window.passkeyPage.capabilities()', rogueId)).toMatchObject({
+      uvpaa: false,
+    });
+    expect(sidecarRequests(log).slice(before)).toEqual([]);
+    await expect(dialogIn()).toHaveCount(0);
+  });
+
+  test('a page that is not on screen cannot start a ceremony', async () => {
+    const { app, log } = launched!;
+    expect(await fixtureMain(app, 'detach', 'tab-main')).toBe('detached');
+    const before = sidecarRequests(log).length;
+    await guest(app, `window.passkeyPage.start('mo-hidden', 'get')`, pageId);
+    expect(await settled(app, 'mo-hidden', pageId)).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+    expect(sidecarRequests(log).slice(before)).toEqual([]);
+    await expect(dialogIn()).toHaveCount(0);
+    expect(await fixtureMain(app, 'show', 'tab-main')).toBe('shown');
+  });
+
+  test('moving the page to another window ends its ceremony and closes the dialog', async () => {
+    const { app, log } = launched!;
+    const second = await fixtureMain<number>(app, 'openWindow');
+    await expect
+      .poll(() => app.windows().some((p) => p.url().includes(`window=${second}`)))
+      .toBe(true);
+    await page(second).waitForFunction(() => 'passkeyFixture' in window);
+
+    await guest(app, `window.passkeyPage.start('mo-move', 'get')`, pageId);
+    await page().getByText('Phone or tablet').click();
+    await expect(
+      page().getByRole('img', { name: 'QR code to scan with your phone' }),
+    ).toBeVisible();
+    const ceremony = sidecarRequests(log)
+      .filter((r) => r.method === 'get')
+      .at(-1)!;
+    await fixtureMain(app, 'move', 'tab-main', second);
+    expect(await settled(app, 'mo-move', pageId)).toMatchObject({
+      state: 'rejected',
+      name: 'AbortError',
+    });
+    await expect(dialogIn()).toHaveCount(0);
+    await expect(dialogIn(second)).toHaveCount(0);
+    await expect
+      .poll(() =>
+        sidecarRequests(log).some(
+          (r) => r.method === 'cancel' && r.params.ceremony === ceremony.id,
+        ),
+      )
+      .toBe(true);
+  });
+
+  test('a ceremony in the new window shows its dialog there, and ends on a move back', async () => {
+    const { app } = launched!;
+    const second = 1;
+    expect(await fixtureMain(app, 'show', 'tab-main')).toBe('shown');
+    await guest(app, `window.passkeyPage.start('mo-second', 'get')`, pageId);
+    await expect(dialogIn(second)).toContainText('Use a passkey for localhost');
+    await expect(dialogIn()).toHaveCount(0);
+    await fixtureMain(app, 'move', 'tab-main', 0);
+    expect(await settled(app, 'mo-second', pageId)).toMatchObject({
+      state: 'rejected',
+      name: 'AbortError',
+    });
+    await expect(dialogIn(second)).toHaveCount(0);
+    await expect(dialogIn()).toHaveCount(0);
+
+    expect(await fixtureMain(app, 'show', 'tab-main')).toBe('shown');
+    await guest(app, `window.passkeyPage.start('mo-back', 'get')`, pageId);
+    await expect(dialogIn()).toContainText('Use a passkey for localhost');
+    await dialogIn().getByRole('button', { name: 'Cancel' }).last().click();
+    expect(await settled(app, 'mo-back', pageId)).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
+  });
+
+  test('the webview guest still works next to main-owned pages', async () => {
+    const { app } = launched!;
+    await guest(app, `window.passkeyPage.start('wv-alongside', 'get')`);
+    await expect(dialogIn()).toContainText('Use a passkey for localhost');
+    await dialogIn().getByRole('button', { name: 'Cancel' }).last().click();
+    expect(await settled(app, 'wv-alongside')).toMatchObject({
+      state: 'rejected',
+      name: 'NotAllowedError',
+    });
   });
 });

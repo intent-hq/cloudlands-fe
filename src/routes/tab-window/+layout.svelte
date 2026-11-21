@@ -10,6 +10,7 @@
   import '$store/renderer/seeders';
   import { store as appStore } from '$store/renderer/store';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
+  import PasskeyDialogHost from '$features/passkeys/PasskeyDialogHost.svelte';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -29,3 +30,5 @@
 </script>
 
 {@render children?.()}
+<!-- A browser page in this window shows its passkey dialog here (main sends it to the page's owner). -->
+<PasskeyDialogHost />

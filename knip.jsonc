@@ -56,6 +56,8 @@
     // Loaded via <script type="module"> in test/fixtures/passkeys/index.html
     // (test/electron-passkeys.spec.ts)
     "test/fixtures/passkeys/Harness.svelte",
+    // Bundled for the Electron main process by test/electron-passkeys.spec.ts
+    "test/fixtures/passkeys/main-entry.ts",
     // Loaded by the module script in test/fixtures/dock-shortcut-settings/index.html;
     // the isolated Electron shortcut-settings fixture serves this HTML entry.
     "test/fixtures/dock-shortcut-settings/Harness.svelte",
