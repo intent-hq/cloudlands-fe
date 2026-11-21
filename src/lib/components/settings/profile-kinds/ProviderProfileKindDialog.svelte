@@ -45,14 +45,18 @@
   import {
     type BaseUrlAction,
     previewProfileFolder,
-    signInCommand,
     type ProfileKindChoice,
     type ProfileKindProvider,
     type ProfileKindStep,
     type ProfileSetupError,
     type ProfileSignInState,
   } from './profile-kind-mock';
-  import { isJwtShaped, isSecretWellFormed, randomSuffix } from '$lib/provider-profile-kinds';
+  import {
+    isJwtShaped,
+    isSecretWellFormed,
+    loginCommand,
+    randomSuffix,
+  } from '$lib/provider-profile-kinds';
   import { secretShapeError } from './secret-shape-error';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
 
@@ -74,7 +78,7 @@
     folderSuffix?: string;
     /** Edit: the folder saved on the profile. */
     savedFolderPath?: string;
-    /** The daemon is not the app's own sidecar (Codex device auth, restart wording). */
+    /** The daemon is not the app's own sidecar (restart wording). */
     remoteDaemon?: boolean;
     signIn?: ProfileSignInState;
     nameError?: string;
@@ -177,7 +181,7 @@
   const secretKind = $derived(kind === 'apiKey' || kind === 'token' ? kind : null);
   let localSecretError = $state<string | undefined>();
   const shownSecretError = $derived(secretError ?? localSecretError);
-  const command = $derived(signInCommand(provider, remoteDaemon));
+  const command = $derived(loginCommand(provider));
   const folderPath = $derived(
     mode === 'edit' ? savedFolderPath : previewProfileFolder(provider, name, folderSuffix),
   );

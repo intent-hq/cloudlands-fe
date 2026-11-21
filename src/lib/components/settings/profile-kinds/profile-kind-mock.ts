@@ -5,7 +5,6 @@
  */
 
 import {
-  loginCommand,
   profileFoldersParent,
   slugifyProfileName,
   type ProfileKind,
@@ -43,11 +42,6 @@ export function previewProfileFolder(
   suffix: string,
 ): string {
   return `${profileFoldersParent(provider)}/${slugifyProfileName(name)}-${suffix}`;
-}
-
-/** The plain terminal command for a sign-in; the folder goes in `env`, never here. */
-export function signInCommand(provider: ProfileKindProvider, remoteDaemon: boolean): string {
-  return loginCommand(provider, !remoteDaemon);
 }
 
 /** A profile row's status, as ProviderProfiles shows it ('error' reads "Signed out"). */

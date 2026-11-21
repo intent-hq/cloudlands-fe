@@ -144,6 +144,13 @@ describe('ProviderProfileAddDialog', () => {
     expect(mocks.notify.success).not.toHaveBeenCalled();
   });
 
+  it('Codex Different login uses device auth on the app sidecar too', async () => {
+    await seed();
+    await openDialog('codex');
+    await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
+    expect(screen.getByText('codex login --device-auth')).toBeTruthy();
+  });
+
   it('a terminal that fails to open keeps the error in the dialog with Try again', async () => {
     await seed([], 'remote-tcp');
     await openDialog('codex');
