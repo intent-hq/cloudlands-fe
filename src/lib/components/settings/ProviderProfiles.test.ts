@@ -182,9 +182,7 @@ describe('ProviderProfiles', () => {
     const dialog = await screen.findByRole('dialog');
     const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
     expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
-    expect(help.textContent).toMatch(
-      /~ or starting with ~\/ means the home folder of the user running the daemon/,
-    );
+    expect(help.textContent).toMatch(/~ means the daemon user's home/);
   });
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {

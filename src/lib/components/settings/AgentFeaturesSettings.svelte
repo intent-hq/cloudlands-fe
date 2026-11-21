@@ -287,6 +287,7 @@
         id: feature.path,
         label: feature.label(),
         description: feature.description(),
+        info: feature.info?.(),
         featureCode: feature.path,
         disabled:
           loading ||

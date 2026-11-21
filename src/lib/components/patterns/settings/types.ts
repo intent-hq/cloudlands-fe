@@ -14,6 +14,8 @@ export type SettingsTab =
   | 'advanced'
   | 'input'
   | 'passkeys'
+  | 'token-savings'
+  | 'performance'
   | 'specialists';
 
 export type SettingKind =
@@ -32,6 +34,8 @@ interface BaseSetting<K extends SettingKind> {
   label: string;
   class?: string;
   description?: string;
+  /** Extra detail shown behind an info tooltip next to the description. */
+  info?: string;
   when?: () => boolean;
   disabled?: Resolvable<boolean>;
   busy?: Resolvable<boolean>;

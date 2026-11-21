@@ -30,7 +30,7 @@
   );
 </script>
 
-<!-- The desktop-only notch control lives in the Appearance card (Settings › Display). -->
+<!-- The desktop-only notch control is the first card in Settings › Inputs. -->
 {#if isElectronPlatform()}
   <section
     id="notch-dock"

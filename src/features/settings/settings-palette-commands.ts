@@ -8,7 +8,7 @@ const SETTINGS_PAGES = {
     get label() {
       return m.settings_sidebar_agentBehavior_label();
     },
-    searchText: 'agent behavior defaults instructions rules features',
+    searchText: 'instructions system prompt agent behavior defaults rules',
   },
   providers: {
     get label() {
@@ -21,6 +21,13 @@ const SETTINGS_PAGES = {
       return m.settings_sidebar_connections_label();
     },
     searchText: 'connections integrations accounts Linear GitHub GitLab Sentry MCP servers',
+  },
+  'token-savings': {
+    get label() {
+      return m.settings_sidebar_tokenSavings_label();
+    },
+    searchText:
+      'token savings rtk cli optimization tool output retention toon agent features tool approvals',
   },
   devices: {
     get label() {
@@ -44,13 +51,20 @@ const SETTINGS_PAGES = {
     get label() {
       return m.settings_sidebar_display_label();
     },
-    searchText: 'appearance display theme color fonts language transparency',
+    searchText: 'appearance display theme color fonts language layout width',
   },
   'app-behavior': {
     get label() {
       return m.settings_sidebar_appBehavior_label();
     },
     searchText: 'general app behavior notifications updates licenses open in github links',
+  },
+  performance: {
+    get label() {
+      return m.settings_sidebar_performance_label();
+    },
+    searchText:
+      'performance battery motion animations aurora translucent agent backend memory heap concurrent idle',
   },
   input: {
     get label() {
@@ -68,14 +82,13 @@ const SETTINGS_PAGES = {
     get label() {
       return m.settings_sidebar_setup_label();
     },
-    searchText: 'workspace setup git shell terminal cli optimization rtk',
+    searchText: 'workspace setup git shell terminal',
   },
   advanced: {
     get label() {
       return m.settings_sidebar_advanced_label();
     },
-    searchText:
-      'advanced labs experimental tool output retention agent backend connection data import reset',
+    searchText: 'advanced labs experimental connection data import reset',
   },
   specialists: {
     get label() {

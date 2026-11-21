@@ -7,6 +7,7 @@
  * means mocking `settings.get` — the sibling suite deliberately exercises the
  * `settings.list` fallback instead.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import AgentBackendSettings from './AgentBackendSettings.svelte';
@@ -481,7 +482,9 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
-    expect(screen.getByText(/Turn off to disable reaping entirely \(0 minutes\)\./)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: m.settings_agentBackend_idleReap_offNote() }),
+    ).toBeTruthy();
   });
 
   it('exposes the documented stepper range with 0 reachable through the toggle', async () => {
@@ -495,7 +498,9 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     expect(stepper.min).toBe('1');
     expect(stepper.max).toBe('120');
     expect(screen.getByText(/1–120 minutes\./)).toBeTruthy();
-    expect(screen.getByText(/Turn off to disable reaping entirely \(0 minutes\)\./)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: m.settings_agentBackend_idleReap_offNote() }),
+    ).toBeTruthy();
   });
 
   it('writes 0 when reaping is switched off — the disable state is reachable', async () => {

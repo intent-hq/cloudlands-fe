@@ -91,7 +91,9 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 let setChannelResponse: { success: boolean; error?: { message: string } };
 
-function renderSettingsTab(tab: 'general' | 'appearance' | 'app-behavior' | 'advanced') {
+function renderSettingsTab(
+  tab: 'general' | 'appearance' | 'app-behavior' | 'advanced' | 'performance',
+) {
   window.history.pushState({}, '', `/settings?tab=${tab}`);
   mocks.page.url = new URL(window.location.href);
   return render(SettingsPage, {
@@ -103,6 +105,7 @@ const renderGeneral = () => renderSettingsTab('general');
 const renderAppearance = () => renderSettingsTab('appearance');
 const renderAppBehavior = () => renderSettingsTab('app-behavior');
 const renderAdvanced = () => renderSettingsTab('advanced');
+const renderPerformance = () => renderSettingsTab('performance');
 
 function installDispatchRecorder() {
   const spy = vi.spyOn(appStore, 'dispatch');
@@ -160,7 +163,7 @@ afterAll(() => {
 describe('Settings migration', () => {
   it('updates both appearance preferences immediately through Redux', async () => {
     const recorder = installDispatchRecorder();
-    renderAppearance();
+    renderPerformance();
 
     const chatAurora = screen.getByRole('switch', { name: 'Chat aurora' });
     const translucentWindow = screen.getByRole('switch', { name: 'Translucent window' });

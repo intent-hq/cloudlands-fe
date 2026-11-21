@@ -2,8 +2,10 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
+  import CoinsIcon from 'phosphor-svelte/lib/CoinsIcon';
   import DesktopIcon from 'phosphor-svelte/lib/DesktopIcon';
   import DeviceMobileIcon from 'phosphor-svelte/lib/DeviceMobileIcon';
+  import GaugeIcon from 'phosphor-svelte/lib/GaugeIcon';
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
   import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
@@ -29,13 +31,6 @@
 
   const primaryItems = [
     {
-      id: 'agent-behavior',
-      icon: RobotIcon,
-      get label() {
-        return m.settings_sidebar_agentBehavior_label();
-      },
-    },
-    {
       id: 'providers',
       icon: TerminalWindowIcon,
       get label() {
@@ -43,10 +38,24 @@
       },
     },
     {
+      id: 'agent-behavior',
+      icon: RobotIcon,
+      get label() {
+        return m.settings_sidebar_agentBehavior_label();
+      },
+    },
+    {
       id: 'connections',
       icon: PlugsConnectedIcon,
       get label() {
         return m.settings_sidebar_connections_label();
+      },
+    },
+    {
+      id: 'token-savings',
+      icon: CoinsIcon,
+      get label() {
+        return m.settings_sidebar_tokenSavings_label();
       },
     },
     {
@@ -71,6 +80,13 @@
       },
     },
     {
+      id: 'app-behavior',
+      icon: SlidersHorizontalIcon,
+      get label() {
+        return m.settings_sidebar_appBehavior_label();
+      },
+    },
+    {
       id: 'display',
       icon: PaintBrushIcon,
       get label() {
@@ -78,10 +94,10 @@
       },
     },
     {
-      id: 'app-behavior',
-      icon: SlidersHorizontalIcon,
+      id: 'performance',
+      icon: GaugeIcon,
       get label() {
-        return m.settings_sidebar_appBehavior_label();
+        return m.settings_sidebar_performance_label();
       },
     },
     {
@@ -120,21 +136,21 @@
       get label() {
         return m.settings_sidebar_agents_label();
       },
-      items: primaryItems.slice(0, 3),
+      items: primaryItems.slice(0, 4),
     },
     {
       id: 'remote',
       get label() {
         return m.settings_sidebar_remote_label();
       },
-      items: primaryItems.slice(3, 6),
+      items: primaryItems.slice(4, 7),
     },
     {
       id: 'preferences',
       get label() {
         return m.settings_sidebar_preferences_label();
       },
-      items: primaryItems.slice(6),
+      items: primaryItems.slice(7),
     },
   ];
 </script>

@@ -30,7 +30,7 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    const setup = screen.getByRole('button', { name: 'Workspace setup' });
+    const setup = screen.getByRole('button', { name: 'Workspaces' });
     expect(setup.getAttribute('aria-current')).toBe('page');
     expect(
       screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current'),
@@ -46,7 +46,7 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Agent defaults' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Instructions' }));
 
     expect(onSelect).toHaveBeenCalledWith('agent-behavior');
   });
@@ -56,6 +56,8 @@ describe('SettingsSidebarNav', () => {
     'app-behavior',
     'input',
     'passkeys',
+    'token-savings',
+    'performance',
     'agent-behavior',
     'providers',
     'connections',
@@ -118,8 +120,8 @@ describe('SettingsSidebarNav', () => {
 
     expect(screen.queryByRole('button', { name: 'Providers' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Connections' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Workspace setup' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Agent defaults' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Workspaces' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Instructions' })).toBeTruthy();
   });
 
   it('delegates specialist navigation without making the section heading clickable', async () => {

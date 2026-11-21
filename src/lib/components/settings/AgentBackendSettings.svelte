@@ -416,20 +416,21 @@
               kind: 'custom',
               id: 'max-concurrent-agents',
               label: m.settings_agentBackend_maxConcurrent_label(),
-              description: m.settings_agentBackend_maxConcurrent_description({
-                current: displayValue,
-              }),
             },
             {
               kind: 'custom',
               id: 'memory-budget',
               label: m.settings_agentBackend_memoryBudget_label(),
+              info: memoryBudgetMaxDisplay
+                ? `${m.settings_agentBackend_memoryBudget_info()} ${m.settings_agentBackend_memoryBudget_boundsNote({ max: memoryBudgetMaxDisplay })}`
+                : m.settings_agentBackend_memoryBudget_info(),
               when: () => memoryBudgetSupported,
             },
             {
               kind: 'custom',
               id: 'idle-reap',
               label: m.settings_agentBackend_idleReap_toggleLabel(),
+              info: m.settings_agentBackend_idleReap_offNote(),
               when: () => idleReapSupported,
             },
             {
@@ -447,6 +448,13 @@
               kind: 'custom',
               id: 'acp-node-heap',
               label: m.settings_agentBackend_acpHeap_label(),
+              info: `${m.settings_agentBackend_acpHeap_info()} ${m.settings_agentBackend_acpHeap_boundsNote(
+                {
+                  min: formatAcpHeap(acpHeapMinMb),
+                  max: formatAcpHeap(acpHeapMaxMb),
+                  defaultValue: formatAcpHeap(acpHeapDefaultMb),
+                },
+              )}`,
               when: () => acpHeapSupported,
             },
           ],
@@ -456,25 +464,24 @@
   );
 </script>
 
+{#snippet maxConcurrentDescription()}
+  <span class="block">{m.settings_agentBackend_current({ value: displayValue })}</span>
+  {m.settings_agentBackend_maxConcurrent_description()}
+{/snippet}
+
 {#snippet memoryBudgetDescription()}
-  {m.settings_agentBackend_memoryBudget_description({ current: memoryBudgetDisplay })}
-  {#if memoryBudgetMaxDisplay}
-    {m.settings_agentBackend_memoryBudget_boundsNote({ max: memoryBudgetMaxDisplay })}
-  {/if}
+  <span class="block">{m.settings_agentBackend_current({ value: memoryBudgetDisplay })}</span>
+  {m.settings_agentBackend_memoryBudget_description()}
 {/snippet}
 
 {#snippet idleReapDescription()}
-  {m.settings_agentBackend_idleReap_description({ current: idleReapDisplay })}
-  {m.settings_agentBackend_idleReap_offNote()}
+  <span class="block">{m.settings_agentBackend_current({ value: idleReapDisplay })}</span>
+  {m.settings_agentBackend_idleReap_description()}
 {/snippet}
 
 {#snippet acpHeapDescription()}
-  {m.settings_agentBackend_acpHeap_description({ current: acpHeapDisplay })}
-  {m.settings_agentBackend_acpHeap_boundsNote({
-    min: formatAcpHeap(acpHeapMinMb),
-    max: formatAcpHeap(acpHeapMaxMb),
-    defaultValue: formatAcpHeap(acpHeapDefaultMb),
-  })}
+  <span class="block">{m.settings_agentBackend_current({ value: acpHeapDisplay })}</span>
+  {m.settings_agentBackend_acpHeap_description()}
 {/snippet}
 
 {#snippet maxConcurrentControl({ labelId, descriptionId }: SettingsControlContext)}
@@ -590,6 +597,7 @@
     'acp-node-heap': acpHeapControl,
   })}
   descriptions={{
+    'max-concurrent-agents': maxConcurrentDescription,
     'memory-budget': memoryBudgetDescription,
     'idle-reap': idleReapDescription,
     'acp-node-heap': acpHeapDescription,

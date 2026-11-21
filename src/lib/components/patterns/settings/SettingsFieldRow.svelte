@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import InfoIcon from 'phosphor-svelte/lib/InfoIcon';
+  import { Button } from '$lib/components/ui/button';
   import { Label } from '$lib/components/ui/label';
   import { cn } from '$lib/utils';
 
@@ -7,6 +9,7 @@
     id,
     label,
     description,
+    info,
     htmlFor,
     activateLabel = false,
     error,
@@ -29,6 +32,8 @@
     id: string;
     label: string;
     description?: string;
+    /** Extra detail behind an info button; keep `description` to one sentence. */
+    info?: string;
     htmlFor?: string;
     /** Forward label activation to composite controls that ignore native label clicks. */
     activateLabel?: boolean;
@@ -79,6 +84,19 @@
     control?.click();
   }
 </script>
+
+{#snippet infoButton()}
+  <Button
+    variant="ghost-light"
+    size="icon-compact"
+    class="ml-0.5 inline-flex size-5 align-text-bottom text-muted-foreground"
+    tooltip={info}
+    aria-label={info}
+    data-field-info
+  >
+    <InfoIcon size={14} aria-hidden="true" />
+  </Button>
+{/snippet}
 
 <div
   {id}
@@ -149,6 +167,9 @@
             {:else}
               {description}
             {/if}
+            {#if info}{@render infoButton()}{/if}
+          </p>{:else if info}<p class="type-body text-muted-foreground">
+            {@render infoButton()}
           </p>{/if}
         {#if error}
           <p id={errorId} class="type-body text-danger" role="alert">{error}</p>

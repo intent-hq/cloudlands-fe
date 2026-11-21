@@ -31,14 +31,14 @@ describe('app UI targets registry', () => {
       git: 'setup',
       shell: 'setup',
       workspace: 'setup',
-      'cli-optimization': 'setup',
+      'cli-optimization': 'token-savings',
       'workspace-api': 'advanced',
       'utility-default-model': 'providers',
       notifications: 'app-behavior',
       updates: 'app-behavior',
       'open-in': 'app-behavior',
       'github-link-action': 'app-behavior',
-      'agent-features': 'agent-behavior',
+      'agent-features': 'token-savings',
       'global-instructions': 'agent-behavior',
       appearance: 'display',
       'font-style': 'display',
@@ -117,7 +117,7 @@ describe('app UI targets registry', () => {
     });
   });
 
-  it('resolves agent-behavior hashes to the Global Instructions target', () => {
+  it('resolves agent-behavior hashes to the Instructions target', () => {
     for (const hash of ['global-instructions', 'agents', 'specialists', 'all-agents']) {
       expect(resolveHashToTarget(hash), hash).toMatchObject({
         id: 'global-instructions',

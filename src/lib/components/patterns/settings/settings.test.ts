@@ -89,10 +89,10 @@ describe('settings pattern', () => {
       'page',
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Workspace setup' }));
-    expect(
-      screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
-    ).toBe('page');
+    await fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }));
+    expect(screen.getByRole('button', { name: 'Workspaces' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
     expect(screen.getByRole('button', { name: 'Appearance' }).hasAttribute('aria-current')).toBe(
       false,
     );

@@ -123,7 +123,7 @@ vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
-// Advanced-tab fixture carrier.
+// Performance-tab fixture carrier.
 vi.mock('$lib/components/settings/AgentBackendSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
@@ -496,7 +496,7 @@ describe('settings tab route and focus behavior', () => {
         'page',
       ),
     );
-    expect(document.querySelector('#agent-backend')).not.toBeNull();
+    expect(document.querySelector('#agent-backend')).toBeNull();
     expect(document.querySelector('#reset')).not.toBeNull();
     expect(document.querySelector('#data')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Import Legacy Workspaces' })).toBeNull();
@@ -518,19 +518,19 @@ describe('settings tab route and focus behavior', () => {
     expect(settingsPage).not.toBeNull();
     expect(settingsPage?.querySelector('[data-settings-git-workspace]')).not.toBeNull();
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
-      ).toBe('page'),
+      expect(screen.getByRole('button', { name: 'Workspaces' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
     );
     expect(settingsPage?.querySelector('[data-settings-agents-section]')).not.toBeNull();
   });
 
   it.each([
     ['accounts', 'Providers', 'page'],
-    ['agents', 'Agent defaults', 'page'],
-    ['setup', 'Workspace setup', 'page'],
-    ['tools', 'Workspace setup', 'page'],
-    ['git-workspace', 'Workspace setup', 'page'],
+    ['agents', 'Instructions', 'page'],
+    ['setup', 'Workspaces', 'page'],
+    ['tools', 'Workspaces', 'page'],
+    ['git-workspace', 'Workspaces', 'page'],
     ['fonts-colors', 'Appearance', 'page'],
     ['notifications', 'General', 'page'],
     ['general', 'Appearance', 'page'],
@@ -539,8 +539,10 @@ describe('settings tab route and focus behavior', () => {
     ['machines', 'Machines', 'page'],
     ['mobile', 'Mobile', 'page'],
     ['interface-system', 'Appearance', 'page'],
-    ['input', 'Input and shortcuts', 'page'],
-    ['unknown', 'Agent defaults', 'page'],
+    ['input', 'Inputs', 'page'],
+    ['token-savings', 'Token Savings', 'page'],
+    ['performance', 'Performance', 'page'],
+    ['unknown', 'Instructions', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
@@ -564,7 +566,7 @@ describe('settings tab route and focus behavior', () => {
     renderSettings('/settings');
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Agent defaults' }).getAttribute('aria-current'),
+        screen.getByRole('button', { name: 'Instructions' }).getAttribute('aria-current'),
       ).toBe('page'),
     );
     expect(document.querySelector('#global-instructions')).not.toBeNull();
@@ -586,17 +588,19 @@ describe('settings tab route and focus behavior', () => {
     expect(new URL(window.location.href).searchParams.get('tab')).toBe('mobile');
   });
 
-  it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
-    const advanced = renderSettings('/settings?tab=advanced');
-    await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
+  it('renders Agent Backend only on Performance while the legacy Tools tab resolves to Setup', async () => {
+    const performance = renderSettings('/settings?tab=performance');
+    await waitFor(() =>
+      expect(performance.container.querySelector('#agent-backend')).not.toBeNull(),
+    );
 
     cleanup();
 
     const tools = renderSettings('/settings?tab=tools');
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
-      ).toBe('page'),
+      expect(screen.getByRole('button', { name: 'Workspaces' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
     );
     expect(tools.container.querySelector('#agent-backend')).toBeNull();
   });
@@ -605,11 +609,13 @@ describe('settings tab route and focus behavior', () => {
     ['/settings#agent-backend'],
     // Legacy deep link from when the section lived on Tools.
     ['/settings?tab=setup#agent-backend'],
-  ])('routes %s to the Advanced tab that now renders the section', async (url) => {
+    // Legacy deep link from when the section lived on Advanced.
+    ['/settings?tab=advanced#agent-backend'],
+  ])('routes %s to the Performance tab that now renders the section', async (url) => {
     renderSettings(url);
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Advanced' }).getAttribute('aria-current')).toBe(
+      expect(screen.getByRole('button', { name: 'Performance' }).getAttribute('aria-current')).toBe(
         'page',
       ),
     );
@@ -617,10 +623,10 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it.each([
-    ['/settings?tab=input#voice', 'Input and shortcuts', 'voice'],
-    ['/settings?tab=connections#voice', 'Input and shortcuts', 'voice'],
-    ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
-    ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
+    ['/settings?tab=input#voice', 'Inputs', 'voice'],
+    ['/settings?tab=connections#voice', 'Inputs', 'voice'],
+    ['/settings?tab=advanced#workspace-api', 'Token Savings', 'workspace-api'],
+    ['/settings?tab=system#workspace-api', 'Token Savings', 'workspace-api'],
     ['/settings#mobile', 'Mobile', 'mobile'],
     ['/settings#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings#remote-access', 'Mobile', 'websocket-api'],
@@ -629,8 +635,9 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=mobile#backend-sync', 'Machines', 'backend-sync'],
     // Legacy deep link from when the section lived on Advanced.
     ['/settings?tab=advanced#websocket-api', 'Mobile', 'websocket-api'],
-    ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
-    ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
+    ['/settings?tab=agent-behavior#agent-features', 'Token Savings', 'agent-features'],
+    ['/settings?tab=behavior#agent-features', 'Token Savings', 'agent-features'],
+    ['/settings?tab=setup#rtk', 'Token Savings', 'cli-optimization'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
     renderSettings(url);
 
@@ -640,25 +647,6 @@ describe('settings tab route and focus behavior', () => {
       ),
     );
     expect(document.getElementById(sectionId)).not.toBeNull();
-  });
-
-  it.each([
-    ['/settings?tab=agent-behavior', 'false'],
-    ['/settings?tab=agent-behavior#agent-features', 'true'],
-    ['/settings#tool-approvals', 'true'],
-  ])('renders Agent defaults Advanced for %s with aria-expanded=%s', async (url, expanded) => {
-    renderSettings(url);
-
-    const main = await waitFor(() => {
-      const content = document.getElementById('global-instructions')?.parentElement;
-      expect(content).toBeTruthy();
-      return content!;
-    });
-    await waitFor(() =>
-      expect(
-        within(main).getByRole('button', { name: 'Advanced' }).getAttribute('aria-expanded'),
-      ).toBe(expanded),
-    );
   });
 
   it('activates selected specialist views', async () => {
@@ -724,7 +712,7 @@ describe('settings tab route and focus behavior', () => {
 
     expect(document.getElementById('utility-default-model')).not.toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Agent defaults' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Instructions' }));
 
     expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain('system-prompt');
     expect(document.getElementById('utility-default-model')).toBeNull();
@@ -818,7 +806,7 @@ describe('settings tab route and focus behavior', () => {
 
       await waitFor(() =>
         expect(
-          screen.getByRole('button', { name: 'Agent defaults' }).getAttribute('aria-current'),
+          screen.getByRole('button', { name: 'Instructions' }).getAttribute('aria-current'),
         ).toBe('page'),
       );
       const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
@@ -864,21 +852,21 @@ describe('settings hash target integration', () => {
   it.each([
     ['default-model', 'utility-default-model', 'Providers', 'page'],
     ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],
-    ['global-instructions', 'global-instructions', 'Agent defaults', 'page'],
+    ['global-instructions', 'global-instructions', 'Instructions', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
     ['updates', 'updates', 'General', 'page'],
     ['open-in', 'open-in', 'General', 'page'],
     ['github-link-action', 'github-link-action', 'General', 'page'],
     ['notifications', 'notifications', 'General', 'page'],
-    ['agent-features', 'agent-features', 'Agent defaults', 'page'],
+    ['agent-features', 'agent-features', 'Token Savings', 'page'],
     ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
-    ['cli-optimization', 'cli-optimization', 'Workspace setup', 'page'],
-    ['workspace-api', 'workspace-api', 'Advanced', 'page'],
+    ['cli-optimization', 'cli-optimization', 'Token Savings', 'page'],
+    ['workspace-api', 'workspace-api', 'Token Savings', 'page'],
     ['mobile', 'mobile', 'Mobile', 'page'],
     ['websocket-api', 'websocket-api', 'Mobile', 'page'],
     ['remote-access', 'websocket-api', 'Mobile', 'page'],
-    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input and shortcuts', 'page'],
-    ['voice', 'voice', 'Input and shortcuts', 'page'],
+    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Inputs', 'page'],
+    ['voice', 'voice', 'Inputs', 'page'],
     ['language', 'language', 'Appearance', 'page'],
     ['color-theme', 'color-theme', 'Appearance', 'page'],
     ['note-font', 'note-font', 'Appearance', 'page'],

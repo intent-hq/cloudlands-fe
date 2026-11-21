@@ -51,6 +51,7 @@
       id={entry.id}
       label={entry.label}
       description={entry.description}
+      info={entry.info}
       descriptionContent={descriptions[entry.id]}
       controlOnly={entry.kind === 'custom' && entry.layout === 'full-width'}
       htmlFor={hasLabelTarget(entry.kind) ? controlId : undefined}

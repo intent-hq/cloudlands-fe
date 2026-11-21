@@ -241,12 +241,12 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     expect(description()?.textContent).toContain(
       m.settings_gitWorkspace_gitCredentials_description(),
     );
-    expect(description()?.textContent).toContain(
-      m.settings_gitWorkspace_gitCredentials_remoteDescription(),
-    );
+    const info = () =>
+      description()?.querySelector('[data-field-info]')?.getAttribute('aria-label') ?? '';
+    expect(info()).toContain(m.settings_gitWorkspace_gitCredentials_remoteDescription());
 
     store.dispatch(setLabsRemoteAgentsEnabled(false));
-    await waitFor(() => expect(description()?.textContent).not.toContain('GH_TOKEN'));
+    await waitFor(() => expect(info()).not.toContain('GH_TOKEN'));
   });
 });
 

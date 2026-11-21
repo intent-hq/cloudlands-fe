@@ -148,8 +148,8 @@ describe('GitWorkspaceSettings — Archiving section', () => {
     const descriptionId = toggle.getAttribute('aria-describedby');
     const description = descriptionId ? document.getElementById(descriptionId) : null;
     expect(description?.textContent).toContain(m.settings_gitWorkspace_purge_description());
-    expect(m.settings_gitWorkspace_purge_description()).toMatch(/conversations/i);
-    expect(m.settings_gitWorkspace_purge_description()).toMatch(/uncommitted/i);
+    const info = description?.querySelector('[data-field-info]')?.getAttribute('aria-label');
+    expect(info).toBe(m.settings_gitWorkspace_purge_info());
     expect(document.body.textContent?.toLowerCase()).not.toContain('retire');
   });
 

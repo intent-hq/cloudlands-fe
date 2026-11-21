@@ -352,9 +352,12 @@
     }
     return parts.join(' · ');
   });
+
+  /** Drop the card surface when a parent card already frames the rows. */
+  let { embedded = false }: { embedded?: boolean } = $props();
 </script>
 
-<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+<div class="flex flex-col divide-y divide-border {embedded ? '' : 'bg-card rounded-xl'}">
   <!-- Enable toggle -->
   <section data-slot="settings-section-body" class="px-6 py-4">
     <SettingsFieldRow

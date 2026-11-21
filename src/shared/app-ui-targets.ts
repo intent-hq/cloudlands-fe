@@ -124,6 +124,8 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     route: '/settings?tab=mobile#websocket-api',
     description: 'Remote access (WebSocket API) settings.',
   }),
+  // workspace-api keeps tab 'advanced': intentd's app-ui-targets.json must match each row
+  // exactly, and settings-hash-tab.ts sends #workspace-api to Token Savings either way.
   ...[
     ['voice', 'Voice Dictation', 'Voice dictation settings.', 'input'],
     ['keyboard-shortcuts', 'Keyboard Shortcuts', 'Keyboard shortcuts reference.', 'input'],
@@ -131,9 +133,9 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['plugins', 'Plugins', 'App-wide Agent Plugins.', 'connections'],
     ['git-workspace', 'Git & Workspace', 'Git and workspace defaults.', 'setup'],
     ['git', 'Git', 'Git defaults.', 'setup'],
-    ['shell', 'Shell', 'Shell and CLI optimization settings.', 'setup'],
+    ['shell', 'Shell', 'Shell settings.', 'setup'],
     ['workspace', 'Workspace', 'Workspace defaults.', 'setup'],
-    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'setup'],
+    ['cli-optimization', 'CLI Optimization', 'RTK/CLI optimization settings.', 'token-savings'],
     [
       'workspace-api',
       'Tool Output & Retention',
@@ -149,13 +151,13 @@ const APP_UI_TARGETS: AppUiTarget[] = [
       'GitHub issue and pull request link behavior.',
       'app-behavior',
     ],
-    ['agent-features', 'Agent Features', 'Agent feature settings.', 'agent-behavior'],
+    ['agent-features', 'Agent Features', 'Agent feature settings.', 'token-savings'],
     ['font-style', 'Font style', 'Font style settings.', 'display'],
     ['language', 'Language', 'Application language settings.', 'display'],
     ['labs', 'Labs', 'Experimental feature switches.', 'advanced'],
-    ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'advanced'],
+    ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'performance'],
     ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
-    ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
+    ['hardware', 'Hardware', 'Hardware integration settings.', 'input'],
     ['developer', 'Developer', 'Development-only settings.', 'advanced'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({

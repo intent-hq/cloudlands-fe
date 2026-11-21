@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { SettingsDisclosure, SettingsFieldRow } from '$lib/components/patterns/settings';
   import { Button, Input, Select } from '$lib/components/patterns/settings/custom-controls';
   import { onMount } from 'svelte';
   import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -495,98 +495,98 @@
       </SettingsFieldRow>
 
       {#if $vocabulary$ !== null || $workspaceVocabularyMaxTerms$ !== null}
-        <div class="space-y-3 pt-1">
-          <span class="type-body text-foreground font-medium">
-            {m.settings_voice_workspaceVocabulary_label()}
-          </span>
-
-          {#if $workspaceVocabularyMaxTerms$ !== null}
-            <div class="space-y-1">
-              <div class="flex items-center justify-between gap-3">
-                <div class="space-y-1">
-                  <span class="type-body text-foreground">
-                    {m.settings_voice_workspaceVocabulary_autoTerms_label()}
-                  </span>
-                  <p class="type-body text-subtle">
-                    {m.settings_voice_workspaceVocabulary_description()}
-                  </p>
-                </div>
-                <Input
-                  type="number"
-                  bind:value={maxTermsDraft}
-                  min={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN}
-                  max={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX}
-                  step={1}
-                  class="h-7 type-body w-[100px] shrink-0"
-                  aria-label={m.settings_voice_workspaceVocabulary_input_ariaLabel()}
-                  aria-invalid={maxTermsDraftError !== null}
-                  oninput={() => (maxTermsDraftError = null)}
-                  onchange={handleCommitMaxTerms}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') handleCommitMaxTerms();
-                  }}
-                />
-              </div>
-              {#if maxTermsDraftError}
-                <p class="type-body text-danger">{maxTermsDraftError}</p>
-              {/if}
-            </div>
-          {/if}
-
-          {#if $vocabulary$ !== null}
-            <div class="space-y-2">
+        <SettingsDisclosure label={m.settings_voice_vocabularySection_label()} flush>
+          <div class="type-body space-y-3 pt-1 text-foreground">
+            {#if $workspaceVocabularyMaxTerms$ !== null}
               <div class="space-y-1">
-                <span class="type-body text-foreground">{m.settings_voice_vocabulary_label()}</span>
-                <p class="type-body text-subtle">{m.settings_voice_vocabulary_description()}</p>
-              </div>
-              <div class="flex items-center gap-2">
-                <Input
-                  bind:value={vocabularyDraft}
-                  placeholder={m.settings_voice_vocabulary_placeholder()}
-                  class="h-7 type-body flex-1"
-                  aria-label={m.settings_voice_vocabulary_input_ariaLabel()}
-                  oninput={() => (vocabularyDraftError = null)}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') handleAddVocabularyTerm();
-                  }}
-                />
-                <Button
-                  type="button"
-                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium type-body"
-                  onclick={handleAddVocabularyTerm}
-                  disabled={!vocabularyDraft.trim()}
-                >
-                  {m.settings_voice_vocabulary_add()}
-                </Button>
-              </div>
-              {#if vocabularyDraftError}
-                <p class="type-body text-danger">{vocabularyDraftError}</p>
-              {/if}
-              {#if $vocabulary$.length > 0}
-                <div class="flex flex-wrap gap-1.5">
-                  {#each $vocabulary$ as term (term)}
-                    <span
-                      class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 type-caption text-foreground"
-                    >
-                      {term}
-                      <Button
-                        variant="ghost"
-                        size="icon-compact"
-                        iconOnly
-                        type="button"
-                        class="size-5 text-muted-foreground hover:text-danger cursor-pointer transition-colors"
-                        aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}
-                        onclick={() => handleRemoveVocabularyTerm(term)}
-                      >
-                        <Fa icon={faXmark} />
-                      </Button>
+                <div class="flex items-center justify-between gap-3">
+                  <div class="space-y-1">
+                    <span class="type-body text-foreground">
+                      {m.settings_voice_workspaceVocabulary_label()}
                     </span>
-                  {/each}
+                    <p class="type-body text-subtle">
+                      {m.settings_voice_workspaceVocabulary_description()}
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    bind:value={maxTermsDraft}
+                    min={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN}
+                    max={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX}
+                    step={1}
+                    class="h-7 type-body w-[100px] shrink-0"
+                    aria-label={m.settings_voice_workspaceVocabulary_input_ariaLabel()}
+                    aria-invalid={maxTermsDraftError !== null}
+                    oninput={() => (maxTermsDraftError = null)}
+                    onchange={handleCommitMaxTerms}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') handleCommitMaxTerms();
+                    }}
+                  />
                 </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
+                {#if maxTermsDraftError}
+                  <p class="type-body text-danger">{maxTermsDraftError}</p>
+                {/if}
+              </div>
+            {/if}
+
+            {#if $vocabulary$ !== null}
+              <div class="space-y-2">
+                <div class="space-y-1">
+                  <span class="type-body text-foreground"
+                    >{m.settings_voice_vocabulary_label()}</span
+                  >
+                  <p class="type-body text-subtle">{m.settings_voice_vocabulary_description()}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Input
+                    bind:value={vocabularyDraft}
+                    placeholder={m.settings_voice_vocabulary_placeholder()}
+                    class="h-7 type-body flex-1"
+                    aria-label={m.settings_voice_vocabulary_input_ariaLabel()}
+                    oninput={() => (vocabularyDraftError = null)}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') handleAddVocabularyTerm();
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium type-body"
+                    onclick={handleAddVocabularyTerm}
+                    disabled={!vocabularyDraft.trim()}
+                  >
+                    {m.settings_voice_vocabulary_add()}
+                  </Button>
+                </div>
+                {#if vocabularyDraftError}
+                  <p class="type-body text-danger">{vocabularyDraftError}</p>
+                {/if}
+                {#if $vocabulary$.length > 0}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each $vocabulary$ as term (term)}
+                      <span
+                        class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 type-caption text-foreground"
+                      >
+                        {term}
+                        <Button
+                          variant="ghost"
+                          size="icon-compact"
+                          iconOnly
+                          type="button"
+                          class="size-5 text-muted-foreground hover:text-danger cursor-pointer transition-colors"
+                          aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}
+                          onclick={() => handleRemoveVocabularyTerm(term)}
+                        >
+                          <Fa icon={faXmark} />
+                        </Button>
+                      </span>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </SettingsDisclosure>
       {/if}
     </div>
   {/if}
