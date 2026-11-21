@@ -28,12 +28,13 @@
     FileDiff,
     VirtualizedFileDiff,
     parsePatchFiles,
-    parseDiffFromFile,
+    processFile,
     type FileContents,
     type HunkData,
     type ExpansionDirections,
     type ThemeTypes,
   } from '@pierre/diffs';
+  import { createTwoFilesPatch } from 'diff';
   import type { PureDiffProps } from './types.js';
   import DiffHeader from './DiffHeader.svelte';
   import {
@@ -57,6 +58,8 @@
    * Files larger than this will show a "too large" message to prevent OOM.
    */
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+  // The line comparison runs on the UI thread and can be quadratic in the edit count.
+  const MAX_DIFF_EDIT_LENGTH = 2_048;
 
   // `hashContent` is now imported from the module-scope block above so the
   // content-hash LRU is shared across all DiffViewer instances (Wave 3 perf).
@@ -190,6 +193,23 @@
     collapsed = initialCollapsed;
   });
 
+  const computedPatch = $derived.by(() => {
+    if (patch || contentTooLarge || oldContent === undefined || newContent === undefined) {
+      return undefined;
+    }
+    return (
+      createTwoFilesPatch(
+        oldFileName || fileName,
+        fileName,
+        oldContent,
+        newContent,
+        undefined,
+        undefined,
+        { maxEditLength: oldContent === '' || newContent === '' ? Infinity : MAX_DIFF_EDIT_LENGTH },
+      ) ?? null
+    );
+  });
+
   // Derive the diff metadata from inputs.
   // Stable cacheKey values (derived from content hashes, never the raw content)
   // are threaded through so the @pierre/diffs worker-pool LRU can hit on repeat
@@ -221,8 +241,7 @@
         return { fileDiff, oldFile: undefined, newFile: undefined };
       }
       return null;
-    } else if (oldContent !== undefined && newContent !== undefined) {
-      // Generate diff from content
+    } else if (computedPatch && oldContent !== undefined && newContent !== undefined) {
       // Use getSafeDiffLanguage to validate language - unsupported languages fall back to plain text
       const safeLang = getSafeDiffLanguage(language);
       // Callers that prepend padding (e.g. partial-diff snippets with a
@@ -242,7 +261,13 @@
         lang: safeLang as any,
         cacheKey: newKey,
       };
-      const fileDiff = parseDiffFromFile(oldFile, newFile);
+      const fileDiff = processFile(computedPatch, {
+        oldFile,
+        newFile,
+        cacheKey: JSON.stringify([oldKey, newKey]),
+      });
+      if (!fileDiff) return null;
+      if (safeLang) fileDiff.lang = safeLang;
       return { fileDiff, oldFile, newFile };
     }
     return null;
@@ -900,7 +925,13 @@
   // Reuses the same instance across prop changes — `FileDiff.render()` is only
   // invoked when the underlying diff data or container has actually changed.
   $effect(() => {
-    if (!containerRef || !diffData) return;
+    if (!diffData) {
+      untrack(cleanupFileDiffInstance);
+      lastDiffDataRef = null;
+      lastContainerRef = undefined;
+      return;
+    }
+    if (!containerRef) return;
 
     const sameDiff =
       diffData === lastDiffDataRef &&
@@ -1102,7 +1133,11 @@
         ></div>
       {:else}
         <div class="pure-diff-empty">
-          <p class="text-subtle text-sm">{m.ui_diffViewer_empty_label()}</p>
+          <p class="text-subtle text-sm">
+            {contentTooLarge || computedPatch === null
+              ? m.ui_trackedDiff_tooLarge_error()
+              : m.ui_diffViewer_empty_label()}
+          </p>
         </div>
       {/if}
     </div>

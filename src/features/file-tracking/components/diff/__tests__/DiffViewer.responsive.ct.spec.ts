@@ -74,6 +74,31 @@ test('an explicitly unified diff stays stacked when its panel widens', async ({ 
   await expect.poll(async () => (await measureChangedLines(component))?.stacked).toBe(true);
 });
 
+test('a large rewrite stops at the edit limit and the viewer can open another diff', async ({
+  mount,
+}, testInfo) => {
+  const makeFile = (prefix: string) =>
+    Array.from({ length: 4_000 }, (_, line) => `${prefix} ${line}\n`).join('');
+  const component = await mount(DiffViewer, {
+    props: { ...fileContents, fileName: 'greeting.ts' },
+  });
+  const addedLine = component.locator('[data-content] [data-line-type="change-addition"]').first();
+  await expect(addedLine).toContainText('Welcome');
+
+  await component.update({
+    props: {
+      fileName: 'generated.txt',
+      oldContent: makeFile('previous'),
+      newContent: makeFile('replacement'),
+    },
+  });
+  await expect(component.getByText('File too large to display diff')).toBeVisible();
+  await component.screenshot({ path: testInfo.outputPath('diff-preview-limit.png') });
+
+  await component.update({ props: { ...fileContents, fileName: 'greeting.ts' } });
+  await expect(addedLine).toContainText('Welcome');
+});
+
 test('virtualized diffs restore split geometry after a narrow viewport', async ({
   mount,
   page,
