@@ -8268,6 +8268,7 @@
   "workspace_share_turnOnSharing_label": "共有をオンにする",
   "notifications_discussion_mention_title": "{name}さんがあなたにメンションしました",
   "notifications_discussion_open_label": "ディスカッションを開く",
+  "notifications_inApp_open_label": "開く",
   "desktop_consent_failed": "デスクトップ操作を開始できませんでした",
   "chat_queuedMessages_sendAllUnsupported_error": "待機中のメッセージをまとめて送信するには、新しいバックエンドが必要です。各メッセージの「今すぐ送信」ボタンを使ってください。",
   "desktop_overlay_openAgent_ariaLabel": "操作中のエージェントを開く",

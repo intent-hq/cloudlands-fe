@@ -91,6 +91,7 @@ import {
   VSCODE_CHANNELS,
   WINDOW_CHANNELS,
 } from '../../../shared/ipc/channels';
+import { isIntentOs } from '../../../shared/intent-os';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
@@ -2008,12 +2009,14 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Shell open path handler
+  // Shell open path handler. Intent OS has no default apps to open a path
+  // with, so it refuses instead of starting a launcher that does nothing.
   ipcMain.handle(
     SHELL_CHANNELS.OPEN_PATH,
     createSafeValidatedHandler(
       ShellShowItemInFolderSchema,
       async (_event, validated) => {
+        if (isIntentOs()) return { success: false, error: m.system_ipc_openPathFailed_error() };
         try {
           await shell.openPath(validated.path);
           return { success: true };

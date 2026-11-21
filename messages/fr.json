@@ -8268,6 +8268,7 @@
   "workspace_share_turnOnSharing_label": "Activer le partage",
   "notifications_discussion_mention_title": "{name} vous a mentionné",
   "notifications_discussion_open_label": "Ouvrir la discussion",
+  "notifications_inApp_open_label": "Ouvrir",
   "desktop_consent_failed": "Le contrôle du bureau n’a pas pu démarrer",
   "chat_queuedMessages_sendAllUnsupported_error": "L’envoi groupé des messages en attente nécessite un backend plus récent. Utilisez les boutons Envoyer maintenant de chaque message.",
   "desktop_overlay_openAgent_ariaLabel": "Ouvrir l’agent qui contrôle",

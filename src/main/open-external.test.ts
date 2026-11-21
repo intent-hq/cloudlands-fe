@@ -58,6 +58,18 @@ describe('openExternal', () => {
     expect(window.contents.send).not.toHaveBeenCalled();
   });
 
+  it('keeps web links in Intent on Intent OS (INTENT_OS=1 implies INTENT_NO_SYSTEM_BROWSER)', async () => {
+    vi.stubEnv('INTENT_OS', '1');
+    const window = frame('ws-1');
+    mocks.getFocusedWindow.mockReturnValue(window);
+    await openExternal('https://example.com/os');
+    expect(window.contents.send).toHaveBeenCalledWith('browser:open-link', {
+      workspaceId: 'ws-1',
+      url: 'https://example.com/os',
+    });
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });
+
   describe('with INTENT_NO_SYSTEM_BROWSER=1', () => {
     beforeEach(() => vi.stubEnv('INTENT_NO_SYSTEM_BROWSER', '1'));
 

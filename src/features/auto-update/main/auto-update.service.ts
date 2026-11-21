@@ -15,6 +15,7 @@ import type {
 } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
+import { isIntentOs } from '../../../shared/intent-os';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
@@ -324,6 +325,8 @@ class AutoUpdateService {
       // betaUpdatesEnabled=true → 'beta', otherwise → 'stable'.
       const betaEnabled = await getLocalPref<boolean>(BETA_UPDATES_STORAGE_KEY);
       this.state.channel = betaEnabled === true ? 'beta' : 'stable';
+      // Nothing saved at all: Intent OS follows alpha by default.
+      if (typeof betaEnabled !== 'boolean' && isIntentOs()) this.state.channel = 'alpha';
       if (typeof betaEnabled === 'boolean') {
         await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, this.state.channel);
         await deleteLocalPref(BETA_UPDATES_STORAGE_KEY);

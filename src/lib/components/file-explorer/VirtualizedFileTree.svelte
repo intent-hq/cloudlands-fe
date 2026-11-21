@@ -37,6 +37,7 @@
   import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -909,7 +910,9 @@
       node.type === 'file'
         ? !!workspaceId && !!workspaceRelativeFilePath(node.path, $fileExplorerWorkspacePath)
         : hostLocal;
-    if (canDownload || hostLocal) items.push({ type: 'separator' });
+    // Intent OS has no file manager to reveal in.
+    const canReveal = hostLocal && hasCapability('systemFileManager');
+    if (canDownload || canReveal) items.push({ type: 'separator' });
     if (canDownload) {
       items.push({
         id: 'download',
@@ -925,7 +928,7 @@
       });
     }
     // Reveal and folder ZIPs read host paths and require a local checkout.
-    if (hostLocal) {
+    if (canReveal) {
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),

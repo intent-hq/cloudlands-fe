@@ -66,7 +66,61 @@ let loggedPermissionSkip = false;
 
 type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentId?: string };
 type NativeNotificationEvent =
-  { kind: 'show' } | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
+  { kind: 'show'; data?: unknown } | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
+
+/**
+ * A desktop notification main asks this renderer to show itself (Intent OS:
+ * no notification daemon). Main sets `inApp` on one renderer only.
+ */
+interface InAppNotification {
+  title: string;
+  body?: string;
+  navigateTarget?: NotificationNavigateEvent;
+}
+
+function readInAppNotification(data: unknown): InAppNotification | null {
+  if (!data || typeof data !== 'object') return null;
+  const value = data as Record<string, unknown>;
+  if (value.inApp !== true || typeof value.title !== 'string') return null;
+  const target = value.navigateTarget as Record<string, unknown> | undefined;
+  const navigateTarget =
+    target && typeof target === 'object' && typeof target.workspaceId === 'string'
+      ? {
+          workspaceId: target.workspaceId,
+          ...(target.chief === true ? { chief: true } : {}),
+          ...(typeof target.agentId === 'string' ? { agentId: target.agentId } : {}),
+        }
+      : undefined;
+  return {
+    title: value.title,
+    ...(typeof value.body === 'string' ? { body: value.body } : {}),
+    ...(navigateTarget ? { navigateTarget } : {}),
+  };
+}
+
+/**
+ * Show an in-app notification as a toast; Open routes like the desktop
+ * banner's click. A repeat for the same agent replaces its toast, as the
+ * banner's stable id does.
+ */
+function showInAppNotification({ title, body, navigateTarget }: InAppNotification): void {
+  notify.info(title, {
+    ...(body ? { description: body } : {}),
+    ...(navigateTarget
+      ? {
+          key: JSON.stringify([
+            'in-app-notification',
+            navigateTarget.workspaceId,
+            navigateTarget.agentId ?? null,
+          ]),
+          action: {
+            label: m.notifications_inApp_open_label(),
+            onClick: () => void handleNotificationNavigate(navigateTarget),
+          },
+        }
+      : {}),
+  });
+}
 
 function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
   return eventChannel<NativeNotificationEvent>((emit) => {
@@ -74,7 +128,7 @@ function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent
     const listeners = [
       [
         'notification:show',
-        window.electronAPI.on('notification:show', () => emit({ kind: 'show' })),
+        window.electronAPI.on('notification:show', (data) => emit({ kind: 'show', data })),
       ],
       [
         'notification:navigate',
@@ -435,6 +489,14 @@ function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
       // Native notification effects are best-effort and independent.
     }
     return;
+  }
+  const inApp = readInAppNotification(event.data);
+  if (inApp) {
+    try {
+      yield* call(showInAppNotification, inApp);
+    } catch (error) {
+      logger.warn('In-app notification failed', { error });
+    }
   }
   try {
     yield* call(playNotificationSoundPerSettings);

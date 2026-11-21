@@ -109,6 +109,7 @@
       : m.layout_panelTabBar_fileManagerGeneric_label();
   const logger = createLogger('PanelTabBar');
   const canOpenExternalEditors = hasCapability('externalEditors');
+  const canRevealInFileManager = hasCapability('systemFileManager');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
   const closePaneShortcut$ = effectiveShortcutReadable('navigation.close-tab');
   const zoomPanelShortcut$ = effectiveShortcutReadable('panel.maximize');
@@ -459,7 +460,7 @@
           onClick: () => void pathActions.filename(tab),
         },
       );
-      if ($isWorkspaceHostLocal$)
+      if ($isWorkspaceHostLocal$ && canRevealInFileManager)
         items.push({
           id: 'reveal-file',
           label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),

@@ -164,6 +164,32 @@ describe('browser view IPC', () => {
     });
   });
 
+  it('is on by default on Intent OS, and turning it off in Labs sticks', async () => {
+    vi.stubEnv('INTENT_OS', '1');
+    try {
+      await register();
+      const event = renderer(fakeWindow());
+      await expect(invoke(CH.GET_LAB, event, undefined)).resolves.toEqual({
+        enabled: true,
+        active: true,
+      });
+
+      await invoke(CH.SET_LAB, event, { enabled: false });
+      expect(mocks.prefs.get('browserViewsInMainEnabled')).toBe(false);
+
+      // Next run: the saved off wins over the Intent OS default.
+      await register();
+      const next = renderer(fakeWindow());
+      await expect(invoke(CH.GET_LAB, next, undefined)).resolves.toEqual({
+        enabled: false,
+        active: false,
+      });
+      await expect(invoke(CH.CREATE, next, CREATE)).rejects.toThrow('off');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('reads a live page state only for its owner', async () => {
     mocks.prefs.set('browserViewsInMainEnabled', true);
     await register();

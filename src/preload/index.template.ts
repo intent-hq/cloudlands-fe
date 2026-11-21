@@ -243,7 +243,9 @@ const electronAPI = {
   },
 
   // Platform info
-  preferInAppPicker: process.argv.includes('--intent-in-app-picker'),
+  preferInAppPicker: process.argv.includes('--intent-in-app-picker'), // see intentOsRendererArguments (src/shared/intent-os.ts)
+  /** Intent OS (`INTENT_OS=1` in main); see src/shared/intent-os.ts. */
+  intentOs: process.argv.includes('--intent-os'), // see intentOsRendererArguments
   platform: process.platform,
   arch: process.arch,
   versions: {

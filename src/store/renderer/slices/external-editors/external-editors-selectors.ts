@@ -1,5 +1,6 @@
 import { store } from '../../store';
 import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import { isIntentOsRenderer } from '$lib/utils/intent-os-renderer';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectIsWorkspaceHostLocal } from '../workspace/workspace-selectors';
 import type { InstalledEditor, OpenAction } from './external-editors-slice';
@@ -64,6 +65,9 @@ export const selectHiddenEditorIds = store.createSelector((state): string[] => {
  * opens against its paths must be hidden too. Without a `workspaceId` the
  * gate falls back to daemon locality (`selectIsDaemonLocal`), keeping this
  * gate and the per-component reveal gates from drifting apart.
+ *
+ * Intent OS has no external editors and no file manager (its
+ * `externalEditors` capability is off), so the list is empty there.
  */
 export const selectInstalledEditorsFiltered = store.createSelector<
   [workspaceId?: string],
@@ -72,7 +76,7 @@ export const selectInstalledEditorsFiltered = store.createSelector<
   const isLocal = workspaceId
     ? selectIsWorkspaceHostLocal.select(state, workspaceId)
     : selectIsDaemonLocal.select(state);
-  if (!isLocal) return [];
+  if (!isLocal || isIntentOsRenderer()) return [];
   const hiddenEditorIds = selectHiddenEditorIds.select(state);
   return selectInstalledEditors
     .select(state)

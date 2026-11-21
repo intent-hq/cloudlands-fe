@@ -8268,6 +8268,7 @@
   "workspace_share_turnOnSharing_label": "공유 켜기",
   "notifications_discussion_mention_title": "{name}님이 나를 언급했습니다",
   "notifications_discussion_open_label": "토론 열기",
+  "notifications_inApp_open_label": "열기",
   "desktop_consent_failed": "데스크톱 제어를 시작할 수 없습니다",
   "chat_queuedMessages_sendAllUnsupported_error": "대기 중인 메시지를 함께 보내려면 더 최신 백엔드가 필요합니다. 각 메시지의 지금 보내기 버튼을 사용하세요.",
   "desktop_overlay_openAgent_ariaLabel": "제어 중인 에이전트 열기",

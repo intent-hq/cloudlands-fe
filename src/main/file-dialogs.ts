@@ -45,6 +45,7 @@ import {
   type InAppPickedFile,
   type LocalDirectoryListing,
 } from '../shared/in-app-file-dialog';
+import { intentOsSwitchOn } from '../shared/intent-os';
 import { Logger } from '../shared/logger';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getShownRendererWebContents, getWindowForWebContents } from './window-backend';
@@ -55,11 +56,12 @@ import { resolvePickerHost, type PickerHostGraph } from './picker-host';
 const logger = new Logger('FileDialogs');
 
 /**
- * Whether this session must use the in-app picker instead of native choosers.
+ * Whether this session must use the in-app picker instead of native choosers:
+ * `INTENT_IN_APP_PICKER=1`, or Intent OS (`INTENT_OS=1`).
  * @internal
  */
 export function inAppFileDialogsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.INTENT_IN_APP_PICKER === '1';
+  return intentOsSwitchOn('INTENT_IN_APP_PICKER', env);
 }
 
 type OwnerWindow = BrowserWindow | null | undefined;

@@ -32,8 +32,9 @@ function harness(inApp: boolean, answer: string[] | null = null) {
 }
 
 describe('inAppFileDialogsEnabled', () => {
-  it('is on only for INTENT_IN_APP_PICKER=1', () => {
+  it('is on for INTENT_IN_APP_PICKER=1 or Intent OS (INTENT_OS=1)', () => {
     expect(inAppFileDialogsEnabled({ INTENT_IN_APP_PICKER: '1' })).toBe(true);
+    expect(inAppFileDialogsEnabled({ INTENT_OS: '1' })).toBe(true);
     expect(inAppFileDialogsEnabled({ INTENT_IN_APP_PICKER: '0' })).toBe(false);
     expect(inAppFileDialogsEnabled({})).toBe(false);
   });

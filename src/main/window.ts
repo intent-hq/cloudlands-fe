@@ -7,6 +7,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
+import { intentOsRendererArguments } from '../shared/intent-os';
 import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
@@ -158,7 +159,7 @@ export function buildRendererWebPreferences(): Electron.WebPreferences {
     contextIsolation: true,
     nodeIntegration: false,
     webviewTag: true,
-    additionalArguments: process.env.INTENT_IN_APP_PICKER === '1' ? ['--intent-in-app-picker'] : [],
+    additionalArguments: intentOsRendererArguments(),
   };
 }
 

@@ -1244,6 +1244,113 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
   });
 });
 
+describe('NotificationService on Intent OS (in-app notifications)', () => {
+  function buildIdleEvent(workspaceId = 'workspace-1'): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: { agentId: 'agent-self', agentName: 'Self Agent', isBackground: false },
+    } as AgentIdleEvent;
+  }
+
+  function createMockWindow(id: number) {
+    return asFrame({
+      id,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    });
+  }
+
+  function showPayloads(window: ReturnType<typeof createMockWindow>): unknown[] {
+    return window.webContents.send.mock.calls
+      .filter(([channel]) => channel === 'notification:show')
+      .map(([, payload]) => payload);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    vi.stubEnv('INTENT_OS', '1');
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    mockNotificationIsSupported.value = false;
+  });
+
+  it('shows the agent notification inside Intent, with the banner click target, and no OS banner', async () => {
+    const window = createMockWindow(71);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(showPayloads(window)).toEqual([
+      expect.objectContaining({
+        title: expect.any(String),
+        inApp: true,
+        navigateTarget: { workspaceId: 'workspace-1' },
+      }),
+    ]);
+  });
+
+  it('routes Assistant notifications to the Assistant, like the banner click', async () => {
+    const window = createMockWindow(72);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window] as never);
+
+    const service = new NotificationService();
+    service.showInAppNotification(
+      { title: 'Assistant', body: 'Finished' },
+      CHIEF_WORKSPACE_ID,
+      'a-1',
+      'local',
+    );
+
+    expect(showPayloads(window)).toEqual([
+      expect.objectContaining({
+        inApp: true,
+        navigateTarget: { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'a-1' },
+      }),
+    ]);
+  });
+
+  it('shows the test notification inside Intent and reports success', () => {
+    mockNotificationIsSupported.value = false;
+    const window = createMockWindow(73);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window] as never);
+
+    const service = new NotificationService();
+    expect(service.showTestNotification()).toEqual({ success: true });
+    expect(mockNotificationInstances.length).toBe(0);
+    const [payload] = showPayloads(window) as Array<Record<string, unknown>>;
+    expect(payload).toMatchObject({ inApp: true });
+    expect(payload).not.toHaveProperty('navigateTarget');
+  });
+
+  it('plays only the sound when no window can show it', () => {
+    const service = new NotificationService();
+    expect(service.showInAppNotification({ title: 'Agent', body: 'Finished' }, 'workspace-1')).toBe(
+      false,
+    );
+    expect(mockNotificationInstances.length).toBe(0);
+  });
+});
+
 describe('NotificationService showNotification click behavior', () => {
   let mockWebContentsSend: ReturnType<typeof vi.fn>;
   let mockFocus: ReturnType<typeof vi.fn>;

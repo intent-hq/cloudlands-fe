@@ -1,4 +1,5 @@
 import { app, powerMonitor, Notification } from 'electron';
+import { isIntentOs } from '../../../shared/intent-os';
 import { m } from '../../../shared/paraglide/messages.js';
 import type { ConnectionStatus, JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { DesktopExecutor, type DesktopConnection } from './desktop-executor';
@@ -11,11 +12,19 @@ let runtime: { executor: DesktopExecutor; reports: DesktopReportStore } | undefi
 function getRuntime() {
   if (!runtime) {
     const reports = new DesktopReportStore(undefined, () => {
-      if (Notification.isSupported())
-        new Notification({
-          title: m.desktop_stopReportFailed_title(),
-          body: m.desktop_stopReportFailed_description(),
-        }).show();
+      const content = {
+        title: m.desktop_stopReportFailed_title(),
+        body: m.desktop_stopReportFailed_description(),
+      };
+      // Intent OS has no notification daemon: show it inside Intent.
+      if (isIntentOs()) {
+        // Loaded lazily: the notification service pulls in the window registry.
+        void import('../../notifications/main/notification.service')
+          .then(({ getNotificationService }) =>
+            getNotificationService().showInAppNotification(content),
+          )
+          .catch(() => {});
+      } else if (Notification.isSupported()) new Notification(content).show();
     });
     const executor = new DesktopExecutor(
       getDesktopNativeAdapter(),

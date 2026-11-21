@@ -101,6 +101,17 @@ describe('external-editors selectors', () => {
     expect(selectInstalledEditorsFiltered.select(state)).toEqual([mockEditors[0]]);
   });
 
+  it('hides every editor and the file manager on Intent OS', () => {
+    const api = (window as unknown as { electronAPI: { intentOs?: boolean } }).electronAPI;
+    api.intentOs = true;
+    try {
+      expect(selectInstalledEditorsFiltered.select(mockState())).toEqual([]);
+    } finally {
+      delete api.intentOs;
+    }
+    expect(selectInstalledEditorsFiltered.select(mockState())).toEqual([mockEditors[0]]);
+  });
+
   it('keeps editors offered on an adopted local UDS daemon (external-uds)', () => {
     const state = mockState(mockEditors, { mode: 'external-uds' });
 

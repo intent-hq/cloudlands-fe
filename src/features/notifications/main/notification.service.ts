@@ -31,6 +31,7 @@ import {
 } from '../../../main/frames';
 import { isMachineRailEnabled } from '../../../main/machine-rail-state';
 import { getShownRendererWebContents } from '../../../main/window-backend';
+import { isIntentOs } from '../../../shared/intent-os';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -149,7 +150,7 @@ interface NotificationStructuredContent {
 /**
  * Notification content for display
  */
-interface NotificationContent {
+export interface NotificationContent {
   title: string;
   body: string;
   structured?: NotificationStructuredContent;
@@ -164,6 +165,32 @@ function isTargetFrame(window: BrowserWindow): boolean {
 function focusedTargetFrame(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow();
   return focused && isTargetFrame(focused) ? focused : null;
+}
+
+/**
+ * The one renderer that shows an in-app notification on Intent OS (no
+ * notification daemon there): the emitting machine's view in the most
+ * recently focused app frame that has one (tab windows show a single tab and
+ * are skipped). Without a machine (test notifications) that frame's shown view.
+ */
+function pickInAppNotificationRenderer(scope: WindowHostScope): Electron.WebContents | null {
+  for (const frame of framesByRecentFocus().filter(isTargetFrame)) {
+    const contents =
+      scope === ANY_HOST ? getShownRendererWebContents(frame) : rendererFor(frame, scope);
+    if (contents && !contents.isDestroyed()) return contents;
+  }
+  return null;
+}
+
+/** The click target of a notification about `workspaceId`, as the native banner routes it. */
+function notificationNavigateTarget(
+  workspaceId: string | undefined,
+  agentId: string | undefined,
+): NotificationNavigateTarget | undefined {
+  if (!workspaceId) return undefined;
+  return workspaceId === CHIEF_WORKSPACE_ID
+    ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
+    : { workspaceId };
 }
 
 /**
@@ -734,15 +761,13 @@ export class NotificationService {
           workspaceId,
           agentName: event.data.agentName,
         });
-        const navigateTarget: NotificationNavigateTarget =
-          workspaceId === CHIEF_WORKSPACE_ID
-            ? {
-                workspaceId,
-                chief: true,
-                ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
-              }
-            : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, toastRenderer);
+        this.sendShowEvent(
+          content,
+          backendId,
+          workspaceId,
+          notificationNavigateTarget(workspaceId, event.data.agentId),
+          toastRenderer,
+        );
         return;
       }
 
@@ -871,6 +896,9 @@ export class NotificationService {
    * merely have the workspace open or host it offscreen. Those still get the
    * sound-only payload, each on its own renderer (a machine view the frame
    * does not show included).
+   *
+   * `inApp` (Intent OS only, with `toastRenderer`) asks that renderer to show
+   * the notification itself, in place of the desktop banner.
    */
   private sendShowEvent(
     content: NotificationContent,
@@ -878,6 +906,7 @@ export class NotificationService {
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
     toastRenderer?: Electron.WebContents,
+    inApp = false,
   ): void {
     const payload = {
       title: content.title,
@@ -885,14 +914,15 @@ export class NotificationService {
       timestamp: new Date().toISOString(),
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
+      ...(inApp ? { inApp: true } : {}),
     };
-    const { navigateTarget: _toastOnly, ...soundOnly } = payload;
+    const { navigateTarget: _toastOnly, inApp: _inAppOnly, ...soundOnly } = payload;
     const send = (contents: Electron.WebContents | null | undefined, data: unknown): boolean => {
       if (!contents || contents.isDestroyed()) return false;
       contents.send('notification:show', data);
       return true;
     };
-    if (navigateTarget && toastRenderer && !toastRenderer.isDestroyed()) {
+    if ((navigateTarget || inApp) && toastRenderer && !toastRenderer.isDestroyed()) {
       send(toastRenderer, payload);
       for (const contents of workspaceId
         ? getRendererWebContentsForWorkspace(workspaceId, scope)
@@ -944,6 +974,10 @@ export class NotificationService {
     agentId?: string,
     backendId?: string,
   ): void {
+    if (isIntentOs()) {
+      this.showInAppNotification(content, workspaceId, agentId, backendId);
+      return;
+    }
     try {
       // Check if notifications are supported
       if (!Notification.isSupported()) {
@@ -1094,6 +1128,38 @@ export class NotificationService {
   }
 
   /**
+   * Intent OS has no notification daemon, so a desktop notification shows
+   * inside Intent instead: one renderer of the emitting machine (see
+   * pickInAppNotificationRenderer) shows it, with an Open action that routes
+   * like the banner click; the others play only the sound. With no renderer
+   * of the machine live, only the sound plays. Returns whether it was shown.
+   */
+  showInAppNotification(
+    content: NotificationContent,
+    workspaceId?: string,
+    agentId?: string,
+    backendId?: string,
+  ): boolean {
+    const scope = backendId ?? ANY_HOST;
+    const renderer = pickInAppNotificationRenderer(scope);
+    if (!renderer) {
+      logger.info('No renderer for an in-app notification; sound only', { workspaceId });
+      this.sendShowEvent(content, scope, workspaceId);
+      return false;
+    }
+    this.sendShowEvent(
+      content,
+      scope,
+      workspaceId,
+      notificationNavigateTarget(workspaceId, agentId),
+      renderer,
+      true,
+    );
+    logger.info('In-app notification shown', { workspaceId, title: content.title });
+    return true;
+  }
+
+  /**
    * Notification-click fallback when no frame holds the emitting machine.
    * With the machine rail on, the machine joins the most recently focused
    * frame, opening the workspace in its view; a frame that cannot take it (a
@@ -1183,8 +1249,8 @@ export class NotificationService {
    */
   showTestNotification(): { success: boolean; error?: string } {
     try {
-      // Check if notifications are supported
-      if (!Notification.isSupported()) {
+      // Check if notifications are supported (Intent OS shows them in-app)
+      if (!isIntentOs() && !Notification.isSupported()) {
         logger.warn('Desktop notifications are not supported on this platform');
         return {
           success: false,
