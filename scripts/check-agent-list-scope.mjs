@@ -50,7 +50,8 @@ const SCOPE_VALUES = new Set(['topLevel', 'delegated', 'background']);
 // Cheap text filter: a file that cannot contain a request is not parsed.
 const CANDIDATE_PATTERN = /agent\.list|agents\s*\??\.\s*list/;
 // Svelte markup is not parsed, so any request there fails closed.
-const MARKUP_REQUEST_PATTERN = /(['"`])agent\.list\1|\.agents\s*\??\.\s*list(?:WithMeta)?\b/g;
+const MARKUP_REQUEST_PATTERN =
+  /(['"`])agent\.list\1|\.agents\s*\??\.\s*list(?:WithMeta)?\s*(?=[(\],])/g;
 
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
 
@@ -76,7 +77,8 @@ function followingArguments(node) {
 // is the `'agent.list'` literal as a call argument; a wrapper request is
 // `<client>.agents.list` / `.listWithMeta`, called directly or passed by reference (a
 // saga `call(fn, …)`, `call([context, fn], …)` or `call({ context, fn }, …)`). A
-// wrapper reference used any other way has no visible options and counts as unscoped.
+// member of the wrapper (`agents.list.length`) is not a request; a wrapper reference
+// used any other way has no visible options and counts as unscoped.
 function requestOptions(node) {
   if (ts.isStringLiteralLike(node)) {
     return node.text === WIRE_METHOD ? followingArguments(node) : null;
@@ -98,6 +100,12 @@ function requestOptions(node) {
   ) {
     return followingArguments(parent.parent) ?? [];
   }
+  if (
+    (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
+    parent.expression === node
+  ) {
+    return null;
+  }
   return followingArguments(node) ?? [];
 }
 
@@ -111,7 +119,7 @@ const isKeywordLiteral = (node) =>
 // other expression (`scope: bin`, `scope: props.scope`) except `undefined` or another
 // literal.
 function isBoundingOption(property) {
-  const name = ts.isIdentifier(property.name) ? property.name.text : null;
+  const name = propertyName(property);
   if (ts.isShorthandPropertyAssignment(property)) return name === 'scope';
   if (!ts.isPropertyAssignment(property)) return false;
   const value = unwrapExpression(property.initializer);

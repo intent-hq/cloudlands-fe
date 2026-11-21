@@ -40,6 +40,7 @@ describe('agent.list scope guard', () => {
       'request after a block-comment opener in a string',
       'const s = "/*"; request(\'agent.list\', {})',
     ],
+    ['spread options only', "await request('agent.list', { ...base });"],
     ['saga context call', 'yield call({ context: c.agents, fn: c.agents.list }, workspaceId);'],
     ['wrapper stored in a variable', 'const listAgents = appClient.agents.listWithMeta;'],
     ['retiredOnly: false', "await request('agent.list', { workspaceId, retiredOnly: false });"],
@@ -77,6 +78,8 @@ describe('agent.list scope guard', () => {
       '});',
     ],
     ['scoped saga tuple', "yield call([c.agents, c.agents.list], id, { scope: 'background' });"],
+    ['scope after a spread', "await client.agents.list({ ...opts, scope: 'topLevel' });"],
+    ['a member of a listed array', 'const count = data.agents.list.length;'],
     [
       'scoped saga context call',
       "yield* call({ context: c.agents, fn: c.agents.listWithMeta }, id, { scope: 'topLevel' as const });",
@@ -123,6 +126,9 @@ describe('agent.list scope guard', () => {
     expect(findUnscopedAgentListRequests(component('<p>Agents</p>'), 'A.svelte')).toEqual([
       { line: 3, text: 'const unscoped = () => client.agents.list(ws);' },
     ]);
+    expect(
+      findUnscopedAgentListRequests(component('<p>{data.agents.list.length}</p>'), 'A.svelte'),
+    ).toHaveLength(1);
     const inMarkup = "<button onclick={() => client.agents.list(ws, { scope: 'topLevel' })} />";
     expect(findUnscopedAgentListRequests(component(inMarkup), 'A.svelte')).toEqual([
       { line: 3, text: 'const unscoped = () => client.agents.list(ws);' },
