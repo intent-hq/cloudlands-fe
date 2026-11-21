@@ -71,6 +71,7 @@ import { inAppFileDialogReducer } from './slices/in-app-file-dialog/in-app-file-
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
+import { autocompleteSettingsReducer } from './slices/autocomplete-settings/autocomplete-settings-slice';
 import { browserReducer } from './slices/browser/browser-slice';
 import { browserClientsReducer } from './slices/browser-clients/browser-clients-slice';
 import { browserTabRegistryReducer } from './slices/browser-tab-registry/browser-tab-registry-slice';
@@ -208,6 +209,7 @@ export const reducers = {
   linearAuth: linearAuthReducer,
   identity: identityReducer,
   voiceSettings: voiceSettingsReducer,
+  autocompleteSettings: autocompleteSettingsReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
   browserClients: browserClientsReducer,
