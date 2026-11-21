@@ -59,11 +59,15 @@ export function shouldDisableOnKeyCancel(
   return service === 'openrouter' && !keys.openrouter;
 }
 
-/** Removing the OpenRouter key while on leaves nothing to run, so turn off. */
-export function shouldDisableOnKeyRemove(
+/**
+ * Removing the active service's key while on turns autocomplete off. For Kilo
+ * the keyless free tier sends text anonymously, so it needs the data
+ * confirmation again before turning back on.
+ */
+export function decideKeyRemove(
   enabled: boolean,
   service: AutocompleteService,
-  removed: AutocompleteService,
-): boolean {
-  return enabled && service === 'openrouter' && removed === 'openrouter';
+): { disable: boolean; confirmKilo: boolean } {
+  if (!enabled) return { disable: false, confirmKilo: false };
+  return { disable: true, confirmKilo: service === 'kilo' };
 }

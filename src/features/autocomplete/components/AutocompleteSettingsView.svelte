@@ -29,7 +29,7 @@
     decideEnable,
     decideServiceChange,
     shouldDisableOnKeyCancel,
-    shouldDisableOnKeyRemove,
+    decideKeyRemove,
     type AutocompleteKeys,
   } from '../utils/autocomplete-settings-rules';
   import AutocompleteKiloConfirmDialog from './AutocompleteKiloConfirmDialog.svelte';
@@ -166,7 +166,9 @@
   }
 
   function handleRemoveKey() {
-    onClearKey(service, shouldDisableOnKeyRemove(enabled, service, service));
+    const decision = decideKeyRemove(enabled, service);
+    onClearKey(service, decision.disable);
+    if (decision.confirmKilo) confirmOpen = true;
   }
 
   const schema = $derived.by(() =>

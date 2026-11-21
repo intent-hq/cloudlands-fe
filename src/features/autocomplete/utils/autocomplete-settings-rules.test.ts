@@ -3,7 +3,7 @@ import {
   decideEnable,
   decideServiceChange,
   shouldDisableOnKeyCancel,
-  shouldDisableOnKeyRemove,
+  decideKeyRemove,
 } from './autocomplete-settings-rules';
 
 const noKeys = { kilo: false, openrouter: false };
@@ -67,8 +67,12 @@ describe('key field cancel and remove', () => {
   });
 
   it('turns off when the OpenRouter key is removed while on', () => {
-    expect(shouldDisableOnKeyRemove(true, 'openrouter', 'openrouter')).toBe(true);
-    expect(shouldDisableOnKeyRemove(false, 'openrouter', 'openrouter')).toBe(false);
-    expect(shouldDisableOnKeyRemove(true, 'kilo', 'kilo')).toBe(false);
+    expect(decideKeyRemove(true, 'openrouter')).toEqual({ disable: true, confirmKilo: false });
+    expect(decideKeyRemove(false, 'openrouter')).toEqual({ disable: false, confirmKilo: false });
+  });
+
+  it('turns off and asks for the Kilo data confirmation when the Kilo key is removed while on', () => {
+    expect(decideKeyRemove(true, 'kilo')).toEqual({ disable: true, confirmKilo: true });
+    expect(decideKeyRemove(false, 'kilo')).toEqual({ disable: false, confirmKilo: false });
   });
 });

@@ -110,4 +110,22 @@ describe('AutocompleteSettingsView gating', () => {
     );
     expect(onClearKey).toHaveBeenCalledExactlyOnceWith('openrouter', true);
   });
+
+  it('removing the Kilo key while on turns it off and asks before using keyless Kilo', async () => {
+    const { onClearKey, onEnabledChange } = setup({
+      enabled: true,
+      service: 'kilo',
+      keyConfigured: { kilo: true, openrouter: false },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_autocomplete_removeKey() }),
+    );
+    expect(onClearKey).toHaveBeenCalledExactlyOnceWith('kilo', true);
+    expect(onEnabledChange).not.toHaveBeenCalled();
+    const confirm = await screen.findByRole('button', {
+      name: m.settings_autocomplete_kiloConfirm_confirm(),
+    });
+    await fireEvent.click(confirm);
+    expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true);
+  });
 });
