@@ -177,6 +177,8 @@ export interface CloudMachineState {
   workspaceId: string;
   startedAt: string;
   runningSeconds: number;
+  /** The self-hosted relay map URL the sandbox's tunnel uses; absent: the default relays. */
+  relayUrl?: string;
 }
 
 /** `cloudMachines.configure` params; the saga maps the secret to the provider's names. */
@@ -216,6 +218,8 @@ export type CloudMachineErrorData =
       provider?: CloudProviderKind;
       /** Only with `permission-denied`: the refused provider call. */
       action?: string;
+      /** Only with `relay-unreachable`: the relay map URL the sandbox could not use. */
+      relayUrl?: string;
     }
   | { code: 'cloud-profile-required'; providerRef?: string; provider?: CloudProviderKind }
   | {
@@ -366,6 +370,7 @@ export function parseCloudMachineState(value: unknown): CloudMachineState | null
       typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
         ? Math.floor(seconds)
         : 0,
+    ...(text(value.relayUrl) ? { relayUrl: value.relayUrl } : {}),
   };
 }
 
@@ -381,6 +386,7 @@ export function parseCloudMachineError(data: unknown): CloudMachineErrorData | n
         ...(Number.isInteger(data.status) ? { status: data.status as number } : {}),
         ...(isCloudProviderKind(data.provider) ? { provider: data.provider } : {}),
         ...(text(data.action) ? { action: data.action } : {}),
+        ...(text(data.relayUrl) ? { relayUrl: data.relayUrl } : {}),
       };
     case 'cloud-profile-required':
       return {

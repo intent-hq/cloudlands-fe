@@ -22,6 +22,8 @@ export const selectWebsocketApiSnapshot = store.createSelector(
       tunnelOnly: values?.tunnelOnly === true,
       tunnelSupported: values?.tunnelSupported === true,
       tcAddress: typeof values?.tcAddress === 'string' ? values.tcAddress : '',
+      relaySupported: values?.relaySupported === true,
+      relayUrl: typeof values?.relayUrl === 'string' ? values.relayUrl : '',
     };
   },
 );

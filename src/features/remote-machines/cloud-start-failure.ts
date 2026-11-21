@@ -97,6 +97,16 @@ function copy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
             actions: ['settings'],
             dashboard: true,
           };
+        case 'relay-unreachable': {
+          const text = cloudErrorText(cloud);
+          return {
+            tone: 'warning',
+            title: text.title,
+            cause: text.description,
+            actions: ['settings', 'retry'],
+            dashboard: false,
+          };
+        }
         case 'not-configured':
           return {
             tone: 'warning',

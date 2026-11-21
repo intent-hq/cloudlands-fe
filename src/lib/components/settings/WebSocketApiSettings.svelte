@@ -45,6 +45,7 @@
   import { websocketApiRequested } from '$store/renderer/slices/websocket-api/websocket-api-slice';
   import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { isRelayUrl } from '$store/renderer/slices/websocket-api/sagas/tunnel-default';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectPrincipalActionContext,
@@ -120,6 +121,15 @@
   const tunnelOnly = $derived($snapshot$.tunnelOnly);
   const tunnelSupported = $derived($snapshot$.tunnelSupported);
   const tcAddress = $derived($snapshot$.tcAddress);
+  const relaySupported = $derived($snapshot$.relaySupported);
+  const relayUrl = $derived($snapshot$.relayUrl);
+  let editedRelay = $state('');
+  // Follow the saved value; a refused save keeps the draft for a fix.
+  $effect.pre(() => {
+    editedRelay = relayUrl;
+  });
+  const relayValid = $derived(isRelayUrl(editedRelay.trim()));
+  const relayChanged = $derived(editedRelay.trim() !== relayUrl);
   const listenSaving = $derived(saving || loading);
 
   let showToken = $state(false);
@@ -240,6 +250,15 @@
       websocketApiRequested(
         { ...identity, resource: 'save', requestId: crypto.randomUUID() },
         { kind: 'tunnel', connectionId: $activeConnectionId$ },
+      ),
+    );
+  }
+  function handleRelaySave() {
+    if (!relayValid || !relayChanged || listenSaving) return;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'relay', url: editedRelay.trim(), connectionId: $activeConnectionId$ },
       ),
     );
   }
@@ -448,6 +467,51 @@
                   {/snippet}
                 </SettingsFieldRow>
               </section>
+              {#if relaySupported}
+                <section data-tunnel-relay-row>
+                  <SettingsFieldRow
+                    id="websocket-tunnel-relay"
+                    label={m.settings_tunnel_relay_label()}
+                    description={m.settings_tunnel_relay_description()}
+                    error={relayValid ? undefined : m.settings_tunnel_relay_invalid()}
+                    disabled={toggleBusy || listenSaving}
+                    class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
+                  >
+                    {#snippet control({ labelId, descriptionId, errorId })}
+                      <div class="flex min-w-0 w-full items-center gap-2">
+                        <Input
+                          type="url"
+                          bind:value={editedRelay}
+                          placeholder={m.settings_tunnel_relay_placeholder()}
+                          disabled={toggleBusy || listenSaving}
+                          spellcheck={false}
+                          autocomplete="off"
+                          class="min-w-0 flex-1"
+                          aria-labelledby={labelId}
+                          aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ')}
+                          onkeydown={(event: KeyboardEvent) => {
+                            if (event.key === 'Enter') handleRelaySave();
+                          }}
+                        />
+                        {#if relayChanged}
+                          <Button
+                            variant="link"
+                            size="sm"
+                            type="button"
+                            onclick={handleRelaySave}
+                            disabled={listenSaving || !relayValid}
+                            class="h-auto shrink-0 px-0"
+                          >
+                            {listenSaving
+                              ? m.settings_wsApi_port_saving()
+                              : m.settings_wsApi_port_save()}
+                          </Button>
+                        {/if}
+                      </div>
+                    {/snippet}
+                  </SettingsFieldRow>
+                </section>
+              {/if}
             </div>
           {/if}
 

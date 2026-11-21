@@ -40,6 +40,7 @@
     agent37RegionLabel,
     agent37TypeLabel,
     cloudEntryNameError,
+    cloudEntryRelayLabel,
     cloudErrorText,
     cloudProviderCopy,
   } from './cloud-machines-format';
@@ -102,6 +103,7 @@
   const sandboxes = $derived(
     entry ? $sandboxes$.filter((machine) => machine.cloud?.cloudMachineId === entry.id) : [],
   );
+  const relay = $derived(cloudEntryRelayLabel(sandboxes));
   const removing = $derived(!!entry && $operations$[cloudRemoveKey(entry.id)] === 'removing');
   const removeFailure = $derived(entry ? ($failures$[cloudRemoveKey(entry.id)] ?? null) : null);
   // A rename's failure; the edit form shows its own.
@@ -230,6 +232,7 @@
               <span aria-hidden="true">·</span>
               {agent37RegionLabel(entry.agent37.region)}</span
             >{/if}
+          {#if relay}<span aria-hidden="true">·</span><span data-cloud-relay>{relay}</span>{/if}
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}

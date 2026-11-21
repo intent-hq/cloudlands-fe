@@ -891,8 +891,10 @@ describe('self-hosted relay', () => {
     expect(parseRemoteMachine(withRelay(E2B_SANDBOXES[0]!, RELAY))?.cloud?.relayUrl).toBe(RELAY);
     expect(parseRemoteMachine(E2B_SANDBOXES[0])?.cloud).not.toHaveProperty('relayUrl');
     expect(
-      parseRemoteMachine({ ...E2B_SANDBOXES[0], cloud: { ...E2B_SANDBOXES[0]!.cloud, relayUrl: 7 } })
-        ?.cloud,
+      parseRemoteMachine({
+        ...E2B_SANDBOXES[0],
+        cloud: { ...E2B_SANDBOXES[0]!.cloud, relayUrl: 7 },
+      })?.cloud,
     ).not.toHaveProperty('relayUrl');
   });
 
@@ -901,7 +903,10 @@ describe('self-hosted relay', () => {
     expect(cloudEntryRelayLabel([])).toBeNull();
     expect(cloudEntryRelayLabel([withRelay(running!)])).toBe(m.cloudMachines_relay_default());
     expect(
-      cloudEntryRelayLabel([withRelay(paused!, 'https://old.example.com/map'), withRelay(running!, RELAY)]),
+      cloudEntryRelayLabel([
+        withRelay(paused!, 'https://old.example.com/map'),
+        withRelay(running!, RELAY),
+      ]),
     ).toBe(m.cloudMachines_relay_host({ host: 'relay.example.com' }));
     expect(cloudEntryRelayLabel([withRelay(paused!, 'not a url')])).toBe(
       m.cloudMachines_relay_host({ host: 'not a url' }),
@@ -927,7 +932,12 @@ describe('self-hosted relay', () => {
   it('explains relay-unreachable in plain words on every provider', () => {
     for (const provider of ['e2b', 'northflank', 'agent37', 'vercel'] as const) {
       const text = cloudErrorText(
-        { code: 'cloud-machine-unavailable', reason: 'relay-unreachable', retryable: true, relayUrl: RELAY },
+        {
+          code: 'cloud-machine-unavailable',
+          reason: 'relay-unreachable',
+          retryable: true,
+          relayUrl: RELAY,
+        },
         provider,
       );
       expect(text.title).toBe(m.cloudMachines_error_relayUnreachable_title());
@@ -936,8 +946,11 @@ describe('self-hosted relay', () => {
       );
     }
     expect(
-      cloudErrorText({ code: 'cloud-machine-unavailable', reason: 'relay-unreachable', retryable: true })
-        .description,
+      cloudErrorText({
+        code: 'cloud-machine-unavailable',
+        reason: 'relay-unreachable',
+        retryable: true,
+      }).description,
     ).toBe(m.cloudMachines_error_relayUnreachable_noHost_description());
   });
 

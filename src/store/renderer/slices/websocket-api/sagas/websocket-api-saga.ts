@@ -12,7 +12,7 @@ import {
 import { appClient, localMachineClient } from '$lib/client';
 import type { ServerPairingInfo } from '$lib/client/app-client';
 import { readSelfPairing } from '$features/devices/self-pairing';
-import { bindIsLoopbackOnly, tunnelDefaultApplies } from './tunnel-default';
+import { bindIsLoopbackOnly, isRelayUrl, tunnelDefaultApplies } from './tunnel-default';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -94,6 +94,7 @@ function* loadSnapshot(
   const value = (path: string) => settings.find((entry) => entry.path === path)?.value;
   const bindAddress = value('server.bindAddress');
   const persistedPort = value('server.wsApi.port');
+  const relayUrl = value('server.tunnel.derpUrl');
   const snapshot: WebSocketApiSnapshot = {
     ...previous,
     enabled: value('server.wsApi.enabled') === true,
@@ -108,6 +109,8 @@ function* loadSnapshot(
     tunnelSupported: settings.some((entry) => entry.path === 'server.tunnel.enabled'),
     tunnelEnabled: value('server.tunnel.enabled') === true,
     tunnelOnly: value('server.tunnel.enabled') === true && value('server.tunnel.only') === true,
+    relaySupported: settings.some((entry) => entry.path === 'server.tunnel.derpUrl'),
+    relayUrl: typeof relayUrl === 'string' ? relayUrl : '',
   };
   // An accepted mutation owns its full domain completion even if its form closes.
   // Reducer and credential receiver still reject delivery to an obsolete identity.
@@ -335,6 +338,36 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         yield* publication('refresh');
       } catch (cause) {
         error = m.settings_listenTargets_saveError({
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      values = { ...(yield* call(loadSnapshot, client, request)) };
+    } else if (intent.kind === 'relay') {
+      const url = intent.url.trim();
+      if (!isRelayUrl(url)) {
+        yield* put(
+          settingsFormRequestSettled(request, {
+            status: 'failed',
+            error: m.settings_tunnel_relay_invalid(),
+          }),
+        );
+        return;
+      }
+      // A set relay must answer before the tunnel restarts, so the daemon's refusal is the check.
+      try {
+        yield* call(
+          [client.settings, client.settings.update],
+          [{ path: 'server.tunnel.derpUrl', value: url }],
+        );
+        if (yield* selectSettingsFormRequestCurrent.effect(request))
+          yield* call(
+            notify.success,
+            url ? m.settings_tunnel_relay_saved() : m.settings_tunnel_relay_cleared(),
+          );
+        yield* publication('refresh');
+      } catch (cause) {
+        error = m.settings_tunnel_relay_saveError({
           error: cause instanceof Error ? cause.message : String(cause),
         });
       }

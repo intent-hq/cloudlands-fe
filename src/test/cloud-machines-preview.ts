@@ -34,6 +34,7 @@ export type CloudMachinesPreviewState =
   | 'setup-key-rejected'
   | 'connected'
   | 'connected-no-sandboxes'
+  | 'relay'
   | 'key-rejected'
   | 'remove-in-use'
   | 'unsupported'
@@ -278,6 +279,12 @@ export const TEAM_SANDBOXES: RemoteMachine[] = [
   sandbox('sb-t1', 'Release notes', 'ws-docs', 'Sam', 'running', 8 * 60, TEAM_ENTRY),
 ];
 
+/** E2B sandboxes on a self-hosted relay. */
+const RELAY_SANDBOXES: RemoteMachine[] = E2B_SANDBOXES.map((machine) => ({
+  ...machine,
+  cloud: { ...machine.cloud!, relayUrl: 'https://relay.example.com/derpmap.json' },
+}));
+
 /**
  * Several workspaces: "Fix flaky CI" has two running sandboxes (the newer
  * one first) and a newer paused one; "Startup time" is only paused; one
@@ -391,9 +398,11 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
             : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
           : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
             ? GROUPED_SANDBOXES
-            : configured && state !== 'connected-no-sandboxes'
-              ? E2B_SANDBOXES
-              : [],
+            : state === 'relay'
+              ? RELAY_SANDBOXES
+              : configured && state !== 'connected-no-sandboxes'
+                ? E2B_SANDBOXES
+                : [],
       // Read now: uptime then matches the fixture until the next 30 s tick.
       readAt: Date.now(),
     }),
