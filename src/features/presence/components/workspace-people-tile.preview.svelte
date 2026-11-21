@@ -9,6 +9,8 @@
     sidebar?: boolean;
     shared?: boolean;
     expanded?: boolean;
+    /** No saved sidebar choice, as in a newly opened or newly shared workspace. */
+    fresh?: boolean;
     guest?: boolean;
     activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older' | 'older-empty' | 'grouped';
   }
@@ -19,6 +21,9 @@
     defaultState: 'sidebar',
     states: {
       sidebar: { props: { sidebar: true } },
+      fresh: { props: { sidebar: true, fresh: true } },
+      'fresh-guest': { props: { sidebar: true, fresh: true, guest: true } },
+      'fresh-solo': { props: { sidebar: true, fresh: true, shared: false, count: 0 } },
       mixed: { props: { sidebar: true, expanded: true, roster: 'mixed' } },
       pending: { props: { sidebar: true, shared: false, count: 1, roster: 'pending' } },
       tile: { props: {} },
@@ -82,6 +87,7 @@
     sidebar = false,
     shared = true,
     expanded = false,
+    fresh = false,
     guest = false,
     activityState = 'ready',
   }: Props = $props();
@@ -108,9 +114,10 @@
         ...PREVIEW_FIXTURE_TIMESTAMPS,
       }),
     );
-    store.dispatch(
-      setMultiSelectSidebarSelectedTabs(workspaceId, [expanded ? 'people' : 'overview']),
-    );
+    if (!fresh)
+      store.dispatch(
+        setMultiSelectSidebarSelectedTabs(workspaceId, [expanded ? 'people' : 'overview']),
+      );
     store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, 'person-0'));
     store.dispatch(presenceWorkspacesReceived([workspaceId]));
     const names = ['Sam', 'Luke', 'Morgan', 'Taylor', 'Robin', 'Jamie', 'Casey', 'Charlie'];

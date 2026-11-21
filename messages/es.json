@@ -8185,6 +8185,8 @@
   "workspace_discussion_mentionAgents_label": "Agentes",
   "workspace_discussion_mentionUsers_label": "Personas",
   "workspace_discussion_mentions_label": "Mencionar a alguien",
+  "workspace_discussion_attachImage_label": "Adjuntar imagen",
+  "workspace_discussion_imageUploadFailed_error": "No se pudo subir la imagen",
   "workspace_discussion_messageActions_label": "Acciones del mensaje",
   "workspace_discussion_multipleUnsupported_label": "Este anfitrión aún no admite varias conversaciones. Actualiza Intent en el anfitrión.",
   "workspace_discussion_new_label": "Nuevo",
