@@ -954,7 +954,7 @@ describe('self-hosted relay', () => {
     ).toBe(m.cloudMachines_error_relayUnreachable_noHost_description());
   });
 
-  it('offers Settings and Retry on a start that could not reach the relay', () => {
+  it('offers Relay settings and Retry on a start that could not reach the relay', () => {
     for (const provider of ['e2b', 'northflank'] as const) {
       const view = cloudStartFailureView(
         placementFailure(
@@ -976,7 +976,7 @@ describe('self-hosted relay', () => {
         tone: 'warning',
         title: m.cloudMachines_error_relayUnreachable_title(),
         cause: m.cloudMachines_error_relayUnreachable_description({ host: 'relay.example.com' }),
-        actions: ['settings', 'retry'],
+        actions: ['relay-settings', 'retry'],
         dashboard: false,
       });
     }

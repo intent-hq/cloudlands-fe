@@ -166,6 +166,9 @@
   function openMachinesSettings() {
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
+  function openRelaySettings() {
+    void navigateToSettings({ tab: 'mobile', hash: 'websocket-api' });
+  }
 </script>
 
 {#snippet outputToggle()}
@@ -288,6 +291,7 @@
       {onRetry}
       {retrying}
       onOpenSettings={openMachinesSettings}
+      onOpenRelaySettings={openRelaySettings}
     />
   {/if}
 {:else if location && kind}

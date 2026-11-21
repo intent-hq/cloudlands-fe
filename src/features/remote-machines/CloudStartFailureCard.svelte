@@ -29,6 +29,7 @@
     onRetry,
     retrying = false,
     onOpenSettings,
+    onOpenRelaySettings,
   }: {
     view: CloudStartFailureView;
     failedAt?: string | null;
@@ -37,6 +38,7 @@
     /** A retry is in flight: Retry shows it and ignores clicks. */
     retrying?: boolean;
     onOpenSettings: () => void;
+    onOpenRelaySettings: () => void;
   } = $props();
 
   // Retry sends the queued message; without Retry it just waits in the queue.
@@ -45,6 +47,7 @@
 
   function run(action: CloudStartFailureAction) {
     if (action === 'retry') onRetry?.();
+    else if (action === 'relay-settings') onOpenRelaySettings();
     else onOpenSettings();
   }
 </script>
@@ -94,7 +97,9 @@
           {#if action === 'retry'}<Fa icon={faRotateRight} class="size-3" />{/if}
           {action === 'retry'
             ? m.chat_shared_retry_label()
-            : m.cloudMachines_startFailure_machinesSettings_label()}
+            : action === 'relay-settings'
+              ? m.cloudMachines_startFailure_relaySettings_label()
+              : m.cloudMachines_startFailure_machinesSettings_label()}
         </Button>
       {/each}
       <FailureDetails text={view.details} />

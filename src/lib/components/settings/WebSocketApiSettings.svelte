@@ -58,12 +58,15 @@
     onEnabled,
     active = true,
     mobileOnly = false,
+    advancedOpen = false,
   }: {
     expanded?: boolean;
     children?: Snippet;
     onEnabled?: () => void;
     active?: boolean;
     mobileOnly?: boolean;
+    /** Previews: start with Advanced open. */
+    advancedOpen?: boolean;
   } = $props();
 
   const activeConnectionId$ = selectCurrentConnectionId();
@@ -433,7 +436,12 @@
 {#snippet connectionSettings()}
   <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
     {#if expanded}
-      <SettingsDisclosure label={m.settings_devices_advanced_label()} flush muted>
+      <SettingsDisclosure
+        label={m.settings_devices_advanced_label()}
+        open={advancedOpen}
+        flush
+        muted
+      >
         <div class="space-y-4">
           {#if enabled && tunnelSupported}
             <div transition:slide={{ tier: 'moderate' }} class="space-y-4">

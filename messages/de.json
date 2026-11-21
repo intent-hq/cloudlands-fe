@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "Wiederholen sendet deine wartende Nachricht.",
   "cloudMachines_startFailure_staysQueued": "Deine Nachricht bleibt unten in der Warteschlange.",
   "cloudMachines_startFailure_machinesSettings_label": "Maschinen-Einstellungen",
+  "cloudMachines_startFailure_relaySettings_label": "Relay-Einstellungen",
   "cloudMachines_form_ariaLabel": "E2B-Einstellungen",
   "cloudMachines_form_intro": "{backend} erstellt für jeden Agenten, den du dort ausführst, eine neue E2B-Sandbox, pausiert sie, wenn der Agent untätig ist, und löscht sie, wenn der Agent endet.",
   "cloudMachines_form_apiKey_label": "API-Schlüssel",

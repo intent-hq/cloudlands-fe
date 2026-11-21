@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "Retry sends your queued message.",
   "cloudMachines_startFailure_staysQueued": "Your message stays queued below.",
   "cloudMachines_startFailure_machinesSettings_label": "Machines settings",
+  "cloudMachines_startFailure_relaySettings_label": "Relay settings",
   "cloudMachines_form_ariaLabel": "E2B settings",
   "cloudMachines_form_intro": "{backend} creates a fresh E2B sandbox for each agent you run there, pauses it when the agent is idle and deletes it when the agent stops.",
   "cloudMachines_form_apiKey_label": "API key",

@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "重試會傳送你排隊的訊息。",
   "cloudMachines_startFailure_staysQueued": "你的訊息仍在下方佇列中。",
   "cloudMachines_startFailure_machinesSettings_label": "機器設定",
+  "cloudMachines_startFailure_relaySettings_label": "中繼設定",
   "cloudMachines_form_ariaLabel": "E2B 設定",
   "cloudMachines_form_intro": "{backend} 會為你在其上執行的每個代理建立新的 E2B 沙盒，代理閒置時暫停，代理停止時刪除。",
   "cloudMachines_form_apiKey_label": "API 金鑰",

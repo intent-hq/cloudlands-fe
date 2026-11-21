@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "Reintentar envía tu mensaje en cola.",
   "cloudMachines_startFailure_staysQueued": "Tu mensaje sigue en la cola de abajo.",
   "cloudMachines_startFailure_machinesSettings_label": "Configuración de Máquinas",
+  "cloudMachines_startFailure_relaySettings_label": "Ajustes del relé",
   "cloudMachines_form_ariaLabel": "Ajustes de E2B",
   "cloudMachines_form_intro": "{backend} crea un sandbox de E2B nuevo para cada agente que ejecutes allí, lo pausa cuando el agente está inactivo y lo elimina cuando el agente se detiene.",
   "cloudMachines_form_apiKey_label": "Clave de API",

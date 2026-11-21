@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "Réessayer envoie votre message en attente.",
   "cloudMachines_startFailure_staysQueued": "Votre message reste en attente ci-dessous.",
   "cloudMachines_startFailure_machinesSettings_label": "Réglages Machines",
+  "cloudMachines_startFailure_relaySettings_label": "Réglages du relais",
   "cloudMachines_form_ariaLabel": "Réglages E2B",
   "cloudMachines_form_intro": "{backend} crée un nouveau sandbox E2B pour chaque agent que vous y exécutez, le met en pause quand l'agent est inactif et le supprime quand l'agent s'arrête.",
   "cloudMachines_form_apiKey_label": "Clé d'API",

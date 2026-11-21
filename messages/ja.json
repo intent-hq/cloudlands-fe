@@ -8694,6 +8694,7 @@
   "cloudMachines_startFailure_retrySendsQueued": "再試行するとキュー内のメッセージが送信されます。",
   "cloudMachines_startFailure_staysQueued": "メッセージは下のキューに残ります。",
   "cloudMachines_startFailure_machinesSettings_label": "マシン設定",
+  "cloudMachines_startFailure_relaySettings_label": "リレーの設定",
   "cloudMachines_form_ariaLabel": "E2B 設定",
   "cloudMachines_form_intro": "{backend} は、そこで実行するエージェントごとに新しい E2B サンドボックスを作成し、エージェントがアイドルのときは一時停止し、エージェントが停止すると削除します。",
   "cloudMachines_form_apiKey_label": "API キー",

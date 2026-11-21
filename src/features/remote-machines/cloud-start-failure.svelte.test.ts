@@ -211,6 +211,27 @@ describe('E2B start failure card', () => {
     expect(link.getAttribute('target')).toBe('_blank');
   });
 
+  it('opens the relay setting first when the relay did not answer, and keeps Retry', async () => {
+    const { card } = show({
+      code: 'remote-launch-failed',
+      detail: typed('the sandbox could not reach the relay', {
+        code: 'cloud-machine-unavailable',
+        reason: 'relay-unreachable',
+        retryable: true,
+        relayUrl: 'https://relay.example.com/derpmap.json',
+      }),
+    });
+    expect(card.dataset.tone).toBe('warning');
+    expect(actions(card)).toEqual(['relay-settings', 'retry']);
+    expect(card.textContent).toContain('relay.example.com');
+    expect(within(card).queryByRole('link')).toBeNull();
+    await fireEvent.click(action(card, 'relay-settings')!);
+    expect(navigation.navigateToSettings).toHaveBeenCalledWith({
+      tab: 'mobile',
+      hash: 'websocket-api',
+    });
+  });
+
   it('leads with settings when E2B rejects the key, and links the dashboard', () => {
     const { card } = show({
       code: 'cloud-machine-unavailable',

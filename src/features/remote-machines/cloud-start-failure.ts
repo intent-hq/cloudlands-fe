@@ -9,7 +9,8 @@ import type { CloudMachineErrorData, CloudProviderKind } from '$shared/types/clo
 import { cloudErrorText, cloudProviderCopy } from '$features/cloud-machines/cloud-machines-format';
 import type { PlacementFailure } from './agent-location';
 
-export type CloudStartFailureAction = 'retry' | 'settings';
+/** `relay-settings` opens the tunnel's relay setting, not Machines. */
+export type CloudStartFailureAction = 'retry' | 'settings' | 'relay-settings';
 
 export interface CloudStartFailureView {
   /** `danger` when Retry may work; `warning` when the user must change something first. */
@@ -103,7 +104,7 @@ function copy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
             tone: 'warning',
             title: text.title,
             cause: text.description,
-            actions: ['settings', 'retry'],
+            actions: ['relay-settings', 'retry'],
             dashboard: false,
           };
         }
