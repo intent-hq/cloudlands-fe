@@ -104,6 +104,10 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
 // anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName.startsWith('data-') && !MARKDOWN_DATA_ATTR.has(data.attrName)) {
+    data.keepAttr = false;
+    return;
+  }
   // A bare filename with a line suffix looks like a URL scheme to DOMPurify
   // (and to the browser). Make only that file form explicitly relative, while
   // leaving the URI allowlist in charge of all actual schemes.
@@ -347,6 +351,96 @@ function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}):
   }
 }
 
+const MARKDOWN_ALLOWED_ATTR = [
+  'class',
+  'id',
+  'title',
+  'dir',
+  'lang', // Global attributes from "*"
+  'href',
+  'target',
+  'rel', // Link attributes from "a"
+  'data-mention',
+  'data-mention-id',
+  'data-mention-type',
+  'data-id',
+  'data-label',
+  'data-uri',
+  'data-meta', // TipTap mention attributes
+  'data-comment-id', // Span attributes
+  'data-anchor-id',
+  'data-anchor-type', // Comment anchor attributes
+  'data-comment-anchor', // Div attributes
+  'data-mermaid-code', // Mermaid diagram code
+  'data-diff-code', // Diff block code
+  'data-type',
+  'data-checked',
+  'data-status',
+  'data-delegated-agent-id', // Task list attributes
+  'data-question',
+  'data-options',
+  'data-selected', // Choice block attributes (V1 and V2)
+  'type',
+  'checked',
+  'disabled', // Input attributes
+  'src',
+  'alt',
+  'width',
+  'height', // Image attributes
+  'controls',
+  'preload',
+  'playsinline',
+  'poster',
+  'data-name', // Video attributes
+  'data-media-unsupported', // Unsupported workspace media placeholder marker
+  'data-media-unavailable',
+  'data-media-src', // Unresolvable workspace media placeholder marker + original source
+  'data-primitive',
+  'data-primitive-type',
+  'data-primitive-id',
+  'data-primitive-base64', // ws-block primitive attributes
+  'data-item-type',
+  'data-provider',
+  'data-title',
+  'data-identifier',
+  'data-url',
+  'data-description',
+  'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
+  'data-math-source', // Original delimited TeX for lossless HTML-to-Markdown conversion
+  'aria-hidden',
+  'display',
+  'encoding',
+  'xmlns',
+  'accent',
+  'accentunder',
+  'columnalign',
+  'columnspacing',
+  'columnlines',
+  'rowalign',
+  'rowspacing',
+  'rowlines',
+  'scriptlevel',
+  'displaystyle',
+  'fence',
+  'separator',
+  'stretchy',
+  'symmetric',
+  'minsize',
+  'maxsize',
+  'viewBox',
+  'preserveAspectRatio',
+  'd',
+  'open', // details element open state
+  'tabindex', // for focusable elements like mention chips
+];
+
+// App code routes by data-* markers (data-workspace-*, data-panel-id, ...), so content
+// keeps only these. ALLOW_DATA_ATTR stays on because it also exempts data-* values
+// (e.g. anchor ids like `cmt-1:start`) from DOMPurify's URI check.
+const MARKDOWN_DATA_ATTR = new Set(
+  MARKDOWN_ALLOWED_ATTR.filter((name) => name.startsWith('data-')),
+);
+
 /**
  * Sanitize HTML for display in markdown preview
  */
@@ -369,89 +463,7 @@ export function sanitizeMarkdownHTML(
       ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'video', 'hr', 'details', 'summary', 'sub', 'sup'],
       // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
       // DOMPurify expects attribute names in the array, not "tag:attr" format
-      ALLOWED_ATTR: [
-        'class',
-        'id',
-        'title',
-        'dir',
-        'lang', // Global attributes from "*"
-        'href',
-        'target',
-        'rel', // Link attributes from "a"
-        'data-mention',
-        'data-mention-id',
-        'data-mention-type',
-        'data-id',
-        'data-label',
-        'data-uri',
-        'data-meta', // TipTap mention attributes
-        'data-comment-id', // Span attributes
-        'data-anchor-id',
-        'data-anchor-type', // Comment anchor attributes
-        'data-comment-anchor', // Div attributes
-        'data-mermaid-code', // Mermaid diagram code
-        'data-diff-code', // Diff block code
-        'data-type',
-        'data-checked',
-        'data-status',
-        'data-delegated-agent-id', // Task list attributes
-        'data-question',
-        'data-options',
-        'data-selected', // Choice block attributes (V1 and V2)
-        'type',
-        'checked',
-        'disabled', // Input attributes
-        'src',
-        'alt',
-        'width',
-        'height', // Image attributes
-        'controls',
-        'preload',
-        'playsinline',
-        'poster',
-        'data-name', // Video attributes
-        'data-media-unsupported', // Unsupported workspace media placeholder marker
-        'data-media-unavailable',
-        'data-media-src', // Unresolvable workspace media placeholder marker + original source
-        'data-primitive',
-        'data-primitive-type',
-        'data-primitive-id',
-        'data-primitive-base64', // ws-block primitive attributes
-        'data-item-type',
-        'data-provider',
-        'data-title',
-        'data-identifier',
-        'data-url',
-        'data-description',
-        'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
-        'data-math-source', // Original delimited TeX for lossless HTML-to-Markdown conversion
-        'aria-hidden',
-        ...(preserveKatexLayoutStyles ? ['style'] : []),
-        'display',
-        'encoding',
-        'xmlns',
-        'accent',
-        'accentunder',
-        'columnalign',
-        'columnspacing',
-        'columnlines',
-        'rowalign',
-        'rowspacing',
-        'rowlines',
-        'scriptlevel',
-        'displaystyle',
-        'fence',
-        'separator',
-        'stretchy',
-        'symmetric',
-        'minsize',
-        'maxsize',
-        'viewBox',
-        'preserveAspectRatio',
-        'd',
-        'open', // details element open state
-        'tabindex', // for focusable elements like mention chips
-      ],
+      ALLOWED_ATTR: [...MARKDOWN_ALLOWED_ATTR, ...(preserveKatexLayoutStyles ? ['style'] : [])],
       // Allow workspace-asset:// (embedded note images) and workspace-file://
       // (inline workspace file images) protocols
       ALLOWED_URI_REGEXP:

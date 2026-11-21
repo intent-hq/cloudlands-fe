@@ -19,6 +19,7 @@ vi.mock('$lib/client', () => ({
   appClient: { integrations },
 }));
 
+import { workspaceSurfaceLink } from '$features/navigation/link-source';
 import { clearGitHubLinkPreviewCache } from './github-link-preview';
 import { hideLinkTooltip, showLinkTooltip, state } from './link-tooltip-state.svelte';
 
@@ -246,14 +247,14 @@ describe('original GitLab hover lifetime', () => {
   const issueUrl = fixture.issue.outcome.issue.url;
   async function mountHover(url = mrUrl) {
     const surface = document.createElement('div');
-    surface.dataset.workspaceSurface = 'workspace-A';
+    const link = workspaceSurfaceLink(surface, 'workspace-A');
     document.body.append(surface);
     const anchor = anchorFor(url);
     surface.append(anchor);
     showLinkTooltip(anchor, url);
     await vi.advanceTimersByTimeAsync(300);
     await flush();
-    return { surface, anchor };
+    return { surface, link, anchor };
   }
   beforeEach(() => {
     vi.useFakeTimers();
@@ -316,10 +317,10 @@ describe('original GitLab hover lifetime', () => {
     async (reason) => {
       const h = session();
       integrations.captureRepositoryResource.mockResolvedValue(h.source);
-      const { surface, anchor } = await mountHover();
+      const { link, anchor } = await mountHover();
       expect(state.preview.status).toBe('ready');
       if (reason === 'unmount') anchor.remove();
-      else if (reason === 'workspace') surface.dataset.workspaceSurface = 'workspace-B';
+      else if (reason === 'workspace') link.update('workspace-B');
       else if (reason === 'href') anchor.href = issueUrl;
       else {
         h.retire();

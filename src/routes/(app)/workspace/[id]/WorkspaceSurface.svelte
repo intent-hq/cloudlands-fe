@@ -927,7 +927,6 @@
     <div
       bind:this={surfaceElement}
       class="h-full min-h-0 w-full overflow-hidden"
-      data-workspace-surface={workspaceId}
       use:workspaceSurfaceLink={workspaceId}
       data-loading={!$workspace}
     >

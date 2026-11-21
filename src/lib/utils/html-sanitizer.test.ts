@@ -116,6 +116,18 @@ describe('html-sanitizer', () => {
     expect(sanitizeMarkdownHTML(html)).toContain('data-diff-code="abc123"');
   });
 
+  it('strips app routing data attributes that are not allowlisted', () => {
+    const element = document.createElement('div');
+    element.innerHTML = sanitizeMarkdownHTML(
+      '<div data-workspace-surface="other" data-workspace-id="other" data-workspace-link-target="other" data-panel-id="p1" data-type="diff-block">' +
+        '<a href="https://github.com/o/r/pull/1" data-workspace-id="other">PR</a></div>',
+    );
+    const div = element.querySelector('div')!;
+
+    expect(div.getAttributeNames().sort()).toEqual(['data-type']);
+    expect(element.querySelector('a')?.getAttributeNames()).toEqual(['href']);
+  });
+
   it('allows workspace-file:// image sources', () => {
     const html = '<img src="workspace-file://ws-abc/docs/shot.png" alt="shot">';
 

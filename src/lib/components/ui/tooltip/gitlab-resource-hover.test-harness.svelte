@@ -7,6 +7,7 @@
     RepositoryResourceResultSchema,
   } from '$shared/types/repository-resource-read';
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
+  import { workspaceSurfaceLink } from '$features/navigation/link-source';
   import { hideLinkTooltip } from './link-tooltip-state.svelte';
   let container: HTMLDivElement;
   let mounted = $state(true);
@@ -64,7 +65,7 @@
 <div
   bind:this={container}
   class="grid gap-8 p-12"
-  data-workspace-surface="workspace-A"
+  use:workspaceSurfaceLink={'workspace-A'}
   data-testid="hover-control"
   data-requests={requests}
   data-releases={releases}
