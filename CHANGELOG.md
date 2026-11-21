@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.362.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.4...v2.362.0) (2026-11-21)
+
+
+### 🚀 Features
+
+* **daemon-status:** Unsloth server submenu and model switch confirmation ([#4861](https://github.com/intent-hq/cloudlands-fe/issues/4861)) ([0354b0d](https://github.com/intent-hq/cloudlands-fe/commit/0354b0d0d49da7c7fa8b91403b1b2b438be469c4))
+* **onboarding:** run providers through npx and lead with free OpenCode ([#4846](https://github.com/intent-hq/cloudlands-fe/issues/4846)) ([2fd62f9](https://github.com/intent-hq/cloudlands-fe/commit/2fd62f9a8ff9724936012c1c5e4e2367cbf168ba))
+* **secrets:** polish secret request cards and settings ([#4871](https://github.com/intent-hq/cloudlands-fe/issues/4871)) ([f9102a5](https://github.com/intent-hq/cloudlands-fe/commit/f9102a5af94c6a0de82c0e2e8443e9015cf1d121))
+* **switcher:** list browser and terminal tabs in the recent switcher ([#4869](https://github.com/intent-hq/cloudlands-fe/issues/4869)) ([9041a12](https://github.com/intent-hq/cloudlands-fe/commit/9041a12f56be47a4b3749a56dca786468d26c744))
+* **voice:** show a live timer and level bars on every dictation mic ([#4862](https://github.com/intent-hq/cloudlands-fe/issues/4862)) ([be5aa41](https://github.com/intent-hq/cloudlands-fe/commit/be5aa4100a182bd51b8a87579432491366a3a4f1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.260 ([#4872](https://github.com/intent-hq/cloudlands-fe/issues/4872)) ([1a4da07](https://github.com/intent-hq/cloudlands-fe/commit/1a4da07c5eb264a4ce1a6bfb3eda65072c3c7c28))
+* bump intentd sidecar to v0.11.261 ([#4874](https://github.com/intent-hq/cloudlands-fe/issues/4874)) ([2f4aa78](https://github.com/intent-hq/cloudlands-fe/commit/2f4aa78bba99bc21cca789d1cbd9d8bcfbcff497))
+* **dock:** keep recent workspaces visible and expand history ([#4865](https://github.com/intent-hq/cloudlands-fe/issues/4865)) ([eff9cca](https://github.com/intent-hq/cloudlands-fe/commit/eff9cca4927e09099654b7293d227b9505a67600))
+* **layout:** stop Mod+Shift+Enter from zooming the panel it opens in its own window ([#4868](https://github.com/intent-hq/cloudlands-fe/issues/4868)) ([736b851](https://github.com/intent-hq/cloudlands-fe/commit/736b8515e0f4d00b0bd72e9c4e8248452d1d24db))
+
 ## [2.361.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.361.3...v2.361.4) (2026-11-20)
 
 
