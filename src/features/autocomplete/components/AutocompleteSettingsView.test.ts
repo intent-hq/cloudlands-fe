@@ -61,8 +61,7 @@ describe('AutocompleteSettingsView gating', () => {
     const dialog = await screen.findByTestId('autocomplete-kilo-confirm');
     const cancel = [...document.querySelectorAll('button')].find(
       (button) =>
-        button.textContent?.trim() === m.settings_autocomplete_cancel() &&
-        !dialog.contains(button),
+        button.textContent?.trim() === m.settings_autocomplete_cancel() && !dialog.contains(button),
     );
     await fireEvent.click(cancel!);
     expect(onEnabledChange).not.toHaveBeenCalled();
@@ -106,7 +105,9 @@ describe('AutocompleteSettingsView gating', () => {
       service: 'openrouter',
       keyConfigured: { kilo: false, openrouter: true },
     });
-    await fireEvent.click(screen.getByRole('button', { name: m.settings_autocomplete_removeKey() }));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_autocomplete_removeKey() }),
+    );
     expect(onClearKey).toHaveBeenCalledExactlyOnceWith('openrouter', true);
   });
 });

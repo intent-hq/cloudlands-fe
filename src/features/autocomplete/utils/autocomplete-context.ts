@@ -66,9 +66,10 @@ export function buildAutocompleteContext(
   const prompts = suggestedPrompts.map((prompt) => prompt.trim()).filter(Boolean);
   if (prompts.length === 0) return conversation;
   // i18n-ignore (prompt text for the model, not UI copy)
-  const promptList = `Suggested prompts:\n${prompts.map((prompt) => `- ${prompt}`).join('\n')}`.slice(
-    0,
-    PROMPTS_MAX_CHARS,
-  );
+  const promptList =
+    `Suggested prompts:\n${prompts.map((prompt) => `- ${prompt}`).join('\n')}`.slice(
+      0,
+      PROMPTS_MAX_CHARS,
+    );
   return conversation ? `${conversation}\n\n${promptList}` : promptList;
 }

@@ -95,7 +95,9 @@ export async function saveAutocompleteApiKey(
     // i18n-ignore (guard against programmer error; the panel disables Save for empty drafts)
     throw new Error('API key must not be empty');
   }
-  await appClient.settings.update([{ path: AUTOCOMPLETE_API_KEY_SETTING_PATHS[service], value: key }]);
+  await appClient.settings.update([
+    { path: AUTOCOMPLETE_API_KEY_SETTING_PATHS[service], value: key },
+  ]);
 }
 
 /** Delete a stored key; the live client folds reset failures to `null`. */

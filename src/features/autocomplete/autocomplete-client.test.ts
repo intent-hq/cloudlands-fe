@@ -24,7 +24,9 @@ describe('requestAutocompletion', () => {
   });
 
   it('folds a missing method or any error to an empty completion', async () => {
-    backendRequest.mockRejectedValue(Object.assign(new Error('Method not found'), { code: -32601 }));
+    backendRequest.mockRejectedValue(
+      Object.assign(new Error('Method not found'), { code: -32601 }),
+    );
     await expect(requestAutocompletion('Show me', '')).resolves.toBe('');
     expect(debug).toHaveBeenCalledOnce();
   });

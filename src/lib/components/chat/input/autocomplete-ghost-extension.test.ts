@@ -147,9 +147,7 @@ describe('AutocompleteGhostExtension', () => {
   it('a programmatic content update clears the ghost', () => {
     const current = mount();
     setAutocompleteGhost(current.view, ' diff.');
-    current.view.dispatch(
-      current.state.tr.insertText(' d').setMeta('external-update', true),
-    );
+    current.view.dispatch(current.state.tr.insertText(' d').setMeta('external-update', true));
     expect(getAutocompleteGhost(current.state)).toBeNull();
   });
 });

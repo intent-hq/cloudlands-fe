@@ -39,10 +39,7 @@ describe('buildAutocompleteContext', () => {
 
   it('never exceeds the 4,000-character wire cap', () => {
     const prompts = Array.from({ length: 10 }, () => 'p'.repeat(800));
-    const context = buildAutocompleteContext(
-      [{ role: 'user', text: 'u'.repeat(5000) }],
-      prompts,
-    );
+    const context = buildAutocompleteContext([{ role: 'user', text: 'u'.repeat(5000) }], prompts);
     expect(context.length).toBeLessThanOrEqual(AUTOCOMPLETE_CONTEXT_MAX_CHARS);
   });
 
