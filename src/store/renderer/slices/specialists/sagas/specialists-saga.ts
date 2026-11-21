@@ -82,7 +82,7 @@ const selectSession = store.createSelector((state) => ({
   admission: selectPrincipalActionContext.select(state),
 }));
 
-type CatalogReadOutcome = 'accepted' | 'failed';
+type CatalogReadOutcome = { status: 'accepted' } | { status: 'failed'; error?: unknown };
 
 interface ListContext {
   generation: number;
@@ -245,7 +245,7 @@ function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
   return true;
 }
 
-function* refetchSpecialists(context: ListContext) {
+function* refetchSpecialists(context: ListContext, reportFailure = false) {
   const admission = yield* selectPrincipalActionContext.effect();
   if (!admission) return;
   const generation = ++context.generation;
@@ -271,7 +271,7 @@ function* refetchSpecialists(context: ListContext) {
     yield* call(
       publishCatalogRead,
       context,
-      accepted ? ('accepted' as const) : ('failed' as const),
+      accepted ? { status: 'accepted' as const } : { status: 'failed' as const },
     );
   } catch (error) {
     // An obsolete failure cannot invalidate a newer catalog or fail its waiters.
@@ -282,11 +282,11 @@ function* refetchSpecialists(context: ListContext) {
       return;
     logger.error('Failed to refetch specialist list', error);
     const hasConfirmations = context.confirmations.size > 0;
-    yield* call(publishCatalogRead, context, 'failed' as const);
-    // Creation owns its failure notification; ordinary refreshes still report theirs.
-    if (!hasConfirmations) {
-      const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
-      yield* call([notify, notify.error], m.specialists_mutation_refreshFailed_error());
+    yield* call(publishCatalogRead, context, { status: 'failed' as const, error });
+    // Only the user's own save or delete is told; creation owns its notification,
+    // and background refreshes keep the last known-good list.
+    if (reportFailure && !hasConfirmations) {
+      yield* call(showMutationError, refreshFailedError(error), '');
     }
   }
 }
@@ -300,9 +300,19 @@ function mutationError(error: unknown, fallback: string): Error {
   return error instanceof Error ? error : new Error(errorMessage(error, fallback));
 }
 
+/** The localized refresh failure, carrying the daemon's error as its cause. */
+function refreshFailedError(cause?: unknown): Error {
+  return new Error(m.specialists_mutation_refreshFailed_error(), { cause });
+}
+
 function* showMutationError(error: unknown, fallback: string) {
   const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
-  yield* call([notify, notify.error], errorMessage(error, fallback));
+  const message = errorMessage(error, fallback);
+  const cause = error instanceof Error ? error.cause : undefined;
+  yield* call(
+    [notify, notify.error],
+    cause ? { message, details: errorMessage(cause, String(cause)) } : message,
+  );
 }
 
 /** Reject the per-dispatch promise while publishing its failure stage. */
@@ -402,7 +412,7 @@ function* handleSave(
     written = true;
     if (scope === 'project' && payload.workspaceId)
       yield* put(workspaceCatalogRequested(payload.workspaceId));
-    else yield* call(refetchSpecialists, context);
+    else yield* call(refetchSpecialists, context, true);
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
@@ -436,6 +446,7 @@ function* confirmGlobalSpecialist(
   const updates = channel<CatalogReadOutcome>(buffers.expanding());
   context.confirmations.add(updates);
   const refresh = yield* fork(refetchSpecialists, context);
+  let cause: unknown;
   try {
     yield* call(requireOwner, admission);
     const { available } = yield* race({
@@ -444,7 +455,10 @@ function* confirmGlobalSpecialist(
           yield* call(requireOwner, admission);
           const outcome = yield* take(updates);
           yield* call(requireOwner, admission);
-          if (outcome === 'failed') return undefined;
+          if (outcome.status === 'failed') {
+            cause = outcome.error;
+            return undefined;
+          }
           const specialist = yield* selectGetFileSpecialist.effect(id);
           if (specialist && (yield* call(isInSettingsSidebar, id))) return specialist;
         }
@@ -452,7 +466,7 @@ function* confirmGlobalSpecialist(
       // Bounds both a hung RPC and accepted catalogs that never contain a visible row.
       timeout: delay(30000),
     });
-    if (!available) throw new Error(m.specialists_mutation_refreshFailed_error());
+    if (!available) throw refreshFailedError(cause);
     return available;
   } finally {
     context.confirmations.delete(updates);
@@ -488,7 +502,7 @@ function* confirmWorkspaceSpecialist(workspaceId: string, id: string, admission:
       // Also bounds a missing row or a catalog owner cancelled when leaving its workspace.
       timeout: delay(30000),
     });
-    if (!available) throw new Error(m.specialists_mutation_refreshFailed_error());
+    if (!available) throw refreshFailedError();
     return available;
   } finally {
     updates.close();
@@ -658,7 +672,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
     written = true;
     if (ref.scope === 'project' && ref.workspaceId)
       yield* put(workspaceCatalogRequested(ref.workspaceId));
-    else yield* call(refetchSpecialists, context);
+    else yield* call(refetchSpecialists, context, true);
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());
@@ -718,7 +732,7 @@ function* watchSpecialistsSubscription(context: ListContext) {
       yield* call(
         publishCatalogRead,
         context,
-        accepted ? ('accepted' as const) : ('failed' as const),
+        accepted ? { status: 'accepted' as const } : { status: 'failed' as const },
       );
     }
   } finally {
