@@ -9,8 +9,8 @@
 import { app, ipcMain, View, WebContentsView, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
-import { intentOsBooleanDefault } from '../../../shared/intent-os';
+import { getBooleanLocalPref, setLocalPref } from '../../../main/local-prefs';
+import { isIntentOs } from '../../../shared/intent-os';
 import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../../../main/machine-rail-state';
 import {
   notifyMainOwnedBrowserPageMoved,
@@ -121,15 +121,10 @@ function requireService(): BrowserViewService {
  * read failure keeps it off.
  */
 async function loadBrowserViewLab(): Promise<void> {
-  try {
-    labEnabled = intentOsBooleanDefault(
-      await getLocalPref<unknown>('browserViewsInMainEnabled'),
-      false,
-      true,
-    );
-  } catch {
-    labEnabled = false;
-  }
+  labEnabled = await getBooleanLocalPref('browserViewsInMainEnabled', {
+    default: isIntentOs(),
+    onError: false,
+  });
   labActive = labEnabled;
 }
 

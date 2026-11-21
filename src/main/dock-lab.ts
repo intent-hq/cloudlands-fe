@@ -15,11 +15,7 @@ export function isDockLabEnabled(): boolean {
 
 /** Reads the persisted setting once at startup. A read failure keeps the lab off. */
 export async function loadDockLabEnabled(): Promise<boolean> {
-  try {
-    enabled = await getDockLabEnabledLocalPref();
-  } catch {
-    enabled = false;
-  }
+  enabled = await getDockLabEnabledLocalPref();
   return enabled;
 }
 

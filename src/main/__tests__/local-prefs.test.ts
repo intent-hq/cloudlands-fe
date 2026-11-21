@@ -65,27 +65,46 @@ const BROWSER_ACCESS_PREFS = {
 };
 
 describe('local-prefs', () => {
-  it('reads the dock setting as on until opted out, and rejects an unreadable file', async () => {
-    const { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref, setLocalPref } =
-      await import('../local-prefs');
+  it('reads a boolean setting as the default when unset and the error value when unreadable', async () => {
+    const { getBooleanLocalPref } = await import('../local-prefs');
     const file = path.join(tmpDir, 'local-prefs.json');
-    // Missing file or missing key: the profile never chose, so the dock is on.
-    expect(await getDockLabEnabledLocalPref()).toBe(true);
-    await setLocalPref('menuBarAutoHide', true);
-    expect(await getDockLabEnabledLocalPref()).toBe(true);
-    await setDockLabEnabledLocalPref(false);
-    expect(await getDockLabEnabledLocalPref()).toBe(false);
-    await setDockLabEnabledLocalPref(true);
-    expect(await getDockLabEnabledLocalPref()).toBe(true);
-    // Corrupt or non-object contents are errors, not "unset".
-    for (const contents of ['{"dockLabEnabled": fal', '[]', 'null', '']) {
+    const read = async () => [
+      await getBooleanLocalPref('dockEnabled', { default: true, onError: false }),
+      await getBooleanLocalPref('dockEnabled', { default: false, onError: true }),
+    ];
+    // Missing file or missing key: the profile never chose.
+    expect(await read()).toEqual([true, false]);
+    await writeDocumentOnDisk({ menuBarAutoHide: true });
+    expect(await read()).toEqual([true, false]);
+    // A saved choice wins over both fallbacks.
+    await writeDocumentOnDisk({ dockEnabled: false });
+    expect(await read()).toEqual([false, false]);
+    await writeDocumentOnDisk({ dockEnabled: true });
+    expect(await read()).toEqual([true, true]);
+    // Corrupt, non-object or non-boolean contents mean "cannot know", not "unset".
+    for (const contents of ['{"dockEnabled": fal', '[]', 'null', '', '{"dockEnabled": "no"}']) {
       await fs.writeFile(file, contents);
-      await expect(getDockLabEnabledLocalPref(), contents).rejects.toThrow();
+      expect(await read(), contents).toEqual([false, true]);
     }
-    // An unreadable path (a directory) is an error too, not "unset".
+    // An unreadable path (a directory) is an error too.
     await fs.rm(file);
     await fs.mkdir(file);
-    await expect(getDockLabEnabledLocalPref()).rejects.toThrow();
+    expect(await read()).toEqual([false, true]);
+  });
+
+  it.each([
+    ['dockLabEnabled', 'getDockLabEnabledLocalPref'],
+    ['dockEnabled', 'getDockEnabledLocalPref'],
+  ] as const)('reads %s as on until opted out, and off when unreadable', async (key, reader) => {
+    const prefs = await import('../local-prefs');
+    const file = path.join(tmpDir, 'local-prefs.json');
+    expect(await prefs[reader]()).toBe(true);
+    await writeDocumentOnDisk({ [key]: true });
+    expect(await prefs[reader]()).toBe(true);
+    await writeDocumentOnDisk({ [key]: false });
+    expect(await prefs[reader]()).toBe(false);
+    await fs.writeFile(file, `{"${key}": tr`);
+    expect(await prefs[reader]()).toBe(false);
   });
 
   it('rejects a failed Labs write and permits retry without losing the persisted setting', async () => {
@@ -161,7 +180,7 @@ describe('local-prefs', () => {
     await setLocalPref('dockEnabled', false);
     await deleteLocalPref('selfPublishSuppressed');
     expect(await getLocalPref('selfPublishSuppressed')).toBeUndefined();
-    expect(await getLocalPref('dockEnabled')).toBe(false);
+    expect(await readDocumentOnDisk()).toEqual({ dockEnabled: false });
   });
 
   it('removes the retired Browser access keys, including its saved access key', async () => {

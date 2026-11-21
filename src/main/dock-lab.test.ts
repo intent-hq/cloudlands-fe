@@ -71,12 +71,6 @@ describe('loadDockLabEnabled', () => {
     await expect(loadDockLabEnabled()).resolves.toBe(false);
     expect(isDockLabEnabled()).toBe(false);
   });
-
-  it('stays off when the preference cannot be read', async () => {
-    mocks.read.mockRejectedValue(new Error('unreadable'));
-    await expect(loadDockLabEnabled()).resolves.toBe(false);
-    expect(isDockLabEnabled()).toBe(false);
-  });
 });
 
 describe('window:set-dock-lab', () => {

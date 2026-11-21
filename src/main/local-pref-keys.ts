@@ -56,6 +56,23 @@ export const LOCAL_PREF_KEYS = [
 export type LocalPrefKey = (typeof LOCAL_PREF_KEYS)[number];
 
 /**
+ * Boolean settings with a default. Only `getBooleanLocalPref` reads them: it
+ * takes a value for "never chose" and a separate one for "cannot read", so a
+ * damaged file cannot turn a setting on (cloudlands-fe#4734). The generic
+ * readers do not accept these keys. List every new default-on setting here.
+ */
+export type BooleanLocalPrefKey = Registered<
+  | 'shareUpdateStatistics'
+  | 'keychainSyncEnabled'
+  | 'dockLabEnabled'
+  | 'dockEnabled'
+  | 'machineRailEnabled'
+  | 'browserViewsInMainEnabled'
+>;
+
+type Registered<K extends LocalPrefKey> = K;
+
+/**
  * Keys of removed features. `deleteRetiredLocalPrefs` deletes them at startup
  * so a removed feature leaves nothing behind (Browser access left a saved
  * access key, cloudlands-fe#4740 → #4744).

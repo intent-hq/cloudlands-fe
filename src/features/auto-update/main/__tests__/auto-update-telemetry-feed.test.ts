@@ -481,6 +481,19 @@ describe('opt-outs select the GitHub feed', () => {
     expect(checkedFeeds).toEqual([`${GITHUB_PREFIX}stable`]);
   });
 
+  it('a prefs file that cannot be read keeps statistics off', async () => {
+    await fs.writeFile(
+      path.join(testUserDataPath, 'local-prefs.json'),
+      '{"shareUpdateStatistics": fal',
+    );
+    const { service, checkedFeeds, answerNotAvailable } = await setup();
+    expect(service.getState().shareStatistics).toBe(false);
+
+    answerNotAvailable();
+    await service.checkForUpdatesManual();
+    expect(checkedFeeds).toEqual([`${GITHUB_PREFIX}stable`]);
+  });
+
   it('DO_NOT_TRACK=1 sends checks to GitHub even with the toggle on', async () => {
     process.env.DO_NOT_TRACK = '1';
     const { service, checkedFeeds, answerNotAvailable } = await setup();

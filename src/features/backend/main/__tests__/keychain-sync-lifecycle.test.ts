@@ -59,6 +59,14 @@ const localPrefs = vi.hoisted(() => {
       values.set(key, value);
     }),
     getLocalPref: vi.fn(async (key: string) => values.get(key)),
+    // An Error value stands for a file that cannot be read.
+    getBooleanLocalPref: vi.fn(
+      async (key: string, policy: { default: boolean; onError: boolean }) => {
+        const value = values.get(key);
+        if (value instanceof Error) return policy.onError;
+        return (value as boolean | undefined) ?? policy.default;
+      },
+    ),
     deleteLocalPref: vi.fn(async (key: string) => {
       values.delete(key);
     }),
@@ -67,6 +75,7 @@ const localPrefs = vi.hoisted(() => {
 vi.mock('../../../../main/local-prefs', () => ({
   setLocalPref: localPrefs.setLocalPref,
   getLocalPref: localPrefs.getLocalPref,
+  getBooleanLocalPref: localPrefs.getBooleanLocalPref,
   deleteLocalPref: localPrefs.deleteLocalPref,
 }));
 
@@ -575,12 +584,17 @@ describe('isKeychainSyncEnabled (opt-out pref semantics)', () => {
     await expect(isKeychainSyncEnabled('darwin')).resolves.toBe(false);
   });
 
+  it('macOS: a prefs file that cannot be read keeps sync off', async () => {
+    localPrefs.values.set('keychainSyncEnabled', new Error('malformed'));
+    await expect(isKeychainSyncEnabled('darwin')).resolves.toBe(false);
+  });
+
   it('non-macOS: always disabled regardless of the pref', async () => {
-    localPrefs.getLocalPref.mockClear();
+    localPrefs.getBooleanLocalPref.mockClear();
     await expect(isKeychainSyncEnabled('linux')).resolves.toBe(false);
     localPrefs.values.set('keychainSyncEnabled', true);
     await expect(isKeychainSyncEnabled('win32')).resolves.toBe(false);
     // The pref is never even read off macOS.
-    expect(localPrefs.getLocalPref).not.toHaveBeenCalled();
+    expect(localPrefs.getBooleanLocalPref).not.toHaveBeenCalled();
   });
 });
