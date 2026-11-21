@@ -75,6 +75,7 @@
   import ChatTurnNotice from '$lib/components/chat/ChatTurnNotice.svelte';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+  import { foldRepeatedAdvisoryTurns } from '$lib/components/chat/advisory-folding';
   import {
     groupIntoTurns,
     hasOperationalAssistantTurnBoundary,
@@ -185,7 +186,9 @@
       queuedMessages.length === 0 &&
       !queueRows?.length,
   );
-  const turns = $derived(groupIntoTurns(messages, { preserveSystemRows: true }));
+  const turns = $derived(
+    foldRepeatedAdvisoryTurns(groupIntoTurns(messages, { preserveSystemRows: true })),
+  );
   const choices = $derived(agents.map((item) => ({ value: item.id, label: item.name })));
   const canSend = $derived(
     !blocked && !sending && !loading && !!agentId && draft.trim().length > 0,
@@ -449,7 +452,7 @@
             {#snippet description()}{m.dock_conversation_empty_description()}{/snippet}
           </EmptyState>
         {/if}
-        {#each turns as turn, index (turn.userMessage?.id ?? turn.bodyMessages[0]?.id ?? turn.noticeMessages[0]?.id)}
+        {#each turns as turn, index (turn.foldedMessages?.[0]?.id ?? turn.userMessage?.id ?? turn.bodyMessages[0]?.id ?? turn.noticeMessages[0]?.id)}
           {@const next = turns[index + 1]}
           {@const isLastTurn = index === turns.length - 1}
           {@const wake = turn.userMessage && isEventWakeMessage(turn.userMessage)}

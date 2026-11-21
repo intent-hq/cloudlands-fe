@@ -9322,5 +9322,14 @@
   "passkeys_settings_deleteConfirm_title": "Delete the passkey for {site}?",
   "passkeys_settings_deleteConfirm_description": "You can no longer sign in to {site} as {user} with this passkey. Also remove it in the account settings of the site.",
   "passkeys_settings_deleteFailed_error": "The passkey was not deleted. Try again.",
-  "passkeys_settings_list_ariaLabel": "Device passkeys"
+  "passkeys_settings_list_ariaLabel": "Device passkeys",
+  "chat_advisoryWake_waiting_label": "is waiting",
+  "chat_advisoryWake_waitingOnPr_label": "is waiting on PR {ref}",
+  "chat_advisoryWake_waitingOnPrList_label": "is waiting on PRs {refs}",
+  "chat_advisoryWake_waitingOnPrCount_label": "is waiting on {count} PRs",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} is waiting on PR {ref}",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} is waiting on PRs {refs}",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} is waiting on {count} PRs",
+  "chat_advisoryWake_agentWaiting_label": "Agent {status}",
+  "chat_advisoryWake_agentWaitingType_label": "Agent is waiting"
 }

@@ -1,6 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import { getAttentionNotice } from './attention-notice';
 import { renderedBlockText } from './prepare-message-blocks';
+import { foldRepeatedAdvisoryTurns } from './advisory-folding';
 
 export interface ConversationTurn {
   userMessage: AgentMessage | null;
@@ -10,6 +11,8 @@ export interface ConversationTurn {
   assistantMessages: AgentMessage[];
   /** Model, effort, and provider re-home notices retain their placement before the turn body. */
   noticeMessages: AgentMessage[];
+  /** Earlier advisory rows represented by this turn's latest wake. */
+  foldedMessages?: AgentMessage[];
 }
 
 interface ConversationTurnGroup<TGroup> {
@@ -181,14 +184,17 @@ export function groupIntoTurns(
 
 export function indexConversationTurns<
   TGroup extends { messages: AgentMessage[]; groupKey?: string },
->(groups: TGroup[]): ConversationTurnIndex<TGroup> {
+>(
+  groups: TGroup[],
+  { keepMessageId }: { keepMessageId?: string | null } = {},
+): ConversationTurnIndex<TGroup> {
   const indexedGroups: Array<ConversationTurnGroup<TGroup>> = [];
   const globalIndexByTurnKey = new Map<string, number>();
   const turnKeyByMessageId = new Map<string, string>();
   let globalIndex = 0;
 
   groups.forEach((group, groupIndex) => {
-    const turns = groupIntoTurns(group.messages);
+    const turns = foldRepeatedAdvisoryTurns(groupIntoTurns(group.messages), keepMessageId);
     indexedGroups.push({ group, turns });
     turns.forEach((turn, turnIndex) => {
       // Orphan turns key off the group's stable `groupKey` when present
@@ -204,6 +210,9 @@ export function indexConversationTurns<
         turn.userMessage?.id ?? `group-${group.groupKey ?? groupIndex}-turn-${turnIndex}`;
       globalIndexByTurnKey.set(turnKey, globalIndex++);
       if (turn.userMessage) turnKeyByMessageId.set(turn.userMessage.id, turnKey);
+      for (const message of turn.foldedMessages ?? []) {
+        turnKeyByMessageId.set(message.id, turnKey);
+      }
       for (const message of turn.bodyMessages) {
         turnKeyByMessageId.set(message.id, turnKey);
       }

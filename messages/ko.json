@@ -9322,5 +9322,14 @@
   "passkeys_settings_deleteConfirm_title": "{site}의 패스키를 삭제할까요?",
   "passkeys_settings_deleteConfirm_description": "이 패스키로 더 이상 {user}(으)로 {site}에 로그인할 수 없습니다. 사이트의 계정 설정에서도 삭제하세요.",
   "passkeys_settings_deleteFailed_error": "패스키가 삭제되지 않았습니다. 다시 시도하세요.",
-  "passkeys_settings_list_ariaLabel": "기기 패스키"
+  "passkeys_settings_list_ariaLabel": "기기 패스키",
+  "chat_advisoryWake_waiting_label": "대기 중",
+  "chat_advisoryWake_waitingOnPr_label": "PR {ref} 대기 중",
+  "chat_advisoryWake_waitingOnPrList_label": "PR {refs} 대기 중",
+  "chat_advisoryWake_waitingOnPrCount_label": "PR {count}개 대기 중",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name}: PR {ref} 대기 중",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name}: PR {refs} 대기 중",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name}: PR {count}개 대기 중",
+  "chat_advisoryWake_agentWaiting_label": "에이전트: {status}",
+  "chat_advisoryWake_agentWaitingType_label": "에이전트 대기 중"
 }

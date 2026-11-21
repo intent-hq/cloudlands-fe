@@ -9322,5 +9322,14 @@
   "passkeys_settings_deleteConfirm_title": "{site} のパスキーを削除しますか？",
   "passkeys_settings_deleteConfirm_description": "このパスキーで {user} として {site} にサインインできなくなります。サイトのアカウント設定でも削除してください。",
   "passkeys_settings_deleteFailed_error": "パスキーは削除されませんでした。もう一度お試しください。",
-  "passkeys_settings_list_ariaLabel": "デバイスのパスキー"
+  "passkeys_settings_list_ariaLabel": "デバイスのパスキー",
+  "chat_advisoryWake_waiting_label": "待機中",
+  "chat_advisoryWake_waitingOnPr_label": "PR {ref} を待機中",
+  "chat_advisoryWake_waitingOnPrList_label": "PR {refs} を待機中",
+  "chat_advisoryWake_waitingOnPrCount_label": "{count} 件の PR を待機中",
+  "chat_advisoryWake_nameWaitingOnPr_label": "{name} は PR {ref} を待機中",
+  "chat_advisoryWake_nameWaitingOnPrList_label": "{name} は PR {refs} を待機中",
+  "chat_advisoryWake_nameWaitingOnPrCount_label": "{name} は {count} 件の PR を待機中",
+  "chat_advisoryWake_agentWaiting_label": "エージェント: {status}",
+  "chat_advisoryWake_agentWaitingType_label": "エージェントは待機中"
 }

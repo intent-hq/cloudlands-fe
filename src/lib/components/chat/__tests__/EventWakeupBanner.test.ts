@@ -704,3 +704,72 @@ describe('EventWakeupBanner agent-id suppression', () => {
     });
   });
 });
+
+describe('EventWakeupBanner monitoring-idle advisories', () => {
+  const ID_SHAPED_AGENT = 'agent-0b9d1f3e-5a7c-4e21-9c4d-2f6a8b0c1d3e';
+  const advisory = (
+    waiting: Record<string, unknown>,
+    data: Record<string, unknown> = { agentId: 'agent-advisory', agentName: 'Builder' },
+  ): Metadata & Record<string, unknown> => ({
+    type: 'event_notification',
+    eventCount: 1,
+    eventTypes: ['agent:idle'],
+    watchStillArmed: true,
+    childExternallyWaiting: true,
+    ...waiting,
+    events: [{ type: 'agent:idle', timestamp: '2026-11-20T22:20:00.000Z', data }],
+  });
+  const prs = (...numbers: number[]) => ({
+    waitingOnPrMonitors: numbers.map((prNumber) => ({
+      monitorId: `m-${prNumber}`,
+      repo: 'acme/app',
+      prNumber,
+    })),
+  });
+
+  it.each([
+    [prs(779), 'is waiting on PR #779'],
+    [prs(779, 797), 'is waiting on PRs #779 and #797'],
+    [prs(1, 2, 3), 'is waiting on 3 PRs'],
+    [{ waitingOnHooks: [{ hookId: 'h', name: 'Deploy' }] }, 'is waiting'],
+    [{ waitingOnScriptMonitors: [{ scriptName: 'e2e', runId: 'r' }] }, 'is waiting'],
+  ])('labels the row, its name, and its details as waiting (%#)', async (waiting, status) => {
+    renderBanner(advisory(waiting), { showAgentCards: true, workspace: WORKSPACE });
+
+    expect(screen.getByTestId('event-wakeup-agent-name').textContent?.trim()).toBe('Builder');
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe(status);
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe(`Builder ${status}`);
+    expect(screen.getByTestId('event-agent-avatar').dataset.completed).toBe('false');
+
+    await fireEvent.click(summary);
+    const card = screen.getByTestId('event-wakeup-card');
+    expect(card.textContent).not.toMatch(/finished/i);
+  });
+
+  it('keeps detail rows waiting when the header does not own the agent identity', async () => {
+    renderBanner(advisory(prs(779)));
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    const detail = screen.getByTestId('event-wakeup-detail');
+    expect(detail.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      'Builder is waiting on PR #779',
+    );
+    expect(detail.textContent).not.toMatch(/finished/i);
+  });
+
+  it('falls back to a generic waiting label when the name is an agent id', async () => {
+    renderBanner(advisory(prs(779), { agentId: ID_SHAPED_AGENT }));
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe('Agent is waiting on PR #779');
+    await fireEvent.click(summary);
+    expect(screen.getByTestId('event-wakeup-card').textContent).not.toMatch(/finished/i);
+    expect(screen.getByTestId('event-wakeup-card').textContent).not.toContain(ID_SHAPED_AGENT);
+  });
+
+  it('keeps genuine completions finished', () => {
+    const { childExternallyWaiting: _omit, ...genuine } = advisory(prs(779));
+    renderBanner(genuine as Metadata, { showAgentCards: true, workspace: WORKSPACE });
+    expect(screen.getByTestId('event-wakeup-status').textContent?.trim()).toBe('finished');
+    expect(screen.getByTestId('event-agent-avatar').dataset.completed).toBe('true');
+  });
+});

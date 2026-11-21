@@ -380,3 +380,45 @@ describe('conversation turn indexing', () => {
     expect(turns[0].assistantMessages.map(({ id }) => id)).toEqual(['assistant']);
   });
 });
+
+describe('advisory wake folding in the turn index', () => {
+  const advisory = (id: string): AgentMessage =>
+    ({
+      id,
+      role: 'user',
+      contentBlocks: [],
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:idle'],
+        childExternallyWaiting: true,
+        waitingOnPrMonitors: [{ monitorId: 'm', repo: 'acme/app', prNumber: 779 }],
+        events: [{ type: 'agent:idle', timestamp: '', data: { agentId: 'agent-a' } }],
+      },
+    }) as unknown as AgentMessage;
+
+  it('renders one row per run and maps folded ids to the surviving turn', () => {
+    const indexed = indexConversationTurns([
+      { messages: [advisory('a1'), advisory('a2'), advisory('a3')] },
+    ]);
+    expect(indexed.groups[0].turns.map((turn) => turn.userMessage?.id)).toEqual(['a3']);
+    expect(indexed.groups[0].turns[0].foldedMessages?.map(({ id }) => id)).toEqual(['a1', 'a2']);
+    expect([...indexed.globalIndexByTurnKey.keys()]).toEqual(['a3']);
+    expect(indexed.turnKeyByMessageId.get('a1')).toBe('a3');
+    expect(indexed.turnKeyByMessageId.get('a2')).toBe('a3');
+  });
+
+  it('never folds across date groups and keeps the divider anchor visible', () => {
+    const acrossDays = indexConversationTurns([
+      { messages: [advisory('d1')] },
+      { messages: [advisory('d2')] },
+    ]);
+    expect(acrossDays.groups.map((group) => group.turns.length)).toEqual([1, 1]);
+
+    const anchored = indexConversationTurns(
+      [{ messages: [advisory('a1'), advisory('a2'), advisory('a3')] }],
+      { keepMessageId: 'a2' },
+    );
+    expect(anchored.groups[0].turns.map((turn) => turn.userMessage?.id)).toEqual(['a2', 'a3']);
+  });
+});

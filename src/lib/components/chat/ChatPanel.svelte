@@ -4728,7 +4728,9 @@
 
   // Compute the turn structure and both virtualization/search indexes in one
   // transcript pass rather than regrouping each date bucket for every consumer.
-  const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
+  const conversationTurnIndex = $derived(
+    indexConversationTurns(groupedMessages, { keepMessageId: newMessagesDividerAnchorId }),
+  );
   const hydrationMessages = $derived.by((): HydrationMessage[] =>
     conversationTurnIndex.groups
       .flatMap(({ turns }) =>
@@ -7763,7 +7765,7 @@
                    rendered turns. -->
               {#each conversationTurnIndex.groups as indexedGroup, groupIndex (indexedGroup.group.groupKey ?? dateGroupKeys[groupIndex] ?? groupIndex)}
                 {@const turns = indexedGroup.turns}
-                {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
+                {#each turns as turn, turnIndex (turn.foldedMessages?.[0]?.id ?? turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey =
                     turn.userMessage?.id ??
                     `group-${indexedGroup.group.groupKey ?? groupIndex}-turn-${turnIndex}`}
@@ -7884,6 +7886,14 @@
                         use:attachPinnedPromptMessage={message}
                         transition:safeDisclosureTransition={{ tier: 'moderate' }}
                       >
+                        {#each turn.foldedMessages ?? [] as folded (folded.id)}
+                          <span
+                            data-message-id={folded.id}
+                            data-message-index={getMessageIndex(folded.id)}
+                            class="pointer-events-none absolute inset-0"
+                            aria-hidden="true"
+                          ></span>
+                        {/each}
                         <EventWakeupBanner
                           metadata={message.metadata as {
                             type: 'event_notification';
