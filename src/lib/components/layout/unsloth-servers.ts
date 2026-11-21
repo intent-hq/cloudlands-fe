@@ -35,3 +35,14 @@ export function planUnslothStop(
     ? { stopsAll: true, serverCount: rows.length, attachedAgentCount }
     : { stopsAll: false, attachedAgentCount };
 }
+
+/** The agents a stop would cut off: live while the server is listed, else as planned. */
+export function stopAgentCount(
+  plan: UnslothStopPlan,
+  model: string | undefined,
+  rows: UnslothServerWirePayload[],
+): number {
+  if (plan.stopsAll) return plan.attachedAgentCount;
+  const row = model ? rows.find((server) => server.repoId === model) : undefined;
+  return row?.attachedAgentCount ?? plan.attachedAgentCount;
+}

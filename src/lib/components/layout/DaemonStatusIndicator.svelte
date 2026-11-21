@@ -110,7 +110,12 @@
   import { selectPausedCloudSandboxCount } from '$features/cloud-machines/cloud-machines-selectors';
   import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
   import UnslothServerSubmenu from './UnslothServerSubmenu.svelte';
-  import { planUnslothStop, unslothServerRows, type UnslothStopPlan } from './unsloth-servers';
+  import {
+    planUnslothStop,
+    stopAgentCount,
+    unslothServerRows,
+    type UnslothStopPlan,
+  } from './unsloth-servers';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
@@ -385,20 +390,8 @@
   );
 
   const unslothServers = $derived(unslothServerRows($unslothStatus$));
-  // A daemon without stopByModel stops every server, so say so when several run.
-  const stopsAllUnsloth = $derived(
-    unslothServers.length > 1 && $unslothStatus$?.stopByModel !== true,
-  );
-
   // Fixed when the dialog opens, so a later poll cannot widen the stop.
   let stopUnslothPlan = $state<{ plan: UnslothStopPlan; model?: string } | null>(null);
-  // The row's server as last polled, for a live agent count.
-  const stopUnslothServer = $derived(
-    stopUnslothPlan?.model
-      ? unslothServers.find((server) => server.repoId === stopUnslothPlan?.model)
-      : undefined,
-  );
-
   function openStopUnsloth(server: UnslothServerWirePayload) {
     stopUnslothPlan = {
       plan: planUnslothStop($unslothStatus$, server.repoId),
@@ -418,7 +411,9 @@
         ? m.layout_daemonStatus_stopUnslothAllAttached_one({ servers, count })
         : m.layout_daemonStatus_stopUnslothAllAttached_many({ servers, count });
     }
-    const count = stopUnslothServer?.attachedAgentCount ?? 0;
+    const count = stopUnslothPlan
+      ? stopAgentCount(stopUnslothPlan.plan, stopUnslothPlan.model, unslothServers)
+      : 0;
     const model = stopUnslothPlan?.model ?? m.layout_daemonStatus_unslothFallbackModel_label();
     if (count > 0) {
       return count === 1
@@ -901,7 +896,7 @@
           <UnslothServerSubmenu
             status={server}
             serverCount={unslothServers.length}
-            stopsAll={stopsAllUnsloth}
+            stopsAll={planUnslothStop($unslothStatus$, server.repoId).stopsAll}
             {menuAnchor}
             onStop={() => openStopUnsloth(server)}
           />
