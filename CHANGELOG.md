@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.366.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.365.2...v2.366.0) (2026-11-21)
+
+
+### 🚀 Features
+
+* always sign in to Codex profiles with device auth ([#4888](https://github.com/intent-hq/cloudlands-fe/issues/4888)) ([53c8741](https://github.com/intent-hq/cloudlands-fe/commit/53c8741ae998cf8e58a946f638175aab79044f39))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.265 ([#4895](https://github.com/intent-hq/cloudlands-fe/issues/4895)) ([858d210](https://github.com/intent-hq/cloudlands-fe/commit/858d210ae095be42801deb90b093b7c7bf89030a))
+
 ## [2.365.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.365.1...v2.365.2) (2026-11-21)
 
 
