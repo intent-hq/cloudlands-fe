@@ -1,4 +1,13 @@
-import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
+import {
+  actionChannel,
+  all,
+  call,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   clearAutocompleteApiKey,
@@ -72,11 +81,13 @@ function* changeEnabledWorker(
 function* changeServiceWorker(
   action: ReturnType<typeof changeAutocompleteService>,
 ): SagaGenerator<void> {
-  const [service, disableFirst = false] = action.payload;
-  const previous = (yield* selectAutocompleteSettings.effect()).service;
+  const [service] = action.payload;
+  const current = yield* selectAutocompleteSettings.effect();
+  const previous = current.service;
   if (previous === service) return;
-  if (disableFirst) {
-    // Off first: the new service must not run until its gate passes.
+  if (current.enabled && !current.keyConfigured[service]) {
+    // Decided here, after earlier mutations settled: a keyless service must
+    // not run until its consent or key gate passes, so turn off first.
     yield* call(persistEnabled, false);
     if ((yield* selectAutocompleteSettings.effect()).enabled) return;
   }
@@ -146,14 +157,44 @@ function* clearKeyWorker(action: ReturnType<typeof clearAutocompleteKey>): SagaG
   }
 }
 
+type Mutation =
+  | ReturnType<typeof changeAutocompleteEnabled>
+  | ReturnType<typeof changeAutocompleteService>
+  | ReturnType<typeof saveAutocompleteKey>
+  | ReturnType<typeof clearAutocompleteKey>;
+
+/**
+ * Enabled, service and key changes run one at a time: each decides its gate
+ * from settled state, so an overlapping switch-off and service change cannot
+ * leave a keyless service on without consent.
+ */
+function* serialMutations(): SagaGenerator<void> {
+  const channel = yield* actionChannel<Mutation>(
+    [
+      changeAutocompleteEnabled,
+      changeAutocompleteService,
+      saveAutocompleteKey,
+      clearAutocompleteKey,
+    ],
+    buffers.expanding(),
+  );
+  while (true) {
+    const action = yield* take(channel);
+    if (action.type === changeAutocompleteEnabled.type)
+      yield* call(changeEnabledWorker, action as ReturnType<typeof changeAutocompleteEnabled>);
+    else if (action.type === changeAutocompleteService.type)
+      yield* call(changeServiceWorker, action as ReturnType<typeof changeAutocompleteService>);
+    else if (action.type === saveAutocompleteKey.type)
+      yield* call(saveKeyWorker, action as ReturnType<typeof saveAutocompleteKey>);
+    else yield* call(clearKeyWorker, action as ReturnType<typeof clearAutocompleteKey>);
+  }
+}
+
 export function* autocompleteSettingsSaga(): SagaGenerator<void> {
   yield* all([
     call(initializeWorker),
     takeEvery(initializeAutocompleteSettings, initializeWorker),
-    takeEvery(changeAutocompleteEnabled, changeEnabledWorker),
-    takeEvery(changeAutocompleteService, changeServiceWorker),
+    call(serialMutations),
     takeEvery(changeAutocompleteModel, changeModelWorker),
-    takeEvery(saveAutocompleteKey, saveKeyWorker),
-    takeEvery(clearAutocompleteKey, clearKeyWorker),
   ]);
 }

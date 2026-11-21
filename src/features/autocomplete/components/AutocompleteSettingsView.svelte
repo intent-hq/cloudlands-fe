@@ -60,7 +60,7 @@
     /** The key field is open for this service (bindable for previews). */
     keyInputFor?: AutocompleteService | null;
     onEnabledChange: (enabled: boolean) => void;
-    onServiceChange: (service: AutocompleteService, disableFirst?: boolean) => void;
+    onServiceChange: (service: AutocompleteService) => void;
     onModelChange: (model: AutocompleteModel) => void;
     onSaveKey: (service: AutocompleteService, apiKey: string, enableAfter: boolean) => void;
     onClearKey: (service: AutocompleteService, disableAfter: boolean) => void;
@@ -130,9 +130,13 @@
       return;
     }
     const decision = decideServiceChange(enabled, value, keyConfigured);
-    onServiceChange(value, decision.disable);
+    onServiceChange(value);
     if (decision.confirmKilo) confirmOpen = true;
-    if (decision.askKey) openKeyInput(value);
+    if (decision.askKey) {
+      // The switch to a keyless OpenRouter turns autocomplete off; saving the key turns it back on.
+      pendingEnable = enabled;
+      openKeyInput(value);
+    }
   }
 
   function handleModelChange(value: string) {

@@ -200,7 +200,7 @@ describe('autocompleteSettingsSaga', () => {
   it('turns off before switching to keyless Kilo', async () => {
     mocks.load.mockResolvedValue({ ...snapshot, enabled: true, service: 'openrouter' });
     const { dispatch, getState, task } = await ready();
-    dispatch(changeAutocompleteService('kilo', true));
+    dispatch(changeAutocompleteService('kilo'));
     await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
     expect(mocks.setEnabled).toHaveBeenCalledWith(false);
     expect(mocks.setEnabled.mock.invocationCallOrder[0]).toBeLessThan(
@@ -214,10 +214,47 @@ describe('autocompleteSettingsSaga', () => {
     mocks.load.mockResolvedValue({ ...snapshot, enabled: true, service: 'openrouter' });
     mocks.setEnabled.mockRejectedValueOnce(new Error('nope'));
     const { dispatch, getState, task } = await ready();
-    dispatch(changeAutocompleteService('kilo', true));
+    dispatch(changeAutocompleteService('kilo'));
     await vi.waitFor(() => expect(getState().error).not.toBeNull());
     expect(mocks.setService).not.toHaveBeenCalled();
     expect(getState()).toMatchObject({ enabled: true, service: 'openrouter' });
+    task.cancel();
+  });
+
+  it('never leaves keyless Kilo on when a failed switch-off overlaps a service change', async () => {
+    mocks.load.mockResolvedValue({ ...snapshot, enabled: true, service: 'openrouter' });
+    let rejectFirstOff: (error: Error) => void = () => {};
+    mocks.setEnabled.mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (rejectFirstOff = reject)),
+    );
+    const { dispatch, getState, task } = await ready();
+    const seen: Array<{ enabled: boolean; service: string }> = [];
+    dispatch(changeAutocompleteEnabled(false));
+    dispatch(changeAutocompleteService('kilo'));
+    rejectFirstOff(new Error('nope'));
+    await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
+    seen.push(getState());
+    expect(mocks.setEnabled).toHaveBeenCalledTimes(2);
+    expect(mocks.setEnabled.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.setService.mock.invocationCallOrder[0],
+    );
+    expect(seen.every((s) => !(s.enabled && s.service === 'kilo'))).toBe(true);
+    expect(getState()).toMatchObject({ enabled: false, service: 'kilo' });
+    task.cancel();
+  });
+
+  it('switches to Kilo without turning off when a Kilo key is saved', async () => {
+    mocks.load.mockResolvedValue({
+      ...snapshot,
+      enabled: true,
+      service: 'openrouter',
+      keyConfigured: { kilo: true, openrouter: true },
+    });
+    const { dispatch, getState, task } = await ready();
+    dispatch(changeAutocompleteService('kilo'));
+    await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
+    expect(mocks.setEnabled).not.toHaveBeenCalled();
+    expect(getState()).toMatchObject({ enabled: true, service: 'kilo' });
     task.cancel();
   });
 });
