@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "复制隧道地址失败",
   "settings_tunnel_tcAddress_label": "Tailcat 地址",
   "settings_tunnel_relay_label": "中继",
-  "settings_tunnel_relay_description": "你自己的中继的中继地图 URL。云沙箱也会使用它。留空则使用默认中继。",
+  "settings_tunnel_relay_description": "你自托管中继的地图 URL（DERP 地图 JSON）。云沙箱也会使用它。在隧道或沙箱启动时检查。留空则使用默认中继。",
   "settings_tunnel_relay_placeholder": "默认中继",
   "settings_tunnel_relay_invalid": "请输入以 https:// 或 http:// 开头的 URL。",
   "settings_tunnel_relay_saved": "中继已保存",

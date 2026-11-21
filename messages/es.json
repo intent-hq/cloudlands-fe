@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "No se pudo copiar la dirección del túnel",
   "settings_tunnel_tcAddress_label": "Dirección de Tailcat",
   "settings_tunnel_relay_label": "Relé",
-  "settings_tunnel_relay_description": "La URL del mapa de relés de tu propio relé. Los sandboxes en la nube también la usan. Déjala vacía para usar los relés predeterminados.",
+  "settings_tunnel_relay_description": "La URL del mapa de tu relé autoalojado (JSON de mapa DERP). Los sandboxes en la nube también la usan. Se comprueba cuando se inicia el túnel o un sandbox. Déjala vacía para usar los relés predeterminados.",
   "settings_tunnel_relay_placeholder": "Relés predeterminados",
   "settings_tunnel_relay_invalid": "Introduce una URL que empiece por https:// o http://.",
   "settings_tunnel_relay_saved": "Relé guardado",

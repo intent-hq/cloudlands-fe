@@ -355,7 +355,8 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         );
         return;
       }
-      // A set relay must answer before the tunnel restarts, so the daemon's refusal is the check.
+      // A running tunnel restarts and checks the relay, so a dead one is refused here; a
+      // stopped tunnel only saves it, and the check runs at the next tunnel or sandbox start.
       try {
         yield* call(
           [client.settings, client.settings.update],

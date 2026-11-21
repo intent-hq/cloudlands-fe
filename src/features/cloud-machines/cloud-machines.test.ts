@@ -898,9 +898,10 @@ describe('self-hosted relay', () => {
     ).not.toHaveProperty('relayUrl');
   });
 
-  it('names the relay host of an entry, preferring a running sandbox', () => {
+  it('names the relay of a running sandbox only, since a paused one changes at resume', () => {
     const [running, , paused] = E2B_SANDBOXES;
     expect(cloudEntryRelayLabel([])).toBeNull();
+    expect(cloudEntryRelayLabel([withRelay(paused!, RELAY)])).toBeNull();
     expect(cloudEntryRelayLabel([withRelay(running!)])).toBe(m.cloudMachines_relay_default());
     expect(
       cloudEntryRelayLabel([
@@ -908,7 +909,7 @@ describe('self-hosted relay', () => {
         withRelay(running!, RELAY),
       ]),
     ).toBe(m.cloudMachines_relay_host({ host: 'relay.example.com' }));
-    expect(cloudEntryRelayLabel([withRelay(paused!, 'not a url')])).toBe(
+    expect(cloudEntryRelayLabel([withRelay(running!, 'not a url')])).toBe(
       m.cloudMachines_relay_host({ host: 'not a url' }),
     );
   });

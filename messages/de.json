@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "Tunnel-Adresse konnte nicht kopiert werden",
   "settings_tunnel_tcAddress_label": "Tailcat-Adresse",
   "settings_tunnel_relay_label": "Relay",
-  "settings_tunnel_relay_description": "Die Relay-Map-URL deines eigenen Relays. Cloud-Sandboxes nutzen sie ebenfalls. Leer lassen, um die Standard-Relays zu verwenden.",
+  "settings_tunnel_relay_description": "Die URL der Map deines selbst gehosteten Relays (DERP-Map-JSON). Cloud-Sandboxes nutzen sie ebenfalls. Sie wird geprüft, wenn der Tunnel oder eine Sandbox startet. Leer lassen für die Standard-Relays.",
   "settings_tunnel_relay_placeholder": "Standard-Relays",
   "settings_tunnel_relay_invalid": "Gib eine URL ein, die mit https:// oder http:// beginnt.",
   "settings_tunnel_relay_saved": "Relay gespeichert",

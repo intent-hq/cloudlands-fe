@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "Échec de la copie de l'adresse du tunnel",
   "settings_tunnel_tcAddress_label": "Adresse Tailcat",
   "settings_tunnel_relay_label": "Relais",
-  "settings_tunnel_relay_description": "L’URL de la carte de relais de votre propre relais. Les sandboxes cloud l’utilisent aussi. Laissez vide pour utiliser les relais par défaut.",
+  "settings_tunnel_relay_description": "L’URL de la carte de votre relais auto-hébergé (JSON de carte DERP). Les sandboxes cloud l’utilisent aussi. Elle est vérifiée au démarrage du tunnel ou d’une sandbox. Laissez vide pour les relais par défaut.",
   "settings_tunnel_relay_placeholder": "Relais par défaut",
   "settings_tunnel_relay_invalid": "Saisissez une URL qui commence par https:// ou http://.",
   "settings_tunnel_relay_saved": "Relais enregistré",

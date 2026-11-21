@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "터널 주소 복사 실패",
   "settings_tunnel_tcAddress_label": "Tailcat 주소",
   "settings_tunnel_relay_label": "릴레이",
-  "settings_tunnel_relay_description": "직접 운영하는 릴레이의 릴레이 맵 URL입니다. 클라우드 샌드박스도 이 값을 사용합니다. 비워 두면 기본 릴레이를 사용합니다.",
+  "settings_tunnel_relay_description": "직접 호스팅하는 릴레이의 맵 URL(DERP 맵 JSON)입니다. 클라우드 샌드박스도 이 값을 사용합니다. 터널이나 샌드박스가 시작될 때 확인됩니다. 비워 두면 기본 릴레이를 사용합니다.",
   "settings_tunnel_relay_placeholder": "기본 릴레이",
   "settings_tunnel_relay_invalid": "https:// 또는 http://로 시작하는 URL을 입력하세요.",
   "settings_tunnel_relay_saved": "릴레이를 저장했습니다",

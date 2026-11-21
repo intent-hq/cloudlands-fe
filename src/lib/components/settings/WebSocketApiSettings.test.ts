@@ -1251,6 +1251,10 @@ describe('WebSocketApiSettings', () => {
         mocks.mockSettingsList.mockResolvedValue(relayRows(''));
         const input = await relayInput();
         await waitFor(() => expect(input.disabled).toBe(false));
+        await fireEvent.input(input, { target: { value: 'h' } });
+        expect(screen.queryByText(m.settings_tunnel_relay_invalid())).toBeNull();
+        await fireEvent.blur(input);
+        expect(screen.getByText(m.settings_tunnel_relay_invalid())).toBeTruthy();
         for (const value of ['relay.example.com', 'ftp://relay.example.com/map', 'https://']) {
           await fireEvent.input(input, { target: { value } });
           expect(screen.getByText(m.settings_tunnel_relay_invalid())).toBeTruthy();
@@ -1258,6 +1262,31 @@ describe('WebSocketApiSettings', () => {
           await fireEvent.keyDown(input, { key: 'Enter' });
         }
         expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+      });
+
+      it('shows the relay with remote access off, since cloud sandboxes use it', async () => {
+        mocks.mockSettingsList.mockResolvedValue(
+          relayRows(RELAY).map((row) =>
+            row.path === 'server.wsApi.enabled' ? { ...row, value: false } : row,
+          ),
+        );
+        const input = await relayInput();
+        await waitFor(() => expect(input.value).toBe(RELAY));
+        expect(screen.queryByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeNull();
+      });
+
+      it('opens Advanced and focuses the field for #tunnel-relay', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(RELAY));
+        window.location.hash = '#tunnel-relay';
+        try {
+          render(WebSocketApiSettings);
+          const input = (await screen.findByRole('textbox', {
+            name: m.settings_tunnel_relay_label(),
+          })) as HTMLInputElement;
+          await waitFor(() => expect(document.activeElement).toBe(input));
+        } finally {
+          window.location.hash = '';
+        }
       });
 
       it('says in plain words when the daemon cannot reach the relay, and keeps the draft', async () => {

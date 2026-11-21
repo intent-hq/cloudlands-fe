@@ -228,7 +228,7 @@ describe('E2B start failure card', () => {
     await fireEvent.click(action(card, 'relay-settings')!);
     expect(navigation.navigateToSettings).toHaveBeenCalledWith({
       tab: 'mobile',
-      hash: 'websocket-api',
+      hash: 'tunnel-relay',
     });
   });
 

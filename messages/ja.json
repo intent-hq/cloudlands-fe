@@ -5839,7 +5839,7 @@
   "settings_tunnel_tcAddress_copyError": "トンネルアドレスのコピーに失敗しました",
   "settings_tunnel_tcAddress_label": "Tailcat アドレス",
   "settings_tunnel_relay_label": "リレー",
-  "settings_tunnel_relay_description": "自分のリレーのリレーマップ URL。クラウドサンドボックスもこれを使います。空欄にすると既定のリレーを使います。",
+  "settings_tunnel_relay_description": "セルフホストしたリレーのマップ URL（DERP マップ JSON）。クラウドサンドボックスもこれを使います。トンネルまたはサンドボックスの起動時に確認されます。空欄にすると既定のリレーを使います。",
   "settings_tunnel_relay_placeholder": "既定のリレー",
   "settings_tunnel_relay_invalid": "https:// または http:// で始まる URL を入力してください。",
   "settings_tunnel_relay_saved": "リレーを保存しました",

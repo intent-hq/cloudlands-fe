@@ -187,11 +187,11 @@ function relayHost(url: string): string {
 }
 
 /**
- * The relay an entry's sandboxes use, from a running one when there is one;
- * null without sandboxes, since the relay is known only from a sandbox.
+ * The relay an entry's running sandboxes use; null without one, since a paused
+ * sandbox picks up the current setting only at its next resume.
  */
 export function cloudEntryRelayLabel(sandboxes: readonly RemoteMachine[]): string | null {
-  const sandbox = sandboxes.find((row) => row.cloud?.state === 'running') ?? sandboxes[0];
+  const sandbox = sandboxes.find((row) => row.cloud?.state === 'running');
   if (!sandbox?.cloud) return null;
   const url = sandbox.cloud.relayUrl;
   return url

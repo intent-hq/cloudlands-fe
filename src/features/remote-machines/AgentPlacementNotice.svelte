@@ -167,7 +167,7 @@
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
   function openRelaySettings() {
-    void navigateToSettings({ tab: 'mobile', hash: 'websocket-api' });
+    void navigateToSettings({ tab: 'mobile', hash: 'tunnel-relay' });
   }
 </script>
 
