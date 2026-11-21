@@ -32,7 +32,7 @@ describe('app UI targets registry', () => {
       shell: 'setup',
       workspace: 'setup',
       'cli-optimization': 'token-savings',
-      'workspace-api': 'token-savings',
+      'workspace-api': 'advanced',
       'utility-default-model': 'providers',
       notifications: 'app-behavior',
       updates: 'app-behavior',

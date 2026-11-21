@@ -124,6 +124,8 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     route: '/settings?tab=mobile#websocket-api',
     description: 'Remote access (WebSocket API) settings.',
   }),
+  // workspace-api keeps tab 'advanced': intentd's app-ui-targets.json must match each row
+  // exactly, and settings-hash-tab.ts sends #workspace-api to Token Savings either way.
   ...[
     ['voice', 'Voice Dictation', 'Voice dictation settings.', 'input'],
     ['keyboard-shortcuts', 'Keyboard Shortcuts', 'Keyboard shortcuts reference.', 'input'],
@@ -138,7 +140,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
       'workspace-api',
       'Tool Output & Retention',
       'Tool output size and retention settings.',
-      'token-savings',
+      'advanced',
     ],
     ['notifications', 'Notifications', 'Notification preferences.', 'app-behavior'],
     ['updates', 'Updates', 'Application update preferences.', 'app-behavior'],
