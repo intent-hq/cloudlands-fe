@@ -156,11 +156,44 @@ describe('autocompleteSettingsSaga', () => {
     });
     const { dispatch, getState, task } = await ready();
     dispatch(clearAutocompleteKey('openrouter', true));
-    await vi.waitFor(() => expect(mocks.setEnabled).toHaveBeenCalledWith(false));
+    await vi.waitFor(() => expect(getState().keyConfigured.openrouter).toBe(false));
+    expect(mocks.setEnabled).toHaveBeenCalledWith(false);
     expect(getState()).toMatchObject({
       enabled: false,
       keyConfigured: { kilo: false, openrouter: false },
     });
+    task.cancel();
+  });
+
+  it('turns autocomplete off before removing the active key, so no keyless request slips in', async () => {
+    mocks.load.mockResolvedValue({
+      ...snapshot,
+      enabled: true,
+      keyConfigured: { kilo: true, openrouter: false },
+    });
+    const { dispatch, getState, task } = await ready();
+    dispatch(clearAutocompleteKey('kilo', true));
+    await vi.waitFor(() => expect(mocks.clearKey).toHaveBeenCalledWith('kilo'));
+    expect(mocks.setEnabled).toHaveBeenCalledWith(false);
+    expect(mocks.setEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.clearKey.mock.invocationCallOrder[0],
+    );
+    expect(getState()).toMatchObject({ enabled: false, keyConfigured: { kilo: false } });
+    task.cancel();
+  });
+
+  it('keeps the key when turning off fails', async () => {
+    mocks.load.mockResolvedValue({
+      ...snapshot,
+      enabled: true,
+      keyConfigured: { kilo: true, openrouter: false },
+    });
+    mocks.setEnabled.mockRejectedValueOnce(new Error('nope'));
+    const { dispatch, getState, task } = await ready();
+    dispatch(clearAutocompleteKey('kilo', true));
+    await vi.waitFor(() => expect(getState().error).not.toBeNull());
+    expect(mocks.clearKey).not.toHaveBeenCalled();
+    expect(getState()).toMatchObject({ enabled: true, keyConfigured: { kilo: true } });
     task.cancel();
   });
 });

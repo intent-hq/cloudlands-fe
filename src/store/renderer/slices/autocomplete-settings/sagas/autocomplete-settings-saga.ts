@@ -122,21 +122,23 @@ function* saveKeyWorker(action: ReturnType<typeof saveAutocompleteKey>): SagaGen
 }
 
 function* clearKeyWorker(action: ReturnType<typeof clearAutocompleteKey>): SagaGenerator<void> {
-  const [service, disableAfter] = action.payload;
+  const [service, disableFirst] = action.payload;
+  if (disableFirst) {
+    // Off first: a request between the key delete and the switch-off would go keyless.
+    yield* call(persistEnabled, false);
+    if ((yield* selectAutocompleteSettings.effect()).enabled) return;
+  }
   yield* put(setAutocompleteSettingsError(null));
   yield* put(setAutocompleteBusyService(service));
-  let cleared = false;
   try {
     yield* call(clearAutocompleteApiKey, service);
     yield* put(setAutocompleteKeyConfigured(service, false));
-    cleared = true;
   } catch (error) {
     yield* put(setAutocompleteSettingsError(m.settings_autocomplete_keyClearFailed_error()));
     logger.error('key clear error', error);
   } finally {
     yield* put(setAutocompleteBusyService(null));
   }
-  if (cleared && disableAfter) yield* call(persistEnabled, false);
 }
 
 export function* autocompleteSettingsSaga(): SagaGenerator<void> {

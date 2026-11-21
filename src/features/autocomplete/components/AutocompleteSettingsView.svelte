@@ -206,7 +206,6 @@
               })),
               get: () => service,
               set: handleServiceChange,
-              disabled: () => !switchedOn,
             },
             {
               kind: 'select',
@@ -217,7 +216,6 @@
               options: AUTOCOMPLETE_MODELS.map((value) => ({ value, label: MODEL_LABELS[value] })),
               get: () => model,
               set: handleModelChange,
-              disabled: () => !switchedOn,
             },
             {
               kind: 'custom',
@@ -226,7 +224,6 @@
                 service: SERVICE_SHORT_LABELS[service],
               }),
               busy: () => keyBusy,
-              disabled: () => !switchedOn,
             },
           ],
         },
@@ -293,7 +290,6 @@
         variant="ghost"
         type="button"
         class="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-        disabled={!switchedOn}
         onclick={() => openKeyInput(service)}
       >
         {m.settings_autocomplete_replaceKey()}
@@ -303,7 +299,6 @@
         variant="ghost"
         type="button"
         class="cursor-pointer text-muted-foreground transition-colors hover:text-danger"
-        disabled={!switchedOn}
         onclick={handleRemoveKey}
       >
         {m.settings_autocomplete_removeKey()}
@@ -313,7 +308,6 @@
         variant="ghost"
         type="button"
         class="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-        disabled={!switchedOn}
         onclick={() => openKeyInput(service)}
       >
         {m.settings_autocomplete_addKey()}

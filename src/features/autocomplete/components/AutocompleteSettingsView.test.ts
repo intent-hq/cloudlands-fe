@@ -128,4 +128,17 @@ describe('AutocompleteSettingsView gating', () => {
     await fireEvent.click(confirm);
     expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true);
   });
+
+  it('lets a user add a key while off, without the Kilo confirmation', async () => {
+    const { onEnabledChange, onSaveKey } = setup();
+    await fireEvent.click(screen.getByRole('button', { name: m.settings_autocomplete_addKey() }));
+    await tick();
+    const input = keyInput();
+    expect(input).not.toBeNull();
+    await fireEvent.input(input as HTMLInputElement, { target: { value: 'sk-kilo' } });
+    await fireEvent.keyDown(input as HTMLInputElement, { key: 'Enter' });
+    expect(onSaveKey).toHaveBeenCalledExactlyOnceWith('kilo', 'sk-kilo', false);
+    expect(onEnabledChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: m.settings_autocomplete_kiloConfirm_confirm() })).toBeNull();
+  });
 });

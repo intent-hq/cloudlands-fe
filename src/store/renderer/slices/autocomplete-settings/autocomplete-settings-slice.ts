@@ -45,9 +45,9 @@ export const saveAutocompleteKey = createAction<
   [service: AutocompleteService, apiKey: string, enableAfter: boolean]
 >('autocompleteSettings/saveKey');
 
-/** Delete a stored key; with `disableAfter`, turn autocomplete off once it is gone. */
+/** Delete a stored key; with `disableFirst`, turn autocomplete off before deleting it. */
 export const clearAutocompleteKey = createAction<
-  [service: AutocompleteService, disableAfter: boolean]
+  [service: AutocompleteService, disableFirst: boolean]
 >('autocompleteSettings/clearKey');
 
 // --- State setters ---
