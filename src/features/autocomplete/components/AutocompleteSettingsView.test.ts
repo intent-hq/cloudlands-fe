@@ -139,6 +139,8 @@ describe('AutocompleteSettingsView gating', () => {
     await fireEvent.keyDown(input as HTMLInputElement, { key: 'Enter' });
     expect(onSaveKey).toHaveBeenCalledExactlyOnceWith('kilo', 'sk-kilo', false);
     expect(onEnabledChange).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: m.settings_autocomplete_kiloConfirm_confirm() })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: m.settings_autocomplete_kiloConfirm_confirm() }),
+    ).toBeNull();
   });
 });
