@@ -386,6 +386,19 @@
         setup: () => setup(),
       },
       'mobile-remote': { props: { mobilePage: true }, setup: () => setup(true) },
+      // A connected backend's own relay, opened the way the relay-unreachable card links to it.
+      'mobile-remote-relay': {
+        props: { mobilePage: true, relayUrl: 'https://relay.example.com/derpmap.json' },
+        setup: () => {
+          const stop = setup(true);
+          const hash = window.location.hash;
+          window.location.hash = '#tunnel-relay';
+          return () => {
+            window.location.hash = hash;
+            stop();
+          };
+        },
+      },
       'intent-web': { props: { editedMachine: 'studio' }, setup: () => setupIntentWeb(false) },
       'intent-web-empty': { props: {}, setup: () => setupIntentWeb(true) },
     },
@@ -403,11 +416,13 @@
     accessEnabled = true,
     mobilePage = false,
     editedMachine,
+    relayUrl,
   }: {
     expanded?: boolean;
     accessEnabled?: boolean;
     mobilePage?: boolean;
     editedMachine?: string;
+    relayUrl?: string;
   } = $props();
   const previous = {
     list: appClient.settings.list,
@@ -423,6 +438,11 @@
     { path: 'server.bindAddress', value: ['0.0.0.0'], type: 'string' },
     { path: 'server.tunnel.enabled', value: true, type: 'boolean' },
     { path: 'server.tunnel.only', value: false, type: 'boolean' },
+    ...untrack(() =>
+      relayUrl === undefined
+        ? []
+        : [{ path: 'server.tunnel.derpUrl', value: relayUrl, type: 'string' }],
+    ),
   ].map((entry) => ({
     label: entry.path,
     description: '',
