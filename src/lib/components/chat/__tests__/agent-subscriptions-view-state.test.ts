@@ -10,13 +10,15 @@ async function reloadModule(): Promise<ViewStateModule> {
 }
 
 describe('agent subscriptions view state persistence', () => {
+  let now = 1_000;
+
   beforeEach(() => {
-    localStorage.clear();
+    now = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now++);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    localStorage.clear();
   });
 
   it('keeps every disclosure choice for an agent thread across a reload', async () => {
@@ -67,19 +69,51 @@ describe('agent subscriptions view state persistence', () => {
 
   it('keeps working in memory when storage writes fail', async () => {
     const state = await reloadModule();
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    state.setEventSubscriptionsExpanded('ws-1', 'agent-1', true);
+    vi.mocked(localStorage.setItem).mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });
 
     state.setEventSubscriptionsExpanded('ws-1', 'agent-1', false);
+    expect(vi.mocked(localStorage.setItem).mock.results.at(-1)?.type).toBe('throw');
     expect(state.getEventSubscriptionsExpanded('ws-1', 'agent-1')).toBe(false);
+  });
+
+  it('merges choices another window saved for the same thread', async () => {
+    const state = await reloadModule();
+    state.setEventSubscriptionsExpanded('ws-1', 'agent-1', false);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<
+      string,
+      Record<string, unknown>
+    >;
+    stored['ws-1:agent-1'] = { ...stored['ws-1:agent-1'], waiting: true, at: now++ };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+
+    expect(state.getWaitingAgentsExpanded('ws-1', 'agent-1')).toBe(true);
+    state.setFinishedAgentsExpanded('ws-1', 'agent-1', true);
+
+    const after = await reloadModule();
+    expect(after.getEventSubscriptionsExpanded('ws-1', 'agent-1')).toBe(false);
+    expect(after.getWaitingAgentsExpanded('ws-1', 'agent-1')).toBe(true);
+    expect(after.getFinishedAgentsExpanded('ws-1', 'agent-1')).toBe(true);
+  });
+
+  it('never persists choices for memory-only preview workspaces', async () => {
+    const state = await reloadModule();
+    state.keepAgentSubscriptionsViewStateInMemory('preview-ws');
+    state.setEventSubscriptionsExpanded('preview-ws', 'agent-1', false);
+
+    expect(state.getEventSubscriptionsExpanded('preview-ws', 'agent-1')).toBe(false);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect((await reloadModule()).getEventSubscriptionsExpanded('preview-ws', 'agent-1')).toBe(
+      true,
+    );
   });
 
   it('drops the least recently changed threads once the cap is reached', async () => {
     const state = await reloadModule();
     const cap = state.AGENT_SUBSCRIPTIONS_VIEW_STATE_LIMIT;
-    let now = 1_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now++);
 
     for (let index = 0; index <= cap; index += 1) {
       state.setEventSubscriptionsExpanded('ws-1', `agent-${index}`, false);

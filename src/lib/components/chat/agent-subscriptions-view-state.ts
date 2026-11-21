@@ -14,6 +14,12 @@ interface ThreadViewState {
 type ViewStateRecord = Record<string, ThreadViewState>;
 
 let sessionState: ViewStateRecord = {};
+const memoryOnlyWorkspaces = new Set<string>();
+
+/** Keeps a preview or catalog workspace's choices out of the user's saved state. */
+export function keepAgentSubscriptionsViewStateInMemory(workspaceId: string): void {
+  memoryOnlyWorkspaces.add(workspaceId);
+}
 
 function disclosureKey(workspaceId: string, agentId: string): string {
   return `${workspaceId}:${agentId}`;
@@ -50,9 +56,18 @@ function pruned(record: ViewStateRecord): ViewStateRecord {
   return Object.fromEntries(entries.slice(0, AGENT_SUBSCRIPTIONS_VIEW_STATE_LIMIT));
 }
 
+function newer(
+  session: ThreadViewState | undefined,
+  stored: ThreadViewState | undefined,
+): ThreadViewState | undefined {
+  if (!session || !stored) return session ?? stored;
+  return session.at > stored.at ? session : stored;
+}
+
 function readEntry(workspaceId: string, agentId: string): ThreadViewState | undefined {
   const key = disclosureKey(workspaceId, agentId);
-  return sessionState[key] ?? readStored()[key];
+  if (memoryOnlyWorkspaces.has(workspaceId)) return sessionState[key];
+  return newer(sessionState[key], readStored()[key]);
 }
 
 function writeEntry(
@@ -61,10 +76,11 @@ function writeEntry(
   patch: Partial<Omit<ThreadViewState, 'at'>>,
 ): void {
   const key = disclosureKey(workspaceId, agentId);
-  const stored = readStored();
-  const entry = { ...(sessionState[key] ?? stored[key]), ...patch, at: Date.now() };
+  const memoryOnly = memoryOnlyWorkspaces.has(workspaceId);
+  const stored = memoryOnly ? {} : readStored();
+  const entry = { ...newer(sessionState[key], stored[key]), ...patch, at: Date.now() };
   sessionState = pruned({ ...sessionState, [key]: entry });
-  safeLocalStorage.setJSON(STORAGE_KEY, pruned({ ...stored, [key]: entry }));
+  if (!memoryOnly) safeLocalStorage.setJSON(STORAGE_KEY, pruned({ ...stored, [key]: entry }));
 }
 
 export function getEventSubscriptionsExpanded(workspaceId: string, agentId: string): boolean {
@@ -117,5 +133,6 @@ export function setExpandedPrMonitorId(
 
 export function resetAgentSubscriptionsViewStateForTests(): void {
   sessionState = {};
+  memoryOnlyWorkspaces.clear();
   safeLocalStorage.removeItem(STORAGE_KEY);
 }

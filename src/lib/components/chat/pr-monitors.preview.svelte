@@ -20,7 +20,10 @@
   import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
-  import { setExpandedPrMonitorId } from './agent-subscriptions-view-state';
+  import {
+    keepAgentSubscriptionsViewStateInMemory,
+    setExpandedPrMonitorId,
+  } from './agent-subscriptions-view-state';
 
   let { estimate = true, legacy = false }: PreviewProps = $props();
 
@@ -76,6 +79,7 @@
     };
   }
 
+  keepAgentSubscriptionsViewStateInMemory(workspaceId);
   setExpandedPrMonitorId(workspaceId, agentId, 'preview-pr-monitor');
   onMount(() => {
     store.dispatch(prMonitorsUpdated(workspaceId, [monitor()]));
