@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.368.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.367.0...v2.368.0) (2026-11-21)
+
+
+### 🚀 Features
+
+* **chat:** open Assistant workspace cards on other machines ([#4898](https://github.com/intent-hq/cloudlands-fe/issues/4898)) ([d59b6d6](https://github.com/intent-hq/cloudlands-fe/commit/d59b6d60d9f3dfe21fc320d7a85ff465b4faa086))
+* **daemon-status:** one Unsloth row per model, each stopping only its server ([#4896](https://github.com/intent-hq/cloudlands-fe/issues/4896)) ([89b17a5](https://github.com/intent-hq/cloudlands-fe/commit/89b17a5953ee9ea02b4cc26ae78e48763ce23066))
+* register the autocomplete settings target ([#4901](https://github.com/intent-hq/cloudlands-fe/issues/4901)) ([1631435](https://github.com/intent-hq/cloudlands-fe/commit/1631435fbdf0fbfb6f3b5aac31d351d2103afad1))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** remember subscription section open/closed state across reloads ([#4891](https://github.com/intent-hq/cloudlands-fe/issues/4891)) ([affed73](https://github.com/intent-hq/cloudlands-fe/commit/affed73adbd7b0adb0bcdd1e3006ee03f3df8d54))
+
 ## [2.367.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.366.0...v2.367.0) (2026-11-21)
 
 
