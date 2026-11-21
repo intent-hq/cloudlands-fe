@@ -755,7 +755,11 @@ describe('daemonHealthSaga', () => {
     await settle();
 
     const stops = mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.stop');
-    expect(stops).toEqual([['unsloth.stop', { repoId: model }], ['unsloth.stop'], ['unsloth.stop']]);
+    expect(stops).toEqual([
+      ['unsloth.stop', { repoId: model }],
+      ['unsloth.stop'],
+      ['unsloth.stop'],
+    ]);
     task.cancel();
     await task.toPromise();
   });
