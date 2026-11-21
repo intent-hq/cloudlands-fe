@@ -24,6 +24,7 @@
   } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    keepAgentSubscriptionsViewStateInMemory,
     setEventSubscriptionsExpanded,
     setExpandedPrMonitorId,
   } from '$lib/components/chat/agent-subscriptions-view-state';
@@ -44,6 +45,7 @@
     const workspaceId = `catalog-subscription-rows-${fixture.id}`;
     const agentId = `catalog-parent-${fixture.id}`;
     liveIds.push({ workspaceId, agentId });
+    keepAgentSubscriptionsViewStateInMemory(workspaceId);
     const own = <T extends { workspaceId: string; agentId: string }>(rows: T[]) =>
       rows.map((row) => ({ ...row, workspaceId, agentId }));
     store.dispatch(backgroundHooksUpdated(workspaceId, own(fixture.hooks ?? [])));
