@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const STORAGE_KEY = 'agent-subscriptions:view-state:v1';
+const STORAGE_LIMIT = 200;
 
 type ViewStateModule = typeof import('../agent-subscriptions-view-state');
 
@@ -113,7 +114,7 @@ describe('agent subscriptions view state persistence', () => {
 
   it('drops the least recently changed threads once the cap is reached', async () => {
     const state = await reloadModule();
-    const cap = state.AGENT_SUBSCRIPTIONS_VIEW_STATE_LIMIT;
+    const cap = STORAGE_LIMIT;
 
     for (let index = 0; index <= cap; index += 1) {
       state.setEventSubscriptionsExpanded('ws-1', `agent-${index}`, false);

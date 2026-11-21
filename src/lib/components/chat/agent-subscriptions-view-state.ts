@@ -1,7 +1,7 @@
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 
 const STORAGE_KEY = 'agent-subscriptions:view-state:v1';
-export const AGENT_SUBSCRIPTIONS_VIEW_STATE_LIMIT = 200;
+const AGENT_SUBSCRIPTIONS_VIEW_STATE_LIMIT = 200;
 
 interface ThreadViewState {
   events?: boolean;
