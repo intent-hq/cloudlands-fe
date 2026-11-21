@@ -1252,6 +1252,23 @@ export const ConnectionsOpenSchema = z.object({
     .optional(),
 });
 
+const AssistantBackendIdSchema = z.string().min(1).max(512);
+const AssistantWorkspaceIdSchema = z.string().min(1).max(512);
+
+export const ConnectionsWorkspaceCardsSchema = z
+  .object({
+    backendId: AssistantBackendIdSchema,
+    workspaceIds: z.array(AssistantWorkspaceIdSchema).min(1).max(50),
+  })
+  .strict();
+
+export const ConnectionsOpenWorkspaceSchema = z
+  .object({
+    backendId: AssistantBackendIdSchema,
+    workspaceId: AssistantWorkspaceIdSchema,
+  })
+  .strict();
+
 export const ConnectionsUpdateBackendSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
 });

@@ -1,5 +1,8 @@
 import { createAuthorizedIpcHandler } from '../../../main/ipc-authorization';
-import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
+import {
+  getStrictBackendBindingForWebContents,
+  getWindowForWebContents,
+} from '../../../main/window-backend';
 import type { SharedDraft } from '../../../shared/types/chat-draft-sync';
 import { createChatDraftBroker } from '../../../shared/chat-draft-broker';
 import { DRAFT_SYNC_METHOD, DRAFT_SYNC_CHANGED } from '../../../shared/types/chat-draft-sync';
@@ -157,6 +160,7 @@ import {
   type LocalBackendFacts,
   type RelayDeps,
 } from './assistant-backend-relay';
+import { openBackendWorkspace, readBackendWorkspaceCards } from './assistant-workspace-cards';
 import {
   requestDesktopPermissions,
   requestLocalDesktopPermissions,
@@ -228,6 +232,8 @@ import {
   ConnectionsUnpublishSelfSchema,
   ConnectionsUpdateSchema,
   ConnectionsUpdateBackendSchema,
+  ConnectionsOpenWorkspaceSchema,
+  ConnectionsWorkspaceCardsSchema,
   PresenceReportSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -5681,6 +5687,46 @@ function registerConnectionsHandlers(): void {
         }
       },
       CONNECTIONS.OPEN,
+    ),
+  );
+
+  // Assistant cards for a workspace on another machine: read it over this
+  // app's saved connection, and open it in the asking window's machine rail
+  // (adding the machine when needed), else in that machine's own window.
+  ipcMain.handle(
+    CONNECTIONS.WORKSPACE_CARDS,
+    createValidatedHandler(
+      ConnectionsWorkspaceCardsSchema,
+      async (_event, params) => readBackendWorkspaceCards(params, assistantRelayDeps),
+      CONNECTIONS.WORKSPACE_CARDS,
+    ),
+  );
+  ipcMain.handle(
+    CONNECTIONS.OPEN_WORKSPACE,
+    createValidatedHandler(
+      ConnectionsOpenWorkspaceSchema,
+      async (event, params) =>
+        openBackendWorkspace(params, {
+          relay: assistantRelayDeps,
+          open: async (id, workspaceId) => {
+            try {
+              const opened = await openBackendWindow(id, {
+                parentWindow: getWindowForWebContents(event.sender),
+                workspaceId,
+              });
+              return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
+            } catch (error) {
+              if (error instanceof ConnectionSecretUnavailableError) {
+                return { status: 'secret-unavailable' } satisfies OpenConnectionResult;
+              }
+              if (error instanceof NodeWindowRefusedError) {
+                return { status: 'node', id } satisfies OpenConnectionResult;
+              }
+              throw error;
+            }
+          },
+        }),
+      CONNECTIONS.OPEN_WORKSPACE,
     ),
   );
 

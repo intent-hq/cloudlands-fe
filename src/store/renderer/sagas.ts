@@ -107,6 +107,7 @@ import { browserViewsLabSaga } from './slices/browser-views-lab/sagas/browser-vi
 import { tabWindowSaga } from './slices/tab-window/sagas/tab-window-saga';
 import { recentAgentsSaga } from './slices/recent-agents/sagas/recent-agents-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
+import { remoteWorkspaceCardsSaga } from './slices/remote-workspace-cards/sagas/remote-workspace-cards-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
 import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
@@ -260,6 +261,7 @@ export const sagas = [
   workspaceCatalogSaga,
   agentSkillsSaga,
   proposalLifecycleSaga,
+  remoteWorkspaceCardsSaga,
   questionUiPersistenceSaga,
   secretRequestsSaga,
   settingsProposalHistorySaga,

@@ -121,6 +121,8 @@
     suppressHover?: boolean;
     /** Scope hover/focus action reveals to this card instead of an ancestor group. */
     isolateHoverReveal?: boolean;
+    /** Show the hover preview; off for a workspace this window's store does not hold. */
+    hoverPreview?: boolean;
     class?: string;
     actions?: Snippet;
   }
@@ -153,6 +155,7 @@
     selected = false,
     highlightId,
     suppressHover = false,
+    hoverPreview = true,
     isolateHoverReveal = false,
     class: className,
     actions,
@@ -1015,7 +1018,7 @@
     {/if}
   </div>
 
-  {#if hoverCardVisible && !suppressHover}
+  {#if hoverCardVisible && !suppressHover && hoverPreview}
     <HoverCard
       id={hoverCardId}
       anchor="--workspace-list-{workspace.id}"

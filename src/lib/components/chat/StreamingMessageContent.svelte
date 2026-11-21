@@ -622,6 +622,7 @@
     <ChatWorkspaceCard
       {workspaceId}
       workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds}
+      refs={parsedBlock.metadata.workspaceCardData.refs}
     />
   {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
     <NavLink

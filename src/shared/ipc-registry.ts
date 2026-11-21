@@ -1181,6 +1181,10 @@ export const IPC_CHANNELS = {
     GET_TUNNEL: 'connections:get-tunnel',
     SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
+    // Assistant workspace cards that name another machine: read the
+    // workspaces, and open one (adding the machine to the window's rail).
+    WORKSPACE_CARDS: 'connections:workspace-cards',
+    OPEN_WORKSPACE: 'connections:open-workspace',
     FORGET: 'connections:forget',
     // Add from an intent://pair link: test + detect (the token stays in main),
     // then save or drop the pending credential.
