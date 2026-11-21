@@ -27,8 +27,8 @@
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
   import PreferredMachineBadge from './PreferredMachineBadge.svelte';
-  import MachinePlatformIcon from './MachinePlatformIcon.svelte';
-  import MachineProviderIcons from './MachineProviderIcons.svelte';
+  import MachineName from './MachineName.svelte';
+  import MachineProviderAvailability from './MachineProviderAvailability.svelte';
   import {
     machinePlatform,
     machineRowNeedsNode,
@@ -63,9 +63,9 @@
 
   const connectionId = $derived(connectionForMachine(machine, $connections$, $localFingerprint$));
   const removing = $derived($operations$[machine.id] === 'removing');
-  const platformIcon = $derived(machinePlatform(machine.platform?.os));
-  const platform = $derived(
-    machine.platform ? `${machine.platform.os} · ${machine.platform.arch}` : null, // i18n-ignore (OS/arch identifiers)
+  const platform = $derived(machinePlatform(machine.platform?.os));
+  const platformFallback = $derived(
+    machine.platform && !platform ? `${machine.platform.os} · ${machine.platform.arch}` : null, // i18n-ignore (OS/arch identifiers)
   );
   const providers = $derived.by(() => {
     const entries = $catalogEntries$;
@@ -150,17 +150,12 @@
         <DeviceIcon record={{ os: machine.platform?.os }} size={20} class="text-foreground" />
       </span>
     {/snippet}
-    {#snippet title()}{machine.name}{/snippet}
+    {#snippet title()}
+      <MachineName name={machine.name} {platform} {platformFallback} {providers} />
+    {/snippet}
     {#snippet meta()}
-      <!-- Laid out like a saved machine's row (DeviceRow): platform icon,
-           then the providers its last report can run. -->
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         {#if order?.preferred}<PreferredMachineBadge />{/if}
-        {#if platformIcon}
-          <MachinePlatformIcon platform={platformIcon} />
-        {:else if platform}
-          <span>{platform}</span>
-        {/if}
         <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
         {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
@@ -168,7 +163,9 @@
             >{m.remoteMachines_scriptsUpdate_label()}</span
           >
         {/if}
-        <MachineProviderIcons {providers} reported={!!report} {needsNode} />
+        {#if providers.length === 0 && report}
+          <MachineProviderAvailability {needsNode} />
+        {/if}
       </span>
     {/snippet}
     {#snippet trailing()}
