@@ -15,6 +15,7 @@ const {
   recoveryStore,
   navigationStore,
   agentDrawingStore,
+  zoomFactorStore,
   dispatchMock,
   pagesModeStore,
   mainOwnedOffscreenPageMock,
@@ -47,6 +48,7 @@ const {
       {},
     ),
     agentDrawingStore: miniWritable<Record<string, true>>({}),
+    zoomFactorStore: miniWritable(1),
     dispatchMock: vi.fn(),
     pagesModeStore: miniWritable<'unknown' | 'webview' | 'main'>('webview'),
     mainOwnedOffscreenPageMock: vi.fn((_node: HTMLElement, _entry: { url: string }) => ({
@@ -81,6 +83,10 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
       return () => {};
     },
   }),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectZoomFactor: () => zoomFactorStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -1087,6 +1093,36 @@ describe('OffscreenWebviewHost', () => {
     });
     await waitFor(() => expect(size('tab-custom')).toEqual(['1440px', '1200px']));
     expect(container.querySelector('[data-offscreen-webview-tab="tab-custom"]')).toBe(guest);
+  });
+
+  // Guests inherit the app zoom, so the element's DIP size is its CSS size ×
+  // zoom. At one Cmd-minus step a 1100x900 element drew a 1004x822 surface
+  // under an 1100x900 emulation and every capture came back tiled.
+  it('keeps each hidden guest at the emulated size in DIP when the app is zoomed', async () => {
+    zoomFactorStore.set(0.8);
+    try {
+      layoutsStore.set({
+        'ws-bg': browserLayout([
+          { id: 'tab-custom', viewport: { mode: 'custom', width: 1100, height: 900 } },
+        ]),
+      });
+      const { container } = render(OffscreenWebviewHost, {
+        props: { excludedWorkspaceIds: new Set() },
+      });
+      await waitFor(() => expect(mountedTabIds(container)).toHaveLength(1));
+      const guest = container.querySelector(
+        '[data-offscreen-webview-tab="tab-custom"]',
+      ) as HTMLElement;
+      expect([guest.style.width, guest.style.height]).toEqual(['1375px', '1125px']);
+
+      zoomFactorStore.set(1.25);
+      await waitFor(() =>
+        expect([guest.style.width, guest.style.height]).toEqual(['880px', '720px']),
+      );
+      expect(container.querySelector('[data-offscreen-webview-tab="tab-custom"]')).toBe(guest);
+    } finally {
+      zoomFactorStore.set(1);
+    }
   });
 
   // Main clamps a replayed size into [320, 3840] and rounds before emulating
