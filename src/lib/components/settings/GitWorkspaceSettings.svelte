@@ -330,9 +330,10 @@
               kind: 'switch',
               id: 'git-credentials',
               label: m.settings_gitWorkspace_gitCredentials_label(),
-              description: $labsRemoteAgentsEnabled$
-                ? `${m.settings_gitWorkspace_gitCredentials_description()} ${m.settings_gitWorkspace_gitCredentials_remoteDescription()}`
-                : m.settings_gitWorkspace_gitCredentials_description(),
+              description: m.settings_gitWorkspace_gitCredentials_description(),
+              info: $labsRemoteAgentsEnabled$
+                ? `${m.settings_gitWorkspace_gitCredentials_info()} ${m.settings_gitWorkspace_gitCredentials_remoteDescription()}`
+                : m.settings_gitWorkspace_gitCredentials_info(),
               when: () => Boolean(gitCredentialSettingSupported),
               get: () => Boolean(exposeGitCredential),
               set: (value: boolean) => {
@@ -387,6 +388,7 @@
               id: 'auto-archive',
               label: m.settings_gitWorkspace_autoArchive_label(),
               description: m.settings_gitWorkspace_autoArchive_description(),
+              info: m.settings_gitWorkspace_autoArchive_info(),
               when: () => Boolean(autoArchiveSupported),
               get: () => Boolean(autoArchiveOn),
               set: (value: boolean) => setAutoArchive(value),
@@ -412,6 +414,7 @@
               id: 'purge-archived',
               label: m.settings_gitWorkspace_purge_label(),
               description: m.settings_gitWorkspace_purge_description(),
+              info: m.settings_gitWorkspace_purge_info(),
               when: () => Boolean(purgeSupported),
               get: () => Boolean(purgeOn),
               set: (value: boolean) => setPurge(value),

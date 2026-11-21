@@ -415,7 +415,7 @@ describe('CommandPalette new actions', () => {
   });
 
   it.each([
-    ['agent defaults', /Agent defaults/i, 'agent-behavior'],
+    ['agent defaults', /^Instructions/i, 'agent-behavior'],
     ['providers', /Providers/i, 'providers'],
     ['connections', /Connections/i, 'connections'],
     ['machines', /^Machines/i, 'devices'],
@@ -423,14 +423,14 @@ describe('CommandPalette new actions', () => {
     ['collaboration', /Collaboration/i, 'collaboration'],
     ['appearance', /Appearance/i, 'display'],
     ['general', /General/i, 'app-behavior'],
-    ['input shortcuts', /Input and shortcuts/i, 'input'],
-    ['workspace setup', /Workspace setup/i, 'setup'],
+    ['input shortcuts', /^Inputs/i, 'input'],
+    ['workspace setup', /^Workspaces.*Settings/i, 'setup'],
     ['advanced', /Advanced/i, 'advanced'],
     ['labs', /Advanced/i, 'advanced'],
     ['specialists', /Specialists/i, 'specialists'],
     ['Linear', /Connections/i, 'connections'],
     ['settings linear', /Connections/i, 'connections'],
-    ['keyboard', /Input and shortcuts/i, 'input'],
+    ['keyboard', /^Inputs/i, 'input'],
     ['notifications', /General/i, 'app-behavior'],
     ['theme', /Appearance/i, 'display'],
   ] as const)(

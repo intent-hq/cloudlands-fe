@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
@@ -288,7 +289,9 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
     const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe(String(enabled)));
-    expect(screen.getByText(/Your permission is still required/)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: m.settings_agentFeatures_desktopControl_info() }),
+    ).toBeTruthy();
   });
 
   it('defaults desktop control on without granting permission and updates only its feature setting', async () => {

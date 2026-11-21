@@ -35,6 +35,7 @@
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ChatAppearanceSettings from '$lib/components/settings/ChatAppearanceSettings.svelte';
+  import ChatAuroraSettings from '$lib/components/settings/ChatAuroraSettings.svelte';
   import MenuBarAutoHideSettings from '$lib/components/settings/MenuBarAutoHideSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import PauseAnimationsWhenUnfocusedSettings from '$lib/components/settings/PauseAnimationsWhenUnfocusedSettings.svelte';
@@ -364,9 +365,9 @@
     );
   });
 
-  // Hash targets rendered inside the collapsed Agent defaults "Advanced" disclosure.
-  const AGENT_ADVANCED_TARGETS = new Set(['agent-features', 'tool-approvals']);
-  let agentAdvancedOpen = $state(false);
+  // Hash targets rendered inside the collapsed Inputs › Hardware "Creator Micro" disclosure.
+  const HARDWARE_TARGETS = new Set(['hardware', 'hardware-encoder']);
+  let hardwareOpen = $state(false);
 
   // Listen for hash changes while already on the settings page
   let hashScrollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -392,7 +393,7 @@
     if (targetTab && targetTab !== activeTab) {
       activeTab = targetTab;
     }
-    if (AGENT_ADVANCED_TARGETS.has(targetId)) agentAdvancedOpen = true;
+    if (HARDWARE_TARGETS.has(targetId)) hardwareOpen = true;
 
     // Scroll to hash target after tab switch
     hashScrollTimer = setTimeout(() => {
@@ -605,11 +606,7 @@
         <!-- Setup -->
         {#if activeTab === 'setup'}
           <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
-            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef}>
-              {#snippet shellAdditions()}
-                <RtkSettings />
-              {/snippet}
-            </GitWorkspaceSettings>
+            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
           </div>
         {/if}
 
@@ -649,29 +646,6 @@
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
               </section>
               <ChatAppearanceSettings />
-              <section
-                id="translucent-window"
-                data-highlight-id="translucent-window"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-appearance-translucentWindow-label-field"
-                  label={m.settings_appearance_translucentWindow_label()}
-                  description={m.settings_appearance_translucentWindow_description()}
-                >
-                  <Switch
-                    id="translucent-window-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$shellTransparencyEnabled}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setShellTransparencyEnabled(enabled))}
-                    ariaLabel={m.settings_appearance_translucentWindow_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
               {#if isElectronPlatform() && !isMacPlatform()}
                 <section
                   id="menu-bar-auto-hide"
@@ -683,25 +657,6 @@
                   <MenuBarAutoHideSettings />
                 </section>
               {/if}
-              <section
-                id="reduce-motion-on-battery"
-                data-highlight-id="reduce-motion-on-battery"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <ReduceMotionOnBatterySettings />
-              </section>
-              <section
-                id="pause-animations-when-unfocused"
-                data-highlight-id="pause-animations-when-unfocused"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <PauseAnimationsWhenUnfocusedSettings />
-              </section>
-              <DockLabSettings />
               {#if isElectronPlatform()}
                 <section
                   id="machine-rail"
@@ -864,6 +819,7 @@
                   id="settings-shareUpdateStatistics-label-field"
                   label={m.settings_shareUpdateStatistics_label()}
                   description={m.settings_shareUpdateStatistics_description()}
+                  info={m.settings_shareUpdateStatistics_info()}
                 >
                   <Switch
                     id="share-update-statistics-switch"
@@ -930,43 +886,59 @@
               workspaceId={settingsWorkspaceId}
             />
           </div>
-
-          <SettingsDisclosure
-            label={m.settings_agentBehavior_advanced_label()}
-            flush
-            muted
-            bind:open={agentAdvancedOpen}
-          >
-            <AgentFeaturesSettings />
-          </SettingsDisclosure>
         {/if}
 
-        <!-- Input -->
-        {#if activeTab === 'input'}
-          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
+        <!-- Performance -->
+        {#if activeTab === 'performance'}
+          <div id="performance" data-highlight-id="performance" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_keyboardShortcuts()}
-            </h2>
-            <div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
-              <KeyboardShortcutsSettings />
-            </div>
-          </div>
-
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_voice()}
+              {m.settings_section_animationsAndEffects()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <VoiceSettings />
+              <ChatAuroraSettings />
+              <section
+                id="translucent-window"
+                data-highlight-id="translucent-window"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-appearance-translucentWindow-label-field"
+                  label={m.settings_appearance_translucentWindow_label()}
+                  description={m.settings_appearance_translucentWindow_description()}
+                >
+                  <Switch
+                    id="translucent-window-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$shellTransparencyEnabled}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setShellTransparencyEnabled(enabled))}
+                    ariaLabel={m.settings_appearance_translucentWindow_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
+                id="reduce-motion-on-battery"
+                data-highlight-id="reduce-motion-on-battery"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <ReduceMotionOnBatterySettings />
+              </section>
+              <section
+                id="pause-animations-when-unfocused"
+                data-highlight-id="pause-animations-when-unfocused"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <PauseAnimationsWhenUnfocusedSettings />
               </section>
             </div>
           </div>
-        {/if}
-
-        <!-- Advanced -->
-        {#if activeTab === 'advanced'}
-          <LabsSettings />
 
           <!-- Agent Backend -->
           <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
@@ -979,6 +951,20 @@
               </section>
             </div>
           </div>
+        {/if}
+
+        <!-- Token Savings -->
+        {#if activeTab === 'token-savings'}
+          <div id="cli-optimization" data-highlight-id="cli-optimization" use:highlightTarget>
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_cliOptimization()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <RtkSettings />
+              </section>
+            </div>
+          </div>
 
           <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
           <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
@@ -987,6 +973,71 @@
             </h2>
             <WorkspaceApiSettings />
           </div>
+
+          <AgentFeaturesSettings />
+        {/if}
+
+        <!-- Inputs -->
+        {#if activeTab === 'input'}
+          {#if isElectronPlatform()}
+            <div>
+              <h2 class="type-title mb-3 text-foreground">
+                {m.settings_dockLab_label()}
+              </h2>
+              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+                <DockLabSettings />
+              </div>
+            </div>
+          {/if}
+
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_voice()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <VoiceSettings />
+              </section>
+            </div>
+          </div>
+
+          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_keyboardShortcuts()}
+            </h2>
+            <div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
+              <KeyboardShortcutsSettings />
+            </div>
+          </div>
+
+          <!-- Hardware (only when a supported device is detectable) -->
+          {#if showHardwareSection}
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
+              <h2 class="type-title mb-3 text-foreground">
+                {m.settings_section_hardware()}
+              </h2>
+              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+                <section data-slot="settings-section-body" class="px-6 py-2">
+                  <SettingsDisclosure
+                    label={m.settings_hardware_creatorMicro_label()}
+                    flush
+                    bind:open={hardwareOpen}
+                  >
+                    <div
+                      class="type-body -mr-8 -mb-5 -ml-6 mt-2 border-t border-border text-foreground"
+                    >
+                      <HardwareConsoleSettings embedded />
+                    </div>
+                  </SettingsDisclosure>
+                </section>
+              </div>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Advanced -->
+        {#if activeTab === 'advanced'}
+          <LabsSettings />
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
@@ -1009,16 +1060,6 @@
                   </div>
                 </section>
               </div>
-            </div>
-          {/if}
-
-          <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
-          {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
-              <h2 class="type-title mb-3 text-foreground">
-                {m.settings_section_hardware()}
-              </h2>
-              <HardwareConsoleSettings />
             </div>
           {/if}
 

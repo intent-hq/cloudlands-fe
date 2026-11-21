@@ -37,6 +37,8 @@ export const FEATURES: {
   path: FeaturePath;
   label: () => string;
   description: () => string;
+  /** Extra detail behind an info tooltip; keep `description` to one sentence. */
+  info?: () => string;
   defaultValue: boolean;
 }[] = [
   {
@@ -81,6 +83,7 @@ export const FEATURES: {
     path: 'agentFeatures.desktopControl',
     label: () => m.settings_agentFeatures_desktopControl_label(),
     description: () => m.settings_agentFeatures_desktopControl_description(),
+    info: () => m.settings_agentFeatures_desktopControl_info(),
     defaultValue: true,
   },
   {

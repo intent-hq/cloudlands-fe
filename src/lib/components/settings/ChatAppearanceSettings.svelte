@@ -5,18 +5,15 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectChatContentWidth,
-    selectChatAuroraEnabled,
     selectCollapseToolRuns,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     setChatContentWidth,
-    setChatAuroraEnabled,
     setCollapseToolRuns,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const chatContentWidth = selectChatContentWidth();
-  const chatAuroraEnabled = selectChatAuroraEnabled();
   const collapseToolRuns = selectCollapseToolRuns();
 </script>
 
@@ -40,28 +37,6 @@
       onCheckedChange={(enabled) =>
         appStore.dispatch(setChatContentWidth(enabled ? 'full' : '800'))}
       ariaLabel={m.settings_appearance_chatContentWidth_label()}
-    />
-  </SettingsFieldRow>
-</section>
-<section
-  id="chat-aurora"
-  data-highlight-id="chat-aurora"
-  use:highlightTarget
-  data-slot="settings-section-body"
-  class="px-6 py-4"
->
-  <SettingsFieldRow
-    id="settings-appearance-chatAurora-label-field"
-    label={m.settings_appearance_chatAurora_label()}
-    description={m.settings_appearance_chatAurora_description()}
-  >
-    <Switch
-      id="chat-aurora-switch"
-      size="sm"
-      class="mb-auto"
-      checked={$chatAuroraEnabled}
-      onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
-      ariaLabel={m.settings_appearance_chatAurora_label()}
     />
   </SettingsFieldRow>
 </section>

@@ -8,6 +8,7 @@
  *
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
@@ -208,13 +209,13 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    expect(result.getByRole('img', { name: 'Requires Node.js (npx) —' })).toBeTruthy();
-    expect(result.queryByText('Requires Node.js (npx) —')).toBeNull();
+    expect(result.getByRole('img', { name: m.settings_providers_requiresNodejs() })).toBeTruthy();
+    expect(result.queryByText(m.settings_providers_requiresNodejs())).toBeNull();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
     );
-    expect(result.getByText('Requires Node.js (npx) —')).toBeTruthy();
+    expect(result.getByText(m.settings_providers_requiresNodejs())).toBeTruthy();
     expect(result.getByRole('menuitem', { name: 'install from nodejs.org' })).toBeTruthy();
   });
 
@@ -226,13 +227,13 @@ describe('ProviderSelector progressive rendering', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
-    expect(result.getByRole('img', { name: 'npm/npx too old — npm 7+ required' })).toBeTruthy();
-    expect(result.queryByText('npm/npx too old — npm 7+ required')).toBeNull();
+    expect(result.getByRole('img', { name: m.settings_providers_npmTooOld() })).toBeTruthy();
+    expect(result.queryByText(m.settings_providers_npmTooOld())).toBeNull();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
     );
-    expect(result.getByText('npm/npx too old — npm 7+ required')).toBeTruthy();
+    expect(result.getByText(m.settings_providers_npmTooOld())).toBeTruthy();
   });
 
   it('runs the catalog login command in a terminal from Log in', async () => {
