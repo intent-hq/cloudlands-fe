@@ -1,11 +1,16 @@
 <!-- Live provisioning labels and a determinate bar. Keep the bar outside
-     the Button content slot so it stays at the button’s bottom edge. -->
+     the Button content slot so it stays at the button’s bottom edge. The
+     percent (and git's download size and rate while cloning) sits in a
+     caption just above the button: numbers in the label would restart its
+     text motion on every frame. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { toStore } from 'svelte/store';
   import { cn } from '$lib/utils';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
-  import { createProgressLabel } from './create-progress-label';
+  import { m } from '$shared/paraglide/messages.js';
+  import { createProgressLabel, formatCreateProgressPercent } from './create-progress-label';
+  import { createProgressTransferLabel } from './create-progress-transfer';
 
   let {
     progressId,
@@ -33,6 +38,13 @@
   });
 
   const live = $derived($entry$?.sawFrame === true);
+  const detail = $derived.by(() => {
+    const percent = formatCreateProgressPercent(maxPercent);
+    const transfer = $entry$?.transfer ? createProgressTransferLabel($entry$.transfer) : null;
+    return transfer
+      ? m.workspace_compactInitializer_progressDetail_label({ percent, transfer })
+      : percent;
+  });
 </script>
 
 <!-- inline-flex keeps the wrapped Button's line-box geometry identical to an
@@ -53,6 +65,16 @@
         aria-valuenow={maxPercent}
         data-testid="create-progress-bar"
       ></div>
+    </div>
+    <!-- Above the button, absolutely positioned, so it takes no layout space:
+         the button sits in a bottom-pinned footer and must not move while a
+         create runs. The bar already exposes the value to assistive tech. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-full mb-1.5 truncate text-center text-xs text-subtle tabular-nums"
+      aria-hidden="true"
+      data-testid="create-progress-detail"
+    >
+      {detail}
     </div>
   {/if}
 </div>

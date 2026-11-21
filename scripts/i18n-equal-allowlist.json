@@ -364,6 +364,7 @@
   "workspace_chiefVirtual_title": "*",
   "workspace_commitsTimeline_commits_label": ["de", "fr", "es"],
   "workspace_compactInitializer_progressWithPercent_label": ["ko", "de", "fr", "es"],
+  "workspace_compactInitializer_progressDetail_label": "*",
   "workspace_compactInitializer_progressTransfer_label": "*",
   "workspace_compactInitializer_setupDevEnvWith_after": ["fr", "es"],
   "workspace_digestCard_prNumber_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],

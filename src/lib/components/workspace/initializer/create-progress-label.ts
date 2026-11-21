@@ -4,7 +4,7 @@
  * strings on the unified 0–100 provisioning scale: the parsed clone phases
  * (`counting`, `compressing`, `receiving`, `resolving`, `checkout`) plus the
  * synthetic milestones (`starting`, `cache`, `base-refresh`, `submodules`,
- * `cow-copy`, `worktree`, `finalizing`, `complete`). Unknown phases fall back to the
+ * `cow-copy`, `worktree`, `finalizing`, `agent`, `complete`). Unknown phases fall back to the
  * generic "Preparing workspace…" label so a daemon that grows new
  * milestones never breaks the button.
  */
@@ -31,6 +31,16 @@ function submoduleCounter(message: string | undefined): { current: number; total
 function baseRefreshTarget(message: string | undefined): { base: string; remote: string } | null {
   const match = message?.match(/^Updating (\S+) from (\S+?)(?:\.\.\.|…)?$/); // i18n-ignore (daemon wire text)
   return match ? { base: match[1], remote: match[2] } : null;
+}
+
+/**
+ * Extract the machine name from the daemon's `agent` message ("Starting
+ * agent on <machine>..."), sent while a placed initial agent starts on its
+ * machine (every first agent on an orchestrator).
+ */
+function agentMachine(message: string | undefined): string | null {
+  const match = message?.match(/^Starting agent on (.+?)(?:\.\.\.|…)$/); // i18n-ignore (daemon wire text)
+  return match ? match[1] : null;
 }
 
 /** Localized stage label for one progress entry (no percent suffix). */
@@ -69,6 +79,12 @@ export function createProgressLabel(entry: WorkspaceCreateProgressEntry): string
       return m.workspace_compactInitializer_progressWorktree_label();
     case 'finalizing':
       return m.workspace_compactInitializer_progressFinalizing_label();
+    case 'agent': {
+      const machine = agentMachine(entry.message);
+      return machine
+        ? m.workspace_compactInitializer_progressAgent_label({ machine })
+        : m.workspace_compactInitializer_progressAgentGeneric_label();
+    }
     case 'complete':
       return m.workspace_compactInitializer_stageAlmostReady_label();
     case 'starting':

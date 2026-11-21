@@ -75,3 +75,25 @@ test('the bar is a sibling overlay of the button, clipped only by the overlay la
   expect(layout.clippingCount).toBe(1);
   expect(layout.rootOverflow).toBe('visible');
 });
+
+test('the percent caption sits above the button and takes no layout space', async ({
+  mount,
+  page,
+}) => {
+  await mount(CreateButtonProgressGeometryHost, { props: { percent: 62 } });
+  const { bar, wrapped, reference } = await awaitLive(page, 62);
+  const caption = page.getByTestId('create-progress-detail');
+  await expect(caption).toHaveText('62%');
+  // The bar's overlay layer is a direct child of the progress wrapper.
+  const wrapper = bar.locator('xpath=../..');
+  const [captionBox, buttonBox, wrapperBox, referenceBox] = await Promise.all([
+    box(caption),
+    box(wrapped),
+    box(wrapper),
+    box(reference),
+  ]);
+  // The bottom-pinned footer must not grow when progress arrives.
+  expect(Math.abs(wrapperBox.height - buttonBox.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(buttonBox.height - referenceBox.height)).toBeLessThanOrEqual(1);
+  expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(buttonBox.y + 1);
+});

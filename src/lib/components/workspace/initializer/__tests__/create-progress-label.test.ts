@@ -44,6 +44,20 @@ describe('createProgressLabel', () => {
     );
   });
 
+  it('names the machine for the agent phase (PROTOCOL §6.5)', () => {
+    expect(createProgressLabel(entry('agent', 'Starting agent on Mac Studio...'))).toBe(
+      'Starting agent on Mac Studio…',
+    );
+    expect(createProgressLabel(entry('agent', 'Starting agent on intent-cache…'))).toBe(
+      'Starting agent on intent-cache…',
+    );
+  });
+
+  it('falls back to a generic agent label when the message names no machine', () => {
+    expect(createProgressLabel(entry('agent'))).toBe('Starting agent…');
+    expect(createProgressLabel(entry('agent', 'Launching'))).toBe('Starting agent…');
+  });
+
   it('falls back to the generic preparing label for unknown phases', () => {
     expect(createProgressLabel(entry('future-phase'))).toBe('Preparing workspace…');
   });
