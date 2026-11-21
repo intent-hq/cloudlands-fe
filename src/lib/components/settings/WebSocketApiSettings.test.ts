@@ -1169,16 +1169,113 @@ describe('WebSocketApiSettings', () => {
       expect(screen.queryByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeNull();
     });
 
-    it('renders no DERP relay URL field (config.toml only)', async () => {
-      mocks.mockSettingsList.mockResolvedValue(settingsRows({ enabled: true, only: false }));
-      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
-      await renderExpandedSettings();
-      await waitFor(() =>
-        expect(screen.getByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeTruthy(),
-      );
+    describe('self-hosted relay (server.tunnel.derpUrl)', () => {
+      const RELAY = 'https://relay.example.com/derpmap.json';
+      function relayRows(derpUrl: string | null) {
+        return settingsRows({ enabled: true, only: false })
+          .filter((row) => row.path !== 'server.tunnel.derpUrl')
+          .concat(derpUrl === null ? [] : [{ path: 'server.tunnel.derpUrl', value: derpUrl }]);
+      }
+      async function relayInput() {
+        await renderExpandedSettings();
+        return (await screen.findByRole('textbox', {
+          name: m.settings_tunnel_relay_label(),
+        })) as HTMLInputElement;
+      }
+      const saveButton = () => screen.queryByRole('button', { name: m.settings_wsApi_port_save() });
 
-      expect(screen.queryByRole('textbox', { name: /derp/i })).toBeNull();
-      expect(screen.queryByLabelText(/derp/i)).toBeNull();
+      beforeEach(() => mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-a' }));
+
+      it('shows the saved relay, and no field on a daemon without the setting', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(RELAY));
+        const input = await relayInput();
+        await waitFor(() => expect(input.value).toBe(RELAY));
+        expect(saveButton()).toBeNull();
+        cleanup();
+
+        mocks.mockSettingsList.mockResolvedValue(relayRows(null));
+        await renderExpandedSettings();
+        await waitFor(() =>
+          expect(
+            screen.getByRole('switch', { name: m.settings_tunnel_enable_label() }),
+          ).toBeTruthy(),
+        );
+        expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
+      });
+
+      it('saves a relay map URL, then reloads the new tunnel address', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(''));
+        const input = await relayInput();
+        await waitFor(() => expect(input.disabled).toBe(false));
+        await fireEvent.input(input, { target: { value: `  ${RELAY} ` } });
+        mocks.mockSettingsUpdate.mockResolvedValueOnce([
+          { path: 'server.tunnel.derpUrl', value: RELAY },
+        ]);
+        mocks.mockSettingsList.mockResolvedValue(relayRows(RELAY));
+        mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-b' });
+        await fireEvent.click(saveButton()!);
+
+        await waitFor(() =>
+          expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+            { path: 'server.tunnel.derpUrl', value: RELAY },
+          ]),
+        );
+        await waitFor(() => expect(screen.getByText('tc-b')).toBeTruthy());
+        expect(mockToast.success).toHaveBeenCalledWith(m.settings_tunnel_relay_saved());
+        expect(ipcMocks.invoke).toHaveBeenCalledWith('connections:refresh-self');
+        expect(saveButton()).toBeNull();
+      });
+
+      it('clears the relay to go back to the default relays', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(RELAY));
+        const input = await relayInput();
+        await waitFor(() => expect(input.value).toBe(RELAY));
+        await fireEvent.input(input, { target: { value: '' } });
+        mocks.mockSettingsUpdate.mockResolvedValueOnce([
+          { path: 'server.tunnel.derpUrl', value: '' },
+        ]);
+        mocks.mockSettingsList.mockResolvedValue(relayRows(''));
+        await fireEvent.keyDown(input, { key: 'Enter' });
+
+        await waitFor(() =>
+          expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+            { path: 'server.tunnel.derpUrl', value: '' },
+          ]),
+        );
+        await waitFor(() =>
+          expect(mockToast.success).toHaveBeenCalledWith(m.settings_tunnel_relay_cleared()),
+        );
+      });
+
+      it('refuses a value that is not an http(s) URL, without a write', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(''));
+        const input = await relayInput();
+        await waitFor(() => expect(input.disabled).toBe(false));
+        for (const value of ['relay.example.com', 'ftp://relay.example.com/map', 'https://']) {
+          await fireEvent.input(input, { target: { value } });
+          expect(screen.getByText(m.settings_tunnel_relay_invalid())).toBeTruthy();
+          expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+          await fireEvent.keyDown(input, { key: 'Enter' });
+        }
+        expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+      });
+
+      it('says in plain words when the daemon cannot reach the relay, and keeps the draft', async () => {
+        mocks.mockSettingsList.mockResolvedValue(relayRows(''));
+        const input = await relayInput();
+        await waitFor(() => expect(input.disabled).toBe(false));
+        await fireEvent.input(input, { target: { value: RELAY } });
+        mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('no relay answered'));
+        await fireEvent.click(saveButton()!);
+
+        await waitFor(() =>
+          expect(mockToast.error).toHaveBeenCalledWith(
+            m.settings_tunnel_relay_saveError({ error: 'no relay answered' }),
+          ),
+        );
+        expect(input.value).toBe(RELAY);
+        expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:refresh-self');
+      });
     });
 
     it('load-repair: a bindAddress without loopback renders 127.0.0.1 checked+locked and the next change persists it', async () => {

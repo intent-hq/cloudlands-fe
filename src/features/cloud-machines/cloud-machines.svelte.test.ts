@@ -318,6 +318,23 @@ describe('sandboxes grouped by workspace', () => {
       onClose: () => {},
     });
     expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
+    expect(view.container.querySelector('[data-cloud-relay]')).toBeNull();
+  });
+
+  it('names the relay its sandboxes use, or the default relays', () => {
+    const props = { entry: E2B_PROVIDER, editing: false, onEdit: () => {}, onClose: () => {} };
+    seed('relay');
+    const custom = render(CloudMachineRow, props);
+    expect(custom.container.querySelector('[data-cloud-relay]')?.textContent).toBe(
+      'Relay: relay.example.com',
+    );
+    custom.unmount();
+    restore?.();
+    seed('connected');
+    const fallback = render(CloudMachineRow, props);
+    expect(fallback.container.querySelector('[data-cloud-relay]')?.textContent).toBe(
+      'Default relays',
+    );
   });
 });
 

@@ -62,6 +62,7 @@ import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/p
 import { cloudProfileBlockReason, startOnCloud } from './cloud-machines-selectors';
 import {
   cloudDashboardUrl,
+  cloudEntryRelayLabel,
   cloudErrorText,
   formatUptime,
   liveRunningSeconds,
@@ -876,5 +877,95 @@ describe('Vercel entries', () => {
   it('picks the next free default name for Vercel', () => {
     expect(nextCloudEntryName(['E2B', 'Agent37'], 'vercel')).toBe('Vercel');
     expect(nextCloudEntryName(['vercel'], 'vercel')).toBe('Vercel 2');
+  });
+});
+
+describe('self-hosted relay', () => {
+  const RELAY = 'https://relay.example.com/derpmap.json';
+  const withRelay = (machine: (typeof E2B_SANDBOXES)[number], relayUrl?: string) => ({
+    ...machine,
+    cloud: { ...machine.cloud!, ...(relayUrl ? { relayUrl } : {}) },
+  });
+
+  it('reads the relay a sandbox uses, and none from an older backend', () => {
+    expect(parseRemoteMachine(withRelay(E2B_SANDBOXES[0]!, RELAY))?.cloud?.relayUrl).toBe(RELAY);
+    expect(parseRemoteMachine(E2B_SANDBOXES[0])?.cloud).not.toHaveProperty('relayUrl');
+    expect(
+      parseRemoteMachine({ ...E2B_SANDBOXES[0], cloud: { ...E2B_SANDBOXES[0]!.cloud, relayUrl: 7 } })
+        ?.cloud,
+    ).not.toHaveProperty('relayUrl');
+  });
+
+  it('names the relay host of an entry, preferring a running sandbox', () => {
+    const [running, , paused] = E2B_SANDBOXES;
+    expect(cloudEntryRelayLabel([])).toBeNull();
+    expect(cloudEntryRelayLabel([withRelay(running!)])).toBe(m.cloudMachines_relay_default());
+    expect(
+      cloudEntryRelayLabel([withRelay(paused!, 'https://old.example.com/map'), withRelay(running!, RELAY)]),
+    ).toBe(m.cloudMachines_relay_host({ host: 'relay.example.com' }));
+    expect(cloudEntryRelayLabel([withRelay(paused!, 'not a url')])).toBe(
+      m.cloudMachines_relay_host({ host: 'not a url' }),
+    );
+  });
+
+  it('reads relay-unreachable with the relay it could not use', () => {
+    expect(
+      parseCloudMachineError({
+        code: 'cloud-machine-unavailable',
+        reason: 'relay-unreachable',
+        retryable: true,
+        relayUrl: RELAY,
+      }),
+    ).toEqual({
+      code: 'cloud-machine-unavailable',
+      reason: 'relay-unreachable',
+      retryable: true,
+      relayUrl: RELAY,
+    });
+  });
+
+  it('explains relay-unreachable in plain words on every provider', () => {
+    for (const provider of ['e2b', 'northflank', 'agent37', 'vercel'] as const) {
+      const text = cloudErrorText(
+        { code: 'cloud-machine-unavailable', reason: 'relay-unreachable', retryable: true, relayUrl: RELAY },
+        provider,
+      );
+      expect(text.title).toBe(m.cloudMachines_error_relayUnreachable_title());
+      expect(text.description).toBe(
+        m.cloudMachines_error_relayUnreachable_description({ host: 'relay.example.com' }),
+      );
+    }
+    expect(
+      cloudErrorText({ code: 'cloud-machine-unavailable', reason: 'relay-unreachable', retryable: true })
+        .description,
+    ).toBe(m.cloudMachines_error_relayUnreachable_noHost_description());
+  });
+
+  it('offers Settings and Retry on a start that could not reach the relay', () => {
+    for (const provider of ['e2b', 'northflank'] as const) {
+      const view = cloudStartFailureView(
+        placementFailure(
+          {
+            code: 'remote-launch-failed',
+            detail: `x ${JSON.stringify({
+              code: 'cloud-machine-unavailable',
+              reason: 'relay-unreachable',
+              retryable: true,
+              provider,
+              relayUrl: RELAY,
+            })}`,
+          },
+          'Cloud',
+        ),
+        { canRetry: true },
+      );
+      expect(view).toMatchObject({
+        tone: 'warning',
+        title: m.cloudMachines_error_relayUnreachable_title(),
+        cause: m.cloudMachines_error_relayUnreachable_description({ host: 'relay.example.com' }),
+        actions: ['settings', 'retry'],
+        dashboard: false,
+      });
+    }
   });
 });
