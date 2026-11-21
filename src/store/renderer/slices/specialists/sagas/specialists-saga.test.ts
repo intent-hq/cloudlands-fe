@@ -747,6 +747,40 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
+  it.each([
+    [
+      'save',
+      () =>
+        saveFileSpecialist({
+          id: 'new-one',
+          name: 'New One',
+          description: 'Desc',
+          behaviorPrompt: 'Prompt',
+          scope: 'user',
+        }),
+    ],
+    ['delete', () => deleteFileSpecialist({ id: 'gone', scope: 'user' })],
+  ] as const)(
+    'settles the %s and reports the daemon error when its refetch fails',
+    async (_kind, makeAction) => {
+      mocks.list.mockRejectedValue(new Error('specialist.list timed out after 30000ms'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+      const action = makeAction();
+      channel.put(action);
+
+      await expect(action.promise).resolves.toBeUndefined();
+      await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
+      expect(mocks.toastError.mock.calls[0][0]).toMatchObject({
+        details: expect.stringContaining('specialist.list timed out after 30000ms'),
+      });
+      task.cancel();
+      await task.toPromise();
+    },
+  );
+
   it('treats an already-absent override as reset when the delete allows it', async () => {
     mocks.list.mockResolvedValue([]);
     mocks.remove.mockRejectedValue(
@@ -935,7 +969,8 @@ describe('specialistsSaga', () => {
       expect(state).toBe(priorState);
       expect(state.fileSpecialistsLoaded).toBe(true);
       expect(mocks.loggerError).toHaveBeenCalledWith('Failed to refetch specialist list', error);
-      expect(mocks.toastError).toHaveBeenCalledTimes(1);
+      // No write happened, so a background refresh failure must not blame one.
+      expect(mocks.toastError).not.toHaveBeenCalled();
       task.cancel();
       await task.toPromise();
     });
@@ -1045,6 +1080,25 @@ describe('specialistsSaga', () => {
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual(
         expectedListActions(['loaded']),
       );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('logs without a toast when a settings-driven refetch fails', async () => {
+      vi.useFakeTimers();
+      const error = new Error('connection closed');
+      mocks.list.mockRejectedValue(error);
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: vi.fn(), getState: () => sagaState() },
+        specialistsSaga,
+      );
+
+      channel.put(settingsChanged([{ path: 'model.default', value: 'fable-5' }]));
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mocks.loggerError).toHaveBeenCalledWith('Failed to refetch specialist list', error);
+      expect(mocks.toastError).not.toHaveBeenCalled();
       task.cancel();
       await task.toPromise();
     });
@@ -1389,6 +1443,21 @@ describe.each(['list', 'listCatalog'] as const)('specialist creation via %s', (r
       expect(mocks.toastError).not.toHaveBeenCalled();
     },
   );
+
+  it('reports the daemon error when the catalog read after creation fails', async () => {
+    mocks.list.mockRejectedValue(new Error('specialist.list timed out after 30000ms'));
+    const h = harness();
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(mocks.create).toHaveBeenCalledOnce();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    expect(mocks.toastError.mock.calls[0][0]).toMatchObject({
+      details: expect.stringContaining('specialist.list timed out after 30000ms'),
+    });
+  });
 
   it('rejects both waiting contexts on a current read failure and retries without duplicate writes', async () => {
     vi.useFakeTimers();
