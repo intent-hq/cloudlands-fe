@@ -3331,6 +3331,8 @@
   "layout_daemonStatus_unslothPhaseStarting_label": "시작 중",
   "layout_daemonStatus_unslothServer_header": "Unsloth 서버",
   "layout_daemonStatus_unslothSummary_label": "Unsloth - {status}",
+  "layout_daemonStatus_unslothModelSummary_label": "Unsloth: {model} - {status}",
+  "layout_daemonStatus_unslothModel_label": "Unsloth: {model}",
   "layout_daemonStatus_updateFailedGeneric_toast": "백엔드가 업데이트를 시작하지 못했습니다.",
   "layout_daemonStatus_updateFailed_toast": "백엔드가 업데이트를 시작하지 못했습니다: {message}",
   "layout_daemonStatus_updateNotConnected_toast": "이 백엔드에 연결되어 있지 않습니다 — 업데이트를 요청하기 전에 연결하세요.",

@@ -3331,6 +3331,8 @@
   "layout_daemonStatus_unslothPhaseStarting_label": "啟動中",
   "layout_daemonStatus_unslothServer_header": "Unsloth 伺服器",
   "layout_daemonStatus_unslothSummary_label": "Unsloth - {status}",
+  "layout_daemonStatus_unslothModelSummary_label": "Unsloth: {model} - {status}",
+  "layout_daemonStatus_unslothModel_label": "Unsloth: {model}",
   "layout_daemonStatus_updateFailedGeneric_toast": "後端無法啟動更新。",
   "layout_daemonStatus_updateFailed_toast": "後端無法啟動更新：{message}",
   "layout_daemonStatus_updateNotConnected_toast": "未連線到此後端 — 請先連線再要求更新。",

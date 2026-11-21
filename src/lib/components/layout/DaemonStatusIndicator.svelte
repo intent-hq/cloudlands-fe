@@ -158,7 +158,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { onDestroy, type Snippet } from 'svelte';
-  import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
+  import type {
+    DaemonHealth,
+    UnslothServerWirePayload,
+  } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
@@ -380,9 +383,16 @@
     currentRemoteName ? `${triggerLabel} — ${currentRemoteName}` : triggerLabel,
   );
 
+  // Older daemons omit `servers` and run a single server.
+  const unslothServers = $derived(
+    $unslothStatus$?.running ? ($unslothStatus$.servers ?? [$unslothStatus$]) : [],
+  );
+  // The server whose stop the dialog confirms.
+  let stopUnslothTarget = $state<UnslothServerWirePayload | null>(null);
+
   const stopUnslothDescription = $derived.by(() => {
-    const count = $unslothStatus$?.attachedAgentCount ?? 0;
-    const model = $unslothStatus$?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
+    const count = stopUnslothTarget?.attachedAgentCount ?? 0;
+    const model = stopUnslothTarget?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
     if (count > 0) {
       return count === 1
         ? m.layout_daemonStatus_stopUnslothAttached_one({ count, model })
@@ -392,7 +402,9 @@
   });
 
   function confirmStopUnsloth() {
-    appStore.dispatch(stopUnslothRequested());
+    // Older daemons ignore repoId and stop their one server; they omit `servers`.
+    const repoId = $unslothStatus$?.servers ? stopUnslothTarget?.repoId : undefined;
+    appStore.dispatch(stopUnslothRequested(repoId));
   }
 
   // --- Agent memory breakdown ---------------------------------------------
@@ -857,16 +869,20 @@
         </Menu.SubContent>
       </Menu.Sub>
 
-      <!-- Managed Unsloth server (only when one is running) -->
-      {#if $health$ !== 'down' && $unslothStatus$?.running}
-        <UnslothServerSubmenu
-          status={$unslothStatus$}
-          {menuAnchor}
-          onStop={() => {
-            dropdownOpen = false;
-            stopUnslothDialogOpen = true;
-          }}
-        />
+      <!-- One row per running managed Unsloth server -->
+      {#if $health$ !== 'down'}
+        {#each unslothServers as server (server.repoId ?? server.port)}
+          <UnslothServerSubmenu
+            status={server}
+            serverCount={unslothServers.length}
+            {menuAnchor}
+            onStop={() => {
+              dropdownOpen = false;
+              stopUnslothTarget = server;
+              stopUnslothDialogOpen = true;
+            }}
+          />
+        {/each}
       {/if}
 
       <!-- Multi-backend devices list + final Devices CTA -->

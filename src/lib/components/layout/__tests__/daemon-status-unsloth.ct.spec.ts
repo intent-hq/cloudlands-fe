@@ -54,3 +54,32 @@ test('No Unsloth submenu appears when no server runs', async ({ mount, page }) =
   await expect(page.getByRole('menuitem', { name: /^Status -/ })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: /^Unsloth/ })).toHaveCount(0);
 });
+
+test('Each running model gets its own row, and its stop names only that model', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('unsloth-two-servers'));
+  await page.getByRole('button').click();
+
+  await expect(page.getByRole('menuitem', { name: /^Unsloth/ })).toHaveCount(2);
+  await expect(page.getByRole('menuitem', { name: 'Unsloth: Qwen3.8-27B - Healthy' })).toBeVisible();
+
+  const minting = await openPanel(
+    page,
+    /^Unsloth: Qwen3\.5-9B - Minting$/,
+    'Unsloth: Qwen3.5-9B',
+  );
+  await expect(minting.getByText('Attached agents', { exact: true }).locator('..')).toContainText(
+    '0',
+  );
+  await testInfo.attach('unsloth-panel-two-servers.png', {
+    body: await minting.screenshot(),
+    contentType: 'image/png',
+  });
+  await minting.getByRole('menuitem', { name: 'Stop server' }).click();
+  const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'));
+  await expect(dialog).toContainText('unsloth/Qwen3.5-9B-GGUF');
+  await expect(dialog).not.toContainText('Qwen3.8-27B');
+});

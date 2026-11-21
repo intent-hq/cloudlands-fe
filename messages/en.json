@@ -3331,6 +3331,8 @@
   "layout_daemonStatus_unslothPhaseStarting_label": "Starting",
   "layout_daemonStatus_unslothServer_header": "Unsloth Server",
   "layout_daemonStatus_unslothSummary_label": "Unsloth - {status}",
+  "layout_daemonStatus_unslothModelSummary_label": "Unsloth: {model} - {status}",
+  "layout_daemonStatus_unslothModel_label": "Unsloth: {model}",
   "layout_daemonStatus_updateFailedGeneric_toast": "The backend could not start the update.",
   "layout_daemonStatus_updateFailed_toast": "The backend could not start the update: {message}",
   "layout_daemonStatus_updateNotConnected_toast": "Not connected to this backend — connect to it before requesting an update.",

@@ -74,6 +74,34 @@ const unslothServer = (phase: string): UnslothStatusWirePayload => ({
   attachedAgentCount: 2,
 });
 
+// A daemon running two models: the most recently used one at the top level
+// and every server in `servers`, each with its own agent count.
+const unslothTwoServers: UnslothStatusWirePayload = {
+  ...unslothServer('ready'),
+  servers: [
+    {
+      repoId: 'unsloth/Qwen3.8-27B-GGUF',
+      port: 8888,
+      pid: 51200,
+      uptimeSecs: 940,
+      phase: 'ready',
+      cpuPercent: 4,
+      memoryBytes: 41_000_000_000,
+      attachedAgentCount: 2,
+    },
+    {
+      repoId: 'unsloth/Qwen3.5-9B-GGUF',
+      port: 18889,
+      pid: 51344,
+      uptimeSecs: 21,
+      phase: 'minting',
+      cpuPercent: 12,
+      memoryBytes: 2_100_000_000,
+      attachedAgentCount: 0,
+    },
+  ],
+};
+
 // A daemon that has sampled its process tree: the agent memory row appears
 // and opens the per-agent breakdown.
 const agentMemoryStatusPayload: SystemStatusWirePayload = {
@@ -232,6 +260,8 @@ interface Scenario {
   pausedSandboxes?: number;
   /** Phase of a running managed Unsloth server; omitted means none runs. */
   unslothPhase?: string;
+  /** Report two running Unsloth servers through `servers`. */
+  unslothServers?: boolean;
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -292,6 +322,7 @@ function setup({
   machines = false,
   pausedSandboxes = 0,
   unslothPhase,
+  unslothServers = false,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -325,6 +356,7 @@ function setup({
       );
     }
     if (unslothPhase) store.dispatch(unslothStatusSuccess(unslothServer(unslothPhase)));
+    if (unslothServers) store.dispatch(unslothStatusSuccess(unslothTwoServers));
     if (pausedSandboxes > 0) {
       store.dispatch(
         cloudMachinesLoaded({
@@ -381,7 +413,7 @@ function setup({
     }
     return () => {
       liveScenes -= 1;
-      if (unslothPhase) store.dispatch(unslothStatusFailure());
+      if (unslothPhase || unslothServers) store.dispatch(unslothStatusFailure());
       if (pausedSandboxes > 0) {
         store.dispatch(
           cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }),
@@ -481,6 +513,7 @@ export const preview = definePreview<Record<string, never>>({
     },
     'unsloth-minting': { props: {}, setup: setup({ unslothPhase: 'minting' }) },
     'unsloth-ready': { props: {}, setup: setup({ unslothPhase: 'ready' }) },
+    'unsloth-two-servers': { props: {}, setup: setup({ unslothServers: true }) },
     'degraded-timeout': {
       props: {},
       setup: setup({ failures: { kind: 'timeout', count: 1 } }),

@@ -416,9 +416,12 @@ function* watchUnslothStatusPolls() {
   }
 }
 
-function* stopUnslothSaga() {
+function* stopUnslothSaga(action: ReturnType<typeof stopUnslothRequested>) {
+  const [repoId] = action.payload;
   try {
-    const result = yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop');
+    const result = repoId
+      ? yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop', { repoId })
+      : yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop');
     yield* put(stopUnslothSucceeded(result.stopped));
     yield* put(pollUnslothStatus());
   } catch (error) {

@@ -207,10 +207,13 @@ export const unslothStatusSuccess = createAction<[payload: UnslothStatusWirePayl
 export const unslothStatusFailure = createAction('daemonHealth/unslothStatusFailure');
 
 /**
- * User confirmed stopping the managed unsloth server. The middleware invokes
- * unsloth.stop and re-polls unsloth.status when it resolves.
+ * User confirmed stopping a managed unsloth server: the one for `repoId`, or
+ * every server when omitted. The middleware invokes unsloth.stop and re-polls
+ * unsloth.status when it resolves.
  */
-export const stopUnslothRequested = createAction('daemonHealth/stopUnslothRequested');
+export const stopUnslothRequested = createAction<[repoId?: string]>(
+  'daemonHealth/stopUnslothRequested',
+);
 
 /**
  * unsloth.stop resolved (`{ stopped: boolean }` — false is a no-op, not an

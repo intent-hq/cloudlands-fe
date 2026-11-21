@@ -3331,6 +3331,8 @@
   "layout_daemonStatus_unslothPhaseStarting_label": "起動中",
   "layout_daemonStatus_unslothServer_header": "Unsloth サーバー",
   "layout_daemonStatus_unslothSummary_label": "Unsloth - {status}",
+  "layout_daemonStatus_unslothModelSummary_label": "Unsloth: {model} - {status}",
+  "layout_daemonStatus_unslothModel_label": "Unsloth: {model}",
   "layout_daemonStatus_updateFailedGeneric_toast": "バックエンドはアップデートを開始できませんでした。",
   "layout_daemonStatus_updateFailed_toast": "バックエンドはアップデートを開始できませんでした: {message}",
   "layout_daemonStatus_updateNotConnected_toast": "このバックエンドに接続していません — アップデートを要求する前に接続してください。",

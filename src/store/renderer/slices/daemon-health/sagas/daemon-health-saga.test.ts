@@ -737,6 +737,24 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('stops one model when given its repoId and every server otherwise', async () => {
+    const { input, task } = startHealthSaga();
+    await settle();
+
+    input.put(stopUnslothRequested('unsloth/Qwen3.5-9B-GGUF'));
+    await settle();
+    input.put(stopUnslothRequested());
+    await settle();
+
+    const stops = mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.stop');
+    expect(stops).toEqual([
+      ['unsloth.stop', { repoId: 'unsloth/Qwen3.5-9B-GGUF' }],
+      ['unsloth.stop'],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('fetches agent.memoryUsage only while the breakdown is open, on a coalesced cadence', async () => {
     const usage: AgentMemoryUsageWirePayload = {
       sampledAt: '2026-09-20T06:00:00.000Z',
