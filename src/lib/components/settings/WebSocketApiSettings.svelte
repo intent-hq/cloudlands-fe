@@ -45,7 +45,7 @@
   import { websocketApiRequested } from '$store/renderer/slices/websocket-api/websocket-api-slice';
   import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { isRelayUrl } from '$store/renderer/slices/websocket-api/sagas/tunnel-default';
+  import { isRelayUrl } from '$store/renderer/slices/websocket-api/relay-url';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectPrincipalActionContext,

@@ -282,7 +282,7 @@ export const TEAM_SANDBOXES: RemoteMachine[] = [
 /** E2B sandboxes on a self-hosted relay. */
 const RELAY_SANDBOXES: RemoteMachine[] = E2B_SANDBOXES.map((machine) => ({
   ...machine,
-  cloud: { ...machine.cloud!, relayUrl: 'https://relay.example.com/derpmap.json' },
+  cloud: machine.cloud && { ...machine.cloud, relayUrl: 'https://relay.example.com/derpmap.json' },
 }));
 
 /**

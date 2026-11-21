@@ -12,7 +12,8 @@ import {
 import { appClient, localMachineClient } from '$lib/client';
 import type { ServerPairingInfo } from '$lib/client/app-client';
 import { readSelfPairing } from '$features/devices/self-pairing';
-import { bindIsLoopbackOnly, isRelayUrl, tunnelDefaultApplies } from './tunnel-default';
+import { bindIsLoopbackOnly, tunnelDefaultApplies } from './tunnel-default';
+import { isRelayUrl } from '../relay-url';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
