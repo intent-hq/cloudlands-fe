@@ -5,7 +5,7 @@
  * the Create button. Before any frame arrives (sawFrame false) the fallback
  * label renders and no bar exists; frames flip it to a phase label and a
  * determinate bar. The label never carries a percentage: the percent (and the
- * download size and rate while cloning) sits in a caption under the button.
+ * download size and rate while cloning) sits in a caption just above the button that takes no layout space.
  * The bar is monotonic.
  * Rendered through a harness that mounts the real Button via
  * `children`, so the bar's placement relative to the Button's internal slots
@@ -159,7 +159,7 @@ describe('CreateButtonProgress', () => {
     expect(screen.queryByTestId('create-progress-detail')).toBeNull();
   });
 
-  it('shows the percent under the button once frames arrive', async () => {
+  it('shows the percent above the button once frames arrive', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });

@@ -1,7 +1,7 @@
 <!-- Live provisioning labels and a determinate bar. Keep the bar outside
      the Button content slot so it stays at the button’s bottom edge. The
      percent (and git's download size and rate while cloning) sits in a
-     caption under the button: numbers in the label would restart its
+     caption just above the button: numbers in the label would restart its
      text motion on every frame. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -66,15 +66,15 @@
         data-testid="create-progress-bar"
       ></div>
     </div>
+    <!-- Above the button, absolutely positioned, so it takes no layout space:
+         the button sits in a bottom-pinned footer and must not move while a
+         create runs. The bar already exposes the value to assistive tech. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-full mb-1.5 truncate text-center text-xs text-subtle tabular-nums"
+      aria-hidden="true"
+      data-testid="create-progress-detail"
+    >
+      {detail}
+    </div>
   {/if}
 </div>
-{#if live && $entry$}
-  <!-- The bar already exposes the value to assistive tech. -->
-  <div
-    class="mt-1.5 truncate text-center text-xs text-subtle tabular-nums"
-    aria-hidden="true"
-    data-testid="create-progress-detail"
-  >
-    {detail}
-  </div>
-{/if}

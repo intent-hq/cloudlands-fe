@@ -162,7 +162,7 @@
     <div class="flex flex-wrap items-start gap-8" data-narrow-button-gallery>
       {#each [160, 200, 240, 320] as width}
         <section
-          class="grid min-w-0 grid-cols-1 gap-3"
+          class="grid min-w-0 grid-cols-1 gap-8"
           style:width={`${width}px`}
           data-button-width={width}
         >
@@ -198,7 +198,7 @@
   {:else}
     <div class="grid grid-cols-1 gap-8 min-[900px]:grid-cols-4">
       <div class="min-w-0 space-y-6">
-        <section class="grid gap-3">
+        <section class="grid gap-8">
           <h2 class="type-body font-medium">Ready</h2>
           {@render button(m.workspace_compactInitializer_createWorkspace_label(), false)}
           <p class="type-body text-muted-foreground">Invalid form · shortcut hidden</p>
@@ -211,11 +211,11 @@
             true,
           )}
         </section>
-        <section class="grid gap-3">
+        <section class="grid gap-8">
           <h2 class="type-body font-medium">Updating an existing repository</h2>
           {@render button(m.workspace_compactInitializer_pullingLatest_label())}
         </section>
-        <section class="grid gap-3">
+        <section class="grid gap-8">
           <h2 class="type-body font-medium">Before live progress arrives</h2>
           {#each fallbackLabels as label}
             {@render button(label)}
@@ -227,7 +227,7 @@
       </div>
       {#each groups as group, groupIndex}
         <div class="min-w-0 space-y-6">
-          <section class="grid gap-3">
+          <section class="grid gap-8">
             <h2 class="type-body font-medium">{group.title}</h2>
             {#each group.entries as _entry, index}
               <CreateButtonProgress
@@ -244,7 +244,7 @@
             {/each}
           </section>
           {#if groupIndex === 1}
-            <section class="grid gap-3">
+            <section class="grid gap-8">
               <h2 class="type-body font-medium">Unrecognized progress phase</h2>
               <CreateButtonProgress
                 class="w-full"
