@@ -283,7 +283,12 @@
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'save', requestId: crypto.randomUUID() },
-        { kind: 'relay', url: editedRelay.trim(), connectionId: $activeConnectionId$ },
+        {
+          kind: 'relay',
+          url: editedRelay.trim(),
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
@@ -417,6 +422,52 @@
   );
 </script>
 
+{#snippet relayRow()}
+  <section data-tunnel-relay-row transition:slide={{ tier: 'moderate' }}>
+    <SettingsFieldRow
+      id="websocket-tunnel-relay"
+      label={m.settings_tunnel_relay_label()}
+      description={m.settings_tunnel_relay_description()}
+      error={relayValid || !relayTouched ? undefined : m.settings_tunnel_relay_invalid()}
+      disabled={listenSaving}
+      class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
+    >
+      {#snippet control({ labelId, descriptionId, errorId })}
+        <div class="flex min-w-0 w-full items-center gap-2">
+          <Input
+            bind:ref={relayInput}
+            type="url"
+            bind:value={editedRelay}
+            placeholder={m.settings_tunnel_relay_placeholder()}
+            disabled={listenSaving}
+            spellcheck={false}
+            autocomplete="off"
+            class="min-w-0 flex-1"
+            aria-labelledby={labelId}
+            aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ')}
+            onblur={() => (relayTouched = true)}
+            onkeydown={(event: KeyboardEvent) => {
+              if (event.key === 'Enter') handleRelaySave();
+            }}
+          />
+          {#if relayChanged}
+            <Button
+              variant="link"
+              size="sm"
+              type="button"
+              onclick={handleRelaySave}
+              disabled={listenSaving || !relayValid}
+              class="h-auto shrink-0 px-0"
+            >
+              {listenSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+            </Button>
+          {/if}
+        </div>
+      {/snippet}
+    </SettingsFieldRow>
+  </section>
+{/snippet}
+
 {#snippet portRow()}
   <SettingsFieldRow
     id="websocket-port"
@@ -501,51 +552,7 @@
           {/if}
 
           {#if relaySupported}
-            <section data-tunnel-relay-row transition:slide={{ tier: 'moderate' }}>
-              <SettingsFieldRow
-                id="websocket-tunnel-relay"
-                label={m.settings_tunnel_relay_label()}
-                description={m.settings_tunnel_relay_description()}
-                error={relayValid || !relayTouched ? undefined : m.settings_tunnel_relay_invalid()}
-                disabled={listenSaving}
-                class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
-              >
-                {#snippet control({ labelId, descriptionId, errorId })}
-                  <div class="flex min-w-0 w-full items-center gap-2">
-                    <Input
-                      bind:ref={relayInput}
-                      type="url"
-                      bind:value={editedRelay}
-                      placeholder={m.settings_tunnel_relay_placeholder()}
-                      disabled={listenSaving}
-                      spellcheck={false}
-                      autocomplete="off"
-                      class="min-w-0 flex-1"
-                      aria-labelledby={labelId}
-                      aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ')}
-                      onblur={() => (relayTouched = true)}
-                      onkeydown={(event: KeyboardEvent) => {
-                        if (event.key === 'Enter') handleRelaySave();
-                      }}
-                    />
-                    {#if relayChanged}
-                      <Button
-                        variant="link"
-                        size="sm"
-                        type="button"
-                        onclick={handleRelaySave}
-                        disabled={listenSaving || !relayValid}
-                        class="h-auto shrink-0 px-0"
-                      >
-                        {listenSaving
-                          ? m.settings_wsApi_port_saving()
-                          : m.settings_wsApi_port_save()}
-                      </Button>
-                    {/if}
-                  </div>
-                {/snippet}
-              </SettingsFieldRow>
-            </section>
+            {@render relayRow()}
           {/if}
           {#if enabled}
             <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
@@ -764,6 +771,16 @@
   {@render mobilePairing()}
   {#if active && !mobileOnly}
     {@render connectionSettings()}
+  {:else if active && relaySupported}
+    <!-- A connected backend's own relay: its cloud sandboxes use it. -->
+    <SettingsDisclosure
+      label={m.settings_devices_advanced_label()}
+      bind:open={advancedExpanded}
+      flush
+      muted
+    >
+      {@render relayRow()}
+    </SettingsDisclosure>
   {/if}
 </div>
 

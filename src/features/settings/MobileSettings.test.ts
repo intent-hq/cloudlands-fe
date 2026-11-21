@@ -48,6 +48,7 @@ const response = {
 
 let stop: () => void;
 let enabled: boolean;
+let relayUrl: string | null;
 let pairing: ReturnType<typeof vi.fn>;
 let invoke: ReturnType<typeof vi.fn>;
 let clipboard: ReturnType<typeof vi.fn>;
@@ -122,6 +123,7 @@ function deferred<T>() {
 beforeEach(() => {
   vi.clearAllMocks();
   enabled = true;
+  relayUrl = null;
   pairing = vi.fn(async () => response);
   clipboard = vi.fn(async () => {});
   Object.defineProperty(navigator, 'clipboard', {
@@ -134,7 +136,7 @@ beforeEach(() => {
       channel: string,
       payload?: {
         method: string;
-        params?: { changes: { path: string; value: boolean }[] };
+        params?: { changes: { path: string; value: boolean | string }[] };
         localMachine?: boolean;
       },
     ) => {
@@ -155,12 +157,36 @@ beforeEach(() => {
                 defaultValue: false,
                 origin: 'file',
               },
+              ...(relayUrl === null
+                ? []
+                : [
+                    {
+                      path: 'server.tunnel.derpUrl',
+                      value: relayUrl,
+                      label: 'Relay',
+                      description: '',
+                      category: 'server',
+                      type: 'string',
+                      defaultValue: '',
+                      origin: 'file',
+                    },
+                  ]),
             ],
           },
         };
       if (payload?.method === 'pairing.getSelfInfo') return { ok: true, result: await pairing() };
       if (payload?.method === 'settings.update') {
-        enabled = payload.params!.changes[0].value;
+        const change = payload.params!.changes[0];
+        if (change.path === 'server.tunnel.derpUrl') {
+          if (typeof change.value === 'string' && change.value.includes('dead'))
+            throw new Error('no relay answered');
+          relayUrl = change.value as string;
+          return {
+            ok: true,
+            result: { revision: 3, applied: [{ ...change, origin: 'file' }] },
+          };
+        }
+        enabled = change.value as boolean;
         return {
           ok: true,
           result: {
@@ -424,4 +450,60 @@ it('keeps pairing unavailable after an error and retries without exposing creden
   await fireEvent.click(copyButton());
   await waitFor(() => expect(clipboard).toHaveBeenCalledWith(remoteUri));
   expect(invoke.mock.calls.every(([, payload]) => !payload.localMachine)).toBe(true);
+});
+
+it('edits the relay of the connected backend, not the local daemon', async () => {
+  relayUrl = 'https://old.example.com/derpmap.json';
+  render(MobileSettings);
+  await fireEvent.click(
+    await screen.findByRole('button', { name: m.settings_devices_advanced_label() }),
+  );
+  const input = (await screen.findByRole('textbox', {
+    name: m.settings_tunnel_relay_label(),
+  })) as HTMLInputElement;
+  await waitFor(() => expect(input.value).toBe('https://old.example.com/derpmap.json'));
+  await waitFor(() => expect(input.disabled).toBe(false));
+  await fireEvent.input(input, { target: { value: 'https://relay.example.com/derpmap.json' } });
+  await fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(relayUrl).toBe('https://relay.example.com/derpmap.json'));
+  const updates = invoke.mock.calls.filter(([, payload]) => payload?.method === 'settings.update');
+  expect(updates).toEqual([
+    [
+      'backend:request',
+      {
+        method: 'settings.update',
+        params: {
+          changes: [
+            { path: 'server.tunnel.derpUrl', value: 'https://relay.example.com/derpmap.json' },
+          ],
+        },
+      },
+    ],
+  ]);
+  expect(invoke.mock.calls.some(([, payload]) => payload?.localMachine)).toBe(false);
+});
+
+it('shows no relay on a remote backend without the setting', async () => {
+  render(MobileSettings);
+  await waitFor(() => expect(copyButton().disabled).toBe(false));
+  expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
+  expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+});
+
+it('keeps the draft and says why when the remote backend refuses the relay', async () => {
+  relayUrl = '';
+  render(MobileSettings);
+  await fireEvent.click(
+    await screen.findByRole('button', { name: m.settings_devices_advanced_label() }),
+  );
+  const input = (await screen.findByRole('textbox', {
+    name: m.settings_tunnel_relay_label(),
+  })) as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  await fireEvent.input(input, { target: { value: 'https://dead.example.com/derpmap.json' } });
+  await fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() =>
+    expect(mocks.error).toHaveBeenCalledWith(expect.stringContaining('no relay answered')),
+  );
+  expect(input.value).toBe('https://dead.example.com/derpmap.json');
 });

@@ -95,7 +95,6 @@ function* loadSnapshot(
   const value = (path: string) => settings.find((entry) => entry.path === path)?.value;
   const bindAddress = value('server.bindAddress');
   const persistedPort = value('server.wsApi.port');
-  const relayUrl = value('server.tunnel.derpUrl');
   const snapshot: WebSocketApiSnapshot = {
     ...previous,
     enabled: value('server.wsApi.enabled') === true,
@@ -110,8 +109,7 @@ function* loadSnapshot(
     tunnelSupported: settings.some((entry) => entry.path === 'server.tunnel.enabled'),
     tunnelEnabled: value('server.tunnel.enabled') === true,
     tunnelOnly: value('server.tunnel.enabled') === true && value('server.tunnel.only') === true,
-    relaySupported: settings.some((entry) => entry.path === 'server.tunnel.derpUrl'),
-    relayUrl: typeof relayUrl === 'string' ? relayUrl : '',
+    ...relayValues(settings),
   };
   // An accepted mutation owns its full domain completion even if its form closes.
   // Reducer and credential receiver still reject delivery to an obsolete identity.
@@ -153,18 +151,28 @@ function* requestCurrent(request: SettingsFormRequest, context?: string): SagaGe
   );
 }
 
+/** The relay fields of a `settings.list` result. */
+function relayValues(settings: { path: string; value: unknown }[]) {
+  const entry = settings.find((row) => row.path === 'server.tunnel.derpUrl');
+  return {
+    relaySupported: !!entry,
+    relayUrl: typeof entry?.value === 'string' ? entry.value : '',
+  };
+}
+
 function* loadMobile(
   request: SettingsFormRequest,
   context: string,
-): SagaGenerator<{ enabled: boolean }> {
+): SagaGenerator<{ enabled: boolean; relaySupported: boolean; relayUrl: string }> {
   const principal = yield* selectPrincipalSnapshot.effect();
   if (!(yield* selectCanAdministerHost.effect()) || !principal)
     throw new Error(m.settings_personalDevices_pairing_error());
   const settings = yield* call([appClient.settings, appClient.settings.list]);
-  if (!(yield* requestCurrent(request, context))) return { enabled: false };
+  const relay = relayValues(settings);
+  if (!(yield* requestCurrent(request, context))) return { enabled: false, ...relay };
   const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
   if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
-  yield* put(settingsFormRequestProgressed(request, { enabled }));
+  yield* put(settingsFormRequestProgressed(request, { enabled, ...relay }));
   if (enabled) {
     if (!principal.capabilities.personalPairing)
       throw new Error(m.settings_personalDevices_pairing_error());
@@ -179,7 +187,7 @@ function* loadMobile(
     if (yield* requestCurrent(request, context))
       receiveWebsocketCredentials(request, { pairingUri: uri });
   } else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
-  return { enabled };
+  return { enabled, ...relay };
 }
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
@@ -355,26 +363,32 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         );
         return;
       }
+      // With a context the relay is the connected backend's; appClient follows it.
+      if (context && !(yield* selectCanAdministerHost.effect()))
+        throw new Error(m.settings_personalDevices_pairing_error());
+      const target = context ? appClient : client;
       // A running tunnel restarts and checks the relay, so a dead one is refused here; a
       // stopped tunnel only saves it, and the check runs at the next tunnel or sandbox start.
       try {
         yield* call(
-          [client.settings, client.settings.update],
+          [target.settings, target.settings.update],
           [{ path: 'server.tunnel.derpUrl', value: url }],
         );
-        if (yield* selectSettingsFormRequestCurrent.effect(request))
+        if (yield* requestCurrent(request, context))
           yield* call(
             notify.success,
             url ? m.settings_tunnel_relay_saved() : m.settings_tunnel_relay_cleared(),
           );
-        yield* publication('refresh');
+        if (!context) yield* publication('refresh');
       } catch (cause) {
         error = m.settings_tunnel_relay_saveError({
           error: cause instanceof Error ? cause.message : String(cause),
         });
       }
-      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
-      values = { ...(yield* call(loadSnapshot, client, request)) };
+      if (!(yield* requestCurrent(request, context))) return;
+      values = context
+        ? relayValues(yield* call([appClient.settings, appClient.settings.list]))
+        : { ...(yield* call(loadSnapshot, client, request)) };
     } else if (intent.kind === 'rotate') {
       // Neither the resolved token nor an error echoing it may enter saga diagnostics.
       const fixed = yield* call(async () => {

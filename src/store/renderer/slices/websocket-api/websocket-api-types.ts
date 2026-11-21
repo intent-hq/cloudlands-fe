@@ -21,7 +21,8 @@ export type WebSocketApiIntent =
   | { kind: 'port'; port: number; connectionId: string }
   | { kind: 'listen'; ips: string[]; tunnel: boolean; connectionId: string }
   | { kind: 'tunnel'; connectionId: string }
-  | { kind: 'relay'; url: string; connectionId: string }
+  /** With `context`, the connected (remote) backend's relay; else this machine's. */
+  | { kind: 'relay'; url: string; connectionId: string; context?: string }
   | { kind: 'rotate'; connectionId: string }
   | { kind: 'publish'; connectionId: string }
   | {
