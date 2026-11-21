@@ -387,10 +387,18 @@
   const unslothServers = $derived(
     $unslothStatus$?.running ? ($unslothStatus$.servers ?? [$unslothStatus$]) : [],
   );
+  // A daemon without stopByModel stops every server, so say so when several run.
+  const stopsAllUnsloth = $derived(
+    unslothServers.length > 1 && $unslothStatus$?.stopByModel !== true,
+  );
+
   // The server whose stop the dialog confirms.
   let stopUnslothTarget = $state<UnslothServerWirePayload | null>(null);
 
   const stopUnslothDescription = $derived.by(() => {
+    if (stopsAllUnsloth) {
+      return m.layout_daemonStatus_stopUnslothAll_description({ servers: unslothServers.length });
+    }
     const count = stopUnslothTarget?.attachedAgentCount ?? 0;
     const model = stopUnslothTarget?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
     if (count > 0) {
@@ -402,9 +410,7 @@
   });
 
   function confirmStopUnsloth() {
-    // Older daemons ignore repoId and stop their one server; they omit `servers`.
-    const repoId = $unslothStatus$?.servers ? stopUnslothTarget?.repoId : undefined;
-    appStore.dispatch(stopUnslothRequested(repoId));
+    appStore.dispatch(stopUnslothRequested(stopUnslothTarget?.repoId));
   }
 
   // --- Agent memory breakdown ---------------------------------------------
@@ -875,6 +881,7 @@
           <UnslothServerSubmenu
             status={server}
             serverCount={unslothServers.length}
+            stopsAll={stopsAllUnsloth}
             {menuAnchor}
             onStop={() => {
               dropdownOpen = false;
@@ -1061,9 +1068,13 @@
 {#if stopUnslothDialogOpen}
   <BulkActionConfirmDialog
     bind:open={stopUnslothDialogOpen}
-    title={m.layout_daemonStatus_stopUnsloth_title()}
+    title={stopsAllUnsloth
+      ? m.layout_daemonStatus_stopUnslothAll_title()
+      : m.layout_daemonStatus_stopUnsloth_title()}
     description={stopUnslothDescription}
-    confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
+    confirmText={stopsAllUnsloth
+      ? m.layout_daemonStatus_stopUnslothAll_confirm_label()
+      : m.layout_daemonStatus_stopUnsloth_confirm_label()}
     variant="destructive"
     onConfirm={confirmStopUnsloth}
   />

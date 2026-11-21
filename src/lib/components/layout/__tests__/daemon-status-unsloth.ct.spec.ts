@@ -83,3 +83,14 @@ test('Each running model gets its own row, and its stop names only that model', 
   await expect(dialog).toContainText('unsloth/Qwen3.5-9B-GGUF');
   await expect(dialog).not.toContainText('Qwen3.8-27B');
 });
+
+test('A daemon that cannot stop one model says stop ends every server', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('unsloth-two-servers-stop-all'));
+  await page.getByRole('button').click();
+
+  const ready = await openPanel(page, /^Unsloth: Qwen3\.8-27B - Healthy$/, 'Unsloth: Qwen3.8-27B');
+  await ready.getByRole('menuitem', { name: 'Stop all servers' }).click();
+  const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'));
+  await expect(dialog).toContainText('all 2 managed Unsloth servers');
+});

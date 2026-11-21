@@ -38,6 +38,7 @@ import {
   stopUnslothRequested,
   systemStatusFailure,
   systemStatusSuccess,
+  unslothStatusSuccess,
 } from '../daemon-health-slice';
 import type {
   AgentMemoryUsageWirePayload,
@@ -737,20 +738,24 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('stops one model when given its repoId and every server otherwise', async () => {
-    const { input, task } = startHealthSaga();
+  it('sends repoId only to a daemon that stops by model', async () => {
+    const { task, dispatch } = startHealthSagaWithReducer();
     await settle();
+    const model = 'unsloth/Qwen3.5-9B-GGUF';
 
-    input.put(stopUnslothRequested('unsloth/Qwen3.5-9B-GGUF'));
+    dispatch(unslothStatusSuccess({ running: true, repoId: model, stopByModel: true }));
+    dispatch(stopUnslothRequested(model));
     await settle();
-    input.put(stopUnslothRequested());
+    dispatch(unslothStatusSuccess({ running: true, repoId: model, stopByModel: true }));
+    dispatch(stopUnslothRequested());
+    await settle();
+    // An older daemon ignores repoId and stops every server.
+    dispatch(unslothStatusSuccess({ running: true, repoId: model }));
+    dispatch(stopUnslothRequested(model));
     await settle();
 
     const stops = mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.stop');
-    expect(stops).toEqual([
-      ['unsloth.stop', { repoId: 'unsloth/Qwen3.5-9B-GGUF' }],
-      ['unsloth.stop'],
-    ]);
+    expect(stops).toEqual([['unsloth.stop', { repoId: model }], ['unsloth.stop'], ['unsloth.stop']]);
     task.cancel();
     await task.toPromise();
   });

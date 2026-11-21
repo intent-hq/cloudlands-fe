@@ -12,12 +12,15 @@
   let {
     status,
     serverCount = 1,
+    stopsAll = false,
     menuAnchor,
     onStop,
   }: {
     status: UnslothServerWirePayload;
     /** Running servers; with more than one, each row names its model. */
     serverCount?: number;
+    /** The daemon cannot stop one model, so stop ends every server. */
+    stopsAll?: boolean;
     menuAnchor: HTMLElement | null;
     onStop: () => void;
   } = $props();
@@ -154,7 +157,9 @@
         <Menu.Item destructive disabled={$stopping$} onSelect={onStop}>
           {$stopping$
             ? m.layout_daemonStatus_stopUnsloth_stopping_label()
-            : m.layout_daemonStatus_stopUnsloth_action_label()}
+            : stopsAll
+              ? m.layout_daemonStatus_stopUnsloth_stopAll_label()
+              : m.layout_daemonStatus_stopUnsloth_action_label()}
         </Menu.Item>
       </div>
     </section>

@@ -260,8 +260,8 @@ interface Scenario {
   pausedSandboxes?: number;
   /** Phase of a running managed Unsloth server; omitted means none runs. */
   unslothPhase?: string;
-  /** Report two running Unsloth servers through `servers`. */
-  unslothServers?: boolean;
+  /** Report two running Unsloth servers: `per-model` stops one, `stop-all` only all. */
+  unslothServers?: 'per-model' | 'stop-all';
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -322,7 +322,7 @@ function setup({
   machines = false,
   pausedSandboxes = 0,
   unslothPhase,
-  unslothServers = false,
+  unslothServers,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -356,7 +356,11 @@ function setup({
       );
     }
     if (unslothPhase) store.dispatch(unslothStatusSuccess(unslothServer(unslothPhase)));
-    if (unslothServers) store.dispatch(unslothStatusSuccess(unslothTwoServers));
+    if (unslothServers) {
+      store.dispatch(
+        unslothStatusSuccess({ ...unslothTwoServers, stopByModel: unslothServers === 'per-model' }),
+      );
+    }
     if (pausedSandboxes > 0) {
       store.dispatch(
         cloudMachinesLoaded({
@@ -513,7 +517,8 @@ export const preview = definePreview<Record<string, never>>({
     },
     'unsloth-minting': { props: {}, setup: setup({ unslothPhase: 'minting' }) },
     'unsloth-ready': { props: {}, setup: setup({ unslothPhase: 'ready' }) },
-    'unsloth-two-servers': { props: {}, setup: setup({ unslothServers: true }) },
+    'unsloth-two-servers': { props: {}, setup: setup({ unslothServers: 'per-model' }) },
+    'unsloth-two-servers-stop-all': { props: {}, setup: setup({ unslothServers: 'stop-all' }) },
     'degraded-timeout': {
       props: {},
       setup: setup({ failures: { kind: 'timeout', count: 1 } }),

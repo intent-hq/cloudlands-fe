@@ -20,7 +20,10 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
-import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
+import {
+  selectDaemonConnectionGeneration,
+  selectUnslothStatus,
+} from '../daemon-health-selectors';
 import {
   agentMemoryBreakdownClosed,
   agentMemoryBreakdownOpened,
@@ -417,7 +420,9 @@ function* watchUnslothStatusPolls() {
 }
 
 function* stopUnslothSaga(action: ReturnType<typeof stopUnslothRequested>) {
-  const [repoId] = action.payload;
+  // Older daemons ignore repoId and stop every server.
+  const stopByModel = (yield* selectUnslothStatus.effect())?.stopByModel === true;
+  const repoId = stopByModel ? action.payload[0] : undefined;
   try {
     const result = repoId
       ? yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop', { repoId })

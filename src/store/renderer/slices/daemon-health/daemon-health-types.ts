@@ -220,6 +220,8 @@ export interface UnslothStatusWirePayload {
    * describe the first one. Older daemons omit it and run one server.
    */
   servers?: UnslothServerWirePayload[];
+  /** `unsloth.stop` honours `repoId`; older daemons omit it and stop every server. */
+  stopByModel?: boolean;
 }
 
 /**
