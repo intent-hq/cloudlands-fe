@@ -23,7 +23,6 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import type { StoreState } from '../../../types';
-import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
   autocompleteSettingsReducer,
   changeAutocompleteEnabled,
@@ -162,15 +161,6 @@ describe('autocompleteSettingsSaga', () => {
       enabled: false,
       keyConfigured: { kilo: false, openrouter: false },
     });
-    task.cancel();
-  });
-
-  it('re-reads on an autocomplete settings change only', async () => {
-    const { dispatch, task } = await ready();
-    expect(mocks.load).toHaveBeenCalledTimes(1);
-    dispatch(settingsChanged([{ path: 'voice.provider', value: 'openai' }]));
-    dispatch(settingsChanged([{ path: 'autocomplete.enabled', value: true }]));
-    await vi.waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2));
     task.cancel();
   });
 });

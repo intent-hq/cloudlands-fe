@@ -1,4 +1,4 @@
-import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   clearAutocompleteApiKey,
@@ -10,7 +10,6 @@ import {
 } from '$features/autocomplete/autocomplete-settings-service';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
   changeAutocompleteEnabled,
   changeAutocompleteModel,
@@ -140,14 +139,6 @@ function* clearKeyWorker(action: ReturnType<typeof clearAutocompleteKey>): SagaG
   if (cleared && disableAfter) yield* call(persistEnabled, false);
 }
 
-/** Another window or the CLI changed an `[autocomplete]` value: re-read. */
-function* settingsChangedWorker(action: ReturnType<typeof settingsChanged>): SagaGenerator<void> {
-  const [changes] = action.payload;
-  if (!changes.some((change) => change.path.startsWith('autocomplete.'))) return;
-  if ((yield* selectAutocompleteSettings.effect()).busyService !== null) return;
-  yield* call(initializeWorker);
-}
-
 export function* autocompleteSettingsSaga(): SagaGenerator<void> {
   yield* all([
     call(initializeWorker),
@@ -157,6 +148,5 @@ export function* autocompleteSettingsSaga(): SagaGenerator<void> {
     takeEvery(changeAutocompleteModel, changeModelWorker),
     takeEvery(saveAutocompleteKey, saveKeyWorker),
     takeEvery(clearAutocompleteKey, clearKeyWorker),
-    takeLatest(settingsChanged, settingsChangedWorker),
   ]);
 }
