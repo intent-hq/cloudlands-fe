@@ -248,6 +248,11 @@ export const selectUnslothStopping = store.createSelector(
   (state) => state.daemonHealth.unslothStopping,
 );
 
+/** The model an in-flight unsloth.stop targets; null when it stops every server. */
+export const selectUnslothStoppingRepoId = store.createSelector(
+  (state) => state.daemonHealth.unslothStoppingRepoId,
+);
+
 /** Last agent.memoryUsage result (fetched while the agent memory breakdown is open), if any. */
 export const selectAgentMemoryUsage = store.createSelector(
   (state) => state.daemonHealth.agentMemoryUsage,

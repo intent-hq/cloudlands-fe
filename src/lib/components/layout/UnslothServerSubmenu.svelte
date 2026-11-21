@@ -5,7 +5,10 @@
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { selectUnslothStopping } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import {
+    selectUnslothStopping,
+    selectUnslothStoppingRepoId,
+  } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import type { UnslothServerWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
   import { formatCpu, formatMemory } from './DaemonStatusIndicator.svelte';
 
@@ -26,6 +29,11 @@
   } = $props();
 
   const stopping$ = selectUnslothStopping();
+  const stoppingRepoId$ = selectUnslothStoppingRepoId();
+  // A one-model stop leaves the other rows running.
+  const stoppingThis = $derived(
+    $stopping$ && ($stoppingRepoId$ === null || $stoppingRepoId$ === status.repoId),
+  );
   const multiple = $derived(serverCount > 1);
 
   // The repo name without the org prefix ("unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
@@ -154,8 +162,9 @@
         {/if}
 
         <Menu.Separator />
+        <!-- One stop at a time: the saga drops a second request. -->
         <Menu.Item destructive disabled={$stopping$} onSelect={onStop}>
-          {$stopping$
+          {stoppingThis
             ? m.layout_daemonStatus_stopUnsloth_stopping_label()
             : stopsAll
               ? m.layout_daemonStatus_stopUnsloth_stopAll_label()

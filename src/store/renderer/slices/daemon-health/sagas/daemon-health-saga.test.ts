@@ -38,6 +38,7 @@ import {
   stopUnslothRequested,
   systemStatusFailure,
   systemStatusSuccess,
+  unslothStatusFailure,
   unslothStatusSuccess,
 } from '../daemon-health-slice';
 import type {
@@ -738,28 +739,23 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('sends repoId only to a daemon that stops by model', async () => {
-    const { task, dispatch } = startHealthSagaWithReducer();
+  it('sends the repoId decided when the dialog opened, whatever a later poll says', async () => {
+    const { task, dispatch, getState } = startHealthSagaWithReducer();
     await settle();
     const model = 'unsloth/Qwen3.5-9B-GGUF';
 
+    // A failed poll clears the status between opening the dialog and confirming.
     dispatch(unslothStatusSuccess({ running: true, repoId: model, stopByModel: true }));
+    dispatch(unslothStatusFailure());
     dispatch(stopUnslothRequested(model));
+    expect(getState().unslothStoppingRepoId).toBe(model);
     await settle();
-    dispatch(unslothStatusSuccess({ running: true, repoId: model, stopByModel: true }));
     dispatch(stopUnslothRequested());
-    await settle();
-    // An older daemon ignores repoId and stops every server.
-    dispatch(unslothStatusSuccess({ running: true, repoId: model }));
-    dispatch(stopUnslothRequested(model));
+    expect(getState().unslothStoppingRepoId).toBeNull();
     await settle();
 
     const stops = mocks.backendRequest.mock.calls.filter(([method]) => method === 'unsloth.stop');
-    expect(stops).toEqual([
-      ['unsloth.stop', { repoId: model }],
-      ['unsloth.stop'],
-      ['unsloth.stop'],
-    ]);
+    expect(stops).toEqual([['unsloth.stop', { repoId: model }], ['unsloth.stop']]);
     task.cancel();
     await task.toPromise();
   });

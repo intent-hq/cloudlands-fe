@@ -417,9 +417,7 @@ function* watchUnslothStatusPolls() {
 }
 
 function* stopUnslothSaga(action: ReturnType<typeof stopUnslothRequested>) {
-  // Older daemons ignore repoId and stop every server.
-  const stopByModel = (yield* selectUnslothStatus.effect())?.stopByModel === true;
-  const repoId = stopByModel ? action.payload[0] : undefined;
+  const [repoId] = action.payload;
   try {
     const result = repoId
       ? yield* call(backendRequest<{ stopped: boolean }>, 'unsloth.stop', { repoId })

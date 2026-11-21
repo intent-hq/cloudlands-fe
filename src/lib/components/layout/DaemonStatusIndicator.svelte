@@ -110,6 +110,7 @@
   import { selectPausedCloudSandboxCount } from '$features/cloud-machines/cloud-machines-selectors';
   import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
   import UnslothServerSubmenu from './UnslothServerSubmenu.svelte';
+  import { planUnslothStop, unslothServerRows, type UnslothStopPlan } from './unsloth-servers';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
@@ -383,24 +384,42 @@
     currentRemoteName ? `${triggerLabel} — ${currentRemoteName}` : triggerLabel,
   );
 
-  // Older daemons omit `servers` and run a single server.
-  const unslothServers = $derived(
-    $unslothStatus$?.running ? ($unslothStatus$.servers ?? [$unslothStatus$]) : [],
-  );
+  const unslothServers = $derived(unslothServerRows($unslothStatus$));
   // A daemon without stopByModel stops every server, so say so when several run.
   const stopsAllUnsloth = $derived(
     unslothServers.length > 1 && $unslothStatus$?.stopByModel !== true,
   );
 
-  // The server whose stop the dialog confirms.
-  let stopUnslothTarget = $state<UnslothServerWirePayload | null>(null);
+  // Fixed when the dialog opens, so a later poll cannot widen the stop.
+  let stopUnslothPlan = $state<{ plan: UnslothStopPlan; model?: string } | null>(null);
+  // The row's server as last polled, for a live agent count.
+  const stopUnslothServer = $derived(
+    stopUnslothPlan?.model
+      ? unslothServers.find((server) => server.repoId === stopUnslothPlan?.model)
+      : undefined,
+  );
+
+  function openStopUnsloth(server: UnslothServerWirePayload) {
+    stopUnslothPlan = {
+      plan: planUnslothStop($unslothStatus$, server.repoId),
+      model: server.repoId,
+    };
+    dropdownOpen = false;
+    stopUnslothDialogOpen = true;
+  }
 
   const stopUnslothDescription = $derived.by(() => {
-    if (stopsAllUnsloth) {
-      return m.layout_daemonStatus_stopUnslothAll_description({ servers: unslothServers.length });
+    const plan = stopUnslothPlan?.plan;
+    if (plan?.stopsAll) {
+      const servers = plan.serverCount;
+      const count = plan.attachedAgentCount;
+      if (count === 0) return m.layout_daemonStatus_stopUnslothAll_description({ servers });
+      return count === 1
+        ? m.layout_daemonStatus_stopUnslothAllAttached_one({ servers, count })
+        : m.layout_daemonStatus_stopUnslothAllAttached_many({ servers, count });
     }
-    const count = stopUnslothTarget?.attachedAgentCount ?? 0;
-    const model = stopUnslothTarget?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
+    const count = stopUnslothServer?.attachedAgentCount ?? 0;
+    const model = stopUnslothPlan?.model ?? m.layout_daemonStatus_unslothFallbackModel_label();
     if (count > 0) {
       return count === 1
         ? m.layout_daemonStatus_stopUnslothAttached_one({ count, model })
@@ -410,7 +429,8 @@
   });
 
   function confirmStopUnsloth() {
-    appStore.dispatch(stopUnslothRequested(stopUnslothTarget?.repoId));
+    const plan = stopUnslothPlan?.plan;
+    appStore.dispatch(stopUnslothRequested(plan && !plan.stopsAll ? plan.repoId : undefined));
   }
 
   // --- Agent memory breakdown ---------------------------------------------
@@ -883,11 +903,7 @@
             serverCount={unslothServers.length}
             stopsAll={stopsAllUnsloth}
             {menuAnchor}
-            onStop={() => {
-              dropdownOpen = false;
-              stopUnslothTarget = server;
-              stopUnslothDialogOpen = true;
-            }}
+            onStop={() => openStopUnsloth(server)}
           />
         {/each}
       {/if}
@@ -1068,11 +1084,11 @@
 {#if stopUnslothDialogOpen}
   <BulkActionConfirmDialog
     bind:open={stopUnslothDialogOpen}
-    title={stopsAllUnsloth
+    title={stopUnslothPlan?.plan.stopsAll
       ? m.layout_daemonStatus_stopUnslothAll_title()
       : m.layout_daemonStatus_stopUnsloth_title()}
     description={stopUnslothDescription}
-    confirmText={stopsAllUnsloth
+    confirmText={stopUnslothPlan?.plan.stopsAll
       ? m.layout_daemonStatus_stopUnslothAll_confirm_label()
       : m.layout_daemonStatus_stopUnsloth_confirm_label()}
     variant="destructive"

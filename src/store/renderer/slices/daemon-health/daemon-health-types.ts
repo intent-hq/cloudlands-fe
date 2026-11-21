@@ -442,6 +442,8 @@ export interface DaemonHealthState {
   unslothPolling: boolean;
   /** True while an unsloth.stop request is in flight. */
   unslothStopping: boolean;
+  /** The model that stop targets; null while every server stops. */
+  unslothStoppingRepoId: string | null;
   /** Error string when the last unsloth.stop request failed. */
   unslothStopError: string | null;
   /**

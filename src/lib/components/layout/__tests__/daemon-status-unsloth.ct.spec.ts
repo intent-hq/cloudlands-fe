@@ -91,4 +91,5 @@ test('A daemon that cannot stop one model says stop ends every server', async ({
   await ready.getByRole('menuitem', { name: 'Stop all servers' }).click();
   const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'));
   await expect(dialog).toContainText('all 2 managed Unsloth servers');
+  await expect(dialog).toContainText('2 agents');
 });
