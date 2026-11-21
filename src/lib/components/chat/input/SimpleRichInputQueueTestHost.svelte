@@ -18,7 +18,14 @@
     queueCount = 12,
     width = 360,
     chief = false,
-  }: { streaming?: boolean; queueCount?: number; width?: number; chief?: boolean } = $props();
+    enableScreenshotCapture = false,
+  }: {
+    streaming?: boolean;
+    queueCount?: number;
+    width?: number;
+    chief?: boolean;
+    enableScreenshotCapture?: boolean;
+  } = $props();
   const workspace = untrack(() => (chief ? createChiefVirtualWorkspace() : null));
   if (workspace) store.dispatch(setWorkspaceEntity(workspace));
   const fixtureDispatch = store.dispatch;
@@ -68,6 +75,7 @@
     <SimpleRichInput
       bind:value
       {workspace}
+      {enableScreenshotCapture}
       isStreaming={streaming}
       isResponding={streaming}
       onsubmit={() => (lastAction = 'sent')}

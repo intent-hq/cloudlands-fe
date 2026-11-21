@@ -457,6 +457,7 @@ describe('owned dock capture visibility release', () => {
         throw new Error('legacy capture not used');
       },
       captureVisible: async (target) => {
+        if (!target) throw new Error('expected a dock window for this capture');
         visibleAtPixels.push(target.isVisible());
         return { ok: true, value: pixels };
       },

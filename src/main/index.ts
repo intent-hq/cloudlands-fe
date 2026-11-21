@@ -1,4 +1,5 @@
 import { setupChatMediaIPC } from '../features/hud/main/chat-media.ipc';
+import { setupChatScreenshotIPC } from '../features/hud/main/chat-screenshot.ipc';
 /**
  * Main Process Entry Point
  *
@@ -1651,6 +1652,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupSystemIPC();
   setupDockEvidenceIPC();
   setupChatMediaIPC();
+  setupChatScreenshotIPC();
   setupDockCaptureEditorIPC();
   // Copy/cut/paste of dock composer screenshots and recordings (dock window only).
   registerDockMediaClipboardIPC(getDockWindow);

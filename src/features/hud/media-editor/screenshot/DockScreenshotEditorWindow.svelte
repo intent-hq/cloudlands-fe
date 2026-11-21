@@ -57,6 +57,7 @@
     onRetake,
     onNoteDictation,
     noteDictationUpdate = null,
+    shortcutDialog = null,
   }: {
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void | boolean | Promise<void | boolean>;
@@ -75,6 +76,7 @@
       request: DockCaptureEditorNoteDictationRequest,
     ) => Promise<DockCaptureEditorNoteDictationAck>;
     noteDictationUpdate?: DockCaptureEditorNoteDictationUpdate | null;
+    shortcutDialog?: HTMLElement | null;
   } = $props();
   function seed(value: DockCaptureEditorSnapshot): ScreenshotEditorBundle | null {
     const source = value.source;
@@ -545,6 +547,7 @@
     onNoteBlur={stopNote}
     disabled={saving || deleting}
     {retaking}
+    {shortcutDialog}
     onInteractionPending={(pending) => (interactionPending = pending)}
     admittedOutputVersion={outputAdmitted ? DOCK_MEDIA_OUTPUT_VERSION : undefined}
     {dictatingId}
@@ -567,6 +570,7 @@
         onUndo={undo}
         onRedo={redo}
         {discardRequest}
+        {shortcutDialog}
         onDiscardRequested={discard}
         {onKeepEditing}
         sidebar={contentSidebar}
@@ -595,6 +599,7 @@
     subtitle={snapshot.title}
     onCancel={onClose}
     {discardRequest}
+    {shortcutDialog}
     {onDiscardRequested}
     {onKeepEditing}
   >

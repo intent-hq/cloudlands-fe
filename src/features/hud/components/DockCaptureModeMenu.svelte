@@ -30,6 +30,7 @@
     heading,
     shortcut,
     focusChecked = false,
+    surface = 'notch',
     onSelect,
     onInteractOutside,
     onpointerenter,
@@ -44,6 +45,7 @@
     shortcut?: string;
     /** Keyboard opening: focus the current mode. Pointer opening never takes focus. */
     focusChecked?: boolean;
+    surface?: 'notch' | 'chat';
     onSelect: (mode: DockCaptureMode) => void;
     onInteractOutside?: (event: PointerEvent) => void;
     onpointerenter?: () => void;
@@ -70,7 +72,7 @@
     sideOffset={6}
     preventScroll={false}
     class="dock-media-tool-popover dock-capture-mode-menu min-w-44"
-    data-dock-palette="notch"
+    data-dock-palette={surface === 'notch' ? 'notch' : undefined}
     aria-label={label}
     onInteractOutside={(event) => {
       // The capture button owns its primary action. Let its click run once;
