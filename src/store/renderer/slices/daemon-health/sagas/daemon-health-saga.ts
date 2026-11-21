@@ -20,7 +20,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
-import { selectDaemonConnectionGeneration, selectUnslothStatus } from '../daemon-health-selectors';
+import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
   agentMemoryBreakdownClosed,
   agentMemoryBreakdownOpened,
