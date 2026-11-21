@@ -59,7 +59,7 @@
     confirmOpen?: boolean;
     /** The key field is open for this service (bindable for previews). */
     keyInputFor?: AutocompleteService | null;
-    onEnabledChange: (enabled: boolean) => void;
+    onEnabledChange: (enabled: boolean, kiloConsent?: boolean) => void;
     onServiceChange: (service: AutocompleteService) => void;
     onModelChange: (model: AutocompleteModel) => void;
     onSaveKey: (service: AutocompleteService, apiKey: string, enableAfter: boolean) => void;
@@ -145,7 +145,7 @@
 
   function handleConfirm() {
     confirmOpen = false;
-    onEnabledChange(true);
+    onEnabledChange(true, true);
   }
 
   function handleConfirmCancel() {

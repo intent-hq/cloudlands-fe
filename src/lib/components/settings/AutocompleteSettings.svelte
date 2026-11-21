@@ -38,7 +38,8 @@
           keyConfigured={$settings$.keyConfigured}
           busyService={$settings$.busyService}
           error={$settings$.error}
-          onEnabledChange={(enabled) => appStore.dispatch(changeAutocompleteEnabled(enabled))}
+          onEnabledChange={(enabled, kiloConsent) =>
+            appStore.dispatch(changeAutocompleteEnabled(enabled, kiloConsent))}
           onServiceChange={(service) => appStore.dispatch(changeAutocompleteService(service))}
           onModelChange={(model) => appStore.dispatch(changeAutocompleteModel(model))}
           onSaveKey={(service, apiKey, enableAfter) =>

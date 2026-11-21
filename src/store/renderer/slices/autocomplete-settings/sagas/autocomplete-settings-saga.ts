@@ -72,10 +72,26 @@ function* persistEnabled(enabled: boolean): SagaGenerator<void> {
   }
 }
 
+/**
+ * Turn on only if the service as settled now may run: it has a key, or it is
+ * keyless Kilo and the user just confirmed the data dialog. Queued actions may
+ * have changed the service since the view decided, so the view cannot gate this.
+ */
+function* enableIfAllowed(kiloConsent: boolean): SagaGenerator<void> {
+  const { service, keyConfigured } = yield* selectAutocompleteSettings.effect();
+  if (!keyConfigured[service] && !(service === 'kilo' && kiloConsent)) {
+    logger.debug('enable skipped: the selected service needs a key or confirmation');
+    return;
+  }
+  yield* call(persistEnabled, true);
+}
+
 function* changeEnabledWorker(
   action: ReturnType<typeof changeAutocompleteEnabled>,
 ): SagaGenerator<void> {
-  yield* call(persistEnabled, action.payload[0]);
+  const [enabled, kiloConsent = false] = action.payload;
+  if (enabled) yield* call(enableIfAllowed, kiloConsent);
+  else yield* call(persistEnabled, false);
 }
 
 function* changeServiceWorker(
@@ -134,7 +150,7 @@ function* saveKeyWorker(action: ReturnType<typeof saveAutocompleteKey>): SagaGen
   } finally {
     yield* put(setAutocompleteBusyService(null));
   }
-  if (saved && enableAfter) yield* call(persistEnabled, true);
+  if (saved && enableAfter) yield* call(enableIfAllowed, false);
 }
 
 function* clearKeyWorker(action: ReturnType<typeof clearAutocompleteKey>): SagaGenerator<void> {

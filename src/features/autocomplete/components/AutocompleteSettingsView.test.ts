@@ -52,7 +52,7 @@ describe('AutocompleteSettingsView gating', () => {
       name: m.settings_autocomplete_kiloConfirm_confirm(),
     });
     await fireEvent.click(confirm);
-    expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true, true);
   });
 
   it('cancelling the Kilo confirmation keeps it off', async () => {
@@ -126,7 +126,7 @@ describe('AutocompleteSettingsView gating', () => {
       name: m.settings_autocomplete_kiloConfirm_confirm(),
     });
     await fireEvent.click(confirm);
-    expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(onEnabledChange).toHaveBeenCalledExactlyOnceWith(true, true);
   });
 
   it('lets a user add a key while off, without the Kilo confirmation', async () => {

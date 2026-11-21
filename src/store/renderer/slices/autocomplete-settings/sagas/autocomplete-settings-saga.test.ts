@@ -100,7 +100,7 @@ describe('autocompleteSettingsSaga', () => {
 
   it('persists enabled and rolls back with an error on failure', async () => {
     const { dispatch, getState, task } = await ready();
-    dispatch(changeAutocompleteEnabled(true));
+    dispatch(changeAutocompleteEnabled(true, true));
     await vi.waitFor(() => expect(mocks.setEnabled).toHaveBeenCalledWith(true));
     expect(getState().enabled).toBe(true);
 
@@ -122,6 +122,7 @@ describe('autocompleteSettingsSaga', () => {
   });
 
   it('saves a key and enables only after the key is stored', async () => {
+    mocks.load.mockResolvedValue({ ...snapshot, service: 'openrouter' });
     const { dispatch, getState, task } = await ready();
     dispatch(saveAutocompleteKey('openrouter', 'sk-or-1', true));
     await vi.waitFor(() => expect(mocks.setEnabled).toHaveBeenCalledWith(true));
@@ -255,6 +256,40 @@ describe('autocompleteSettingsSaga', () => {
     await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
     expect(mocks.setEnabled).not.toHaveBeenCalled();
     expect(getState()).toMatchObject({ enabled: true, service: 'kilo' });
+    task.cancel();
+  });
+
+  it('refuses a queued enable once the service turned keyless without consent', async () => {
+    mocks.load.mockResolvedValue({
+      ...snapshot,
+      enabled: false,
+      service: 'openrouter',
+      keyConfigured: { kilo: false, openrouter: true },
+    });
+    let finishSave: () => void = () => {};
+    mocks.saveKey.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishSave = resolve)),
+    );
+    const { dispatch, getState, task } = await ready();
+    dispatch(saveAutocompleteKey('openrouter', 'sk-or-2', false));
+    dispatch(changeAutocompleteService('kilo'));
+    dispatch(changeAutocompleteEnabled(true));
+    finishSave();
+    await vi.waitFor(() => expect(mocks.setService).toHaveBeenCalledWith('kilo'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.setEnabled).not.toHaveBeenCalledWith(true);
+    expect(getState()).toMatchObject({ enabled: false, service: 'kilo' });
+    task.cancel();
+  });
+
+  it('enables keyless Kilo only with explicit consent', async () => {
+    const { dispatch, getState, task } = await ready();
+    dispatch(changeAutocompleteEnabled(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.setEnabled).not.toHaveBeenCalled();
+    dispatch(changeAutocompleteEnabled(true, true));
+    await vi.waitFor(() => expect(mocks.setEnabled).toHaveBeenCalledWith(true));
+    expect(getState().enabled).toBe(true);
     task.cancel();
   });
 });

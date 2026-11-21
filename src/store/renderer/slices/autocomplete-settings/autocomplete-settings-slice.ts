@@ -26,7 +26,8 @@ export const initialState: AutocompleteSettingsSliceState = {
 export const initializeAutocompleteSettings = createAction('autocompleteSettings/initialize');
 
 /** Persist `autocomplete.enabled` (optimistic, rolls back on failure). */
-export const changeAutocompleteEnabled = createAction<[enabled: boolean]>(
+/** Turn on or off. Turning keyless Kilo on needs `kiloConsent` from the confirmation dialog. */
+export const changeAutocompleteEnabled = createAction<[enabled: boolean, kiloConsent?: boolean]>(
   'autocompleteSettings/changeEnabled',
 );
 
