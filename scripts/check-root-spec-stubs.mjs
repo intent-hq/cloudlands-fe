@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { lineOf, svelteScriptBlocks } from './source-ast-lib.mjs';
 import { isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import {
   collectImports,
@@ -55,7 +56,6 @@ export const REMEDIATION_HINT = [
 const CONFIG_INPUTS = new Set(['tsconfig.json', 'playwright/root-spec-pattern.mjs']);
 const CODE_EXTENSIONS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.svelte']);
 const ENTRY_PATTERN = /^\/?src\/[^\s*?{}[\]!$`'"\\]+$/;
-const SVELTE_SCRIPT_PATTERN = /(<script\b(?:[^>"']|"[^"]*"|'[^']*')*>)([\s\S]*?)<\/script>/g;
 const IDENTIFIER_PATTERN = /[A-Za-z_$][\w$]*/g;
 const PATH_FUNCTIONS = new Set(['join', 'resolve']);
 
@@ -66,9 +66,6 @@ const isStringLike = (node) =>
 
 const parse = (fileName, text) =>
   ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-
-const lineOf = (node) =>
-  node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).line + 1;
 
 const hasModifier = (node, kind) =>
   ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((m) => m.kind === kind);
@@ -306,15 +303,10 @@ function readModule(absolute, cache) {
     if (absolute.endsWith('.svelte')) {
       module.exports.add('default');
       const everything = new Set(text.match(IDENTIFIER_PATTERN));
-      for (const match of text.matchAll(SVELTE_SCRIPT_PATTERN)) {
-        const offset = text.slice(0, match.index + match[1].length).split('\n').length - 1;
-        const script = parse(`${absolute}.ts`, match[2]);
-        for (const entry of collectImports(script, everything)) {
-          module.imports.push({ ...entry, line: entry.line + offset });
-        }
-        if (/\bmodule\b|context=["']module["']/.test(match[1])) {
-          for (const name of ownExports(script)) module.exports.add(name);
-        }
+      for (const block of svelteScriptBlocks(text)) {
+        const script = parse(`${absolute}.ts`, block.text);
+        module.imports.push(...collectImports(script, everything));
+        if (block.isModule) for (const name of ownExports(script)) module.exports.add(name);
       }
     } else {
       const sourceFile = parse(absolute, text);

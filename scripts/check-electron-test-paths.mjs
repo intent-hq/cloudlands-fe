@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { lineOf, parseSource } from './source-ast-lib.mjs';
 
 // Electron suite helpers (`test/electron*.ts`, `test/fixtures/**/*.ts`) run only in the
 // merge queue's test-electron job, so a pull request never resolves the source paths they
@@ -52,7 +53,6 @@ export function isElectronTestPathInput(file) {
 const REPO_PATH_PATTERN = /^(?:\.\/)?(?:src|test)\/[^\s*?{}[\]!$`'"\\]+$/;
 const CODE_EXTENSIONS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.svelte']);
 const RESOLVE_EXTENSIONS = ['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.svelte', '.json'];
-const SVELTE_SCRIPT_PATTERN = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
 
 const normalize = (value) => value.split(path.sep).join('/');
 
@@ -113,18 +113,6 @@ export function resolveSpecifier(fromFile, specifier, aliases) {
 export function pathExists(absolute) {
   return fs.existsSync(absolute) || RESOLVE_EXTENSIONS.some((ext) => isFile(absolute + ext));
 }
-
-function parse(fileName, text) {
-  const extension = path.extname(fileName);
-  const kind =
-    extension === '.js' || extension === '.mjs' || extension === '.cjs'
-      ? ts.ScriptKind.JS
-      : ts.ScriptKind.TS;
-  return ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
-}
-
-const lineOf = (node) =>
-  node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).line + 1;
 
 const isStringLike = (node) =>
   node !== undefined && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node));
@@ -224,7 +212,7 @@ export function collectImports(sourceFile, alsoUsed = []) {
 
 /** Exported value names of stub module code, or null when they cannot be read statically. */
 export function stubExports(code) {
-  const sourceFile = parse('stub.mjs', code);
+  const sourceFile = parseSource(code, 'stub.mjs');
   const names = new Set();
   for (const statement of sourceFile.statements) {
     if (ts.isExportDeclaration(statement)) {
@@ -514,16 +502,9 @@ function repoPathReferences(scope, context) {
 
 function readModule(absolute, cache) {
   if (cache.has(absolute)) return cache.get(absolute);
-  let imports = [];
+  let imports;
   try {
-    const text = fs.readFileSync(absolute, 'utf8');
-    if (absolute.endsWith('.svelte')) {
-      for (const [, script] of text.matchAll(SVELTE_SCRIPT_PATTERN)) {
-        imports.push(...collectImports(parse(`${absolute}.ts`, script)));
-      }
-    } else {
-      imports = collectImports(parse(absolute, text));
-    }
+    imports = collectImports(parseSource(fs.readFileSync(absolute, 'utf8'), absolute));
   } catch {
     imports = [];
   }

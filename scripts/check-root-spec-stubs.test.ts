@@ -215,6 +215,21 @@ describe('root spec stub export check', () => {
     ]);
   });
 
+  it('ignores a script block inside an HTML comment', () => {
+    const root = tree({
+      'src/store/tabs/tab-slice.ts': 'export const openTab = () => {};',
+      'src/lib/Strip.svelte': [
+        '<script lang="ts">',
+        `  import { openTab } from '${SLICE}';`,
+        '  openTab();',
+        '</script>',
+        `<!-- <script lang="ts">import { closeTab } from '${SLICE}';</script> -->`,
+      ],
+      'test/strip.spec.ts': spec({ [SLICE]: 'export const openTab = () => {};' }),
+    });
+    expect(messages(root)).toEqual([]);
+  });
+
   it('checks names requested through an export-star barrel of a stub', () => {
     const files = {
       'src/lib/mod.ts': 'export const real = 1; export const extra = 2;',

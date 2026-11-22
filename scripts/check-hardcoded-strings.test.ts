@@ -231,6 +231,43 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('reads an instance script after a module script that ends in a line comment', () => {
+    withFixture(
+      {
+        'Example.svelte':
+          "<script module>const n = 1; // note</script><script>const label = 'Save your work';</script>",
+        'CarriageReturn.svelte':
+          "<script module>const n = 1; // note\r</script><script>const label = 'Keep your work';</script>",
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.output).toContain('Example.svelte:1  [string literal] "Save your work"');
+        expect(result.output).toContain(
+          'CarriageReturn.svelte:1  [string literal] "Keep your work"',
+        );
+      },
+    );
+  });
+
+  it('ignores a script block inside an HTML comment', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          '  const count = 1;',
+          '</script>',
+          '<!-- <script lang="ts">const old = "Save your old work";</script> -->',
+          '<div>{count}</div>',
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.output).not.toContain('Save your old work');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
   it('preserves template interpolation and multiline string locations around nested regexes', () => {
     withFixture(
       {
