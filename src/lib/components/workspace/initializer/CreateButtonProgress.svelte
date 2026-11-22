@@ -64,7 +64,8 @@
   {/if}
   {#if live && transfer}
     <!-- Absolutely positioned, so it takes no layout space: the button sits
-         in a bottom-pinned footer and must not move while a create runs. -->
+         in a bottom-pinned footer and must not move while a create runs.
+         Hidden from assistive tech on purpose: it changes too often to announce. -->
     <div
       class="pointer-events-none absolute inset-x-0 top-full mt-1 truncate text-center text-xs text-subtle tabular-nums"
       aria-hidden="true"

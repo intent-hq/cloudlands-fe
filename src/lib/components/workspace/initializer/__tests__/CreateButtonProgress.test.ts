@@ -231,9 +231,11 @@ describe('CreateButtonProgress', () => {
       await waitFor(() => {
         expect(screen.getByTestId('create-progress-label').textContent).toContain(label);
       });
-      expect(screen.getByTestId('create-progress-bar').getAttribute('aria-valuenow')).toBe(
-        String(frame.percent),
-      );
+      await waitFor(() => {
+        expect(screen.getByTestId('create-progress-bar').getAttribute('aria-valuenow')).toBe(
+          String(frame.percent),
+        );
+      });
     }
   });
 });
