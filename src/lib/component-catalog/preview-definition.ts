@@ -17,7 +17,7 @@ export interface PreviewCaptureReadiness {
 /** CatalogScene renders every state when the requested state is this name. */
 export const ALL_PREVIEW_STATES = 'all';
 
-export type PreviewStates<Props> = Record<string, PreviewState<Props>> & {
+type PreviewStates<Props> = Record<string, PreviewState<Props>> & {
   [ALL_PREVIEW_STATES]?: never;
 };
 
