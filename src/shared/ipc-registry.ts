@@ -6,7 +6,59 @@
  * 1. Add them here in the appropriate section
  * 2. Run 'npm run generate:ipc-channels' to update the preload allowed list
  * 3. The preload script will automatically allow the new channels
+ *
+ * A request channel that main owns is declared with `forwarded(channel, browserFallback)`.
+ * The shared forwarded-channels seeder then hands every call to main verbatim, and
+ * answers `browserFallback(payload)` where no desktop bridge exists (browser build,
+ * tests). Write a custom seeder only when the browser build needs more than that.
  */
+import type { SshSetupDefaults, SshSetupStartResult } from './types/machine-setup';
+import type { MachineRailState } from './types/machine-rail';
+import type { PairLinkCommitResult } from './types/pair-link';
+// Type-only: types/connections imports this module at runtime.
+import type {
+  LOCAL_CONNECTION_ID,
+  OpenConnectionParams,
+  OpenConnectionResult,
+  WorkspaceCardsResult,
+} from './types/connections';
+
+/** What a forwarded channel answers when there is no desktop bridge. */
+export type BrowserFallback = (payload: unknown) => unknown;
+
+const forwardedChannels = new Map<string, BrowserFallback>();
+
+/** Channels declared with `forwarded()`, in declaration order. */
+export const FORWARDED_IPC_CHANNELS: ReadonlyMap<string, BrowserFallback> = forwardedChannels;
+
+/** Mark a main-owned request channel; see the module comment. Returns `channel`. */
+export function forwarded<C extends string>(channel: C, browserFallback: BrowserFallback): C {
+  if (forwardedChannels.has(channel)) {
+    throw new Error(`IPC channel '${channel}' is already marked forwarded`);
+  }
+  forwardedChannels.set(channel, browserFallback);
+  return channel;
+}
+
+const LOCAL: typeof LOCAL_CONNECTION_ID = 'local';
+
+// Main owns the rail; without it there is one machine and the lab is off.
+const machineRailOff = (): MachineRailState => ({
+  enabled: false,
+  machineIds: [LOCAL],
+  selectedId: LOCAL,
+  shownId: LOCAL,
+  pendingId: '',
+  degradedIds: [],
+});
+const ok = () => ({ ok: true });
+const notOk = () => ({ ok: false });
+const emptyList = () => [];
+// No main process holds saved machines: every other machine reads as not added.
+const unknownBackend = () => ({ status: 'unknown-backend' }) satisfies WorkspaceCardsResult;
+const connectFailed = () => ({ status: 'failed', reason: 'connect-failed' });
+// No main process to test a pair link or hold its credential: nothing is kept.
+const pairLinkFailed = () => ({ ok: false, code: 'failed' }) satisfies PairLinkCommitResult;
 
 export const IPC_CHANNELS = {
   DEV_CONSOLE: {
@@ -1175,22 +1227,29 @@ export const IPC_CHANNELS = {
     LIST: 'connections:list',
     CAPTURE_FINGERPRINT: 'connections:capture-fingerprint',
     ADD: 'connections:add',
-    UPDATE: 'connections:update',
-    TEST: 'connections:test',
-    ROTATE_SECRET: 'connections:rotate-secret',
+    UPDATE: forwarded('connections:update', connectFailed),
+    TEST: forwarded('connections:test', connectFailed),
+    ROTATE_SECRET: forwarded('connections:rotate-secret', connectFailed),
     GET_TUNNEL: 'connections:get-tunnel',
     SET_TUNNEL: 'connections:set-tunnel',
-    OPEN: 'connections:open',
+    OPEN: forwarded(
+      'connections:open',
+      (payload) =>
+        ({
+          status: 'opened',
+          id: (payload as OpenConnectionParams).id,
+        }) satisfies OpenConnectionResult,
+    ),
     // Assistant workspace cards that name another machine: read the
     // workspaces, and open one (adding the machine to the window's rail).
-    WORKSPACE_CARDS: 'connections:workspace-cards',
-    OPEN_WORKSPACE: 'connections:open-workspace',
+    WORKSPACE_CARDS: forwarded('connections:workspace-cards', unknownBackend),
+    OPEN_WORKSPACE: forwarded('connections:open-workspace', unknownBackend),
     FORGET: 'connections:forget',
     // Add from an intent://pair link: test + detect (the token stays in main),
     // then save or drop the pending credential.
-    PAIR_LINK_INSPECT: 'connections:pair-link-inspect',
-    PAIR_LINK_COMMIT: 'connections:pair-link-commit',
-    PAIR_LINK_DISCARD: 'connections:pair-link-discard',
+    PAIR_LINK_INSPECT: forwarded('connections:pair-link-inspect', pairLinkFailed),
+    PAIR_LINK_COMMIT: forwarded('connections:pair-link-commit', pairLinkFailed),
+    PAIR_LINK_DISCARD: forwarded('connections:pair-link-discard', ok),
     // Ask one connected remote backend's daemon to self-update (routes
     // `system.requestUpdate` to that backend's pooled client). Structured
     // result — never throws for daemon-side failures (unsupported/old daemon,
@@ -1247,11 +1306,11 @@ export const IPC_CHANNELS = {
   // recent-agent switcher, plus browser and terminal tabs. Main owns and persists it; CHANGED is a main→renderer
   // push of the whole list (also in EVENT_CHANNELS). Types: `shared/recent-agents.ts`.
   RECENT_AGENTS: {
-    LIST: 'recent-agents:list',
-    RECORD: 'recent-agents:record',
-    FORGET_WORKSPACE: 'recent-agents:forget-workspace',
+    LIST: forwarded('recent-agents:list', emptyList),
+    RECORD: forwarded('recent-agents:record', emptyList),
+    FORGET_WORKSPACE: forwarded('recent-agents:forget-workspace', emptyList),
     // Renderer → main: drop a browser or terminal tab its workspace no longer holds.
-    FORGET_TAB: 'recent-agents:forget-tab',
+    FORGET_TAB: forwarded('recent-agents:forget-tab', emptyList),
     CHANGED: 'recent-agents:changed',
     // Main → renderer: the switcher chord, or the release of its modifier, pressed
     // in a page of the browser panel, whose keys never reach the app's document
@@ -1259,34 +1318,34 @@ export const IPC_CHANNELS = {
     PAGE_KEY: 'recent-agents:page-key',
     // Renderer → main: the switcher's effective binding, so main forwards that
     // chord (not only the default) from browser-panel pages.
-    SET_PAGE_CHORD: 'recent-agents:set-page-chord',
+    SET_PAGE_CHORD: forwarded('recent-agents:set-page-chord', emptyList),
   },
   MACHINE_RAIL: {
-    GET_STATE: 'machine-rail:get-state',
-    SELECT: 'machine-rail:select',
-    ADD: 'machine-rail:add',
-    REMOVE: 'machine-rail:remove',
-    REORDER: 'machine-rail:reorder',
-    SET_ENABLED: 'machine-rail:set-enabled',
+    GET_STATE: forwarded('machine-rail:get-state', machineRailOff),
+    SELECT: forwarded('machine-rail:select', machineRailOff),
+    ADD: forwarded('machine-rail:add', machineRailOff),
+    REMOVE: forwarded('machine-rail:remove', machineRailOff),
+    REORDER: forwarded('machine-rail:reorder', machineRailOff),
+    SET_ENABLED: forwarded('machine-rail:set-enabled', machineRailOff),
     CHANGED: 'machine-rail:changed',
     // A renderer whose machine is not shown hands a toast to main, which
     // pushes TOAST to the renderer the window shows (also in EVENT_CHANNELS).
-    FORWARD_TOAST: 'machine-rail:forward-toast',
+    FORWARD_TOAST: forwarded('machine-rail:forward-toast', () => ({ forwarded: false })),
     TOAST: 'machine-rail:toast',
     // A renderer reports that it has painted after becoming the selected one,
     // so main can take the previous machine away without a gap.
-    SHOWN: 'machine-rail:shown',
+    SHOWN: forwarded('machine-rail:shown', ok),
     // A machine's renderer reports that its startup is done (backend reached or
     // given up on), so main can show it in place of the startup splash.
-    READY: 'machine-rail:ready',
+    READY: forwarded('machine-rail:ready', ok),
     // A renderer reports whether its machine's daemon is degraded, so every
     // rail can mark it.
-    HEALTH: 'machine-rail:health',
+    HEALTH: forwarded('machine-rail:health', ok),
     // A machine's renderer reports the shell backdrop for its machine; main
     // hands the shown machine's to the frame page, which reads it with
     // GET_BACKDROP and gets BACKDROP_CHANGED pushes (also in EVENT_CHANNELS).
-    BACKDROP: 'machine-rail:backdrop',
-    GET_BACKDROP: 'machine-rail:get-backdrop',
+    BACKDROP: forwarded('machine-rail:backdrop', ok),
+    GET_BACKDROP: forwarded('machine-rail:get-backdrop', () => null),
     BACKDROP_CHANGED: 'machine-rail:backdrop-changed',
   },
 
@@ -1334,13 +1393,19 @@ export const IPC_CHANNELS = {
   // password or key passphrase: its handler validates by hand and never logs.
   MACHINE_SETUP: {
     /** Renderer → main: `SshSetupDefaults` (is an SSH agent running?). */
-    SSH_DEFAULTS: 'machine-setup:ssh-defaults',
+    SSH_DEFAULTS: forwarded(
+      'machine-setup:ssh-defaults',
+      () => ({ agent: false }) satisfies SshSetupDefaults,
+    ),
     /** Renderer → main: start one SSH setup run → `SshSetupStartResult`. */
-    SSH_START: 'machine-setup:ssh-start',
+    SSH_START: forwarded(
+      'machine-setup:ssh-start',
+      () => ({ ok: false, code: 'busy' }) satisfies SshSetupStartResult,
+    ),
     /** Renderer → main: answer the unknown-host-key question. */
-    SSH_TRUST: 'machine-setup:ssh-trust',
+    SSH_TRUST: forwarded('machine-setup:ssh-trust', notOk),
     /** Renderer → main: close the SSH connection; nothing is saved. */
-    SSH_CANCEL: 'machine-setup:ssh-cancel',
+    SSH_CANCEL: forwarded('machine-setup:ssh-cancel', notOk),
     /** Main → renderer (the starting window only): `SshSetupEvent`. */
     SSH_EVENT: 'machine-setup:ssh-event',
   },
