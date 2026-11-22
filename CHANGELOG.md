@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.370.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.369.1...v2.370.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **onboarding:** enable OpenCode as a free backup provider ([#4912](https://github.com/intent-hq/cloudlands-fe/issues/4912)) ([96442fe](https://github.com/intent-hq/cloudlands-fe/commit/96442fe84c2a52bcb8cf74477814ec035f7ed543))
+
+
+### 🐛 Bug Fixes
+
+* **catalog:** reserve the "all" preview state name ([#4909](https://github.com/intent-hq/cloudlands-fe/issues/4909)) ([37e1e14](https://github.com/intent-hq/cloudlands-fe/commit/37e1e1404048b0d01e7a00633db2f13bcbfa74b5))
+
 ## [2.369.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.369.0...v2.369.1) (2026-11-22)
 
 
