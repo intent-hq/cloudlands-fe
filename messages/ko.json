@@ -9434,5 +9434,6 @@
   "chat_goalNotice_edit_label": "편집",
   "chat_goalNotice_fallback_label": "목표가 변경되었습니다",
   "chat_slashCommand_goal_description": "이 대화에 목표 고정",
-  "chat_goal_retired_error": "이 대화는 종료되어 목표를 변경할 수 없습니다."
+  "chat_goal_retired_error": "이 대화는 종료되어 목표를 변경할 수 없습니다.",
+  "chat_goal_workspaceRetired_error": "이 워크스페이스는 종료되어 목표를 변경할 수 없습니다."
 }

@@ -11,6 +11,8 @@ export function goalErrorMessage(error: GoalRequestError): string {
       return m.chat_goal_attachments_error();
     case 'retired':
       return m.chat_goal_retired_error();
+    case 'workspaceRetired':
+      return m.chat_goal_workspaceRetired_error();
     case 'invalid':
     case 'failed':
       // Daemon messages are English-only; show the localized fallback.

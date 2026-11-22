@@ -49,6 +49,16 @@ describe('parseGoalCommandResult', () => {
     ).toEqual({ action: 'shown', goal: null, noticeMessageId: 'msg-2' });
   });
 
+  it('reads a successful command whose notice row was not written (no noticeMessageId)', () => {
+    expect(
+      parseGoalCommandResult({
+        success: true,
+        queued: false,
+        command: { name: 'goal', action: 'updated', goal: 'Ship it' },
+      }),
+    ).toEqual({ action: 'updated', goal: 'Ship it' });
+  });
+
   it('returns null for an ordinary send or an unknown command shape', () => {
     expect(parseGoalCommandResult({ success: true, queued: false, messageId: 'm' })).toBeNull();
     expect(
@@ -147,6 +157,13 @@ describe('classifyGoalRequestError', () => {
         data: { code: 'agent-retired' },
       }),
     ).toEqual({ kind: 'retired' });
+    expect(
+      classifyGoalRequestError({
+        rpcCode: -32602,
+        message: 'workspace is retired',
+        data: { code: 'workspace-retired' },
+      }),
+    ).toEqual({ kind: 'workspaceRetired' });
     expect(classifyGoalRequestError({ rpcCode: -32602, message: 'agent not found' })).toEqual({
       kind: 'invalid',
       message: 'agent not found',

@@ -9434,5 +9434,6 @@
   "chat_goalNotice_edit_label": "編集",
   "chat_goalNotice_fallback_label": "目標が変更されました",
   "chat_slashCommand_goal_description": "この会話に目標を固定",
-  "chat_goal_retired_error": "この会話はリタイア済みのため、目標を変更できません。"
+  "chat_goal_retired_error": "この会話はリタイア済みのため、目標を変更できません。",
+  "chat_goal_workspaceRetired_error": "このワークスペースはリタイア済みのため、目標を変更できません。"
 }

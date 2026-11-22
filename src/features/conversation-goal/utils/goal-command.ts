@@ -32,7 +32,8 @@ type GoalNoticeAction = GoalCommandAction | 'cleared';
 export interface GoalCommandResult {
   action: GoalCommandAction;
   goal: string | null;
-  noticeMessageId: string;
+  /** Absent when the goal write landed but its notice row could not be written. */
+  noticeMessageId?: string;
 }
 
 export interface SetGoalResult {
@@ -67,11 +68,14 @@ export function parseGoalCommandResult(response: unknown): GoalCommandResult | n
     name !== GOAL_COMMAND_NAME ||
     typeof action !== 'string' ||
     !COMMAND_ACTIONS.has(action) ||
-    parsedGoal === undefined ||
-    typeof noticeMessageId !== 'string'
+    parsedGoal === undefined
   )
     return null;
-  return { action: action as GoalCommandAction, goal: parsedGoal, noticeMessageId };
+  return {
+    action: action as GoalCommandAction,
+    goal: parsedGoal,
+    ...(typeof noticeMessageId === 'string' ? { noticeMessageId } : {}),
+  };
 }
 
 /** Read an `agent.setGoal` result, or null when it does not match the contract. */
@@ -137,6 +141,7 @@ export type GoalRequestError =
   | { kind: 'tooLong' }
   | { kind: 'attachments' }
   | { kind: 'retired' }
+  | { kind: 'workspaceRetired' }
   | { kind: 'invalid'; message: string }
   | { kind: 'failed'; message?: string };
 
@@ -164,5 +169,6 @@ export function classifyGoalRequestError(error: unknown): GoalRequestError {
   if (code === 'goal-too-long') return { kind: 'tooLong' };
   if (code === 'goal-attachments-not-allowed') return { kind: 'attachments' };
   if (code === 'agent-retired') return { kind: 'retired' };
+  if (code === 'workspace-retired') return { kind: 'workspaceRetired' };
   return { kind: 'invalid', message: message ?? '' };
 }

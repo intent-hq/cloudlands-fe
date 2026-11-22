@@ -43,6 +43,7 @@ vi.mock('svelte', async (original) => ({
 }));
 
 import {
+  BackendError,
   buildErrorPayload,
   installMockBackend,
   resetMockBackend,
@@ -126,7 +127,7 @@ import { selectAgentMessages } from '../../agent-session/agent-session-selectors
 import { selectComposerContextItems } from '../../transient-ui/transient-ui-selectors';
 import { selectPendingSubmissionEntry } from '../../pending-submissions/pending-submissions-selectors';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
-import { BackendError } from '$lib/client/live/backend-transport-types';
+import { goalErrorMessage } from '$features/conversation-goal/utils/goal-error-message';
 import { m } from '$shared/paraglide/messages.js';
 
 function deferred<T>() {
@@ -1150,8 +1151,40 @@ describe('conversation goal command from the dock', () => {
     await open();
     appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal too long'));
     appStore.dispatch(sendDockConversationRequested());
-    await vi.waitFor(() => expect(view().sendError).not.toBeNull());
+    await vi.waitFor(() => expect(view().sendError).toBe(goalErrorMessage({ kind: 'tooLong' })));
     expect(view().draft).toBe('/goal too long');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('treats a command without a noticeMessageId as a success', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      command: { name: 'goal', action: 'updated', goal: 'ship it later' },
+    }));
+    await open();
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal ship it later'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(view().draft).toBe(''));
+    expect(view().sendError).toBeNull();
+    expect(sent).toHaveLength(0);
+    expect(appStore.state.agentSessions.byAgentId[mainA]?.goal).toBe('ship it later');
+  });
+
+  it('shows the localized workspace-retired refusal and keeps the draft', async () => {
+    backend.onRequest('agent.sendMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'workspace is retired', {
+          rpcCode: -32602,
+          data: { code: 'workspace-retired' },
+        }),
+      );
+    });
+    await open();
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal revive?'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(view().sendError).toBe(m.chat_goal_workspaceRetired_error()));
+    expect(view().draft).toBe('/goal revive?');
     expect(sent).toHaveLength(0);
   });
 
