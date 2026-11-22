@@ -100,6 +100,7 @@
         agentId={agent.id}
         agentName={agent.name}
         autoFocus={false}
+        isFallbackPromptTarget
         attentionFocusRequest={attentionFocus?.agentId === agent.id ? attentionFocus : undefined}
         isInitialWorkspaceAgent={false}
       />

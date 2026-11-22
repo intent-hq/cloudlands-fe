@@ -262,7 +262,10 @@
     autocompleteTurnsFromMessages,
     buildAutocompleteContext,
   } from '$features/autocomplete/utils/autocomplete-context';
-  import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
+  import {
+    isReachablePromptTarget,
+    publishFocusedChatSuggestions,
+  } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
   import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
@@ -567,6 +570,8 @@
     }) => void;
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
+    /** The only chat on screen (Home's preview): the hardware prompt picker uses it while no chat has focus. */
+    isFallbackPromptTarget?: boolean;
     onNavigationStateChange?: (state: ChatNavigationState) => void;
     onTaskProgressChange?: (tasks: TaskProgressItem[]) => void;
   }
@@ -590,6 +595,7 @@
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
+    isFallbackPromptTarget = false,
     onNavigationStateChange,
     onTaskProgressChange,
   }: Props = $props();
@@ -2816,16 +2822,22 @@
   );
 
   // Share the focused chat's suggestions with the hardware joystick ring, which
-  // sends them exactly like a click. Gated like the Ctrl/Alt+1-3 shortcut, minus
-  // its chip-visibility check: the ring shows the suggestion text itself.
+  // sends them exactly like a click, and its composer for used prompts when no
+  // text field has focus. Gated like the Ctrl/Alt+1-3 shortcut, minus its
+  // chip-visibility check: the ring shows the suggestion text itself.
   $effect(() => {
-    if (!isActive || !isChatFocused || isRetiredSession || deferTranscriptReveal) return;
-    if (suggestedPrompts.length === 0) return;
-    return publishFocusedChatSuggestions({
-      ownerId: agentId,
-      prompts: suggestedPrompts,
-      send: (prompt) => handleSelectSuggestedPrompt(prompt),
-    });
+    if (!isActive || isRetiredSession || deferTranscriptReveal) return;
+    if (!isChatFocused && !isFallbackPromptTarget) return;
+    return publishFocusedChatSuggestions(
+      {
+        ownerId: agentId,
+        prompts: suggestedPrompts,
+        send: (prompt) => handleSelectSuggestedPrompt(prompt),
+        insert: (text) => !draftManager.gateVisible && (inputComponent?.insertText(text) ?? false),
+        available: () => isReachablePromptTarget(panelElement),
+      },
+      { fallback: !isChatFocused },
+    );
   });
 
   // The utility stack never precedes the transcript. Once transcript hydration

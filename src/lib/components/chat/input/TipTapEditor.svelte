@@ -598,6 +598,19 @@
     return false;
   }
 
+  /** Insert plain text at the cursor the way a paste does: one hard break per newline. */
+  export function insertPlainText(text: string): boolean {
+    if (inputLocked || !editor?.view) return false;
+    const { state, dispatch } = editor.view;
+    const paragraphs = pastedTextToParagraphNodes(state.schema, text);
+    if (paragraphs.length === 0) return false;
+    dispatch(
+      state.tr.replaceSelection(new Slice(Fragment.from(paragraphs), 1, 1)).scrollIntoView(),
+    );
+    editor.view.focus();
+    return true;
+  }
+
   // Export focus method for parent components
   export function focus(): boolean {
     if (inputLocked) return false;
