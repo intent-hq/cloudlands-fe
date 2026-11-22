@@ -16,6 +16,7 @@ import {
   profileKindsFor,
   profileProviderFromBaseId,
   randomSuffix,
+  singleProfileKind,
   savedFolderPath,
   slugifyProfileName,
   type ProfileKind,
@@ -554,6 +555,15 @@ describe('providers with profile kinds', () => {
     expect(buildCreatePayload('apiKey', 'grok', { name: 'n', apiKey: 'k' }).baseProviderId).toBe(
       'grok',
     );
+  });
+
+  it('names the only kind of a single-kind provider, so the picker is skipped', () => {
+    expect(singleProfileKind('grok')).toBe('apiKey');
+    expect(singleProfileKind('droid')).toBe('apiKey');
+    expect(singleProfileKind('cursor')).toBe('apiKey');
+    expect(singleProfileKind('auggie')).toBe('token');
+    expect(singleProfileKind('claude')).toBeUndefined();
+    expect(singleProfileKind('codex')).toBeUndefined();
   });
 
   it('refuses a kind the provider does not offer', () => {

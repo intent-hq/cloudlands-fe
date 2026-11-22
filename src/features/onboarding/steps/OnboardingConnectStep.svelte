@@ -289,36 +289,43 @@
 </script>
 
 <div class="max-w-2xl space-y-6" data-testid="onboarding-connect-step" data-provider={provider}>
-  <div
-    class="grid grid-cols-1 gap-3 sm:grid-cols-2"
-    role="radiogroup"
-    aria-label={m.settings_providerProfileKinds_picker_ariaLabel()}
-  >
-    {#each cards as card (card.kind)}
-      {@const selected = card.kind === kind}
-      <Button
-        variant="outline"
-        role="radio"
-        aria-checked={selected}
-        disabled={saving}
-        truncateLabel={false}
-        labelClass="flex items-start gap-3"
-        class="h-auto justify-start gap-3 whitespace-normal p-4 text-left {selected
-          ? 'border-foreground bg-muted'
-          : ''}"
-        data-testid={`onboarding-connect-kind-${card.kind}`}
-        onclick={() => choose(card.kind)}
-      >
-        <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-          <Fa icon={card.icon} class="size-4 text-foreground" />
-        </span>
-        <span class="flex min-w-0 flex-col gap-1">
-          <span class="type-body font-medium! text-foreground">{card.title}</span>
-          <span class="type-caption text-muted-foreground">{card.description}</span>
-        </span>
-      </Button>
-    {/each}
-  </div>
+  {#if cards.length > 1}
+    <div
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+      role="radiogroup"
+      aria-label={m.settings_providerProfileKinds_picker_ariaLabel()}
+    >
+      {#each cards as card (card.kind)}
+        {@const selected = card.kind === kind}
+        <Button
+          variant="outline"
+          role="radio"
+          aria-checked={selected}
+          disabled={saving}
+          truncateLabel={false}
+          labelClass="flex items-start gap-3"
+          class="h-auto justify-start gap-3 whitespace-normal p-4 text-left {selected
+            ? 'border-foreground bg-muted'
+            : ''}"
+          data-testid={`onboarding-connect-kind-${card.kind}`}
+          onclick={() => choose(card.kind)}
+        >
+          <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+            <Fa icon={card.icon} class="size-4 text-foreground" />
+          </span>
+          <span class="flex min-w-0 flex-col gap-1">
+            <span class="type-body font-medium! text-foreground">{card.title}</span>
+            <span class="type-caption text-muted-foreground">{card.description}</span>
+          </span>
+        </Button>
+      {/each}
+    </div>
+  {:else if cards[0]}
+    <!-- One kind (Grok, Droid, Cursor, Auggie): no choice to make, only its note. -->
+    <p class="type-body text-muted-foreground" data-testid="onboarding-connect-kind-note">
+      {cards[0].description}
+    </p>
+  {/if}
 
   {#key kind}
     <ProfileSecretFields

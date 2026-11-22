@@ -31,7 +31,7 @@ for (const [provider, { providerName, kind, secret }] of Object.entries(PROVIDER
     folderSuffix: 'k3f9',
   } as const;
   const details = { ...base, mode: 'add', step: 'details', kind, name: 'Work' } as const;
-  states[`${provider}-pick`] = { props: { ...base, mode: 'add', step: 'pick' } };
+  states[`${provider}-advanced`] = { props: { ...details, kind: 'advanced' } };
   states[`${provider}-add`] = { props: details };
   states[`${provider}-add-filled`] = { props: { ...details, secret } };
   states[`${provider}-key-works`] = {
@@ -48,11 +48,11 @@ for (const [provider, { providerName, kind, secret }] of Object.entries(PROVIDER
   };
 }
 
-/** Add profile for Grok, Droid, Auggie and Cursor: kind picker and key screens. */
+/** Add profile for Grok, Droid, Auggie and Cursor: no kind picker, the key screen first. */
 export const preview = definePreview<Props>({
   id: 'provider-profile-more-providers',
   title: 'Provider profile: Grok, Droid, Auggie, Cursor',
-  defaultState: 'grok-pick',
+  defaultState: 'grok-add',
   states,
 });
 

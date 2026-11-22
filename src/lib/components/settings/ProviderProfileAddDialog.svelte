@@ -35,6 +35,7 @@
     buildUpdateEnv,
     hasFolderLogin,
     randomSuffix,
+    singleProfileKind,
     type ProfileKind,
     type ProfileProvider,
   } from '$lib/provider-profile-kinds';
@@ -117,8 +118,10 @@
   const setup = $derived<ProviderProfileSetup | undefined>(setupId ? $setups$[setupId] : undefined);
 
   function reset() {
-    step = 'pick';
-    kind = 'differentLogin';
+    // One specialized kind: straight to its screen (Advanced is one click away).
+    const only = singleProfileKind(provider);
+    step = only ? 'details' : 'pick';
+    kind = only ?? 'differentLogin';
     name = '';
     backup = false;
     remoteCompatible = true;

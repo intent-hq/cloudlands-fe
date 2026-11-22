@@ -129,6 +129,12 @@ export function profileKindsFor(provider: ProfileProvider): SpecializedProfileKi
   return DETECTION_ORDER.filter((kind) => PROFILE_KIND_TABLE[provider][kind] !== undefined);
 }
 
+/** The provider's only specialized kind, or `undefined` when it offers a choice. */
+export function singleProfileKind(provider: ProfileProvider): SpecializedProfileKind | undefined {
+  const kinds = profileKindsFor(provider);
+  return kinds.length === 1 ? kinds[0] : undefined;
+}
+
 /** Whether `provider` offers `kind`. */
 export function hasProfileKind(provider: ProfileProvider, kind: SpecializedProfileKind): boolean {
   return PROFILE_KIND_TABLE[provider][kind] !== undefined;

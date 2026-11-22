@@ -65,22 +65,21 @@ export function secretKindLabel(provider: ProfileProvider, kind: SecretKind): st
     : m.settings_providerProfileKinds_token_label();
 }
 
-/** The dialog description on a key or token screen. */
+/**
+ * The dialog description on a key or token screen. A provider with one kind
+ * shows no kind card, so its description carries the card's note (Grok's own
+ * login, Cursor's CLI on each runner).
+ */
 export function secretDialogDescription(provider: ProfileProvider, kind: SecretKind): string {
+  if (provider !== 'claude' && provider !== 'codex') return kindCardDescription(provider, kind);
   if (kind === 'token') {
-    if (provider === 'codex') return m.settings_providerProfileKinds_tokenCodexDialog_description();
-    if (provider === 'auggie')
-      return m.settings_providerProfileKinds_tokenAuggieDialog_description();
-    return m.settings_providerProfileKinds_tokenClaudeDialog_description();
+    return provider === 'codex'
+      ? m.settings_providerProfileKinds_tokenCodexDialog_description()
+      : m.settings_providerProfileKinds_tokenClaudeDialog_description();
   }
-  switch (provider) {
-    case 'codex':
-      return m.settings_providerProfileKinds_apiKeyCodexDialog_description();
-    case 'claude':
-      return m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
-    default:
-      return m.settings_providerProfileKinds_apiKeyOtherDialog_description();
-  }
+  return provider === 'codex'
+    ? m.settings_providerProfileKinds_apiKeyCodexDialog_description()
+    : m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
 }
 
 /** How to get the key or token, without the final "paste it" step. */

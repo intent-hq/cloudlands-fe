@@ -56,6 +56,7 @@
     isSecretWellFormed,
     loginCommand,
     randomSuffix,
+    singleProfileKind,
   } from '$lib/provider-profile-kinds';
   import { secretDialogDescription, secretShapeError } from './profile-kind-copy';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
@@ -175,6 +176,8 @@
     onSwitchToAdvanced,
   }: Props = $props();
 
+  /** A provider with one specialized kind (Grok, Droid, Cursor, Auggie) skips the picker. */
+  const onlyKind = $derived(singleProfileKind(provider));
   const picking = $derived(mode === 'add' && step === 'pick');
   const folderKind = $derived(kind === 'differentLogin');
   /** Claude API key and Token (both providers): a pasted secret plus the key check. */
@@ -459,8 +462,17 @@
   {#snippet footer()}
     <FormActions>
       {#snippet destructive()}
-        {#if !picking && mode === 'add' && !started}
-          <Button variant="ghost-light" disabled={busy} onclick={() => (step = 'pick')}>
+        {#if !picking && mode === 'add' && !started && onlyKind && kind !== 'advanced'}
+          <!-- One specialized kind: no picker, so Advanced is offered here. -->
+          <Button variant="ghost-light" disabled={busy} onclick={switchToAdvanced}>
+            {m.settings_providerProfileKinds_switchToAdvanced_label()}
+          </Button>
+        {:else if !picking && mode === 'add' && !started}
+          <Button
+            variant="ghost-light"
+            disabled={busy}
+            onclick={() => (onlyKind ? (kind = onlyKind) : (step = 'pick'))}
+          >
             {m.settings_providerProfileKinds_back_label()}
           </Button>
         {:else if mode === 'edit' && kind !== 'advanced'}
