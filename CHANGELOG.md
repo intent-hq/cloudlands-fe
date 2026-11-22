@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.373.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.4...v2.373.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **browser:** add View → Darken Websites for workspace browser tabs ([#4950](https://github.com/intent-hq/cloudlands-fe/issues/4950)) ([288cc4f](https://github.com/intent-hq/cloudlands-fe/commit/288cc4f629d20fe8de0047164fe4c9560cda468b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.275 ([#4956](https://github.com/intent-hq/cloudlands-fe/issues/4956)) ([a18b3de](https://github.com/intent-hq/cloudlands-fe/commit/a18b3de9a5157d93c3d495bf6f5827ff1b30d2d5))
+
 ## [2.372.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.3...v2.372.4) (2026-11-22)
 
 
