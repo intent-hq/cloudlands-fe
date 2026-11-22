@@ -2784,6 +2784,45 @@ describe('alignment of link syntax the lexer does not account for', () => {
         ['numeric windows-1252 control', '&#150;&#x9F;', '\u0096\u009F', /&#150;&#x9F;/g],
         ['numeric null', '&#0;&#0;', '\uFFFD\uFFFD', /&#0;&#0;/g],
         ['numeric surrogate', '&#xD800;&#57343;', '\uFFFD\uFFFD', /&#xD800;&#57343;/g],
+        // A carriage return a reference spells shows as the line feed the
+        // HTML parser normalizes the one marked writes to.
+        ['numeric carriage return', '!&#13;?', '!', /!&#13;\?/g],
+        // A tag in a cell is text to the renderer, which escapes it before
+        // marked lexes: a C1 control in it is decoded by marked, not left
+        // to the HTML parser to remap (`&#150;` is no `–`).
+        [
+          'tag holding a numeric control',
+          '<kbd>&#150;&#x97;</kbd>',
+          '<kbd>',
+          /<kbd>&#150;&#x97;<\/kbd>/g,
+        ],
+        // A reference marked decodes to `&` is no reference again (marked
+        // 18.0.14 decoded `&#38;amp;` twice, to `&`).
+        ['decoded ampersand', '&#38;amp;&#x26;lt;', '&amp;&lt;', /&#38;amp;&#x26;lt;/g],
+        // A URL shows its references as written (marked 18.2, as CommonMark
+        // and GFM ask), bare or in angle brackets — which the renderer
+        // escapes, so they are a bare one's too. (Decoded, the cell was keyed
+        // `wwwxtestab` against the `wwwxtestaampb` of its plain-text line.)
+        [
+          'URL holding a reference',
+          'www.x.test/?a&amp;b',
+          'www.x.test/?a&amp;b',
+          /www\.x\.test\/\?a&amp;b/g,
+        ],
+        [
+          'angle-bracketed URL holding a reference',
+          '<ftp://y.test/?c&amp;d>',
+          'ftp://y.test/?c&amp;d',
+          /<ftp:\/\/y\.test\/\?c&amp;d>/g,
+        ],
+        // `www.` starts a URL only at the start or after a blank, `*`, `_`,
+        // `~` or `(`: after a `<` its references are decoded.
+        [
+          'bracketed www text holding a reference',
+          '<www.z.test/?e&amp;f>',
+          'www.z.test/?e&f',
+          /<www\.z\.test\/\?e&amp;f>/g,
+        ],
       ] as Array<[string, string, string, RegExp]>
     ).flatMap(([kind, cell, needle, pattern]) =>
       CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [
@@ -3200,6 +3239,14 @@ describe('alignment of link syntax the lexer does not account for', () => {
         '[re[f]: u.png',
         'after',
       ],
+      // A bare destination holds a parenthesis only in a balanced pair: one
+      // left open is no definition (marked 18.2; 18.0 took it for one).
+      [
+        'a reference whose definition leaves a parenthesis open',
+        '![visible tk87z][ref]',
+        '[ref]: https://example.test/i.png(x',
+        'after',
+      ],
       ['a destination holding a vertical tab', '![visible tk87z](not\u000bvalid)', '', 'after'],
       ['a destination holding a form feed', '![visible tk87z](not\u000cvalid)', '', 'after'],
     ];
@@ -3250,6 +3297,17 @@ describe('alignment of link syntax the lexer does not account for', () => {
       // A label is matched trimmed, as CommonMark normalizes it (marked
       // since 18.0.14): the blanks around a reference's label or a
       // definition's do not keep them apart.
+      // A label is matched case folded, as CommonMark normalizes it (marked
+      // 18.2; 18.0 only lowercased it, and `ẞ` is `ß` lowercased).
+      [
+        'a reference whose label a definition matches case folded',
+        '![alt tk87z][ẞ]',
+        '[SS]: https://example.test/i.png',
+        'after',
+      ],
+      // Brackets in a label nest to any depth in matched pairs (marked 18.2;
+      // 18.0 read one level).
+      ['a label holding brackets two deep', '![alt [x [y]] tk87z](u.png)', '', 'after'],
       [
         'a reference whose label holds blanks around it a definition resolves',
         '![alt tk87z][ ref ]',
