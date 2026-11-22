@@ -33,7 +33,6 @@ export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
 /** The index search field (32) and its gap below (8); keep in step with DockOverview. */
 const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
-/** Width of the compact notch wing that shows one dot per status group. */
 /**
  * Collapsed status wing: its outer inset, the 12px glyphs and the gaps between them (both
  * tighter than in the open header), and 4px clear of the camera. Keep in step with the
@@ -41,12 +40,18 @@ const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
  */
 const DOCK_COMPACT_STATUS_INSET = 8;
 const DOCK_COMPACT_STATUS_GAP = 3;
-export function dockCompactWingWidth(statusGroups: number): number {
+/**
+ * Extra clearance beside a hardware camera cutout: macOS can draw its camera/microphone
+ * privacy dot just right of the camera, on top of the dock.
+ */
+export const DOCK_CAMERA_INDICATOR_LANE = 12;
+export function dockCompactWingWidth(statusGroups: number, camera = false): number {
   return (
     DOCK_COMPACT_STATUS_INSET +
     statusGroups * 12 +
     DOCK_COMPACT_STATUS_GAP * Math.max(0, statusGroups - 1) +
-    4
+    4 +
+    (camera ? DOCK_CAMERA_INDICATOR_LANE : 0)
   );
 }
 

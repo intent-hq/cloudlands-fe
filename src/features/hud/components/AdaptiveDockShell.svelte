@@ -19,6 +19,7 @@
     dockViewportRect,
     getDockShellLayout,
     dockCompactWingWidth,
+    DOCK_CAMERA_INDICATOR_LANE,
   } from './dock-shell-geometry';
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
   import { dockIntro, releaseDockIntroHold } from '$features/hud/intro/dock-intro.svelte';
@@ -258,7 +259,10 @@
   );
   const statusGroups = $derived(dockStatusGroups(workspaces));
   const compactWingWidth = $derived(
-    Math.max(dockCompactWingWidth(statusGroups.length), recording ? 120 : 0),
+    Math.max(
+      dockCompactWingWidth(statusGroups.length, !!placement.cutout),
+      recording ? 120 + (placement.cutout ? DOCK_CAMERA_INDICATOR_LANE : 0) : 0,
+    ),
   );
   const rowLimit = 5;
   const conversationResize = useDockConversationResize(

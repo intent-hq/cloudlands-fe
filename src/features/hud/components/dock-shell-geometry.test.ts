@@ -58,7 +58,11 @@ it('keeps edge landing height stable when the overview reveals older workspaces'
 
 describe('lifted shell helpers', () => {
   it('keeps the compact wing width formula', () => {
-    expect([0, 1, 2, 3].map(dockCompactWingWidth)).toEqual([12, 24, 39, 54]);
+    expect([0, 1, 2, 3].map((n) => dockCompactWingWidth(n))).toEqual([12, 24, 39, 54]);
+  });
+
+  it('keeps a lane beside a camera cutout for the macOS privacy indicator', () => {
+    expect([0, 1, 2, 3].map((n) => dockCompactWingWidth(n, true))).toEqual([24, 36, 51, 66]);
   });
 
   it('builds end and cancel drag commands', () => {
