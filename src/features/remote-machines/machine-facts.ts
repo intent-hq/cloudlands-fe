@@ -1,5 +1,9 @@
 import type { ConnectionRecord, DaemonMode } from '$shared/types/connections';
-import type { RemoteMachine } from '$shared/types/remote-machines';
+import type {
+  RemoteMachine,
+  RemoteMachineCapacity,
+  RemoteMachineResources,
+} from '$shared/types/remote-machines';
 import { isMachineProviderOffered } from './remote-model-picker';
 
 /** The platform families Settings → Machines shows an icon for. */
@@ -30,6 +34,24 @@ export function machineRowPlatform(
 }
 
 const REPORT_STATES = new Set<RemoteMachine['state']>(['connected', 'disconnected']);
+
+/**
+ * The machine-wide load from its report while it is connected: every agent on
+ * it, this host's, other hosts' and its own local ones. The machine pushes its
+ * report when the count changes, so it is live only while connected; null
+ * otherwise (the last count says nothing about now).
+ */
+export function machineRowLoad(machine: RemoteMachine | null): RemoteMachineCapacity | null {
+  return machine?.state === 'connected' ? (machine.capabilities?.capacity ?? null) : null;
+}
+
+/**
+ * The whole host's CPU and memory from the machine's report while it is
+ * connected; null otherwise, and for an older machine that does not send them.
+ */
+export function machineRowResources(machine: RemoteMachine | null): RemoteMachineResources | null {
+  return machine?.state === 'connected' ? (machine.capabilities?.resources ?? null) : null;
+}
 
 /** The machine's last report, while it is connected or idle (disconnected). */
 export function machineRowReport(machine: RemoteMachine | null) {

@@ -60,6 +60,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import RemoteMachineBadge from '$features/remote-machines/RemoteMachineBadge.svelte';
+  import MachineLoad from '$features/remote-machines/MachineLoad.svelte';
   import NodeStatusBadge from '$features/nodes/NodeStatusBadge.svelte';
   import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
   import {
@@ -688,6 +689,7 @@
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         {#if exposedMachine}
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+          <MachineLoad machine={exposedMachine} />
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
         {/if}

@@ -23,7 +23,8 @@
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { remoteMachineBadge, runningAgentsLabel } from './remote-machines-messages';
+  import { remoteMachineBadge } from './remote-machines-messages';
+  import MachineLoad from './MachineLoad.svelte';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
   import MachineName from './MachineName.svelte';
@@ -155,7 +156,7 @@
     {#snippet meta()}
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
-        {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
+        <MachineLoad {machine} />
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
             >{m.remoteMachines_scriptsUpdate_label()}</span

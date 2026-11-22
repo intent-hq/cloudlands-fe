@@ -42,9 +42,32 @@ interface RemoteMachineProvider {
   modelsStale?: true;
 }
 
+/**
+ * The machine's shared agent limit and its use (node-link.md "Capabilities
+ * report"): every agent counted against its cap, its own local agents and
+ * every backend's remote agents. Pushed again when the count changes.
+ */
+export interface RemoteMachineCapacity {
+  runningAgents: number;
+  agentCap: number;
+}
+
+/**
+ * The whole host's CPU and memory use from the machine's report (node-link.md
+ * "Resources"); older machines omit it.
+ */
+export interface RemoteMachineResources {
+  /** 0-100 across all cores, smoothed; absent until the machine has two samples. */
+  cpuPercent?: number;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+}
+
 interface RemoteMachineCapabilities {
   intentdVersion?: string;
   providers: RemoteMachineProvider[];
+  capacity?: RemoteMachineCapacity;
+  resources?: RemoteMachineResources;
 }
 
 /** `RemoteMachine` from `remoteMachines.list` / `add` / `refresh` (no token, ever). */
@@ -176,7 +199,39 @@ function parseCapabilities(value: unknown): RemoteMachineCapabilities | undefine
       )
     : [];
   const intentdVersion = optionalText(value.intentdVersion);
-  return { ...(intentdVersion ? { intentdVersion } : {}), providers };
+  const capacity = parseCapacity(value.capacity);
+  const resources = parseResources(value.resources);
+  return {
+    ...(intentdVersion ? { intentdVersion } : {}),
+    providers,
+    ...(capacity ? { capacity } : {}),
+    ...(resources ? { resources } : {}),
+  };
+}
+
+function parseResources(value: unknown): RemoteMachineResources | undefined {
+  if (
+    !record(value) ||
+    !safeCount(value.memoryUsedBytes) ||
+    !safeCount(value.memoryTotalBytes) ||
+    value.memoryTotalBytes === 0
+  )
+    return undefined;
+  const cpu = value.cpuPercent;
+  return {
+    ...(safeCount(cpu) && cpu <= 100 ? { cpuPercent: cpu } : {}),
+    memoryUsedBytes: Math.min(value.memoryUsedBytes, value.memoryTotalBytes),
+    memoryTotalBytes: value.memoryTotalBytes,
+  };
+}
+
+const safeCount = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+function parseCapacity(value: unknown): RemoteMachineCapacity | undefined {
+  if (!record(value) || !safeCount(value.runningAgents) || !safeCount(value.agentCap))
+    return undefined;
+  return { runningAgents: value.runningAgents, agentCap: value.agentCap };
 }
 
 /** Narrow one wire `RemoteMachine`; drops any field it does not know (tokens included). */
