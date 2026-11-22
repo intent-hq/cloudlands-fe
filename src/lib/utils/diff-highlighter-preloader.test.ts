@@ -3,7 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 async function loadModules() {
   vi.resetModules();
   const worker = await import('@pierre/diffs/worker');
-  const preloader = await import('./diff-highlighter-preloader');
+  const {
+    DIFF_WORKER_POOL_IDLE_TERMINATION_MS,
+    acquireDiffWorkerPool,
+    getDiffWorkerPool,
+    inspectDiffWorkerPoolLifecycle,
+    isDiffHighlighterPreloaded,
+    releaseDiffWorkerPool,
+  } = await import('./diff-highlighter-preloader');
+  const preloader = {
+    DIFF_WORKER_POOL_IDLE_TERMINATION_MS,
+    acquireDiffWorkerPool,
+    getDiffWorkerPool,
+    inspectDiffWorkerPoolLifecycle,
+    isDiffHighlighterPreloaded,
+    releaseDiffWorkerPool,
+  };
   return { preloader, worker };
 }
 

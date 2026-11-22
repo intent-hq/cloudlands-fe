@@ -48,7 +48,7 @@ import type {
 // ============================================================================
 
 /** Ring-buffer cap on stored chunks (comparable to the old 5000-line cap). */
-export const MAX_OUTPUT_CHUNKS = 5000;
+const MAX_OUTPUT_CHUNKS = 5000;
 /** Ring-buffer cap on total stored text (UTF-16 code units) per script. */
 export const MAX_OUTPUT_CHARS = 2_000_000;
 

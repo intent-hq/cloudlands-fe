@@ -140,7 +140,7 @@ const LIST_TABS_TIMEOUT_MS = 500;
  * How long an agent-owned tab keeps drawing at full frame rate after its
  * owner's last action (see EmbeddedBrowserCdpService.beginAgentDrawing):
  * long enough to span an agent's gap between tool calls, short enough that
- * an idle background tab goes back to being throttled.
+ * an idle background tab goes back to being throttled. @internal Exported for tests.
  */
 export const AGENT_DRAWING_IDLE_MS = 30_000;
 
