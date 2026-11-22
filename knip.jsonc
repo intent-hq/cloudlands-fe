@@ -272,6 +272,9 @@
     "node-gyp",
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
     "@inlang/plugin-message-format",
+    // Type-only import in src/types/themis-overrides.d.ts (a `declare module` augmentation);
+    // redux reaches the type graph through @themislib/themis and redux-saga, not a direct dep
+    "redux",
   ],
   // Vite dev-server /@id/<package> specifiers imported the same way — runtime URLs for
   // bare packages, not module specifiers

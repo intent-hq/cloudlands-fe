@@ -60,6 +60,7 @@ let initPromise: Promise<WorkerPoolManager> | null = null;
 let activeWorkerPoolLeases = 0;
 let idleTerminationTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** @internal Exported for tests. */
 export const DIFF_WORKER_POOL_IDLE_TERMINATION_MS = 30_000;
 
 /**
@@ -184,7 +185,7 @@ function workerFactory(): Worker {
  * Get or create the diff highlighter worker pool singleton.
  * This should be called when rendering diffs.
  *
- * The worker pool is initialized lazily on first call.
+ * The worker pool is initialized lazily on first call. @internal Exported for tests.
  */
 export function getDiffWorkerPool(): WorkerPoolManager {
   if (workerPool) {
@@ -329,7 +330,7 @@ export function preloadDiffHighlighter(): void {
 }
 
 /**
- * Check if the worker pool has been created.
+ * Check if the worker pool has been created. @internal Exported for tests.
  */
 export function isDiffHighlighterPreloaded(): boolean {
   return workerPool !== null;

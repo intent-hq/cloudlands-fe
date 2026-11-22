@@ -1227,22 +1227,6 @@
       "deriveWorkspacePhase",
       "deriveWorkspaceStats"
     ],
-    "src/lib/icons/phosphor-icons.ts": [
-      "faAsterisk",
-      "faCalendar",
-      "faCircleHalfStroke",
-      "faCloudArrowUp",
-      "faCompressAlt",
-      "faEllipsisV",
-      "faExpandAlt",
-      "faFileCircleMinus",
-      "faFilter",
-      "faQuestionCircle",
-      "faStar",
-      "faTimesCircle",
-      "faVial",
-      "faXmarkCircle"
-    ],
     "src/lib/notes/character-references.ts": [
       "namedCharacterReferences"
     ],
@@ -1297,11 +1281,6 @@
       "getGuestsSummary",
       "getLocalChanges",
       "getOpenPrItems"
-    ],
-    "src/lib/utils/diff-highlighter-preloader.ts": [
-      "DIFF_WORKER_POOL_IDLE_TERMINATION_MS",
-      "getDiffWorkerPool",
-      "isDiffHighlighterPreloaded"
     ],
     "src/lib/utils/diff-patch-utils.ts": [
       "hasUnifiedDiffHeaders"
@@ -2308,7 +2287,6 @@
     ],
     "src/store/renderer/slices/scripts/scripts-slice.ts": [
       "MAX_OUTPUT_CHARS",
-      "MAX_OUTPUT_CHUNKS",
       "upsertScript"
     ],
     "src/store/renderer/slices/sentry-auth/sentry-auth-slice.ts": [
@@ -2476,21 +2454,13 @@
       "selectWorkspaceHasAgent"
     ],
     "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts": [
-      "agentStreamResetStreamingMessagesRequested",
-      "agentStreamUpdateReceived",
       "agentsLoaded",
-      "backendStreamsReconnectResultReceived",
       "cleanupAgentCreatedEvents",
-      "delegateTaskRequested",
-      "forkAgentRequested",
       "initialState",
-      "reconnectStreamHandlersForWorkspaceRequested",
       "recordAgentCreatedEvent",
       "removeWorkspaceAgentState",
       "setInitialSpecWriteInProgress",
-      "setWaitingForFirstMessage",
-      "triggerBackendStreamReconnect",
-      "triggerStreamingSafetyCheck"
+      "setWaitingForFirstMessage"
     ],
     "src/store/renderer/slices/workspace-create-progress/workspace-create-progress-slice.ts": [
       "initialState"
@@ -3001,11 +2971,6 @@
     ],
     "src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts": [
       "DividerSessionBoundary"
-    ],
-    "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts": [
-      "AgentStreamUpdatePayload",
-      "BackendActiveStreamPayload",
-      "ForkAgentRequest"
     ],
     "src/store/renderer/slices/workspace-share/workspace-share-slice.ts": [
       "WorkspaceRosterState"
