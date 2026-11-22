@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.370.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.0...v2.370.1) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.268 ([#4917](https://github.com/intent-hq/cloudlands-fe/issues/4917)) ([6313c3e](https://github.com/intent-hq/cloudlands-fe/commit/6313c3eb963a30261908ebbdf0fee1fee5627ea5))
+
+
+### ⚡ Performance
+
+* **specialists:** share default-model previews and skip the form's forced refetch ([#4913](https://github.com/intent-hq/cloudlands-fe/issues/4913)) ([bb6d161](https://github.com/intent-hq/cloudlands-fe/commit/bb6d161f9ac3ed9cc262d5cb5bfba0fa3ebee7b5))
+
 ## [2.370.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.369.1...v2.370.0) (2026-11-22)
 
 
