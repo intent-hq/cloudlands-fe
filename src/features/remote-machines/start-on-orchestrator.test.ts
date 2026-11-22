@@ -1,12 +1,11 @@
 /**
  * Start On against an orchestrator (PROTOCOL `methods/nodes.md` →
  * "Orchestrator mode" and "One ordered list"): the backend never runs agents,
- * so there is no "this machine" choice. The omitted placement, which walks the
- * ordered machine list, is offered first as "First available machine"; the
- * machines follow in the stored order. A Full backend keeps its own row.
+ * so it has no row and there is no "First available" choice. The runners
+ * follow the stored order and the first usable one is preselected. An omitted
+ * placement still walks the order for API callers. A Full backend keeps its own row.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord, DaemonMode } from '$shared/types/connections';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { store } from '$store/renderer/store';
@@ -81,32 +80,45 @@ beforeEach(() => store.init());
 afterEach(() => store.dispose());
 
 describe('Start On on an orchestrator', () => {
-  it('offers no backend choice: "First available machine" first, then the machines in order', () => {
+  it('offers only the runners, in order, with no backend or First available row', () => {
     seed('orchestrator', ORCHESTRATOR_ORDER);
     const options = selectStartOnOptions.select(store.state);
 
-    expect(options.map((option) => option.id)).toEqual([START_ON_BACKEND, 'd-pc', 'd-mac']);
+    expect(options.map((option) => option.id)).toEqual(['d-pc', 'd-mac']);
     expect(options.map((option) => option.label)).not.toContain(backend.label);
-    expect(options[0]).toMatchObject({
-      label: m.remoteMachines_startOn_firstAvailable_label(),
-      platform: null,
-      disabled: false,
-    });
-    // Messages that name "where it starts" read the same row.
-    expect(startOnBackendLabel(options)).toBe(m.remoteMachines_startOn_firstAvailable_label());
+    // Messages that name the host fall back to its name.
+    expect(startOnBackendLabel(options, backend.label)).toBe(backend.label);
   });
 
-  it('sends no placement for that choice, so the backend walks its ordered list', () => {
+  it('preselects the first runner in order and sends it as the placement', () => {
     seed('orchestrator', ORCHESTRATOR_ORDER);
-    const effective = selectEffectiveStartOn.select(store.state, undefined);
+    for (const remembered of [undefined, START_ON_BACKEND, 'd-gone']) {
+      const effective = selectEffectiveStartOn.select(store.state, remembered);
+      expect(effective).toBe('d-pc');
+      expect(initialAgentPlacement(effective)).toEqual({
+        target: 'remote',
+        checkout: 'isolated',
+        nodeId: 'd-pc',
+      });
+    }
+    // A runner the user chose stays chosen.
+    expect(selectEffectiveStartOn.select(store.state, 'd-mac')).toBe('d-mac');
+  });
 
-    expect(effective).toBe(START_ON_BACKEND);
-    expect(initialAgentPlacement(effective)).toBeUndefined();
-    expect(initialAgentPlacement('d-pc')).toEqual({
-      target: 'remote',
-      checkout: 'isolated',
-      nodeId: 'd-pc',
-    });
+  it('preselects the first online runner when the first one is offline', () => {
+    seed('orchestrator', ORCHESTRATOR_ORDER);
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        initialAgentPlacement: true,
+        machineOrder: true,
+        order: ORCHESTRATOR_ORDER,
+        localFingerprint: null,
+        executorBackends: null,
+        machines: [machine('d-mac', 'Mac Studio'), machine('d-pc', 'Gaming PC', 'unreachable')],
+      }),
+    );
+    expect(selectEffectiveStartOn.select(store.state, undefined)).toBe('d-mac');
   });
 });
 
@@ -123,12 +135,23 @@ describe('Start On on a Full backend', () => {
 
       expect(options.map((option) => option.id)).toEqual(['d-pc', START_ON_BACKEND, 'd-mac']);
       expect(options[1]).toMatchObject({ label: backend.label, platform: 'Linux x64' });
+      // The first runner in the host's order is preselected.
+      expect(selectEffectiveStartOn.select(store.state, undefined)).toBe('d-pc');
     },
   );
+
+  it('preselects the host itself when it runs agents and comes first', () => {
+    seed('regular', [
+      { kind: 'local', name: 'Hub server' },
+      { kind: 'machine', nodeId: 'd-pc', name: 'Gaming PC' },
+    ]);
+    expect(selectEffectiveStartOn.select(store.state, undefined)).toBe(START_ON_BACKEND);
+    expect(selectEffectiveStartOn.select(store.state, 'd-pc')).toBe('d-pc');
+  });
 });
 
 describe('Model row machine for a Start On choice', () => {
-  it('lists the first usable machine in order for "First available machine" on an orchestrator', () => {
+  it('lists the first usable runner in order for an omitted placement on an orchestrator', () => {
     seed('orchestrator', ORCHESTRATOR_ORDER);
     const options = selectStartOnOptions.select(store.state);
     expect(startOnModelMachineId(START_ON_BACKEND, options, true)).toBe('d-pc');

@@ -31,6 +31,7 @@ import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
+import { SWITCH_TO_SETTINGS_TAB } from '$shared/types/connections';
 import { createElectronChannel } from '../../../utils/ipc-channel';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
@@ -173,6 +174,9 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
       return;
     case 'settings':
       if (params.beta !== undefined) return yield* call(switchUpdateChannel, params.beta);
+      // "Switch to" in Settings → Hosts opens the same tab on the host it shows.
+      if (params.tab === SWITCH_TO_SETTINGS_TAB)
+        return yield* call(navigateToRoute, `/settings?tab=${SWITCH_TO_SETTINGS_TAB}`);
       return yield* call(navigateToRoute, '/settings');
     case 'node-link':
       if (params.connectionId) {

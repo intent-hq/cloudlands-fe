@@ -422,8 +422,8 @@
   "layout_agentMemoryBreakdown_unnamedAgent_label": ["de", "fr"],
   "layout_daemonStatus_connectedBackends_one": ["es", "fr"],
   "layout_daemonStatus_connectedBackends_many": ["es", "fr"],
-  "layout_daemonStatus_connectedMachines_one": ["fr"],
-  "layout_daemonStatus_connectedMachines_many": ["fr"],
+  "layout_daemonStatus_connectedMachines_one": ["fr", "es"],
+  "layout_daemonStatus_connectedMachines_many": ["fr", "es"],
   "settings_section_plugins": ["de", "fr", "es"],
   "settings_plugins_details": ["de"],
   "settings_plugins_skills": ["de", "fr", "es"],
@@ -451,5 +451,11 @@
   "sessionImport_tab_label": ["fr"],
   "recentAgents_switcher_statusTime_label": "*",
   "cloudMachines_relay_host": ["de"],
-  "settings_tunnel_relay_label": ["de"]
+  "settings_tunnel_relay_label": ["de"],
+  "layout_daemonStatus_devices_header": ["de", "es"],
+  "settings_devices_title": ["de", "es"],
+  "settings_sidebar_devices_label": ["de", "es"],
+  "dock_machines_label": ["de", "es"],
+  "nodes_section_title": ["fr", "es"],
+  "workspace_initialAgentPicker_startOn_label": ["de", "es", "fr"]
 }

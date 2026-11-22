@@ -581,20 +581,21 @@ describe('New Workspace → Start On', () => {
     expect(agent.model).toBeUndefined();
   });
 
-  // An orchestrator has no models of its own (`models.list` is empty): with
-  // "First available machine" the Model row and the saved override's check
-  // read the first machine in order, and no placement is sent.
-  it('keeps a saved model the first machine runs on an orchestrator', async () => {
+  // An orchestrator has no models of its own (`models.list` is empty) and no
+  // row of its own: the first runner in order is preselected, its models fill
+  // the Model row and the saved override's check, and it is sent as the placement.
+  it('preselects the first runner on an orchestrator and keeps a saved model it runs', async () => {
     mocks.principalState = withBackendDaemonMode(withLegacyPrincipal({}), 'orchestrator');
     mocks.backendModels = [];
     const view = await createWith();
     await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
-    expect(screen.getByTestId('start-on-picker').textContent).toContain(
-      m.remoteMachines_startOn_firstAvailable_label(),
-    );
+    expect(screen.getByTestId('start-on-picker').textContent).toContain(MACHINE.name);
     const agent = await submit(view);
-    expect(agent).toMatchObject({ model: 'opus4.6', provider: 'auggie' });
-    expect(agent).not.toHaveProperty('placement');
+    expect(agent).toMatchObject({
+      model: 'opus4.6',
+      provider: 'auggie',
+      placement: { nodeId: 'node-mac' },
+    });
   });
 
   it('keeps a new repository on the backend: a remote agent needs a commit', async () => {

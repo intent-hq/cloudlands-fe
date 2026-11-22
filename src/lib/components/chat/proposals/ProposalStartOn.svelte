@@ -10,11 +10,13 @@
     initialAgentPlacement,
     START_ON_BACKEND,
     startOnBackendLabel,
-    startOnCloudId,
     startOnCloudMachineId,
+    startOnDefault,
+    startOnRowsWithCloud,
     type StartOnPlacement,
   } from '$features/remote-machines/start-on';
   import {
+    selectCurrentBackendLabel,
     selectInitialAgentPlacementSupported,
     selectRemoteMachinesVisible,
     selectStartOnCloud,
@@ -66,8 +68,17 @@
 
   // Shown only while there is another place to choose: a remote machine or a saved E2B entry.
   const enabled = $derived($remoteVisible$ && $supported$);
-  const active = $derived(enabled && $rows$.length > 1);
-  const effective = $derived(backendOnly ? START_ON_BACKEND : resolveImplicitE2b(value, $rows$));
+  // Another place than the backend to choose (an orchestrator has no row of its own).
+  const active = $derived(enabled && $rows$.some((option) => option.id !== START_ON_BACKEND));
+  const hostLabel$ = selectCurrentBackendLabel();
+  // The backend ('') on a host without its own row: the first usable runner in its order.
+  const effective = $derived(
+    backendOnly
+      ? START_ON_BACKEND
+      : value === START_ON_BACKEND && !$rows$.some((option) => option.id === START_ON_BACKEND)
+        ? startOnDefault(startOnRowsWithCloud($rows$, $cloud$))
+        : resolveImplicitE2b(value, $rows$),
+  );
   function missingLabelFor(id: string): string {
     const entryId = startOnCloudMachineId(id);
     return entryId
@@ -83,22 +94,12 @@
     enabled && !active && !backendOnly && defaultValue !== START_ON_BACKEND
       ? m.chat_proposalCard_startOnGone_label({
           machine: missingLabelFor(defaultValue),
-          backend: startOnBackendLabel($rows$),
+          backend: startOnBackendLabel($rows$, $hostLabel$),
         })
       : null,
   );
   const choices = $derived(
-    proposalStartOnChoices(
-      $rows$.map((option) => {
-        if (option.kind !== 'cloud') return option;
-        const reason = $cloud$?.find(
-          (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
-        )?.unavailableReason;
-        return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
-      }),
-      effective,
-      missingLabel,
-    ),
+    proposalStartOnChoices(startOnRowsWithCloud($rows$, $cloud$), effective, missingLabel),
   );
 
   $effect(() => {
@@ -138,7 +139,7 @@
         onChange={(id) => (value = id)}
         lockedReason={backendOnly
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel(choices.options),
+              backend: startOnBackendLabel(choices.options, $hostLabel$),
             })
           : undefined}
       />

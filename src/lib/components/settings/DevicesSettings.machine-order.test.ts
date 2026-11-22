@@ -16,7 +16,10 @@ import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
 import { store } from '$store/renderer/store';
-import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import {
+  connectionsListReceived,
+  connectionWorkflowRequested,
+} from '$store/renderer/slices/connections/connections-slice';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -169,7 +172,7 @@ afterEach(() => {
 });
 
 describe('Settings → Machines with machineOrder: 1', () => {
-  it('lists every row in the stored order and marks only the first as preferred', () => {
+  it('lists every row in the stored order, with no Preferred pill', () => {
     seed();
     render(DevicesSettings);
 
@@ -179,30 +182,34 @@ describe('Settings → Machines with machineOrder: 1', () => {
       'machine:d-studio',
       'cloud:e2b-main',
     ]);
-    const preferred = orderedSection().querySelectorAll('[data-preferred-machine]');
-    expect(preferred).toHaveLength(1);
-    expect(orderedRow('machine:d-garage').contains(preferred[0])).toBe(true);
+    expect(orderedSection().querySelector('[data-preferred-machine]')).toBeNull();
     // Merged: no separate Nodes or "can run agents on" section.
     expect(document.querySelector('[data-nodes-section]')).toBeNull();
-    expect(
-      screen.queryByRole('heading', {
-        name: m.remoteMachines_section_title({
-          backend: m.layout_daemonStatus_localConnection_label(),
-        }),
-      }),
-    ).toBeNull();
+    expect(document.querySelector('[aria-labelledby="remote-machines-title"]')).toBeNull();
   });
 
-  it('keeps saved full daemons that are not exposed in the Machines list above', () => {
+  it('lists every saved host under Hosts, also one that runs agents for this host', () => {
     seed();
     render(DevicesSettings);
 
-    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
-    expect(within(machines).queryByRole('article', { name: 'Spare box' })).not.toBeNull();
-    expect(within(machines).queryByRole('article', { name: 'Studio Mac' })).toBeNull();
+    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    expect(within(hosts).queryByRole('article', { name: 'Spare box' })).not.toBeNull();
+    expect(within(hosts).queryByRole('article', { name: 'Studio Mac' })).not.toBeNull();
+    // Its runner row is the plain runner row: the host row (and its edit
+    // panel) shows once.
     expect(
-      within(orderedRow('machine:d-studio')).getByRole('article', { name: 'Studio Mac' }),
-    ).toBeTruthy();
+      orderedRow('machine:d-studio').querySelector('[data-remote-machine-row="d-studio"]'),
+    ).not.toBeNull();
+    expect(document.querySelectorAll('#device-studio-name')).toHaveLength(1);
+  });
+
+  it("labels the host's own runner row This host", () => {
+    seed();
+    render(DevicesSettings);
+
+    expect(orderedRow('local').textContent).toContain(
+      m.remoteMachines_order_thisHostNamed_label({ name: 'build-host' }),
+    );
   });
 
   it('Move down sends the whole list with the row one place lower', async () => {
@@ -395,19 +402,18 @@ describe('Settings → Machines against another backend', () => {
     });
   }
 
-  // cloudlands-fe#4494 follow-up: the local row stayed above and the exposed
-  // machine showed again in the ordered list.
-  it('shows this computer once, in the ordered list, when it is exposed to the backend', () => {
+  // cloudlands-fe#4494 follow-up: the host row of this computer shows once.
+  it('keeps this computer under Hosts and lists it as a runner of the backend', () => {
     seedRemoteBackend();
     render(DevicesSettings);
 
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
+    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    expect(hosts.querySelector('#device-local-name')).not.toBeNull();
     const row = remoteOrderedSection().querySelector<HTMLElement>(
       '[data-machine-order-row="machine:d-laptop"]',
     )!;
-    expect(row.querySelector('#device-local-name')).not.toBeNull();
-    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
-    expect(machines.querySelector('#device-local-name')).toBeNull();
+    expect(row.querySelector('[data-remote-machine-row="d-laptop"]')).not.toBeNull();
   });
 
   it('keeps this computer in the Machines list while it is not exposed', () => {
@@ -429,22 +435,110 @@ describe('Settings → Machines against another backend', () => {
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
   });
 
-  it('says an orchestrator backend runs agents on your machines, on its row only', () => {
+  it('marks an orchestrator host with the hub marker after its name, on its row only', () => {
     seedRemoteBackend('orchestrator');
     render(DevicesSettings);
 
-    const marks = document.querySelectorAll('[data-testid="device-orchestrator-mode"]');
+    const marks = document.querySelectorAll('[data-host-only-marker]');
     expect(marks).toHaveLength(1);
-    // The mark sits on the backend's own row ("Spare box").
-    expect(
-      document.querySelector('#device-spare-name')!.closest('article')!.contains(marks[0]),
-    ).toBe(true);
+    expect(marks[0].getAttribute('aria-label')).toBe(m.settings_devices_hostOnly_tooltip());
+    // The mark sits on the backend's own row ("Spare box"), with no subtitle.
+    const row = document.querySelector('#device-spare-name')!.closest('article')!;
+    expect(row.contains(marks[0])).toBe(true);
+    expect(document.querySelector('[data-testid="device-orchestrator-mode"]')).toBeNull();
   });
 
   it('marks no row on a full backend', () => {
     seedRemoteBackend();
     render(DevicesSettings);
 
-    expect(document.querySelector('[data-testid="device-orchestrator-mode"]')).toBeNull();
+    expect(document.querySelector('[data-host-only-marker]')).toBeNull();
+  });
+
+  it('never lists an orchestrator as its own runner', () => {
+    seedRemoteBackend('orchestrator');
+    // An older orchestrator that still sends its own row.
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machineOrder: true,
+        order: [
+          { kind: 'local', name: 'spare' },
+          { kind: 'machine', nodeId: 'd-studio', name: 'Studio Mac' },
+        ],
+        machines: [STUDIO],
+        localFingerprint: 'LO:CA:L1',
+        executorBackends: [],
+      }),
+    );
+    render(DevicesSettings);
+
+    expect(remoteOrderedSection().querySelector('[data-machine-order-row="local"]')).toBeNull();
+    expect(
+      remoteOrderedSection().querySelector('[data-machine-order-row="machine:d-studio"]'),
+    ).not.toBeNull();
+  });
+
+  it('offers Switch to on every other host and shows Current on this one', async () => {
+    seedRemoteBackend();
+    render(DevicesSettings);
+
+    const hostRow = (id: string) =>
+      document.querySelector(`#device-${id}-name`)!.closest('article')!;
+    expect(hostRow('spare').querySelector('[data-current-host]')?.textContent).toBe(
+      m.settings_devices_current_label(),
+    );
+    expect(hostRow('spare').querySelector('[data-switch-to-host]')).toBeNull();
+    expect(hostRow('local').querySelector('[data-switch-to-host]')).not.toBeNull();
+
+    await fireEvent.click(
+      within(hostRow('studio')).getByRole('button', { name: m.settings_devices_switchTo_label() }),
+    );
+    const requested = dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload?: { intent?: unknown } })
+      .filter((action) => action.type === connectionWorkflowRequested.type);
+    expect(requested.map((action) => action.payload?.intent)).toEqual([
+      { kind: 'open', id: 'studio', switchTo: true },
+    ]);
+  });
+
+  it('offers no Switch to on a runner-only node', () => {
+    const node: ConnectionRecord = { ...spare, id: 'gpu', label: 'GPU node', daemonMode: 'node' };
+    seedRemoteBackend();
+    store.dispatch(
+      connectionsListReceived({
+        connections: [local, studio, spare, node],
+        activeId: 'spare',
+        windowBackendId: 'spare',
+      }),
+    );
+    render(DevicesSettings);
+
+    const row = document.querySelector('#device-gpu-name')!.closest('article')!;
+    expect(row.querySelector('[data-switch-to-host]')).toBeNull();
+    expect(row.querySelector('[data-current-host]')).toBeNull();
+  });
+
+  it('lists a regular host as its own runner', () => {
+    seedRemoteBackend();
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machineOrder: true,
+        order: [
+          { kind: 'local', name: 'spare' },
+          { kind: 'machine', nodeId: 'd-studio', name: 'Studio Mac' },
+        ],
+        machines: [STUDIO],
+        localFingerprint: 'LO:CA:L1',
+        executorBackends: [],
+      }),
+    );
+    render(DevicesSettings);
+
+    const own = remoteOrderedSection().querySelector<HTMLElement>(
+      '[data-machine-order-row="local"]',
+    )!;
+    expect(own.textContent).toContain(m.remoteMachines_order_thisHost_label());
   });
 });

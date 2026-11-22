@@ -17,7 +17,7 @@ import OnboardingAgentMachinesNotice from './OnboardingAgentMachinesNotice.svelt
 
 const openButton = (root: HTMLElement) =>
   Array.from(root.querySelectorAll('button')).find((b) =>
-    (b.textContent ?? '').includes('Open Settings → Machines'),
+    (b.textContent ?? '').includes('Open Settings → Hosts'),
   );
 
 beforeEach(() => mocks.goto.mockReset());
@@ -25,7 +25,7 @@ beforeEach(() => mocks.goto.mockReset());
 describe('OnboardingAgentMachinesNotice', () => {
   it('asks for a machine and links to Settings → Machines when none is set up', async () => {
     const { container } = render(OnboardingAgentMachinesNotice, { props: { machines: 'none' } });
-    expect(container.textContent).toContain('Add a machine to run agents');
+    expect(container.textContent).toContain('Add a runner to run agents');
     await fireEvent.click(openButton(container)!);
     expect(mocks.goto).toHaveBeenCalledWith('/settings?tab=devices#devices');
   });

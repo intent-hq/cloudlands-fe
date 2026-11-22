@@ -270,6 +270,16 @@ describe('intent://settings', () => {
     await run({ type: 'settings', params: { section: 'general' } });
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings');
   });
+
+  it('opens Settings → Hosts for the link "Switch to" queues on the host it shows', async () => {
+    await run({ type: 'settings', params: { tab: 'devices' } });
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings?tab=devices');
+  });
+
+  it('opens plain Settings for any other tab', async () => {
+    await run({ type: 'settings', params: { tab: 'advanced' } });
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings');
+  });
 });
 
 describe('node links', () => {

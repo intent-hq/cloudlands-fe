@@ -9,6 +9,7 @@ import {
   type MachineOrderKey,
   type MachineOrderRow,
 } from '$shared/types/remote-machines';
+import type { DaemonMode } from '$shared/types/connections';
 import { START_ON_BACKEND, startOnCloudMachineId } from './start-on';
 
 /**
@@ -69,4 +70,16 @@ export function sortByMachineOrder<T extends { id: string; kind?: 'machine' | 'c
     .map((option, index) => ({ option, index }))
     .sort((a, b) => rankOf(a.option) - rankOf(b.option) || a.index - b.index)
     .map(({ option }) => option);
+}
+
+/**
+ * The runners a host lists in Settings → Hosts: its stored order, without the
+ * host's own row (`kind: "local"`) while it runs as an orchestrator, which
+ * never runs agents itself (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
+ */
+export function hostRunnerRows(
+  order: readonly MachineOrderRow[],
+  daemonMode: DaemonMode | null,
+): MachineOrderRow[] {
+  return daemonMode === 'orchestrator' ? order.filter((row) => row.kind !== 'local') : [...order];
 }

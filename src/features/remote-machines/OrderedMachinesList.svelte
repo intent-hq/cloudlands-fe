@@ -75,7 +75,6 @@
   function controlsFor(entry: MachineOrderRow, index: number): MachineOrderControls {
     const id = machineOrderId(entry);
     return {
-      preferred: index === 0,
       actions: canReorder
         ? [
             {

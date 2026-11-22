@@ -22,6 +22,7 @@ import {
   resolveStartOn,
   START_ON_BACKEND,
   startOnOptions,
+  startOnRowsWithCloud,
   startOnVisible,
   type StartOnCloud,
   type StartOnOption,
@@ -183,10 +184,9 @@ function backendHostPlatform(state: Parameters<typeof selectCurrentBackendLabel.
 }
 
 /**
- * The backend first (by its label), then each machine available to it, usable
- * or not; in the stored order with `machineOrder: 1`. On an orchestrator the
- * first row is "First available machine" (no placement) instead of the
- * backend, and it stays first: the list it walks has no row for the backend.
+ * The backend first (by its label), then each runner available to it, usable
+ * or not; in the stored order with `machineOrder: 1`. An orchestrator has no
+ * row of its own.
  */
 export const selectStartOnRows = store.createSelector((state): StartOnOption[] => {
   const orchestrator = selectIsOrchestratorBackend.select(state);
@@ -198,10 +198,8 @@ export const selectStartOnRows = store.createSelector((state): StartOnOption[] =
     orchestrator,
   });
   if (!selectMachineOrderVisible.select(state)) return options;
-  // With `machineOrder: 1` the rows follow the user's ordered machine list.
-  if (!orchestrator) return sortByMachineOrder(options, selectMachineOrder.select(state));
-  const [first, ...machines] = options;
-  return [first, ...sortByMachineOrder(machines, selectMachineOrder.select(state))];
+  // With `machineOrder: 1` the rows follow the user's ordered runner list.
+  return sortByMachineOrder(options, selectMachineOrder.select(state));
 });
 
 /** `selectStartOnRows`; empty while hidden. */
@@ -215,18 +213,21 @@ export const selectInitialAgentPlacementSupported = store.createSelector(
 );
 
 /**
- * The machine the first agent starts on for a remembered choice: that
- * machine while the row shows and it is usable, else the backend ('').
+ * Where the first agent starts for a remembered choice: that runner while the
+ * row shows and it is usable, else the first usable row in the host's order
+ * (`startOnDefault`); the backend ('') while the row is hidden.
  */
 export const selectEffectiveStartOn = store.createSelector(
-  (state, remembered?: string, providerRef?: string): string =>
-    selectStartOnVisible.select(state)
-      ? resolveStartOn(
-          remembered,
-          selectRemoteMachines.select(state),
-          startOnCloudFor(state, providerRef),
-        )
-      : START_ON_BACKEND,
+  (state, remembered?: string, providerRef?: string): string => {
+    if (!selectStartOnVisible.select(state)) return START_ON_BACKEND;
+    const cloud = startOnCloudFor(state, providerRef);
+    return resolveStartOn(
+      remembered,
+      selectRemoteMachines.select(state),
+      cloud,
+      startOnRowsWithCloud(selectStartOnRows.select(state), cloud),
+    );
+  },
 );
 
 /**

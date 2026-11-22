@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { MachineOrderRow } from '$shared/types/remote-machines';
 import { parseMachineOrder } from '$shared/types/remote-machines';
-import { moveMachineOrder, sortByMachineOrder, stepMachineOrder } from './machine-order';
+import {
+  hostRunnerRows,
+  moveMachineOrder,
+  sortByMachineOrder,
+  stepMachineOrder,
+} from './machine-order';
 import { START_ON_BACKEND, startOnCloudId } from './start-on';
 
 const ORDER: MachineOrderRow[] = [
@@ -113,5 +118,16 @@ describe('parseMachineOrder', () => {
       { kind: 'cloud', cloudMachineId: 'e2b-1', name: 'S' },
     ]);
     expect(parseMachineOrder(undefined)).toBeNull();
+  });
+});
+
+describe('hostRunnerRows (Settings → Hosts runner list)', () => {
+  it('lists a regular host as its own runner', () => {
+    expect(hostRunnerRows(ORDER, 'regular')).toEqual(ORDER);
+    expect(hostRunnerRows(ORDER, null)).toEqual(ORDER);
+  });
+
+  it('never lists an orchestrator as its own runner', () => {
+    expect(hostRunnerRows(ORDER, 'orchestrator')).toEqual(ORDER.slice(1));
   });
 });

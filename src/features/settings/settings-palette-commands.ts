@@ -33,7 +33,7 @@ const SETTINGS_PAGES = {
     get label() {
       return m.settings_sidebar_devices_label();
     },
-    searchText: 'machines devices remote hosts backend sync',
+    searchText: 'hosts runners machines nodes orchestrator devices remote backend sync',
   },
   mobile: {
     get label() {

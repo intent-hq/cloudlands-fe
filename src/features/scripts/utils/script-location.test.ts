@@ -85,7 +85,7 @@ describe('machineRunLocation', () => {
   it('ignores an agent placed on a different machine', () => {
     expect(
       machineRunLocation(run, agent({ nodeId: 'node-other', nodeName: 'Other' }), null),
-    ).toMatchObject({ name: 'Another machine', platform: null });
+    ).toMatchObject({ name: 'Another runner', platform: null });
   });
 
   it('names the machine state', () => {

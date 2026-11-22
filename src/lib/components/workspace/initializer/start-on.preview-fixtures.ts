@@ -7,6 +7,8 @@ import { selectConnections } from '$store/renderer/slices/connections/connection
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import type { MachineOrderRow } from '$shared/types/remote-machines';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
 export function startOnPreviewMachine(
@@ -41,8 +43,14 @@ export function setupStartOnPreview(
   {
     remoteBackend = true,
     catalog = {},
+    orchestrator = false,
+    order,
   }: {
     remoteBackend?: boolean;
+    /** The backend runs as an orchestrator (no agents of its own). */
+    orchestrator?: boolean;
+    /** The backend's ordered runner list (`machineOrder: 1`). */
+    order?: MachineOrderRow[];
     /** Extra catalog fields (profiles, `defaultRemoteLaunch`). */
     catalog?: Partial<Parameters<typeof providerCatalogLoaded>[0]>;
   } = {},
@@ -71,6 +79,7 @@ export function setupStartOnPreview(
         windowBackendId: 'intent1',
       }),
     );
+  if (orchestrator) admitLegacyPrincipal('owner', {}, 'orchestrator');
   store.dispatch(setLabsRemoteAgentsEnabled(true));
   // A catalog with remote-compatibility fields: the backend switches remote models.
   store.dispatch(
@@ -84,6 +93,7 @@ export function setupStartOnPreview(
     remoteMachinesLoaded({
       supported: true,
       initialAgentPlacement: true,
+      ...(order ? { machineOrder: true, order } : {}),
       machines,
       localFingerprint: null,
       executorBackends: null,

@@ -1428,6 +1428,7 @@ interface BackendWindowHooks {
   ): boolean | Promise<boolean>;
   showWorkspace?(backendId: string, workspaceId: string): void | Promise<void>;
   showAgent?(backendId: string, agent: ConnectionAgentTarget): void | Promise<void>;
+  showHostsSettings?(backendId: string): void | Promise<void>;
   openOrFocus?(backendId: string): void | Promise<void>;
   ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
@@ -1444,6 +1445,10 @@ const defaultWindowHooks: BackendWindowHooks = {
   async showAgent(backendId, agent) {
     const { showAgentInBackendWindow } = await import('../../../main/window');
     showAgentInBackendWindow(backendId, agent);
+  },
+  async showHostsSettings(backendId) {
+    const { showHostsSettingsInBackendWindow } = await import('../../../main/window');
+    showHostsSettingsInBackendWindow(backendId);
   },
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -4451,6 +4456,8 @@ export function openBackendWindow(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
+    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    switchTo?: boolean;
   },
 ): Promise<{ id: string }> {
   return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
@@ -4465,6 +4472,8 @@ function performOpenBackendWindowOwned(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
+    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    switchTo?: boolean;
   },
   parent?: PoolOwner,
 ): Promise<{ id: string }> {
@@ -4482,6 +4491,8 @@ async function performOpenBackendWindowOriginal(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
+    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    switchTo?: boolean;
   },
   owner?: PoolOwner,
 ): Promise<{ id: string }> {
@@ -4537,6 +4548,8 @@ async function performOpenBackendWindowOriginal(
       await windowHooks.showWorkspace?.(id, options.workspaceId);
     if (options?.agent && (!options.mayOpen || options.mayOpen()))
       await windowHooks.showAgent?.(id, options.agent);
+    if (options?.switchTo && (!options.mayOpen || options.mayOpen()))
+      await windowHooks.showHostsSettings?.(id);
     return { id };
   } catch (error) {
     recordPoolError(owner, error);
@@ -5665,7 +5678,7 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (event, { id, agent }) => {
+      async (event, { id, agent, switchTo }) => {
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         const invited = (await guestSessionsStore.findById(id)) !== null;
         const mayOpen = () => allowed() && !event.sender.isDestroyed();
@@ -5674,6 +5687,7 @@ function registerConnectionsHandlers(): void {
           const opened = await openBackendWindow(id, {
             ...(invited ? { mayOpen } : {}),
             ...(agent ? { agent } : {}),
+            ...(switchTo ? { switchTo } : {}),
           });
           return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
         } catch (error) {

@@ -211,7 +211,7 @@ describe('connectionsSaga', () => {
 
   it.each([
     ['labs-off', 'To add GPU rig, turn on Remote agents in Settings → Labs.'],
-    ['backend-unsupported', "can't run agents on other machines, so GPU rig wasn't added"],
+    ['backend-unsupported', "can't run agents on runners, so GPU rig wasn't added"],
   ] as const)(
     'shows the %s refusal when main refuses a node before saving',
     async (reason, text) => {
@@ -365,6 +365,26 @@ describe('connectionsSaga', () => {
       expect(navigation.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' }),
     );
     expect(notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('asks main to switch to the host for a Switch to open, and only then', async () => {
+    const run = start();
+    run.dispatch(
+      connectionWorkflowRequested('row', { kind: 'open', id: REMOTE.id, switchTo: true }),
+    );
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, {
+        id: REMOTE.id,
+        switchTo: true,
+      }),
+    );
+    invoke.mockClear();
+    run.dispatch(connectionWorkflowRequested('other', { kind: 'open', id: REMOTE.id }));
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id }),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });

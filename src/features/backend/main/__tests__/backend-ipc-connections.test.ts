@@ -3271,6 +3271,41 @@ describe('connections:* IPC handlers', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
+  it('connections:open with switchTo shows the host, then its Settings → Hosts', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const order: string[] = [];
+    openOrFocus.mockImplementation(async (id: string) => {
+      order.push(`open:${id}`);
+    });
+    const showHostsSettings = vi.fn(async (id: string) => {
+      order.push(`settings:${id}`);
+    });
+    mod.__setBackendWindowHooksForTesting({ openOrFocus, showHostsSettings });
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1', switchTo: true })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
+
+    // openOrFocus adds the host to the window's rail (when it is on) and selects it.
+    expect(order).toEqual(['open:remote-1', 'settings:remote-1']);
+  });
+
+  it('connections:open without switchTo leaves the host on its current page', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const showHostsSettings = vi.fn();
+    mod.__setBackendWindowHooksForTesting({ openOrFocus, showHostsSettings });
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await handler!({}, { id: 'remote-1' });
+
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(showHostsSettings).not.toHaveBeenCalled();
+  });
+
   it('connections:open never opens a window for a node (refusal probe on an older daemon)', async () => {
     const { JsonRpcError } = await import('../json-rpc-errors');
     rpc.handler = async (method) => {

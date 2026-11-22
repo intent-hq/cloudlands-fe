@@ -84,6 +84,7 @@
     selectProviderCatalogDefaultRemoteLaunch,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
+    selectCurrentBackendLabel,
     selectDefaultHasOverrides,
     selectRemoteMachines,
     selectRemoteMachinesVisible,
@@ -103,7 +104,7 @@
     START_ON_BACKEND,
     startOnBackendLabel,
     startOnModelMachineId,
-    startOnCloudId,
+    startOnRowsWithCloud,
   } from '$features/remote-machines/start-on';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
@@ -228,20 +229,14 @@
     startOnProviderRef.set(selectedProvider);
   });
   const startOnCloud$ = selectStartOnCloud(startOnProviderRef);
-  const startOnChoices = $derived(
-    $startOnOptions$.map((option) => {
-      if (option.kind !== 'cloud') return option;
-      const reason = $startOnCloud$?.find(
-        (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
-      )?.unavailableReason;
-      return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
-    }),
-  );
+  const startOnChoices = $derived(startOnRowsWithCloud($startOnOptions$, $startOnCloud$));
+  // No usable choice yet: the first usable runner in the host's order.
   const effectiveStartOn = $derived(
     $startOnVisible$ && !startOnBackendOnly
-      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
+      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$, startOnChoices)
       : START_ON_BACKEND,
   );
+  const startOnHostLabel$ = selectCurrentBackendLabel();
   // The machine whose models the Model row lists (an orchestrator has none of its own).
   const orchestratorBackend$ = selectIsOrchestratorBackend();
   const modelMachineId = $derived(
@@ -1129,11 +1124,11 @@
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
-            backend: startOnBackendLabel($startOnOptions$),
+            backend: startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
           })
         : startOnBackendOnly === 'new-repo'
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel($startOnOptions$),
+              backend: startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
             })
           : undefined}
     />
