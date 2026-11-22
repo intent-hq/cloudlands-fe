@@ -403,12 +403,17 @@
 
   // The prompt text the active slash context was read from (built-ins need its start).
   let slashPromptText = $state('');
-  const filteredCommands = $derived(
+  const applicableCommands = $derived(
     slashContext ? rankSlashBuiltins(slashCommands, slashPromptText, slashContext) : [],
+  );
+  // A fully typed command (`/goal`) leaves the menu so Enter sends it at once;
+  // it still shadows a same-named skill.
+  const filteredCommands = $derived(
+    applicableCommands.filter((command) => command.name !== slashContext?.query),
   );
   const filteredSkills = $derived(
     slashContext
-      ? rankSlashSkills(withoutShadowedSkills(skills, filteredCommands), slashContext.query)
+      ? rankSlashSkills(withoutShadowedSkills(skills, applicableCommands), slashContext.query)
       : [],
   );
   const slashContextKey = $derived(

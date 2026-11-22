@@ -33,9 +33,20 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectAllNotes: readable<unknown[]>([]),
 }));
 
+const retired = vi.hoisted(() => ({ value: false }));
+
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentMessageById: readable<unknown>(undefined),
   selectAgentGoal: readable<string | null>('Ship the goal strip'),
+  selectAgentRetired: Object.assign(
+    () => ({
+      subscribe: (run: (v: boolean) => void) => {
+        run(retired.value);
+        return () => {};
+      },
+    }),
+    { select: () => retired.value },
+  ),
 }));
 
 vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
@@ -119,6 +130,23 @@ describe('ChatMessage - goal_command notice', () => {
       },
     });
     expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
+  });
+
+  it('hides Edit on a retired conversation even when the host passes no readOnly', () => {
+    retired.value = true;
+    try {
+      render(ChatMessage, {
+        props: {
+          message: goalRow({ action: 'shown', goal: 'Ship the goal strip' }),
+          isStreaming: false,
+          agentId: 'agent-1',
+          workspace: { id: 'ws-1' } as never,
+        },
+      });
+      expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
+    } finally {
+      retired.value = false;
+    }
   });
 
   it('falls back to the row text for an unknown action', () => {

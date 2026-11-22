@@ -128,6 +128,9 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   // §5.54 profile state is presence-detected and must clear when omitted, so
   // write both fields explicitly: a merge of this row then drops stale flags.
   session.usingEarlierProfileSettings = raw.usingEarlierProfileSettings === true ? true : undefined;
+  // Conversation goal: omitted when unset, so write it explicitly — a row
+  // without `goal` replaces the previous one as unset (full-row deltas).
+  session.goal = typeof raw.goal === 'string' && raw.goal.length > 0 ? raw.goal : undefined;
   session.providerReplacementRequired = readProviderReplacementRequired(
     raw.providerReplacementRequired,
   );

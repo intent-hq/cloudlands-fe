@@ -19,7 +19,7 @@ import {
   resetMockBackend,
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
-import { LiveAgentsClient } from './live-agents-client';
+import { LiveAgentsClient, normalizeAgent } from './live-agents-client';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 
 describe('LiveAgentsClient mutations (fake transport)', () => {
@@ -1492,6 +1492,15 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(
       await client.sendGoalCommand({ agentId: 'agent-1', workspaceId: 'ws-1', content: '/goal x' }),
     ).toEqual({ ok: false, error: { kind: 'tooLong' } });
+  });
+
+  it('normalizeAgent reads goal as a non-empty string, else unset', () => {
+    const base = { id: 'agent-1', workspaceId: 'ws-1' };
+    expect(normalizeAgent({ ...base, goal: 'Ship it' }).goal).toBe('Ship it');
+    expect(normalizeAgent({ ...base }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: null }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: '' }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: 42 }).goal).toBeUndefined();
   });
 
   it('setGoal maps the agent-retired refusal by data.code', async () => {

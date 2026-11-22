@@ -6388,6 +6388,8 @@
 
   function performLocalSendCleanup(options: {
     clearInput?: boolean;
+    /** Keep context chips and checked panels (a `/goal` command never sends them). */
+    keepContext?: boolean;
     followBottom?: boolean;
     historyText?: string | null;
   }) {
@@ -6412,13 +6414,15 @@
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
       draftManager.invalidatePendingRestore();
-      setContextItems([]);
-      // Checked panels/selections were folded into this send; uncheck them so
-      // they do not ride along with the next message. A selection write still
-      // deferred to the next frame must land first, or it would re-check
-      // itself after the cleanup.
-      flushPendingSelectionWrites();
-      appStore.dispatch(clearMultiPanelChecked());
+      if (!options.keepContext) {
+        setContextItems([]);
+        // Checked panels/selections were folded into this send; uncheck them so
+        // they do not ride along with the next message. A selection write still
+        // deferred to the next frame must land first, or it would re-check
+        // itself after the cleanup.
+        flushPendingSelectionWrites();
+        appStore.dispatch(clearMultiPanelChecked());
+      }
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
@@ -6454,7 +6458,9 @@
   // state; the composer clears only when the daemon accepts it.
   const goalSupported$ = selectConversationGoalSupported();
   let goalCommandError = $state<string | null>(null);
-  let goalCommandPending = false;
+  // The agent whose `/goal` request is in flight; a late outcome for another
+  // agent (the panel switched) is ignored and never blocks this one.
+  let goalCommandPendingAgent: string | null = null;
   $effect(() => {
     void inputValue;
     void agentId;
@@ -6463,7 +6469,8 @@
 
   function sendGoalCommand(text: string): boolean {
     if (!$goalSupported$ || !workspace || !isGoalCommandText(text)) return false;
-    if (goalCommandPending) return true;
+    if (goalCommandPendingAgent === agentId) return true;
+    const sentAgentId = agentId;
     const capture = draftManager.captureDraft();
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks([
       ...getContextItems(),
@@ -6473,23 +6480,29 @@
       goalCommandError = goalErrorMessage({ kind: 'attachments' });
       return true;
     }
-    goalCommandPending = true;
+    goalCommandPendingAgent = sentAgentId;
     goalCommandError = null;
     void appStore
-      .dispatch(goalCommandSendRequested(workspace.id, agentId, text))
+      .dispatch(goalCommandSendRequested(workspace.id, sentAgentId, text))
       .then((outcome) => {
+        if (agentId !== sentAgentId) return;
         if (!outcome.ok) {
           goalCommandError = goalErrorMessage(outcome.error);
           return;
         }
         if (capture ? draftManager.isCurrentDraft(capture) : inputValue === text)
-          void performLocalSendCleanup({ clearInput: true, followBottom: true, historyText: text });
+          void performLocalSendCleanup({
+            clearInput: true,
+            keepContext: true,
+            followBottom: true,
+            historyText: text,
+          });
       })
       .catch(() => {
-        goalCommandError = goalErrorMessage({ kind: 'failed' });
+        if (agentId === sentAgentId) goalCommandError = goalErrorMessage({ kind: 'failed' });
       })
       .finally(() => {
-        goalCommandPending = false;
+        if (goalCommandPendingAgent === sentAgentId) goalCommandPendingAgent = null;
       });
     return true;
   }

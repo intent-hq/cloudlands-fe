@@ -4,6 +4,7 @@
    * `agent.setGoal` (empty text removes the goal). A refusal keeps the dialog
    * open with the typed text and shows the reason under the field.
    */
+  import { untrack } from 'svelte';
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { Textarea } from '$lib/components/ui/textarea';
   import { m } from '$shared/paraglide/messages.js';
@@ -26,11 +27,18 @@
   let saving = $state(false);
   let field = $state<HTMLTextAreaElement | null>(null);
 
-  $effect(() => {
-    if (!open) return;
-    value = initialGoal;
-    error = undefined;
-    saving = false;
+  // Seed the field only when the dialog opens: a goal change pushed while it
+  // is open (another client, or this Save's own reconcile) must not replace
+  // the typed text or reset the in-flight Save.
+  let wasOpen = false;
+  $effect.pre(() => {
+    const isOpen = open;
+    if (isOpen && !wasOpen) {
+      value = untrack(() => initialGoal);
+      error = undefined;
+      saving = false;
+    }
+    wasOpen = isOpen;
   });
 
   async function save() {

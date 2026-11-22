@@ -525,22 +525,7 @@ function* sendReply(
         !evidence))
   )
     return;
-  // A restored or pasted draft can exceed the ordinary-file limit the editor enforces on add.
-  // Evidence screenshots and clips are separate; refusal keeps the draft and admits nothing.
-  const ordinaryFiles = clickedItems.filter(
-    (item) =>
-      item.type === 'file' && !item.imageData && !item.imageMimeType && !evidenceOwned.has(item.id),
-  ).length;
-  if (!retry && ordinaryFiles > DOCK_EVIDENCE_LIMITS.files) {
-    yield* put(
-      dockConversationSendState(
-        generation,
-        false,
-        m.dock_composer_fileLimit_error({ limit: formatInteger(DOCK_EVIDENCE_LIMITS.files) }),
-      ),
-    );
-    return;
-  }
+  // A `/goal` command refuses every attachment itself, before the file limit.
   if (
     !retry &&
     clickedDraft &&
@@ -557,6 +542,22 @@ function* sendReply(
       hasAttachments: blocks.imageBlocks.length > 0 || blocks.fileBlocks.length > 0 || !!evidence,
       isCurrent: () => current(generation, authority),
     });
+    return;
+  }
+  // A restored or pasted draft can exceed the ordinary-file limit the editor enforces on add.
+  // Evidence screenshots and clips are separate; refusal keeps the draft and admits nothing.
+  const ordinaryFiles = clickedItems.filter(
+    (item) =>
+      item.type === 'file' && !item.imageData && !item.imageMimeType && !evidenceOwned.has(item.id),
+  ).length;
+  if (!retry && ordinaryFiles > DOCK_EVIDENCE_LIMITS.files) {
+    yield* put(
+      dockConversationSendState(
+        generation,
+        false,
+        m.dock_composer_fileLimit_error({ limit: formatInteger(DOCK_EVIDENCE_LIMITS.files) }),
+      ),
+    );
     return;
   }
   const contextFingerprint = JSON.stringify(pairItems);

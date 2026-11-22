@@ -671,7 +671,7 @@ dockConversationReducer.with(
         ...draft,
         text: '',
         revision: revision + 1,
-        hasAttachments: false,
+        // Context chips stay (a command never sends them).
         clearRevision: revision + 1,
         clearSubmissionId: composerSubmissionId ?? undefined,
         retryRevision: undefined,

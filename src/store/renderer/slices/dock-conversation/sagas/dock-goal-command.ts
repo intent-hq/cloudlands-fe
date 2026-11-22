@@ -3,6 +3,7 @@
  * command (`agent.sendMessage` + `interpretCommands`), never a pending
  * submission. No optimistic row, no delivery tracking; the draft clears only
  * when the daemon accepts it, and a refusal shows inline with the text kept.
+ * Context chips stay: the daemon ignores them on a command, so none was sent.
  */
 import { call, put, type SagaGenerator } from 'typed-redux-saga';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -10,7 +11,6 @@ import { store as appStore } from '$store/renderer/store';
 import { requestGoalCommand } from '$features/conversation-goal/goal-requests';
 import type { GoalCommandOutcome } from '$features/conversation-goal/utils/goal-command';
 import { goalErrorMessage } from '$features/conversation-goal/utils/goal-error-message';
-import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
 import { chatDraftClearRequested } from '../../chat-drafts/chat-drafts-slice';
 import {
   dockConversationCommandAdmitted,
@@ -62,6 +62,5 @@ export function* sendDockGoalCommand(command: DockGoalCommand): SagaGenerator<vo
     JSON.stringify([workspaceId, agentId]),
   );
   if (draft?.clearRevision !== command.revision + 1) return;
-  yield* put(setComposerContextItems(workspaceId, agentId, []));
   yield* put(chatDraftClearRequested(workspaceId, agentId));
 }

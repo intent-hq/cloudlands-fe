@@ -9,7 +9,10 @@
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { selectConversationGoalSupported } from '$store/renderer/slices/principal/principal-selectors';
-  import { selectAgentGoal } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentGoal,
+    selectAgentRetired,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { GoalNoticeInfo } from '../utils/goal-command';
   import GoalEditorDialog from './GoalEditorDialog.svelte';
   import GoalText from './GoalText.svelte';
@@ -27,7 +30,11 @@
   let { notice, fallbackText, workspaceId, agentId, readonly = false }: Props = $props();
 
   const supported$ = selectConversationGoalSupported();
-  const currentGoal$ = selectAgentGoal(toStore(() => agentId ?? ''));
+  const agentId$ = toStore(() => agentId ?? '');
+  const currentGoal$ = selectAgentGoal(agentId$);
+  // Retired conversations are read-only even when the transcript host does
+  // not pass `readonly` (the chat panel renders rows without it).
+  const retired$ = selectAgentRetired(agentId$);
   let editing = $state(false);
 
   const label = $derived.by((): string | null => {
@@ -47,6 +54,7 @@
   });
   const canEdit = $derived(
     !readonly &&
+      !$retired$ &&
       $supported$ &&
       !!workspaceId &&
       !!agentId &&

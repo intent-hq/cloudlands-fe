@@ -661,3 +661,8 @@ export const selectAgentGoal = store.createSelector((state, agentId: string): st
   const goal = state.agentSessions?.byAgentId[agentId]?.goal;
   return typeof goal === 'string' && goal.length > 0 ? goal : null;
 });
+
+/** The agent session is retired (read-only: its goal cannot change). */
+export const selectAgentRetired = store.createSelector(
+  (state, agentId: string): boolean => !!state.agentSessions?.byAgentId[agentId]?.retiredAt,
+);

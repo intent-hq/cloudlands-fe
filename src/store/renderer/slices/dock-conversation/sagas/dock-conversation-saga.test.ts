@@ -43,6 +43,7 @@ vi.mock('svelte', async (original) => ({
 }));
 
 import {
+  buildErrorPayload,
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
@@ -125,6 +126,8 @@ import { selectAgentMessages } from '../../agent-session/agent-session-selectors
 import { selectComposerContextItems } from '../../transient-ui/transient-ui-selectors';
 import { selectPendingSubmissionEntry } from '../../pending-submissions/pending-submissions-selectors';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { m } from '$shared/paraglide/messages.js';
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {
@@ -195,6 +198,7 @@ beforeEach(() => {
   const initial = createAdmittedLegacyPrincipal();
   if (!initial.principal.snapshot) throw new Error('Principal fixture must be admitted');
   initial.principal.snapshot.capabilities.submissionCorrelation = 1;
+  initial.principal.snapshot.capabilities.conversationGoal = 1;
   cleanups = [appStore.init(initial)];
   backend.onRequest('workspace.get', (params) => ({
     workspace: {
@@ -1096,6 +1100,98 @@ describe('ordinary file limit at send', () => {
     appStore.dispatch(sendDockConversationRequested());
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(latestSend().payload.payload.fileBlocks).toHaveLength(10);
+  });
+});
+
+describe('conversation goal command from the dock', () => {
+  const note: ContextItem = { id: 'note-1', type: 'note', label: 'Spec' } as ContextItem;
+  const goalRequests = () =>
+    backend.requests.filter(
+      (row) =>
+        row.method === 'agent.sendMessage' &&
+        (row.params as { interpretCommands?: boolean }).interpretCommands === true,
+    );
+
+  it('sends a leading /goal as a command, clears only the text and keeps context chips', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      command: { name: 'goal', action: 'set', goal: 'ship it', noticeMessageId: 'n-1' },
+    }));
+    await open();
+    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, [note]));
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal ship it'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(view().draft).toBe(''));
+    expect(goalRequests().map((row) => row.params)).toEqual([
+      {
+        agentId: mainA,
+        workspaceId: workspaceA,
+        content: '/goal ship it',
+        interpretCommands: true,
+      },
+    ]);
+    // No canonical send, so no optimistic row or pending submission.
+    expect(sent).toHaveLength(0);
+    expect(view().sendError).toBeNull();
+    expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([note]);
+    expect(appStore.state.agentSessions.byAgentId[mainA]?.goal).toBe('ship it');
+  });
+
+  it('keeps the draft and shows a refusal inline', async () => {
+    backend.onRequest('agent.sendMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'goal is too long (max 1000 characters)', {
+          rpcCode: -32602,
+          data: { code: 'goal-too-long', maxLength: 1000 },
+        }),
+      );
+    });
+    await open();
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal too long'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(view().sendError).not.toBeNull());
+    expect(view().draft).toBe('/goal too long');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('refuses attachments before the file limit without calling the daemon', async () => {
+    await open();
+    const files: ContextItem[] = Array.from({ length: 11 }, (_, index) => ({
+      id: `file-${index}`,
+      type: 'file',
+      label: `notes-${index}.pdf`,
+      attachmentId: `12345678-1234-4234-8234-1234567890${String(index).padStart(2, '0')}`,
+      attachmentMimeType: 'application/pdf',
+      attachmentSize: 1,
+    }));
+    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, files));
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal x'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(view().sendError).toBe(m.chat_goal_attachments_error()));
+    expect(goalRequests()).toHaveLength(0);
+    expect(view().draft).toBe('/goal x');
+  });
+
+  it('keeps text typed while the command is in flight', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    backend.onRequest('agent.sendMessage', async () => {
+      await held;
+      return {
+        success: true,
+        queued: false,
+        command: { name: 'goal', action: 'shown', goal: null, noticeMessageId: 'n-2' },
+      };
+    });
+    await open();
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, '/goal'));
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(goalRequests()).toHaveLength(1));
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, 'newer words'));
+    release();
+    await vi.waitFor(() => expect(view().sending).toBe(false));
+    expect(view().draft).toBe('newer words');
   });
 });
 
