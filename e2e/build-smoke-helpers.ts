@@ -402,6 +402,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
         timeout: 30_000,
       }),
     );
+    await withLogging(ensureRendererFillsWindow(app, page));
     // Give the home page components time to initialize
     await withLogging(page.waitForTimeout(2_000));
 
@@ -431,6 +432,45 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     }
     throw primary;
   }
+}
+
+/**
+ * The machine view takes the window's content size on `resize`. Under Xvfb
+ * there is no window manager to send one after the window maps, so a view laid
+ * out early can stay at a stale size (420x452 in intent-hq/intent#9697) and the
+ * page renders its compact layout, where the sidebar overlays the panels.
+ * Wait for the view to fill the window; nudge the size once if it does not.
+ */
+async function ensureRendererFillsWindow(app: ElectronApplication, page: Page): Promise<void> {
+  const sizes = async () => {
+    const view = await page.evaluate(() => [window.innerWidth, window.innerHeight]);
+    const content = await app.evaluate(({ BrowserWindow }) => {
+      const sizes = BrowserWindow.getAllWindows()
+        .filter((w) => !w.isDestroyed())
+        .map((w) => w.getContentSize());
+      return sizes.sort((a, b) => b[0] * b[1] - a[0] * a[1])[0] ?? [0, 0];
+    });
+    return { view, content };
+  };
+  const fills = async () => {
+    const { view, content } = await sizes();
+    return Math.abs(view[0] - content[0]) <= 2 && Math.abs(view[1] - content[1]) <= 2;
+  };
+  try {
+    await expect.poll(fills, { timeout: 5_000 }).toBe(true);
+    return;
+  } catch {
+    console.warn(`⚠️ Renderer view does not fill its window: ${JSON.stringify(await sizes())}`);
+  }
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue;
+      const [width, height] = w.getContentSize();
+      w.setContentSize(width - 1, height);
+      w.setContentSize(width, height);
+    }
+  });
+  await expect.poll(fills, { timeout: 10_000 }).toBe(true);
 }
 
 // ---------------------------------------------------------------------------
