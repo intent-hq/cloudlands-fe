@@ -27,6 +27,8 @@ test('Home preview chat feeds the Micro prompt picker without focus', async ({
   const component = await mount(Harness);
   const composer = component.getByRole('textbox').last();
   await expect(composer).toBeVisible();
+  // The Micro knob moves Home's list selection, so focus sits on a row, not the chat.
+  await page.locator('[data-home-row]').focus();
   await expect(composer).not.toBeFocused();
 
   await expect

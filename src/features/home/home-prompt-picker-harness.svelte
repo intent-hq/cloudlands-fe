@@ -18,6 +18,7 @@
   onDestroy(dispose);
 </script>
 
+<button type="button" data-home-row>Review workspace links</button>
 <div
   data-home-prompt-picker
   style:width="640px"
