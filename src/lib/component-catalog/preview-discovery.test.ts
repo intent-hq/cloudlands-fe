@@ -8,6 +8,18 @@ import {
   registerPreviewLoader,
   setActivePreview,
 } from './preview-discovery';
+import { warmImport } from '../../test/warm-import';
+
+// Without a warm-up, the first preview case (advisory-wakes) pays the one-time
+// cold compile of the module graph most previews share: the store, i18n
+// messages, UI primitives and the chat message renderer. That took it from
+// ~1s to ~10s on a fast cold run and past its 60s limit on slower machines.
+// Warm those shared roots once, under warmImport's cold-compile timeout, so
+// each case below is billed only for its own preview and keeps its own limit.
+warmImport(() => import('$store/renderer/store'));
+warmImport(() => import('$shared/paraglide/messages.js'));
+warmImport(() => import('$lib/components/ui/button'));
+warmImport(() => import('$lib/components/chat/StreamingMessageContent.svelte'));
 
 const component = () => undefined;
 
