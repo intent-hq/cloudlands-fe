@@ -134,7 +134,11 @@ export function createBrowserWebsiteDarkMode(
     };
     pages.set(contents, page);
 
-    const navigation = (details: { url: string; isMainFrame: boolean; isSameDocument: boolean }) => {
+    const navigation = (details: {
+      url: string;
+      isMainFrame: boolean;
+      isSameDocument: boolean;
+    }) => {
       if (!details.isMainFrame || details.isSameDocument) return;
       page.url = details.url;
       page.loadFailed = false;
