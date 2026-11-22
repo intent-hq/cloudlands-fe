@@ -267,9 +267,25 @@ describe('spec pattern sources guard', () => {
     expect(stale).toEqual(['scripts/legacy.mjs']);
   });
 
+  it('reports a file it cannot parse, even when allowlisted', () => {
+    const { unreadable } = checkSpecPatternSources(
+      [
+        file('scripts/broken.mjs', 'const ok = 1;', 'const = ;'),
+        file('scripts/legacy.mjs', 'const = ;'),
+        file('scripts/broken.test.ts', 'const = ;'),
+      ],
+      { 'scripts/legacy.mjs': 'kept for the fixture' },
+    );
+    expect(unreadable).toEqual([
+      { path: 'scripts/broken.mjs', line: 2, message: expect.any(String) },
+      { path: 'scripts/legacy.mjs', line: 1, message: expect.any(String) },
+    ]);
+  });
+
   it('finds no re-derived spec discovery in the repository scripts', () => {
-    const { hits, stale } = checkSpecPatternSources(collectSourceFiles(process.cwd()));
+    const { hits, stale, unreadable } = checkSpecPatternSources(collectSourceFiles(process.cwd()));
     expect(hits.map((hit) => `${hit.path}:${hit.line} ${hit.text}`)).toEqual([]);
     expect(stale).toEqual([]);
+    expect(unreadable.map((entry) => `${entry.path}:${entry.line} ${entry.message}`)).toEqual([]);
   });
 });

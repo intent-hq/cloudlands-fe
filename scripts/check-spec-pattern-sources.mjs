@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { lineOf, parseSource, ts, unwrapExpression, walk } from './source-ast-lib.mjs';
+import { lineOf, parseErrors, parseSource, ts, unwrapExpression, walk } from './source-ast-lib.mjs';
 import { CT_SPEC_SUFFIX } from '../playwright/ct-spec-pattern.mjs';
 import {
   ROOT_IGNORED_SPEC_NAMES,
@@ -149,31 +149,41 @@ const offendingRule = ({ node, text }) => {
   return null;
 };
 
-// Every offending literal in one file: `{ line, text, rule }` per hit, in source order.
-export function findOffenders(source, filePath) {
+// One file's offending literals (`{ line, text, rule }` each, in source order) and its
+// first parse error (`{ line, message }`, or null).
+function scanFile(source, filePath) {
   const lines = source.split('\n');
-  return literalNodes(parseSource(source, filePath)).flatMap((literal) => {
+  const sourceFile = parseSource(source, filePath);
+  const offenders = literalNodes(sourceFile).flatMap((literal) => {
     const rule = offendingRule(literal);
     if (!rule) return [];
     const line = lineOf(literal.node);
     return [{ line, text: lines[line - 1].trim(), rule }];
   });
+  return { offenders, parseError: parseErrors(sourceFile)[0] ?? null };
 }
 
-// Hits in non-allowlisted files plus allowlist entries that no longer match anything.
+// Every offending literal in one file: `{ line, text, rule }` per hit, in source order.
+export const findOffenders = (source, filePath) => scanFile(source, filePath).offenders;
+
+// Hits in non-allowlisted files, allowlist entries that no longer match anything, and
+// files the check cannot parse (`{ path, line, message }`, allowlisted or not): a
+// recovered parse can drop a literal.
 export function checkSpecPatternSources(files, allowlist = ALLOWLIST) {
   const hits = [];
+  const unreadable = [];
   const matched = new Set();
   for (const file of files) {
     const filePath = normalize(file.path);
     if (!isScannedPath(filePath)) continue;
-    const offenders = findOffenders(file.content, filePath);
+    const { offenders, parseError } = scanFile(file.content, filePath);
+    if (parseError) unreadable.push({ path: filePath, ...parseError });
     if (!offenders.length) continue;
     if (Object.hasOwn(allowlist, filePath)) matched.add(filePath);
     else hits.push(...offenders.map((hit) => ({ path: filePath, ...hit })));
   }
   const stale = Object.keys(allowlist).filter((filePath) => !matched.has(filePath));
-  return { hits, stale };
+  return { hits, stale, unreadable };
 }
 
 export const formatHit = ({ path: filePath, line, text, rule }) =>
@@ -200,9 +210,17 @@ export function collectSourceFiles(root, roots = SCAN_ROOTS) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { hits, stale } = checkSpecPatternSources(collectSourceFiles(process.cwd()));
-  if (hits.length || stale.length) {
+  const { hits, stale, unreadable } = checkSpecPatternSources(collectSourceFiles(process.cwd()));
+  if (hits.length || stale.length || unreadable.length) {
     const lines = [];
+    if (unreadable.length) {
+      lines.push('Cannot parse, so literals there may be missed (fix the syntax error):');
+      lines.push(
+        ...unreadable.map(
+          ({ path: filePath, line, message }) => `  ${filePath}:${line} ${message}`,
+        ),
+      );
+    }
     if (hits.length) {
       lines.push(
         `Re-derived spec discovery pattern${hits.length === 1 ? '' : 's'} in ${SCAN_ROOTS.join('/ and ')}/:`,

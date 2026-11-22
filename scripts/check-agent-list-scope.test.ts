@@ -181,12 +181,29 @@ describe('agent.list scope guard', () => {
     expect(checkAgentListScope(files, allowlist)).toEqual({
       hits: [],
       stale: ['src/features/debug/main/debug.ipc.ts'],
+      unreadable: [],
     });
+  });
+
+  it('reports a candidate file it cannot parse, even when allowlisted', () => {
+    const broken = "const rows = await request('agent.list', { scope: 'topLevel' ;";
+    const files = [
+      file('src/features/agent/broken.ts', broken),
+      file('src/lib/client/live/live-agents-client.ts', broken),
+      file('src/features/agent/unrelated.ts', 'const = ;'),
+    ];
+    const { unreadable } = checkAgentListScope(files, {
+      'src/lib/client/live/live-agents-client.ts': 'the wire wrapper',
+    });
+    expect(unreadable).toEqual([
+      { path: 'src/features/agent/broken.ts', line: 1, message: expect.any(String) },
+      { path: 'src/lib/client/live/live-agents-client.ts', line: 1, message: expect.any(String) },
+    ]);
   });
 
   it('passes on the current tree and fails once a new unscoped caller is added', () => {
     const tree = collectSourceFiles(process.cwd());
-    expect(checkAgentListScope(tree)).toEqual({ hits: [], stale: [] });
+    expect(checkAgentListScope(tree)).toEqual({ hits: [], stale: [], unreadable: [] });
     const added = file(
       'src/features/agent/new-agent-saga.ts',
       'const rows = yield call(appClient.agents.list, workspaceId);',
