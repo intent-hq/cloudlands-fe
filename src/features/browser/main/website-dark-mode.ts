@@ -98,6 +98,7 @@ export function createBrowserWebsiteDarkMode(
       try {
         darken = await shouldDarken(page);
       } catch (error) {
+        // i18n-ignore (main-process log, not user-facing)
         deps.warn('Could not read the remote daemon hosts', error);
       }
       if (page.contents.isDestroyed() || darken === page.darkened) return;
@@ -116,6 +117,7 @@ export function createBrowserWebsiteDarkMode(
       } catch (error) {
         // A partial apply may have left one override set; let a later sync clear it.
         if (darken) page.darkened = true;
+        // i18n-ignore (main-process log, not user-facing)
         if (!page.contents.isDestroyed()) deps.warn('Could not update website dark mode', error);
       }
     });
@@ -178,6 +180,7 @@ export function createBrowserWebsiteDarkMode(
       if (enabled === next) return;
       enabled = next;
       void deps.writePref(next).catch((error: unknown) => {
+        // i18n-ignore (main-process log, not user-facing)
         deps.warn('Could not save website dark mode', error);
       });
       for (const page of pages.values()) sync(page);
