@@ -18,7 +18,6 @@
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
   import type { MachineOrderControls } from '$features/remote-machines/machine-order-controls';
-  import PreferredMachineBadge from '$features/remote-machines/PreferredMachineBadge.svelte';
   import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { cn } from '$lib/utils';
   import {
@@ -56,7 +55,6 @@
     faCopy,
     faLinkSlash,
     faPen,
-    faPlug,
     faServer,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
@@ -81,6 +79,7 @@
     machineForConnection,
   } from '$features/remote-machines/remote-machines-utils';
   import MachineName from '$features/remote-machines/MachineName.svelte';
+  import HostOnlyMarker from '$features/remote-machines/HostOnlyMarker.svelte';
   import MachineProviderAvailability from '$features/remote-machines/MachineProviderAvailability.svelte';
   import {
     machineRowNeedsNode,
@@ -105,7 +104,7 @@
     first?: boolean;
     /** Last row of its list: the highlight follows the card's rounded corners. */
     last?: boolean;
-    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    /** In the ordered runner list: Move up / Move down. */
     order?: MachineOrderControls;
   }
 
@@ -251,12 +250,15 @@
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const displayName = $derived(formatMachineRowLabel(device, $currentConnectionId$));
-  // An orchestrator never runs agents itself: say where they run instead.
+  // An orchestrator never runs agents itself: its name carries the hub marker.
   const isOrchestrator = $derived(
     ((device.id === $currentConnectionId$ && $backendMode$) || device.daemonMode) ===
       'orchestrator',
   );
   const openStatus = $derived(device.status ?? 'not-open');
+  // A runner-only node is never a host; the host this window shows is "Current".
+  const isCurrent = $derived(!isNode && device.id === $currentConnectionId$);
+  const canSwitchTo = $derived(!isNode && !isCurrent);
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
   const portNumber = $derived(Number(port.trim()));
@@ -342,9 +344,6 @@
   );
   const remoteFailure = $derived($remoteFailures$[remoteFailureKey] ?? null);
   const rowActions = $derived.by((): ActionDefinition[] => [
-    ...(!device.isLocal && !isNode
-      ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
-      : []),
     ...(canUpdateDaemon
       ? [
           {
@@ -447,6 +446,13 @@
     appStore.dispatch(connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id }));
   }
 
+  /** Show this host (in the host rail when it is on), then its Settings → Hosts. */
+  function switchToHost() {
+    appStore.dispatch(
+      connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id, switchTo: true }),
+    );
+  }
+
   function requestDaemonUpdate() {
     if (daemonUpdating) return;
     appStore.dispatch(
@@ -457,9 +463,6 @@
   function handleRowAction(id: string) {
     if (order?.onAction(id)) return;
     switch (id) {
-      case 'connect':
-        void connectDevice();
-        break;
       case 'update':
         void requestDaemonUpdate();
         break;
@@ -658,10 +661,7 @@
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
-  <ListRow
-    class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center"
-    description={isOrchestrator ? orchestratorDescription : undefined}
-  >
+  <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
       <span class="flex items-center gap-3">
         <span
@@ -676,11 +676,16 @@
       </span>
     {/snippet}
     {#snippet title()}
-      <MachineName name={displayName} id={`device-${device.id}-name`} {platform} {providers} />
+      <!-- The name truncates; the hub marker after it stays visible. -->
+      <span class="flex min-w-0 max-w-full items-center gap-1.5">
+        <span class="min-w-0 truncate">
+          <MachineName name={displayName} id={`device-${device.id}-name`} {platform} {providers} />
+        </span>
+        {#if isOrchestrator}<HostOnlyMarker />{/if}
+      </span>
     {/snippet}
     {#snippet meta()}
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
-        {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if exposedMachine}
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
         {:else if isNode && exposing}
@@ -698,6 +703,21 @@
       </span>
     {/snippet}
     {#snippet trailing()}
+      {#if isCurrent}
+        <span class="type-caption whitespace-nowrap text-muted-foreground" data-current-host
+          >{m.settings_devices_current_label()}</span
+        >
+      {:else if canSwitchTo}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="whitespace-nowrap"
+          data-switch-to-host
+          disabled={$openWorkflow$?.phase === 'running'}
+          onclick={switchToHost}>{m.settings_devices_switchTo_label()}</Button
+        >
+      {/if}
       <RowActions
         alwaysVisible
         actions={rowActions}
@@ -1060,8 +1080,3 @@
     </form>
   {/if}
 </article>
-
-{#snippet orchestratorDescription()}
-  <span data-testid="device-orchestrator-mode">{m.settings_devices_orchestrator_description()}</span
-  >
-{/snippet}

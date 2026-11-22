@@ -5,7 +5,7 @@ import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferen
 import type { ConnectionRecord } from '$shared/types/connections';
 import { remoteMachinesLoaded } from './remote-machines-slice';
 import { selectStartOnOptions } from './remote-machines-selectors';
-import { START_ON_BACKEND } from './start-on';
+import { START_ON_HOST } from './start-on';
 
 const backend: ConnectionRecord = {
   id: 'intent1',
@@ -50,7 +50,7 @@ function seed(connection: ConnectionRecord) {
 }
 
 const backendRow = () =>
-  selectStartOnOptions.select(store.state).find((option) => option.id === START_ON_BACKEND);
+  selectStartOnOptions.select(store.state).find((option) => option.id === START_ON_HOST);
 
 beforeEach(() => store.init());
 afterEach(() => store.dispose());

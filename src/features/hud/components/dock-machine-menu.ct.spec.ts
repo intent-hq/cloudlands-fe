@@ -44,7 +44,7 @@ test('failed native device selection preserves current machine and retries on th
   await page.clock.runFor(600);
   const feedback = page.locator('[data-dock-action-feedback]');
   await expect(feedback.getByRole('status')).toHaveText(
-    'Could not connect. Select a machine to retry.',
+    'Could not connect. Select a host to retry.',
   );
   await expect(feedback).toBeVisible();
   await feedback.screenshot({ path: info.outputPath('machine-switch-error.png') });

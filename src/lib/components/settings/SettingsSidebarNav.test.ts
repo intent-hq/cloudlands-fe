@@ -81,7 +81,7 @@ describe('SettingsSidebarNav', () => {
     expect(onSelect).toHaveBeenCalledWith(id);
   });
 
-  it('selects Machines through the existing devices identifier and Mobile through its own identifier', async () => {
+  it('selects Hosts through the existing devices identifier and Mobile through its own identifier', async () => {
     const onSelect = vi.fn();
     render(SettingsSidebarNav, {
       activeTab: 'providers',
@@ -89,7 +89,7 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Hosts' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Mobile' }));
 
     expect(onSelect.mock.calls).toEqual([['devices'], ['mobile']]);

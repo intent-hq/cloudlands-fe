@@ -1250,6 +1250,8 @@ export const ConnectionsOpenSchema = z.object({
     .strict()
     .refine((target) => (target.agentId === undefined) !== (target.tabId === undefined))
     .optional(),
+  /** "Switch to" in Settings → Hosts: show the backend, then its Settings → Hosts. */
+  switchTo: z.literal(true).optional(),
 });
 
 const AssistantBackendIdSchema = z.string().min(1).max(512);

@@ -445,7 +445,10 @@ export function* prepareCompactWorkspaceInitialization(
           },
         }
       : {}),
-    lastSubmittedAgent: s.agent,
+    lastSubmittedAgent:
+      s.rememberStartOn === undefined
+        ? s.agent
+        : { ...s.agent, startOnMachineId: s.rememberStartOn },
     rememberAgentRepoKey: s.rememberAgentRepoKey,
     rememberBranch:
       !plainFolder &&

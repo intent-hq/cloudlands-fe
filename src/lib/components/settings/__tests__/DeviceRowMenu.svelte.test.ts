@@ -39,7 +39,7 @@ const MACHINE: RemoteMachine = {
   addedAt: '2026-11-01T00:00:00Z',
 };
 
-const STOP_LABEL = /^Stop letting .+ run agents on this machine$/;
+const STOP_LABEL = /^Stop letting .+ run agents on this computer$/;
 
 beforeEach(() => {
   store.init();

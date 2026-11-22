@@ -242,7 +242,7 @@ export const rotateConnectionSecretRequested = createAsyncAction<
 
 /** Saga-owned non-destructive open/focus request for one backend. */
 export const openConnectionRequested = createAsyncAction<
-  [id: string, agent?: ConnectionAgentTarget],
+  [id: string, agent?: ConnectionAgentTarget, switchTo?: true],
   OpenConnectionResult
 >('connections/open', 'connections/openRequested');
 

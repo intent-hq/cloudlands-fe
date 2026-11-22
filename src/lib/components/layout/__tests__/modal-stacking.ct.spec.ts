@@ -185,7 +185,7 @@ test('standalone protocol notice supports native dismissal and open-local callba
   };
   const component = await mount(ProtocolMismatchModal, { props });
   await ownsFocus(page.getByRole('dialog'));
-  await page.getByRole('button', { name: 'Open This machine (local)', exact: true }).click();
+  await page.getByRole('button', { name: 'Open this computer', exact: true }).click();
   await expect.poll(() => openedLocal).toBe(1);
   expect(continued).toBe(0);
   await expect(page.getByRole('dialog')).toBeVisible();

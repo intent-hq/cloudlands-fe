@@ -26,7 +26,6 @@
   import { remoteMachineBadge, runningAgentsLabel } from './remote-machines-messages';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
-  import PreferredMachineBadge from './PreferredMachineBadge.svelte';
   import MachineName from './MachineName.svelte';
   import MachineProviderAvailability from './MachineProviderAvailability.svelte';
   import {
@@ -49,7 +48,7 @@
     highlighted?: boolean;
     first?: boolean;
     last?: boolean;
-    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    /** In the ordered runner list: Move up / Move down. */
     order?: MachineOrderControls;
   } = $props();
 
@@ -155,7 +154,6 @@
     {/snippet}
     {#snippet meta()}
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
-        {#if order?.preferred}<PreferredMachineBadge />{/if}
         <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
         {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}

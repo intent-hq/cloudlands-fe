@@ -23,20 +23,16 @@ export function formatConnectionLabel(conn: {
 }
 
 /**
- * Display label for the local entry's Machines row: this machine's own name
- * with a "(local)" suffix, or "This machine (local)" when no name is known.
+ * Display label for the local entry: "This computer" on screen. The stored
+ * fallback label ("This machine (local)") is never shown as is.
  */
-export function formatLocalMachineLabel(conn: { machineName?: string | null }): string {
-  const name = conn.machineName?.trim();
-  return name
-    ? m.settings_devices_localMachine_label({ name })
-    : m.layout_daemonStatus_localConnection_label();
+export function formatLocalMachineLabel(_conn: { machineName?: string | null }): string {
+  return m.layout_daemonStatus_localConnection_label();
 }
 
 /**
- * Settings → Machines row label: the local entry reads "{name} (local)"; the
- * saved connection this window uses reads "{name} (connected backend)"; any
- * other saved connection reads its plain name.
+ * Settings → Hosts row label: the local entry reads "This computer"; every
+ * saved connection reads its plain name (the host on screen shows Current).
  */
 export function formatMachineRowLabel(
   conn: {
@@ -48,11 +44,10 @@ export function formatMachineRowLabel(
     port: number | null;
     label: string;
   },
-  windowBackendId: string,
+  _windowBackendId: string,
 ): string {
   if (conn.isLocal) return formatLocalMachineLabel(conn);
-  const name = formatConnectionLabel(conn);
-  return conn.id === windowBackendId ? m.settings_devices_connectedBackend_label({ name }) : name;
+  return formatConnectionLabel(conn);
 }
 
 /**

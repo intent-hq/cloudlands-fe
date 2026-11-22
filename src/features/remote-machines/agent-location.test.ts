@@ -83,7 +83,7 @@ describe('agentMachineLocation', () => {
       'Mac mini (list)',
     );
     expect(agentMachineLocation(remoteAgent({ nodeName: undefined }))?.name).toBe(
-      'Another machine',
+      'Another computer',
     );
   });
 
@@ -267,7 +267,7 @@ describe('machineLocation (an agent not created yet)', () => {
   it('names an unlisted machine generically and is null without a machine', () => {
     expect(machineLocation('node-gone', machine())).toEqual({
       nodeId: 'node-gone',
-      name: 'Another machine',
+      name: 'Another computer',
       platform: null,
       state: 'ready',
     });

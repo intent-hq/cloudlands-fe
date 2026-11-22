@@ -506,7 +506,15 @@ export interface OpenConnectionParams {
   id: string;
   /** Open this agent once the window shows (the recent-agent switcher). */
   agent?: ConnectionAgentTarget;
+  /**
+   * "Switch to" in Settings → Hosts: show the backend (joining the window's
+   * host rail when it is on), then open its Settings → Hosts.
+   */
+  switchTo?: true;
 }
+
+/** The Settings tab "Switch to" opens on the host it switches to. */
+export const SWITCH_TO_SETTINGS_TAB = 'devices';
 
 /** `connections:open` result: echoes the opened or focused backend id. */
 export type OpenConnectionResult =

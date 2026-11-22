@@ -1770,7 +1770,8 @@ export interface CreateWorkspaceRequest {
    */
   origin?: WorkspaceCreateOrigin;
   initialAgent?: {
-    placement?: AgentPlacement;
+    /** A remote or cloud placement, or `{ target: "local" }` for the host chosen explicitly. */
+    placement?: AgentPlacement | AgentPlacementRequest;
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on
      * the `workspace.create` result (`initialAgent.id`). Clients must no

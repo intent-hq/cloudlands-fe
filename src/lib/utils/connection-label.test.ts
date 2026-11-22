@@ -14,28 +14,19 @@ it('preserves the accepted collaboration name while retaining personal alias pre
   ).toBe('My studio');
 });
 
-it('labels the local machine by its own name with the local suffix', () => {
-  expect(formatLocalMachineLabel({ machineName: ' Clément’s Mac Studio ' })).toBe(
-    'Clément’s Mac Studio (local)',
-  );
-});
-
-it.each([undefined, null, '', '   '])(
-  'falls back to "This machine (local)" when the machine name is %j',
+it.each([' Clément’s Mac Studio ', undefined, null, ''])(
+  'labels the local machine "This computer" on screen (machine name %j)',
   (machineName) => {
-    expect(formatLocalMachineLabel({ machineName })).toBe('This machine (local)');
+    expect(formatLocalMachineLabel({ machineName })).toBe('This computer');
   },
 );
 
 const savedRemote = { label: 'intent1', host: '192.0.2.9', port: 5181, hostname: null };
 
-it('labels the saved connection this window uses as the connected backend', () => {
+it('labels the local row This computer and every saved connection by its plain name', () => {
   expect(formatMachineRowLabel({ ...savedRemote, id: 'intent1', isLocal: false }, 'intent1')).toBe(
-    'intent1 (connected backend)',
+    'intent1',
   );
-});
-
-it('leaves other saved connections and the local row unchanged', () => {
   expect(formatMachineRowLabel({ ...savedRemote, id: 'mini', isLocal: false }, 'intent1')).toBe(
     'intent1',
   );
@@ -44,5 +35,5 @@ it('leaves other saved connections and the local row unchanged', () => {
       { ...savedRemote, id: 'local', isLocal: true, machineName: 'MacBook Pro' },
       'local',
     ),
-  ).toBe('MacBook Pro (local)');
+  ).toBe('This computer');
 });

@@ -11,8 +11,13 @@ import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-mac
 import type { CloudProviderKind } from '$shared/types/cloud-machines';
 import { machinePlatformLabel } from './agent-location';
 
-/** The current backend: no placement. */
+/**
+ * No placement: the backend picks (it walks its ordered runner list). Also the
+ * remembered value before the user chose, which follows {@link startOnDefault}.
+ */
 export const START_ON_BACKEND = '';
+/** The host's own row, chosen explicitly: sent as `{ target: "local" }`. */
+export const START_ON_HOST = 'host:';
 const CLOUD_PREFIX = 'cloud:';
 /** The Start On id of a new machine from a cloud entry; never a daemon id. */
 export function startOnCloudId(cloudMachineId: string): string {
@@ -26,7 +31,7 @@ export function startOnCloudMachineId(id: string | undefined): string | null {
 export const START_ON_E2B = startOnCloudId('e2b');
 
 export interface StartOnOption {
-  /** Machine id, or `START_ON_BACKEND`. */
+  /** Runner id, a cloud id, or `START_ON_HOST`. */
   id: string;
   label: string;
   platform: string | null;
@@ -82,10 +87,11 @@ function isStartOnMachineUsable(machine: RemoteMachine): boolean {
 }
 
 /**
- * The backend first, then each machine available to it. On an orchestrator
- * the first row is not the backend, which never runs agents: an omitted
- * placement walks the ordered machine list, so the row reads "First available
- * machine" (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
+ * The backend first, then each runner available to it. An orchestrator never
+ * runs agents, so it has no row of its own: the user picks a runner, and the
+ * picker preselects one with {@link startOnDefault}. An omitted placement still
+ * walks the ordered list for API callers (PROTOCOL `methods/nodes.md` →
+ * "Orchestrator mode").
  */
 export function startOnOptions({
   backendLabel,
@@ -99,24 +105,20 @@ export function startOnOptions({
   backendPlatform?: { os?: string; arch?: string };
   machines: readonly RemoteMachine[];
   cloud?: StartOnCloud | null;
-  /** The backend is an orchestrator: no "this machine" choice. */
+  /** The backend is an orchestrator: no row of its own. */
   orchestrator?: boolean;
 }): StartOnOption[] {
   const options: StartOnOption[] = [
-    orchestrator
-      ? {
-          id: START_ON_BACKEND,
-          label: m.remoteMachines_startOn_firstAvailable_label(),
-          platform: null,
-          disabled: false,
-          hint: m.remoteMachines_startOn_firstAvailable_hint(),
-        }
-      : {
-          id: START_ON_BACKEND,
-          label: backendLabel,
-          platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
-          disabled: false,
-        },
+    ...(orchestrator
+      ? []
+      : [
+          {
+            id: START_ON_HOST,
+            label: backendLabel,
+            platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
+            disabled: false,
+          },
+        ]),
     ...machines.map((machine): StartOnOption => {
       const platform = machinePlatformLabel(machine.platform?.os, machine.platform?.arch);
       if (isStartOnMachineUsable(machine))
@@ -147,11 +149,22 @@ export function startOnOptions({
 }
 
 /**
- * The label of the omitted-placement row among Start On rows (not always first
- * with `machineOrder: 1`): the backend, or "First available machine" on an orchestrator.
+ * The label of the backend's row among Start On rows (not always first with
+ * `machineOrder: 1`); `fallback` (the backend's name) on an orchestrator,
+ * which has no row.
  */
-export function startOnBackendLabel(options: readonly StartOnOption[]): string {
-  return options.find((option) => option.id === START_ON_BACKEND)?.label ?? '';
+export function startOnBackendLabel(options: readonly StartOnOption[], fallback = ''): string {
+  return options.find((option) => option.id === START_ON_HOST)?.label ?? fallback;
+}
+
+/**
+ * The preselected Start On row: the first usable row in the host's order from
+ * Settings → Hosts (the host itself when it runs agents and comes first; a
+ * runner that can't take an agent is skipped). With nothing usable, the first
+ * row, so the picker shows why it can't start; no placement without rows.
+ */
+export function startOnDefault(options: readonly StartOnOption[]): string {
+  return (options.find((option) => !option.disabled) ?? options[0])?.id ?? START_ON_BACKEND;
 }
 
 /**
@@ -166,11 +179,12 @@ export function startOnModelMachineId(
   options: readonly StartOnOption[],
   orchestrator: boolean,
 ): string | undefined {
+  if (effective === START_ON_HOST) return undefined;
   if (effective !== START_ON_BACKEND)
     return startOnCloudMachineId(effective) ? undefined : effective;
   if (!orchestrator) return undefined;
   return options.find(
-    (option) => option.id !== START_ON_BACKEND && option.kind !== 'cloud' && !option.disabled,
+    (option) => option.id !== START_ON_HOST && option.kind !== 'cloud' && !option.disabled,
   )?.id;
 }
 
@@ -198,24 +212,58 @@ export function startOnVisible({
   );
 }
 
-/** A remembered machine while it is still usable, else the backend. */
+/** Start On rows with each cloud row's availability for the chosen model. */
+export function startOnRowsWithCloud(
+  rows: readonly StartOnOption[],
+  cloud: StartOnCloud | null | undefined,
+): StartOnOption[] {
+  return rows.map((option) => {
+    if (option.kind !== 'cloud') return option;
+    const reason = cloud?.find(
+      (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
+    )?.unavailableReason;
+    return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
+  });
+}
+
+/**
+ * A remembered choice while it is still usable, else the default: the first
+ * usable row of `rows` (the ordered Start On rows, see {@link startOnDefault}),
+ * or the backend without rows.
+ */
 export function resolveStartOn(
   remembered: string | undefined,
   machines: readonly RemoteMachine[],
   cloud?: StartOnCloud | null,
+  rows?: readonly StartOnOption[],
 ): string {
-  if (!remembered) return START_ON_BACKEND;
+  const fallback = rows ? startOnDefault(rows) : START_ON_BACKEND;
+  // No choice yet follows the host's order.
+  if (!remembered) return fallback;
+  if (remembered === START_ON_HOST)
+    return !rows || rows.some((row) => row.id === START_ON_HOST) ? START_ON_HOST : fallback;
   if (startOnCloudMachineId(remembered))
-    return usableCloudEntry(cloud, remembered) ? remembered : START_ON_BACKEND;
+    return usableCloudEntry(cloud, remembered) ? remembered : fallback;
   const machine = machines.find((row) => row.id === remembered);
-  return machine && isStartOnMachineUsable(machine) ? machine.id : START_ON_BACKEND;
+  return machine && isStartOnMachineUsable(machine) ? machine.id : fallback;
 }
 
 /**
- * `workspace.create.initialAgent.placement` for a choice; absent for the
- * backend. The entry is named only to a backend that keeps entries.
+ * The Start On id to submit: the effective row, except that a default that
+ * lands on the host is sent as no placement, so the backend can still pass
+ * over the host (a provider turned off there) as it walks its order. Only a
+ * host the user picked is sent as `{ target: "local" }`.
+ */
+export function startOnSubmitted(chosen: string | undefined, effective: string): string {
+  return effective === START_ON_HOST && chosen !== START_ON_HOST ? START_ON_BACKEND : effective;
+}
+
+/**
+ * `workspace.create.initialAgent.placement` for a choice: `{ target: "local" }`
+ * for the host's own row, absent for no choice (the backend picks). The entry is named only to a backend that keeps entries.
  */
 export type StartOnPlacement =
+  | { target: 'local' }
   | { target: 'remote'; checkout: 'isolated'; nodeId: string }
   | { target: 'e2b' | 'cloud'; checkout: 'isolated'; cloudMachineId?: string };
 
@@ -230,6 +278,8 @@ export function initialAgentPlacement(
     providerOf?: (cloudMachineId: string) => CloudProviderKind | undefined;
   } = {},
 ): StartOnPlacement | undefined {
+  // The host chosen explicitly: an omitted placement would walk the order.
+  if (machineId === START_ON_HOST) return { target: 'local' };
   const cloudMachineId = startOnCloudMachineId(machineId);
   if (cloudMachineId) {
     const provider = providerOf?.(cloudMachineId);

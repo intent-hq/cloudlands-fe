@@ -10,6 +10,7 @@ import type { Proposal } from '$shared/types/proposal';
 import {
   START_ON_BACKEND,
   START_ON_E2B,
+  START_ON_HOST,
   startOnCloudId,
   startOnCloudMachineId,
   type StartOnOption,
@@ -27,7 +28,7 @@ function startOnIdForPlacement(placement: unknown, nodeId?: string): string | nu
   const value = placement as Record<string, unknown>;
   switch (value.target) {
     case 'local':
-      return START_ON_BACKEND;
+      return START_ON_HOST;
     case 'remote': {
       const id = nonEmpty(value.nodeId) ?? nonEmpty(nodeId);
       return id ?? null;
@@ -73,6 +74,9 @@ export function proposalStartOnChoices(
   missingLabel: string,
 ): { options: StartOnOption[]; unavailable: StartOnOption | null } {
   if (value === START_ON_BACKEND) return { options, unavailable: null };
+  // A host stamp on a host that has no row of its own (an orchestrator) can't start there.
+  if (value === START_ON_HOST && !options.some((option) => option.id === START_ON_HOST))
+    return { options, unavailable: null };
   const listed = options.find((option) => option.id === value);
   if (listed) return { options, unavailable: listed.disabled ? listed : null };
   const missing: StartOnOption = {
