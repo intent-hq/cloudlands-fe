@@ -45,7 +45,6 @@
   import { websocketApiRequested } from '$store/renderer/slices/websocket-api/websocket-api-slice';
   import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { isRelayUrl } from '$store/renderer/slices/websocket-api/relay-url';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectPrincipalActionContext,
@@ -58,15 +57,12 @@
     onEnabled,
     active = true,
     mobileOnly = false,
-    advancedOpen = false,
   }: {
     expanded?: boolean;
     children?: Snippet;
     onEnabled?: () => void;
     active?: boolean;
     mobileOnly?: boolean;
-    /** Previews: start with Advanced open. */
-    advancedOpen?: boolean;
   } = $props();
 
   const activeConnectionId$ = selectCurrentConnectionId();
@@ -124,37 +120,7 @@
   const tunnelOnly = $derived($snapshot$.tunnelOnly);
   const tunnelSupported = $derived($snapshot$.tunnelSupported);
   const tcAddress = $derived($snapshot$.tcAddress);
-  const relaySupported = $derived($snapshot$.relaySupported);
-  const relayUrl = $derived($snapshot$.relayUrl);
-  let editedRelay = $state('');
-  let relayTouched = $state(false);
-  // Follow the saved value; a refused save keeps the draft for a fix.
-  $effect.pre(() => {
-    editedRelay = relayUrl;
-    relayTouched = false;
-  });
-  let relayInput = $state<HTMLInputElement | null>(null);
-  // The relay-unreachable card links here with #tunnel-relay: open Advanced, focus the field.
-  let advancedExpanded = $state(untrack(() => advancedOpen));
-  let relayLinked = $state(false);
-  $effect(() => {
-    const read = () => {
-      if (window.location.hash !== '#tunnel-relay') return;
-      advancedExpanded = true;
-      relayLinked = true;
-    };
-    untrack(read);
-    window.addEventListener('hashchange', read);
-    return () => window.removeEventListener('hashchange', read);
-  });
-  $effect(() => {
-    if (!relayLinked || !relayInput || listenSaving) return;
-    relayInput.scrollIntoView?.({ block: 'center' });
-    relayInput.focus();
-    relayLinked = false;
-  });
-  const relayValid = $derived(isRelayUrl(editedRelay.trim()));
-  const relayChanged = $derived(editedRelay.trim() !== relayUrl);
+  let advancedExpanded = $state(false);
   const listenSaving = $derived(saving || loading);
 
   let showToken = $state(false);
@@ -275,21 +241,6 @@
       websocketApiRequested(
         { ...identity, resource: 'save', requestId: crypto.randomUUID() },
         { kind: 'tunnel', connectionId: $activeConnectionId$ },
-      ),
-    );
-  }
-  function handleRelaySave() {
-    relayTouched = true;
-    if (!relayValid || !relayChanged || listenSaving) return;
-    appStore.dispatch(
-      websocketApiRequested(
-        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
-        {
-          kind: 'relay',
-          url: editedRelay.trim(),
-          connectionId: $activeConnectionId$,
-          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
-        },
       ),
     );
   }
@@ -423,52 +374,6 @@
   );
 </script>
 
-{#snippet relayRow()}
-  <section data-tunnel-relay-row transition:slide={{ tier: 'moderate' }}>
-    <SettingsFieldRow
-      id="websocket-tunnel-relay"
-      label={m.settings_tunnel_relay_label()}
-      description={m.settings_tunnel_relay_description()}
-      error={relayValid || !relayTouched ? undefined : m.settings_tunnel_relay_invalid()}
-      disabled={listenSaving}
-      class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
-    >
-      {#snippet control({ labelId, descriptionId, errorId })}
-        <div class="flex min-w-0 w-full items-center gap-2">
-          <Input
-            bind:ref={relayInput}
-            type="url"
-            bind:value={editedRelay}
-            placeholder={m.settings_tunnel_relay_placeholder()}
-            disabled={listenSaving}
-            spellcheck={false}
-            autocomplete="off"
-            class="min-w-0 flex-1"
-            aria-labelledby={labelId}
-            aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ')}
-            onblur={() => (relayTouched = true)}
-            onkeydown={(event: KeyboardEvent) => {
-              if (event.key === 'Enter') handleRelaySave();
-            }}
-          />
-          {#if relayChanged}
-            <Button
-              variant="link"
-              size="sm"
-              type="button"
-              onclick={handleRelaySave}
-              disabled={listenSaving || !relayValid}
-              class="h-auto shrink-0 px-0"
-            >
-              {listenSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
-            </Button>
-          {/if}
-        </div>
-      {/snippet}
-    </SettingsFieldRow>
-  </section>
-{/snippet}
-
 {#snippet portRow()}
   <SettingsFieldRow
     id="websocket-port"
@@ -552,9 +457,6 @@
             </div>
           {/if}
 
-          {#if relaySupported}
-            {@render relayRow()}
-          {/if}
           {#if enabled}
             <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
               <!-- Publish this backend to iCloud Keychain (local + macOS + sync on
@@ -772,16 +674,6 @@
   {@render mobilePairing()}
   {#if active && !mobileOnly}
     {@render connectionSettings()}
-  {:else if active && relaySupported}
-    <!-- A connected backend's own relay: its cloud sandboxes use it. -->
-    <SettingsDisclosure
-      label={m.settings_devices_advanced_label()}
-      bind:open={advancedExpanded}
-      flush
-      muted
-    >
-      {@render relayRow()}
-    </SettingsDisclosure>
   {/if}
 </div>
 

@@ -18,6 +18,8 @@
   import type { ProviderBrandColors } from './ProviderCard.svelte';
   import { commitOnboardingProviderSelection } from '../utils/commit-onboarding-provider-selection';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
+  import { resolveOnboardingBackupProvider } from '../utils/resolve-onboarding-backup-provider';
+  import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import {
     orderOnboardingProviders,
@@ -240,11 +242,21 @@
    * or the selection is already the active provider.
    */
   export function commitSelection(): string | undefined {
-    return commitOnboardingProviderSelection({
+    const state = appStore.state;
+    const committed = commitOnboardingProviderSelection({
       selectedProviderId,
-      activeProviderId: selectActiveProviderId.select(appStore.state),
+      activeProviderId: selectActiveProviderId.select(state),
       dispatch: (action) => appStore.dispatch(action),
     });
+    // OpenCode's free models need no account: keep it enabled as a backup.
+    const backup = resolveOnboardingBackupProvider({
+      selectedProviderId,
+      statusMap: selectProviderStatusMap.select(state),
+      enabledProviders: selectEnabledProviders.select(state),
+      orchestrator: selectIsOrchestratorBackend.select(state),
+    });
+    if (backup) appStore.dispatch(setProviderEnabled({ providerId: backup, enabled: true }));
+    return committed;
   }
 
   // Install and login run in the root terminal drawer (or the user's own

@@ -106,9 +106,7 @@ vi.mock('../json-rpc-client', () => {
       rpc.options.push(options);
       return method === 'principal.me' ? rpc.principal() : rpc.handler(method);
     });
-    registerMethod(): () => void {
-      return () => {};
-    }
+    registerMethod = vi.fn((_method: string): (() => void) => () => {});
     getConfig(): unknown {
       return this.config;
     }
@@ -685,6 +683,36 @@ describe('openBackendWindow connect-before-open', () => {
     await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/no stored token/i);
     expect(lifecycle.events).toEqual([]);
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('never offers the Assistant relay to a guest session or reports one', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    await mod.openBackendWindow(REMOTE.id);
+    await mod.openBackendWindow(GUEST.id);
+    type Pooled = {
+      hello(result: unknown): void;
+      registerMethod: ReturnType<typeof vi.fn>;
+      request: ReturnType<typeof vi.fn>;
+    };
+    const owner = mod.getBackendClientForConnection(REMOTE.id) as unknown as Pooled;
+    const guest = mod.getBackendClientForConnection(GUEST.id) as unknown as Pooled;
+    owner.hello({});
+    guest.hello({});
+
+    const registered = (client: Pooled) => client.registerMethod.mock.calls.map(([m]) => m);
+    expect(registered(owner)).toContain('backends.relayCall');
+    expect(registered(guest)).not.toContain('backends.relayCall');
+
+    const reports = (client: Pooled) =>
+      client.request.mock.calls.filter(([method]) => method === 'backends.report');
+    await vi.waitFor(() => expect(reports(owner)).not.toHaveLength(0));
+    expect(reports(guest)).toHaveLength(0);
+    const sent = JSON.stringify(reports(owner).map(([, params]) => params));
+    expect(sent).not.toContain(GUEST.host);
+    expect(sent).not.toContain(GUEST.fingerprint);
   });
 
   it('a guest re-join evicts the pooled client built on the superseded credential', async () => {
@@ -3269,6 +3297,41 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open with switchTo shows the host, then its Settings → Hosts', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const order: string[] = [];
+    openOrFocus.mockImplementation(async (id: string) => {
+      order.push(`open:${id}`);
+    });
+    const showHostsSettings = vi.fn(async (id: string) => {
+      order.push(`settings:${id}`);
+    });
+    mod.__setBackendWindowHooksForTesting({ openOrFocus, showHostsSettings });
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1', switchTo: true })).resolves.toEqual({
+      status: 'opened',
+      id: 'remote-1',
+    });
+
+    // openOrFocus adds the host to the window's rail (when it is on) and selects it.
+    expect(order).toEqual(['open:remote-1', 'settings:remote-1']);
+  });
+
+  it('connections:open without switchTo leaves the host on its current page', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    const showHostsSettings = vi.fn();
+    mod.__setBackendWindowHooksForTesting({ openOrFocus, showHostsSettings });
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await handler!({}, { id: 'remote-1' });
+
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    expect(showHostsSettings).not.toHaveBeenCalled();
   });
 
   it('connections:open never opens a window for a node (refusal probe on an older daemon)', async () => {

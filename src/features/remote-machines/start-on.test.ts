@@ -7,6 +7,8 @@ import {
   startOnOptions,
   startOnVisible,
   START_ON_BACKEND,
+  START_ON_HOST,
+  startOnSubmitted,
 } from './start-on';
 
 const machine = (id: string, extra: Partial<RemoteMachine> = {}): RemoteMachine => ({
@@ -34,7 +36,7 @@ describe('startOnOptions', () => {
       ],
     });
     expect(options).toEqual([
-      { id: START_ON_BACKEND, label: 'intent1', platform: null, disabled: false },
+      { id: START_ON_HOST, label: 'intent1', platform: null, disabled: false },
       { id: 'mac', label: 'Mac mini', platform: 'macOS arm64', disabled: false },
       { id: 'idle', label: 'Idle box', platform: null, disabled: false },
       { id: 'gone', label: 'Gone', platform: null, disabled: true, reason: 'Unreachable' },
@@ -51,7 +53,7 @@ describe('startOnOptions backend platform', () => {
       backendPlatform: { os: 'linux', arch: 'x86_64' },
       machines: [machine('mac', { name: 'Mac', platform: { os: 'macos', arch: 'aarch64' } })],
     });
-    expect(backend).toMatchObject({ id: START_ON_BACKEND, platform: 'Linux x64' });
+    expect(backend).toMatchObject({ id: START_ON_HOST, platform: 'Linux x64' });
     expect(mac).toMatchObject({ platform: 'macOS arm64' });
   });
 
@@ -119,6 +121,13 @@ describe('initialAgentPlacement', () => {
       nodeId: 'mac',
     });
     expect(initialAgentPlacement(START_ON_BACKEND)).toBeUndefined();
+    // The host chosen explicitly is sent, so the backend doesn't walk its order.
+    expect(initialAgentPlacement(START_ON_HOST)).toEqual({ target: 'local' });
+    // A default that lands on the host stays no placement; only a picked host is sent.
+    expect(startOnSubmitted(undefined, START_ON_HOST)).toBe(START_ON_BACKEND);
+    expect(startOnSubmitted('', START_ON_HOST)).toBe(START_ON_BACKEND);
+    expect(startOnSubmitted(START_ON_HOST, START_ON_HOST)).toBe(START_ON_HOST);
+    expect(startOnSubmitted('', 'd-mac')).toBe('d-mac');
     expect(initialAgentPlacement(undefined)).toBeUndefined();
   });
 });

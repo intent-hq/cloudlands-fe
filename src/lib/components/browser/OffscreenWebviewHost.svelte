@@ -39,6 +39,7 @@
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { offscreenWebview } from './offscreen-webview-action';
   import { mainOwnedOffscreenPage } from './main-owned-offscreen-action';
   import { browserPagesMode } from './main-owned-browser-page';
@@ -82,6 +83,7 @@
   $effect(() => {
     if (mainOwned) setBrowserViewTabDragging($isDragging$);
   });
+  const zoomFactor$ = selectZoomFactor();
   let recoveryKeys = $state<Record<string, string>>({});
 
   function recoverGuest(tabId: string, requestId: string) {
@@ -302,14 +304,14 @@
           ></div>
         {:else}
           <!--
-          The element is the guest's capture surface: it is sized to the
-          emulated viewport so a CDP screenshot gets one full-size image
-          instead of a tiled one (intent-hq/intent#8359).
-        -->
+            The element is the guest's capture surface: its DIP size (CSS px ×
+            app zoom) must equal the emulated viewport, or a CDP screenshot
+            comes back tiled (intent-hq/intent#8359, and again in a zoomed app).
+          -->
           <webview
             class="absolute left-0 top-0 border-none"
-            style:width="{entry.size.width}px"
-            style:height="{entry.size.height}px"
+            style:width="{entry.size.width / $zoomFactor$}px"
+            style:height="{entry.size.height / $zoomFactor$}px"
             src={entry.recoveryKey ? 'about:blank' : entry.url}
             partition={BROWSER_PANEL_PARTITION}
             allowpopups

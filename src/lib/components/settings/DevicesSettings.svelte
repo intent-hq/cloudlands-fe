@@ -7,7 +7,7 @@
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connections';
+  import type { ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
@@ -34,7 +34,11 @@
   import OrderedMachinesList from '$features/remote-machines/OrderedMachinesList.svelte';
   import MachineOrderPlainRow from '$features/remote-machines/MachineOrderPlainRow.svelte';
   import type { MachineOrderControls } from '$features/remote-machines/machine-order-controls';
-  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectBackendDaemonMode,
+    selectCanAdministerHost,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import { hostRunnerRows } from '$features/remote-machines/machine-order';
   import type { MachineOrderRow } from '$shared/types/remote-machines';
   import { connectionForMachine } from '$features/remote-machines/remote-machines-utils';
   import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -173,9 +177,9 @@
   const canAdminister$ = selectCanAdministerHost();
   const backendLabel$ = selectCurrentBackendLabel();
   /**
-   * Saved connection id of each exposed machine. This computer's own daemon,
-   * exposed to another backend, is one of them: it moves into the ordered list
-   * like any exposed machine instead of showing in both lists.
+   * Saved connection id of each exposed machine (this computer's own daemon,
+   * exposed to another host, is one of them). A saved host stays under Hosts
+   * and gets a plain runner row; only a runner-only node moves into the list.
    */
   const exposedConnectionIds = $derived(
     new Map(
@@ -186,11 +190,13 @@
     ),
   );
   const exposedIds = $derived(new Set(exposedConnectionIds.values()));
+  // Hosts stay in the hosts list even when they also run agents for the
+  // current host; only a runner-only node moves into the runner list.
   const listRows = $derived<ListRowItem[]>(
     $orderVisible$
       ? [
           ...rows
-            .filter((device) => !exposedIds.has(device.id))
+            .filter((device) => device.daemonMode !== 'node' || !exposedIds.has(device.id))
             .map((device): ListRowItem => ({ kind: 'device', device })),
           // Without named entries the single E2B row has no row in the order.
           ...($cloudNamed$ ? [] : cloudRows),
@@ -203,11 +209,17 @@
   const newCloudRow = $derived(
     $cloudNamed$ ? (cloudRows.find((row) => row.entry === null) ?? null) : null,
   );
-  /** The saved connection behind an ordered machine row, when this app has one. */
-  function orderedDevice(nodeId: string): ConnectionRecord | null {
+  /**
+   * The saved node connection behind an ordered runner row, when this app has
+   * one. A saved host is listed under Hosts, so its runner row is a plain one.
+   */
+  function orderedNode(nodeId: string): ConnectionRecord | null {
     const id = exposedConnectionIds.get(nodeId);
-    return (id && $connections$.find((device) => device.id === id)) || null;
+    const device = id ? $connections$.find((row) => row.id === id) : undefined;
+    return device?.daemonMode === 'node' ? device : null;
   }
+  const backendMode$ = selectBackendDaemonMode();
+  const runnerRows = $derived(hostRunnerRows($order$, $backendMode$));
 
   let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
   let activePanel = $state<DevicePanelMode>(untrack(() => (initialEditedMachine ? 'edit' : null)));
@@ -307,7 +319,7 @@
 
   {#if $orderVisible$}
     <OrderedMachinesList
-      rows={$order$}
+      rows={runnerRows}
       backendLabel={$backendLabel$}
       owner={$canAdminister$}
       saving={$orderSaving$}
@@ -469,7 +481,7 @@
 {#snippet orderedRow(entry: MachineOrderRow, order: MachineOrderControls)}
   {@const machine =
     entry.kind === 'machine' ? $remoteMachines$.find((row) => row.id === entry.nodeId) : undefined}
-  {@const device = entry.kind === 'machine' ? orderedDevice(entry.nodeId) : null}
+  {@const device = entry.kind === 'machine' ? orderedNode(entry.nodeId) : null}
   {@const cloudEntry =
     entry.kind === 'cloud'
       ? $cloudEntries$.find((row) => row.id === entry.cloudMachineId)
@@ -490,11 +502,7 @@
   {:else if cloudEntry}
     {@render cloudRow({ kind: 'cloud', entry: cloudEntry }, true, order)}
   {:else}
-    <MachineOrderPlainRow
-      row={entry}
-      {order}
-      localBackend={$currentConnectionId$ === LOCAL_CONNECTION_ID}
-    />
+    <MachineOrderPlainRow row={entry} {order} />
   {/if}
 {/snippet}
 

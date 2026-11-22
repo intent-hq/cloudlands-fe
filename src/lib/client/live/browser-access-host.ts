@@ -151,6 +151,7 @@ export async function fetchBrowserAccessConnections(
 /**
  * Open a backend; the tab binds to it through `?backend=`. A tab with no
  * backend yet becomes that backend's tab; a bound tab opens a new one.
+ * `route` (an app path, query allowed) is where the tab lands; home by default.
  */
 export function openBrowserAccessBackend(
   id: string,
@@ -158,9 +159,10 @@ export function openBrowserAccessBackend(
     globalThis.open?.(url, target, features),
   navigate: (url: string) => void = (url) => globalThis.location?.assign(url),
   replaceCurrentTab = false,
+  route = '/',
 ): OpenConnectionResult {
   if (!CONNECTION_ID_PATTERN.test(id)) throw new Error(`invalid connection id: ${id}`);
-  const url = `/?backend=${encodeURIComponent(id)}`;
+  const url = `${route}${route.includes('?') ? '&' : '?'}backend=${encodeURIComponent(id)}`;
   if (replaceCurrentTab) navigate(url);
   else open(url, '_blank', 'noopener');
   return { status: 'opened', id };

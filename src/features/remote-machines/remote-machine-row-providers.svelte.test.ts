@@ -40,9 +40,9 @@ describe('remote machine rows while disconnected', () => {
     expect(within(cache).queryByText('No providers ready')).toBeNull();
   });
 
-  it('says so on a saved machine row too', () => {
+  it('says so on the runner row of a saved host too', () => {
     const studio = row(renderDisconnected(), 'Studio Mac');
-    expect(studio.hasAttribute('data-device-row')).toBe(true);
+    expect(studio.hasAttribute('data-remote-machine-row')).toBe(true);
     expect(within(studio).getByText('No providers ready')).toBeTruthy();
   });
 

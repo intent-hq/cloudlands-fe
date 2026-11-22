@@ -230,6 +230,29 @@ describe('unconsumed action guard', () => {
     ]);
   });
 
+  it('ignores a Svelte script block inside an HTML comment', () => {
+    const result = inspectUnconsumedActions(
+      [
+        slice(),
+        {
+          path: 'src/features/demo/Demo.svelte',
+          content: [
+            '<!--',
+            '<script lang="ts">',
+            "  import { store } from '$store/renderer/store';",
+            "  import { a } from '$store/renderer/slices/demo/demo-slice';",
+            "  store.dispatch(a({ id: 'x' }));",
+            '</script>',
+            '-->',
+            '<p>footer</p>',
+          ].join('\n'),
+        },
+      ],
+      noExceptions,
+    );
+    expect(result.violations).toEqual([]);
+  });
+
   it('accepts an unhandled put covered by an injected exception', () => {
     const result = inspectUnconsumedActions([slice(), saga(["  yield* put(a({ id: 'x' }));"])], {
       exceptions: [{ pattern: /demo-slice\.ts#a$/, rationale: 'fixture' }],

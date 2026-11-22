@@ -84,6 +84,7 @@
     selectProviderCatalogDefaultRemoteLaunch,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
+    selectCurrentBackendLabel,
     selectDefaultHasOverrides,
     selectRemoteMachines,
     selectRemoteMachinesVisible,
@@ -103,7 +104,7 @@
     START_ON_BACKEND,
     startOnBackendLabel,
     startOnModelMachineId,
-    startOnCloudId,
+    startOnRowsWithCloud,
   } from '$features/remote-machines/start-on';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
@@ -228,22 +229,22 @@
     startOnProviderRef.set(selectedProvider);
   });
   const startOnCloud$ = selectStartOnCloud(startOnProviderRef);
-  const startOnChoices = $derived(
-    $startOnOptions$.map((option) => {
-      if (option.kind !== 'cloud') return option;
-      const reason = $startOnCloud$?.find(
-        (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
-      )?.unavailableReason;
-      return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
-    }),
-  );
+  const startOnChoices = $derived(startOnRowsWithCloud($startOnOptions$, $startOnCloud$));
+  // No usable choice yet: the first usable runner in the host's order.
   const effectiveStartOn = $derived(
     $startOnVisible$ && !startOnBackendOnly
-      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
+      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$, startOnChoices)
       : START_ON_BACKEND,
   );
-  // The machine whose models the Model row lists (an orchestrator has none of its own).
+  const startOnHostLabel$ = selectCurrentBackendLabel();
   const orchestratorBackend$ = selectIsOrchestratorBackend();
+  // Where a create with no placement starts: the host, or on an orchestrator its first runner.
+  const startOnPlaceLabel = $derived(
+    $orchestratorBackend$
+      ? m.remoteMachines_startOn_anyRunner_label()
+      : startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
+  );
+  // The machine whose models the Model row lists (an orchestrator has none of its own).
   const modelMachineId = $derived(
     startOnModelMachineId(effectiveStartOn, $startOnOptions$, $orchestratorBackend$),
   );
@@ -553,10 +554,7 @@
   // (daemon `specialists:changed` → list subscription refetch), so the
   // resolvedModel preview tracks specialist/settings changes while the picker
   // stays mounted. The fetch effect below then refetches on demand.
-  $effect(() => {
-    void $specialists$;
-    previews.invalidate();
-  });
+  $effect(() => previews.invalidate($specialists$));
 
   $effect(() => previews.load(selectedProvider));
 
@@ -1129,11 +1127,11 @@
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
-            backend: startOnBackendLabel($startOnOptions$),
+            backend: startOnPlaceLabel,
           })
         : startOnBackendOnly === 'new-repo'
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel($startOnOptions$),
+              backend: startOnPlaceLabel,
             })
           : undefined}
     />

@@ -356,13 +356,12 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     expect(initialAgent.metadata.workMode).toBe('single');
   });
 
-  it('requests a fresh specialist roster once when mounted', () => {
+  it('asks for the specialist roster only if it never loaded when mounted', () => {
     render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
 
-    const refetches = mocks.dispatch.mock.calls.filter(
-      ([action]) => action.type === 'specialists/refetchRequested',
-    );
-    expect(refetches).toHaveLength(1);
+    const types = mocks.dispatch.mock.calls.map(([action]) => action.type);
+    expect(types.filter((type) => type === 'specialists/ensureLoaded')).toHaveLength(1);
+    expect(types.filter((type) => type === 'specialists/refetchRequested')).toHaveLength(0);
   });
 
   it.each([
@@ -465,7 +464,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
       mocks.dispatch.mock.calls.filter(
         ([action]) => action.type === 'specialists/refetchRequested',
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
 
     seedAutoCreatePrefill();
     await component.applyPrefill();

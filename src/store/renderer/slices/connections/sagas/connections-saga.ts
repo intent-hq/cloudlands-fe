@@ -64,6 +64,7 @@ import {
   CONNECTION_CERT_WARNINGS_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
   KEYCHAIN_SYNC_STATUS_EVENT,
+  SWITCH_TO_SETTINGS_TAB,
 } from '$shared/types/connections';
 import type {
   AddConnectionParams,
@@ -356,7 +357,14 @@ async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenC
   // A tab with no backend yet becomes the opened backend's tab.
   const pageHost = getPageHost();
   if (pageHost) {
-    return openBrowserAccessBackend(params.id, undefined, undefined, pageHost.backendId === null);
+    return openBrowserAccessBackend(
+      params.id,
+      undefined,
+      undefined,
+      pageHost.backendId === null,
+      // Switch to lands on the host's Settings → Hosts, as in the desktop app.
+      params.switchTo ? `/settings?tab=${SWITCH_TO_SETTINGS_TAB}` : '/',
+    );
   }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
@@ -742,7 +750,7 @@ function* rotateConnectionSecret(
 }
 
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
-  const [id, agent] = action.payload;
+  const [id, agent, switchTo] = action.payload;
   let settled = false;
   yield* put(openOperationStarted(id));
   try {
@@ -763,7 +771,11 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
       )
         throw new Error('Invitation is no longer current');
     }
-    const result = yield* call(invokeOpenConnection, { id, ...(agent ? { agent } : {}) });
+    const result = yield* call(invokeOpenConnection, {
+      id,
+      ...(agent ? { agent } : {}),
+      ...(switchTo ? { switchTo } : {}),
+    });
     yield* put(openOperationSettled(id));
     yield* put(action.success(result));
     settled = true;
@@ -1029,7 +1041,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
             ? { kind: 'secretUnavailable' }
             : { kind: 'blocked', operation: 'test', result };
     } else if (intent.kind === 'open') {
-      const open = openConnectionRequested(intent.id);
+      const open = openConnectionRequested(intent.id, undefined, intent.switchTo);
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') {

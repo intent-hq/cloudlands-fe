@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { MachineOrderRow } from '$shared/types/remote-machines';
 import { parseMachineOrder } from '$shared/types/remote-machines';
-import { moveMachineOrder, sortByMachineOrder, stepMachineOrder } from './machine-order';
-import { START_ON_BACKEND, startOnCloudId } from './start-on';
+import {
+  hostRunnerRows,
+  moveMachineOrder,
+  sortByMachineOrder,
+  stepMachineOrder,
+} from './machine-order';
+import { START_ON_HOST, startOnCloudId } from './start-on';
 
 const ORDER: MachineOrderRow[] = [
   { kind: 'local', name: 'build-host' },
@@ -59,7 +64,7 @@ describe('sortByMachineOrder (Start On)', () => {
   it('lists the backend, machines and cloud entries in the stored order', () => {
     const order: MachineOrderRow[] = [ORDER[3], ORDER[2], ORDER[0], ORDER[1]];
     const options = [
-      { id: START_ON_BACKEND, label: 'This machine' },
+      { id: START_ON_HOST, label: 'This machine' },
       { id: 'd-a', label: 'A', kind: 'machine' as const },
       { id: 'd-b', label: 'B', kind: 'machine' as const },
       { id: startOnCloudId('e2b-1'), label: 'E2B · Sandbox', kind: 'cloud' as const },
@@ -75,7 +80,7 @@ describe('sortByMachineOrder (Start On)', () => {
   it('keeps rows the list does not name after the named ones, in their own order', () => {
     const options = [
       { id: 'd-new', label: 'New' },
-      { id: START_ON_BACKEND, label: 'This machine' },
+      { id: START_ON_HOST, label: 'This machine' },
       { id: 'd-other', label: 'Other' },
       { id: 'd-b', label: 'B' },
     ];
@@ -113,5 +118,16 @@ describe('parseMachineOrder', () => {
       { kind: 'cloud', cloudMachineId: 'e2b-1', name: 'S' },
     ]);
     expect(parseMachineOrder(undefined)).toBeNull();
+  });
+});
+
+describe('hostRunnerRows (Settings → Hosts runner list)', () => {
+  it('lists a regular host as its own runner', () => {
+    expect(hostRunnerRows(ORDER, 'regular')).toEqual(ORDER);
+    expect(hostRunnerRows(ORDER, null)).toEqual(ORDER);
+  });
+
+  it('never lists an orchestrator as its own runner', () => {
+    expect(hostRunnerRows(ORDER, 'orchestrator')).toEqual(ORDER.slice(1));
   });
 });

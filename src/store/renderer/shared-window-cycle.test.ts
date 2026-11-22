@@ -58,6 +58,9 @@ vi.mock('./slices/hardware-console/sagas/prompt-picker-saga', () => ({
 vi.mock('./slices/hardware-console/sagas/voice-transcription-saga', () => ({
   voiceTranscriptionSaga: function* () {},
 }));
+vi.mock('./slices/autocomplete-settings/sagas/autocomplete-settings-saga', () => ({
+  autocompleteSettingsSaga: function* () {},
+}));
 vi.mock('./slices/voice-settings/sagas/voice-settings-saga', async () => {
   const { take } = await import('typed-redux-saga');
   return {

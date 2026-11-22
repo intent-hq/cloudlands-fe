@@ -9,7 +9,7 @@ test('shows retained device details without offering another window’s retained
   const home = component.locator('[data-machine-id="home-machine"]');
   await expect(home).toHaveAccessibleName('Home workstation');
   await expect(home.locator('svg')).toBeVisible();
-  await component.getByRole('button', { name: 'Add a machine to this window' }).click();
+  await component.getByRole('button', { name: 'Add a host to this window' }).click();
   await expect(page.getByTestId('machine-rail-add-item')).toHaveText(['Saved machine']);
   await testInfo.attach('retained-device-add-menu', {
     body: await page.screenshot({ path: testInfo.outputPath('retained-device-add-menu.png') }),
@@ -24,7 +24,7 @@ test('keeps the home device visible and focused as its details disappear and ret
   await page.setViewportSize({ width: 390, height: 600 });
   const component = await mount(Preview, { props: { scenario: 'missing-home' } });
   const home = component.locator('[data-machine-id="home-machine"]');
-  await expect(home).toHaveAccessibleName('Unknown machine');
+  await expect(home).toHaveAccessibleName('Unknown host');
   await expect(home.locator('svg')).toBeVisible();
   await component.getByRole('textbox', { name: 'Draft' }).fill('Keep my work here');
   await home.focus();
@@ -40,7 +40,7 @@ test('keeps the home device visible and focused as its details disappear and ret
   await expect(component.getByRole('textbox', { name: 'Draft' })).toHaveValue('Keep my work here');
 
   await component.update({ props: { scenario: 'missing-home' } });
-  await expect(home).toHaveAccessibleName('Unknown machine');
+  await expect(home).toHaveAccessibleName('Unknown host');
   await expect(home.locator('svg')).toBeVisible();
   await expect(home).toBeFocused();
   await home.press('Enter');
@@ -63,11 +63,11 @@ test('keeps an unknown secondary device visible and removable without affecting 
   const cloud = component.locator('[data-machine-id="cloud-machine"]');
   await expect(unknown.locator('svg')).toBeVisible();
   await expect(cloud).toHaveAccessibleName('reliablesite');
-  await component.getByRole('button', { name: 'Add a machine to this window' }).click();
+  await component.getByRole('button', { name: 'Add a host to this window' }).click();
   const remove = page.locator(
     '[data-testid="machine-rail-remove-item"][data-machine-id="unknown-machine"]',
   );
-  await expect(remove).toHaveText('Unknown machine');
+  await expect(remove).toHaveText('Unknown host');
   await expect(remove.locator('svg')).toBeVisible();
   await remove.click();
   await expect(component.locator('[data-machine-id="unknown-machine"]')).toHaveCount(0);

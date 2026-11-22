@@ -19,8 +19,9 @@
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import CreateButtonProgress from '../CreateButtonProgress.svelte';
   import { createProgressLabel } from '../create-progress-label';
+  import type { WorkspaceCreateTransfer } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-types';
 
-  let { percent }: { percent: number } = $props();
+  let { percent, transfer }: { percent: number; transfer?: WorkspaceCreateTransfer } = $props();
 
   const progressId = 'ct-create-button-progress';
   const phase = 'receiving';
@@ -33,7 +34,7 @@
 
   onMount(() => {
     appStore.dispatch(beginWorkspaceCreateProgress(progressId));
-    appStore.dispatch(workspaceCreateProgressReceived(progressId, { phase, percent }));
+    appStore.dispatch(workspaceCreateProgressReceived(progressId, { phase, percent, transfer }));
     return () => {
       appStore.dispatch(clearWorkspaceCreateProgress(progressId));
     };

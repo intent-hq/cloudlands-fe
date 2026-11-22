@@ -51,7 +51,6 @@
     withOrderActions,
     type MachineOrderControls,
   } from '$features/remote-machines/machine-order-controls';
-  import PreferredMachineBadge from '$features/remote-machines/PreferredMachineBadge.svelte';
 
   interface Props {
     /** The saved entry; null while a new one is set up. */
@@ -68,7 +67,7 @@
     first?: boolean;
     /** Fixed clock for previews and tests. */
     now?: number;
-    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    /** In the ordered runner list: Move up / Move down. */
     order?: MachineOrderControls;
   }
 
@@ -217,7 +216,6 @@
     {/snippet}
     {#snippet meta()}
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
-        {#if order?.preferred}<PreferredMachineBadge />{/if}
         {#if status}
           {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
           {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}

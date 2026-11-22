@@ -53,7 +53,7 @@ describe('a machine added from a node link', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Actions for Lab node' }));
     await fireEvent.click(
       await screen.findByRole('menuitem', {
-        name: 'Stop letting Build box run agents on this machine',
+        name: 'Stop letting Build box run agents on this computer',
       }),
     );
     expect(
@@ -77,11 +77,11 @@ describe('link field with a node link', () => {
     ['invite-revoked', 'This link was revoked on Lab node.', false],
     ['invite-invalid', "Lab node didn't accept this link.", false],
     ['link-version', 'This link needs a newer version of Intent.', false],
-    ['invite-not-owner', 'Only the owner of Build box can add machines to it.', false],
+    ['invite-not-owner', 'Only the owner of Build box can add runners to it.', false],
     ['invite-update-required', 'Lab node needs an update', false],
-    ['invites-unsupported', "Build box can't add machines from intent://node links yet.", true],
+    ['invites-unsupported', "Build box can't add runners from intent://node links yet.", true],
     ['invite-labs-off', 'To add Lab node, turn on Remote agents in Settings → Labs.', false],
-    ['invite-self', "This link is for Build box's own machine", false],
+    ['invite-self', 'This link is for Build box itself', false],
     ['invite-certificate', "Lab node's certificate doesn't match this link.", false],
     ['invite-unreachable-spent', 'this link may be used up', false],
   ] as const)('%s shows its error inline', (state, text, retry) => {

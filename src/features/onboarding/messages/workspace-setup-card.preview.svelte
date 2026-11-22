@@ -2,6 +2,12 @@
   import type { ComponentProps } from 'svelte';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import WorkspaceSetupCard from './WorkspaceSetupCard.svelte';
+  import { store } from '$store/renderer/store';
+  import {
+    beginWorkspaceCreateProgress,
+    clearWorkspaceCreateProgress,
+    workspaceCreateProgressReceived,
+  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 
   type Props = ComponentProps<typeof WorkspaceSetupCard>;
   const base: Props = {
@@ -15,6 +21,26 @@
     onFocusSetupTerminal: () => {},
   };
 
+  const cloneProgressId = 'workspace-setup-card-live-clone';
+
+  function setupLiveClone() {
+    store.dispatch(beginWorkspaceCreateProgress(cloneProgressId));
+    store.dispatch(
+      workspaceCreateProgressReceived(cloneProgressId, {
+        phase: 'receiving',
+        percent: 42,
+        message: 'Receiving objects: 60%',
+        transfer: {
+          receivedObjects: 612_000,
+          totalObjects: 1_020_000,
+          receivedBytes: 123_400_000,
+          bytesPerSecond: 5_700_000,
+        },
+      }),
+    );
+    return () => store.dispatch(clearWorkspaceCreateProgress(cloneProgressId));
+  }
+
   export const preview = definePreview<Props>({
     id: 'workspace-setup-card',
     title: 'Workspace setup card',
@@ -22,6 +48,16 @@
     states: {
       starting: {
         props: { ...base, repoStatus: 'active', branchStatus: 'active', agentStatus: 'active' },
+      },
+      'live-clone': {
+        props: {
+          ...base,
+          repoStatus: 'active',
+          branchStatus: 'pending',
+          agentStatus: 'pending',
+          progressId: cloneProgressId,
+        },
+        setup: setupLiveClone,
       },
       ready: {
         props: {

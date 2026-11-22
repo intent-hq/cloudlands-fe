@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { parseSource } from './source-ast-lib.mjs';
 import {
   CONTEXT_WATCHERS,
   WILDCARD_EFFECTS,
@@ -16,7 +17,6 @@ import {
 } from './check-saga-watcher-ownership.mjs';
 
 const SLICE_SOURCE = /^src\/store\/.+\/slices\/.+-slice\.ts$/;
-const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
 // Test-only sources never count as consumers: *.test.*, *.spec.* (incl. .ct.spec /
 // .visual.spec), and anything under __tests__/ or __mocks__/.
 const TEST_SOURCE = /(?:\.(?:test|spec)\.|(?:^|\/)__(?:tests|mocks)__\/)/;
@@ -66,32 +66,13 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
   },
 ];
 
-// Keep only the <script> blocks of a .svelte file, padded so line numbers match.
-function svelteScript(content) {
-  let script = '';
-  let emittedLines = 0;
-  for (const match of content.matchAll(SCRIPT_BLOCK)) {
-    const start = match.index + match[0].length - '</script>'.length - match[1].length;
-    const precedingLines = content.slice(0, start).split('\n').length - 1;
-    script += '\n'.repeat(precedingLines - emittedLines) + match[1];
-    emittedLines = precedingLines + match[1].split('\n').length - 1;
-  }
-  return script;
-}
-
 function loadSources(files) {
   const sources = new Map();
   for (const file of files) {
     const filePath = normalize(file.path);
     if (TEST_SOURCE.test(filePath)) continue;
-    let content;
-    if (filePath.endsWith('.ts')) content = file.content;
-    else if (filePath.endsWith('.svelte')) content = svelteScript(file.content);
-    else continue;
-    sources.set(
-      filePath,
-      ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
-    );
+    if (!filePath.endsWith('.ts') && !filePath.endsWith('.svelte')) continue;
+    sources.set(filePath, parseSource(file.content, filePath));
   }
   return sources;
 }

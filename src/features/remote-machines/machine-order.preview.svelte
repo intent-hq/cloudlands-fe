@@ -7,7 +7,7 @@
   const state = (name: MachineOrderPreviewState) => ({ props: {}, setup: () => setup(name) });
   export const preview = definePreview({
     id: 'machine-order',
-    title: 'One ordered machine list in Settings → Machines (machineOrder: 1)',
+    title: 'Hosts and runners in Settings → Hosts (machineOrder: 1)',
     defaultState: 'owner',
     states: {
       owner: state('owner'),
@@ -16,7 +16,7 @@
       unsupported: state('unsupported'),
       exceptions: state('exceptions'),
       disconnected: state('disconnected'),
-      // The backend runs no agents: it reads "Orchestrator — agents run on your machines".
+      // The host runs no agents: its row shows the hub marker, and it is not its own runner.
       orchestrator: state('orchestrator'),
     },
     captureReadiness: { selector: '[data-machine-order-section], [data-nodes-section]' },

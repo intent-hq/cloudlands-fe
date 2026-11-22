@@ -5,7 +5,7 @@
   import CatalogFixtureList from './CatalogFixtureList.svelte';
   import { getCatalogEntry, type CatalogEntry } from './catalog';
   import { loadPreview, setActivePreview } from './preview-discovery';
-  import { resolvePreviewState, type PreviewState } from './preview-definition';
+  import { ALL_PREVIEW_STATES, resolvePreviewState, type PreviewState } from './preview-definition';
   import { waitForCaptureStability, watchCaptureStability } from './capture-stability';
   import type { CatalogPreviewFit } from './catalog-preferences';
 
@@ -187,8 +187,8 @@
       title = loaded.definition.title;
       availableStates = Object.keys(loaded.definition.states);
       const renderedScenes: RenderedScene[] = [];
-      if (nextState === 'all') {
-        stateName = 'all';
+      if (nextState === ALL_PREVIEW_STATES) {
+        stateName = ALL_PREVIEW_STATES;
         renderedScenes.push(
           ...Object.entries(loaded.definition.states).map(([name, state]) => ({ name, state })),
         );
@@ -300,8 +300,8 @@
         <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
           <a
             class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary-ink hover:bg-muted"
-            aria-current={stateName === 'all' ? 'page' : undefined}
-            href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
+            aria-current={stateName === ALL_PREVIEW_STATES ? 'page' : undefined}
+            href={previewUrl(ALL_PREVIEW_STATES)}>{m.sandbox_catalogScene_allStates_label()}</a
           >
           {#each availableStates as name (name)}
             <a
@@ -357,11 +357,11 @@
     {:else if Preview && scenes.length > 0}
       <div
         class="preview-scene-list grid gap-8"
-        data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
+        data-preview-scene-list={stateName === ALL_PREVIEW_STATES ? 'all' : undefined}
       >
         {#each scenes as rendered (rendered.name)}
           <article class="preview-article grid gap-3" data-preview-rendered-state={rendered.name}>
-            {#if stateName === 'all' && requestedFit !== 'component'}
+            {#if stateName === ALL_PREVIEW_STATES && requestedFit !== 'component'}
               <h2 class="text-lg font-medium">
                 {m.sandbox_catalogScene_stateHeading_title({ state: rendered.name })}
               </h2>

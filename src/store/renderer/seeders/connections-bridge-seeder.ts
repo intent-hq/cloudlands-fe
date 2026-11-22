@@ -1,9 +1,9 @@
 /**
  * Connections IPC bridge — mock fallback for the multi-backend connect channels.
  *
- * Bridges the `connections:*` request/response channels (`list`,
- * `capture-fingerprint`, `add`, `forget`, `open`, `update`, `test`,
- * `rotate-secret`) so the connections service
+ * Bridges the `connections:*` request/response channels that main does not
+ * simply forward (`list`, `capture-fingerprint`, `add`, `forget`, keychain sync,
+ * self-publish; the rest are `forwarded(...)` in the IPC registry) so the connections service
  * thunks resolve in bridge-less builds (browser mock) and tests instead of
  * rejecting with UnbridgedMockIpcChannelError.
  *
@@ -17,7 +17,6 @@
  * override individual channels via `registerMockIpcHandler` after this runs.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-import type { PairLinkCommitResult } from '$shared/types/pair-link';
 import { CONNECTION_CHANNELS, LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
   ConnectionRecord,
@@ -28,11 +27,8 @@ import type {
   AddConnectionResult,
   ForgetConnectionParams,
   ForgetConnectionResult,
-  OpenConnectionParams,
-  OpenConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
-  WorkspaceCardsResult,
   KeychainSyncStateResult,
   SetKeychainSyncEnabledParams,
   PublishSelfResult,
@@ -99,46 +95,6 @@ registerMockIpcHandler(CONNECTION_CHANNELS.FORGET, async (arg): Promise<ForgetCo
   if (activeId === id) activeId = LOCAL_CONNECTION_ID;
   return { id };
 });
-
-const FORWARDED_DEVICE_CHANNELS = [
-  CONNECTION_CHANNELS.OPEN,
-  CONNECTION_CHANNELS.UPDATE,
-  CONNECTION_CHANNELS.TEST,
-  CONNECTION_CHANNELS.ROTATE_SECRET,
-  CONNECTION_CHANNELS.PAIR_LINK_INSPECT,
-  CONNECTION_CHANNELS.PAIR_LINK_COMMIT,
-  CONNECTION_CHANNELS.PAIR_LINK_DISCARD,
-  CONNECTION_CHANNELS.WORKSPACE_CARDS,
-  CONNECTION_CHANNELS.OPEN_WORKSPACE,
-] as const;
-
-for (const channel of FORWARDED_DEVICE_CHANNELS) {
-  registerMockIpcHandler(channel, async (arg) => {
-    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
-    const invoke = bridge?.invoke as
-      ((channel: string, payload?: unknown) => Promise<unknown>) | undefined;
-    if (invoke) return invoke(channel, arg);
-
-    if (channel === CONNECTION_CHANNELS.OPEN) {
-      const { id } = arg as OpenConnectionParams;
-      return { status: 'opened', id } satisfies OpenConnectionResult;
-    }
-    // No main process holds saved machines: every other machine reads as not added.
-    if (
-      channel === CONNECTION_CHANNELS.WORKSPACE_CARDS ||
-      channel === CONNECTION_CHANNELS.OPEN_WORKSPACE
-    )
-      return { status: 'unknown-backend' } satisfies WorkspaceCardsResult;
-    // No main process to test a pair link or hold its credential: nothing is kept.
-    if (channel === CONNECTION_CHANNELS.PAIR_LINK_DISCARD) return { ok: true };
-    if (
-      channel === CONNECTION_CHANNELS.PAIR_LINK_INSPECT ||
-      channel === CONNECTION_CHANNELS.PAIR_LINK_COMMIT
-    )
-      return { ok: false, code: 'failed' } satisfies PairLinkCommitResult;
-    return { status: 'failed', reason: 'connect-failed' };
-  });
-}
 
 // Remote self-update request. The mock has no live pooled clients, so every
 // target reads as not connected — mirroring the main handler's gate.

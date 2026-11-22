@@ -13,6 +13,24 @@ const JS_EXTENSION_PATTERN = /\.[cm]?jsx?$/;
 
 const blank = (text) => text.replace(/[^\n]/g, ' ');
 
+// A block's content made safe to join with the next block: Svelte parses each block on
+// its own, so a trailing line comment or a missing semicolon must not run into the next
+// block. The trailing line comment is blanked and the closing tag becomes `;`.
+function closedBlock(content, closeTag) {
+  const block = ts.createSourceFile('block.ts', content, ts.ScriptTarget.Latest, false);
+  const end = block.endOfFileToken.pos;
+  const comments = [
+    ...(ts.getTrailingCommentRanges(content, end) ?? []),
+    ...(ts.getLeadingCommentRanges(content, end) ?? []),
+  ];
+  const last = comments.at(-1);
+  const safe =
+    last?.kind === ts.SyntaxKind.SingleLineCommentTrivia && last.end === content.length
+      ? content.slice(0, last.pos) + blank(content.slice(last.pos))
+      : content;
+  return `${safe};${blank(closeTag.slice(1))}`;
+}
+
 function splitSvelte(text) {
   let script = '';
   let markup = '';
@@ -24,7 +42,7 @@ function splitSvelte(text) {
     if (openTag === undefined) script += blank(whole);
     else {
       const contentEnd = openTag.length + content.length;
-      script += blank(openTag) + content + blank(whole.slice(contentEnd));
+      script += blank(openTag) + closedBlock(content, whole.slice(contentEnd));
     }
     kept = match.index + whole.length;
   }
@@ -32,8 +50,29 @@ function splitSvelte(text) {
 }
 
 // The component's `<script>` contents in place, everything else blanked to spaces
-// (newlines kept), so offsets and lines match the component.
+// (newlines kept), so offsets and lines match the component. Each block ends at its
+// closing tag (see `closedBlock`), so one parse reads every block and their shared scope.
 export const svelteScriptText = (text) => splitSvelte(text).script;
+
+// Each `<script>` block of a component, in order: `{ openTag, isModule, text }`. `text` is
+// the component with everything but this block's content blanked, so a source parsed
+// from it (under a `.ts` name, not the component's) keeps the component's offsets and
+// lines.
+export function svelteScriptBlocks(text) {
+  const blocks = [];
+  for (const match of text.matchAll(SVELTE_BLOCK_PATTERN)) {
+    const [, openTag, content] = match;
+    if (openTag === undefined) continue;
+    const contentStart = match.index + openTag.length;
+    const contentEnd = contentStart + content.length;
+    blocks.push({
+      openTag,
+      isModule: /\smodule\b|\scontext\s*=\s*["']module["']/.test(openTag),
+      text: blank(text.slice(0, contentStart)) + content + blank(text.slice(contentEnd)),
+    });
+  }
+  return blocks;
+}
 
 // The component's markup in place, with script and style blocks and HTML comments
 // blanked. Markup is not parsed; a check can only search it as text.

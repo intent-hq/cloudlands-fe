@@ -64,6 +64,7 @@ import {
   createSpecialistFromDraft,
   setSpecialistCreation,
   deleteFileSpecialist,
+  ensureSpecialistsLoaded,
   refetchSpecialistsRequested,
   saveFileSpecialist,
   setSpecialistImportDiagnostics,
@@ -709,6 +710,10 @@ function* watchSpecialistRefetches(context: ListContext) {
   }
 }
 
+function* requestRefetchIfUnloaded() {
+  if (!(yield* selectBundledSpecialistsLoaded.effect())) yield* put(refetchSpecialistsRequested());
+}
+
 function createSpecialistsChannel(): EventChannel<SpecialistCatalog | SpecialistDef[]> {
   return eventChannel<SpecialistCatalog | SpecialistDef[]>(
     (emit) =>
@@ -800,6 +805,7 @@ function* specialistsSession(admission: string | null) {
   if (admission) yield* fork(watchSpecialistsSubscription, context);
   yield* all([
     takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
+    takeEvery(ensureSpecialistsLoaded, requestRefetchIfUnloaded),
     fork(watchFileMutations, context),
     fork(watchSpecialistRefetches, context),
   ]);

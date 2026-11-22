@@ -90,7 +90,10 @@
     selectCustomSpecialistsLoaded,
     selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
+  import {
+    ensureSpecialistsLoaded,
+    refetchSpecialistsRequested,
+  } from '$store/renderer/slices/specialists/specialists-slice';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import { createLogger } from '$lib/utils/client-logger';
   import { getGitErrorMessage, parseGitHubUrl } from '$lib/utils/workspace-validation';
@@ -133,6 +136,7 @@
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
+  import { startOnSubmitted } from '$features/remote-machines/start-on';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import type { SessionImportSelection } from '$features/session-import/importable-session';
   import {
@@ -1342,7 +1346,7 @@
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
   onMount(() => {
-    appStore.dispatch(refetchSpecialistsRequested());
+    appStore.dispatch(ensureSpecialistsLoaded());
     if (repoType === 'gitlab' && !selectCheckoutForm.select(appStore.state, checkoutFormId))
       restoreCheckout(readRepositoryCheckoutDraft(savedState?.repositoryCheckoutDraft));
     logger.debug('Preloading issues on mount');
@@ -2708,8 +2712,13 @@
           // A new repository or a plain folder has no commit for a remote agent to start from.
           startOnMachineId: startOnBackendOnly
             ? ''
-            : selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
+            : startOnSubmitted(
+                startOnMachineId,
+                selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
+              ),
         },
+        // The default follows the host's order on the next form, so remember the raw choice.
+        rememberStartOn: startOnBackendOnly ? '' : startOnMachineId,
         rememberAgentRepoKey,
         setupScriptExplicit,
         repoConfigError,
@@ -2951,10 +2960,9 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
-      // A new repository or a plain folder has no commit for a remote agent to start from.
-      startOnMachineId: startOnBackendOnly
-        ? ''
-        : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+      // The user's own choice ('' until they pick), so the next form follows the
+      // host's order again; a choice that is gone falls back to that order too.
+      startOnMachineId: startOnBackendOnly ? '' : startOnMachineId,
       skipIsolation,
       remoteSetup, // null at this point
       // Repo selection — preserved so the next form re-opens on the same repo.
@@ -4002,7 +4010,7 @@
             {/if}
           </div>
         {/if}
-        <div class="settings-footer mt-auto pt-6">
+        <div class="settings-footer mt-auto pt-4 pb-2">
           <!-- Create button -->
           <div class="w-full">
             <CreateButtonProgress

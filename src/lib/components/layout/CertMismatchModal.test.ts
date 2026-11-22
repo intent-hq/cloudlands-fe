@@ -43,7 +43,7 @@ describe('CertMismatchModal', () => {
     const CertMismatchModal = (await import('./CertMismatchModal.svelte')).default;
     render(CertMismatchModal, { props: { event, onOpenLocal, onForget, onDismiss } });
 
-    await fireEvent.click(screen.getByText('Open This machine (local)'));
+    await fireEvent.click(screen.getByText('Open this computer'));
     expect(onOpenLocal).toHaveBeenCalledOnce();
 
     await fireEvent.click(screen.getByText('Forget & re-pair'));

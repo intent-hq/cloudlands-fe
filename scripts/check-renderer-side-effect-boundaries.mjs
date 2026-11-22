@@ -23,7 +23,9 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
+  ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 11 }],
+  // One loop over every channel marked `forwarded(...)` in src/shared/ipc-registry.ts.
+  ['src/store/renderer/seeders/forwarded-channels-seeder.ts', { registerMockIpcHandler: 1 }],
   // intent:// link delivery: drains the actions main queued for this window.
   ['src/store/renderer/seeders/deep-link-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
@@ -32,13 +34,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
   ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 33 }],
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  // Machine rail (Labs): forwards `machine-rail:*` to main; answers "lab off" without a bridge.
-  ['src/store/renderer/seeders/machine-rail-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  // SSH machine setup (Labs): forwards `machine-setup:ssh-*` to main; no run without a bridge.
-  ['src/store/renderer/seeders/machine-setup-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  // Recent-agent switcher: forwards `recent-agents:*` to main; empty list without a bridge.
-  ['src/store/renderer/seeders/recent-agents-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',

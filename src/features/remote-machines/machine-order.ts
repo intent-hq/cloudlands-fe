@@ -9,7 +9,8 @@ import {
   type MachineOrderKey,
   type MachineOrderRow,
 } from '$shared/types/remote-machines';
-import { START_ON_BACKEND, startOnCloudMachineId } from './start-on';
+import type { DaemonMode } from '$shared/types/connections';
+import { START_ON_HOST, startOnCloudMachineId } from './start-on';
 
 /**
  * The whole list with row `id` moved before or after row `targetId`, as
@@ -46,9 +47,9 @@ export function stepMachineOrder(
   return moveMachineOrder(order, id, machineOrderId(target), direction === -1 ? 'before' : 'after');
 }
 
-/** The order id of a Start On option: the backend is "This computer". */
+/** The order id of a Start On option: the host's own row is `local`. */
 function startOnOrderId(optionId: string, kind: 'machine' | 'cloud' | undefined): string {
-  if (optionId === START_ON_BACKEND) return 'local';
+  if (optionId === START_ON_HOST) return 'local';
   const cloudMachineId = kind === 'cloud' ? startOnCloudMachineId(optionId) : null;
   return machineOrderId(
     cloudMachineId ? { kind: 'cloud', cloudMachineId } : { kind: 'machine', nodeId: optionId },
@@ -69,4 +70,16 @@ export function sortByMachineOrder<T extends { id: string; kind?: 'machine' | 'c
     .map((option, index) => ({ option, index }))
     .sort((a, b) => rankOf(a.option) - rankOf(b.option) || a.index - b.index)
     .map(({ option }) => option);
+}
+
+/**
+ * The runners a host lists in Settings → Hosts: its stored order, without the
+ * host's own row (`kind: "local"`) while it runs as an orchestrator, which
+ * never runs agents itself (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
+ */
+export function hostRunnerRows(
+  order: readonly MachineOrderRow[],
+  daemonMode: DaemonMode | null,
+): MachineOrderRow[] {
+  return daemonMode === 'orchestrator' ? order.filter((row) => row.kind !== 'local') : [...order];
 }

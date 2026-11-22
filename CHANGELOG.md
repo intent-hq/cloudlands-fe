@@ -4,6 +4,56 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.371.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.2...v2.371.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **settings:** hosts and runners, Switch to, orchestrator marker ([#4915](https://github.com/intent-hq/cloudlands-fe/issues/4915)) ([2cc899e](https://github.com/intent-hq/cloudlands-fe/commit/2cc899ee1a47caa0b857010826ca324b0f60e397))
+
+
+### 🐛 Bug Fixes
+
+* **preload:** regenerate untouched stale preload output without a false hand-edit refusal ([#4922](https://github.com/intent-hq/cloudlands-fe/issues/4922)) ([c4b4345](https://github.com/intent-hq/cloudlands-fe/commit/c4b4345e42e1fc3605563ac19fc3d8f64d22cca4))
+
+## [2.370.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.1...v2.370.2) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** capture one untiled image of tabs in a zoomed app ([#4808](https://github.com/intent-hq/cloudlands-fe/issues/4808)) ([502e6d5](https://github.com/intent-hq/cloudlands-fe/commit/502e6d574a048ec50cf902e490eb8ba1bb1cf099))
+
+## [2.370.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.0...v2.370.1) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.268 ([#4917](https://github.com/intent-hq/cloudlands-fe/issues/4917)) ([6313c3e](https://github.com/intent-hq/cloudlands-fe/commit/6313c3eb963a30261908ebbdf0fee1fee5627ea5))
+
+
+### ⚡ Performance
+
+* **specialists:** share default-model previews and skip the form's forced refetch ([#4913](https://github.com/intent-hq/cloudlands-fe/issues/4913)) ([bb6d161](https://github.com/intent-hq/cloudlands-fe/commit/bb6d161f9ac3ed9cc262d5cb5bfba0fa3ebee7b5))
+
+## [2.370.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.369.1...v2.370.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **onboarding:** enable OpenCode as a free backup provider ([#4912](https://github.com/intent-hq/cloudlands-fe/issues/4912)) ([96442fe](https://github.com/intent-hq/cloudlands-fe/commit/96442fe84c2a52bcb8cf74477814ec035f7ed543))
+
+
+### 🐛 Bug Fixes
+
+* **catalog:** reserve the "all" preview state name ([#4909](https://github.com/intent-hq/cloudlands-fe/issues/4909)) ([37e1e14](https://github.com/intent-hq/cloudlands-fe/commit/37e1e1404048b0d01e7a00633db2f13bcbfa74b5))
+
+## [2.369.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.369.0...v2.369.1) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** fail the agent.list and spec pattern checks on parse errors ([#4906](https://github.com/intent-hq/cloudlands-fe/issues/4906)) ([f8cb18a](https://github.com/intent-hq/cloudlands-fe/commit/f8cb18af0ae9884c1a3a25cf9602d40e8e740760))
+
 ## [2.369.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.368.0...v2.369.0) (2026-11-22)
 
 
