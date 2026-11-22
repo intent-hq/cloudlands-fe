@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   lineOf,
+  parseErrors,
   parseSource,
   propertyName,
   stringValue,
@@ -147,42 +148,54 @@ const hasBoundingOption = (options) =>
     return bounded;
   });
 
-// Every unscoped request in one file: `{ line, text }` per offending call. A `.svelte`
-// file is read through its script blocks; a request in its markup is always reported.
-export function findUnscopedAgentListRequests(content, filePath = 'source.ts') {
-  if (!CANDIDATE_PATTERN.test(content)) return [];
+// One file's unscoped requests (`{ line, text }` each) and its first parse error
+// (`{ line, message }`, or null). A `.svelte` file is read through its script blocks; a
+// request in its markup is always reported. A file whose text cannot hold a request is
+// not parsed.
+function scanFile(content, filePath) {
+  if (!CANDIDATE_PATTERN.test(content)) return { requests: [], parseError: null };
   const lines = content.split('\n');
   const hit = (line) => ({ line, text: lines[line - 1].trim() });
-  const hits = [];
-  walk(parseSource(content, filePath), (node) => {
+  const requests = [];
+  const source = parseSource(content, filePath);
+  walk(source, (node) => {
     const options = requestOptions(node);
     if (options && !hasBoundingOption(options)) {
-      hits.push(hit(lineOf(ts.isPropertyAccessExpression(node) ? node.expression.name : node)));
+      requests.push(hit(lineOf(ts.isPropertyAccessExpression(node) ? node.expression.name : node)));
     }
   });
   if (filePath.endsWith('.svelte')) {
     const markup = svelteMarkupText(content);
     for (const match of markup.matchAll(MARKUP_REQUEST_PATTERN)) {
-      hits.push(hit(markup.slice(0, match.index).split('\n').length));
+      requests.push(hit(markup.slice(0, match.index).split('\n').length));
     }
   }
-  return hits.sort((a, b) => a.line - b.line);
+  requests.sort((x, y) => x.line - y.line);
+  return { requests, parseError: parseErrors(source)[0] ?? null };
 }
 
-// Hits in non-allowlisted files plus allowlist entries that no longer match anything.
+// Every unscoped request in one file: `{ line, text }` per offending call.
+export const findUnscopedAgentListRequests = (content, filePath = 'source.ts') =>
+  scanFile(content, filePath).requests;
+
+// Hits in non-allowlisted files, allowlist entries that no longer match anything, and
+// files the check cannot parse (`{ path, line, message }`, allowlisted or not): a
+// recovered parse can drop a request.
 export function checkAgentListScope(files, allowlist = ALLOWLIST) {
   const hits = [];
+  const unreadable = [];
   const matched = new Set();
   for (const file of files) {
     const filePath = normalize(file.path);
     if (!isScannedPath(filePath)) continue;
-    const requests = findUnscopedAgentListRequests(file.content, filePath);
+    const { requests, parseError } = scanFile(file.content, filePath);
+    if (parseError) unreadable.push({ path: filePath, ...parseError });
     if (!requests.length) continue;
     if (Object.hasOwn(allowlist, filePath)) matched.add(filePath);
     else hits.push(...requests.map((request) => ({ path: filePath, ...request })));
   }
   const stale = Object.keys(allowlist).filter((filePath) => !matched.has(filePath));
-  return { hits, stale };
+  return { hits, stale, unreadable };
 }
 
 export const formatHit = ({ path: filePath, line, text }) => `${filePath}:${line}\n    ${text}`;
@@ -205,9 +218,17 @@ export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { hits, stale } = checkAgentListScope(collectSourceFiles(process.cwd()));
-  if (hits.length || stale.length) {
+  const { hits, stale, unreadable } = checkAgentListScope(collectSourceFiles(process.cwd()));
+  if (hits.length || stale.length || unreadable.length) {
     const lines = [];
+    if (unreadable.length) {
+      lines.push('Cannot parse, so requests there may be missed (fix the syntax error):');
+      lines.push(
+        ...unreadable.map(
+          ({ path: filePath, line, message }) => `  ${filePath}:${line} ${message}`,
+        ),
+      );
+    }
     if (hits.length) {
       lines.push(
         `Unscoped \`agent.list\` request${hits.length === 1 ? '' : 's'} in non-test source:`,
