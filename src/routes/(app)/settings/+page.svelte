@@ -103,6 +103,7 @@
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
+  import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import MachineRailSettings from '$lib/components/settings/MachineRailSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
@@ -1041,6 +1042,10 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <LabsSettings />
+          <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
+          {#if !$hostManagesConnections$}
+            <TunnelRelaySettings />
+          {/if}
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}

@@ -5791,6 +5791,7 @@
   "settings_section_backendSync": "Backend Sync",
   "settings_section_cliOptimization": "CLI Optimization",
   "settings_section_connection": "Connection",
+  "settings_section_network": "Network",
   "settings_section_defaults": "Default models",
   "settings_section_fontStyle": "Font Style",
   "settings_section_git": "Git",

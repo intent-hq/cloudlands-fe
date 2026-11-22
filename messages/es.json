@@ -5791,6 +5791,7 @@
   "settings_section_backendSync": "Sincronización de backends",
   "settings_section_cliOptimization": "Optimización de CLI",
   "settings_section_connection": "Conexión",
+  "settings_section_network": "Red",
   "settings_section_defaults": "Modelos predeterminados",
   "settings_section_fontStyle": "Estilo de fuente",
   "settings_section_git": "Git",

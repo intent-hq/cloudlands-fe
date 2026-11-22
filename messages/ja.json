@@ -5791,6 +5791,7 @@
   "settings_section_backendSync": "バックエンド同期",
   "settings_section_cliOptimization": "CLI 最適化",
   "settings_section_connection": "接続",
+  "settings_section_network": "ネットワーク",
   "settings_section_defaults": "デフォルトモデル",
   "settings_section_fontStyle": "フォントスタイル",
   "settings_section_git": "Git",
