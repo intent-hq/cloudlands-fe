@@ -56,8 +56,9 @@
     isSecretWellFormed,
     loginCommand,
     randomSuffix,
+    singleProfileKind,
   } from '$lib/provider-profile-kinds';
-  import { secretShapeError } from './secret-shape-error';
+  import { secretDialogDescription, secretShapeError } from './profile-kind-copy';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
 
   interface Props {
@@ -175,13 +176,16 @@
     onSwitchToAdvanced,
   }: Props = $props();
 
+  /** A provider with one specialized kind (Grok, Droid, Cursor, Auggie) skips the picker. */
+  const onlyKind = $derived(singleProfileKind(provider));
   const picking = $derived(mode === 'add' && step === 'pick');
   const folderKind = $derived(kind === 'differentLogin');
   /** Claude API key and Token (both providers): a pasted secret plus the key check. */
   const secretKind = $derived(kind === 'apiKey' || kind === 'token' ? kind : null);
   let localSecretError = $state<string | undefined>();
   const shownSecretError = $derived(secretError ?? localSecretError);
-  const command = $derived(loginCommand(provider));
+  // Only Claude Code and Codex have a Different login (a terminal sign-in).
+  const command = $derived(folderKind ? loginCommand(provider) : '');
   const folderPath = $derived(
     mode === 'edit' ? savedFolderPath : previewProfileFolder(provider, name, folderSuffix),
   );
@@ -214,16 +218,7 @@
   const description = $derived.by(() => {
     if (picking) return m.settings_providerProfileKinds_pick_description();
     if (folderKind) return m.settings_providerProfileKinds_differentLoginDialog_description();
-    if (secretKind === 'apiKey') {
-      return provider === 'codex'
-        ? m.settings_providerProfileKinds_apiKeyCodexDialog_description()
-        : m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
-    }
-    if (secretKind === 'token') {
-      return provider === 'codex'
-        ? m.settings_providerProfileKinds_tokenCodexDialog_description()
-        : m.settings_providerProfileKinds_tokenClaudeDialog_description();
-    }
+    if (secretKind) return secretDialogDescription(provider, secretKind);
     return m.settings_providerProfiles_dialog_description();
   });
   const submitLabel = $derived(
@@ -467,8 +462,17 @@
   {#snippet footer()}
     <FormActions>
       {#snippet destructive()}
-        {#if !picking && mode === 'add' && !started}
-          <Button variant="ghost-light" disabled={busy} onclick={() => (step = 'pick')}>
+        {#if !picking && mode === 'add' && !started && onlyKind && kind !== 'advanced'}
+          <!-- One specialized kind: no picker, so Advanced is offered here. -->
+          <Button variant="ghost-light" disabled={busy} onclick={switchToAdvanced}>
+            {m.settings_providerProfileKinds_switchToAdvanced_label()}
+          </Button>
+        {:else if !picking && mode === 'add' && !started}
+          <Button
+            variant="ghost-light"
+            disabled={busy}
+            onclick={() => (onlyKind ? (kind = onlyKind) : (step = 'pick'))}
+          >
             {m.settings_providerProfileKinds_back_label()}
           </Button>
         {:else if mode === 'edit' && kind !== 'advanced'}

@@ -1,7 +1,9 @@
 <script lang="ts">
   /**
-   * Step 1 of Add profile: large cards for Different login, API key, Token
-   * and Advanced. Presentational: picking a card only calls `onPick`.
+   * Step 1 of Add profile: large cards for the provider's kinds (Different
+   * login, API key, Token; Grok, Droid and Cursor offer only API key, Auggie
+   * only its access token) and Advanced. Presentational: picking a card only
+   * calls `onPick`.
    * With `remoteMarks`, API key and Token read "Works on remote machines" and
    * Different login "This machine only" (Advanced has its own toggle).
    */
@@ -18,6 +20,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { kindRemoteSupport } from '$lib/provider-remote-ready';
+  import { profileKindsFor } from '$lib/provider-profile-kinds';
+  import { kindCardDescription, secretKindLabel } from './profile-kind-copy';
   import type { ProfileKindChoice, ProfileKindProvider } from './profile-kind-mock';
 
   interface Props {
@@ -42,37 +46,22 @@
     onPick,
   }: Props = $props();
 
+  const KIND_ICONS = { differentLogin: faUserPlus, apiKey: faKey, token: faTicket } as const;
+
   const cards = $derived<
     { kind: ProfileKindChoice; icon: IconDefinition; title: string; description: string }[]
   >([
-    ...(differentLogin
-      ? [
-          {
-            kind: 'differentLogin' as const,
-            icon: faUserPlus,
-            title: m.settings_providerProfileKinds_differentLogin_label(),
-            description: m.settings_providerProfileKinds_differentLogin_description(),
-          },
-        ]
-      : []),
-    {
-      kind: 'apiKey',
-      icon: faKey,
-      title: m.settings_providerProfileKinds_apiKey_label(),
-      description:
-        provider === 'codex'
-          ? m.settings_providerProfileKinds_apiKeyCodex_description()
-          : m.settings_providerProfileKinds_apiKeyClaude_description(),
-    },
-    {
-      kind: 'token',
-      icon: faTicket,
-      title: m.settings_providerProfileKinds_token_label(),
-      description:
-        provider === 'codex'
-          ? m.settings_providerProfileKinds_tokenCodex_description()
-          : m.settings_providerProfileKinds_tokenClaude_description(),
-    },
+    ...profileKindsFor(provider)
+      .filter((kind) => differentLogin || kind !== 'differentLogin')
+      .map((kind) => ({
+        kind,
+        icon: KIND_ICONS[kind],
+        title:
+          kind === 'differentLogin'
+            ? m.settings_providerProfileKinds_differentLogin_label()
+            : secretKindLabel(provider, kind),
+        description: kindCardDescription(provider, kind),
+      })),
     {
       kind: 'advanced',
       icon: faSliders,

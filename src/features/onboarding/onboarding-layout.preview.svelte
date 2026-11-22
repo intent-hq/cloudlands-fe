@@ -99,6 +99,26 @@
       'connect-orchestrator-codex': {
         props: { step: 'connect', orchestrator: 'machine', activeProvider: 'codex' },
       },
+      // Every profile base (Grok, Cursor, Auggie, Droid too) on step 1.
+      'welcome-orchestrator-all-providers': {
+        props: { step: 'welcome', orchestrator: 'machine', allProviders: true, cursor: true },
+      },
+      'connect-orchestrator-grok': {
+        props: {
+          step: 'connect',
+          orchestrator: 'machine',
+          activeProvider: 'grok',
+          allProviders: true,
+        },
+      },
+      'connect-orchestrator-cursor': {
+        props: {
+          step: 'connect',
+          orchestrator: 'machine',
+          activeProvider: 'cursor',
+          cursor: true,
+        },
+      },
     },
   });
 </script>
@@ -383,14 +403,22 @@
     appStore.dispatch(hydrateDefaultProvider(picked));
   }
   const fullCatalog = untrack(() => allProviders);
+  const PROFILE_BASES: readonly string[] = [
+    'claude-code',
+    'codex',
+    'grok',
+    'droid',
+    'auggie',
+    'cursor',
+  ];
   const seededCursor = untrack(() => cursor);
-  // An orchestrator's catalog offers profiles for Claude Code and Codex and
+  // An orchestrator's catalog offers profiles for every profile base and
   // never a test prompt.
   const seededProviders = [
     ...(fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders),
     ...(seededCursor ? [MOCK_CURSOR_PROVIDER] : []),
   ].map((entry) =>
-    seededOrchestrator && (entry.id === 'codex' || entry.id === 'claude-code')
+    seededOrchestrator && PROFILE_BASES.includes(entry.id)
       ? { ...entry, supportsProfiles: true, supportsTestPrompt: false }
       : entry,
   );

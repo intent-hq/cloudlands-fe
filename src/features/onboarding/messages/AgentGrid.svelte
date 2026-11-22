@@ -156,7 +156,8 @@
         const inFlight = loadingMap[p.id];
         return {
           id: p.id,
-          name: p.displayName,
+          // "Anthropic Claude Code" truncates on the card; its short name fits.
+          name: p.id === 'claude-code' ? p.shortName : p.displayName,
           available: status?.available ?? false,
           /** Whether the user is authenticated. undefined = not checked yet. */
           authenticated: status?.authenticated,

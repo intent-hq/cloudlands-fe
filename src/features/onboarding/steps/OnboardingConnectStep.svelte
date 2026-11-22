@@ -14,7 +14,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import ProfileSecretFields from '$lib/components/settings/profile-kinds/ProfileSecretFields.svelte';
-  import { secretShapeError } from '$lib/components/settings/profile-kinds/secret-shape-error';
+  import {
+    kindCardDescription,
+    secretKindLabel,
+    secretShapeError,
+  } from '$lib/components/settings/profile-kinds/profile-kind-copy';
   import {
     baseProviderIdFor,
     buildCreatePayload,
@@ -42,8 +46,8 @@
     selectProviderSettingsSessionRequests,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-    CONNECT_KINDS,
     canContinueConnect,
+    connectKindsFor,
     connectSecretIssue,
     savedConnectProfile,
     uniqueProfileName,
@@ -65,7 +69,7 @@
 
   let {
     provider,
-    kind = $bindable(CONNECT_KINDS[0]),
+    kind = $bindable(untrack(() => connectKindsFor(provider)[0])),
     secret = $bindable(''),
     setupId = $bindable(null),
     busy = $bindable(false),
@@ -131,7 +135,11 @@
   $effect(() => {
     if (kindRestored || !savedKind) return;
     kindRestored = true;
-    if (savedKind === 'token' || savedKind === 'apiKey') kind = savedKind;
+    if (
+      (savedKind === 'token' || savedKind === 'apiKey') &&
+      connectKindsFor(provider).includes(savedKind)
+    )
+      kind = savedKind;
   });
 
   /** The saved profile stands only for its own kind; another kind replaces it. */
@@ -150,44 +158,59 @@
   );
   const secretError = $derived(issue === 'shape' ? secretShapeError(provider, kind) : undefined);
 
+  function cardTitle(item: ConnectKind): string {
+    if (item === 'apiKey') return m.settings_providerProfileKinds_apiKey_label();
+    if (provider === 'claude') return m.onboarding_connect_claudeToken_label();
+    if (provider === 'codex') return m.onboarding_connect_codexToken_label();
+    return secretKindLabel(provider, item);
+  }
+
+  function cardDescription(item: ConnectKind): string {
+    if (provider === 'claude') {
+      return item === 'token'
+        ? m.onboarding_connect_claudeToken_description()
+        : m.onboarding_connect_claudeApiKey_description();
+    }
+    if (provider === 'codex' && item === 'apiKey')
+      return m.onboarding_connect_codexApiKey_description();
+    return kindCardDescription(provider, item);
+  }
+
   const cards = $derived<
     { kind: ConnectKind; icon: IconDefinition; title: string; description: string }[]
   >(
-    CONNECT_KINDS.map((item) =>
-      item === 'token'
-        ? {
-            kind: item,
-            icon: faTicket,
-            title:
-              provider === 'claude'
-                ? m.onboarding_connect_claudeToken_label()
-                : m.onboarding_connect_codexToken_label(),
-            description:
-              provider === 'claude'
-                ? m.onboarding_connect_claudeToken_description()
-                : m.settings_providerProfileKinds_tokenCodex_description(),
-          }
-        : {
-            kind: item,
-            icon: faKey,
-            title: m.settings_providerProfileKinds_apiKey_label(),
-            description:
-              provider === 'claude'
-                ? m.onboarding_connect_claudeApiKey_description()
-                : m.onboarding_connect_codexApiKey_description(),
-          },
-    ),
+    connectKindsFor(provider).map((item) => ({
+      kind: item,
+      icon: item === 'token' ? faTicket : faKey,
+      title: cardTitle(item),
+      description: cardDescription(item),
+    })),
   );
 
-  function profileName(): string {
-    const name =
-      kind === 'token'
-        ? provider === 'claude'
+  /** The new profile's name: what it signs in with. */
+  function connectProfileName(): string {
+    switch (provider) {
+      case 'claude':
+        return kind === 'token'
           ? m.onboarding_connect_claudeTokenProfile_name()
-          : m.onboarding_connect_codexTokenProfile_name()
-        : provider === 'claude'
-          ? m.onboarding_connect_claudeApiKeyProfile_name()
+          : m.onboarding_connect_claudeApiKeyProfile_name();
+      case 'codex':
+        return kind === 'token'
+          ? m.onboarding_connect_codexTokenProfile_name()
           : m.onboarding_connect_codexApiKeyProfile_name();
+      case 'grok':
+        return m.onboarding_connect_grokApiKeyProfile_name();
+      case 'droid':
+        return m.onboarding_connect_droidApiKeyProfile_name();
+      case 'cursor':
+        return m.onboarding_connect_cursorApiKeyProfile_name();
+      case 'auggie':
+        return m.onboarding_connect_auggieTokenProfile_name();
+    }
+  }
+
+  function profileName(): string {
+    const name = connectProfileName();
     const taken = $profiles$.filter((p) => p.id !== saved?.id).map((p) => p.name);
     const defaultName = $defaults$[baseProviderId]?.name;
     return uniqueProfileName(name, defaultName ? [...taken, defaultName] : taken);
@@ -266,36 +289,43 @@
 </script>
 
 <div class="max-w-2xl space-y-6" data-testid="onboarding-connect-step" data-provider={provider}>
-  <div
-    class="grid grid-cols-1 gap-3 sm:grid-cols-2"
-    role="radiogroup"
-    aria-label={m.settings_providerProfileKinds_picker_ariaLabel()}
-  >
-    {#each cards as card (card.kind)}
-      {@const selected = card.kind === kind}
-      <Button
-        variant="outline"
-        role="radio"
-        aria-checked={selected}
-        disabled={saving}
-        truncateLabel={false}
-        labelClass="flex items-start gap-3"
-        class="h-auto justify-start gap-3 whitespace-normal p-4 text-left {selected
-          ? 'border-foreground bg-muted'
-          : ''}"
-        data-testid={`onboarding-connect-kind-${card.kind}`}
-        onclick={() => choose(card.kind)}
-      >
-        <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-          <Fa icon={card.icon} class="size-4 text-foreground" />
-        </span>
-        <span class="flex min-w-0 flex-col gap-1">
-          <span class="type-body font-medium! text-foreground">{card.title}</span>
-          <span class="type-caption text-muted-foreground">{card.description}</span>
-        </span>
-      </Button>
-    {/each}
-  </div>
+  {#if cards.length > 1}
+    <div
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+      role="radiogroup"
+      aria-label={m.settings_providerProfileKinds_picker_ariaLabel()}
+    >
+      {#each cards as card (card.kind)}
+        {@const selected = card.kind === kind}
+        <Button
+          variant="outline"
+          role="radio"
+          aria-checked={selected}
+          disabled={saving}
+          truncateLabel={false}
+          labelClass="flex items-start gap-3"
+          class="h-auto justify-start gap-3 whitespace-normal p-4 text-left {selected
+            ? 'border-foreground bg-muted'
+            : ''}"
+          data-testid={`onboarding-connect-kind-${card.kind}`}
+          onclick={() => choose(card.kind)}
+        >
+          <span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+            <Fa icon={card.icon} class="size-4 text-foreground" />
+          </span>
+          <span class="flex min-w-0 flex-col gap-1">
+            <span class="type-body font-medium! text-foreground">{card.title}</span>
+            <span class="type-caption text-muted-foreground">{card.description}</span>
+          </span>
+        </Button>
+      {/each}
+    </div>
+  {:else if cards[0]}
+    <!-- One kind (Grok, Droid, Cursor, Auggie): no choice to make, only its note. -->
+    <p class="type-body text-muted-foreground" data-testid="onboarding-connect-kind-note">
+      {cards[0].description}
+    </p>
+  {/if}
 
   {#key kind}
     <ProfileSecretFields

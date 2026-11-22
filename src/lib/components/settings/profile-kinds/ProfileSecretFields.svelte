@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Body of the secret-based screens: API key (add + edit, both providers;
-   * Claude's has the optional Custom endpoint) and Token (add + edit, both
-   * providers). Onboarding reuses it without the last "paste it" step. A saved
+   * Body of the secret-based screens: API key (add + edit; Claude's has the
+   * optional Custom endpoint) and Token (add + edit), for every provider with
+   * profile kinds; the steps and links come from `profile-kind-copy`. Onboarding reuses it without the last "paste it" step. A saved
    * key or token is never shown: edit reads "Saved ••••" with Replace.
    * Presentational only; the dialog owns validation and the key check.
    */
@@ -12,6 +12,11 @@
   import { FormField } from '$lib/components/patterns/form';
   import { Button, CopyButton, Input } from '$lib/components/patterns/settings/custom-controls';
   import type { BaseUrlAction, ProfileKindProvider } from './profile-kind-mock';
+  import {
+    pasteStepLabel as pasteStepText,
+    secretGuide,
+    secretKindLabel,
+  } from './profile-kind-copy';
 
   interface Props {
     provider: ProfileKindProvider;
@@ -61,50 +66,13 @@
     customEndpoint = true,
   }: Props = $props();
 
-  const ANTHROPIC_CONSOLE_KEYS_URL = 'https://console.anthropic.com/settings/keys'; // i18n-ignore (URL)
-  const OPENAI_ACCESS_TOKENS_URL = 'https://developers.openai.com/codex/enterprise/access-tokens'; // i18n-ignore (URL)
-  const OPENAI_API_KEYS_URL = 'https://platform.openai.com/api-keys'; // i18n-ignore (URL)
-  const SETUP_TOKEN_COMMAND = 'claude setup-token'; // i18n-ignore (CLI command)
   const BASE_URL_PLACEHOLDER = 'https://'; // i18n-ignore (URL prefix)
 
   const claudeApiKey = $derived(provider === 'claude' && kind === 'apiKey');
-  const codexApiKey = $derived(provider === 'codex' && kind === 'apiKey');
-  const pasteStepLabel = $derived.by(() => {
-    if (!keyCheck) return m.settings_providerProfileKinds_pasteNoCheck_label();
-    if (kind === 'apiKey') return m.settings_providerProfileKinds_apiKeyClaudeStep3_label();
-    return provider === 'claude'
-      ? m.settings_providerProfileKinds_tokenClaudeStep3_label()
-      : m.settings_providerProfileKinds_tokenCodexStep2_label();
-  });
+  const guide = $derived(secretGuide(provider, kind));
+  const pasteStepLabel = $derived(pasteStepText(kind, keyCheck));
   const showSecretField = $derived(mode === 'add' || !secretSaved || replacing);
-  const fieldLabel = $derived(
-    kind === 'apiKey'
-      ? m.settings_providerProfileKinds_apiKey_label()
-      : m.settings_providerProfileKinds_token_label(),
-  );
-
-  /** Steps link: the provider's API keys page, or OpenAI's token guide (Codex token). */
-  const stepsLink = $derived.by(() => {
-    if (claudeApiKey) {
-      return {
-        href: ANTHROPIC_CONSOLE_KEYS_URL,
-        label: m.settings_providerProfileKinds_anthropicConsole_link(),
-      };
-    }
-    if (codexApiKey) {
-      return {
-        href: OPENAI_API_KEYS_URL,
-        label: m.settings_providerProfileKinds_openAiApiKeys_link(),
-      };
-    }
-    if (provider === 'codex') {
-      return {
-        href: OPENAI_ACCESS_TOKENS_URL,
-        label: m.settings_providerProfileKinds_openAiAccessTokens_link(),
-      };
-    }
-    return undefined;
-  });
+  const fieldLabel = $derived(secretKindLabel(provider, kind));
 
   function cancelReplace() {
     replacing = false;
@@ -113,9 +81,9 @@
 </script>
 
 <div class="space-y-5" data-testid="provider-profile-secret" data-kind={kind}>
-  {#if provider === 'codex' && kind === 'token'}
+  {#if guide.eligibility}
     <p class="type-body text-muted-foreground" data-testid="provider-profile-token-eligibility">
-      {m.settings_providerProfileKinds_tokenCodexEligibility_description()}
+      {guide.eligibility}
     </p>
   {/if}
 
@@ -126,41 +94,36 @@
           ? m.settings_providerProfileKinds_apiKeyClaudeSteps_label()
           : m.settings_providerProfileKinds_tokenSteps_label()}
       </h3>
-      <!-- Fixed instruction copy per kind, not a data collection. -->
+      <!-- Fixed instruction copy per provider and kind, not a data collection. -->
       <ol class="type-body list-decimal space-y-1 pl-5 text-muted-foreground">
-        {#if claudeApiKey}
-          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep1_label()}</li>
-          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep2_label()}</li>
-        {:else if codexApiKey}
-          <li>{m.settings_providerProfileKinds_apiKeyCodexStep1_label()}</li>
-          <li>{m.settings_providerProfileKinds_apiKeyCodexStep2_label()}</li>
-        {:else if provider === 'claude'}
-          <li>
-            {m.settings_providerProfileKinds_tokenClaudeStep1_label()}
+        <!-- At most two fixed steps, so no collection rendering. -->
+        <li>
+          {guide.steps[0]}
+          {#if guide.command}
             <span class="mt-1 flex items-center gap-2" data-testid="provider-profile-setup-token">
               <code
                 class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
-                >{SETUP_TOKEN_COMMAND}</code
+                >{guide.command}</code
               >
-              <CopyButton text={SETUP_TOKEN_COMMAND} size="sm" />
+              <CopyButton text={guide.command} size="sm" />
             </span>
-          </li>
-          <li>{m.settings_providerProfileKinds_tokenClaudeStep2_label()}</li>
-        {:else}
-          <li>{m.settings_providerProfileKinds_tokenCodexStep1_label()}</li>
+          {/if}
+        </li>
+        {#if guide.steps[1]}
+          <li>{guide.steps[1]}</li>
         {/if}
         {#if pasteStep}
           <li>{pasteStepLabel}</li>
         {/if}
       </ol>
-      {#if stepsLink}
+      {#if guide.link}
         <Button
           variant="link"
           size="sm"
-          href={stepsLink.href}
+          href={guide.link.href}
           target="_blank"
           rel="noopener noreferrer"
-          class="h-auto px-0">{stepsLink.label}</Button
+          class="h-auto px-0">{guide.link.label}</Button
         >
       {/if}
     </section>

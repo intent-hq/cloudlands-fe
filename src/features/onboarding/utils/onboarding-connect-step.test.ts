@@ -3,6 +3,8 @@ import type { ProviderProfile } from '$shared/provider-profiles';
 import {
   CONNECT_KINDS,
   canContinueConnect,
+  connectKindsFor,
+  connectProviderFor,
   connectSecretIssue,
   savedConnectProfile,
   uniqueProfileName,
@@ -13,6 +15,46 @@ const pad = 'A1b2C3d4E5f6G7h8I9j0K1l2';
 describe('CONNECT_KINDS', () => {
   it('preselects the subscription or ChatGPT token, then offers an API key', () => {
     expect(CONNECT_KINDS).toEqual(['token', 'apiKey']);
+  });
+});
+
+describe('connectProviderFor', () => {
+  it('runs the step only for a row the daemon offers profiles for', () => {
+    expect(connectProviderFor({ id: 'grok', supportsProfiles: true })).toBe('grok');
+    expect(connectProviderFor({ id: 'claude-code', supportsProfiles: true })).toBe('claude');
+    // An older daemon: no Grok or Cursor profiles.
+    expect(connectProviderFor({ id: 'cursor', supportsProfiles: false })).toBeUndefined();
+    expect(connectProviderFor({ id: 'cursor' })).toBeUndefined();
+    expect(connectProviderFor({ id: 'opencode', supportsProfiles: true })).toBeUndefined();
+    expect(connectProviderFor(undefined)).toBeUndefined();
+  });
+});
+
+describe('connectKindsFor', () => {
+  it('offers each provider its own kinds, the first preselected', () => {
+    expect(connectKindsFor('claude')).toEqual(['token', 'apiKey']);
+    expect(connectKindsFor('codex')).toEqual(['token', 'apiKey']);
+    expect(connectKindsFor('grok')).toEqual(['apiKey']);
+    expect(connectKindsFor('droid')).toEqual(['apiKey']);
+    expect(connectKindsFor('cursor')).toEqual(['apiKey']);
+    expect(connectKindsFor('auggie')).toEqual(['token']);
+  });
+
+  it('checks the new providers’ formats only', () => {
+    expect(connectSecretIssue('grok', 'apiKey', `xai-${pad}`)).toBeUndefined();
+    expect(connectSecretIssue('grok', 'apiKey', `sk-${pad}`)).toBe('shape');
+    expect(connectSecretIssue('cursor', 'apiKey', `${pad}${pad}`)).toBeUndefined();
+    expect(connectSecretIssue('cursor', 'apiKey', 'short')).toBe('shape');
+    expect(connectSecretIssue('droid', 'apiKey', `fk-${pad}`)).toBeUndefined();
+    expect(
+      connectSecretIssue(
+        'auggie',
+        'token',
+        'SESSION={"accessToken":"t","tenantURL":"https://t.invalid/","scopes":[]}',
+      ),
+    ).toBeUndefined();
+    expect(connectSecretIssue('auggie', 'token', '{}')).toBe('shape');
+    expect(connectSecretIssue('auggie', 'token', ' ')).toBe('empty');
   });
 });
 
