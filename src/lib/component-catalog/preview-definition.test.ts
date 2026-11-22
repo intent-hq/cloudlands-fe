@@ -52,6 +52,34 @@ describe('preview definitions', () => {
     ).toThrow('Preview “example” default state “missing” is not defined.');
   });
 
+  it('rejects the reserved "all" state name, which the scene uses for every state', () => {
+    expect(() =>
+      definePreview({
+        id: 'example',
+        title: 'Example',
+        defaultState: 'default',
+        states: {
+          default: { props: {} },
+          // @ts-expect-error -- "all" is reserved for the all-states scene.
+          all: { props: {} },
+        },
+      }),
+    ).toThrow(
+      'Preview “example” cannot name a state “all”: the sandbox reserves it to show every state.',
+    );
+  });
+
+  it('rejects the reserved state name in discovered previews that bypass the type', () => {
+    const untyped = {
+      ...definition,
+      states: { ...definition.states, all: { props: { label: 'All' } } },
+    } as unknown as PreviewDefinition<{ label: string }>;
+
+    expect(() => validatePreviewDefinition(untyped, 'example')).toThrow(
+      'Preview “example” cannot name a state “all”: the sandbox reserves it to show every state.',
+    );
+  });
+
   it('rejects a definition id that does not match its discovered slug', () => {
     expect(() => validatePreviewDefinition(definition, 'other')).toThrow(
       'Preview slug “other” does not match definition id “example”.',

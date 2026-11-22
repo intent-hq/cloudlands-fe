@@ -14,11 +14,18 @@ export interface PreviewCaptureReadiness {
   readinessTimeoutMs?: number;
 }
 
+/** CatalogScene renders every state when the requested state is this name. */
+export const ALL_PREVIEW_STATES = 'all';
+
+type PreviewStates<Props> = Record<string, PreviewState<Props>> & {
+  [ALL_PREVIEW_STATES]?: never;
+};
+
 export interface PreviewDefinition<Props> {
   id: string;
   title: string;
   defaultState: string;
-  states: Record<string, PreviewState<Props>>;
+  states: PreviewStates<Props>;
   captureReadiness?: PreviewCaptureReadiness;
 }
 
@@ -40,6 +47,11 @@ export function validatePreviewDefinition<Props>(
   const states = definition.states && Object.keys(definition.states);
   if (!states || states.length === 0) {
     throw new Error(`Preview “${definition.id}” must define at least one state.`);
+  }
+  if (Object.prototype.hasOwnProperty.call(definition.states, ALL_PREVIEW_STATES)) {
+    throw new Error(
+      `Preview “${definition.id}” cannot name a state “${ALL_PREVIEW_STATES}”: the sandbox reserves it to show every state.`,
+    );
   }
   if (!Object.prototype.hasOwnProperty.call(definition.states, definition.defaultState)) {
     throw new Error(

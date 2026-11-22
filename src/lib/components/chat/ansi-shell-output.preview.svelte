@@ -41,10 +41,10 @@
   export const preview = definePreview({
     id: 'ansi-shell-output',
     title: 'Shell output colors',
-    defaultState: 'all',
+    defaultState: 'combined',
     captureReadiness: { selector: '[data-tool-icon]' },
     states: {
-      all: { props: { samples: ['cargo', 'nextest', 'progress', 'extended', 'plain'] } },
+      combined: { props: { samples: ['cargo', 'nextest', 'progress', 'extended', 'plain'] } },
       cargo: { props: { samples: ['cargo'] } },
       nextest: { props: { samples: ['nextest'] } },
       progress: { props: { samples: ['progress'] } },
