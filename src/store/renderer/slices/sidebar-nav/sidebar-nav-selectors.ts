@@ -285,9 +285,7 @@ export const selectStatsOverlayOpen = store.createSelector(
 /** Live (not archived) Chief threads: pinned first, then by latest activity. */
 export const selectChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
   getLiveChiefSessions(state)
-    .sort(
-      (a, b) => Number(b.pinned === true) - Number(a.pinned === true) || byDaemonActivity(a, b),
-    )
+    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || byDaemonActivity(a, b))
     .map(toChiefThreadSummary),
 );
 
