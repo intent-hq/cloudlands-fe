@@ -558,10 +558,7 @@
       .then((result) => (providerAvailability = result))
       .catch(() => {});
   });
-  $effect(() => {
-    void $specialists;
-    defaultModelPreviews.invalidate();
-  });
+  $effect(() => defaultModelPreviews.invalidate($specialists));
   $effect(() => {
     if (isWorkspaceCreate && shownSetup.provider) defaultModelPreviews.load(shownSetup.provider);
   });

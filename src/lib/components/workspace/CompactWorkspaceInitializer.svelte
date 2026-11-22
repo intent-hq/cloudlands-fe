@@ -90,7 +90,10 @@
     selectCustomSpecialistsLoaded,
     selectFileSpecialistsLoaded,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
+  import {
+    ensureSpecialistsLoaded,
+    refetchSpecialistsRequested,
+  } from '$store/renderer/slices/specialists/specialists-slice';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import { createLogger } from '$lib/utils/client-logger';
   import { getGitErrorMessage, parseGitHubUrl } from '$lib/utils/workspace-validation';
@@ -1342,7 +1345,7 @@
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
   onMount(() => {
-    appStore.dispatch(refetchSpecialistsRequested());
+    appStore.dispatch(ensureSpecialistsLoaded());
     if (repoType === 'gitlab' && !selectCheckoutForm.select(appStore.state, checkoutFormId))
       restoreCheckout(readRepositoryCheckoutDraft(savedState?.repositoryCheckoutDraft));
     logger.debug('Preloading issues on mount');

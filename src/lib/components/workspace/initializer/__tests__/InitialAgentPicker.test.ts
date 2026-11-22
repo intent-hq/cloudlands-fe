@@ -1646,6 +1646,52 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(mocks.specialistsList).toHaveBeenCalledTimes(2);
   });
 
+  it('shares one per-provider preview fetch across mounted pickers', async () => {
+    mocks.fileSpecialistsLoaded$.set(true);
+    const props = { selectedSpecialist: 'spec-writer', isTeamMode: true };
+
+    render(InitialAgentPicker, { props });
+    render(InitialAgentPicker, { props });
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-default').map((el) => el.textContent)).toEqual([
+        'fable-5',
+        'fable-5',
+      ]),
+    );
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(1);
+
+    mocks.specialistsList.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+      ]),
+    );
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+    ]);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-default').map((el) => el.textContent)).toEqual([
+        'sonnet-4.6',
+        'sonnet-4.6',
+      ]),
+    );
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed per-provider preview fetch on the next refresh', async () => {
+    mocks.fileSpecialistsLoaded$.set(true);
+    mocks.specialistsList.mockRejectedValueOnce(new Error('connection closed'));
+
+    render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
+    await waitFor(() => expect(mocks.specialistsList).toHaveBeenCalledTimes(1));
+
+    mocks.specialists$.set([{ id: 'spec-writer', name: 'Coordinator', description: '' }]);
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(2);
+  });
+
   it('falls back to the store resolvedModel until the per-provider fetch lands', async () => {
     // Per-provider fetch never resolves — the store view (daemon default
     // provider context) must drive the preview.

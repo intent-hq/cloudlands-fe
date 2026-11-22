@@ -553,10 +553,7 @@
   // (daemon `specialists:changed` → list subscription refetch), so the
   // resolvedModel preview tracks specialist/settings changes while the picker
   // stays mounted. The fetch effect below then refetches on demand.
-  $effect(() => {
-    void $specialists$;
-    previews.invalidate();
-  });
+  $effect(() => previews.invalidate($specialists$));
 
   $effect(() => previews.load(selectedProvider));
 
