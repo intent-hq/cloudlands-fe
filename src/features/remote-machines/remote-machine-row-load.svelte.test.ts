@@ -36,6 +36,8 @@ describe('runner load on a machine row', () => {
     expect(load.dataset.machineLoad).toBe('4');
     expect(load.textContent).toBe('4 agents running');
     expect(within(studio).queryByText(/CPU/)).toBeNull();
+    // Only on the runner row: the Hosts list does not repeat it.
+    expect(document.querySelectorAll('[data-machine-load]')).toHaveLength(1);
   });
 
   it('shows the count at 0 when the runner reports CPU and memory, so the tooltip is reachable', async () => {
