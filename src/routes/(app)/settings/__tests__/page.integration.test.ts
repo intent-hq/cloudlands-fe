@@ -542,7 +542,7 @@ describe('settings tab route and focus behavior', () => {
     ['input', 'Inputs', 'page'],
     ['token-savings', 'Token Savings', 'page'],
     ['performance', 'Performance', 'page'],
-    ['unknown', 'Instructions', 'page'],
+    ['unknown', 'Providers', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
