@@ -106,9 +106,7 @@ vi.mock('../json-rpc-client', () => {
       rpc.options.push(options);
       return method === 'principal.me' ? rpc.principal() : rpc.handler(method);
     });
-    registerMethod(): () => void {
-      return () => {};
-    }
+    registerMethod = vi.fn((_method: string): (() => void) => () => {});
     getConfig(): unknown {
       return this.config;
     }
@@ -685,6 +683,36 @@ describe('openBackendWindow connect-before-open', () => {
     await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/no stored token/i);
     expect(lifecycle.events).toEqual([]);
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('never offers the Assistant relay to a guest session or reports one', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    await mod.openBackendWindow(REMOTE.id);
+    await mod.openBackendWindow(GUEST.id);
+    type Pooled = {
+      hello(result: unknown): void;
+      registerMethod: ReturnType<typeof vi.fn>;
+      request: ReturnType<typeof vi.fn>;
+    };
+    const owner = mod.getBackendClientForConnection(REMOTE.id) as unknown as Pooled;
+    const guest = mod.getBackendClientForConnection(GUEST.id) as unknown as Pooled;
+    owner.hello({});
+    guest.hello({});
+
+    const registered = (client: Pooled) => client.registerMethod.mock.calls.map(([m]) => m);
+    expect(registered(owner)).toContain('backends.relayCall');
+    expect(registered(guest)).not.toContain('backends.relayCall');
+
+    const reports = (client: Pooled) =>
+      client.request.mock.calls.filter(([method]) => method === 'backends.report');
+    await vi.waitFor(() => expect(reports(owner)).not.toHaveLength(0));
+    expect(reports(guest)).toHaveLength(0);
+    const sent = JSON.stringify(reports(owner).map(([, params]) => params));
+    expect(sent).not.toContain(GUEST.host);
+    expect(sent).not.toContain(GUEST.fingerprint);
   });
 
   it('a guest re-join evicts the pooled client built on the superseded credential', async () => {
