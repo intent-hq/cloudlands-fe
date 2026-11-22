@@ -80,6 +80,7 @@ const FAILURE_CODES: ReadonlySet<string> = new Set<RemoteMachineFailure['code']>
   'machine-update-required',
   'machine-unreachable',
   'machine-in-use',
+  'machine-orchestrator',
   'failed',
 ]);
 
@@ -466,6 +467,13 @@ function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGen
   yield* call(notify.error, m.remoteMachines_order_saveFailed_error());
 }
 
+/** A runner the backend removed because it is now an orchestrator: say so once. */
+function* announceRemoval(action: ReturnType<typeof remoteMachineRemoved>): SagaGenerator<void> {
+  const [, removal] = action.payload;
+  if (removal?.reason !== 'orchestrator') return;
+  yield* call(notify.info, m.remoteMachines_removed_orchestrator_info({ machine: removal.name }));
+}
+
 export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeLatest(
     [remoteMachinesRefreshRequested, backendReconnected, setLabsRemoteAgentsEnabled],
@@ -476,5 +484,6 @@ export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeEvery(remoteMachineUnexposeRequested, unexpose);
   yield* takeEvery(executorRevokeRequested, revokeExecutor);
   yield* takeEvery(remoteMachineRefreshRequested, refreshMachine);
+  yield* takeEvery(remoteMachineRemoved, announceRemoval);
   yield* takeEvery(machineOrderSetRequested, setOrder);
 }

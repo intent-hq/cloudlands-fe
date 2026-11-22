@@ -4,7 +4,13 @@
   import { m } from '$shared/paraglide/messages.js';
   import { setupNodesFixture as setup, type NodesPreviewState } from '../../test/nodes-preview';
 
-  type Scene = NodesPreviewState | 'add-menu' | 'prompt' | 'invite-prompt';
+  type Scene =
+    | NodesPreviewState
+    | 'add-menu'
+    | 'prompt'
+    | 'invite-prompt'
+    | 'orchestrator-menu'
+    | 'orchestrator-removed';
   interface Props {
     scene?: Scene;
   }
@@ -45,6 +51,16 @@
       'wrong-token': sceneState('wrong-token'),
       'backend-unsupported': sceneState('backend-unsupported'),
       'labs-off': sceneState('labs-off'),
+      // An orchestrator host's row menu: no "Let <backend> run agents here".
+      'orchestrator-menu': {
+        props: { scene: 'orchestrator-menu' },
+        setup: () => setup('orchestrator-host'),
+      },
+      // The notice after the backend removed a runner that became an orchestrator.
+      'orchestrator-removed': {
+        props: { scene: 'orchestrator-removed' },
+        setup: () => setup('orchestrator-host'),
+      },
       'invite-prompt': {
         props: { scene: 'invite-prompt' },
         setup: () => {
@@ -84,6 +100,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { ConfirmHost } from '$lib/components/patterns/confirm';
+  import { notify } from '$lib/components/patterns/notify';
+  import { Toast, toast } from '$lib/components/ui/toast';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
 
@@ -91,9 +109,38 @@
   const connectionId$ = selectCurrentConnectionId();
   let ready = $state(false);
 
-  onMount(async () => {
-    await tick();
-    ready = true;
+  const toasterId = 'nodes-preview';
+  const toastId = 'nodes-preview-orchestrator-removed';
+
+  /** Open the orchestrator row's menu once the row and then the menu are rendered. */
+  async function openOrchestratorMenu() {
+    const seek = <T extends Element>(selector: string) =>
+      new Promise<T | null>((resolve) => {
+        let tries = 0;
+        const look = () => {
+          const found = document.querySelector<T>(selector);
+          if (found || ++tries > 60) resolve(found);
+          else requestAnimationFrame(look);
+        };
+        look();
+      });
+    (await seek<HTMLButtonElement>('button[aria-label="Actions for Intent cache"]'))?.click();
+    await seek('[role="menu"]');
+  }
+
+  onMount(() => {
+    void (async () => {
+      await tick();
+      if (scene === 'orchestrator-menu') await openOrchestratorMenu();
+      if (scene === 'orchestrator-removed')
+        notify.info(m.remoteMachines_removed_orchestrator_info({ machine: 'Intent cache' }), {
+          id: toastId,
+          toasterId,
+          duration: Number.POSITIVE_INFINITY,
+        });
+      ready = true;
+    })();
+    return () => toast.dismiss(toastId);
   });
 </script>
 
@@ -106,4 +153,5 @@
     <DevicesSettings initialAddMenuOpen={scene === 'add-menu'} />
   {/if}
   <ConfirmHost />
+  {#if scene === 'orchestrator-removed'}<Toast {toasterId} />{/if}
 </div>

@@ -73,6 +73,18 @@ describe('Machines and Nodes', () => {
     expect(screen.getByRole('menuitem', { name: 'Remove' })).toBeTruthy();
   });
 
+  it('never offers to make an orchestrator host a runner', async () => {
+    seed('orchestrator-host');
+    render(DevicesSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Intent cache' }));
+    await screen.findByRole('menuitem', { name: 'Edit' });
+    expect(screen.queryByRole('menuitem', { name: 'Let Build box run agents here' })).toBeNull();
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    // A regular host in the same list still offers it.
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
+    await screen.findByRole('menuitem', { name: 'Let Build box run agents here' });
+  });
+
   it('highlights the row that was just added', () => {
     seed('added-machine');
     const view = render(DevicesSettings);

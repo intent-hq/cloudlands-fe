@@ -212,6 +212,45 @@ describe('remote machine relay — expose', () => {
     expect(machineCalls.map((c) => c.method)).toContain('executor.revoke');
   });
 
+  it('reports a machine that runs as an orchestrator, before minting anything', async () => {
+    const { relay, backend, machineCalls, backendCalls } = setup({
+      machine: {
+        'executor.mint': () => {
+          throw new JsonRpcError({
+            code: -32003,
+            message: 'executor.mint is off: this backend runs agents only on other machines',
+            data: { code: 'orchestrator-mode' },
+          });
+        },
+      },
+    });
+    const result = await relay.expose({ machineConnectionId: 'mac' }, backend);
+    expect(result).toMatchObject({ success: false, code: 'machine-orchestrator' });
+    expect(backendCalls.map((c) => c.method)).not.toContain('remoteMachines.add');
+    expect(machineCalls.map((c) => c.method)).not.toContain('executor.revoke');
+  });
+
+  it('reports a backend refusing an orchestrator machine, and revokes the fresh credential', async () => {
+    const { relay, backend, machineCalls } = setup({
+      backend: {
+        'remoteMachines.add': () => {
+          throw new JsonRpcError({
+            code: -32602,
+            message:
+              'Studio Mac is now an orchestrator and no longer runs agents for other backends.',
+            data: { code: 'machine-orchestrator' },
+          });
+        },
+      },
+    });
+    const result = await relay.expose({ machineConnectionId: 'mac' }, backend);
+    expect(result).toMatchObject({ success: false, code: 'machine-orchestrator' });
+    expect(machineCalls.at(-1)).toEqual({
+      method: 'executor.revoke',
+      params: { credentialId: 'cred-1' },
+    });
+  });
+
   it('maps a machine without executor.* (-32601) to update-required on the machine', async () => {
     const { relay, backend, backendCalls } = setup({
       machine: {

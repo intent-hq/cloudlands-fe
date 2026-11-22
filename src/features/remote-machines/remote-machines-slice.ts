@@ -69,9 +69,15 @@ export const machineOrderSaveSettled = createAction<[saveId: string, order?: Mac
 export const remoteMachineChanged = createAction<[machine: RemoteMachine]>(
   'remoteMachines/machineChanged',
 );
-export const remoteMachineRemoved = createAction<[machineId: string]>(
-  'remoteMachines/machineRemoved',
-);
+/** Why the backend removed a runner on its own, and the runner's name. */
+export interface RemoteMachineRemoval {
+  /** The runner now runs as an orchestrator (nodes.md "An orchestrator leaves its backends"). */
+  reason: 'orchestrator';
+  name: string;
+}
+export const remoteMachineRemoved = createAction<
+  [machineId: string, removal?: RemoteMachineRemoval]
+>('remoteMachines/machineRemoved');
 /**
  * Owner action on a saved machine row: make it available to the current
  * backend. `confirmed` skips the confirmation when the node prompt already asked.

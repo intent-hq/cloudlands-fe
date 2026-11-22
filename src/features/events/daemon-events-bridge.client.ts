@@ -3663,7 +3663,14 @@ function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
   const order = parseMachineOrder(data?.order);
   if (order) appStore.dispatch(machineOrderLoaded(order));
   if (data?.removed === true && typeof data.machineId === 'string' && data.machineId) {
-    appStore.dispatch(remoteMachineRemoved(data.machineId));
+    // `reason: "orchestrator"`: the runner left because it is now an
+    // orchestrator. Its name is read before the row goes, for the notice.
+    const name = appStore.state.remoteMachines.machines[data.machineId]?.name;
+    appStore.dispatch(
+      data.reason === 'orchestrator' && name
+        ? remoteMachineRemoved(data.machineId, { reason: 'orchestrator', name })
+        : remoteMachineRemoved(data.machineId),
+    );
     return;
   }
   const machine = parseRemoteMachine(data?.machine);
