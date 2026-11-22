@@ -1,5 +1,6 @@
 import { activateHoverAction, expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
+import { inUseTab } from './__tests__/sidebar-tab-name';
 
 const note = {
   sidebarTabId: 'notes',
@@ -117,7 +118,7 @@ for (const [name, target, selector, groupName] of [
       const component = await mount(SidebarTabsPreview, {
         props: { collapsed, terminals: 1, locate: target },
       });
-      const shells = component.getByRole('tab', { name: 'Shells', exact: true });
+      const shells = component.getByRole('tab', { name: inUseTab('Shells') });
       if (collapsed) await shells.hover();
       else await shells.click();
       const group = component
@@ -147,7 +148,7 @@ test('managers reveal saved scripts but not raw terminals', async ({ mount, page
     props: { manager: true, collapsed: true, terminals: 1, locate: script },
   });
   const rail = scriptView.locator('[data-workspace-sidebar-rail]');
-  await expect(rail.getByRole('tab', { name: 'Shells', exact: true })).toBeVisible();
+  await expect(rail.getByRole('tab', { name: inUseTab('Shells') })).toBeVisible();
   await scriptView.locator('[data-sidebar-preview-locate]').click();
   const flyout = scriptView.locator('[data-workspace-sidebar-flyout]');
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
@@ -206,7 +207,7 @@ test('a short rail scrolls its tabs under a fixed expand button', async ({
 
   // Reveal scrolls the target's rail tab into view without moving the expand button.
   await component.locator('[data-sidebar-preview-locate]').click();
-  const shells = rail.getByRole('tab', { name: 'Shells', exact: true });
+  const shells = rail.getByRole('tab', { name: inUseTab('Shells') });
   await expect(shells).toHaveAttribute('aria-selected', 'true');
   await expect(shells).toBeInViewport({ ratio: 1 });
   await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);

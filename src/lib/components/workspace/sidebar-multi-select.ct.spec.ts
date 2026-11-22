@@ -1,5 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
+import { inUseTab } from './__tests__/sidebar-tab-name';
 
 for (const theme of ['light', 'dark'] as const) {
   test(`Shift-click adds and removes panes without changing the main content in ${theme}`, async ({
@@ -218,8 +219,8 @@ test('restored multi-selection is filtered by permissions and keeps canonical pa
     },
   });
   const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
-  await expect(tabs.getByRole('tab', { name: 'Browsers', exact: true })).toHaveCount(0);
-  await expect(tabs.getByRole('tab', { name: 'Shells', exact: true })).toHaveCount(0);
+  await expect(tabs.getByRole('tab', { name: inUseTab('Browsers') })).toHaveCount(0);
+  await expect(tabs.getByRole('tab', { name: inUseTab('Shells') })).toHaveCount(0);
   await expect(tabs.getByRole('tab', { name: 'People', exact: true })).toHaveCount(0);
   await expect(tabs.getByRole('tab', { name: 'Files', exact: true })).toHaveAttribute(
     'aria-selected',

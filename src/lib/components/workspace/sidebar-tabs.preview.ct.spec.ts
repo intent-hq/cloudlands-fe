@@ -1,5 +1,6 @@
 import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
+import { inUseTab } from './__tests__/sidebar-tab-name';
 
 test('collapse and expand transfer keyboard focus', async ({ mount }) => {
   const component = await mount(SidebarTabsPreview);
@@ -47,7 +48,7 @@ test('overflowing icon tabs reveal restored, keyboard-selected, and resized sect
   const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
   const viewport = tabs.locator('[data-sidebar-tab-scroll]');
   const agents = tabs.getByRole('tab', { name: 'Agents', exact: true });
-  const shell = tabs.getByRole('tab', { name: 'Shells', exact: true });
+  const shell = tabs.getByRole('tab', { name: inUseTab('Shells') });
   const draft = component.getByRole('textbox', { name: 'Workspace draft' });
   await draft.fill('Keep this draft while the tab row scrolls.');
   await expect
@@ -254,7 +255,7 @@ for (const side of ['left', 'right'] as const) {
     expect(floating!.x).toBeGreaterThanOrEqual(bounds!.x);
     expect(floating!.x + floating!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
     expect(floating!.height).toBeLessThanOrEqual(bounds!.height);
-    await rail.getByRole('tab', { name: 'Shells', exact: true }).click();
+    await rail.getByRole('tab', { name: inUseTab('Shells') }).click();
     await expect(flyout.locator('[data-sidebar-section="shell"]')).toBeVisible();
     await testInfo.attach(`narrow-${side}`, {
       body: await page.screenshot(),
@@ -271,8 +272,8 @@ test('collaborators keep permitted sections in the collapsed rail', async ({
     props: { collaborator: true, collapsed: true },
   });
   const rail = component.locator('[data-workspace-sidebar-rail]');
-  await expect(rail.getByRole('tab', { name: 'Browsers', exact: true })).toHaveCount(0);
-  await expect(rail.getByRole('tab', { name: 'Shells', exact: true })).toHaveCount(0);
+  await expect(rail.getByRole('tab', { name: inUseTab('Browsers') })).toHaveCount(0);
+  await expect(rail.getByRole('tab', { name: inUseTab('Shells') })).toHaveCount(0);
   await rail.getByRole('tab', { name: 'Context', exact: true }).click();
   await expect(component.locator('[data-sidebar-section="context"]')).toBeVisible();
   await testInfo.attach('collaborator', {
