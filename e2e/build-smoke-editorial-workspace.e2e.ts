@@ -294,6 +294,7 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     workspaceId = await createWorkspaceWithPrompt(page, {
       repoPath: repo.repoPath,
       prompt: 'Prepare the editorial shell fixture',
+      providerName: 'Mock (E2E)',
     });
     await page.locator('[data-panel-id]').first().waitFor({ state: 'visible', timeout: 20_000 });
     await page
@@ -457,10 +458,9 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     const target = page.locator(`[data-panel-id="${firstPanelId}"]`);
     await target.click({ position: { x: 24, y: 96 } });
     await expect(target).toHaveAttribute('data-focused', 'true');
-    // Mod+Shift+M toggles workspace chrome; Mod+Shift+Enter zooms the focused panel.
-    await page.keyboard.press(
-      process.platform === 'darwin' ? 'Meta+Shift+Enter' : 'Control+Shift+Enter',
-    );
+    // Zoom is leader `z` (Mod+; then z); Mod+Shift+Enter opens the tab in its own window.
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+;' : 'Control+;');
+    await page.keyboard.press('z');
     await expect(target).toHaveAttribute('data-zoomed', 'true');
     await capture('desktop-light-zoomed-panel');
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');

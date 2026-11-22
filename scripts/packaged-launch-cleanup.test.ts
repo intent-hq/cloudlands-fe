@@ -123,6 +123,17 @@ it.each([
         return true;
       }),
     });
+    const page = {
+      on: vi.fn(),
+      url: () => 'app://workspaces/',
+      evaluate: vi.fn(async () => [1920, 1080]),
+      waitForFunction: vi.fn(async () => {
+        if (stage.startsWith('log-after-handoff') || stage.startsWith('exit-')) return;
+        throw primary;
+      }),
+      waitForTimeout: vi.fn(async () => undefined),
+      locator: () => ({ first: () => ({ isVisible: async () => false }) }),
+    };
     const app = {
       process: () => proc,
       close: vi.fn(async () => {
@@ -137,16 +148,9 @@ it.each([
       evaluate: vi.fn(),
       firstWindow: vi.fn(async () => {
         if (stage === 'firstWindow') throw primary;
-        return {
-          on: vi.fn(),
-          waitForFunction: vi.fn(async () => {
-            if (stage.startsWith('log-after-handoff') || stage.startsWith('exit-')) return;
-            throw primary;
-          }),
-          waitForTimeout: vi.fn(async () => undefined),
-          locator: () => ({ first: () => ({ isVisible: async () => false }) }),
-        };
+        return page;
       }),
+      windows: vi.fn(() => [page]),
     };
     mocks.launch.mockImplementation(async (options) => {
       const profile = options.env.INTENTD_DATA_DIR.slice(0, -'/intentd'.length);

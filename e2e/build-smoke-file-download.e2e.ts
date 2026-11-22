@@ -141,6 +141,7 @@ test.describe('Build Smoke — File tab image actions', () => {
     workspaceId = await createWorkspaceWithPrompt(page, {
       repoPath: repo.repoPath,
       prompt: 'Review the media fixtures',
+      providerName: 'Mock (E2E)',
     });
     worktreePath = (await getSmokeWorkspace(page, workspaceId)).worktreePath;
     saveRoot = mkdtempSync(path.join(tmpdir(), 'file-download-'));
