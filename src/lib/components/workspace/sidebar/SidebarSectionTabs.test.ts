@@ -266,9 +266,12 @@ describe('sidebar in-use dots', () => {
   it('marks Browser while the workspace has browser tabs', async () => {
     const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
     expect(dot(view, 'browser')).toBeNull();
+    expect(view.getByRole('tab', { name: 'Browsers', exact: true })).toBeTruthy();
     live.hasBrowserTabs.set(true);
     await waitFor(() => expect(dot(view, 'browser')).not.toBeNull());
+    expect(view.getByRole('tab', { name: 'Browsers (in use)', exact: true })).toBeTruthy();
     expect(dot(view, 'shell')).toBeNull();
+    expect(view.getByRole('tab', { name: 'Shells', exact: true })).toBeTruthy();
   });
 
   it('marks Shell for an open terminal or a live script, not an idle one', async () => {
@@ -281,6 +284,7 @@ describe('sidebar in-use dots', () => {
     await waitFor(() => expect(dot(view, 'shell')).toBeNull());
     live.terminals.set([{ id: 'terminal-1' }]);
     await waitFor(() => expect(dot(view, 'shell')).not.toBeNull());
+    expect(view.getByRole('tab', { name: 'Shells (in use)', exact: true })).toBeTruthy();
   });
 
   it('ignores raw terminals a collaborator cannot open', async () => {
