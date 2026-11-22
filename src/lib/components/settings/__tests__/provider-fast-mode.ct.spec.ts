@@ -46,9 +46,7 @@ test('Service Tier supports keyboard selection and keeps Claude independent', as
   await expect(standard).toBeFocused();
   await expect(fast).toHaveAttribute('aria-checked', 'true');
   await expect(standard).toHaveAttribute('aria-checked', 'false');
-  await expect(fast).toHaveAccessibleDescription(
-    /next turn.*usage and costs.*model and account/,
-  );
+  await expect(fast).toHaveAccessibleDescription(/next turn.*usage and costs.*model and account/);
   await page.keyboard.press('Space');
   await expect(standard).toHaveAttribute('aria-checked', 'true');
   await expect(fast).toHaveAttribute('aria-checked', 'false');
