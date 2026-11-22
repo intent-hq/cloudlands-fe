@@ -4,7 +4,8 @@
 retire-obsolete-merge-runs.py is an exact copy from intent-hq/intentd commit
 df970a6df21589bcd8a73bb09b5d153ebccc3d95 (intentd#2562) plus
 40a474c105262a26dfb113215170f1b26afe3fd1 (intentd#3364),
-efe3ee7729ea7cad7048d74c764883cb994ea9ae (intentd#3366) and intentd#3645. Its regression scenarios are
+efe3ee7729ea7cad7048d74c764883cb994ea9ae (intentd#3366) and
+2d413655831965f0ce4e3b7b1eef5a8b6375a95e (intentd#3645). Its regression scenarios are
 retained with pre-import isolation and in-process CLI parsing for portable offline tests.
 No runtime dependency on that repository exists. This caller pins cloudlands-fe.
 A cursor only orders work; every cancellation still requires the full policy.
