@@ -317,7 +317,7 @@
     "playwright": "^1.65.1",
     "postcss": "^8.5.33",
     "prettier": "^3.10.1",
-    "prettier-plugin-svelte": "^4.2.0",
+    "prettier-plugin-svelte": "^4.1.1",
     "qrcode": "^1.5.4",
     "redux-saga": "1.6.0",
     "sharp": "^0.35.5",
