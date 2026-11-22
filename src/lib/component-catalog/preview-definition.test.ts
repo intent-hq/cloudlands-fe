@@ -76,7 +76,7 @@ describe('preview definitions', () => {
     } as unknown as PreviewDefinition<{ label: string }>;
 
     expect(() => validatePreviewDefinition(untyped, 'example')).toThrow(
-      'Preview “example” cannot name a state “all”',
+      'Preview “example” cannot name a state “all”: the sandbox reserves it to show every state.',
     );
   });
 
