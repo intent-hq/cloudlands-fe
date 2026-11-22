@@ -86,6 +86,13 @@ function byRecency(a: AgentSession, b: AgentSession): number {
   return agentActivityTimestamp(b) - agentActivityTimestamp(a);
 }
 
+/** Orders by the daemon's activity stamp only, so loading a chat's history cannot move its row. */
+function byDaemonActivity(a: AgentSession, b: AgentSession): number {
+  const stamp = (session: AgentSession) =>
+    new Date(session.lastActivity ?? session.updatedAt ?? session.createdAt).getTime() || 0;
+  return stamp(b) - stamp(a);
+}
+
 // ── Direct state selectors ──
 export const selectPanelItem = store.createSelector((state) => state.sidebarNav.panelItem);
 
@@ -278,7 +285,9 @@ export const selectStatsOverlayOpen = store.createSelector(
 /** Live (not archived) Chief threads: pinned first, then by latest activity. */
 export const selectChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
   getLiveChiefSessions(state)
-    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || byRecency(a, b))
+    .sort(
+      (a, b) => Number(b.pinned === true) - Number(a.pinned === true) || byDaemonActivity(a, b),
+    )
     .map(toChiefThreadSummary),
 );
 
@@ -286,7 +295,7 @@ export const selectChiefThreads = store.createSelector((state): ChiefThreadSumma
 export const selectRetiredChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
   getChiefSessions(state)
     .filter((session) => !!session.retiredAt)
-    .sort(byRecency)
+    .sort(byDaemonActivity)
     .map(toChiefThreadSummary),
 );
 

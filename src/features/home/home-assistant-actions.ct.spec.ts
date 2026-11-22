@@ -19,6 +19,80 @@ function wireCalls(page: CtPage, method?: string) {
   );
 }
 
+test('opening read and unread Assistant chats preserves their activity order', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Harness, { hooksConfig: { mockBackend: {} } });
+  await page.evaluate(() => window.__homeAssistantActions!.prepareTranscriptTest());
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  const list = sidebar.getByRole('listbox', { name: 'Assistant thread', exact: true });
+  const order = () =>
+    list
+      .locator('[data-assistant-thread]')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-assistant-thread')));
+  const initialOrder = [3, 0, 1, 2].map((index) => `home-assistant-${index}`);
+  await expect.poll(order).toEqual(initialOrder);
+  for (const [index, unread] of [
+    [1, false],
+    [2, true],
+  ] as const) {
+    const agentId = `home-assistant-${index}`;
+    const messageId = `home-assistant-reply-${index}`;
+    const markSeen = { workspaceId: '__chief__', agentId, messageId };
+    expect(await page.evaluate((id) => window.__homeAssistantActions!.isUnread(id), agentId)).toBe(
+      unread,
+    );
+    await list
+      .getByRole('option')
+      .filter({ has: page.locator(`[data-assistant-thread="${agentId}"]`) })
+      .click();
+    await expect
+      .poll(() => wireCalls(page, 'agent.get'))
+      .toContainEqual({
+        method: 'agent.get',
+        params: { workspaceId: '__chief__', agentId },
+      });
+    await expect
+      .poll(() => wireCalls(page, 'chat.subscribe'))
+      .toContainEqual({
+        method: 'chat.subscribe',
+        params: {
+          workspaceId: '__chief__',
+          agentId,
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      });
+    expect(await order()).toEqual(initialOrder);
+    expect(await wireCalls(page, 'agent.markSeen')).not.toContainEqual({
+      method: 'agent.markSeen',
+      params: markSeen,
+    });
+    await page.evaluate((id) => window.__homeAssistantActions!.deliverTranscript(id), agentId);
+    await expect(page.getByText(`Saved reply ${index}`, { exact: true })).toBeVisible();
+    expect(await order()).toEqual(initialOrder);
+    if (unread) {
+      await expect
+        .poll(() => wireCalls(page, 'agent.markSeen'))
+        .toContainEqual({
+          method: 'agent.markSeen',
+          params: markSeen,
+        });
+      await expect
+        .poll(() => page.evaluate((id) => window.__homeAssistantActions!.isUnread(id), agentId))
+        .toBe(false);
+      expect(await order()).toEqual(initialOrder);
+    }
+  }
+  await page.evaluate(() =>
+    window.__homeAssistantActions!.refreshActivity('home-assistant-2', '2026-09-29T12:30:00Z'),
+  );
+  await expect.poll(order).toEqual([3, 2, 0, 1].map((index) => `home-assistant-${index}`));
+});
+
 test('right-click menu pins, archives, restores and deletes one Assistant chat', async ({
   mount,
   page,
