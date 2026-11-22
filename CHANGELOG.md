@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.370.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.1...v2.370.2) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** capture one untiled image of tabs in a zoomed app ([#4808](https://github.com/intent-hq/cloudlands-fe/issues/4808)) ([502e6d5](https://github.com/intent-hq/cloudlands-fe/commit/502e6d574a048ec50cf902e490eb8ba1bb1cf099))
+
 ## [2.370.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.0...v2.370.1) (2026-11-22)
 
 
