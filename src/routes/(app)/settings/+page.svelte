@@ -1039,7 +1039,10 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <LabsSettings />
-          <TunnelRelaySettings />
+          <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
+          {#if !$hostManagesConnections$}
+            <TunnelRelaySettings />
+          {/if}
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}

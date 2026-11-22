@@ -19,9 +19,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
 
 let stop: () => void;
 let relayUrl: string | null;
+let listFails: boolean;
 let invoke: ReturnType<typeof vi.fn>;
 
-function connect(role: 'owner' | 'member') {
+function connect(role: 'owner' | 'member', activeId = 'remote-a') {
   store.dispatch(
     connectionsListReceived({
       connections: [
@@ -44,8 +45,8 @@ function connect(role: 'owner' | 'member') {
           status: 'connected',
         },
       ],
-      activeId: 'remote-a',
-      windowBackendId: 'remote-a',
+      activeId,
+      windowBackendId: activeId,
     }),
   );
   admitLegacyPrincipal();
@@ -70,6 +71,7 @@ function relayCalls() {
 beforeEach(() => {
   vi.clearAllMocks();
   relayUrl = null;
+  listFails = false;
   invoke = vi.fn(
     async (
       channel: string,
@@ -80,7 +82,8 @@ beforeEach(() => {
       },
     ) => {
       if (channel !== 'backend:request') throw new Error(`Unexpected channel ${channel}`);
-      if (payload?.method === 'settings.list')
+      if (payload?.method === 'settings.list') {
+        if (listFails) throw new Error('settings.list exploded');
         return {
           ok: true,
           result: {
@@ -102,6 +105,7 @@ beforeEach(() => {
                   ],
           },
         };
+      }
       if (payload?.method === 'settings.update') {
         const change = payload.params!.changes[0];
         if (change.value.includes('dead')) throw new Error('no relay answered');
@@ -184,4 +188,23 @@ it('neither reads nor shows the relay for a caller who does not own the backend'
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
   expect(relayCalls()).toEqual([]);
+});
+
+it('neither reads nor shows this machine’s relay for a caller denied host administration', async () => {
+  connect('member', 'local');
+  relayUrl = 'https://relay.example.com/derpmap.json';
+  render(TunnelRelaySettings);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
+  expect(relayCalls()).toEqual([]);
+});
+
+it('hides the section without a toast when the relay cannot be read', async () => {
+  connect('owner');
+  listFails = true;
+  render(TunnelRelaySettings);
+  await waitFor(() => expect(relayCalls()).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
+  expect(mocks.error).not.toHaveBeenCalled();
 });

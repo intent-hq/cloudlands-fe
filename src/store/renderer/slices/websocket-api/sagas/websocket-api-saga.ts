@@ -498,7 +498,8 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
                           ? m.settings_wsApi_shareLink_copyError()
                           : m.ui_imageActionsMenu_copyFailed_error()
                     : message;
-      yield* call(notify.error, error);
+      // An unreadable relay only hides its section; Advanced opens without a toast.
+      if (intent.kind !== 'loadRelay') yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
           status: 'failed',

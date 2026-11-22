@@ -22,12 +22,14 @@
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectCanAdministerHost,
+    selectHostAdministrationDenied,
     selectPrincipalActionContext,
   } from '$store/renderer/slices/principal/principal-selectors';
 
   const connectionId$ = selectCurrentConnectionId();
   const principalContext$ = selectPrincipalActionContext();
   const canAdminister$ = selectCanAdministerHost();
+  const denied$ = selectHostAdministrationDenied();
   const formId = crypto.randomUUID();
   let identity = { formId, sessionId: '' };
   const form$ = selectSettingsFormById(formId);
@@ -36,9 +38,9 @@
   const load$ = selectSettingsFormOperationById(formId, 'load');
 
   const isRemote = $derived($connectionId$ !== LOCAL_CONNECTION_ID);
-  // A connected backend's relay is its owner's to read and change.
+  // The relay is the host owner's to read and change, here or on a connected backend.
   const remoteContext = $derived(isRemote && $canAdminister$ ? $principalContext$ : null);
-  const available = $derived(!isRemote || !!remoteContext);
+  const available = $derived(!$denied$ && (!isRemote || !!remoteContext));
   const busy = $derived(!$form$ || $load$?.status === 'pending' || $save$?.status === 'pending');
 
   const relaySupported = $derived($snapshot$.relaySupported);
