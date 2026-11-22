@@ -60,4 +60,10 @@ describe('remoteMachine:changed removals', () => {
     event({ machineId: 'd-cache', removed: true, reason: 'something-new' });
     expect(store.dispatch).toHaveBeenCalledWith(remoteMachineRemoved('d-cache'));
   });
+
+  it('removes an unloaded runner without a notice, since it has no name to show', () => {
+    event({ machineId: 'd-unknown', removed: true, reason: 'orchestrator' });
+    expect(store.dispatch).toHaveBeenCalledWith(remoteMachineRemoved('d-unknown'));
+    expect(store.state.remoteMachines.machines['d-cache']).toBeDefined();
+  });
 });
