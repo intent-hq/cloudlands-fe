@@ -9,12 +9,14 @@
   import {
     initialAgentPlacement,
     START_ON_BACKEND,
+    START_ON_HOST,
     startOnBackendLabel,
     startOnCloudMachineId,
     startOnDefault,
     startOnRowsWithCloud,
     type StartOnPlacement,
   } from '$features/remote-machines/start-on';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import {
     selectCurrentBackendLabel,
     selectInitialAgentPlacementSupported,
@@ -68,14 +70,22 @@
 
   // Shown only while there is another place to choose: a remote machine or a saved E2B entry.
   const enabled = $derived($remoteVisible$ && $supported$);
-  // Another place than the backend to choose (an orchestrator has no row of its own).
-  const active = $derived(enabled && $rows$.some((option) => option.id !== START_ON_BACKEND));
+  // Another place than the host itself to choose (an orchestrator has no row of its own).
+  const active = $derived(enabled && $rows$.some((option) => option.id !== START_ON_HOST));
   const hostLabel$ = selectCurrentBackendLabel();
-  // The backend ('') on a host without its own row: the first usable runner in its order.
+  const orchestrator$ = selectIsOrchestratorBackend();
+  // Where an omitted placement starts: the host, or on an orchestrator its first runner.
+  const placeLabel = $derived(
+    $orchestrator$
+      ? m.remoteMachines_startOn_anyRunner_label()
+      : startOnBackendLabel($rows$, $hostLabel$),
+  );
+  // No stamp, or the host on a host without its own row: the first usable row in its order.
   const effective = $derived(
     backendOnly
       ? START_ON_BACKEND
-      : value === START_ON_BACKEND && !$rows$.some((option) => option.id === START_ON_BACKEND)
+      : value === START_ON_BACKEND ||
+          (value === START_ON_HOST && !$rows$.some((option) => option.id === START_ON_HOST))
         ? startOnDefault(startOnRowsWithCloud($rows$, $cloud$))
         : resolveImplicitE2b(value, $rows$),
   );
@@ -91,10 +101,14 @@
   const missingLabel = $derived(missingLabelFor(effective));
   // Nothing to choose, yet the proposal named a place that is gone: it starts on the backend.
   const goneNote = $derived(
-    enabled && !active && !backendOnly && defaultValue !== START_ON_BACKEND
+    enabled &&
+      !active &&
+      !backendOnly &&
+      defaultValue !== START_ON_BACKEND &&
+      defaultValue !== START_ON_HOST
       ? m.chat_proposalCard_startOnGone_label({
           machine: missingLabelFor(defaultValue),
-          backend: startOnBackendLabel($rows$, $hostLabel$),
+          backend: placeLabel,
         })
       : null,
   );
@@ -139,7 +153,7 @@
         onChange={(id) => (value = id)}
         lockedReason={backendOnly
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel(choices.options, $hostLabel$),
+              backend: placeLabel,
             })
           : undefined}
       />

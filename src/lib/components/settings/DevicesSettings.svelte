@@ -7,7 +7,7 @@
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connections';
+  import type { ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
@@ -177,9 +177,9 @@
   const canAdminister$ = selectCanAdministerHost();
   const backendLabel$ = selectCurrentBackendLabel();
   /**
-   * Saved connection id of each exposed machine. This computer's own daemon,
-   * exposed to another backend, is one of them: it moves into the ordered list
-   * like any exposed machine instead of showing in both lists.
+   * Saved connection id of each exposed machine (this computer's own daemon,
+   * exposed to another host, is one of them). A saved host stays under Hosts
+   * and gets a plain runner row; only a runner-only node moves into the list.
    */
   const exposedConnectionIds = $derived(
     new Map(
@@ -502,11 +502,7 @@
   {:else if cloudEntry}
     {@render cloudRow({ kind: 'cloud', entry: cloudEntry }, true, order)}
   {:else}
-    <MachineOrderPlainRow
-      row={entry}
-      {order}
-      localBackend={$currentConnectionId$ === LOCAL_CONNECTION_ID}
-    />
+    <MachineOrderPlainRow row={entry} {order} />
   {/if}
 {/snippet}
 

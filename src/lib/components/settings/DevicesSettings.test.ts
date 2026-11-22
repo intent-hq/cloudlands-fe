@@ -88,6 +88,14 @@ vi.mock('$lib/components/ui/toast', () => ({
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
+
+/** Click the visible Switch to button on a host row. */
+async function switchTo(deviceName = 'Studio Mac') {
+  const row = screen.getByText(deviceName).closest('article') as HTMLElement;
+  await fireEvent.click(
+    within(row).getByRole('button', { name: m.settings_devices_switchTo_label() }),
+  );
+}
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
@@ -283,7 +291,7 @@ describe('DevicesSettings', () => {
     });
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.getByText('This machine (local)')).toBeTruthy();
-    await openAction('Connect');
+    await switchTo();
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
     expect(dispatchSpy.mock.calls.map(([action]) => (action as { type: string }).type)).toContain(
@@ -429,18 +437,21 @@ describe('DevicesSettings', () => {
     );
   });
 
-  it('dispatches Connect through the existing open/focus action', async () => {
+  it('dispatches Switch to through the existing open/focus action', async () => {
     render(DevicesSettings);
 
-    await openAction('Connect');
+    await switchTo();
 
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:open', { id: remote.id });
+    expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:open', {
+      id: remote.id,
+      switchTo: true,
+    });
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('surfaces Connect failure without testing or saving the device', async () => {
+  it('surfaces a Switch to failure without testing or saving the device', async () => {
     mocks.open.mockImplementation((id) => ({
       type: 'connections/openRequested',
       payload: [id],
@@ -448,14 +459,14 @@ describe('DevicesSettings', () => {
     }));
     render(DevicesSettings);
 
-    await openAction('Connect');
+    await switchTo();
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('opens the write-only replacement flow when Connect cannot decrypt the saved secret', async () => {
+  it('opens the write-only replacement flow when Switch to cannot decrypt the saved secret', async () => {
     mocks.open.mockImplementation((id) => ({
       type: 'connections/openRequested',
       payload: [id],
@@ -463,7 +474,7 @@ describe('DevicesSettings', () => {
     }));
     render(DevicesSettings);
 
-    await openAction('Connect');
+    await switchTo();
 
     await waitFor(() => expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy());
     expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe('');
@@ -489,10 +500,7 @@ describe('DevicesSettings', () => {
     expect(screen.getByText(m.settings_devices_empty_title())).toBeTruthy();
   });
 
-  async function openAction(
-    name: 'Connect' | 'Edit' | 'Remove' | 'Update',
-    deviceName = 'Studio Mac',
-  ) {
+  async function openAction(name: 'Edit' | 'Remove' | 'Update', deviceName = 'Studio Mac') {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     const item = await screen.findByRole('menuitem', { name });
     await fireEvent.click(item);
@@ -575,7 +583,7 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
-      await screen.findByRole('menuitem', { name: 'Connect' });
+      await screen.findByRole('menuitem', { name: 'Edit' });
 
       expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
       expect(mocks.updateBackend).not.toHaveBeenCalled();

@@ -17,7 +17,7 @@ import type {
   WorkspaceHomeState,
 } from '$shared/types/workspace-home';
 import {
-  START_ON_BACKEND,
+  START_ON_HOST,
   startOnCloudMachineId,
   type StartOnOption,
 } from '$features/remote-machines/start-on';
@@ -282,7 +282,7 @@ export function moveHomeTargets({
     disabled: false,
   }));
   const machineOptions = machineRows
-    .filter((row) => row.id !== START_ON_BACKEND)
+    .filter((row) => row.id !== START_ON_HOST)
     .map((row): MoveHomeOption => {
       const cloudMachineId = startOnCloudMachineId(row.id);
       return {

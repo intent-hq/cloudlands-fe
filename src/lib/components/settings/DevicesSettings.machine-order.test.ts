@@ -207,9 +207,8 @@ describe('Settings → Machines with machineOrder: 1', () => {
     seed();
     render(DevicesSettings);
 
-    expect(orderedRow('local').textContent).toContain(
-      m.remoteMachines_order_thisHostNamed_label({ name: 'build-host' }),
-    );
+    expect(orderedRow('local').textContent).toContain('build-host');
+    expect(orderedRow('local').textContent).toContain(m.remoteMachines_order_thisHost_label());
   });
 
   it('Move down sends the whole list with the row one place lower', async () => {

@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "{machine}에서 실행 중 · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "{machine}에서 실행 중",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "다른 러너",
+  "remoteAgent_location_unknownMachine": "다른 컴퓨터",
   "remoteAgent_notice_checkAgain_label": "다시 확인",
   "remoteAgent_notice_failed_hint": "다시 시도하려면 새 에이전트를 시작하세요.",
   "remoteAgent_notice_failed_title": "{machine}에서 시작하지 못했습니다",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "이 호스트에 연결할 수 없습니다.",
   "settings_devices_connect_label": "연결",
   "settings_devices_daemonBehind_tooltip": "이 호스트의 intentd v{daemonVersion}이(가) 번들 버전(v{pinnedVersion})보다 오래되었습니다",
-  "settings_devices_description": "호스트는 연결하는 Intent입니다. 러너는 호스트가 에이전트를 실행하는 컴퓨터입니다.",
+  "settings_devices_description": "호스트는 연결하는 Intent 서버입니다. 러너는 호스트가 에이전트를 실행하는 컴퓨터입니다.",
   "settings_devices_detectedAddresses_label": "감지된 주소",
   "settings_devices_done_label": "완료",
   "settings_devices_editForm_ariaLabel": "{name} 편집",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "위로 이동",
   "remoteMachines_order_moveDown_label": "아래로 이동",
   "remoteMachines_order_announcement": "{name}을(를) {position}번째로 옮겼습니다",
-  "remoteMachines_order_local_label": "이 컴퓨터",
   "remoteMachines_order_saveFailed_error": "러너 순서를 저장할 수 없습니다. 다시 시도하세요.",
   "remoteMachines_order_stale_info": "러너 순서가 다른 곳에서 변경되어 최신 순서를 표시합니다.",
   "remoteMachines_state_available_label": "{backend}의 에이전트 실행",
@@ -9295,7 +9294,7 @@
   "onboarding_agentMachines_none_title": "에이전트를 실행할 러너 추가",
   "onboarding_agentMachines_none_description": "이 Intent는 에이전트를 러너로 보내고 자체적으로는 실행하지 않습니다. 설정 → 호스트에서 러너를 추가한 다음 돌아와서 계속하세요.",
   "onboarding_agentMachines_openSettings_label": "설정 → 호스트 열기",
-  "onboarding_providerCard_onMachines_label": "내 러너에서 실행",
+  "onboarding_providerCard_onMachines_label": "러너에서 실행",
   "ui_shortcuts_recentAgents_label": "최근 탭으로 전환",
   "recentAgents_switcher_ariaLabel": "최근 탭",
   "recentAgents_switcher_untitled_label": "제목 없는 에이전트",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "현재",
   "settings_devices_switchTo_label": "전환",
   "remoteMachines_order_thisHost_label": "이 호스트",
-  "remoteMachines_order_thisHostNamed_label": "{name} · 이 호스트"
+  "remoteMachines_startOn_anyRunner_label": "처음 사용 가능한 러너"
 }

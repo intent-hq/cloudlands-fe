@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "在 {machine} 上运行 · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "在 {machine} 上运行",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "另一个运行器",
+  "remoteAgent_location_unknownMachine": "另一台电脑",
   "remoteAgent_notice_checkAgain_label": "重新检查",
   "remoteAgent_notice_failed_hint": "请启动新的智能体以重试。",
   "remoteAgent_notice_failed_title": "无法在 {machine} 上启动",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "无法连接到此主机。",
   "settings_devices_connect_label": "连接",
   "settings_devices_daemonBehind_tooltip": "此主机的 intentd v{daemonVersion} 比内置版本 (v{pinnedVersion}) 旧",
-  "settings_devices_description": "主机是你连接的 Intent。运行器是主机运行智能体的计算机。",
+  "settings_devices_description": "主机是你连接的 Intent 服务器。运行器是主机运行智能体的计算机。",
   "settings_devices_detectedAddresses_label": "检测到的地址",
   "settings_devices_done_label": "完成",
   "settings_devices_editForm_ariaLabel": "编辑 {name}",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "上移",
   "remoteMachines_order_moveDown_label": "下移",
   "remoteMachines_order_announcement": "已将 {name} 移到第 {position} 位",
-  "remoteMachines_order_local_label": "这台电脑",
   "remoteMachines_order_saveFailed_error": "无法保存运行器顺序。请重试。",
   "remoteMachines_order_stale_info": "运行器顺序已在别处更改，列表现在显示最新顺序。",
   "remoteMachines_state_available_label": "为 {backend} 运行智能体",
@@ -9295,7 +9294,7 @@
   "onboarding_agentMachines_none_title": "添加运行器来运行智能体",
   "onboarding_agentMachines_none_description": "此 Intent 将智能体发送到运行器，自身不运行任何智能体。请在“设置 → 主机”中添加运行器，然后返回继续。",
   "onboarding_agentMachines_openSettings_label": "打开设置 → 主机",
-  "onboarding_providerCard_onMachines_label": "在你的运行器上运行",
+  "onboarding_providerCard_onMachines_label": "在运行器上运行",
   "ui_shortcuts_recentAgents_label": "切换到最近的标签页",
   "recentAgents_switcher_ariaLabel": "最近的标签页",
   "recentAgents_switcher_untitled_label": "未命名智能体",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "当前",
   "settings_devices_switchTo_label": "切换到",
   "remoteMachines_order_thisHost_label": "此主机",
-  "remoteMachines_order_thisHostNamed_label": "{name} · 此主机"
+  "remoteMachines_startOn_anyRunner_label": "第一个可用的运行器"
 }

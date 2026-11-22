@@ -28,7 +28,7 @@ const e2bAgent = {
 
 describe('proposalStartOnDefault', () => {
   it('maps the stamped placement to a Start on id', () => {
-    expect(proposalStartOnDefault(proposal({ target: 'local' }), remoteAgent)).toBe('');
+    expect(proposalStartOnDefault(proposal({ target: 'local' }), remoteAgent)).toBe('host:');
     expect(
       proposalStartOnDefault(proposal({ target: 'remote', nodeId: 'd-mac' }), remoteAgent),
     ).toBe('d-mac');
@@ -56,7 +56,7 @@ describe('proposalStartOnDefault', () => {
 });
 
 describe('proposalStartOnChoices', () => {
-  const backend: StartOnOption = { id: '', label: 'intent1', platform: null, disabled: false };
+  const backend: StartOnOption = { id: 'host:', label: 'intent1', platform: null, disabled: false };
   const mac: StartOnOption = { id: 'd-mac', label: 'Mac mini', platform: null, disabled: false };
   const lab: StartOnOption = {
     id: 'd-lab',
@@ -81,7 +81,7 @@ describe('proposalStartOnChoices', () => {
 
   it('adds a gone choice as a disabled row so the card can still show it', () => {
     const choices = proposalStartOnChoices([backend, mac], 'd-gone', 'Old box');
-    expect(choices.options.map((option) => option.id)).toEqual(['', 'd-mac', 'd-gone']);
+    expect(choices.options.map((option) => option.id)).toEqual(['host:', 'd-mac', 'd-gone']);
     expect(choices.unavailable).toMatchObject({ id: 'd-gone', label: 'Old box', disabled: true });
     expect(choices.unavailable?.reason).toBeTruthy();
   });
@@ -100,7 +100,7 @@ describe('resolveImplicitE2b', () => {
     disabled: false,
     kind: 'cloud',
   });
-  const backend: StartOnOption = { id: '', label: 'intent1', platform: null, disabled: false };
+  const backend: StartOnOption = { id: 'host:', label: 'intent1', platform: null, disabled: false };
 
   it('uses the only saved entry for an E2B stamp that names none', () => {
     expect(resolveImplicitE2b('cloud:e2b', [backend, row('cloud:e2b-team')])).toBe(

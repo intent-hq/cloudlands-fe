@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "{machine} で実行中 · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "{machine} で実行中",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "別のランナー",
+  "remoteAgent_location_unknownMachine": "別のコンピューター",
   "remoteAgent_notice_checkAgain_label": "再確認",
   "remoteAgent_notice_failed_hint": "もう一度試すには、新しいエージェントを開始してください。",
   "remoteAgent_notice_failed_title": "{machine} で起動できませんでした",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "このホストに接続できませんでした。",
   "settings_devices_connect_label": "接続",
   "settings_devices_daemonBehind_tooltip": "このホストの intentd v{daemonVersion} は同梱バージョン (v{pinnedVersion}) より古いです",
-  "settings_devices_description": "ホストは接続先の Intent です。ランナーはホストがエージェントを実行するコンピューターです。",
+  "settings_devices_description": "ホストは接続先の Intent サーバーです。ランナーはホストがエージェントを実行するコンピューターです。",
   "settings_devices_detectedAddresses_label": "検出されたアドレス",
   "settings_devices_done_label": "完了",
   "settings_devices_editForm_ariaLabel": "{name} を編集",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "上へ移動",
   "remoteMachines_order_moveDown_label": "下へ移動",
   "remoteMachines_order_announcement": "{name} を {position} 番目に移動しました",
-  "remoteMachines_order_local_label": "このコンピューター",
   "remoteMachines_order_saveFailed_error": "ランナーの順序を保存できませんでした。もう一度お試しください。",
   "remoteMachines_order_stale_info": "ランナーの順序がほかの場所で変更されたため、最新の順序を表示しています。",
   "remoteMachines_state_available_label": "{backend} のエージェントを実行",
@@ -8594,7 +8593,7 @@
   "remoteMachines_unexpose_confirm_description": "{backend} は {machine} でエージェントを実行しなくなり、付与したアクセス権は取り消されます。",
   "remoteMachines_unexpose_label": "停止",
   "remoteMachines_unexpose_success": "{backend} は {machine} でエージェントを実行できなくなりました。",
-  "remoteMachines_unexpose_unrevoked_warning": "{machine} は削除されましたが、そのランナーが接続されていないためアクセスを取り消せませんでした。{machine} の 設定 → ホスト → アクセスできるホスト で取り消してください。",
+  "remoteMachines_unexpose_unrevoked_warning": "{machine} は削除されましたが、そのランナーが接続されていないためアクセスを取り消せませんでした。{machine} の「設定 → ホスト → アクセスできるホスト」で取り消してください。",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、{backend} は引き続きそこでエージェントを実行できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、{backend} は引き続きそこでエージェントを実行できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
   "remoteMachines_failure_retryStopAgents_label": "再試行",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "現在",
   "settings_devices_switchTo_label": "切り替え",
   "remoteMachines_order_thisHost_label": "このホスト",
-  "remoteMachines_order_thisHostNamed_label": "{name} · このホスト"
+  "remoteMachines_startOn_anyRunner_label": "最初に利用可能なランナー"
 }

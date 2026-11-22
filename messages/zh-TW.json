@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "在 {machine} 上執行 · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "在 {machine} 上執行",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "另一個執行器",
+  "remoteAgent_location_unknownMachine": "另一台電腦",
   "remoteAgent_notice_checkAgain_label": "重新檢查",
   "remoteAgent_notice_failed_hint": "請啟動新的代理以重試。",
   "remoteAgent_notice_failed_title": "無法在 {machine} 上啟動",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "無法連線到此主機。",
   "settings_devices_connect_label": "連線",
   "settings_devices_daemonBehind_tooltip": "此主機的 intentd v{daemonVersion} 比內建版本 (v{pinnedVersion}) 舊",
-  "settings_devices_description": "主機是你連線的 Intent。執行器是主機執行代理程式的電腦。",
+  "settings_devices_description": "主機是你連線的 Intent 伺服器。執行器是主機執行代理程式的電腦。",
   "settings_devices_detectedAddresses_label": "偵測到的位址",
   "settings_devices_done_label": "完成",
   "settings_devices_editForm_ariaLabel": "編輯 {name}",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "上移",
   "remoteMachines_order_moveDown_label": "下移",
   "remoteMachines_order_announcement": "已將 {name} 移到第 {position} 位",
-  "remoteMachines_order_local_label": "這台電腦",
   "remoteMachines_order_saveFailed_error": "無法儲存執行器順序。請再試一次。",
   "remoteMachines_order_stale_info": "執行器順序已在其他地方變更，清單現在顯示最新順序。",
   "remoteMachines_state_available_label": "為 {backend} 執行代理程式",
@@ -9295,7 +9294,7 @@
   "onboarding_agentMachines_none_title": "新增執行器來執行代理程式",
   "onboarding_agentMachines_none_description": "此 Intent 將代理程式傳送到執行器，本身不執行任何代理程式。請在「設定 → 主機」中新增執行器，然後返回繼續。",
   "onboarding_agentMachines_openSettings_label": "開啟設定 → 主機",
-  "onboarding_providerCard_onMachines_label": "在你的執行器上執行",
+  "onboarding_providerCard_onMachines_label": "在執行器上執行",
   "ui_shortcuts_recentAgents_label": "切換到最近的分頁",
   "recentAgents_switcher_ariaLabel": "最近的分頁",
   "recentAgents_switcher_untitled_label": "未命名代理程式",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "目前",
   "settings_devices_switchTo_label": "切換至",
   "remoteMachines_order_thisHost_label": "此主機",
-  "remoteMachines_order_thisHostNamed_label": "{name} · 此主機"
+  "remoteMachines_startOn_anyRunner_label": "第一個可用的執行器"
 }

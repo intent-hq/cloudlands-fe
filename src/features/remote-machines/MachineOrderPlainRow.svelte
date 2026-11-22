@@ -14,25 +14,14 @@
   let {
     row,
     order,
-    localBackend = false,
   }: {
     row: MachineOrderRow;
     order: MachineOrderControls;
-    /** The current backend is this app's own daemon. */
-    localBackend?: boolean;
   } = $props();
 
   // The host's own row (a host that is not an orchestrator runs agents too).
-  const label = $derived(
-    row.kind === 'local' && localBackend ? m.remoteMachines_order_local_label() : row.name,
-  );
-  const detail = $derived(
-    row.kind !== 'local'
-      ? null
-      : localBackend
-        ? m.remoteMachines_order_thisHostNamed_label({ name: row.name })
-        : m.remoteMachines_order_thisHost_label(),
-  );
+  const label = $derived(row.name);
+  const detail = $derived(row.kind === 'local' ? m.remoteMachines_order_thisHost_label() : null);
 </script>
 
 <article aria-label={label} data-machine-order-plain-row={row.kind}>

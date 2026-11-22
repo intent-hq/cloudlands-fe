@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "Runs on {machine} · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "Runs on {machine}",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "Another runner",
+  "remoteAgent_location_unknownMachine": "Another computer",
   "remoteAgent_notice_checkAgain_label": "Check again",
   "remoteAgent_notice_failed_hint": "Start a new agent to try again.",
   "remoteAgent_notice_failed_title": "Couldn't start on {machine}",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "Could not connect to this host.",
   "settings_devices_connect_label": "Connect",
   "settings_devices_daemonBehind_tooltip": "This host's intentd v{daemonVersion} is older than the bundled version (v{pinnedVersion})",
-  "settings_devices_description": "Hosts are the Intents you connect to. Runners are the computers a host runs agents on.",
+  "settings_devices_description": "Hosts are the Intent servers you connect to. Runners are the computers a host runs agents on.",
   "settings_devices_detectedAddresses_label": "Detected addresses",
   "settings_devices_done_label": "Done",
   "settings_devices_editForm_ariaLabel": "Edit {name}",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "Move up",
   "remoteMachines_order_moveDown_label": "Move down",
   "remoteMachines_order_announcement": "{name} moved to position {position}",
-  "remoteMachines_order_local_label": "This computer",
   "remoteMachines_order_saveFailed_error": "Couldn't save the runner order. Try again.",
   "remoteMachines_order_stale_info": "The runner order changed elsewhere, so the list now shows the latest order.",
   "remoteMachines_state_available_label": "Runs agents for {backend}",
@@ -9295,7 +9294,7 @@
   "onboarding_agentMachines_none_title": "Add a runner to run agents",
   "onboarding_agentMachines_none_description": "This Intent sends agents to runners and runs none itself. Add a runner in Settings → Hosts, then come back to continue.",
   "onboarding_agentMachines_openSettings_label": "Open Settings → Hosts",
-  "onboarding_providerCard_onMachines_label": "Runs on your runners",
+  "onboarding_providerCard_onMachines_label": "Runs on a runner",
   "ui_shortcuts_recentAgents_label": "Switch to Recent Tab",
   "recentAgents_switcher_ariaLabel": "Recent tabs",
   "recentAgents_switcher_untitled_label": "Untitled agent",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "Current",
   "settings_devices_switchTo_label": "Switch to",
   "remoteMachines_order_thisHost_label": "This host",
-  "remoteMachines_order_thisHostNamed_label": "{name} · This host"
+  "remoteMachines_startOn_anyRunner_label": "the first available runner"
 }

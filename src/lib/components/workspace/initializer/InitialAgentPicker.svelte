@@ -237,6 +237,12 @@
       : START_ON_BACKEND,
   );
   const startOnHostLabel$ = selectCurrentBackendLabel();
+  // Where a create with no placement starts: the host, or on an orchestrator its first runner.
+  const startOnPlaceLabel = $derived(
+    $orchestratorBackend$
+      ? m.remoteMachines_startOn_anyRunner_label()
+      : startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
+  );
   // The machine whose models the Model row lists (an orchestrator has none of its own).
   const orchestratorBackend$ = selectIsOrchestratorBackend();
   const modelMachineId = $derived(
@@ -1124,11 +1130,11 @@
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
-            backend: startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
+            backend: startOnPlaceLabel,
           })
         : startOnBackendOnly === 'new-repo'
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
+              backend: startOnPlaceLabel,
             })
           : undefined}
     />

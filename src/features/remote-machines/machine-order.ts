@@ -10,7 +10,7 @@ import {
   type MachineOrderRow,
 } from '$shared/types/remote-machines';
 import type { DaemonMode } from '$shared/types/connections';
-import { START_ON_BACKEND, startOnCloudMachineId } from './start-on';
+import { START_ON_HOST, startOnCloudMachineId } from './start-on';
 
 /**
  * The whole list with row `id` moved before or after row `targetId`, as
@@ -47,9 +47,9 @@ export function stepMachineOrder(
   return moveMachineOrder(order, id, machineOrderId(target), direction === -1 ? 'before' : 'after');
 }
 
-/** The order id of a Start On option: the backend is "This computer". */
+/** The order id of a Start On option: the host's own row is `local`. */
 function startOnOrderId(optionId: string, kind: 'machine' | 'cloud' | undefined): string {
-  if (optionId === START_ON_BACKEND) return 'local';
+  if (optionId === START_ON_HOST) return 'local';
   const cloudMachineId = kind === 'cloud' ? startOnCloudMachineId(optionId) : null;
   return machineOrderId(
     cloudMachineId ? { kind: 'cloud', cloudMachineId } : { kind: 'machine', nodeId: optionId },

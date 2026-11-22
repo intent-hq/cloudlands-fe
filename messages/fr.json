@@ -2709,7 +2709,7 @@
   "remoteAgent_location_tooltip": "S'exécute sur {machine} · {platform}",
   "remoteAgent_location_tooltipNoPlatform": "S'exécute sur {machine}",
   "remoteAgent_location_tooltipWithState": "{location} · {state}",
-  "remoteAgent_location_unknownMachine": "Un autre runner",
+  "remoteAgent_location_unknownMachine": "Un autre ordinateur",
   "remoteAgent_notice_checkAgain_label": "Vérifier à nouveau",
   "remoteAgent_notice_failed_hint": "Lancez un nouvel agent pour réessayer.",
   "remoteAgent_notice_failed_title": "Impossible de démarrer sur {machine}",
@@ -5106,7 +5106,7 @@
   "settings_devices_connectFailed_error": "Impossible de se connecter à cet hôte.",
   "settings_devices_connect_label": "Connecter",
   "settings_devices_daemonBehind_tooltip": "L’intentd v{daemonVersion} de cet hôte est plus ancien que la version fournie (v{pinnedVersion})",
-  "settings_devices_description": "Les hôtes sont les Intents auxquels vous vous connectez. Les runners sont les ordinateurs sur lesquels un hôte exécute des agents.",
+  "settings_devices_description": "Les hôtes sont les serveurs Intent auxquels vous vous connectez. Les runners sont les ordinateurs sur lesquels un hôte exécute des agents.",
   "settings_devices_detectedAddresses_label": "Adresses détectées",
   "settings_devices_done_label": "Terminé",
   "settings_devices_editForm_ariaLabel": "Modifier {name}",
@@ -8580,7 +8580,6 @@
   "remoteMachines_order_moveUp_label": "Monter",
   "remoteMachines_order_moveDown_label": "Descendre",
   "remoteMachines_order_announcement": "{name} déplacée en position {position}",
-  "remoteMachines_order_local_label": "Cet ordinateur",
   "remoteMachines_order_saveFailed_error": "Impossible d’enregistrer l’ordre des runners. Réessayez.",
   "remoteMachines_order_stale_info": "L’ordre des runners a changé ailleurs ; la liste affiche maintenant l’ordre le plus récent.",
   "remoteMachines_state_available_label": "Exécute des agents pour {backend}",
@@ -9295,7 +9294,7 @@
   "onboarding_agentMachines_none_title": "Ajoutez un runner pour exécuter des agents",
   "onboarding_agentMachines_none_description": "Cet Intent envoie les agents à des runners et n’en exécute aucun lui-même. Ajoutez un runner dans Réglages → Hôtes, puis revenez pour continuer.",
   "onboarding_agentMachines_openSettings_label": "Ouvrir Réglages → Hôtes",
-  "onboarding_providerCard_onMachines_label": "S’exécute sur vos runners",
+  "onboarding_providerCard_onMachines_label": "S’exécute sur un runner",
   "ui_shortcuts_recentAgents_label": "Passer à un onglet récent",
   "recentAgents_switcher_ariaLabel": "Onglets récents",
   "recentAgents_switcher_untitled_label": "Agent sans titre",
@@ -9375,5 +9374,5 @@
   "settings_devices_current_label": "Actuel",
   "settings_devices_switchTo_label": "Basculer",
   "remoteMachines_order_thisHost_label": "Cet hôte",
-  "remoteMachines_order_thisHostNamed_label": "{name} · Cet hôte"
+  "remoteMachines_startOn_anyRunner_label": "le premier runner disponible"
 }

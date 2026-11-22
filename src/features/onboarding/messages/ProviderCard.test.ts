@@ -555,7 +555,7 @@ describe('ProviderCard on an orchestrator', () => {
         onMachines: true,
       },
     });
-    expect(container.textContent).toContain('Runs on your runners');
+    expect(container.textContent).toContain('Runs on a runner');
     expect(container.textContent).not.toContain('Connected');
     expect(banner(container)).toBeTruthy();
   });

@@ -13,11 +13,17 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { remoteMachinesLoaded } from './remote-machines-slice';
-import { selectEffectiveStartOn, selectStartOnOptions } from './remote-machines-selectors';
+import {
+  selectEffectiveStartOn,
+  selectStartOnOptions,
+  selectStartOnRows,
+} from './remote-machines-selectors';
 import {
   initialAgentPlacement,
   START_ON_BACKEND,
+  START_ON_HOST,
   startOnBackendLabel,
+  startOnDefault,
   startOnModelMachineId,
 } from './start-on';
 
@@ -120,6 +126,29 @@ describe('Start On on an orchestrator', () => {
     );
     expect(selectEffectiveStartOn.select(store.state, undefined)).toBe('d-mac');
   });
+
+  it('keeps the first runner chosen when none can take the agent, so the picker says why', () => {
+    seed('orchestrator', ORCHESTRATOR_ORDER);
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        initialAgentPlacement: true,
+        machineOrder: true,
+        order: ORCHESTRATOR_ORDER,
+        localFingerprint: null,
+        executorBackends: null,
+        machines: [
+          machine('d-mac', 'Mac Studio', 'unreachable'),
+          machine('d-pc', 'Gaming PC', 'unreachable'),
+        ],
+      }),
+    );
+    // New Workspace hides the row then; the proposal card reads every row.
+    expect(selectStartOnOptions.select(store.state)).toEqual([]);
+    const rows = selectStartOnRows.select(store.state);
+    expect(startOnDefault(rows)).toBe('d-pc');
+    expect(rows[0]).toMatchObject({ id: 'd-pc', disabled: true });
+  });
 });
 
 describe('Start On on a Full backend', () => {
@@ -133,7 +162,7 @@ describe('Start On on a Full backend', () => {
       ]);
       const options = selectStartOnOptions.select(store.state);
 
-      expect(options.map((option) => option.id)).toEqual(['d-pc', START_ON_BACKEND, 'd-mac']);
+      expect(options.map((option) => option.id)).toEqual(['d-pc', START_ON_HOST, 'd-mac']);
       expect(options[1]).toMatchObject({ label: backend.label, platform: 'Linux x64' });
       // The first runner in the host's order is preselected.
       expect(selectEffectiveStartOn.select(store.state, undefined)).toBe('d-pc');
@@ -145,8 +174,19 @@ describe('Start On on a Full backend', () => {
       { kind: 'local', name: 'Hub server' },
       { kind: 'machine', nodeId: 'd-pc', name: 'Gaming PC' },
     ]);
-    expect(selectEffectiveStartOn.select(store.state, undefined)).toBe(START_ON_BACKEND);
+    expect(selectEffectiveStartOn.select(store.state, undefined)).toBe(START_ON_HOST);
     expect(selectEffectiveStartOn.select(store.state, 'd-pc')).toBe('d-pc');
+  });
+
+  it('keeps the host when the user picks it while a runner comes first', () => {
+    seed('regular', [
+      { kind: 'machine', nodeId: 'd-pc', name: 'Gaming PC' },
+      { kind: 'local', name: 'Hub server' },
+    ]);
+    expect(selectEffectiveStartOn.select(store.state, undefined)).toBe('d-pc');
+    const picked = selectEffectiveStartOn.select(store.state, START_ON_HOST);
+    expect(picked).toBe(START_ON_HOST);
+    expect(initialAgentPlacement(picked)).toEqual({ target: 'local' });
   });
 });
 
@@ -162,7 +202,7 @@ describe('Model row machine for a Start On choice', () => {
 
   it('skips machines that cannot start an agent', () => {
     const options = [
-      { id: START_ON_BACKEND, label: 'First', platform: null, disabled: false },
+      { id: START_ON_HOST, label: 'Host', platform: null, disabled: false },
       { id: 'd-off', label: 'Off', platform: null, disabled: true },
       { id: 'cloud:e2b', label: 'E2B', platform: null, disabled: false, kind: 'cloud' as const },
       { id: 'd-on', label: 'On', platform: null, disabled: false },
