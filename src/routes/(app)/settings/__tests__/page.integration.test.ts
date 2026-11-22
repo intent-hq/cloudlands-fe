@@ -542,7 +542,7 @@ describe('settings tab route and focus behavior', () => {
     ['input', 'Inputs', 'page'],
     ['token-savings', 'Token Savings', 'page'],
     ['performance', 'Performance', 'page'],
-    ['unknown', 'Instructions', 'page'],
+    ['unknown', 'Providers', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
@@ -562,14 +562,15 @@ describe('settings tab route and focus behavior', () => {
     expect(container.querySelector('#devices')).not.toBeNull();
   });
 
-  it('opens Agent defaults when settings has no destination', async () => {
+  it('opens Providers when settings has no destination', async () => {
     renderSettings('/settings');
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Instructions' }).getAttribute('aria-current'),
+        document.querySelector('[data-settings-tab="providers"]')?.getAttribute('aria-current'),
       ).toBe('page'),
     );
-    expect(document.querySelector('#global-instructions')).not.toBeNull();
+    expect(document.getElementById('utility-default-model')).not.toBeNull();
+    expect(document.querySelector('#global-instructions')).toBeNull();
   });
 
   it('switches between Mobile remote access and Machines backend sync', async () => {

@@ -162,18 +162,23 @@
       return 'setup';
   }
 
-  function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
+  function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab | null {
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
+    return (tabParam && resolveLegacyTab(tabParam)) || null;
   }
 
-  function getInitialTab(): SettingsTab {
+  function getInitialTab(): SettingsTab | null {
     return resolveTabFromUrl(page.url.searchParams.get('tab'), page.url.hash.slice(1));
   }
 
-  let activeTab = $state<SettingsTab>(getInitialTab());
+  // With no destination in the URL, Providers opens only once the window is a
+  // confirmed owner; otherwise Instructions, which every principal can see.
+  let requestedTab = $state<SettingsTab | null>(getInitialTab());
+  const activeTab = $derived<SettingsTab>(
+    requestedTab ?? ($isCollaboratorOnlyClient$ ? 'agent-behavior' : 'providers'),
+  );
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -187,7 +192,7 @@
       hashScrollTimer = undefined;
       resetContentScroll();
     }
-    activeTab = tab;
+    requestedTab = tab;
     // Update URL with the new tab, preserving other params
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -230,8 +235,8 @@
     const nextTab = resolveTabFromUrl(tabParam, targetId);
 
     untrack(() => {
-      if (nextTab !== activeTab) {
-        activeTab = nextTab;
+      if (nextTab !== requestedTab) {
+        requestedTab = nextTab;
         if (!targetId) resetContentScroll();
       }
       handleHashNavigation();
@@ -252,7 +257,7 @@
   function selectAiBehaviorView(view: AIBehaviorView) {
     aiBehaviorView = view;
     const tab = view.type === 'system-prompt' ? 'agent-behavior' : 'specialists';
-    activeTab = tab;
+    requestedTab = tab;
 
     if (browser) {
       const url = new URL(window.location.href);
@@ -393,7 +398,7 @@
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
     if (targetTab && targetTab !== activeTab) {
-      activeTab = targetTab;
+      requestedTab = targetTab;
     }
     if (HARDWARE_TARGETS.has(targetId)) hardwareOpen = true;
 

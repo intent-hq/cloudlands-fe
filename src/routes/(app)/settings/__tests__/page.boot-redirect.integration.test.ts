@@ -111,6 +111,12 @@ function renderSettings(tab: string) {
   return render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 }
 
+function renderBareSettings() {
+  window.history.pushState({}, '', '/settings');
+  mocks.page.url = new URL(window.location.href);
+  return render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
+}
+
 function urlTab(): string | null {
   return new URL(window.location.href).searchParams.get('tab');
 }
@@ -294,6 +300,27 @@ describe('settings deep link through the boot window (intent-hq/intent#5514)', (
       expect(document.querySelector(`[data-settings-tab="${tab}"]`)).toBeNull();
     },
   );
+
+  it('opens Instructions for a bare /settings until the window settles as an owner, then Providers', async () => {
+    renderBareSettings();
+
+    await waitFor(() => expect(currentTab()).toBe('agent-behavior'));
+    expect(document.getElementById('global-instructions')).not.toBeNull();
+
+    settleAsOwner();
+
+    await waitFor(() => expect(currentTab()).toBe('providers'));
+    expect(document.getElementById('global-instructions')).toBeNull();
+  });
+
+  it('opens Instructions for a bare /settings in a collaborator-only guest window', async () => {
+    settleAsGuest();
+    renderBareSettings();
+
+    await waitFor(() => expect(currentTab()).toBe('agent-behavior'));
+    expect(document.getElementById('global-instructions')).not.toBeNull();
+    expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
+  });
 
   it('keeps owner authority when its current workspace list contains only collaborator rows', async () => {
     settleAsOwner();
