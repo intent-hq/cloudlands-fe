@@ -35,23 +35,18 @@ const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
 /**
  * Collapsed status wing: its outer inset, the 12px glyphs and the gaps between them (both
- * tighter than in the open header), and 4px clear of the camera. Keep in step with the
- * collapsed rules in AdaptiveDockShell (.header-state) and DockUpdateStatus (--dock-status-gap).
+ * tighter than in the open header), and 4px clear of the hardware gap; getDockCompactNotchSize
+ * adds the camera lane. Keep in step with the collapsed rules in AdaptiveDockShell
+ * (.header-state) and DockUpdateStatus (--dock-status-gap).
  */
 const DOCK_COMPACT_STATUS_INSET = 8;
 const DOCK_COMPACT_STATUS_GAP = 3;
-/**
- * Extra clearance beside a hardware camera cutout: macOS can draw its camera/microphone
- * privacy dot just right of the camera, on top of the dock.
- */
-export const DOCK_CAMERA_INDICATOR_LANE = 12;
-export function dockCompactWingWidth(statusGroups: number, camera = false): number {
+export function dockCompactWingWidth(statusGroups: number): number {
   return (
     DOCK_COMPACT_STATUS_INSET +
     statusGroups * 12 +
     DOCK_COMPACT_STATUS_GAP * Math.max(0, statusGroups - 1) +
-    4 +
-    (camera ? DOCK_CAMERA_INDICATOR_LANE : 0)
+    4
   );
 }
 

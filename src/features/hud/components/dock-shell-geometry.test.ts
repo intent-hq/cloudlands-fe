@@ -4,7 +4,7 @@
  * only; the compact wing width and the drag-end command are unchanged.
  */
 import { describe, expect, it } from 'vitest';
-import type { DockPlacementSnapshot } from '$shared/dock-placement';
+import { getDockCompactNotchSize, type DockPlacementSnapshot } from '$shared/dock-placement';
 import {
   DOCK_INTRO_HEIGHT,
   dockCompactWingWidth,
@@ -58,11 +58,24 @@ it('keeps edge landing height stable when the overview reveals older workspaces'
 
 describe('lifted shell helpers', () => {
   it('keeps the compact wing width formula', () => {
-    expect([0, 1, 2, 3].map((n) => dockCompactWingWidth(n))).toEqual([12, 24, 39, 54]);
+    expect([0, 1, 2, 3].map(dockCompactWingWidth)).toEqual([12, 24, 39, 54]);
   });
 
-  it('keeps a lane beside a camera cutout for the macOS privacy indicator', () => {
-    expect([0, 1, 2, 3].map((n) => dockCompactWingWidth(n, true))).toEqual([24, 36, 51, 66]);
+  // macOS draws its privacy dot just right of a camera cutout, over the dock.
+  it('adds a lane beside a camera cutout to the status and recording wings', () => {
+    const cutout = { width: 100, height: 32 };
+    const twoGlyphs = dockCompactWingWidth(2);
+    expect(getDockCompactNotchSize(cutout, twoGlyphs).width).toBe(100 + 2 * (twoGlyphs + 12));
+    expect(getDockCompactNotchSize(cutout, 120).width).toBe(100 + 2 * (120 + 12));
+  });
+
+  it('adds no lane without a camera and keeps the minimum wing', () => {
+    expect(getDockCompactNotchSize(null, dockCompactWingWidth(3)).width).toBe(
+      2 * dockCompactWingWidth(3),
+    );
+    expect(getDockCompactNotchSize({ width: 100, height: 32 }, dockCompactWingWidth(0))).toEqual(
+      getDockCompactNotchSize({ width: 100, height: 32 }),
+    );
   });
 
   it('builds end and cancel drag commands', () => {
@@ -127,7 +140,8 @@ describe('compact recording geometry', () => {
       recording: true,
       compactWingWidth: 120,
     });
-    expect(layout.compactWidth).toBe(200 + 2 * 120);
+    // Each wing also keeps the 12px lane beside the camera for the macOS privacy dot.
+    expect(layout.compactWidth).toBe(200 + 2 * (120 + 12));
     expect(layout.shown.width).toBeLessThanOrEqual(notch.surface.width);
     expect(layout.headerHeight).toBe(32);
   });
