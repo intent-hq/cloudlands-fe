@@ -165,7 +165,7 @@
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
+    return (tabParam && resolveLegacyTab(tabParam)) || 'providers';
   }
 
   function getInitialTab(): SettingsTab {
