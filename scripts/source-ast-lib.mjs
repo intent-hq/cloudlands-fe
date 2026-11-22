@@ -18,7 +18,11 @@ const blank = (text) => text.replace(/[^\n]/g, ' ');
 // block. The trailing line comment is blanked and the closing tag becomes `;`.
 function closedBlock(content, closeTag) {
   const block = ts.createSourceFile('block.ts', content, ts.ScriptTarget.Latest, false);
-  const comments = ts.getLeadingCommentRanges(content, block.endOfFileToken.pos) ?? [];
+  const end = block.endOfFileToken.pos;
+  const comments = [
+    ...(ts.getTrailingCommentRanges(content, end) ?? []),
+    ...(ts.getLeadingCommentRanges(content, end) ?? []),
+  ];
   const last = comments.at(-1);
   const safe =
     last?.kind === ts.SyntaxKind.SingleLineCommentTrivia && last.end === content.length

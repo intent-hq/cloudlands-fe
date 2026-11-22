@@ -194,6 +194,9 @@ describe('source AST helper', () => {
       expect(ts.isExpressionStatement(statements[1])).toBe(true);
       expect(statements[1].getText()).toBe('[1].forEach(f);');
       expect(svelteScriptText(comment)).toHaveLength(comment.length);
+      const trailing =
+        "<script module>const n = 1; // note</script><script>const o = { id: 'instance' };</script>";
+      expect(findObjectLiterals(parseSource(trailing, 'A.svelte'), 'id')).toHaveLength(1);
     });
 
     it('splits a component into one same-length text per script block', () => {

@@ -235,7 +235,7 @@ describe('hardcoded user-facing string gate', () => {
     withFixture(
       {
         'Example.svelte':
-          "<script module>// note</script><script>const label = 'Save your work';</script>",
+          "<script module>const n = 1; // note</script><script>const label = 'Save your work';</script>",
       },
       (dir) => {
         const result = runGate([dir]);
