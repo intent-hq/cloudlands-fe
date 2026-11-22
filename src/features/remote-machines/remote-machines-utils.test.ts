@@ -73,6 +73,57 @@ describe('machineNeedsUpdateForScripts', () => {
 });
 
 describe('parseRemoteMachine', () => {
+  it("keeps the host's CPU and memory, and drops malformed values", () => {
+    const row = {
+      id: 'd-mac',
+      name: 'Mac',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'connected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+    };
+    const parse = (resources: unknown) =>
+      parseRemoteMachine({ ...row, capabilities: { providers: [], resources } })?.capabilities
+        ?.resources;
+    expect(parse({ cpuPercent: 35, memoryUsedBytes: 12, memoryTotalBytes: 32 })).toEqual({
+      cpuPercent: 35,
+      memoryUsedBytes: 12,
+      memoryTotalBytes: 32,
+    });
+    expect(parse({ cpuPercent: 140, memoryUsedBytes: 40, memoryTotalBytes: 32 })).toEqual({
+      memoryUsedBytes: 32,
+      memoryTotalBytes: 32,
+    });
+    expect(parse({ memoryUsedBytes: 1, memoryTotalBytes: 0 })).toBeUndefined();
+    expect(parse('busy')).toBeUndefined();
+  });
+
+  it("keeps the report's machine-wide capacity, and drops a malformed one", () => {
+    const row = {
+      id: 'd-mac',
+      name: 'Mac',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'connected',
+      runningAgents: 1,
+      addedAt: '2026-11-01T00:00:00Z',
+    };
+    const capacity = { runningAgents: 3, agentCap: 8, chargedMemoryBytes: 0 };
+    expect(
+      parseRemoteMachine({ ...row, capabilities: { providers: [], capacity } })?.capabilities
+        ?.capacity,
+    ).toEqual({ runningAgents: 3, agentCap: 8 });
+    for (const bad of [{ runningAgents: -1, agentCap: 8 }, { runningAgents: 3 }, 'full']) {
+      expect(
+        parseRemoteMachine({ ...row, capabilities: { providers: [], capacity: bad } })
+          ?.capabilities,
+      ).not.toHaveProperty('capacity');
+    }
+  });
+
   it('keeps the link version negotiated at the last bind (nodeProtocol)', () => {
     const row = {
       id: 'd-mac',

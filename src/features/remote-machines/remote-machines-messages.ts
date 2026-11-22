@@ -1,6 +1,11 @@
 import { m } from '$shared/paraglide/messages.js';
-import { formatInteger } from '$lib/i18n/format';
-import type { RemoteMachine, RemoteMachineFailure } from '$shared/types/remote-machines';
+import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
+import type {
+  RemoteMachine,
+  RemoteMachineCapacity,
+  RemoteMachineFailure,
+  RemoteMachineResources,
+} from '$shared/types/remote-machines';
 
 interface Labels {
   machine: string;
@@ -102,4 +107,25 @@ export function runningAgentsLabel(count: number): string {
   return count === 1
     ? m.remoteMachines_agents_running_one({ count: formatInteger(count) })
     : m.remoteMachines_agents_running_many({ count: formatInteger(count) });
+}
+
+/** The tooltip on a runner's machine-wide agent count: slots in use against its cap. */
+export function machineLoadTooltip(load: RemoteMachineCapacity): string {
+  return m.remoteMachines_agents_load_tooltip({
+    count: formatInteger(load.runningAgents),
+    cap: formatInteger(load.agentCap),
+  });
+}
+
+/** The full CPU and memory lines of a runner row's tooltip. */
+export function machineResourcesTooltip(resources: RemoteMachineResources): string[] {
+  return [
+    ...(resources.cpuPercent === undefined
+      ? []
+      : [m.remoteMachines_load_cpu_tooltip({ percent: formatInteger(resources.cpuPercent) })]),
+    m.remoteMachines_load_memory_tooltip({
+      used: formatBytesBinary(resources.memoryUsedBytes),
+      total: formatBytesBinary(resources.memoryTotalBytes),
+    }),
+  ];
 }
