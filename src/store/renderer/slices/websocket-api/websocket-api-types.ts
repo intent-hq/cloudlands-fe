@@ -17,6 +17,8 @@ export type WebSocketApiState = WebSocketApiStatusSnapshot & {
 export type WebSocketApiIntent =
   | { kind: 'load'; connectionId: string }
   | { kind: 'loadMobile'; connectionId: string; context: string }
+  /** Only the relay setting; with `context`, the connected (remote) backend's. */
+  | { kind: 'loadRelay'; connectionId: string; context?: string }
   | { kind: 'toggle'; enabled: boolean; connectionId: string; context?: string }
   | { kind: 'port'; port: number; connectionId: string }
   | { kind: 'listen'; ips: string[]; tunnel: boolean; connectionId: string }

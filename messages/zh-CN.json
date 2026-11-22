@@ -5794,6 +5794,7 @@
   "settings_section_backendSync": "后端同步",
   "settings_section_cliOptimization": "CLI 优化",
   "settings_section_connection": "连接",
+  "settings_section_network": "网络",
   "settings_section_defaults": "默认模型",
   "settings_section_fontStyle": "字体样式",
   "settings_section_git": "Git",

@@ -5794,6 +5794,7 @@
   "settings_section_backendSync": "백엔드 동기화",
   "settings_section_cliOptimization": "CLI 최적화",
   "settings_section_connection": "연결",
+  "settings_section_network": "네트워크",
   "settings_section_defaults": "기본 모델",
   "settings_section_fontStyle": "글꼴 스타일",
   "settings_section_git": "Git",

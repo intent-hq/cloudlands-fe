@@ -44,6 +44,7 @@ const hashToTab: Record<string, SettingsTab> = {
   'remote-access': 'mobile',
   'intent-mobile': 'mobile',
   'push-notifications': 'mobile',
+  'tunnel-relay': 'advanced',
   collaboration: 'collaboration',
   'guest-sessions': 'collaboration',
   sharing: 'collaboration',
