@@ -28,8 +28,9 @@ export function needsPlacementPolicy(method: string, params: unknown): boolean {
  * Daemon-to-daemon placement subset (PROTOCOL `methods/nodes.md`): a backend
  * advertising `remoteInitialAgent: 1` (with `remoteMachines: 1`, without
  * `agentNodes`) accepts `workspace.create.initialAgent.placement` as the
- * closed remote object, validated by the daemon. True when that applies;
- * a placement outside the closed object throws.
+ * closed remote object, or the bare `{ target: "local" }` ("run on the
+ * backend", e.g. a proposal stamped on the host), validated by the daemon.
+ * True when that applies; a placement outside those objects throws.
  */
 async function remoteInitialAgentPlacement(
   placement: unknown,
@@ -39,6 +40,12 @@ async function remoteInitialAgentPlacement(
   const caps = object(object(hello.server).capabilities);
   if (caps.agentNodes === 1 || caps.remoteMachines !== 1 || caps.remoteInitialAgent !== 1)
     return false;
+  // `target: "local"` takes no other member.
+  const local = object(placement);
+  if (local.target === 'local') {
+    if (Object.keys(local).length !== 1) throw new Error(m.agent_placement_unavailable());
+    return true;
+  }
   const checked = AgentPlacementRequestSchema.parse(placement);
   if (checked.exclusive === true) throw new Error(m.agent_placement_unavailable());
   // A new cloud machine needs the cloud machines contract as well.
@@ -155,6 +162,14 @@ export async function prepareNodeRequest(
   }
   // Even old daemons must not silently discard a known new placement configuration.
   if (!capabilities.agentNodes) {
+    // The host chosen explicitly (`{ target: "local" }`, e.g. a proposal stamped
+    // on the host) on a backend with the remote initial agent subset.
+    if (
+      key === 'initialAgent' &&
+      object(placement).target === 'local' &&
+      (await remoteInitialAgentPlacement(placement, observeCapabilities))
+    )
+      return input;
     if (placement != null) throw new Error(m.agent_placement_unavailable());
     return input;
   }
