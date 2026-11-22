@@ -5,6 +5,7 @@ import './electron-browser-lifetime-dev-console.fixture';
 import './electron-browser-lifetime-dev-console-ui.fixture';
 import './electron-browser-capture.fixture';
 import './electron-browser-input.fixture';
+import './electron-browser-screenshot.fixture';
 import './electron-inline-html-preview.fixture';
 import './electron-browser-lifetime-media.fixture';
 import './electron-machine-rail-drag-region.fixture';

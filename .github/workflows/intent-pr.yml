@@ -579,9 +579,9 @@ jobs:
         id: electron
         run: |
           set -euo pipefail
-          # Include lifetime, checkout, monitor and companion fixtures and transports,
-          # shared harness/config and dependency inputs. --no-renames exposes
-          # both sides of a moved test or fixture.
+          # Include lifetime, screenshot, checkout, monitor and companion fixtures and
+          # transports, the CDP capture service, shared harness/config and dependency
+          # inputs. --no-renames exposes both sides of a moved test or fixture.
           # Match NUL-separated records without grep's platform-specific anchors.
           changed_paths=$(mktemp)
           trap 'rm -f "$changed_paths"' EXIT
@@ -595,7 +595,7 @@ jobs:
           # --require preload, an unreadable path list) — require the suite, never
           # skip it (intent-hq/intent#8299).
           match_status=0
-          node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 3);' "$changed_paths" '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|pr-monitor-native|dock-placement-native|dock-lab-native)/|vite-harness-cache\.)|src/(features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$|shared/dock-placement\.ts$|main/(ipc-schemas|dock-lab|window-backend)\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' || match_status=$?
+          node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 3);' "$changed_paths" '^(test/(electron-browser-(lifetime|screenshot)[^/]*|fixtures/(browser-lifetime|browser-screenshot|repository-checkout|pr-monitor-native|dock-placement-native|dock-lab-native)/|vite-harness-cache\.)|src/(features/browser/main/embedded-browser-cdp-service\.ts$|features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$|shared/dock-placement\.ts$|main/(ipc-schemas|dock-lab|window-backend)\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' || match_status=$?
           case "$match_status" in
             0) echo "electron_required=true" | tee -a "$GITHUB_OUTPUT" ;;
             3) echo "electron_required=false" | tee -a "$GITHUB_OUTPUT" ;;
