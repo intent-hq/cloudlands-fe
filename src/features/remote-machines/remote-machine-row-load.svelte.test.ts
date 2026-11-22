@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { setupMachineOrderFixture } from '../../test/machine-order-preview';
+import { setupNodesFixture } from '../../test/nodes-preview';
 import MachineLoad from './MachineLoad.svelte';
 
 let restore: (() => void) | null = null;
@@ -73,6 +74,15 @@ describe('runner load on a machine row', () => {
       "0 of 4 agent slots in use, counting agents from every host and the runner's own",
       '2Gi of 16Gi memory in use',
     ]);
+  });
+
+  it('shows the count on a saved node runner row (rendered as a device row), not in the Hosts list', () => {
+    store.init();
+    restore = setupNodesFixture('machines-and-nodes');
+    const view = render(DevicesSettings);
+    const rig = view.container.querySelector('[data-device-row="gpu-rig"]') as HTMLElement;
+    expect(rig.querySelector('[data-machine-load]')?.textContent).toBe('2 agents running');
+    expect(view.container.querySelectorAll('[data-machine-load]')).toHaveLength(1);
   });
 
   it('shows nothing on an older runner with nothing running (no CPU or memory reported)', () => {
