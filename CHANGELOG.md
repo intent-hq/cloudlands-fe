@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.374.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.373.0...v2.374.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **profiles:** Add profile for Grok, Droid, Auggie and Cursor ([#4919](https://github.com/intent-hq/cloudlands-fe/issues/4919)) ([0575862](https://github.com/intent-hq/cloudlands-fe/commit/0575862554afe201044af008156f352637bdaee7))
+
 ## [2.373.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.4...v2.373.0) (2026-11-22)
 
 
