@@ -100,7 +100,7 @@ describe('catalog workspace', () => {
     const navigation = screen.getByRole('navigation', { name: 'Component catalog' });
     const customization = screen.getByRole('complementary', { name: 'Catalog customization' });
     const main = screen.getByRole('main');
-    expect(navigation.contains(screen.getByRole('link', { name: 'Component catalog home' }))).toBe(
+    expect(navigation.contains(screen.getByRole('link', { name: 'Intent UI' }))).toBe(
       true,
     );
     expect(customization.contains(screen.getByRole('button', { name: 'Customize preview' }))).toBe(

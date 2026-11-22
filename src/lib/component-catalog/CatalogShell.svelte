@@ -203,7 +203,7 @@
             aria-label="Component catalog"
           >
             <Sidebar.Header class="catalog-sidebar-header">
-              <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
+              <a class="catalog-brand" href="/sandbox">
                 <span class="brand-mark" aria-hidden="true">I</span>
                 <span>Intent UI</span>
               </a>

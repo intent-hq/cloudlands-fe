@@ -61,7 +61,13 @@
       const target = node.querySelector<HTMLElement>(
         '[role="group"], [role="radiogroup"], input:not([type="file"]):not([aria-hidden="true"]), textarea, button',
       );
-      target?.setAttribute('aria-labelledby', labelId);
+      if (target instanceof HTMLButtonElement) {
+        target.id ||= `${labelId}-control`;
+        const own = target.getAttribute('aria-labelledby') ?? target.id;
+        target.setAttribute('aria-labelledby', `${own} ${labelId}`);
+      } else {
+        target?.setAttribute('aria-labelledby', labelId);
+      }
       if (describedBy) target?.setAttribute('aria-describedby', describedBy);
     });
   }
