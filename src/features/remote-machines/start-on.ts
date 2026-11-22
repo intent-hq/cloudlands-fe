@@ -1,9 +1,10 @@
 /**
  * The New Workspace dialog's "Start On" row: which machine the first agent
  * runs on (PROTOCOL `methods/nodes.md` → "Placement subset",
- * `workspace.create.initialAgent.placement`). The current backend is the
- * default and is sent as an omitted placement; another machine is sent as the
- * closed `{ target: "remote", checkout: "isolated", nodeId }` object.
+ * `workspace.create.initialAgent.placement`). The default is the first usable
+ * row in the host's order; a default that lands on the host is an omitted
+ * placement. The host picked explicitly is sent as `{ target: "local" }`, a
+ * runner as the closed `{ target: "remote", checkout: "isolated", nodeId }` object.
  */
 import { m } from '$shared/paraglide/messages.js';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';

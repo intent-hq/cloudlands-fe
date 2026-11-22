@@ -332,7 +332,7 @@ export function* prepareCompactWorkspaceInitialization(
     prompt: hasStagedFiles ? undefined : prompt || undefined,
     agentType: createAgentTypeId('workspace'),
     provider: submitProvider,
-    // Start On: only a remote machine is sent; the backend is an omitted placement.
+    // Start On: a runner, or the host picked explicitly ({ target: "local" }); no choice is omitted.
     ...(startOnPlacement ? { placement: startOnPlacement } : {}),
     contextReferences:
       !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,

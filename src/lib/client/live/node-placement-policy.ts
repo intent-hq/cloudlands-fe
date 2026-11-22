@@ -40,10 +40,11 @@ async function remoteInitialAgentPlacement(
   const caps = object(object(hello.server).capabilities);
   if (caps.agentNodes === 1 || caps.remoteMachines !== 1 || caps.remoteInitialAgent !== 1)
     return false;
-  // `target: "local"` takes no other member.
+  // `target: "local"` takes no other member (an undefined one is dropped on the wire).
   const local = object(placement);
   if (local.target === 'local') {
-    if (Object.keys(local).length !== 1) throw new Error(m.agent_placement_unavailable());
+    const members = Object.entries(local).filter(([, value]) => value !== undefined);
+    if (members.length !== 1) throw new Error(m.agent_placement_unavailable());
     return true;
   }
   const checked = AgentPlacementRequestSchema.parse(placement);
@@ -163,7 +164,8 @@ export async function prepareNodeRequest(
   // Even old daemons must not silently discard a known new placement configuration.
   if (!capabilities.agentNodes) {
     // The host chosen explicitly (`{ target: "local" }`, e.g. a proposal stamped
-    // on the host) on a backend with the remote initial agent subset.
+    // on the host) on a backend with the remote initial agent subset. With
+    // `agentNodes: 1` the full placement contract below applies instead.
     if (
       key === 'initialAgent' &&
       object(placement).target === 'local' &&
