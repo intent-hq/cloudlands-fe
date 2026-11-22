@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.372.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.0...v2.372.1) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **deps:** bump @sveltejs/kit to 2.70.4 and adapter-static to 3.0.11 ([#4938](https://github.com/intent-hq/cloudlands-fe/issues/4938)) ([65373a0](https://github.com/intent-hq/cloudlands-fe/commit/65373a0920580c4a99c5931d23c819657f9398ac))
+
 ## [2.372.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.371.0...v2.372.0) (2026-11-22)
 
 
