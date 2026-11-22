@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.369.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.368.0...v2.369.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **settings:** self-hosted relay setting and relay on cloud entries ([#4897](https://github.com/intent-hq/cloudlands-fe/issues/4897)) ([9ca2f2f](https://github.com/intent-hq/cloudlands-fe/commit/9ca2f2f9e212df39fe8ac6a8e261e8a64de8eb0e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.267 ([#4905](https://github.com/intent-hq/cloudlands-fe/issues/4905)) ([115c371](https://github.com/intent-hq/cloudlands-fe/commit/115c371645d267194d0c456e029ec5b62b9fb906))
+
 ## [2.368.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.367.0...v2.368.0) (2026-11-21)
 
 
