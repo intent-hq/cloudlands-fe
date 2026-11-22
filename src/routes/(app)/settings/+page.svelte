@@ -107,6 +107,7 @@
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { workspaceIdFromRouteParam } from '$lib/utils/workspace-route-context';
   import { onMount, untrack } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -160,15 +161,26 @@
       return 'setup';
   }
 
-  function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
-    const targetTab = resolveHashTab(targetId);
+  const DEFAULT_TAB: SettingsTab = 'providers';
+  const LAST_TAB_KEY = 'intent:settings:last-tab';
+
+  function resolveTabFromUrl(url: URL): SettingsTab | undefined {
+    const targetTab = resolveHashTab(url.hash.slice(1));
     if (targetTab) return targetTab;
+    const tabParam = url.searchParams.get('tab');
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
+    return tabParam ? resolveLegacyTab(tabParam) : undefined;
+  }
+
+  function restoreTab(): SettingsTab {
+    const savedTab = safeLocalStorage.getItem(LAST_TAB_KEY);
+    return savedTab && savedTab !== 'specialists' && isSettingsTab(savedTab)
+      ? savedTab
+      : DEFAULT_TAB;
   }
 
   function getInitialTab(): SettingsTab {
-    return resolveTabFromUrl(page.url.searchParams.get('tab'), page.url.hash.slice(1));
+    return resolveTabFromUrl(page.url) ?? restoreTab();
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
@@ -191,7 +203,7 @@
       const url = new URL(window.location.href);
       url.searchParams.set('tab', tab);
       url.hash = '';
-      window.history.replaceState({}, '', url.toString());
+      window.history.replaceState(window.history.state, '', url.toString());
     }
   }
 
@@ -209,23 +221,10 @@
     if (!$devicePasskeysAvailable$) tabs.push('passkeys');
     return tabs;
   });
-  $effect(() => {
-    if (
-      hiddenTabs.includes(activeTab) &&
-      (activeTab === 'collaboration' ||
-        activeTab === 'mobile' ||
-        (activeTab === 'passkeys' && $devicePasskeys$.status === 'unavailable') ||
-        $hostAdministrationDenied$)
-    ) {
-      setActiveTab('display');
-    }
-  });
-
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
-    const tabParam = page.url.searchParams.get('tab');
     const targetId = page.url.hash.slice(1);
-    const nextTab = resolveTabFromUrl(tabParam, targetId);
+    const nextTab = resolveTabFromUrl(page.url) ?? restoreTab();
 
     untrack(() => {
       if (nextTab !== activeTab) {
@@ -294,6 +293,25 @@
           : aiBehaviorView.type === nextView.type;
       if (!isCurrentView) aiBehaviorView = nextView;
     });
+  });
+
+  $effect(() => {
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'collaboration' ||
+        activeTab === 'mobile' ||
+        (activeTab === 'passkeys' && $devicePasskeys$.status === 'unavailable') ||
+        $hostAdministrationDenied$)
+    ) {
+      const requestedTab = resolveTabFromUrl(new URL(window.location.href));
+      setActiveTab(requestedTab || $hostAdministrationDenied$ ? 'display' : DEFAULT_TAB);
+    }
+  });
+
+  $effect(() => {
+    if (activeTab !== 'specialists' && !hiddenTabs.includes(activeTab)) {
+      safeLocalStorage.setItem(LAST_TAB_KEY, activeTab);
+    }
   });
 
   // Check if we're in development mode
