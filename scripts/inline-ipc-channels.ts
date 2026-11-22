@@ -13,11 +13,15 @@
  * It also refuses to run when `src/preload/index.ts` contains hand-written
  * lines that are not in the template: such edits live only in the local file,
  * so regenerating would silently delete them and they would never reach a
- * packaged app. See `discardedLines()` below.
+ * packaged app. See `discardedLines()` below. The guard is skipped when the
+ * output still matches the fingerprint written on its first line: the file is
+ * then exactly what this script last wrote, so even an older template's output
+ * holds no hand edits (cloudlands-fe#4896).
  *
  * Usage: tsx scripts/inline-ipc-channels.ts [projectRoot] [--force]
  */
 
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -46,13 +50,31 @@ const preloadOutputPath = path.join(projectRoot, 'src/preload/index.ts');
 const generatedSectionPattern =
   /\/\/ ={40,}\s*\n\/\/ GENERATED IPC CHANNELS[\s\S]*?\/\/ END GENERATED IPC CHANNELS\s*\n\/\/ ={40,}\s*/g;
 
+// First line of the output: a digest of everything after it.
+const fingerprintPattern = /^\/\/ inline-ipc-channels fingerprint: sha256-([0-9a-f]{64})\n/;
+
+function digest(body: string): string {
+  return createHash('sha256').update(body, 'utf8').digest('hex');
+}
+
+function withFingerprint(body: string): string {
+  return `// inline-ipc-channels fingerprint: sha256-${digest(body)}\n${body}`;
+}
+
+/** The output is byte-for-byte what this script last wrote. */
+function isUntouchedOutput(output: string): boolean {
+  const match = output.match(fingerprintPattern);
+  return match !== null && match[1] === digest(output.slice(match[0].length));
+}
+
 /**
- * Lines that carry meaning for drift detection: the generated block is dropped
- * (it is regenerated every run) and blank lines are ignored (inserting the
- * block shifts blank lines around it).
+ * Lines that carry meaning for drift detection: the fingerprint and generated
+ * block are dropped (both are rewritten every run) and blank lines are ignored
+ * (inserting the block shifts blank lines around it).
  */
 function meaningfulLines(source: string): string[] {
   return source
+    .replace(fingerprintPattern, '')
     .replace(generatedSectionPattern, '')
     .split('\n')
     .map((line) => line.trimEnd())
@@ -200,9 +222,13 @@ if (problem) {
   process.exit(1);
 }
 
-// Refuse to silently destroy hand edits made to the generated file.
-if (fs.existsSync(preloadOutputPath)) {
-  const discarded = discardedLines(fs.readFileSync(preloadOutputPath, 'utf-8'), templateContent);
+// Refuse to silently destroy hand edits made to the generated file. A missing or
+// mismatched fingerprint cannot prove the file untouched, so the line check runs.
+const existingOutput = fs.existsSync(preloadOutputPath)
+  ? fs.readFileSync(preloadOutputPath, 'utf-8')
+  : null;
+if (existingOutput !== null && !isUntouchedOutput(existingOutput)) {
+  const discarded = discardedLines(existingOutput, templateContent);
 
   if (discarded.length > 0) {
     const relOutput = path.relative(projectRoot, preloadOutputPath);
@@ -290,12 +316,10 @@ const outputContent = await format(templateContent, {
 
 // Unchanged output is left alone, and a change is renamed into place, so a concurrent
 // tsc or build never reads a half-written file.
-const existing = fs.existsSync(preloadOutputPath)
-  ? fs.readFileSync(preloadOutputPath, 'utf-8')
-  : null;
-if (existing !== outputContent) {
+const fingerprintedOutput = withFingerprint(outputContent);
+if (existingOutput !== fingerprintedOutput) {
   const temporaryPath = `${preloadOutputPath}.${process.pid}.tmp`;
-  fs.writeFileSync(temporaryPath, outputContent, 'utf-8');
+  fs.writeFileSync(temporaryPath, fingerprintedOutput, 'utf-8');
   fs.renameSync(temporaryPath, preloadOutputPath);
 }
 
