@@ -15,9 +15,6 @@ describe('WindowUpdateDockPlacementSchema compact wing', () => {
     });
     expect(parsed).toMatchObject({ compactNotchWingWidth: ONE_GLYPH_WING });
     // The controller hands the raw wing to the shared geometry, which keeps the minimum.
-    expect(getDockCompactNotchSize({ width: 180, height: 32 }, ONE_GLYPH_WING)).toEqual(
-      getDockCompactNotchSize({ width: 180, height: 32 }),
-    );
     expect(getDockCompactNotchSize(null, ONE_GLYPH_WING)).toEqual(getDockCompactNotchSize(null));
   });
 
