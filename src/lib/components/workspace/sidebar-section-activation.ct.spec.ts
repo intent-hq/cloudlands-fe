@@ -1,5 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
+import { inUseTab } from './__tests__/sidebar-tab-name';
 
 test('expanded selection preserves content until the selected tab is activated again', async ({
   mount,
@@ -79,7 +80,7 @@ test('the Browsers tab focuses the first browser from the existing list', async 
   await component.getByRole('textbox', { name: 'Workspace draft' }).click();
   const browsers = component
     .locator('[data-sidebar-section-tabs="horizontal"]')
-    .getByRole('tab', { name: 'Browsers', exact: true });
+    .getByRole('tab', { name: inUseTab('Browsers') });
   await browsers.click();
   const scene = page.locator('[data-sidebar-tabs-preview]');
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');

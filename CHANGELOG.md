@@ -4,6 +4,41 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.372.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.1...v2.372.2) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.272 ([#4943](https://github.com/intent-hq/cloudlands-fe/issues/4943)) ([0b180ce](https://github.com/intent-hq/cloudlands-fe/commit/0b180cefd6dc020eb3eea9584dcf1345f074e0ef))
+
+## [2.372.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.0...v2.372.1) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **deps:** bump @sveltejs/kit to 2.70.4 and adapter-static to 3.0.11 ([#4938](https://github.com/intent-hq/cloudlands-fe/issues/4938)) ([65373a0](https://github.com/intent-hq/cloudlands-fe/commit/65373a0920580c4a99c5931d23c819657f9398ac))
+
+## [2.372.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.371.0...v2.372.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* add composer autocomplete with Settings &gt; Input section ([#4900](https://github.com/intent-hq/cloudlands-fe/issues/4900)) ([8d5edad](https://github.com/intent-hq/cloudlands-fe/commit/8d5edadba860b24e19bd4b494029ac7ce09e7d1e))
+* **remote-machines:** show a runner's machine-wide agent count, with CPU and memory in its tooltip ([#4918](https://github.com/intent-hq/cloudlands-fe/issues/4918)) ([737608e](https://github.com/intent-hq/cloudlands-fe/commit/737608e3c2f840435a19a9a74c1d3896fa73e455))
+* **settings:** move the Relay field to Settings → Advanced ([#4930](https://github.com/intent-hq/cloudlands-fe/issues/4930)) ([dfb7cb8](https://github.com/intent-hq/cloudlands-fe/commit/dfb7cb896a364db7538faa95d6b346f020e20fae))
+* **workspace:** show clone size and rate below the Create button ([#4932](https://github.com/intent-hq/cloudlands-fe/issues/4932)) ([3d3ce40](https://github.com/intent-hq/cloudlands-fe/commit/3d3ce40d5702d4c5df3db242adfaf680c9781d4f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.269 ([#4935](https://github.com/intent-hq/cloudlands-fe/issues/4935)) ([a41b3b9](https://github.com/intent-hq/cloudlands-fe/commit/a41b3b98b9c7d500dddbea39664c0f08c9338aee))
+* bump intentd sidecar to v0.11.270 ([#4937](https://github.com/intent-hq/cloudlands-fe/issues/4937)) ([96b96ed](https://github.com/intent-hq/cloudlands-fe/commit/96b96ed9a37eecc996fc9980fb2658e0a01c95ae))
+* **ci:** wait out run-count lag in the merge-run inventory ([#4925](https://github.com/intent-hq/cloudlands-fe/issues/4925)) ([cc6672e](https://github.com/intent-hq/cloudlands-fe/commit/cc6672ec8251f16ea878c26b67f3e41e953968db))
+* **dock:** keep notch status glyphs clear of the macOS camera indicator ([#4926](https://github.com/intent-hq/cloudlands-fe/issues/4926)) ([7cc35fa](https://github.com/intent-hq/cloudlands-fe/commit/7cc35fa75d77b823653d8f37f2e1f969d5cebfdb))
+* **hardware-console:** let Home's preview chat feed the Micro prompt ring ([#4934](https://github.com/intent-hq/cloudlands-fe/issues/4934)) ([ccacee3](https://github.com/intent-hq/cloudlands-fe/commit/ccacee35b8eb72bb4977e9f1956d2bb27b7d4bdf))
+* **placement:** accept the host's own placement for a new workspace's first agent ([#4936](https://github.com/intent-hq/cloudlands-fe/issues/4936)) ([e68dc96](https://github.com/intent-hq/cloudlands-fe/commit/e68dc9677e54115756ae80113e78f4d9e38410ee))
+* **settings:** open Providers by default and auto-grow the instructions box ([#4927](https://github.com/intent-hq/cloudlands-fe/issues/4927)) ([80fe92c](https://github.com/intent-hq/cloudlands-fe/commit/80fe92c1a62593e75d305646c644e4dee63201a4))
+
 ## [2.371.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.2...v2.371.0) (2026-11-22)
 
 

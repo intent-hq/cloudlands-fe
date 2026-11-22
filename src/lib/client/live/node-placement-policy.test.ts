@@ -411,10 +411,45 @@ describe('remote initial agent (daemon-to-daemon placement subset)', () => {
       prepareNodeRequest('workspace.create', input, d2d({ remoteMachines: 1 }), () => true),
     ).rejects.toThrow('unavailable');
   });
+  // Regression (cloudlands-fe v2.371.0): a proposal stamped by an agent on the
+  // host sends { target: "local" }; the protocol accepts it unchanged
+  // (methods/workspace.md "Proposer placement"), but this policy refused it.
+  it('passes the bare local placement through for a create on the host itself', async () => {
+    const local = { title: '', initialAgent: { placement: { target: 'local' } } };
+    expect(
+      await prepareNodeRequest(
+        'workspace.create',
+        local,
+        d2d({ remoteMachines: 1, remoteInitialAgent: 1 }),
+        () => true,
+      ),
+    ).toEqual(local);
+    // It runs on the host, so the Labs flag is not needed.
+    expect(
+      await prepareNodeRequest(
+        'workspace.create',
+        local,
+        d2d({ remoteMachines: 1, remoteInitialAgent: 1 }),
+        () => false,
+      ),
+    ).toEqual(local);
+  });
+  it('still refuses the local placement on a backend without the subset', async () => {
+    // Without remoteInitialAgent the Start on row is hidden and no placement is sent.
+    await expect(
+      prepareNodeRequest(
+        'workspace.create',
+        { initialAgent: { placement: { target: 'local' } } },
+        d2d({ remoteMachines: 1 }),
+        () => true,
+      ),
+    ).rejects.toThrow('unavailable');
+  });
   it('refuses placements outside the closed remote object', async () => {
     const request = d2d({ remoteMachines: 1, remoteInitialAgent: 1 });
     for (const placement of [
-      { target: 'local' },
+      { target: 'local', checkout: 'isolated' },
+      { target: 'local', nodeId: 'node-mac' },
       { target: 'remote', exclusive: true },
       { target: 'remote', checkout: 'shared' },
     ])
