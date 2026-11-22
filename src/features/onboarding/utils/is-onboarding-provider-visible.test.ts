@@ -151,8 +151,8 @@ describe('isOnboardingProviderVisible', () => {
   });
 
   it('keeps Droid hidden on an orchestrator while it is not enabled', () => {
-    // The daemon reports supportsProfiles: false for a gated-off Droid, and
-    // the env-var gate hides it as on any backend.
+    // A gated-off Droid keeps supportsProfiles: true (a capability); the
+    // env-var gate hides it, as on any backend.
     expect(
       isOnboardingProviderVisible({
         provider: { id: 'droid', supportsProfiles: true, requiresEnvVar: 'INTENTD_ENABLE_DROID' },

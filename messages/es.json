@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex usa un token de acceso de un espacio de trabajo de ChatGPT en todas las sesiones de este perfil.",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "Los tokens de acceso solo funcionan con ChatGPT Business o Enterprise, y un administrador del espacio de trabajo debe permitirlos antes.",
   "settings_providerProfileKinds_tokenCodexStep1_label": "Crea un token de acceso en la consola de administración de ChatGPT y cópialo.",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "Pégalo abajo y elige Crear. Intent comprobará después que el token funciona.",
   "settings_providerProfileKinds_tokenCodex_description": "Token de acceso de ChatGPT Business o Enterprise.",
   "settings_providerProfileKinds_tokenNotJwt_error": "Esto no parece un token de acceso de Codex. Debe tener tres partes separadas por puntos.",
   "settings_providerProfileKinds_tokenRequired_error": "Pega un token.",

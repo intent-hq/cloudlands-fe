@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex verwendet für jede Sitzung mit diesem Profil ein Zugriffstoken eines ChatGPT-Workspace.",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "Zugriffstoken funktionieren nur mit ChatGPT Business oder Enterprise, und ein Workspace-Admin muss sie zuerst erlauben.",
   "settings_providerProfileKinds_tokenCodexStep1_label": "Erstellen Sie in der ChatGPT-Adminkonsole ein Zugriffstoken und kopieren Sie es.",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "Fügen Sie es unten ein und wählen Sie „Erstellen“. Intent prüft dann, ob das Token funktioniert.",
   "settings_providerProfileKinds_tokenCodex_description": "Zugriffstoken für ChatGPT Business oder Enterprise.",
   "settings_providerProfileKinds_tokenNotJwt_error": "Das sieht nicht wie ein Codex-Zugriffstoken aus. Es sollte aus drei durch Punkte getrennten Teilen bestehen.",
   "settings_providerProfileKinds_tokenRequired_error": "Fügen Sie ein Token ein.",

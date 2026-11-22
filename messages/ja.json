@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex はこのプロファイルのすべてのセッションで ChatGPT ワークスペースのアクセストークンを使います。",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "アクセストークンは ChatGPT Business または Enterprise でのみ使え、事前にワークスペース管理者の許可が必要です。",
   "settings_providerProfileKinds_tokenCodexStep1_label": "ChatGPT 管理コンソールでアクセストークンを作成してコピーします。",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "下に貼り付けて「作成」を選びます。その後 Intent がトークンが使えるか確認します。",
   "settings_providerProfileKinds_tokenCodex_description": "ChatGPT Business または Enterprise のアクセストークン。",
   "settings_providerProfileKinds_tokenNotJwt_error": "Codex のアクセストークンではないようです。ドットで区切られた 3 つの部分があるはずです。",
   "settings_providerProfileKinds_tokenRequired_error": "トークンを貼り付けてください。",

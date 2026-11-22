@@ -4,6 +4,7 @@ import {
   CONNECT_KINDS,
   canContinueConnect,
   connectKindsFor,
+  connectProviderFor,
   connectSecretIssue,
   savedConnectProfile,
   uniqueProfileName,
@@ -14,6 +15,18 @@ const pad = 'A1b2C3d4E5f6G7h8I9j0K1l2';
 describe('CONNECT_KINDS', () => {
   it('preselects the subscription or ChatGPT token, then offers an API key', () => {
     expect(CONNECT_KINDS).toEqual(['token', 'apiKey']);
+  });
+});
+
+describe('connectProviderFor', () => {
+  it('runs the step only for a row the daemon offers profiles for', () => {
+    expect(connectProviderFor({ id: 'grok', supportsProfiles: true })).toBe('grok');
+    expect(connectProviderFor({ id: 'claude-code', supportsProfiles: true })).toBe('claude');
+    // An older daemon: no Grok or Cursor profiles.
+    expect(connectProviderFor({ id: 'cursor', supportsProfiles: false })).toBeUndefined();
+    expect(connectProviderFor({ id: 'cursor' })).toBeUndefined();
+    expect(connectProviderFor({ id: 'opencode', supportsProfiles: true })).toBeUndefined();
+    expect(connectProviderFor(undefined)).toBeUndefined();
   });
 });
 

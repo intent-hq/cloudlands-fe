@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex utilise un jeton d'accès d'espace de travail ChatGPT pour chaque session de ce profil.",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "Les jetons d'accès ne fonctionnent qu'avec ChatGPT Business ou Enterprise, et un administrateur de l'espace de travail doit d'abord les autoriser.",
   "settings_providerProfileKinds_tokenCodexStep1_label": "Créez un jeton d'accès dans la console d'administration de ChatGPT et copiez-le.",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "Collez-le ci-dessous et choisissez Créer. Intent vérifie ensuite que le jeton fonctionne.",
   "settings_providerProfileKinds_tokenCodex_description": "Jeton d'accès ChatGPT Business ou Enterprise.",
   "settings_providerProfileKinds_tokenNotJwt_error": "Cela ne ressemble pas à un jeton d'accès Codex. Il doit comporter trois parties séparées par des points.",
   "settings_providerProfileKinds_tokenRequired_error": "Collez un jeton.",

@@ -76,12 +76,12 @@
   import {
     CONNECT_KINDS,
     connectKindsFor,
+    connectProviderFor,
     type ConnectKind,
   } from '$features/onboarding/utils/onboarding-connect-step';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { providerRefBaseId } from '$shared/provider-profiles';
-  import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import { onboardingForgeCopy } from '$features/onboarding/utils/onboarding-forge-copy';
   import OnboardingGitRequiredNotice from '$features/onboarding/steps/OnboardingGitRequiredNotice.svelte';
   import { needsGitInstallForProject } from '$lib/components/workspace/initializer/plain-folder-create';
@@ -809,10 +809,11 @@
   const connectBaseId = $derived(
     onboardingGridSelectedProviderId ?? providerRefBaseId($onboardingActiveProviderId$ ?? ''),
   );
-  const connectProvider = $derived(profileProviderFromBaseId(connectBaseId));
-  const connectProviderName = $derived(
-    $providerCatalogEntries$.find((entry) => entry.id === connectBaseId)?.displayName ?? '',
+  const connectCatalogEntry = $derived(
+    $providerCatalogEntries$.find((entry) => entry.id === connectBaseId),
   );
+  const connectProvider = $derived(connectProviderFor(connectCatalogEntry));
+  const connectProviderName = $derived(connectCatalogEntry?.displayName ?? '');
   let connectStepRef: OnboardingConnectStep | null = $state(null);
   // Kept here so Back from step 3 (or to step 1 and forward again for the
   // same provider) keeps an unsaved choice and paste.

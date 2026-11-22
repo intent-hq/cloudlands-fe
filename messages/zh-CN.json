@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex 会在此配置文件的每个会话中使用 ChatGPT 工作区访问令牌。",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "访问令牌仅适用于 ChatGPT Business 或 Enterprise，且需要工作区管理员先允许。",
   "settings_providerProfileKinds_tokenCodexStep1_label": "在 ChatGPT 管理控制台中创建访问令牌并复制。",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "粘贴到下方并选择“创建”。Intent 随后会检查令牌是否可用。",
   "settings_providerProfileKinds_tokenCodex_description": "ChatGPT Business 或 Enterprise 访问令牌。",
   "settings_providerProfileKinds_tokenNotJwt_error": "这看起来不像 Codex 访问令牌。它应包含由点分隔的三个部分。",
   "settings_providerProfileKinds_tokenRequired_error": "请粘贴令牌。",

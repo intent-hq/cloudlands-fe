@@ -7,9 +7,25 @@
 import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
 import {
   hasProfileKind,
+  hasProfileKinds,
   isSecretWellFormed,
+  profileProviderFromBaseId,
   type ProfileProvider,
 } from '$lib/provider-profile-kinds';
+
+/**
+ * The provider whose Connect step runs for the catalog row `entry`: only a
+ * row with profile kinds that the daemon reports `supportsProfiles` for, so
+ * an older daemon (Claude Code and Codex only) never shows a step whose
+ * save it would refuse.
+ */
+export function connectProviderFor(
+  entry: { id?: string; supportsProfiles?: boolean } | undefined,
+): ProfileProvider | undefined {
+  return entry?.id !== undefined && hasProfileKinds(entry)
+    ? profileProviderFromBaseId(entry.id)
+    : undefined;
+}
 
 export type ConnectKind = 'token' | 'apiKey';
 

@@ -5635,7 +5635,6 @@
   "settings_providerProfileKinds_tokenCodexDialog_description": "Codex 會在此設定檔的每個工作階段中使用 ChatGPT 工作區存取權杖。",
   "settings_providerProfileKinds_tokenCodexEligibility_description": "存取權杖僅適用於 ChatGPT Business 或 Enterprise，且需要工作區管理員先允許。",
   "settings_providerProfileKinds_tokenCodexStep1_label": "在 ChatGPT 管理主控台中建立存取權杖並複製。",
-  "settings_providerProfileKinds_tokenCodexStep2_label": "貼到下方並選擇「建立」。Intent 接著會檢查權杖是否可用。",
   "settings_providerProfileKinds_tokenCodex_description": "ChatGPT Business 或 Enterprise 存取權杖。",
   "settings_providerProfileKinds_tokenNotJwt_error": "這看起來不像 Codex 存取權杖。它應包含以點分隔的三個部分。",
   "settings_providerProfileKinds_tokenRequired_error": "請貼上權杖。",
