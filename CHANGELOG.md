@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.372.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.2...v2.372.3) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.273 ([#4952](https://github.com/intent-hq/cloudlands-fe/issues/4952)) ([18824d3](https://github.com/intent-hq/cloudlands-fe/commit/18824d39a49d759e619683fc747dacb41ed11372))
+* **home:** keep the Assistant chat order when opening a chat ([#4948](https://github.com/intent-hq/cloudlands-fe/issues/4948)) ([5a04713](https://github.com/intent-hq/cloudlands-fe/commit/5a047131a68914d1f06022abc724abe51e78e491))
+
 ## [2.372.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.372.1...v2.372.2) (2026-11-22)
 
 
