@@ -64,6 +64,7 @@ import {
   CONNECTION_CERT_WARNINGS_EVENT,
   CONNECTION_PROTOCOL_MISMATCH_EVENT,
   KEYCHAIN_SYNC_STATUS_EVENT,
+  SWITCH_TO_SETTINGS_TAB,
 } from '$shared/types/connections';
 import type {
   AddConnectionParams,
@@ -356,7 +357,14 @@ async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenC
   // A tab with no backend yet becomes the opened backend's tab.
   const pageHost = getPageHost();
   if (pageHost) {
-    return openBrowserAccessBackend(params.id, undefined, undefined, pageHost.backendId === null);
+    return openBrowserAccessBackend(
+      params.id,
+      undefined,
+      undefined,
+      pageHost.backendId === null,
+      // Switch to lands on the host's Settings → Hosts, as in the desktop app.
+      params.switchTo ? `/settings?tab=${SWITCH_TO_SETTINGS_TAB}` : '/',
+    );
   }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');

@@ -249,6 +249,16 @@ export function resolveStartOn(
 }
 
 /**
+ * The Start On id to submit: the effective row, except that a default that
+ * lands on the host is sent as no placement, so the backend can still pass
+ * over the host (a provider turned off there) as it walks its order. Only a
+ * host the user picked is sent as `{ target: "local" }`.
+ */
+export function startOnSubmitted(chosen: string | undefined, effective: string): string {
+  return effective === START_ON_HOST && chosen !== START_ON_HOST ? START_ON_BACKEND : effective;
+}
+
+/**
  * `workspace.create.initialAgent.placement` for a choice: `{ target: "local" }`
  * for the host's own row, absent for no choice (the backend picks). The entry is named only to a backend that keeps entries.
  */

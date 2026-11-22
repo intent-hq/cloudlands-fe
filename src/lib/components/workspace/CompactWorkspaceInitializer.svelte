@@ -133,6 +133,7 @@
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
+  import { startOnSubmitted } from '$features/remote-machines/start-on';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import type { SessionImportSelection } from '$features/session-import/importable-session';
   import {
@@ -2708,8 +2709,13 @@
           // A new repository or a plain folder has no commit for a remote agent to start from.
           startOnMachineId: startOnBackendOnly
             ? ''
-            : selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
+            : startOnSubmitted(
+                startOnMachineId,
+                selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
+              ),
         },
+        // The default follows the host's order on the next form, so remember the raw choice.
+        rememberStartOn: startOnBackendOnly ? '' : startOnMachineId,
         rememberAgentRepoKey,
         setupScriptExplicit,
         repoConfigError,
@@ -2951,10 +2957,9 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
-      // A new repository or a plain folder has no commit for a remote agent to start from.
-      startOnMachineId: startOnBackendOnly
-        ? ''
-        : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+      // The user's own choice ('' until they pick), so the next form follows the
+      // host's order again; a choice that is gone falls back to that order too.
+      startOnMachineId: startOnBackendOnly ? '' : startOnMachineId,
       skipIsolation,
       remoteSetup, // null at this point
       // Repo selection — preserved so the next form re-opens on the same repo.

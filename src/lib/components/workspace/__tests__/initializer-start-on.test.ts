@@ -596,6 +596,14 @@ describe('New Workspace → Start On', () => {
       provider: 'auggie',
       placement: { nodeId: 'node-mac' },
     });
+    // The default is remembered as no choice, so the next form follows the order again.
+    const remembered = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action?.type === 'workspaceInitializer/setAgentForRepo');
+    expect(remembered.payload).toEqual([
+      REPO_KEY,
+      expect.objectContaining({ startOnMachineId: '' }),
+    ]);
   });
 
   it('keeps a new repository on the backend: a remote agent needs a commit', async () => {

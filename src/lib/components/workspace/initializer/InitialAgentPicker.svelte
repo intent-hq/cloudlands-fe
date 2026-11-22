@@ -237,6 +237,7 @@
       : START_ON_BACKEND,
   );
   const startOnHostLabel$ = selectCurrentBackendLabel();
+  const orchestratorBackend$ = selectIsOrchestratorBackend();
   // Where a create with no placement starts: the host, or on an orchestrator its first runner.
   const startOnPlaceLabel = $derived(
     $orchestratorBackend$
@@ -244,7 +245,6 @@
       : startOnBackendLabel($startOnOptions$, $startOnHostLabel$),
   );
   // The machine whose models the Model row lists (an orchestrator has none of its own).
-  const orchestratorBackend$ = selectIsOrchestratorBackend();
   const modelMachineId = $derived(
     startOnModelMachineId(effectiveStartOn, $startOnOptions$, $orchestratorBackend$),
   );

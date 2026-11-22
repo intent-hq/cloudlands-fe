@@ -14,6 +14,7 @@
     startOnCloudMachineId,
     startOnDefault,
     startOnRowsWithCloud,
+    startOnSubmitted,
     type StartOnPlacement,
   } from '$features/remote-machines/start-on';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
@@ -120,7 +121,7 @@
     unavailable = active && choices.unavailable !== null;
     // With nothing to choose the card starts on the backend: say so, so no payload placement wins.
     placement = active
-      ? (initialAgentPlacement(effective, {
+      ? (initialAgentPlacement(startOnSubmitted(value, effective), {
           cloudEntries: $cloudEntries$,
           providerOf: (id) => $savedEntries$.find((entry) => entry.id === id)?.provider,
         }) ?? null)

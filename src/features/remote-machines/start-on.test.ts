@@ -8,6 +8,7 @@ import {
   startOnVisible,
   START_ON_BACKEND,
   START_ON_HOST,
+  startOnSubmitted,
 } from './start-on';
 
 const machine = (id: string, extra: Partial<RemoteMachine> = {}): RemoteMachine => ({
@@ -122,6 +123,11 @@ describe('initialAgentPlacement', () => {
     expect(initialAgentPlacement(START_ON_BACKEND)).toBeUndefined();
     // The host chosen explicitly is sent, so the backend doesn't walk its order.
     expect(initialAgentPlacement(START_ON_HOST)).toEqual({ target: 'local' });
+    // A default that lands on the host stays no placement; only a picked host is sent.
+    expect(startOnSubmitted(undefined, START_ON_HOST)).toBe(START_ON_BACKEND);
+    expect(startOnSubmitted('', START_ON_HOST)).toBe(START_ON_BACKEND);
+    expect(startOnSubmitted(START_ON_HOST, START_ON_HOST)).toBe(START_ON_HOST);
+    expect(startOnSubmitted('', 'd-mac')).toBe('d-mac');
     expect(initialAgentPlacement(undefined)).toBeUndefined();
   });
 });
