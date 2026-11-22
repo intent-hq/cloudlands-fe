@@ -209,7 +209,7 @@ for (const source of ['user', 'project'] as const) {
       await expect(component.getByRole('combobox')).toHaveCount(0);
       const warning = component.getByTestId('specialist-import-warning');
       if (unsupported) {
-        await expect(warning).toContainText('Cannot launch in Intent');
+        await expect(warning).toContainText("Can't launch in Intent");
         await expect(warning).toContainText('tools, permissionMode');
       } else {
         await expect(warning).toHaveCount(0);
@@ -335,7 +335,7 @@ test('missing Claude skills clear after a catalog refresh without unlocking edit
     props: { imported: true, missingSkills: true, catalogFlow: true },
   });
   const warning = component.getByTestId('specialist-missing-skills');
-  await expect(warning).toContainText('absent from this catalog');
+  await expect(warning).toContainText('Missing skills');
   await expect(warning).toContainText('workspace where you launch');
   await expect(warning).toContainText('code-review');
   await expect(component.getByRole('textbox')).toHaveAttribute('readonly', '');
