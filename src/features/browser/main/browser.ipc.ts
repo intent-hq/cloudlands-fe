@@ -40,6 +40,7 @@ import {
   getBackendClientForConnection,
   getBackendIdForIpcSender,
   getConnectedDaemonProtocolVersion,
+  getLiveBackendIds,
 } from '../../backend/main/backend.ipc';
 import { getFocusedWindowBackendId } from '../../../main/window';
 import { startRailMachineRenderer } from '../../../main/machine-rail-state';
@@ -349,6 +350,30 @@ export function dockServiceAddress(url: string, backendId: string): string | und
   } catch {
     return;
   }
+}
+
+/**
+ * The daemon host of every live remote backend, so View → Darken Websites
+ * can leave that machine's dev servers alone. Tailcat backends report no
+ * host: their pages load through a loopback tunnel port.
+ */
+export function connectedRemoteDaemonHosts(): string[] {
+  const hosts: string[] = [];
+  for (const backendId of getLiveBackendIds()) {
+    try {
+      const config = getBackendClientForConnection(backendId)?.getConfig();
+      if (!config) continue;
+      const { daemonHost } = loopbackContextFromTransport(
+        backendId === LOCAL_CONNECTION_ID && config.transport === 'uds',
+        config,
+        backendId !== LOCAL_CONNECTION_ID,
+      );
+      if (daemonHost) hosts.push(daemonHost);
+    } catch {
+      // An unreadable connection contributes no host.
+    }
+  }
+  return hosts;
 }
 
 function getBrowserTunnelProvider(
