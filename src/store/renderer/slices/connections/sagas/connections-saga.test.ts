@@ -1582,7 +1582,7 @@ describe('connectionsSaga', () => {
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
       const [, options] = notify.warning.mock.calls[0]!;
-      expect(String(options.description)).toContain('This machine (local)');
+      expect(String(options.description)).toContain('This computer');
       expect(String(options.description)).toContain('v0.9.0');
       expect(String(options.description)).toContain('v0.10.0');
       expect(options.id).toBe(`connections-daemon-behind-${LOCAL.id}`);
@@ -1612,7 +1612,7 @@ describe('connectionsSaga', () => {
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
       const [, options] = notify.warning.mock.calls[0]!;
-      expect(String(options.description)).toContain('This machine (local)');
+      expect(String(options.description)).toContain('This computer');
       expect(String(options.description)).not.toContain('persisted-fallback-label');
 
       run.task.cancel();

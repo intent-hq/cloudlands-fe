@@ -290,7 +290,7 @@ describe('DevicesSettings', () => {
       expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     });
     expect(screen.getByText('Studio Mac')).toBeTruthy();
-    expect(screen.getByText('This machine (local)')).toBeTruthy();
+    expect(screen.getByText('This computer')).toBeTruthy();
     await switchTo();
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
@@ -340,7 +340,7 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('Studio Mac')).toBeTruthy();
     expect(screen.queryByText('10.0.0.2:5181')).toBeNull();
     expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
-    expect(screen.getByText('This machine (local)')).toBeTruthy();
+    expect(screen.getByText('This computer')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(mocks.open).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
@@ -1073,18 +1073,16 @@ describe('DevicesSettings', () => {
   });
 
   it.each(['local', 'remote-1'])(
-    'names the local row after this machine when %s is the current backend',
+    'names the local row This computer and the current host plain when %s is current',
     (currentConnectionId) => {
       mocks.currentConnectionId = currentConnectionId;
       mocks.connections = [{ ...local, machineName: 'Clément’s Mac Studio' }, remote];
       render(DevicesSettings);
-      expect(screen.getByText('Clément’s Mac Studio (local)')).toBeTruthy();
-      expect(screen.queryByText(m.layout_daemonStatus_localConnection_label())).toBeNull();
-      expect(
-        screen.getByText(
-          currentConnectionId === 'remote-1' ? 'Studio Mac (connected backend)' : 'Studio Mac',
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText('This computer')).toBeTruthy();
+      expect(screen.queryByText('Clément’s Mac Studio (local)')).toBeNull();
+      // The host on screen reads Current; its name has no suffix.
+      expect(screen.getByText('Studio Mac')).toBeTruthy();
+      expect(screen.queryByText(/\(connected backend\)/)).toBeNull();
     },
   );
 
@@ -1344,7 +1342,7 @@ describe('DevicesSettings', () => {
     const rowNames = () =>
       screen.getAllByRole('article').map((row) => row.getAttribute('aria-labelledby'));
 
-    it('labels the backend this window uses and lists it right after the local row', () => {
+    it('lists the host this window uses right after the local row, marked Current', () => {
       mocks.connections = [local, remote, intent1];
       mocks.currentConnectionId = 'intent1';
       render(DevicesSettings);
@@ -1354,7 +1352,8 @@ describe('DevicesSettings', () => {
         'device-intent1-name',
         'device-remote-1-name',
       ]);
-      expect(screen.getByRole('article', { name: 'intent1 (connected backend)' })).toBeTruthy();
+      const current = screen.getByRole('article', { name: 'intent1' });
+      expect(current.querySelector('[data-current-host]')).not.toBeNull();
       expect(screen.getByRole('article', { name: 'Studio Mac' })).toBeTruthy();
     });
 
