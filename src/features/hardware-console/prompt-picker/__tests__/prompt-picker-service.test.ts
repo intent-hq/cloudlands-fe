@@ -366,6 +366,16 @@ describe('chat suggestions on the ring', () => {
     expect(source.send).not.toHaveBeenCalled();
   });
 
+  it('does not insert into a different chat than the one the ring opened with', () => {
+    const { suggestions, run } = withSuggestions([]);
+    run.insertText.mockReturnValue(false);
+    run.manager.joystick(UP, 0.9);
+    const other = { ownerId: 'agent-b', prompts: [], send: vi.fn(), insert: vi.fn(() => true) };
+    suggestions.current = other;
+    run.manager.joystick(UP, 0);
+    expect(other.insert).not.toHaveBeenCalled();
+  });
+
   it('prefers the focused text field over the chat composer', () => {
     const { source, run } = withSuggestions([]);
     const insert = vi.fn(() => true);

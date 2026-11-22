@@ -47,3 +47,10 @@ export function getFocusedChatSuggestions(): ChatSuggestionSource | null {
   );
   return fallback?.source ?? null;
 }
+
+/** A fallback chat is reachable when it is on screen, not inert, and not behind a modal dialog. */
+export function isReachablePromptTarget(element: HTMLElement | null): boolean {
+  if (!element?.isConnected || element.closest('[inert]')) return false;
+  const modals = element.ownerDocument.querySelectorAll('[aria-modal="true"]');
+  return Array.from(modals).every((modal) => modal.contains(element));
+}

@@ -262,7 +262,10 @@
     autocompleteTurnsFromMessages,
     buildAutocompleteContext,
   } from '$features/autocomplete/utils/autocomplete-context';
-  import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
+  import {
+    isReachablePromptTarget,
+    publishFocusedChatSuggestions,
+  } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
   import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
@@ -2831,7 +2834,7 @@
         prompts: suggestedPrompts,
         send: (prompt) => handleSelectSuggestedPrompt(prompt),
         insert: (text) => !draftManager.gateVisible && (inputComponent?.insertText(text) ?? false),
-        available: () => !!panelElement?.isConnected && !panelElement.closest('[inert]'),
+        available: () => isReachablePromptTarget(panelElement),
       },
       { fallback: !isChatFocused },
     );

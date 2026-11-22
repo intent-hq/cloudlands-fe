@@ -192,8 +192,10 @@ export function installHardwareConsolePromptPickerJoystick(
       return;
     }
     if (slot?.kind !== 'prompt' || insertText(slot.text)) return;
-    // Nothing editable has focus (Home's preview chat): use the chat's composer.
-    if (!getSuggestions()?.insert?.(slot.text)) {
+    // Nothing editable has focus (Home's preview chat): use the composer of the
+    // chat the ring opened with, never one that took over mid-gesture.
+    const current = getSuggestions();
+    if (!source || current?.ownerId !== source.ownerId || !current.insert?.(slot.text)) {
       logger.info('Radial prompt release with no focused text input; insertion skipped');
     }
   };

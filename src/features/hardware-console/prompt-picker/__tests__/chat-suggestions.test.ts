@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getFocusedChatSuggestions, publishFocusedChatSuggestions } from '../chat-suggestions';
+import {
+  getFocusedChatSuggestions,
+  isReachablePromptTarget,
+  publishFocusedChatSuggestions,
+} from '../chat-suggestions';
 
 const releases: (() => void)[] = [];
 afterEach(() => {
@@ -52,5 +56,37 @@ describe('fallback chat target', () => {
     expect(getFocusedChatSuggestions()).toBeNull();
     available = true;
     expect(getFocusedChatSuggestions()).toBe(home);
+  });
+});
+
+describe('isReachablePromptTarget', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  function mountChat(): HTMLElement {
+    const chat = document.createElement('section');
+    document.body.append(chat);
+    return chat;
+  }
+
+  it('accepts a connected chat with no modal open', () => {
+    expect(isReachablePromptTarget(mountChat())).toBe(true);
+  });
+
+  it('rejects a missing, detached or inert chat', () => {
+    expect(isReachablePromptTarget(null)).toBe(false);
+    expect(isReachablePromptTarget(document.createElement('section'))).toBe(false);
+    const chat = mountChat();
+    chat.setAttribute('inert', '');
+    expect(isReachablePromptTarget(chat)).toBe(false);
+  });
+
+  it('rejects a chat behind an open modal dialog but not one inside it', () => {
+    const chat = mountChat();
+    const dialog = document.createElement('div');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.append(dialog);
+    expect(isReachablePromptTarget(chat)).toBe(false);
+    dialog.append(chat);
+    expect(isReachablePromptTarget(chat)).toBe(true);
   });
 });
