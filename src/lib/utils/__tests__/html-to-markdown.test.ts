@@ -221,4 +221,54 @@ describe('HTML to Markdown Conversion', () => {
       expect(result).toBe('```mermaid\nsay &quot;hi&quot;\n```');
     });
   });
+  // A saved code fence must read back to the same fence: marked 18.2 reads
+  // the blank line a fence's content ends with as part of its text
+  // ("```\n\n```" is "\n"; 18.0 gave ""), so a block written back as
+  // `\n${text}\n` must not gain a line per save. (The serializer's collapse
+  // of three or more breaks to two is what holds it; the last column is the
+  // form a first save settles on, the same on 18.0: an empty fence is written
+  // holding one blank line, and a run of blank lines collapses to one.)
+  describe('code fence round trip', () => {
+    const save = async (markdown: string) =>
+      processHTMLToMarkdown(await processMarkdownToHTML(markdown));
+
+    it.each([
+      ['an empty code block', '```js\n```', '```js\n\n```'],
+      ['a code block holding one blank line', '```js\n\n```', '```js\n\n```'],
+      [
+        'a code block ending in a blank line',
+        '```js\nconst a = 1;\n\n```',
+        '```js\nconst a = 1;\n\n```',
+      ],
+      [
+        'a code block ending in two blank lines',
+        '```js\nconst a = 1;\n\n\n```',
+        '```js\nconst a = 1;\n\n```',
+      ],
+      [
+        'a code block opening with a blank line',
+        '```js\n\nconst a = 1;\n```',
+        '```js\n\nconst a = 1;\n```',
+      ],
+      [
+        'a plain code block',
+        '```js\nconst a = 1;\nconst b = 2;\n```',
+        '```js\nconst a = 1;\nconst b = 2;\n```',
+      ],
+      ['an empty Mermaid block', '```mermaid\n```', '```mermaid\n\n```'],
+      ['a Mermaid block holding one blank line', '```mermaid\n\n```', '```mermaid\n\n```'],
+      [
+        'a Mermaid block ending in a blank line',
+        '```mermaid\ngraph TD; A-->B\n\n```',
+        '```mermaid\ngraph TD; A-->B\n\n```',
+      ],
+      ['an empty diff block', '```diff\n```', '```diff\n\n```'],
+      ['a diff block ending in a blank line', '```diff\n+a\n\n```', '```diff\n+a\n\n```'],
+    ])('saves %s as a fence that later saves keep', async (_kind, markdown, saved) => {
+      const once = await save(markdown);
+      expect(once).toBe(saved);
+      expect(await save(once)).toBe(saved);
+      expect(await save(await save(once))).toBe(saved);
+    });
+  });
 });
