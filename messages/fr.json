@@ -6990,7 +6990,6 @@
   "workspace_compactInitializer_progressFinalizing_label": "Finalisation de l'espace de travail…",
   "workspace_compactInitializer_progressAgent_label": "Démarrage de l'agent sur {machine}…",
   "workspace_compactInitializer_progressAgentGeneric_label": "Démarrage de l'agent…",
-  "workspace_compactInitializer_progressDetail_label": "{percent} · {transfer}",
   "workspace_compactInitializer_progressReceiving_label": "Clonage du dépôt…",
   "workspace_compactInitializer_progressResolving_label": "Résolution des deltas…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Clonage des sous-modules ({current}/{total})…",

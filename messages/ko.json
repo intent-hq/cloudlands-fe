@@ -6990,7 +6990,6 @@
   "workspace_compactInitializer_progressFinalizing_label": "작업 공간 마무리 중…",
   "workspace_compactInitializer_progressAgent_label": "{machine}에서 에이전트 시작 중…",
   "workspace_compactInitializer_progressAgentGeneric_label": "에이전트 시작 중…",
-  "workspace_compactInitializer_progressDetail_label": "{percent} · {transfer}",
   "workspace_compactInitializer_progressReceiving_label": "리포지토리 복제 중…",
   "workspace_compactInitializer_progressResolving_label": "델타 해결 중…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "서브모듈 복제 중 ({current}/{total})…",

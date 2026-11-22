@@ -6990,7 +6990,6 @@
   "workspace_compactInitializer_progressFinalizing_label": "正在完成工作区设置…",
   "workspace_compactInitializer_progressAgent_label": "正在 {machine} 上启动智能体…",
   "workspace_compactInitializer_progressAgentGeneric_label": "正在启动智能体…",
-  "workspace_compactInitializer_progressDetail_label": "{percent} · {transfer}",
   "workspace_compactInitializer_progressReceiving_label": "正在克隆仓库…",
   "workspace_compactInitializer_progressResolving_label": "正在解析增量…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "正在克隆子模块（{current}/{total}）…",

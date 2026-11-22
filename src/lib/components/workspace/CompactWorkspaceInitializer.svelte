@@ -4010,7 +4010,7 @@
             {/if}
           </div>
         {/if}
-        <div class="settings-footer mt-auto pt-6">
+        <div class="settings-footer mt-auto pt-4 pb-2">
           <!-- Create button -->
           <div class="w-full">
             <CreateButtonProgress
