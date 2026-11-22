@@ -258,7 +258,13 @@ declare module '@pierre/diffs' {
     );
   }
 
-  export function parsePatchFiles(data: string, cacheKeyPrefix?: string): ParsedPatch[];
+  export interface ParsePatchOptions {
+    cacheKeyPrefix?: string;
+    disableLineMatching?: boolean;
+    throwOnError?: boolean;
+  }
+
+  export function parsePatchFiles(data: string, options?: ParsePatchOptions): ParsedPatch[];
 
   export function parseDiffFromFile(
     oldFile: FileContents,

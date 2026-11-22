@@ -1,3 +1,5 @@
+import { parsePatchFiles, type ParsedPatch } from '@pierre/diffs';
+
 /**
  * Module-scoped hash cache shared across all DiffViewer instances.
  * Wave 3: previously kept per-component-instance, which defeated dedup
@@ -33,4 +35,9 @@ export function hashContent(str: string): string {
   }
   contentHashCache.set(str, h);
   return h;
+}
+
+/** Parse a patch with per-file cache keys derived from `fileName` and the patch hash. */
+export function parseKeyedPatch(fileName: string, patch: string): ParsedPatch[] {
+  return parsePatchFiles(patch, { cacheKeyPrefix: `${fileName}:${hashContent(patch)}` });
 }

@@ -27,7 +27,6 @@
   import {
     FileDiff,
     VirtualizedFileDiff,
-    parsePatchFiles,
     parseDiffFromFile,
     type FileContents,
     type HunkData,
@@ -46,7 +45,7 @@
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { Button } from '$lib/components/ui/button';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
-  import { hashContent } from './diff-content-hash.js';
+  import { hashContent, parseKeyedPatch } from './diff-content-hash.js';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -199,10 +198,7 @@
     if (contentTooLarge) return null;
 
     if (patch) {
-      // Parse patch string. `cacheKeyPrefix` lets the parser key per-file
-      // cache entries on a stable identifier rather than re-parsing each mount.
-      const patchKey = `${fileName}:${hashContent(patch)}`;
-      const parsed = parsePatchFiles(patch, patchKey);
+      const parsed = parseKeyedPatch(fileName, patch);
       if (parsed.length > 0 && parsed[0].files.length > 0) {
         const fileDiff = parsed[0].files[0];
         // Validate the language extracted from the patch file extension.
