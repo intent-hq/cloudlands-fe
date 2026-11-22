@@ -124,3 +124,14 @@ export const selectWorkspaceCreationVisible = store.createSelector(
     selectCanCreateWorkspace.select(state) &&
     (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
 );
+
+/**
+ * The connected daemon supports the conversation goal contract
+ * (`client.hello` `server.capabilities.conversationGoal: 1`): `/goal` sends
+ * with `interpretCommands`, `agent.setGoal`, the `goal` session field and
+ * `goal_command` notice rows. Without it no goal UI is shown and `/goal …`
+ * is sent as plain text.
+ */
+export const selectConversationGoalSupported = store.createSelector(
+  (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.conversationGoal === 1,
+);

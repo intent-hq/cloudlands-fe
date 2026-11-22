@@ -275,3 +275,26 @@ it('preserves a repeated absent completion-report clear over a held detail read'
   expect(metadata?.specialist).toBe('fetched');
   expect(pendingGets).toHaveLength(1);
 });
+
+it('applies a conversation goal from agent:updated without a detail read (set, then removed)', () => {
+  const agent = knownAgent('goal-live-update');
+  appStore.dispatch(bulkUpsertSessions([agent]));
+
+  push(agent, 'agent:updated', { goal: 'Ship the release' });
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBe('Ship the release');
+
+  push(agent, 'agent:updated', { goal: null });
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBeUndefined();
+  expect(pendingGets).toHaveLength(0);
+});
+
+it('lands a session read whose only change is the goal (goal writes keep updatedAt)', () => {
+  const agent = knownAgent('goal-same-updated-at');
+  appStore.dispatch(bulkUpsertSessions([agent]));
+
+  appStore.dispatch(bulkUpsertSessions([{ ...agent, goal: 'Keep CI green' }]));
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBe('Keep CI green');
+
+  appStore.dispatch(bulkUpsertSessions([agent]));
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBeUndefined();
+});

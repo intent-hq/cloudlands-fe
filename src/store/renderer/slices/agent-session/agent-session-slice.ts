@@ -1168,6 +1168,7 @@ type SessionComparisonSnapshot = Pick<
   | 'sessionCorrupted'
   | 'permissionPolicy'
   | 'effectivePermissionPolicy'
+  | 'goal'
 > & {
   messageCount: number;
   wireMessageCount: number | undefined;
@@ -1234,6 +1235,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // re-reads the agent without bumping `updatedAt`; the read must still land.
     permissionPolicy: session.permissionPolicy,
     effectivePermissionPolicy: session.effectivePermissionPolicy,
+    // A goal write never advances `updatedAt`; a read carrying it must land.
+    goal: session.goal,
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,

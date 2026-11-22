@@ -1,4 +1,5 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { goalFromAgentUpdated } from '$features/conversation-goal/utils/goal-command';
 import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
@@ -1634,6 +1635,13 @@ function projectAgentMetadata(
     // no longer describes the stored value.
     metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     for (const key of Object.keys(data)) consumed.add(key);
+  }
+  // Conversation goal (`agent:updated { agentId, goal }`): a string sets it,
+  // `null` removes it. The payload is self-sufficient, so no `agent.get`.
+  const goal = goalFromAgentUpdated(data);
+  if (goal.present) {
+    updates.goal = goal.goal;
+    consumed.add('goal');
   }
   if (consumed.size === 1) return false;
   const metadata = applyAgentMetadataPatch(session.metadata, metadataPatch);

@@ -1436,6 +1436,110 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('sendGoalCommand sends only the text with interpretCommands and reads the command result', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      command: { name: 'goal', action: 'set', goal: 'Ship it', noticeMessageId: 'notice-1' },
+    }));
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.sendGoalCommand({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        content: '/goal Ship it',
+      }),
+    ).toEqual({
+      ok: true,
+      command: { action: 'set', goal: 'Ship it', noticeMessageId: 'notice-1' },
+    });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.sendMessage',
+        params: {
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          content: '/goal Ship it',
+          interpretCommands: true,
+        },
+      },
+    ]);
+  });
+
+  it('sendGoalCommand reports an ordinary delivery as command: null', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      messageId: 'm',
+    }));
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendGoalCommand({ agentId: 'agent-1', workspaceId: 'ws-1', content: '/goal' }),
+    ).toEqual({ ok: true, command: null });
+  });
+
+  it('sendGoalCommand classifies the documented -32602 refusals', async () => {
+    backend.onRequest('agent.sendMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'goal is too long (max 1000 characters)', {
+          rpcCode: -32602,
+          data: { code: 'goal-too-long', maxLength: 1000 },
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendGoalCommand({ agentId: 'agent-1', workspaceId: 'ws-1', content: '/goal x' }),
+    ).toEqual({ ok: false, error: { kind: 'tooLong' } });
+  });
+
+  it('setGoal maps the agent-retired refusal by data.code', async () => {
+    backend.onRequest('agent.setGoal', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'agent is retired', {
+          rpcCode: -32602,
+          data: { code: 'agent-retired' },
+        }),
+      );
+    });
+    expect(
+      await new LiveAgentsClient().setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'x' }),
+    ).toEqual({ ok: false, error: { kind: 'retired' } });
+  });
+
+  it('setGoal forwards agent.setGoal, including a null removal', async () => {
+    const results = [
+      { action: 'set', goal: 'Ship it', noticeMessageId: 'n-1' },
+      { action: 'cleared', goal: null, noticeMessageId: 'n-2' },
+    ];
+    backend.onRequest('agent.setGoal', () => results.shift());
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'Ship it' }),
+    ).toEqual({ ok: true, result: { action: 'set', goal: 'Ship it', noticeMessageId: 'n-1' } });
+    expect(await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: null })).toEqual({
+      ok: true,
+      result: { action: 'cleared', goal: null, noticeMessageId: 'n-2' },
+    });
+    expect(backend.requests.map((request) => request.params)).toEqual([
+      { agentId: 'agent-1', workspaceId: 'ws-1', goal: 'Ship it' },
+      { agentId: 'agent-1', workspaceId: 'ws-1', goal: null },
+    ]);
+  });
+
+  it('setGoal folds a transport failure into a failed outcome', async () => {
+    backend.onRequest('agent.setGoal', () => {
+      throw new Error('socket closed');
+    });
+    const client = new LiveAgentsClient();
+    expect(await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'x' })).toEqual({
+      ok: false,
+      error: { kind: 'failed', message: 'socket closed' },
+    });
+  });
+
   it('setPinned forwards agent.update with the boolean pinned change (§5.5)', async () => {
     backend.onRequest('agent.update', () => ({ success: true }));
     const client = new LiveAgentsClient();

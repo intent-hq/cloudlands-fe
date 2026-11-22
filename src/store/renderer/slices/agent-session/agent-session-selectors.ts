@@ -655,3 +655,9 @@ export const selectAgentPreview = store.createSelector(
     return preview ? { ...preview, isLive } : null;
   },
 );
+
+/** The conversation goal stored on the agent session, or null when unset. */
+export const selectAgentGoal = store.createSelector((state, agentId: string): string | null => {
+  const goal = state.agentSessions?.byAgentId[agentId]?.goal;
+  return typeof goal === 'string' && goal.length > 0 ? goal : null;
+});
