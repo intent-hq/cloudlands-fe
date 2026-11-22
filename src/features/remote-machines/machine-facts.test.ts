@@ -154,8 +154,9 @@ describe('machineRowProviders', () => {
 
 describe('machineRowLoad', () => {
   const capacity = { runningAgents: 3, agentCap: 8 };
+  const resources = { memoryUsedBytes: 1, memoryTotalBytes: 2 };
   const withCapacity = (state: RemoteMachine['state']) =>
-    machine({ state, capabilities: { providers: [], capacity } });
+    machine({ state, capabilities: { providers: [], capacity, resources } });
 
   it("is the report's machine-wide load while the machine is connected", () => {
     expect(machineRowLoad(withCapacity('connected'))).toEqual(capacity);
@@ -169,6 +170,10 @@ describe('machineRowLoad', () => {
   it('is null without a capacity in the report (an older backend) or without a machine', () => {
     expect(machineRowLoad(machine())).toBeNull();
     expect(machineRowLoad(null)).toBeNull();
+  });
+
+  it('is null for an older runner that does not push its count (no resources)', () => {
+    expect(machineRowLoad(machine({ capabilities: { providers: [], capacity } }))).toBeNull();
   });
 });
 

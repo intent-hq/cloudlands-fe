@@ -37,12 +37,14 @@ const REPORT_STATES = new Set<RemoteMachine['state']>(['connected', 'disconnecte
 
 /**
  * The machine-wide load from its report while it is connected: every agent on
- * it, this host's, other hosts' and its own local ones. The machine pushes its
- * report when the count changes, so it is live only while connected; null
- * otherwise (the last count says nothing about now).
+ * it, this host's, other hosts' and its own local ones. Only a runner that
+ * sends `resources` pushes its report when the count changes, so the count is
+ * live only then; null otherwise (not connected, or an older runner whose
+ * count can be an hour old).
  */
 export function machineRowLoad(machine: RemoteMachine | null): RemoteMachineCapacity | null {
-  return machine?.state === 'connected' ? (machine.capabilities?.capacity ?? null) : null;
+  if (machine?.state !== 'connected' || !machine.capabilities?.resources) return null;
+  return machine.capabilities.capacity ?? null;
 }
 
 /**

@@ -29,7 +29,8 @@
       resources: { cpuPercent: 3, memoryUsedBytes: 5 * GIB, memoryTotalBytes: 16 * GIB },
     },
   });
-  // An older runner: count only, no CPU or memory.
+  // An older runner: it does not push its count, so the row shows this
+  // host's agents there and no tooltip.
   const OLDER = runner({
     capabilities: { providers: [], capacity: { runningAgents: 2, agentCap: 4 } },
   });

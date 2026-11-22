@@ -1,6 +1,7 @@
 <!--
-  A runner row's agent count: machine-wide while the runner is connected
-  (every host's agents and its own), else this host's agents there. The
+  A runner row's agent count: machine-wide while the runner is connected and
+  pushes its load (every host's agents and its own), else this host's agents
+  there. The
   tooltip has the agent limit and the whole computer's CPU and memory when the
   runner reports them; a runner that reports them shows its count even at 0, so
   the tooltip is reachable. Nothing otherwise (an older runner with no agents).
