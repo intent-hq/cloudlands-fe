@@ -13,6 +13,20 @@ const JS_EXTENSION_PATTERN = /\.[cm]?jsx?$/;
 
 const blank = (text) => text.replace(/[^\n]/g, ' ');
 
+// A block's content made safe to join with the next block: Svelte parses each block on
+// its own, so a trailing line comment or a missing semicolon must not run into the next
+// block. The trailing line comment is blanked and the closing tag becomes `;`.
+function closedBlock(content, closeTag) {
+  const block = ts.createSourceFile('block.ts', content, ts.ScriptTarget.Latest, false);
+  const comments = ts.getLeadingCommentRanges(content, block.endOfFileToken.pos) ?? [];
+  const last = comments.at(-1);
+  const safe =
+    last?.kind === ts.SyntaxKind.SingleLineCommentTrivia && last.end === content.length
+      ? content.slice(0, last.pos) + blank(content.slice(last.pos))
+      : content;
+  return `${safe};${blank(closeTag.slice(1))}`;
+}
+
 function splitSvelte(text) {
   let script = '';
   let markup = '';
@@ -24,7 +38,7 @@ function splitSvelte(text) {
     if (openTag === undefined) script += blank(whole);
     else {
       const contentEnd = openTag.length + content.length;
-      script += blank(openTag) + content + blank(whole.slice(contentEnd));
+      script += blank(openTag) + closedBlock(content, whole.slice(contentEnd));
     }
     kept = match.index + whole.length;
   }
@@ -32,7 +46,8 @@ function splitSvelte(text) {
 }
 
 // The component's `<script>` contents in place, everything else blanked to spaces
-// (newlines kept), so offsets and lines match the component.
+// (newlines kept), so offsets and lines match the component. Each block ends at its
+// closing tag (see `closedBlock`), so one parse reads every block and their shared scope.
 export const svelteScriptText = (text) => splitSvelte(text).script;
 
 // Each `<script>` block of a component, in order: `{ openTag, isModule, text }`. `text` is

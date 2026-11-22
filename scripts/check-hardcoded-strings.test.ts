@@ -231,6 +231,19 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('reads an instance script after a module script that ends in a line comment', () => {
+    withFixture(
+      {
+        'Example.svelte':
+          "<script module>// note</script><script>const label = 'Save your work';</script>",
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.output).toContain('Example.svelte:1  [string literal] "Save your work"');
+      },
+    );
+  });
+
   it('ignores a script block inside an HTML comment', () => {
     withFixture(
       {

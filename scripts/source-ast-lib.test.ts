@@ -174,6 +174,28 @@ describe('source AST helper', () => {
       expect(markup).not.toContain('.a {');
     });
 
+    it('ends each script block before the next one starts', () => {
+      const comment =
+        "<script module>// note</script><script>const o = { id: 'instance' };</script>";
+      const source = parseSource(comment, 'A.svelte');
+      expect(findObjectLiterals(source, 'id')).toHaveLength(1);
+      expect(parseErrors(source)).toEqual([]);
+      const noSemicolon = [
+        '<script module>',
+        '  export const a = b',
+        '</script>',
+        '<script>',
+        '  [1].forEach(f);',
+        '</script>',
+      ].join('\n');
+      const statements = parseSource(noSemicolon, 'A.svelte').statements;
+      expect(statements).toHaveLength(3);
+      expect(ts.isVariableStatement(statements[0])).toBe(true);
+      expect(ts.isExpressionStatement(statements[1])).toBe(true);
+      expect(statements[1].getText()).toBe('[1].forEach(f);');
+      expect(svelteScriptText(comment)).toHaveLength(comment.length);
+    });
+
     it('splits a component into one same-length text per script block', () => {
       const blocks = svelteScriptBlocks(page);
       expect(blocks.map((block) => block.isModule)).toEqual([true, false]);
