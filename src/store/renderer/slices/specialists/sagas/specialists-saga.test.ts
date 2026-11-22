@@ -66,6 +66,7 @@ import {
   setSpecialistCreation,
   updateSpecialistDraft,
   deleteFileSpecialist,
+  ensureSpecialistsLoaded,
   initialState,
   refetchSpecialistsRequested,
   saveFileSpecialist,
@@ -905,6 +906,37 @@ describe('specialistsSaga', () => {
 
   describe('explicit refetch requests', () => {
     afterEach(() => vi.useRealTimers());
+
+    it.each([
+      [false, 1],
+      [true, 0],
+    ] as const)(
+      'ensureSpecialistsLoaded with a loaded roster of %s reads the catalog %i time(s)',
+      async (loaded, reads) => {
+        vi.useFakeTimers();
+        mocks.list.mockResolvedValue([fileDef('loaded')]);
+        const state = {
+          ...specialistsReducer(initialState, setBundledSpecialistsLoaded(loaded)),
+        };
+        const channel = stdChannel();
+        const task = runSaga(
+          {
+            channel,
+            dispatch: (action: StoreAction<unknown>) => channel.put(action),
+            getState: () => ({ specialists: state }),
+          },
+          specialistsSaga,
+        );
+
+        channel.put(ensureSpecialistsLoaded());
+        channel.put(ensureSpecialistsLoaded());
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(mocks.list).toHaveBeenCalledTimes(reads);
+        task.cancel();
+        await task.toPromise();
+      },
+    );
 
     it('replaces prior specialists with the authoritative list', async () => {
       vi.useFakeTimers();

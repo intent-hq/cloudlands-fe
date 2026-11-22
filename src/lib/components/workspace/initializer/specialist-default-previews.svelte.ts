@@ -4,30 +4,33 @@ import type { ResolvedSpecialist } from './initial-agent-defaults';
 
 const logger = createLogger('SpecialistDefaultPreviews');
 
+type PreviewsByProvider = Record<string, Record<string, ResolvedSpecialist>>;
+
 /**
- * Daemon-resolved default-model previews per provider context (PROTOCOL
- * §5.11): `specialist.list` with a provider returns additive
- * `resolvedModel`/`resolvedProvider` fields computed by the same resolver a
- * no-model create uses, so a form names exactly the model the daemon would
- * pin. The store's specialist view carries the daemon-default-provider
- * context, so it serves as the fallback until a provider's fetch lands.
+ * One cache for every mounted picker and proposal card, so N open forms cost
+ * one `specialist.list` per provider instead of N.
  */
-export class SpecialistDefaultPreviews {
-  byProvider = $state<Record<string, Record<string, ResolvedSpecialist>>>({});
+class SharedPreviewCache {
+  byProvider = $state<PreviewsByProvider>({});
   // Bumped on every invalidation; in-flight fetches from an older generation
   // are dropped so they can't overwrite fresher previews.
   #generation = 0;
+  #view: unknown = Symbol('unset');
+  #inFlight = new Set<string>();
 
-  /** Forget every preview (the store's specialist view refreshed). */
-  invalidate(): void {
+  invalidate(view: unknown): void {
+    // Every holder reports the same store view; only a new one clears.
+    if (view === this.#view) return;
+    this.#view = view;
     this.#generation += 1;
+    this.#inFlight.clear();
     this.byProvider = {};
   }
 
-  /** Fetch a provider's previews unless they are already loaded. */
   load(provider: string): void {
-    if (!provider || provider in this.byProvider) return;
+    if (!provider || provider in this.byProvider || this.#inFlight.has(provider)) return;
     const generation = this.#generation;
+    this.#inFlight.add(provider);
     void (async () => {
       try {
         const defs = await appClient.specialists.list(provider);
@@ -37,7 +40,35 @@ export class SpecialistDefaultPreviews {
         this.byProvider = { ...this.byProvider, [provider]: byId };
       } catch (error) {
         logger.debug('Failed to fetch resolved-model previews:', { provider, error });
+      } finally {
+        if (generation === this.#generation) this.#inFlight.delete(provider);
       }
     })();
+  }
+}
+
+const shared = new SharedPreviewCache();
+
+/**
+ * Daemon-resolved default-model previews per provider context (PROTOCOL
+ * §5.11): `specialist.list` with a provider returns additive
+ * `resolvedModel`/`resolvedProvider` fields computed by the same resolver a
+ * no-model create uses, so a form names exactly the model the daemon would
+ * pin. The store's specialist view carries the daemon-default-provider
+ * context, so it serves as the fallback until a provider's fetch lands.
+ */
+export class SpecialistDefaultPreviews {
+  get byProvider(): PreviewsByProvider {
+    return shared.byProvider;
+  }
+
+  /** Forget every preview when the store's specialist view is a new one. */
+  invalidate(storeView: unknown): void {
+    shared.invalidate(storeView);
+  }
+
+  /** Fetch a provider's previews unless they are loaded or loading. */
+  load(provider: string): void {
+    shared.load(provider);
   }
 }
