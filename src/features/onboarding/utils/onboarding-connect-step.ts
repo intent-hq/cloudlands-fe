@@ -5,12 +5,25 @@
  * default; machines use it when an agent starts there.
  */
 import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
-import { isSecretWellFormed, type ProfileProvider } from '$lib/provider-profile-kinds';
+import {
+  hasProfileKind,
+  isSecretWellFormed,
+  type ProfileProvider,
+} from '$lib/provider-profile-kinds';
 
 export type ConnectKind = 'token' | 'apiKey';
 
-/** The first is preselected: Claude's subscription token, Codex's ChatGPT access token. */
+/** Token before API key: Claude's subscription token, Codex's ChatGPT access token. */
 export const CONNECT_KINDS: readonly ConnectKind[] = ['token', 'apiKey'];
+
+/**
+ * The kinds the step offers for `provider`, the first preselected: Claude
+ * Code and Codex offer both, Grok, Droid and Cursor an API key, Auggie its
+ * access token.
+ */
+export function connectKindsFor(provider: ProfileProvider): ConnectKind[] {
+  return CONNECT_KINDS.filter((kind) => hasProfileKind(provider, kind));
+}
 
 export type ConnectSecretIssue = 'empty' | 'shape';
 

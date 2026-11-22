@@ -1,6 +1,8 @@
 /**
  * Pure helpers for the add/edit provider-profile dialog's kinds (Different
- * login, API key, Token, Advanced) for Claude Code and Codex.
+ * login, API key, Token, Advanced) for every provider with profile kinds:
+ * Claude Code, Codex, Grok, Factory Droid, Auggie and Cursor. Each provider
+ * offers only the kinds in its row of the table below.
  *
  * A profile's kind is never stored: it is read from the profile's saved env
  * (PROTOCOL §5.54) with the matching table below, and every specialized kind
@@ -15,8 +17,8 @@ import type {
   ProviderProfileCreateParams,
 } from '$shared/provider-profiles';
 
-/** The two profile-capable providers, named as in the folder path. */
-export type ProfileProvider = 'claude' | 'codex';
+/** The providers with profile kinds, named as in the folder path. */
+export type ProfileProvider = 'claude' | 'codex' | 'grok' | 'droid' | 'auggie' | 'cursor';
 
 export type ProfileKind = 'differentLogin' | 'apiKey' | 'token' | 'advanced';
 
@@ -29,9 +31,14 @@ export const MASKED_ENV_VALUE = '********';
 const BASE_PROVIDER_IDS: Record<ProfileProvider, string> = {
   claude: 'claude-code',
   codex: 'codex',
+  grok: 'grok',
+  droid: 'droid',
+  auggie: 'auggie',
+  cursor: 'cursor',
 };
 
-const FOLDER_VARIABLES: Record<ProfileProvider, string> = {
+/** Account folders of the providers with a Different login kind. */
+const FOLDER_VARIABLES: Partial<Record<ProfileProvider, string>> = {
   claude: 'CLAUDE_CONFIG_DIR',
   codex: 'CODEX_HOME',
 };
@@ -51,7 +58,16 @@ interface KindKeys {
  * other tools that read `OPENAI_API_KEY` do not pick it up. The daemon signs
  * Codex in with it at launch (Codex ignores a key that is only in the env).
  */
-const PROFILE_KIND_TABLE: Record<ProfileProvider, Record<SpecializedProfileKind, KindKeys>> = {
+/*
+ * Grok, Droid, Auggie and Cursor (PROTOCOL §5.54 "Profile-capable bases"):
+ * one credential each. Grok and Cursor prefer a saved login over the key,
+ * so the daemon runs their key profiles in a home of their own; Auggie's
+ * token is the JSON `auggie token print` prints (AUGMENT_SESSION_AUTH).
+ */
+const PROFILE_KIND_TABLE: Record<
+  ProfileProvider,
+  Partial<Record<SpecializedProfileKind, KindKeys>>
+> = {
   claude: {
     differentLogin: {
       set: ['CLAUDE_CONFIG_DIR'],
@@ -86,12 +102,36 @@ const PROFILE_KIND_TABLE: Record<ProfileProvider, Record<SpecializedProfileKind,
       unset: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
     },
   },
+  grok: {
+    apiKey: { set: ['XAI_API_KEY'], optionalSet: [], unset: [] },
+  },
+  droid: {
+    apiKey: { set: ['FACTORY_API_KEY'], optionalSet: [], unset: [] },
+  },
+  auggie: {
+    token: { set: ['AUGMENT_SESSION_AUTH'], optionalSet: [], unset: [] },
+  },
+  cursor: {
+    apiKey: { set: ['CURSOR_API_KEY'], optionalSet: [], unset: ['CURSOR_AUTH_TOKEN'] },
+  },
 };
 
 const DETECTION_ORDER: readonly SpecializedProfileKind[] = ['differentLogin', 'apiKey', 'token'];
 
 function kindKeys(provider: ProfileProvider, kind: SpecializedProfileKind): KindKeys {
-  return PROFILE_KIND_TABLE[provider][kind];
+  const keys = PROFILE_KIND_TABLE[provider][kind];
+  if (!keys) throw new Error(`${provider} has no ${kind} profile kind`);
+  return keys;
+}
+
+/** The specialized kinds a provider offers, in dialog order (Advanced is always offered too). */
+export function profileKindsFor(provider: ProfileProvider): SpecializedProfileKind[] {
+  return DETECTION_ORDER.filter((kind) => PROFILE_KIND_TABLE[provider][kind] !== undefined);
+}
+
+/** Whether `provider` offers `kind`. */
+export function hasProfileKind(provider: ProfileProvider, kind: SpecializedProfileKind): boolean {
+  return PROFILE_KIND_TABLE[provider][kind] !== undefined;
 }
 
 /** The variable of Claude's optional Custom endpoint (Codex API keys have none). */
@@ -104,14 +144,16 @@ export function baseProviderIdFor(provider: ProfileProvider): string {
 
 /** The provider for a profile's `baseProviderId`, or `undefined` for one without kinds. */
 export function profileProviderFromBaseId(baseProviderId: string): ProfileProvider | undefined {
-  if (baseProviderId === 'claude-code') return 'claude';
-  if (baseProviderId === 'codex') return 'codex';
-  return undefined;
+  return (Object.keys(BASE_PROVIDER_IDS) as ProfileProvider[]).find(
+    (provider) => BASE_PROVIDER_IDS[provider] === baseProviderId,
+  );
 }
 
 /**
- * A catalog row with profile kinds (key and token screens): Claude Code and
- * Codex, when the daemon offers profiles for them.
+ * A catalog row with profile kinds (key and token screens): Claude Code,
+ * Codex, Grok, Droid, Auggie and Cursor, when the daemon offers profiles
+ * for them (`supportsProfiles`; an older daemon offers them for Claude Code
+ * and Codex only).
  */
 export function hasProfileKinds(entry: { id?: string; supportsProfiles?: boolean }): boolean {
   return (
@@ -126,9 +168,19 @@ export function secretKeyFor(kind: 'apiKey' | 'token', provider: ProfileProvider
   return kindKeys(provider, kind).set[0];
 }
 
-/** The variable that picks a provider's account folder. */
+/** The providers with a Different login kind: an account folder signed in from a terminal. */
+export type FolderLoginProvider = 'claude' | 'codex';
+
+/** Whether `provider` has a Different login (an account folder). */
+export function hasFolderLogin(provider: ProfileProvider): provider is FolderLoginProvider {
+  return FOLDER_VARIABLES[provider] !== undefined;
+}
+
+/** The variable that picks a provider's account folder (Claude Code and Codex). */
 export function folderVariableFor(provider: ProfileProvider): string {
-  return FOLDER_VARIABLES[provider];
+  const variable = FOLDER_VARIABLES[provider];
+  if (!variable) throw new Error(`${provider} has no account folder`);
+  return variable;
 }
 
 /** The folder new Different-login folders are created in (`~/` form; the daemon expands it). */
@@ -156,8 +208,8 @@ export function detectProfileKind(
     if (setKeys.has(key) || unsetKeys.has(key)) return 'advanced';
     (entry.kind === 'set' ? setKeys : unsetKeys).add(key);
   }
-  for (const kind of DETECTION_ORDER) {
-    if (!matches(PROFILE_KIND_TABLE[provider][kind], setKeys, unsetKeys)) continue;
+  for (const kind of profileKindsFor(provider)) {
+    if (!matches(kindKeys(provider, kind), setKeys, unsetKeys)) continue;
     if (kind === 'differentLogin' && !hasUsableFolder(provider, env)) return 'advanced';
     return kind;
   }
@@ -174,6 +226,7 @@ function matches(keys: KindKeys, setKeys: Set<string>, unsetKeys: Set<string>): 
 }
 
 function hasUsableFolder(provider: ProfileProvider, env: readonly EnvEntryRead[]): boolean {
+  if (!FOLDER_VARIABLES[provider]) return false;
   const folder = savedFolderPath(provider, env);
   return folder !== undefined && folder !== '' && folder !== MASKED_ENV_VALUE;
 }
@@ -183,7 +236,9 @@ export function savedFolderPath(
   provider: ProfileProvider,
   env: readonly EnvEntryRead[],
 ): string | undefined {
-  const variable = upper(folderVariableFor(provider));
+  const folderVariable = FOLDER_VARIABLES[provider];
+  if (!folderVariable) return undefined;
+  const variable = upper(folderVariable);
   const entry = env.find((item) => item.kind === 'set' && upper(item.key) === variable);
   return entry?.kind === 'set' ? entry.value : undefined;
 }
@@ -296,13 +351,21 @@ export function buildCreatePayload(
       value: requireValue(form.folder, 'folder'),
     });
   } else if (kind === 'apiKey') {
-    set.push({ key: keys.set[0], kind: 'set', value: requireValue(form.apiKey, 'API key') });
+    set.push({
+      key: keys.set[0],
+      kind: 'set',
+      value: savedSecretValue(provider, kind, requireValue(form.apiKey, 'API key')),
+    });
     const baseUrl = form.baseUrl?.trim();
     if (baseUrl && provider === 'claude') {
       set.push({ key: CLAUDE_BASE_URL, kind: 'set', value: baseUrl });
     }
   } else {
-    set.push({ key: keys.set[0], kind: 'set', value: requireValue(form.token, 'token') });
+    set.push({
+      key: keys.set[0],
+      kind: 'set',
+      value: savedSecretValue(provider, kind, requireValue(form.token, 'token')),
+    });
   }
   return {
     baseProviderId: baseProviderIdFor(provider),
@@ -342,7 +405,12 @@ export function buildUpdateEnv(
   const secret = (key: string, replacement: string | undefined): EnvEntryWrite => {
     const existing = savedKey(key, 'set');
     if (replacement !== undefined) {
-      return { key: existing ?? key, kind: 'set', value: requireValue(replacement, key) };
+      const value = requireValue(replacement, key);
+      return {
+        key: existing ?? key,
+        kind: 'set',
+        value: kind === 'differentLogin' ? value : savedSecretValue(provider, kind, value),
+      };
     }
     if (!existing) throw new Error(`Missing ${key}`);
     return { key: existing, kind: 'keep' };
@@ -375,7 +443,55 @@ export function isJwtShaped(value: string): boolean {
   return JWT_SHAPE.test(value.trim());
 }
 
-const SECRET_SHAPES: Record<ProfileProvider, Record<'apiKey' | 'token', RegExp>> = {
+/**
+ * Auggie's access token: the JSON `auggie token print` prints. Auggie ignores
+ * an `AUGMENT_SESSION_AUTH` without a string `accessToken`, a `tenantURL` and
+ * a `scopes` array (auggie 0.35.0), so all three are required.
+ */
+function isAuggieSessionJson(value: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(auggieSessionJson(value));
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
+  const session = parsed as Record<string, unknown>;
+  return (
+    typeof session.accessToken === 'string' &&
+    session.accessToken.trim() !== '' &&
+    typeof session.tenantURL === 'string' &&
+    /^https:\/\/\S+$/.test(session.tenantURL) &&
+    Array.isArray(session.scopes)
+  );
+}
+
+/**
+ * The session JSON in a paste of `auggie token print`: the value after
+ * `SESSION=`, else the outermost `{…}`, else the paste trimmed. Users may
+ * paste the whole output (banner and usage lines included).
+ */
+function auggieSessionJson(value: string): string {
+  const trimmed = value.trim();
+  const line = trimmed.split(/\r?\n/).find((item) => item.trim().startsWith('SESSION='));
+  if (line) return line.trim().slice('SESSION='.length).trim();
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  return start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
+}
+
+/** The value a pasted key or token is saved as (Auggie: just the session JSON). */
+function savedSecretValue(
+  provider: ProfileProvider,
+  kind: 'apiKey' | 'token',
+  value: string,
+): string {
+  return provider === 'auggie' && kind === 'token' ? auggieSessionJson(value) : value.trim();
+}
+
+type SecretShape = RegExp | ((value: string) => boolean);
+
+const SECRET_SHAPES: Record<ProfileProvider, Partial<Record<'apiKey' | 'token', SecretShape>>> = {
   claude: {
     apiKey: /^sk-ant-api\d*-[A-Za-z0-9_-]{16,}$/,
     token: /^sk-ant-oat\d*-[A-Za-z0-9_-]{16,}$/,
@@ -384,6 +500,11 @@ const SECRET_SHAPES: Record<ProfileProvider, Record<'apiKey' | 'token', RegExp>>
     apiKey: /^sk-(?!ant-)[A-Za-z0-9_-]{20,}$/,
     token: JWT_SHAPE,
   },
+  grok: { apiKey: /^xai-[A-Za-z0-9]{20,}$/ },
+  droid: { apiKey: /^fk-[A-Za-z0-9_-]{20,}$/ },
+  auggie: { token: isAuggieSessionJson },
+  // Cursor documents no prefix: one word of at least 32 characters.
+  cursor: { apiKey: /^\S{32,}$/ },
 };
 
 /**
@@ -402,7 +523,9 @@ export function isSecretWellFormed(
   if (provider === 'claude' && kind === 'apiKey' && options.customEndpoint) {
     return /^\S+$/.test(trimmed);
   }
-  return SECRET_SHAPES[provider][kind].test(trimmed);
+  const shape = SECRET_SHAPES[provider][kind];
+  if (!shape) return false;
+  return typeof shape === 'function' ? shape(trimmed) : shape.test(trimmed);
 }
 
 /**
@@ -411,5 +534,7 @@ export function isSecretWellFormed(
  * device auth: the browser flow's localhost callback can't reach a remote daemon.
  */
 export function loginCommand(provider: ProfileProvider): string {
-  return provider === 'claude' ? 'claude auth login' : 'codex login --device-auth';
+  if (provider === 'claude') return 'claude auth login';
+  if (provider === 'codex') return 'codex login --device-auth';
+  throw new Error(`${provider} has no Different login sign-in`);
 }

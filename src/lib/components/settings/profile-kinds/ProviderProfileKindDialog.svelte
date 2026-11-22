@@ -57,7 +57,7 @@
     loginCommand,
     randomSuffix,
   } from '$lib/provider-profile-kinds';
-  import { secretShapeError } from './secret-shape-error';
+  import { secretDialogDescription, secretShapeError } from './profile-kind-copy';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
 
   interface Props {
@@ -181,7 +181,8 @@
   const secretKind = $derived(kind === 'apiKey' || kind === 'token' ? kind : null);
   let localSecretError = $state<string | undefined>();
   const shownSecretError = $derived(secretError ?? localSecretError);
-  const command = $derived(loginCommand(provider));
+  // Only Claude Code and Codex have a Different login (a terminal sign-in).
+  const command = $derived(folderKind ? loginCommand(provider) : '');
   const folderPath = $derived(
     mode === 'edit' ? savedFolderPath : previewProfileFolder(provider, name, folderSuffix),
   );
@@ -214,16 +215,7 @@
   const description = $derived.by(() => {
     if (picking) return m.settings_providerProfileKinds_pick_description();
     if (folderKind) return m.settings_providerProfileKinds_differentLoginDialog_description();
-    if (secretKind === 'apiKey') {
-      return provider === 'codex'
-        ? m.settings_providerProfileKinds_apiKeyCodexDialog_description()
-        : m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
-    }
-    if (secretKind === 'token') {
-      return provider === 'codex'
-        ? m.settings_providerProfileKinds_tokenCodexDialog_description()
-        : m.settings_providerProfileKinds_tokenClaudeDialog_description();
-    }
+    if (secretKind) return secretDialogDescription(provider, secretKind);
     return m.settings_providerProfiles_dialog_description();
   });
   const submitLabel = $derived(

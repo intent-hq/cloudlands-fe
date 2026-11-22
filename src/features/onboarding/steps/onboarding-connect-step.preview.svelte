@@ -1,7 +1,7 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import type { ProfileProvider } from '$lib/provider-profile-kinds';
-  import type { ConnectKind } from '../utils/onboarding-connect-step';
+  import { connectKindsFor, type ConnectKind } from '../utils/onboarding-connect-step';
 
   type Scene = 'empty' | 'invalid' | 'valid' | 'saving' | 'saved' | 'saveFailed';
   interface Props {
@@ -12,8 +12,8 @@
 
   const SCENES: Scene[] = ['empty', 'invalid', 'valid', 'saving', 'saved', 'saveFailed'];
   const states = Object.fromEntries(
-    (['claude', 'codex'] as const).flatMap((provider) =>
-      (['token', 'apiKey'] as const).flatMap((kind) =>
+    (['claude', 'codex', 'grok', 'droid', 'auggie', 'cursor'] as const).flatMap((provider) =>
+      connectKindsFor(provider).flatMap((kind) =>
         SCENES.map((scene) => [
           `${provider}-${kind === 'apiKey' ? 'api-key' : 'token'}-${scene.replace('saveFailed', 'save-failed')}`,
           { props: { provider, kind, scene } },
@@ -41,12 +41,13 @@
     providerProfilesLoaded,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import type { ProviderProfile } from '$shared/provider-profiles';
+  import { baseProviderIdFor, buildCreatePayload } from '$lib/provider-profile-kinds';
   import OnboardingConnectStep from './OnboardingConnectStep.svelte';
 
   let { provider = 'claude', kind = 'token', scene = 'empty' }: Props = $props();
 
   // i18n-ignore (fake preview credentials, never real)
-  const SECRETS: Record<ProfileProvider, Record<ConnectKind, string>> = {
+  const SECRETS: Record<ProfileProvider, Partial<Record<ConnectKind, string>>> = {
     claude: {
       token: 'sk-ant-oat01-fakefakefakefakefakefake',
       apiKey: 'sk-ant-api03-fakefakefakefakefakefake',
@@ -55,26 +56,33 @@
       token: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJmYWtlIn0.ZmFrZQ',
       apiKey: 'sk-proj-fakefakefakefakefakefake',
     },
+    grok: { apiKey: 'xai-fakefakefakefakefakefakefake' },
+    droid: { apiKey: 'fk-fakefakefakefakefakefakefake' },
+    auggie: {
+      token: '{"accessToken":"fake","tenantURL":"https://fake.invalid/","scopes":["email"]}',
+    },
+    cursor: { apiKey: 'key_fakefakefakefakefakefakefakefakefake' },
   };
   const SETUP_ID = 'preview-connect-setup';
 
   const seeded = untrack(() => ({ provider, kind, scene }));
-  const base = seeded.provider === 'claude' ? 'claude-code' : 'codex';
+  const base = baseProviderIdFor(seeded.provider);
   const previousDefault = appStore.state.model.defaultProviderId;
   const previousRevision = appStore.state.providerSettings.profiles.revision;
   const savedProfile: ProviderProfile = {
     id: 'pconnect00001',
     providerRef: `${base}@pconnect00001`, // i18n-ignore (fake profile reference)
     baseProviderId: base,
-    name: seeded.provider === 'claude' ? 'Claude subscription' : 'OpenAI API key', // i18n-ignore (fake preview data)
-    env:
-      seeded.provider === 'claude'
-        ? seeded.kind === 'token'
-          ? [{ key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'set', value: '********' }]
-          : [{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: '********' }]
-        : seeded.kind === 'token'
-          ? [{ key: 'CODEX_ACCESS_TOKEN', kind: 'set', value: '********' }]
-          : [{ key: 'CODEX_API_KEY', kind: 'set', value: '********' }],
+    name: 'Saved profile', // i18n-ignore (fake preview data)
+    env: (
+      buildCreatePayload(seeded.kind, seeded.provider, {
+        name: 'n',
+        apiKey: 'x',
+        token: 'x',
+      }).env ?? []
+    ).map((entry) =>
+      entry.kind === 'set' ? { ...entry, value: '********' } : entry,
+    ) as ProviderProfile['env'],
     settingsFingerprint: 'fp-connect',
     createdAt: '2026-11-18T10:00:00Z',
     updatedAt: '2026-11-18T10:00:00Z',
@@ -101,7 +109,7 @@
       ? 'not-a-valid-secret'
       : seeded.scene === 'empty' || seeded.scene === 'saved'
         ? ''
-        : SECRETS[seeded.provider][seeded.kind],
+        : (SECRETS[seeded.provider][seeded.kind] ?? ''),
   );
   let setupId = $state<string | null>(
     seeded.scene === 'saving' || seeded.scene === 'saveFailed' ? SETUP_ID : null,

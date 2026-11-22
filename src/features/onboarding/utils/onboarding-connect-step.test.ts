@@ -3,6 +3,7 @@ import type { ProviderProfile } from '$shared/provider-profiles';
 import {
   CONNECT_KINDS,
   canContinueConnect,
+  connectKindsFor,
   connectSecretIssue,
   savedConnectProfile,
   uniqueProfileName,
@@ -13,6 +14,34 @@ const pad = 'A1b2C3d4E5f6G7h8I9j0K1l2';
 describe('CONNECT_KINDS', () => {
   it('preselects the subscription or ChatGPT token, then offers an API key', () => {
     expect(CONNECT_KINDS).toEqual(['token', 'apiKey']);
+  });
+});
+
+describe('connectKindsFor', () => {
+  it('offers each provider its own kinds, the first preselected', () => {
+    expect(connectKindsFor('claude')).toEqual(['token', 'apiKey']);
+    expect(connectKindsFor('codex')).toEqual(['token', 'apiKey']);
+    expect(connectKindsFor('grok')).toEqual(['apiKey']);
+    expect(connectKindsFor('droid')).toEqual(['apiKey']);
+    expect(connectKindsFor('cursor')).toEqual(['apiKey']);
+    expect(connectKindsFor('auggie')).toEqual(['token']);
+  });
+
+  it('checks the new providers’ formats only', () => {
+    expect(connectSecretIssue('grok', 'apiKey', `xai-${pad}`)).toBeUndefined();
+    expect(connectSecretIssue('grok', 'apiKey', `sk-${pad}`)).toBe('shape');
+    expect(connectSecretIssue('cursor', 'apiKey', `${pad}${pad}`)).toBeUndefined();
+    expect(connectSecretIssue('cursor', 'apiKey', 'short')).toBe('shape');
+    expect(connectSecretIssue('droid', 'apiKey', `fk-${pad}`)).toBeUndefined();
+    expect(
+      connectSecretIssue(
+        'auggie',
+        'token',
+        'SESSION={"accessToken":"t","tenantURL":"https://t.invalid/","scopes":[]}',
+      ),
+    ).toBeUndefined();
+    expect(connectSecretIssue('auggie', 'token', '{}')).toBe('shape');
+    expect(connectSecretIssue('auggie', 'token', ' ')).toBe('empty');
   });
 });
 

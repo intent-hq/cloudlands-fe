@@ -33,6 +33,7 @@
     baseProviderIdFor,
     buildCreatePayload,
     buildUpdateEnv,
+    hasFolderLogin,
     randomSuffix,
     type ProfileKind,
     type ProfileProvider,
@@ -252,6 +253,7 @@
   }
 
   function createAndSignIn() {
+    if (!hasFolderLogin(provider)) return;
     const id = startSetup();
     appStore.dispatch(
       providerProfileFolderSetupRequested({

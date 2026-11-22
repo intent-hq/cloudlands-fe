@@ -7,11 +7,13 @@ import {
   buildUpdateEnv,
   detectProfileKind,
   folderVariableFor,
+  hasProfileKinds,
   isJwtShaped,
   isSecretWellFormed,
   loginCommand,
   pickUnusedFolder,
   profileFoldersParent,
+  profileKindsFor,
   profileProviderFromBaseId,
   randomSuffix,
   savedFolderPath,
@@ -346,6 +348,10 @@ describe('buildCreatePayload', () => {
       ['codex', 'differentLogin'],
       ['codex', 'apiKey'],
       ['codex', 'token'],
+      ['grok', 'apiKey'],
+      ['droid', 'apiKey'],
+      ['auggie', 'token'],
+      ['cursor', 'apiKey'],
     ];
     for (const [provider, kind] of cases) {
       const env = buildCreatePayload(kind, provider, {
@@ -509,5 +515,121 @@ describe('isSecretWellFormed', () => {
     expect(isSecretWellFormed('claude', 'apiKey', 'gateway key', { customEndpoint: true })).toBe(
       false,
     );
+  });
+});
+
+describe('providers with profile kinds', () => {
+  it('maps every base id and offers only its own kinds', () => {
+    const rows: [string, ProfileProvider, string[]][] = [
+      ['claude-code', 'claude', ['differentLogin', 'apiKey', 'token']],
+      ['codex', 'codex', ['differentLogin', 'apiKey', 'token']],
+      ['grok', 'grok', ['apiKey']],
+      ['droid', 'droid', ['apiKey']],
+      ['auggie', 'auggie', ['token']],
+      ['cursor', 'cursor', ['apiKey']],
+    ];
+    for (const [baseId, provider, kinds] of rows) {
+      expect(profileProviderFromBaseId(baseId)).toBe(provider);
+      expect(baseProviderIdFor(provider)).toBe(baseId);
+      expect(profileKindsFor(provider)).toEqual(kinds);
+    }
+    expect(profileProviderFromBaseId('opencode')).toBeUndefined();
+    expect(hasProfileKinds({ id: 'grok', supportsProfiles: true })).toBe(true);
+    expect(hasProfileKinds({ id: 'cursor', supportsProfiles: false })).toBe(false);
+    expect(hasProfileKinds({ id: 'opencode', supportsProfiles: true })).toBe(false);
+  });
+
+  it('saves one credential each, unsetting only Cursor’s other credential', () => {
+    const env = (provider: ProfileProvider, kind: 'apiKey' | 'token') =>
+      buildCreatePayload(kind, provider, { name: 'n', apiKey: ' k ', token: ' k ' }).env;
+    expect(env('grok', 'apiKey')).toEqual([{ key: 'XAI_API_KEY', kind: 'set', value: 'k' }]);
+    expect(env('droid', 'apiKey')).toEqual([{ key: 'FACTORY_API_KEY', kind: 'set', value: 'k' }]);
+    expect(env('cursor', 'apiKey')).toEqual([
+      { key: 'CURSOR_API_KEY', kind: 'set', value: 'k' },
+      { key: 'CURSOR_AUTH_TOKEN', kind: 'unset' },
+    ]);
+    expect(env('auggie', 'token')).toEqual([
+      { key: 'AUGMENT_SESSION_AUTH', kind: 'set', value: 'k' },
+    ]);
+    expect(buildCreatePayload('apiKey', 'grok', { name: 'n', apiKey: 'k' }).baseProviderId).toBe(
+      'grok',
+    );
+  });
+
+  it('refuses a kind the provider does not offer', () => {
+    expect(() => buildCreatePayload('token', 'grok', { name: 'n', token: 't' })).toThrow();
+    expect(() =>
+      buildCreatePayload('differentLogin', 'cursor', { name: 'n', folder: '~/f' }),
+    ).toThrow();
+    expect(() => loginCommand('grok')).toThrow();
+    expect(() => folderVariableFor('cursor')).toThrow();
+    expect(savedFolderPath('grok', [set('GROK_HOME', '~/g')])).toBeUndefined();
+    // A Grok profile with only a folder is Advanced: Grok has no Different login kind.
+    expect(detectProfileKind('grok', [set('GROK_HOME', '~/g')])).toBe('advanced');
+    expect(detectProfileKind('cursor', [set('CURSOR_API_KEY'), unset('CURSOR_AUTH_TOKEN')])).toBe(
+      'apiKey',
+    );
+    expect(detectProfileKind('cursor', [set('CURSOR_AUTH_TOKEN')])).toBe('advanced');
+  });
+});
+
+describe('Auggie access token', () => {
+  const json =
+    '{"accessToken":"tok","tenantURL":"https://d1.api.augmentcode.com/","scopes":["email"]}';
+  const printed = `🔑 Augment authentication session:\n\nSESSION=${json}\n\n💡 Usage for automation:\n\nexport AUGMENT_SESSION_AUTH=$SESSION\n`;
+
+  it('saves the session JSON whether the JSON or a padded paste is given', () => {
+    for (const token of [json, `  ${json}\n`]) {
+      expect(buildCreatePayload('token', 'auggie', { name: 'n', token }).env).toEqual([
+        { key: 'AUGMENT_SESSION_AUTH', kind: 'set', value: json },
+      ]);
+    }
+  });
+
+  it('saves only the session JSON', () => {
+    expect(buildCreatePayload('token', 'auggie', { name: 'n', token: printed }).env).toEqual([
+      { key: 'AUGMENT_SESSION_AUTH', kind: 'set', value: json },
+    ]);
+    expect(
+      buildUpdateEnv('token', 'auggie', [set('AUGMENT_SESSION_AUTH')], { token: printed }),
+    ).toEqual([{ key: 'AUGMENT_SESSION_AUTH', kind: 'set', value: json }]);
+  });
+
+  it.each([
+    ['the JSON', json, true],
+    ['the whole printed output', printed, true],
+    ['no scopes', '{"accessToken":"t","tenantURL":"https://x/"}', false],
+    ['an http tenant', '{"accessToken":"t","tenantURL":"http://x/","scopes":[]}', false],
+    ['an empty token', '{"accessToken":" ","tenantURL":"https://x/","scopes":[]}', false],
+    ['an array', '[1]', false],
+    ['not JSON', 'abc', false],
+  ])('%s', (_label, value, expected) => {
+    expect(isSecretWellFormed('auggie', 'token', value)).toBe(expected);
+  });
+});
+
+describe('isSecretWellFormed for Grok, Droid and Cursor', () => {
+  const pad = 'A1b2C3d4E5f6G7h8I9j0K1l2';
+  it.each([
+    ['grok key', 'grok', `xai-${pad}`, true],
+    ['grok key, padded', 'grok', ` xai-${pad}\n`, true],
+    ['grok key, too short', 'grok', 'xai-abc', false],
+    ['grok key with a dash in the body', 'grok', `xai-${pad}-x`, false],
+    ['openai key as grok key', 'grok', `sk-${pad}`, false],
+    ['droid key', 'droid', `fk-${pad}`, true],
+    ['droid key with _ and -', 'droid', `fk-${pad}_x-y`, true],
+    ['droid key, no prefix', 'droid', pad, false],
+    ['cursor key', 'cursor', `key_${pad}${pad}`, true],
+    ['cursor key, 31 characters', 'cursor', 'a'.repeat(31), false],
+    ['cursor key, 32 characters', 'cursor', 'a'.repeat(32), true],
+    ['cursor key with a space', 'cursor', `${pad} ${pad}`, false],
+    ['empty', 'cursor', '   ', false],
+  ] as [string, ProfileProvider, string, boolean][])('%s', (_label, provider, value, expected) => {
+    expect(isSecretWellFormed(provider, 'apiKey', value)).toBe(expected);
+  });
+
+  it('has no token kind for Grok, Droid or Cursor, nor an API key for Auggie', () => {
+    expect(isSecretWellFormed('grok', 'token', 'x'.repeat(40))).toBe(false);
+    expect(isSecretWellFormed('auggie', 'apiKey', 'x'.repeat(40))).toBe(false);
   });
 });

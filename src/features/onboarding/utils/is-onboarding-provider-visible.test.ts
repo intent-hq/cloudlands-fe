@@ -145,5 +145,21 @@ describe('isOnboardingProviderVisible', () => {
     expect(visible({ id: 'codex' })).toBe(false);
     expect(visible({ id: 'opencode', supportsProfiles: true })).toBe(false);
     expect(visible({ id: 'cursor' })).toBe(false);
+    for (const id of ['grok', 'cursor', 'auggie', 'droid']) {
+      expect(visible({ id, supportsProfiles: true })).toBe(true);
+    }
+  });
+
+  it('keeps Droid hidden on an orchestrator while it is not enabled', () => {
+    // The daemon reports supportsProfiles: false for a gated-off Droid, and
+    // the env-var gate hides it as on any backend.
+    expect(
+      isOnboardingProviderVisible({
+        provider: { id: 'droid', supportsProfiles: true, requiresEnvVar: 'INTENTD_ENABLE_DROID' },
+        isFeatureEnabled: featureEnabled,
+        status: { available: false },
+        orchestrator: true,
+      }),
+    ).toBe(false);
   });
 });

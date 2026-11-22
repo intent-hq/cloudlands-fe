@@ -75,6 +75,7 @@
   } from '$features/onboarding/utils/onboarding-steps';
   import {
     CONNECT_KINDS,
+    connectKindsFor,
     type ConnectKind,
   } from '$features/onboarding/utils/onboarding-connect-step';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
@@ -823,7 +824,7 @@
     const provider = connectProvider;
     if (provider === connectKindProvider) return;
     connectKindProvider = provider;
-    connectKind = CONNECT_KINDS[0];
+    connectKind = provider ? connectKindsFor(provider)[0] : CONNECT_KINDS[0];
     connectSecret = '';
   });
   // A provider without profile kinds has nothing to connect.

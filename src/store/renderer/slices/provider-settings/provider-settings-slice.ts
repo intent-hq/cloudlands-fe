@@ -3,6 +3,7 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { isFastModeSettingKey } from '$shared/provider-profiles';
+import type { FolderLoginProvider } from '$lib/provider-profile-kinds';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   addItem,
@@ -505,7 +506,7 @@ export const providerProfileFolderSetupRequested = createAction<
   [
     payload: {
       setupId: string;
-      provider: 'claude' | 'codex';
+      provider: FolderLoginProvider;
       name: string;
       backup: boolean;
       /** The suffix the dialog previewed; used when that folder is free. */

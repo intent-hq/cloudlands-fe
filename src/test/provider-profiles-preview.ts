@@ -302,7 +302,9 @@ export function setupProviderProfilesPreview({
     providerCatalogLoaded({
       providers: catalog.map((entry) => ({
         ...entry,
-        supportsProfiles: entry.id === 'codex' || entry.id === 'claude-code',
+        supportsProfiles: ['codex', 'claude-code', 'grok', 'auggie', 'cursor', 'droid'].includes(
+          entry.id,
+        ),
       })),
     }),
   );
