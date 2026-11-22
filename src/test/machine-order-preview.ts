@@ -21,7 +21,16 @@ const STUDIO: RemoteMachine = {
   fingerprint: 'AA:BB',
   state: 'connected',
   runningAgents: 1,
-  capabilities: { providers: [{ id: 'claude', status: 'signed-in', models: ['opus'] }] },
+  capabilities: {
+    providers: [{ id: 'claude', status: 'signed-in', models: ['opus'] }],
+    // Machine-wide: this host's one agent, another host's and two local ones.
+    capacity: { runningAgents: 4, agentCap: 8 },
+    resources: {
+      cpuPercent: 35,
+      memoryUsedBytes: 12 * 1024 ** 3,
+      memoryTotalBytes: 32 * 1024 ** 3,
+    },
+  },
   addedAt: '2026-10-30T00:00:00Z',
 };
 
@@ -34,6 +43,10 @@ const GARAGE: RemoteMachine = {
   hosts: ['192.0.2.20'],
   fingerprint: '11:22',
   runningAgents: 0,
+  capabilities: {
+    providers: [{ id: 'claude', status: 'signed-in', models: ['opus'] }],
+    capacity: { runningAgents: 0, agentCap: 4 },
+  },
   addedAt: '2026-11-02T00:00:00Z',
 };
 

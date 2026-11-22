@@ -19,7 +19,11 @@ import {
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { getMainWindow, setMainWindow } from './state';
-import { LOCAL_CONNECTION_ID, type ConnectionAgentTarget } from '../shared/types/connections';
+import {
+  LOCAL_CONNECTION_ID,
+  SWITCH_TO_SETTINGS_TAB,
+  type ConnectionAgentTarget,
+} from '../shared/types/connections';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import {
@@ -1106,6 +1110,25 @@ export function showWorkspaceInBackendWindow(backendId: string, workspaceId: str
     return false;
   }
   queueDeepLinkForRenderer(target.contents, { type: 'open', params: { id: workspaceId } });
+  bringToFront(target.window);
+  return true;
+}
+
+/**
+ * Show Settings → Hosts in a frame holding `backendId`, as
+ * {@link showWorkspaceInBackendWindow} shows a workspace ("Switch to" in
+ * Settings → Hosts). Returns false when no frame holds the machine.
+ */
+export function showHostsSettingsInBackendWindow(backendId: string): boolean {
+  const target = showInFrame(backendId);
+  if (!target?.contents) {
+    logger.warn('No window for backend to show Settings in', { backendId });
+    return false;
+  }
+  queueDeepLinkForRenderer(target.contents, {
+    type: 'settings',
+    params: { tab: SWITCH_TO_SETTINGS_TAB },
+  });
   bringToFront(target.window);
   return true;
 }

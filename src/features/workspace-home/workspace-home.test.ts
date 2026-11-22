@@ -234,7 +234,7 @@ function agent(id: string, fields: Partial<AgentSession>): AgentSession {
 }
 
 const MACHINE_ROWS: StartOnOption[] = [
-  { id: '', label: 'First available machine', platform: null, disabled: false },
+  { id: 'host:', label: 'Build box', platform: null, disabled: false },
   { id: 'd-garage', label: 'Garage node', platform: 'Linux x64', disabled: false },
   {
     id: 'd-old',

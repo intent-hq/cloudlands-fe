@@ -17,7 +17,7 @@
 // @verify-changed-triggers: src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -145,6 +145,89 @@ describe('preload generator drift guard', () => {
 
     expect(result.status, result.output).toBe(0);
     expect(generatedIndex(root)).toContain('brand-new-template-line');
+  });
+
+  describe('output generated from an older template', () => {
+    // cloudlands-fe#4896: a file generated before the template gained a trailing
+    // comment was reported as a hand edit, though nobody had touched it.
+    const currentLine =
+      "  preferInAppPicker: process.argv.includes('--intent-in-app-picker'), // see intentOsRendererArguments (src/shared/intent-os.ts)";
+    const olderLine = "  preferInAppPicker: process.argv.includes('--intent-in-app-picker'),";
+    const olderTemplate = realTemplate.replace(currentLine, olderLine);
+
+    function generatedFromOlderTemplate(): string {
+      expect(olderTemplate, 'fixture must actually change the template').not.toBe(realTemplate);
+      const root = makeFixture(olderTemplate);
+      const result = runGenerator(root);
+      if (result.status !== 0) throw new Error(`older regeneration failed:\n${result.output}`);
+      return generatedIndex(root);
+    }
+
+    it('regenerates an untouched copy without reporting a hand edit', () => {
+      const root = makeFixture(realTemplate, generatedFromOlderTemplate());
+
+      const result = runGenerator(root);
+
+      expect(result.status, result.output).toBe(0);
+      expect(result.output).not.toContain('regenerating would not reproduce');
+      expect(generatedIndex(root)).toBe(baselineIndex);
+    });
+
+    it('still refuses when the older copy was edited by hand', () => {
+      const edited = withHandEdit(generatedFromOlderTemplate());
+      const root = makeFixture(realTemplate, edited);
+
+      const result = runGenerator(root);
+
+      expect(result.status, 'a hand edit voids the fingerprint').toBe(1);
+      expect(result.output).toContain('regenerating would not reproduce');
+      expect(result.output).toContain(HAND_EDIT_MARKER.trim());
+      // A voided fingerprint cannot tell stale template lines from edits, so
+      // both are listed.
+      expect(result.output).toContain(olderLine.trim());
+      expect(result.output).not.toContain('predates generator fingerprints');
+      expect(generatedIndex(root)).toBe(edited);
+    });
+
+    it('still refuses an older copy that carries no fingerprint', () => {
+      // Files generated before fingerprints existed cannot prove they are
+      // untouched, so the line comparison stays in charge.
+      const older = generatedFromOlderTemplate();
+      const unfingerprinted = older.replace(/^\/\/ inline-ipc-channels fingerprint: .*\n/, '');
+      expect(unfingerprinted, 'fixture must drop the fingerprint').not.toBe(older);
+      const root = makeFixture(realTemplate, unfingerprinted);
+
+      const result = runGenerator(root);
+
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(olderLine.trim());
+      expect(result.output).toContain('predates generator fingerprints');
+    });
+  });
+
+  it('leaves a current fingerprinted file byte-identical and unwritten on a rerun', () => {
+    const root = makeFixture(realTemplate, baselineIndex);
+    const before = statSync(join(root, generatedFile)).mtimeMs;
+
+    const result = runGenerator(root);
+
+    expect(result.status, result.output).toBe(0);
+    expect(generatedIndex(root)).toBe(baselineIndex);
+    expect(statSync(join(root, generatedFile)).mtimeMs).toBe(before);
+  });
+
+  it('adds a fingerprint to a current file that has none', () => {
+    const unfingerprinted = baselineIndex.replace(
+      /^\/\/ inline-ipc-channels fingerprint: .*\n/,
+      '',
+    );
+    expect(unfingerprinted, 'fixture must drop the fingerprint').not.toBe(baselineIndex);
+    const root = makeFixture(realTemplate, unfingerprinted);
+
+    const result = runGenerator(root);
+
+    expect(result.status, result.output).toBe(0);
+    expect(generatedIndex(root)).toBe(baselineIndex);
   });
 
   it('discards hand edits only when --force is passed explicitly', () => {

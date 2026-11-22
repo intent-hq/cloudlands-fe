@@ -5,7 +5,6 @@ import {
   DEFAULT_DOCK_PLACEMENT,
   DOCK_FLOATING_COMPACT_SIZE,
   DOCK_FLOATING_SHADOW_MARGIN,
-  DOCK_NOTCH_MIN_WING_WIDTH,
   DOCK_SURFACE_SIZES,
   dockLocalRect,
   dockShape,
@@ -102,7 +101,7 @@ export class DockPlacementController {
     floating: { ...DOCK_SURFACE_SIZES.floating } as { width: number; height: number },
   };
   private revision = 0;
-  private compactNotchWingWidth = DOCK_NOTCH_MIN_WING_WIDTH;
+  private compactNotchWingWidth = 0;
   private sidePanelSize: { width: number; height: number } | null = null;
   /** Vertical anchor of the side conversation (offset from the rail top); null centres it. */
   private sidePanelAnchor: number | null = null;

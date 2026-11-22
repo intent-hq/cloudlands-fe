@@ -383,7 +383,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     ) {
       throw new Error(`Packaged worktree boundary mismatch: ${JSON.stringify(runtime)}`);
     }
-    const page = await withLogging(app.firstWindow());
+    const page = await withLogging(selectAppPage(app));
 
     // --- Capture renderer console output ---
     page.on('console', (msg) => {
@@ -431,6 +431,41 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     }
     throw primary;
   }
+}
+
+/**
+ * The app window the tests drive. `firstWindow()` is whichever page opens first,
+ * and the app opens other pages too: in intent-hq/intent#9697 it returned a
+ * 420x452 page on /workspace/<id>, whose compact layout put the sidebar over
+ * the panels and intercepted clicks. The main window is at least 800px wide
+ * (its minWidth), so take the largest page that wide.
+ */
+async function selectAppPage(app: ElectronApplication): Promise<Page> {
+  await app.firstWindow();
+  const describe = () =>
+    Promise.all(
+      app.windows().map(async (candidate) => {
+        const size = await candidate
+          .evaluate(() => [window.innerWidth, window.innerHeight])
+          .catch(() => [0, 0]);
+        return { page: candidate, url: candidate.url(), width: size[0], height: size[1] };
+      }),
+    );
+  let pages = await describe();
+  const deadline = Date.now() + 30_000;
+  while (!pages.some((p) => p.width >= 800) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    pages = await describe();
+  }
+  const summary = pages.map(({ url, width, height }) => ({ url, width, height }));
+  const main = pages
+    .filter((p) => p.width >= 800)
+    .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+  if (!main) throw new Error(`No app window is at least 800px wide: ${JSON.stringify(summary)}`);
+  if (pages.length > 1 || main.page !== app.windows()[0]) {
+    console.log(`🪟 App pages at launch: ${JSON.stringify(summary)}`);
+  }
+  return main.page;
 }
 
 // ---------------------------------------------------------------------------

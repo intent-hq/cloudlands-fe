@@ -76,7 +76,7 @@ export type ConnectionWorkflowIntent =
       enableSync: boolean;
     }
   | { kind: 'test'; params: TestConnectionParams }
-  | { kind: 'open'; id: string; recovery?: 'settings' }
+  | { kind: 'open'; id: string; recovery?: 'settings'; switchTo?: true }
   | { kind: 'forget' | 'updateBackend'; id: string }
   | { kind: 'localIcon'; params: UpdateConnectionParams };
 

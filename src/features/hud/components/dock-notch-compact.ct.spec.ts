@@ -14,8 +14,10 @@ test('collapsed notch controls avoid the camera exclusion', async ({ mount, page
   const camera = (await component.getByTestId('dock-camera-exclusion').boundingBox())!;
   const grip = (await component.locator('.dock-grip').boundingBox())!;
   expect(grip.x + grip.width).toBeLessThanOrEqual(camera.x + 0.5);
+  // macOS draws its camera and microphone privacy dot just right of a camera cutout,
+  // about 10px past its edge; the first status glyph must stay clear of that lane.
   for (const glyph of await glyphs.all()) {
     const box = (await glyph.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(camera.x + camera.width - 0.5);
+    expect(box.x).toBeGreaterThanOrEqual(camera.x + camera.width + 14 - 0.5);
   }
 });

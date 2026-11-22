@@ -68,6 +68,16 @@
   } from './trailing-hint-extension';
   import SlashSkillSuggestionList from './SlashSkillSuggestionList.svelte';
   import {
+    AUTOCOMPLETE_GHOST_ACCEPTED,
+    AutocompleteGhostExtension,
+    getAutocompleteGhost,
+    handleAutocompleteGhostKeyDown,
+    isCaretAtDocEnd,
+    setAutocompleteGhost,
+  } from './autocomplete-ghost-extension';
+  import { AutocompleteController } from '$features/autocomplete/utils/autocomplete-controller';
+  import { requestAutocompletion } from '$features/autocomplete/autocomplete-client';
+  import {
     findSlashCommandContext,
     rankSlashSkills,
     type SlashCommandContext,
@@ -189,6 +199,11 @@
     onSelectionChange?: (selectedText: string | null) => void;
     contextItems?: ContextItem[];
     trailingHint?: TrailingHint | null;
+    /**
+     * Composer autocomplete (ghost text): returns the conversation context for
+     * `input.autocomplete`. `null`/absent turns suggestions off.
+     */
+    autocompleteContext?: (() => string) | null;
     skills?: readonly SkillInfo[];
     skillsLoading?: boolean;
     skillsError?: string | null;
@@ -238,6 +253,7 @@
 
     contextItems: _contextItems = [],
     trailingHint = null,
+    autocompleteContext = null,
     skills = [],
     skillsLoading = false,
     skillsError = null,
@@ -499,6 +515,51 @@
     return screenReferences ? hydrateScreenReferences(html, screenReferences) : html;
   }
 
+  // Composer autocomplete: request scheduling lives in the controller, the
+  // ghost itself in the ProseMirror plugin (autocomplete-ghost-extension.ts).
+  const autocomplete = new AutocompleteController({
+    readSnapshot: () => {
+      const current = editor;
+      if (!current || current.isDestroyed || !autocompleteContext || !isEditable) return null;
+      if (!editorFocused) return null;
+      return {
+        text: serializeEditorText(current),
+        caretAtEnd: isCaretAtDocEnd(current.state),
+        composing: composing || current.view.composing,
+        menuOpen:
+          slashMenuOpen || mentionSuggestion.pluginKey.getState(current.state)?.active === true,
+      };
+    },
+    readContext: () => autocompleteContext?.() ?? '',
+    request: requestAutocompletion,
+    showGhost: (ghost) => {
+      if (editor && !editor.isDestroyed) setAutocompleteGhost(editor.view, ghost);
+    },
+  });
+
+  function clearAutocomplete() {
+    autocomplete.cancel();
+    if (editor && !editor.isDestroyed && getAutocompleteGhost(editor.state)) {
+      setAutocompleteGhost(editor.view, null);
+    }
+  }
+
+  /** After a user edit: a live (consumed) ghost needs no request; otherwise ask again. */
+  function afterAutocompleteEdit(current: Editor, accepted: boolean) {
+    if (accepted || getAutocompleteGhost(current.state)) autocomplete.cancel();
+    else autocomplete.schedule();
+  }
+
+  $effect(() => {
+    if (!autocompleteContext || !isEditable) untrack(clearAutocomplete);
+  });
+
+  /** Show (or clear with `null`) a ghost suggestion directly, e.g. in previews. */
+  export function showAutocompleteSuggestion(ghost: string | null): void {
+    autocomplete.cancel();
+    if (editor && !editor.isDestroyed) setAutocompleteGhost(editor.view, ghost);
+  }
+
   function handleSlashMenuKeyDown(event: KeyboardEvent): boolean {
     if (!slashMenuOpen || !slashSuggestionList) return false;
     const isPlainNavigationKey =
@@ -535,6 +596,19 @@
       return true;
     }
     return false;
+  }
+
+  /** Insert plain text at the cursor the way a paste does: one hard break per newline. */
+  export function insertPlainText(text: string): boolean {
+    if (inputLocked || !editor?.view) return false;
+    const { state, dispatch } = editor.view;
+    const paragraphs = pastedTextToParagraphNodes(state.schema, text);
+    if (paragraphs.length === 0) return false;
+    dispatch(
+      state.tr.replaceSelection(new Slice(Fragment.from(paragraphs), 1, 1)).scrollIntoView(),
+    );
+    editor.view.focus();
+    return true;
   }
 
   // Export focus method for parent components
@@ -1078,6 +1152,7 @@
           PasteChip,
           SkillCommand,
           TrailingHintExtension,
+          AutocompleteGhostExtension,
         ],
         content: initialHTML,
         editable: isEditable,
@@ -1133,6 +1208,7 @@
           });
           if (transaction.getMeta(SCREEN_REFERENCE_SYNC)) onUpdate?.(text, { programmatic: true });
           else onUpdate?.(text);
+          afterAutocompleteEdit(editor, transaction.getMeta(AUTOCOMPLETE_GHOST_ACCEPTED) === true);
         },
         onSelectionUpdate: ({ editor, transaction }) => {
           refreshSlashContext(editor, {
@@ -1162,6 +1238,7 @@
           untrack(() => {
             editorFocused = false;
           });
+          clearAutocomplete();
         },
         editorProps: {
           handleDOMEvents: {
@@ -1268,6 +1345,8 @@
             // IME confirmation belongs to text composition, not app shortcuts.
             // Safari may report the final composing key only through keyCode 229.
             if (view.composing || event.isComposing || event.keyCode === 229) return false;
+            // Tab accepts / Esc dismisses a ghost suggestion before any other binding.
+            if (handleAutocompleteGhostKeyDown(view, event)) return true;
             if (handleSlashMenuKeyDown(event)) {
               return true;
             }
@@ -1772,6 +1851,7 @@
   }
 
   onDestroy(() => {
+    autocomplete.dispose();
     // Clean up keydown handler from editor DOM before destroying
     if (editor) {
       const editorDom = editor.view.dom as HTMLElement;
@@ -1998,6 +2078,32 @@
     opacity: 0.85;
     float: left;
     height: 0;
+  }
+
+  /* Composer autocomplete ghost text: muted suggestion after the caret. */
+  .tiptap-container :global(.composer-autocomplete-ghost) {
+    color: var(--color-muted-foreground);
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    white-space: pre-wrap;
+  }
+
+  .tiptap-container :global(.composer-autocomplete-ghost-text) {
+    opacity: 0.75;
+  }
+
+  .tiptap-container :global(.composer-autocomplete-ghost kbd) {
+    display: inline-block;
+    margin-inline-start: 0.375rem;
+    padding: 0 0.3125rem;
+    border-radius: var(--radius-small);
+    background: var(--color-background);
+    font: inherit;
+    font-size: 0.75em;
+    line-height: 1.5;
+    vertical-align: 1px;
+    white-space: nowrap;
   }
 
   .tiptap-container :global(.prompt-trailing-hint) {

@@ -252,6 +252,8 @@
     onHistoryPrev?: () => string | null;
     /** Callback to get next history item (down arrow) - returns null if at end of history */
     onHistoryNext?: () => string | null;
+    /** Composer autocomplete context getter; `null`/absent turns ghost-text suggestions off. */
+    autocompleteContext?: (() => string) | null;
   }
 
   // Import ContextItem from context-api.ts
@@ -339,6 +341,7 @@
     onvaluechange,
     onHistoryPrev,
     onHistoryNext,
+    autocompleteContext = null,
   }: Props = $props();
 
   // Selector readables are created at component init; mirror the reactive prop
@@ -601,6 +604,12 @@
     }
 
     return false;
+  }
+
+  /** Insert text at the composer cursor without sending. */
+  export function insertText(text: string): boolean {
+    if (disposed || inputLocked || (disabled && !editableWhileDisabled)) return false;
+    return tiptap?.insertPlainText(text) ?? false;
   }
 
   // Export clear method for parent components
@@ -1992,6 +2001,7 @@
         onEscape={isEnhancing ? handleCancelEnhance : editMode ? oncancel : undefined}
         {onHistoryPrev}
         {onHistoryNext}
+        autocompleteContext={editMode ? null : autocompleteContext}
         onSelectionChange={(selectedText) => (editorSelection = selectedText)}
         onMentionSelect={(item) => {
           // Mentions are already rendered as chips in the editor

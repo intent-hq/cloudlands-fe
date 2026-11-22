@@ -1,6 +1,6 @@
 <!--
-  A row of the ordered machine list without a richer row of its own: "This
-  computer" (the backend itself), or a machine or cloud entry whose details
+  A row of the ordered runner list without a richer row of its own: the host
+  itself ("This host"), or a machine or cloud entry whose details
   this window can't read (a member sees only the names in the order).
 -->
 <script lang="ts">
@@ -10,23 +10,18 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { MachineOrderRow } from '$shared/types/remote-machines';
   import type { MachineOrderControls } from './machine-order-controls';
-  import PreferredMachineBadge from './PreferredMachineBadge.svelte';
 
   let {
     row,
     order,
-    localBackend = false,
   }: {
     row: MachineOrderRow;
     order: MachineOrderControls;
-    /** The current backend is this app's own daemon. */
-    localBackend?: boolean;
   } = $props();
 
-  const label = $derived(
-    row.kind === 'local' && localBackend ? m.remoteMachines_order_local_label() : row.name,
-  );
-  const detail = $derived(row.kind === 'local' && localBackend ? row.name : null);
+  // The host's own row (a host that is not an orchestrator runs agents too).
+  const label = $derived(row.name);
+  const detail = $derived(row.kind === 'local' ? m.remoteMachines_order_thisHost_label() : null);
 </script>
 
 <article aria-label={label} data-machine-order-plain-row={row.kind}>
@@ -36,7 +31,6 @@
     {/snippet}
     {#snippet title()}{label}{/snippet}
     {#snippet meta()}
-      {#if order.preferred}<PreferredMachineBadge />{/if}
       {#if detail}<span>{detail}</span>{/if}
     {/snippet}
     {#snippet trailing()}

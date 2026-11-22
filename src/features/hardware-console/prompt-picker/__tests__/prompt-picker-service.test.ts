@@ -354,6 +354,38 @@ describe('chat suggestions on the ring', () => {
     expect(run.dispatched).toEqual([radialPromptPickerOpened(['s1'], [], 0)]);
   });
 
+  it('inserts a used prompt into the chat composer when no text field has focus', () => {
+    const { source, run } = withSuggestions([]);
+    const insert = vi.fn(() => true);
+    Object.assign(source, { insert });
+    run.insertText.mockReturnValue(false);
+    run.manager.joystick(UP, 0.9); // slot 0 = p0
+    run.manager.joystick(UP, 0);
+    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p0');
+    expect(insert).toHaveBeenCalledExactlyOnceWith('p0');
+    expect(source.send).not.toHaveBeenCalled();
+  });
+
+  it('does not insert into a different chat than the one the ring opened with', () => {
+    const { suggestions, run } = withSuggestions([]);
+    run.insertText.mockReturnValue(false);
+    run.manager.joystick(UP, 0.9);
+    const other = { ownerId: 'agent-b', prompts: [], send: vi.fn(), insert: vi.fn(() => true) };
+    suggestions.current = other;
+    run.manager.joystick(UP, 0);
+    expect(other.insert).not.toHaveBeenCalled();
+  });
+
+  it('prefers the focused text field over the chat composer', () => {
+    const { source, run } = withSuggestions([]);
+    const insert = vi.fn(() => true);
+    Object.assign(source, { insert });
+    run.manager.joystick(UP, 0.9);
+    run.manager.joystick(UP, 0);
+    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p0');
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it('still inserts used prompts that sit next to suggestions', () => {
     const { source, run } = withSuggestions(['s1', 's2']);
     run.manager.joystick(RIGHT, 0.9); // slot 2 = p0

@@ -33,11 +33,11 @@ export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
 /** The index search field (32) and its gap below (8); keep in step with DockOverview. */
 const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
-/** Width of the compact notch wing that shows one dot per status group. */
 /**
  * Collapsed status wing: its outer inset, the 12px glyphs and the gaps between them (both
- * tighter than in the open header), and 4px clear of the camera. Keep in step with the
- * collapsed rules in AdaptiveDockShell (.header-state) and DockUpdateStatus (--dock-status-gap).
+ * tighter than in the open header), and 4px clear of the hardware gap; getDockCompactNotchSize
+ * adds the camera lane. Keep in step with the collapsed rules in AdaptiveDockShell
+ * (.header-state) and DockUpdateStatus (--dock-status-gap).
  */
 const DOCK_COMPACT_STATUS_INSET = 8;
 const DOCK_COMPACT_STATUS_GAP = 3;

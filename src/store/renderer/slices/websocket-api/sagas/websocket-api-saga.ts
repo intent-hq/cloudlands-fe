@@ -201,6 +201,12 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
     if (!(yield* requestCurrent(request, context))) return;
     if (intent.kind === 'loadMobile') {
       values = yield* loadMobile(request, intent.context);
+    } else if (intent.kind === 'loadRelay') {
+      // With a context the relay is the connected backend's; appClient follows it.
+      if (context && !(yield* selectCanAdministerHost.effect()))
+        throw new Error(m.settings_personalDevices_pairing_error());
+      const target = context ? appClient : client;
+      values = relayValues(yield* call([target.settings, target.settings.list]));
     } else if (intent.kind === 'toggle' && context) {
       if (!(yield* selectCanAdministerHost.effect()))
         throw new Error(m.settings_personalDevices_pairing_error());
@@ -386,9 +392,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         });
       }
       if (!(yield* requestCurrent(request, context))) return;
-      values = context
-        ? relayValues(yield* call([appClient.settings, appClient.settings.list]))
-        : { ...(yield* call(loadSnapshot, client, request)) };
+      values = relayValues(yield* call([target.settings, target.settings.list]));
     } else if (intent.kind === 'rotate') {
       // Neither the resolved token nor an error echoing it may enter saga diagnostics.
       const fixed = yield* call(async () => {
@@ -494,7 +498,8 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
                           ? m.settings_wsApi_shareLink_copyError()
                           : m.ui_imageActionsMenu_copyFailed_error()
                     : message;
-      yield* call(notify.error, error);
+      // An unreadable relay only hides its section; Advanced opens without a toast.
+      if (intent.kind !== 'loadRelay') yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
           status: 'failed',
@@ -576,6 +581,7 @@ export function* websocketApiSaga(): SagaGenerator<void> {
       } else if (
         intent.kind === 'load' ||
         intent.kind === 'loadMobile' ||
+        intent.kind === 'loadRelay' ||
         intent.kind === 'copy' ||
         intent.kind === 'qr'
       ) {

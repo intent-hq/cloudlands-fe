@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { RemoteMachine } from '$shared/types/remote-machines';
-import { machinePlatform, machineRowPlatform, machineRowProviders } from './machine-facts';
+import {
+  machinePlatform,
+  machineRowLoad,
+  machineRowPlatform,
+  machineRowResources,
+  machineRowProviders,
+} from './machine-facts';
 
 const device: ConnectionRecord = {
   id: 'mini',
@@ -143,5 +149,49 @@ describe('machineRowProviders', () => {
     expect(machineRowProviders(device, machine({ state: 'unreachable' }), noNames)).toEqual([]);
     expect(machineRowProviders(device, machine({ capabilities: undefined }), noNames)).toEqual([]);
     expect(machineRowProviders({ ...device, status: 'disconnected' }, null, noNames)).toEqual([]);
+  });
+});
+
+describe('machineRowLoad', () => {
+  const capacity = { runningAgents: 3, agentCap: 8 };
+  const resources = { memoryUsedBytes: 1, memoryTotalBytes: 2 };
+  const withCapacity = (state: RemoteMachine['state']) =>
+    machine({ state, capabilities: { providers: [], capacity, resources } });
+
+  it("is the report's machine-wide load while the machine is connected", () => {
+    expect(machineRowLoad(withCapacity('connected'))).toEqual(capacity);
+  });
+
+  it('is null while the machine is not connected: the last count says nothing about now', () => {
+    for (const state of ['disconnected', 'unreachable', 'revoked', 'update-required'] as const)
+      expect(machineRowLoad(withCapacity(state))).toBeNull();
+  });
+
+  it('is null without a capacity in the report (an older backend) or without a machine', () => {
+    expect(machineRowLoad(machine())).toBeNull();
+    expect(machineRowLoad(null)).toBeNull();
+  });
+
+  it('is null for an older runner that does not push its count (no resources)', () => {
+    expect(machineRowLoad(machine({ capabilities: { providers: [], capacity } }))).toBeNull();
+  });
+});
+
+describe('machineRowResources', () => {
+  const resources = { cpuPercent: 35, memoryUsedBytes: 12, memoryTotalBytes: 32 };
+
+  it("is the report's host CPU and memory while connected", () => {
+    expect(machineRowResources(machine({ capabilities: { providers: [], resources } }))).toEqual(
+      resources,
+    );
+  });
+
+  it('is null while not connected, and for an older runner that sends none', () => {
+    expect(
+      machineRowResources(
+        machine({ state: 'disconnected', capabilities: { providers: [], resources } }),
+      ),
+    ).toBeNull();
+    expect(machineRowResources(machine())).toBeNull();
   });
 });

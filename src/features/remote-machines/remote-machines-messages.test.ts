@@ -43,7 +43,7 @@ describe('remote machine failure messages', () => {
         }),
         labels,
       ),
-    ).toContain('it runs 0.9.0; this backend needs 0.10.0 or newer');
+    ).toContain('it runs 0.9.0; this host needs 0.10.0 or newer');
   });
 });
 

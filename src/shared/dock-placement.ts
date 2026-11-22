@@ -128,7 +128,12 @@ const DOCK_NOTCH_MIN_HEIGHT = 32;
  * inset (the status wing grows from its dots, see dockCompactWingWidth). Native size,
  * rendered shell and hit regions all derive from this one width.
  */
-export const DOCK_NOTCH_MIN_WING_WIDTH = 34;
+const DOCK_NOTCH_MIN_WING_WIDTH = 34;
+/**
+ * Clearance beside a camera cutout: macOS can draw its camera and microphone privacy dot
+ * just right of the camera, over the dock, so wing content keeps this lane clear.
+ */
+const DOCK_CAMERA_INDICATOR_LANE = 12;
 export const DOCK_FLOATING_COMPACT_SIZE = { width: 224, height: 40 } as const;
 /** Conversation content size; horizontal shells add their compact header height. */
 export const DOCK_CONVERSATION_MIN_SIZE = { width: 320, height: 300 } as const;
@@ -142,9 +147,12 @@ export const DOCK_FLOATING_SHADOW_MARGIN = 64;
 /** The compact attached shell follows measured hardware; plain displays keep a top pill. */
 export function getDockCompactNotchSize(
   cutout: Pick<DockPointerRect, 'width' | 'height'> | null,
-  wingWidth = DOCK_NOTCH_MIN_WING_WIDTH,
+  wingWidth = 0,
 ): { width: number; height: number } {
-  const wing = Math.max(DOCK_NOTCH_MIN_WING_WIDTH, wingWidth);
+  const wing = Math.max(
+    DOCK_NOTCH_MIN_WING_WIDTH,
+    wingWidth + (cutout ? DOCK_CAMERA_INDICATOR_LANE : 0),
+  );
   // Without a camera the top pill follows the same rules: header height, two wings.
   if (!cutout) return { width: wing * 2, height: DOCK_NOTCH_MIN_HEIGHT };
   return {

@@ -113,7 +113,7 @@ describe('HudBackendMenu', () => {
 
     expect(screen.getByText('Connect to another intentd…')).toBeTruthy();
     expect(screen.getByText('Connections')).toBeTruthy();
-    expect(screen.getByText('This machine (local)')).toBeTruthy();
+    expect(screen.getByText('This computer')).toBeTruthy();
     expect(screen.getByText('desk:4180')).toBeTruthy();
   });
 

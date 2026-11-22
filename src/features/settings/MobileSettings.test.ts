@@ -452,58 +452,10 @@ it('keeps pairing unavailable after an error and retries without exposing creden
   expect(invoke.mock.calls.every(([, payload]) => !payload.localMachine)).toBe(true);
 });
 
-it('edits the relay of the connected backend, not the local daemon', async () => {
-  relayUrl = 'https://old.example.com/derpmap.json';
-  render(MobileSettings);
-  await fireEvent.click(
-    await screen.findByRole('button', { name: m.settings_devices_advanced_label() }),
-  );
-  const input = (await screen.findByRole('textbox', {
-    name: m.settings_tunnel_relay_label(),
-  })) as HTMLInputElement;
-  await waitFor(() => expect(input.value).toBe('https://old.example.com/derpmap.json'));
-  await waitFor(() => expect(input.disabled).toBe(false));
-  await fireEvent.input(input, { target: { value: 'https://relay.example.com/derpmap.json' } });
-  await fireEvent.keyDown(input, { key: 'Enter' });
-  await waitFor(() => expect(relayUrl).toBe('https://relay.example.com/derpmap.json'));
-  const updates = invoke.mock.calls.filter(([, payload]) => payload?.method === 'settings.update');
-  expect(updates).toEqual([
-    [
-      'backend:request',
-      {
-        method: 'settings.update',
-        params: {
-          changes: [
-            { path: 'server.tunnel.derpUrl', value: 'https://relay.example.com/derpmap.json' },
-          ],
-        },
-      },
-    ],
-  ]);
-  expect(invoke.mock.calls.some(([, payload]) => payload?.localMachine)).toBe(false);
-});
-
-it('shows no relay on a remote backend without the setting', async () => {
+it('leaves the relay to Settings → Advanced, even when the backend has one', async () => {
+  relayUrl = 'https://relay.example.com/derpmap.json';
   render(MobileSettings);
   await waitFor(() => expect(copyButton().disabled).toBe(false));
   expect(screen.queryByRole('textbox', { name: m.settings_tunnel_relay_label() })).toBeNull();
   expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
-});
-
-it('keeps the draft and says why when the remote backend refuses the relay', async () => {
-  relayUrl = '';
-  render(MobileSettings);
-  await fireEvent.click(
-    await screen.findByRole('button', { name: m.settings_devices_advanced_label() }),
-  );
-  const input = (await screen.findByRole('textbox', {
-    name: m.settings_tunnel_relay_label(),
-  })) as HTMLInputElement;
-  await waitFor(() => expect(input.disabled).toBe(false));
-  await fireEvent.input(input, { target: { value: 'https://dead.example.com/derpmap.json' } });
-  await fireEvent.keyDown(input, { key: 'Enter' });
-  await waitFor(() =>
-    expect(mocks.error).toHaveBeenCalledWith(expect.stringContaining('no relay answered')),
-  );
-  expect(input.value).toBe('https://dead.example.com/derpmap.json');
 });

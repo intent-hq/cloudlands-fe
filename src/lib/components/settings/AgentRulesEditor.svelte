@@ -192,7 +192,7 @@
 
 <style>
   .agent-rules-textarea :global(textarea) {
-    height: 100%;
+    field-sizing: content;
     min-height: 200px;
     resize: none;
   }

@@ -38,6 +38,23 @@
   }
 
   function setupStartOnFixture(scenario: string) {
+    if (scenario.startsWith('start-on-orchestrator'))
+      // An orchestrator: Mac Studio is first in Settings → Hosts but unreachable.
+      return setupStartOnPreview(
+        [
+          startOnPreviewMachine('d-studio', 'Mac Studio', 'unreachable'),
+          startOnPreviewMachine('d-mac', 'Mac mini', 'connected'),
+          startOnPreviewMachine('d-lab', 'Lab PC', 'disconnected'),
+        ],
+        {
+          orchestrator: true,
+          order: [
+            { kind: 'machine', nodeId: 'd-studio', name: 'Mac Studio' },
+            { kind: 'machine', nodeId: 'd-mac', name: 'Mac mini' },
+            { kind: 'machine', nodeId: 'd-lab', name: 'Lab PC' },
+          ],
+        },
+      );
     if (scenario === 'start-on-auto-pick')
       // Codex isn't signed in on the machine; the plain Default uses the Remote Ready profile.
       return setupStartOnPreview(
@@ -83,6 +100,8 @@
       | 'start-on-machine'
       | 'start-on-unreachable'
       | 'start-on-open'
+      | 'start-on-orchestrator'
+      | 'start-on-orchestrator-open'
       | 'start-on-auto-pick';
   }
   export const preview = definePreview<Props>({
@@ -106,6 +125,9 @@
       'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
       // The open machine list: backend and machine rows both show their platform.
       'start-on-open': { props: { state: 'start-on-open' } },
+      // An orchestrator: its first usable runner in Settings → Hosts order is preselected.
+      'start-on-orchestrator': { props: { state: 'start-on-orchestrator' } },
+      'start-on-orchestrator-open': { props: { state: 'start-on-orchestrator-open' } },
     },
   });
 </script>
@@ -115,6 +137,7 @@
   import { SPECIALISTS } from '$lib/constants/specialists';
   import StartOnPicker from './StartOnPicker.svelte';
   import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
+  import { startOnDefault } from '$features/remote-machines/start-on';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
@@ -232,7 +255,9 @@
 <section
   class="w-full min-w-0 p-4 {scenario === 'sidebar' || startOn ? 'max-w-[300px]' : ''} {startOn
     ? 'ml-auto'
-    : ''} {scenario === 'start-on-open' ? 'min-h-[420px]' : ''}"
+    : ''} {scenario === 'start-on-open' || scenario === 'start-on-orchestrator-open'
+    ? 'min-h-[420px]'
+    : ''}"
   data-testid="specialist-fixture"
 >
   {#if scenario === 'compact'}
@@ -242,10 +267,10 @@
       session={welcomeSession}
       onSpecialistChange={(value) => (selected = value)}
     />
-  {:else if scenario === 'start-on-open'}
+  {:else if scenario === 'start-on-open' || scenario === 'start-on-orchestrator-open'}
     <StartOnPicker
       open
-      value={startOnMachineId}
+      value={startOnMachineId || startOnDefault($startOnOptions$)}
       options={$startOnOptions$}
       onChange={(id) => (startOnMachineId = id)}
     />

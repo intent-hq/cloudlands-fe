@@ -9,12 +9,17 @@
   import {
     initialAgentPlacement,
     START_ON_BACKEND,
+    START_ON_HOST,
     startOnBackendLabel,
-    startOnCloudId,
     startOnCloudMachineId,
+    startOnDefault,
+    startOnRowsWithCloud,
+    startOnSubmitted,
     type StartOnPlacement,
   } from '$features/remote-machines/start-on';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import {
+    selectCurrentBackendLabel,
     selectInitialAgentPlacementSupported,
     selectRemoteMachinesVisible,
     selectStartOnCloud,
@@ -66,8 +71,25 @@
 
   // Shown only while there is another place to choose: a remote machine or a saved E2B entry.
   const enabled = $derived($remoteVisible$ && $supported$);
-  const active = $derived(enabled && $rows$.length > 1);
-  const effective = $derived(backendOnly ? START_ON_BACKEND : resolveImplicitE2b(value, $rows$));
+  // Another place than the host itself to choose (an orchestrator has no row of its own).
+  const active = $derived(enabled && $rows$.some((option) => option.id !== START_ON_HOST));
+  const hostLabel$ = selectCurrentBackendLabel();
+  const orchestrator$ = selectIsOrchestratorBackend();
+  // Where an omitted placement starts: the host, or on an orchestrator its first runner.
+  const placeLabel = $derived(
+    $orchestrator$
+      ? m.remoteMachines_startOn_anyRunner_label()
+      : startOnBackendLabel($rows$, $hostLabel$),
+  );
+  // No stamp, or the host on a host without its own row: the first usable row in its order.
+  const effective = $derived(
+    backendOnly
+      ? START_ON_BACKEND
+      : value === START_ON_BACKEND ||
+          (value === START_ON_HOST && !$rows$.some((option) => option.id === START_ON_HOST))
+        ? startOnDefault(startOnRowsWithCloud($rows$, $cloud$))
+        : resolveImplicitE2b(value, $rows$),
+  );
   function missingLabelFor(id: string): string {
     const entryId = startOnCloudMachineId(id);
     return entryId
@@ -80,32 +102,26 @@
   const missingLabel = $derived(missingLabelFor(effective));
   // Nothing to choose, yet the proposal named a place that is gone: it starts on the backend.
   const goneNote = $derived(
-    enabled && !active && !backendOnly && defaultValue !== START_ON_BACKEND
+    enabled &&
+      !active &&
+      !backendOnly &&
+      defaultValue !== START_ON_BACKEND &&
+      defaultValue !== START_ON_HOST
       ? m.chat_proposalCard_startOnGone_label({
           machine: missingLabelFor(defaultValue),
-          backend: startOnBackendLabel($rows$),
+          backend: placeLabel,
         })
       : null,
   );
   const choices = $derived(
-    proposalStartOnChoices(
-      $rows$.map((option) => {
-        if (option.kind !== 'cloud') return option;
-        const reason = $cloud$?.find(
-          (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
-        )?.unavailableReason;
-        return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
-      }),
-      effective,
-      missingLabel,
-    ),
+    proposalStartOnChoices(startOnRowsWithCloud($rows$, $cloud$), effective, missingLabel),
   );
 
   $effect(() => {
     unavailable = active && choices.unavailable !== null;
     // With nothing to choose the card starts on the backend: say so, so no payload placement wins.
     placement = active
-      ? (initialAgentPlacement(effective, {
+      ? (initialAgentPlacement(startOnSubmitted(value, effective), {
           cloudEntries: $cloudEntries$,
           providerOf: (id) => $savedEntries$.find((entry) => entry.id === id)?.provider,
         }) ?? null)
@@ -138,7 +154,7 @@
         onChange={(id) => (value = id)}
         lockedReason={backendOnly
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: startOnBackendLabel(choices.options),
+              backend: placeLabel,
             })
           : undefined}
       />

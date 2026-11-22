@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.371.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.2...v2.371.0) (2026-11-22)
+
+
+### 🚀 Features
+
+* **settings:** hosts and runners, Switch to, orchestrator marker ([#4915](https://github.com/intent-hq/cloudlands-fe/issues/4915)) ([2cc899e](https://github.com/intent-hq/cloudlands-fe/commit/2cc899ee1a47caa0b857010826ca324b0f60e397))
+
+
+### 🐛 Bug Fixes
+
+* **preload:** regenerate untouched stale preload output without a false hand-edit refusal ([#4922](https://github.com/intent-hq/cloudlands-fe/issues/4922)) ([c4b4345](https://github.com/intent-hq/cloudlands-fe/commit/c4b4345e42e1fc3605563ac19fc3d8f64d22cca4))
+
+## [2.370.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.1...v2.370.2) (2026-11-22)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** capture one untiled image of tabs in a zoomed app ([#4808](https://github.com/intent-hq/cloudlands-fe/issues/4808)) ([502e6d5](https://github.com/intent-hq/cloudlands-fe/commit/502e6d574a048ec50cf902e490eb8ba1bb1cf099))
+
 ## [2.370.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.370.0...v2.370.1) (2026-11-22)
 
 

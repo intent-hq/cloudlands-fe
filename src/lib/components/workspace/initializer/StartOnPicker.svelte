@@ -10,7 +10,11 @@
   import { faCloud } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
-  import type { StartOnOption } from '$features/remote-machines/start-on';
+  import {
+    START_ON_BACKEND,
+    START_ON_HOST,
+    type StartOnOption,
+  } from '$features/remote-machines/start-on';
   import { workspacePickerStyles } from './workspace-picker-styles';
 
   /**
@@ -50,7 +54,14 @@
   let menuBelow = $state(false);
   let trigger = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
   let searchInput = $state<HTMLInputElement | null>(null);
-  const selected = $derived(options.find((option) => option.id === value) ?? options[0]);
+  // No placement ('', a form locked to the host) shows the host's own row when it has one.
+  const selected = $derived(
+    options.find((option) => option.id === value) ??
+      (value === START_ON_BACKEND
+        ? options.find((option) => option.id === START_ON_HOST)
+        : undefined) ??
+      options[0],
+  );
   const machineOptions = $derived<ComboboxOption[]>(
     options.map((option) => ({
       // Prefix every id so the backend's empty id is a selectable combobox value.

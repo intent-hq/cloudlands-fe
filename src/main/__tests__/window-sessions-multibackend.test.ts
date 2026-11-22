@@ -270,6 +270,15 @@ function legacySessionsPath(): string {
   return path.join(mockGetPath('userData') as string, 'window-sessions.json');
 }
 
+/**
+ * Sets `file`'s mtime a minute before `reference`'s. File times come from the real
+ * clock, so this must not use `Date.now()`, which the shifted test clock moves.
+ */
+function backdateBefore(file: string, reference: string): void {
+  const past = new Date(fs.statSync(reference).mtimeMs - 60_000);
+  fs.utimesSync(file, past, past);
+}
+
 interface SavedFrame {
   bounds: { x: number; y: number; width: number; height: number };
   isFullScreen?: boolean;
@@ -829,12 +838,11 @@ describe('multi-backend window sessions', () => {
 
     it('migrates again when an older client saved after this one (downgrade, then upgrade)', async () => {
       writeFrames([single('local', '/work/stale')]);
-      const past = new Date(Date.now() - 60_000);
-      fs.utimesSync(getWindowFramesPath(), past, past);
       fs.writeFileSync(
         legacySessionsPath(),
         JSON.stringify({ local: [{ route: '/work/newer', bounds }] }),
       );
+      backdateBefore(getWindowFramesPath(), legacySessionsPath());
 
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
@@ -848,9 +856,8 @@ describe('multi-backend window sessions', () => {
         legacySessionsPath(),
         JSON.stringify({ local: [{ route: '/work/old', bounds }] }),
       );
-      const past = new Date(Date.now() - 60_000);
-      fs.utimesSync(legacySessionsPath(), past, past);
       writeFrames([single('local', '/work/current')]);
+      backdateBefore(legacySessionsPath(), getWindowFramesPath());
 
       await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 

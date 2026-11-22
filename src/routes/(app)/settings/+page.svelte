@@ -28,6 +28,7 @@
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
+  import AutocompleteSettings from '$lib/components/settings/AutocompleteSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
@@ -102,6 +103,7 @@
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
+  import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import MachineRailSettings from '$lib/components/settings/MachineRailSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
@@ -161,29 +163,23 @@
       return 'setup';
   }
 
-  const DEFAULT_TAB: SettingsTab = 'providers';
   const LAST_TAB_KEY = 'intent:settings:last-tab';
 
-  function resolveTabFromUrl(url: URL): SettingsTab | undefined {
+  function resolveTabFromUrl(url: URL): SettingsTab | null {
     const targetTab = resolveHashTab(url.hash.slice(1));
     if (targetTab) return targetTab;
     const tabParam = url.searchParams.get('tab');
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return tabParam ? resolveLegacyTab(tabParam) : undefined;
+    return (tabParam && resolveLegacyTab(tabParam)) || null;
   }
 
-  function restoreTab(): SettingsTab {
+  function restoreTab(): SettingsTab | null {
     const savedTab = safeLocalStorage.getItem(LAST_TAB_KEY);
-    return savedTab && savedTab !== 'specialists' && isSettingsTab(savedTab)
-      ? savedTab
-      : DEFAULT_TAB;
+    return savedTab && savedTab !== 'specialists' && isSettingsTab(savedTab) ? savedTab : null;
   }
 
-  function getInitialTab(): SettingsTab {
-    return resolveTabFromUrl(page.url) ?? restoreTab();
-  }
-
-  let activeTab = $state<SettingsTab>(getInitialTab());
+  let requestedTab = $state(untrack(() => resolveTabFromUrl(page.url)));
+  let rememberedTab = $state(restoreTab());
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -197,7 +193,7 @@
       hashScrollTimer = undefined;
       resetContentScroll();
     }
-    activeTab = tab;
+    requestedTab = tab;
     // Update URL with the new tab, preserving other params
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -221,14 +217,21 @@
     if (!$devicePasskeysAvailable$) tabs.push('passkeys');
     return tabs;
   });
+  const defaultTab = $derived($isCollaboratorOnlyClient$ ? 'agent-behavior' : 'providers');
+  const activeTab = $derived<SettingsTab>(
+    requestedTab ??
+      (rememberedTab && !hiddenTabs.includes(rememberedTab) ? rememberedTab : defaultTab),
+  );
+
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
     const targetId = page.url.hash.slice(1);
-    const nextTab = resolveTabFromUrl(page.url) ?? restoreTab();
+    const nextTab = resolveTabFromUrl(page.url);
 
     untrack(() => {
-      if (nextTab !== activeTab) {
-        activeTab = nextTab;
+      if (!nextTab) rememberedTab = restoreTab();
+      if (nextTab !== requestedTab) {
+        requestedTab = nextTab;
         if (!targetId) resetContentScroll();
       }
       handleHashNavigation();
@@ -249,7 +252,7 @@
   function selectAiBehaviorView(view: AIBehaviorView) {
     aiBehaviorView = view;
     const tab = view.type === 'system-prompt' ? 'agent-behavior' : 'specialists';
-    activeTab = tab;
+    requestedTab = tab;
 
     if (browser) {
       const url = new URL(window.location.href);
@@ -303,14 +306,13 @@
         (activeTab === 'passkeys' && $devicePasskeys$.status === 'unavailable') ||
         $hostAdministrationDenied$)
     ) {
-      const requestedTab = resolveTabFromUrl(new URL(window.location.href));
-      setActiveTab(requestedTab || $hostAdministrationDenied$ ? 'display' : DEFAULT_TAB);
+      setActiveTab('display');
     }
   });
 
   $effect(() => {
-    if (activeTab !== 'specialists' && !hiddenTabs.includes(activeTab)) {
-      safeLocalStorage.setItem(LAST_TAB_KEY, activeTab);
+    if (requestedTab && requestedTab !== 'specialists' && !hiddenTabs.includes(requestedTab)) {
+      safeLocalStorage.setItem(LAST_TAB_KEY, requestedTab);
     }
   });
 
@@ -409,7 +411,7 @@
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
     if (targetTab && targetTab !== activeTab) {
-      activeTab = targetTab;
+      requestedTab = targetTab;
     }
     if (HARDWARE_TARGETS.has(targetId)) hardwareOpen = true;
 
@@ -1019,6 +1021,8 @@
             </div>
           </div>
 
+          <AutocompleteSettings />
+
           <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
@@ -1056,6 +1060,10 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <LabsSettings />
+          <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
+          {#if !$hostManagesConnections$}
+            <TunnelRelaySettings />
+          {/if}
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}

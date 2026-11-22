@@ -409,6 +409,11 @@ export interface CompactWorkspaceInitializationSubmission extends WorkspaceIniti
   selectedPRBranch: string;
   selectedPRTargetBranch: string;
   agent: WorkspaceInitializerAgentSettings;
+  /**
+   * The Start On choice to remember ('' until the user picks), while
+   * `agent.startOnMachineId` is the resolved row sent as the placement.
+   */
+  rememberStartOn?: string;
   rememberAgentRepoKey?: string;
   setupScriptExplicit: boolean;
   repoConfigError: boolean;

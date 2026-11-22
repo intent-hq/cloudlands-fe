@@ -257,7 +257,15 @@
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
-  import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
+  import { selectAutocompleteActive } from '$store/renderer/slices/autocomplete-settings/autocomplete-settings-selectors';
+  import {
+    autocompleteTurnsFromMessages,
+    buildAutocompleteContext,
+  } from '$features/autocomplete/utils/autocomplete-context';
+  import {
+    isReachablePromptTarget,
+    publishFocusedChatSuggestions,
+  } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
   import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
@@ -562,6 +570,8 @@
     }) => void;
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
+    /** The only chat on screen (Home's preview): the hardware prompt picker uses it while no chat has focus. */
+    isFallbackPromptTarget?: boolean;
     onNavigationStateChange?: (state: ChatNavigationState) => void;
     onTaskProgressChange?: (tasks: TaskProgressItem[]) => void;
   }
@@ -585,6 +595,7 @@
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
+    isFallbackPromptTarget = false,
     onNavigationStateChange,
     onTaskProgressChange,
   }: Props = $props();
@@ -618,6 +629,7 @@
   const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
+  const autocompleteActive$ = selectAutocompleteActive();
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   // Bridges the gap between a turn ending and the daemon starting the queued
@@ -1275,6 +1287,14 @@
     }
     return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks ?? [], reasoningAsText);
   });
+
+  // Composer autocomplete context (Contract §6.2): read lazily, only when a request fires.
+  function readAutocompleteContext(): string {
+    return buildAutocompleteContext(
+      autocompleteTurnsFromMessages($agentMessages$),
+      suggestedPrompts,
+    );
+  }
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
   // its selected question-bearing assistant message stays pending across later
@@ -2802,16 +2822,22 @@
   );
 
   // Share the focused chat's suggestions with the hardware joystick ring, which
-  // sends them exactly like a click. Gated like the Ctrl/Alt+1-3 shortcut, minus
-  // its chip-visibility check: the ring shows the suggestion text itself.
+  // sends them exactly like a click, and its composer for used prompts when no
+  // text field has focus. Gated like the Ctrl/Alt+1-3 shortcut, minus its
+  // chip-visibility check: the ring shows the suggestion text itself.
   $effect(() => {
-    if (!isActive || !isChatFocused || isRetiredSession || deferTranscriptReveal) return;
-    if (suggestedPrompts.length === 0) return;
-    return publishFocusedChatSuggestions({
-      ownerId: agentId,
-      prompts: suggestedPrompts,
-      send: (prompt) => handleSelectSuggestedPrompt(prompt),
-    });
+    if (!isActive || isRetiredSession || deferTranscriptReveal) return;
+    if (!isChatFocused && !isFallbackPromptTarget) return;
+    return publishFocusedChatSuggestions(
+      {
+        ownerId: agentId,
+        prompts: suggestedPrompts,
+        send: (prompt) => handleSelectSuggestedPrompt(prompt),
+        insert: (text) => !draftManager.gateVisible && (inputComponent?.insertText(text) ?? false),
+        available: () => isReachablePromptTarget(panelElement),
+      },
+      { fallback: !isChatFocused },
+    );
   });
 
   // The utility stack never precedes the transcript. Once transcript hydration
@@ -8631,6 +8657,7 @@
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}
                     onHistoryNext={handleHistoryNext}
+                    autocompleteContext={$autocompleteActive$ ? readAutocompleteContext : null}
                     disabled={!workspace || !$agentSession$}
                     inputLocked={draftManager.gateActive}
                     isStreaming={$agentSessionIsStreaming$}

@@ -15,6 +15,7 @@ import { hostRequirementsSaga } from '../../host-requirements/sagas/host-require
 import { hostRequirementsReset } from '../../host-requirements/host-requirements-slice';
 import { notificationSettingsSaga } from '../../user-preferences/sagas/notification-settings-saga';
 import { voiceSettingsSaga } from '../../voice-settings/sagas/voice-settings-saga';
+import { autocompleteSettingsSaga } from '../../autocomplete-settings/sagas/autocomplete-settings-saga';
 import { hardwareConsoleSettingsHydrationStarted } from '../../hardware-console/hardware-console-slice';
 import {
   publishWindowCyclePreferenceSaga,
@@ -51,6 +52,7 @@ function* watchHostOwnerServices() {
         call(hostRequirementsSaga),
         call(hardwareConsoleSaga),
         call(voiceSettingsSaga),
+        call(autocompleteSettingsSaga),
         call(notificationSettingsSaga),
         call(githubAuthSaga),
         put(initializeGitHubAuth()),

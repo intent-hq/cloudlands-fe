@@ -1,7 +1,7 @@
 <!--
-  Settings → Machines with `machineOrder: 1`: one list of every place the
-  current backend can run agents, in its stored order (PROTOCOL
-  `methods/nodes.md` → "Ordered machine list"). The first row is preferred.
+  Settings → Hosts with `machineOrder: 1`: the current host's runners, every
+  place it can run agents, in its stored order (PROTOCOL `methods/nodes.md` →
+  "Ordered machine list"). New agents start on the first row that can take them.
   The owner reorders by dragging a row's handle or with the Move up / Move
   down items of its menu; each move sends the whole list. Members read it.
   The caller renders each row's content and merges the controls it gets.
@@ -75,7 +75,6 @@
   function controlsFor(entry: MachineOrderRow, index: number): MachineOrderControls {
     const id = machineOrderId(entry);
     return {
-      preferred: index === 0,
       actions: canReorder
         ? [
             {
