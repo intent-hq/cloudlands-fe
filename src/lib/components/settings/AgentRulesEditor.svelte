@@ -194,7 +194,6 @@
   .agent-rules-textarea :global(textarea) {
     field-sizing: content;
     min-height: 200px;
-    overflow-y: hidden;
     resize: none;
   }
 
