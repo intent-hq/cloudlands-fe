@@ -46,6 +46,8 @@ export const LOCAL_PREF_KEYS = [
   'recentAgents',
   // Main-owned browser views (Labs)
   'browserViewsInMainEnabled',
+  // Workspace browser
+  'browserWebsiteDarkMode',
   // Window chrome, release notes, feature codes
   'menuBarAutoHide',
   'lastSeenReleaseNotesVersion',
