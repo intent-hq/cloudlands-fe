@@ -40,7 +40,7 @@ import {
   SKIP_DIRS,
 } from './hardcoded-strings-scope.mjs';
 import { scriptArgs } from './script-args.mjs';
-import { svelteMarkupText, svelteScriptText } from './source-ast-lib.mjs';
+import { svelteMarkupText, svelteScriptBlocks } from './source-ast-lib.mjs';
 
 const ROOT = process.cwd();
 const DEFAULT_BASELINE = resolve(ROOT, 'scripts/hardcoded-strings-baseline.json');
@@ -373,11 +373,12 @@ function findTagEnd(src, openIndex) {
   return -1;
 }
 
-// The markup (scripts, styles and HTML comments blanked) and the script code (markup
-// blanked), both at the component's offsets.
+// The markup (scripts, styles and HTML comments blanked) and each script block on its
+// own (everything else blanked), all at the component's offsets. The comment stripper
+// ends a line comment only at `\n`, so each block is scanned alone.
 const extractSvelteParts = (src) => ({
   template: svelteMarkupText(src),
-  scripts: [{ text: svelteScriptText(src), index: 0 }],
+  scripts: svelteScriptBlocks(src).map((block) => ({ text: block.text, index: 0 })),
 });
 
 function checkTemplateText(src, template, start, end, violations) {

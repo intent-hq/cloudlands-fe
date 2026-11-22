@@ -236,10 +236,15 @@ describe('hardcoded user-facing string gate', () => {
       {
         'Example.svelte':
           "<script module>const n = 1; // note</script><script>const label = 'Save your work';</script>",
+        'CarriageReturn.svelte':
+          "<script module>const n = 1; // note\r</script><script>const label = 'Keep your work';</script>",
       },
       (dir) => {
         const result = runGate([dir]);
         expect(result.output).toContain('Example.svelte:1  [string literal] "Save your work"');
+        expect(result.output).toContain(
+          'CarriageReturn.svelte:1  [string literal] "Keep your work"',
+        );
       },
     );
   });
