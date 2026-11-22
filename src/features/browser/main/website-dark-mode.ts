@@ -43,12 +43,17 @@ interface Page {
   panelPage: boolean;
   /** The main frame shows an error page. */
   loadFailed: boolean;
-  /** Overrides currently set in the page's CDP session. */
-  darkened: boolean;
+  /** Overrides set in the page's CDP session; `'unknown'` after a failed send, so the next sync always sends. */
+  darkened: boolean | 'unknown';
+  /** Bumped on every debugger detach, which drops the overrides. */
+  detaches: number;
+  /** Consecutive failed syncs; retries stop at {@link MAX_RETRIES}. */
+  failures: number;
   queue: Promise<void>;
 }
 
 const DEFAULT_REAPPLY_DELAY_MS = 250;
+const MAX_RETRIES = 3;
 
 function bareHost(host: string): string {
   return host
@@ -106,6 +111,7 @@ export function createBrowserWebsiteDarkMode(
       }
       if (page.contents.isDestroyed() || darken === page.darkened) return;
       const id = page.contents.id;
+      const detaches = page.detaches;
       try {
         // Automatic darkening alone does not ask a site for its own dark theme.
         await deps.sendCdpCommand(id, 'Emulation.setEmulatedMedia', {
@@ -116,14 +122,23 @@ export function createBrowserWebsiteDarkMode(
           'Emulation.setAutoDarkModeOverride',
           darken ? { enabled: true } : {},
         );
-        page.darkened = darken;
+        // A detach mid-send may have dropped the first override.
+        page.darkened = detaches === page.detaches ? darken : 'unknown';
+        page.failures = 0;
       } catch (error) {
-        // A partial apply may have left one override set; let a later sync clear it.
-        if (darken) page.darkened = true;
+        page.darkened = 'unknown';
+        if (page.contents.isDestroyed()) return;
         // i18n-ignore (main-process log, not user-facing)
-        if (!page.contents.isDestroyed()) deps.warn('Could not update website dark mode', error);
+        deps.warn('Could not update website dark mode', error);
+        if (++page.failures <= MAX_RETRIES) later(page);
       }
     });
+  };
+
+  const later = (page: Page): void => {
+    setTimeout(() => {
+      if (!page.contents.isDestroyed()) sync(page);
+    }, reapplyDelayMs);
   };
 
   const track = (contents: WebContents): void => {
@@ -135,6 +150,8 @@ export function createBrowserWebsiteDarkMode(
       panelPage: false,
       loadFailed: false,
       darkened: false,
+      detaches: 0,
+      failures: 0,
       queue: Promise.resolve(),
     };
     pages.set(contents, page);
@@ -147,27 +164,33 @@ export function createBrowserWebsiteDarkMode(
       if (!details.isMainFrame || details.isSameDocument) return;
       page.url = details.url;
       page.loadFailed = false;
+      page.failures = 0;
+      sync(page);
+    };
+    // Downloads, 204s and Stop never commit: fall back to the page still shown.
+    const settled = () => {
+      page.url = contents.getURL();
       sync(page);
     };
     contents.on('did-start-navigation', navigation);
     contents.on('did-redirect-navigation', navigation);
     contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
-      // -3 is ERR_ABORTED: the user or a new navigation stopped the load.
-      if (!isMainFrame || errorCode === -3) return;
+      if (!isMainFrame) return;
+      // -3 is ERR_ABORTED: the user, a download or a new navigation stopped the load.
+      if (errorCode === -3) return settled();
       page.loadFailed = true;
       sync(page);
     });
+    contents.on('did-stop-loading', settled);
     contents.on('dom-ready', () => {
       page.url = contents.getURL();
       sync(page);
     });
     // Chromium drops emulation overrides with the CDP session.
     contents.debugger.on('detach', () => {
-      if (!page.darkened) return;
+      page.detaches++;
       page.darkened = false;
-      setTimeout(() => {
-        if (enabled && !contents.isDestroyed()) sync(page);
-      }, reapplyDelayMs);
+      if (enabled) later(page);
     });
     contents.once('destroyed', () => pages.delete(contents));
   };

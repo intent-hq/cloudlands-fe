@@ -74,6 +74,10 @@ function fakeContents(options: {
     failLoad(errorCode: number, isMainFrame = true) {
       fire('did-fail-load', {}, errorCode, 'failed', url, isMainFrame);
     },
+    /** Loading ended without a new commit (download, 204, Stop). */
+    stopLoading() {
+      fire('did-stop-loading');
+    },
     detachDebugger(reason = 'target closed') {
       for (const listener of debuggerListeners.get('detach') ?? []) listener({}, reason);
     },
@@ -87,7 +91,7 @@ function fakeContents(options: {
 function harness(
   options: {
     pref?: unknown;
-    remoteHosts?: string[];
+    remoteHosts?: string[] | (() => string[]);
     send?: (id: number, method: string, params: unknown) => Promise<unknown>;
   } = {},
 ) {
@@ -106,7 +110,10 @@ function harness(
     },
     isBrowserPanelPage: (contents) => browserPanelPageOwner(contents) !== null,
     sendCdpCommand: send,
-    remoteDaemonHosts: async () => options.remoteHosts ?? [],
+    remoteDaemonHosts: async () =>
+      typeof options.remoteHosts === 'function'
+        ? options.remoteHosts()
+        : (options.remoteHosts ?? []),
     readPref,
     writePref,
     warn,
@@ -374,5 +381,108 @@ describe('browser website dark mode', () => {
     await flush();
     expect(h.warn).toHaveBeenCalled();
     expect(h.methodsFor(healthy.raw.id)).toEqual(APPLIED);
+  });
+
+  it('restores the committed page state when a navigation never commits', async () => {
+    const h = harness({ pref: true });
+    await h.controller.start();
+    const aborted = h.open(fakeContents({ type: 'webview', url: 'http://localhost:3000/' }));
+    const stopped = h.open(fakeContents({ type: 'webview', url: 'http://localhost:3000/' }));
+    await flush();
+
+    // A download link: the navigation starts, then Chromium aborts it.
+    aborted.startNavigation('https://cdn.example.com/file.zip');
+    // A 204 response: no commit and no failure, only a stop.
+    stopped.startNavigation('https://example.com/no-content');
+    await flush();
+    aborted.failLoad(-3);
+    stopped.stopLoading();
+    await flush();
+
+    expect(h.methodsFor(aborted.raw.id)).toEqual([...APPLIED, ...CLEARED]);
+    expect(h.methodsFor(stopped.raw.id)).toEqual([...APPLIED, ...CLEARED]);
+  });
+
+  it('retries a failed apply instead of treating the tab as darkened', async () => {
+    let failures = 1;
+    const h = harness({
+      pref: true,
+      send: async () => {
+        if (failures > 0) {
+          failures--;
+          throw new Error('Debugger attach timeout');
+        }
+      },
+    });
+    await h.controller.start();
+    const tab = h.open(fakeContents({ type: 'webview' }));
+    tab.startNavigation('https://example.com/');
+    await flush();
+
+    // First attempt fails on its first command, the retry sends both.
+    expect(h.methodsFor(tab.raw.id)).toEqual([APPLIED[0], ...APPLIED]);
+    expect(h.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops retrying a tab that keeps failing', async () => {
+    const h = harness({
+      pref: true,
+      send: async () => {
+        throw new Error('Another debugger is attached');
+      },
+    });
+    await h.controller.start();
+    const tab = h.open(fakeContents({ type: 'webview' }));
+    tab.startNavigation('https://example.com/');
+    for (let i = 0; i < 5; i++) await flush();
+    const attempts = h.methodsFor(tab.raw.id).length;
+    for (let i = 0; i < 5; i++) await flush();
+    expect(h.methodsFor(tab.raw.id).length).toBe(attempts);
+    expect(attempts).toBeLessThanOrEqual(4);
+  });
+
+  it('re-applies when a debugger detaches while an apply is in flight', async () => {
+    let release: (() => void) | undefined;
+    let first = true;
+    const h = harness({
+      pref: true,
+      send: async () => {
+        if (!first) return;
+        first = false;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+    });
+    await h.controller.start();
+    const tab = h.open(fakeContents({ type: 'webview' }));
+    tab.startNavigation('https://example.com/');
+    await flush();
+    tab.detachDebugger();
+    release?.();
+    await flush();
+
+    expect(h.methodsFor(tab.raw.id)).toEqual([...APPLIED, ...APPLIED]);
+  });
+
+  it('leaves pages light when the remote daemon hosts cannot be read', async () => {
+    let readable = true;
+    const h = harness({
+      pref: true,
+      remoteHosts: () => {
+        if (!readable) throw new Error('connection state unreadable');
+        return [];
+      },
+    });
+    await h.controller.start();
+    const tab = h.open(fakeContents({ type: 'webview' }));
+    tab.startNavigation('https://example.com/');
+    await flush();
+    readable = false;
+    tab.startNavigation('https://devbox.example.net/');
+    await flush();
+
+    expect(h.methodsFor(tab.raw.id)).toEqual([...APPLIED, ...CLEARED]);
+    expect(h.warn).toHaveBeenCalled();
   });
 });

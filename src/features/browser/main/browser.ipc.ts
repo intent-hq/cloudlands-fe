@@ -353,25 +353,22 @@ export function dockServiceAddress(url: string, backendId: string): string | und
 }
 
 /**
- * The daemon host of every live remote backend, so View → Darken Websites
- * can leave that machine's dev servers alone. Tailcat backends report no
- * host: their pages load through a loopback tunnel port.
+ * The daemon host of every pooled backend (reconnecting ones included), so
+ * View → Darken Websites can leave that machine's dev servers alone. Tailcat
+ * backends report no host: their pages load through a loopback tunnel port.
+ * Throws when a connection is unreadable, so the caller leaves pages light.
  */
 export function connectedRemoteDaemonHosts(): string[] {
   const hosts: string[] = [];
   for (const backendId of getLiveBackendIds()) {
-    try {
-      const config = getBackendClientForConnection(backendId)?.getConfig();
-      if (!config) continue;
-      const { daemonHost } = loopbackContextFromTransport(
-        backendId === LOCAL_CONNECTION_ID && config.transport === 'uds',
-        config,
-        backendId !== LOCAL_CONNECTION_ID,
-      );
-      if (daemonHost) hosts.push(daemonHost);
-    } catch {
-      // An unreadable connection contributes no host.
-    }
+    const config = getBackendClientForConnection(backendId)?.getConfig();
+    if (!config) continue;
+    const { daemonHost } = loopbackContextFromTransport(
+      backendId === LOCAL_CONNECTION_ID && config.transport === 'uds',
+      config,
+      backendId !== LOCAL_CONNECTION_ID,
+    );
+    if (daemonHost) hosts.push(daemonHost);
   }
   return hosts;
 }
