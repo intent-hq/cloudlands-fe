@@ -257,6 +257,11 @@
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
+  import { selectAutocompleteActive } from '$store/renderer/slices/autocomplete-settings/autocomplete-settings-selectors';
+  import {
+    autocompleteTurnsFromMessages,
+    buildAutocompleteContext,
+  } from '$features/autocomplete/utils/autocomplete-context';
   import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
@@ -618,6 +623,7 @@
   const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
+  const autocompleteActive$ = selectAutocompleteActive();
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   // Bridges the gap between a turn ending and the daemon starting the queued
@@ -1275,6 +1281,14 @@
     }
     return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks ?? [], reasoningAsText);
   });
+
+  // Composer autocomplete context (Contract §6.2): read lazily, only when a request fires.
+  function readAutocompleteContext(): string {
+    return buildAutocompleteContext(
+      autocompleteTurnsFromMessages($agentMessages$),
+      suggestedPrompts,
+    );
+  }
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
   // its selected question-bearing assistant message stays pending across later
@@ -8631,6 +8645,7 @@
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}
                     onHistoryNext={handleHistoryNext}
+                    autocompleteContext={$autocompleteActive$ ? readAutocompleteContext : null}
                     disabled={!workspace || !$agentSession$}
                     inputLocked={draftManager.gateActive}
                     isStreaming={$agentSessionIsStreaming$}

@@ -259,6 +259,7 @@
   "repository_prRemote_option_label": "*",
   "settings_agentBackend_acpHeap_megabytesValue": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
   "settings_agentBackend_autoPlaceholder": ["fr"],
+  "settings_autocomplete_service_label": ["fr"],
   "settings_agentBackend_idleReap_minutesValue": ["es", "fr"],
   "settings_agentBackend_memoryBudget_megabytesValue": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
   "settings_aiBehavior_description_label": ["fr"],
