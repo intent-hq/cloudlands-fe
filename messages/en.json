@@ -6992,7 +6992,6 @@
   "workspace_compactInitializer_progressFinalizing_label": "Finalizing workspace…",
   "workspace_compactInitializer_progressAgent_label": "Starting agent on {machine}…",
   "workspace_compactInitializer_progressAgentGeneric_label": "Starting agent…",
-  "workspace_compactInitializer_progressDetail_label": "{percent} · {transfer}",
   "workspace_compactInitializer_progressReceiving_label": "Cloning repository…",
   "workspace_compactInitializer_progressResolving_label": "Resolving deltas…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Submodules ({current}/{total})…",

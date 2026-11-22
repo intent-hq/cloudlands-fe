@@ -159,7 +159,7 @@ describe('CreateButtonProgress', () => {
     expect(screen.queryByTestId('create-progress-detail')).toBeNull();
   });
 
-  it('shows the percent above the button once frames arrive', async () => {
+  it('shows no percent caption once frames arrive; the bar carries progress', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
@@ -172,12 +172,15 @@ describe('CreateButtonProgress', () => {
       }),
     );
     await waitFor(() => {
-      expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe('78%');
+      expect(screen.getByTestId('create-progress-label').textContent).toContain(
+        'Submodules (3/12)…',
+      );
     });
-    expect(screen.getByTestId('create-progress-label').textContent).toContain('Submodules (3/12)…');
+    expect(screen.getByTestId('create-progress-bar').getAttribute('aria-valuenow')).toBe('78');
+    expect(screen.queryByTestId('create-progress-detail')).toBeNull();
   });
 
-  it('adds the download size and rate while git reports them', async () => {
+  it('shows the download size and rate while git reports them', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
@@ -197,7 +200,7 @@ describe('CreateButtonProgress', () => {
     );
     await waitFor(() => {
       expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe(
-        '42% · 123.4 MB · 5.7 MB/s',
+        '123.4 MB · 5.7 MB/s',
       );
     });
   });
@@ -228,11 +231,9 @@ describe('CreateButtonProgress', () => {
       await waitFor(() => {
         expect(screen.getByTestId('create-progress-label').textContent).toContain(label);
       });
-      await waitFor(() => {
-        expect(screen.getByTestId('create-progress-detail').textContent?.trim()).toBe(
-          `${frame.percent}%`,
-        );
-      });
+      expect(screen.getByTestId('create-progress-bar').getAttribute('aria-valuenow')).toBe(
+        String(frame.percent),
+      );
     }
   });
 });

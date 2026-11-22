@@ -6992,7 +6992,6 @@
   "workspace_compactInitializer_progressFinalizing_label": "Arbeitsbereich wird fertiggestellt…",
   "workspace_compactInitializer_progressAgent_label": "Agent wird auf {machine} gestartet…",
   "workspace_compactInitializer_progressAgentGeneric_label": "Agent wird gestartet…",
-  "workspace_compactInitializer_progressDetail_label": "{percent} · {transfer}",
   "workspace_compactInitializer_progressReceiving_label": "Repository wird geklont…",
   "workspace_compactInitializer_progressResolving_label": "Deltas werden aufgelöst…",
   "workspace_compactInitializer_progressSubmodulesCounted_label": "Submodule werden geklont ({current}/{total})…",
