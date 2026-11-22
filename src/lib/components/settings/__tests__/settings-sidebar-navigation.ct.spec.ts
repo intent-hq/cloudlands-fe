@@ -19,14 +19,16 @@ test('keeps Back, grouped settings and specialists in one keyboard sequence', as
   await expect(component.locator('[data-settings-back-count]')).toHaveText('1');
   await page.keyboard.press('Tab');
   const expectedOrder = [
-    'agent-behavior',
     'providers',
+    'agent-behavior',
     'connections',
+    'token-savings',
     'devices',
     'mobile',
     'collaboration',
-    'display',
     'app-behavior',
+    'display',
+    'performance',
     'input',
     'passkeys',
     'setup',
