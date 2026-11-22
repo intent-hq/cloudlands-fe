@@ -265,6 +265,11 @@ if (existingOutput !== null && !isUntouchedOutput(existingOutput)) {
         console.error(`\nMove the change into ${relTemplate}, then re-run this script.`);
         console.error('If the lines really are obsolete, re-run with --force to discard them.\n');
       }
+      if (!fingerprintPattern.test(existingOutput)) {
+        console.error(`${relOutput} predates generator fingerprints, so an untouched copy from an`);
+        console.error('older template looks the same as a hand edit. If you never edited it,');
+        console.error('re-run with --force or delete it.\n');
+      }
       process.exit(1);
     }
 

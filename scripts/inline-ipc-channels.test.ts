@@ -17,7 +17,7 @@
 // @verify-changed-triggers: src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -182,6 +182,10 @@ describe('preload generator drift guard', () => {
       expect(result.status, 'a hand edit voids the fingerprint').toBe(1);
       expect(result.output).toContain('regenerating would not reproduce');
       expect(result.output).toContain(HAND_EDIT_MARKER.trim());
+      // A voided fingerprint cannot tell stale template lines from edits, so
+      // both are listed.
+      expect(result.output).toContain(olderLine.trim());
+      expect(result.output).not.toContain('predates generator fingerprints');
       expect(generatedIndex(root)).toBe(edited);
     });
 
@@ -197,7 +201,33 @@ describe('preload generator drift guard', () => {
 
       expect(result.status).toBe(1);
       expect(result.output).toContain(olderLine.trim());
+      expect(result.output).toContain('predates generator fingerprints');
     });
+  });
+
+  it('leaves a current fingerprinted file byte-identical and unwritten on a rerun', () => {
+    const root = makeFixture(realTemplate, baselineIndex);
+    const before = statSync(join(root, generatedFile)).mtimeMs;
+
+    const result = runGenerator(root);
+
+    expect(result.status, result.output).toBe(0);
+    expect(generatedIndex(root)).toBe(baselineIndex);
+    expect(statSync(join(root, generatedFile)).mtimeMs).toBe(before);
+  });
+
+  it('adds a fingerprint to a current file that has none', () => {
+    const unfingerprinted = baselineIndex.replace(
+      /^\/\/ inline-ipc-channels fingerprint: .*\n/,
+      '',
+    );
+    expect(unfingerprinted, 'fixture must drop the fingerprint').not.toBe(baselineIndex);
+    const root = makeFixture(realTemplate, unfingerprinted);
+
+    const result = runGenerator(root);
+
+    expect(result.status, result.output).toBe(0);
+    expect(generatedIndex(root)).toBe(baselineIndex);
   });
 
   it('discards hand edits only when --force is passed explicitly', () => {
