@@ -58,7 +58,10 @@ function bareHost(host: string): string {
     .replace(/\.$/, '');
 }
 
-/** External http(s) pages only: no loopback, `*.localhost`, or remote daemon host. */
+/**
+ * External http(s) pages only: no loopback, `*.localhost`, or remote daemon host.
+ * @internal
+ */
 export function isDarkenableUrl(url: string, remoteDaemonHosts: readonly string[]): boolean {
   let parsed: URL;
   try {
