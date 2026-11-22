@@ -1,12 +1,18 @@
 <script lang="ts">
   /**
-   * Centered inline notice for a daemon-persisted `goal_command` row (like the
-   * model-change notice). A "Current goal" row offers Edit.
+   * Transcript row for a daemon-persisted `goal_command` row, in the shared
+   * left-aligned operational row pattern: one truncated line that expands to
+   * the full goal (links clickable). A "Current goal" row offers Edit.
    */
   import Fa from 'svelte-fa';
   import { toStore } from 'svelte/store';
   import { faFlag } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
+  import {
+    CHAT_OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import { m } from '$shared/paraglide/messages.js';
   import { selectConversationGoalSupported } from '$store/renderer/slices/principal/principal-selectors';
   import {
@@ -36,6 +42,8 @@
   // not pass `readonly` (the chat panel renders rows without it).
   const retired$ = selectAgentRetired(agentId$);
   let editing = $state(false);
+  let expanded = $state(false);
+  const detailsId = $props.id();
 
   const label = $derived.by((): string | null => {
     const goal = notice.goal;
@@ -52,6 +60,7 @@
         return m.chat_goalNotice_cleared_label();
     }
   });
+  const text = $derived(label ?? fallbackText ?? m.chat_goalNotice_fallback_label());
   const canEdit = $derived(
     !readonly &&
       !$retired$ &&
@@ -63,28 +72,45 @@
   );
 </script>
 
-<div class="goal-notice my-4 flex w-full min-w-0 items-center gap-3" role="status">
-  <div class="h-px min-w-4 flex-1 bg-border"></div>
-  <span class="flex min-w-0 shrink items-start gap-2 text-left text-xs text-muted-foreground">
-    <Fa icon={faFlag} class="mt-0.5 h-3 w-3 flex-shrink-0" />
-    <span class="min-w-0 whitespace-pre-wrap break-words" data-testid="goal-notice-text"
-      ><GoalText
-        text={label ?? fallbackText ?? m.chat_goalNotice_fallback_label()}
-        {workspaceId}
-      /></span
+{#snippet leading()}
+  <Fa icon={faFlag} class="{CHAT_OPERATIONAL_ICON_CLASS} text-subtle opacity-50" />
+{/snippet}
+{#snippet summary()}
+  <span data-testid="goal-notice-text">{text}</span>
+{/snippet}
+{#snippet trailing()}
+  {#if canEdit}
+    <Button
+      variant="link"
+      size="sm"
+      class="h-auto p-0 type-caption"
+      aria-label={m.chat_goalStrip_edit_ariaLabel()}
+      onclick={() => (editing = true)}>{m.chat_goalNotice_edit_label()}</Button
     >
-    {#if canEdit}
-      <Button
-        variant="link"
-        size="sm"
-        class="h-auto p-0 text-xs"
-        aria-label={m.chat_goalStrip_edit_ariaLabel()}
-        onclick={() => (editing = true)}>{m.chat_goalNotice_edit_label()}</Button
-      >
-    {/if}
-  </span>
-  <div class="h-px min-w-4 flex-1 bg-border"></div>
-</div>
+  {/if}
+{/snippet}
+{#snippet detailsBody()}
+  <div class="whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="goal-notice-details">
+    <GoalText {text} {workspaceId} />
+  </div>
+{/snippet}
+
+<ChatOperationalRow
+  {leading}
+  {summary}
+  {trailing}
+  details={notice.goal ? detailsBody : undefined}
+  animateDetailsHeight
+  interactive={!!notice.goal}
+  {expanded}
+  controls={notice.goal ? detailsId : undefined}
+  {detailsId}
+  ariaLabel={text}
+  onclick={() => (expanded = !expanded)}
+  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground"
+  testId="goal-notice"
+  class="goal-notice my-1"
+/>
 {#if canEdit && workspaceId && agentId}
   <GoalEditorDialog
     bind:open={editing}

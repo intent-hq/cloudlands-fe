@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage } from '$shared/types';
 
@@ -75,7 +75,7 @@ function goalRow(metadata: Record<string, unknown>, text = 'Goal set: x'): Agent
 }
 
 describe('ChatMessage - goal_command notice', () => {
-  it('renders a set notice as a centered divider, not a message bubble', () => {
+  it('renders a set notice as an operational row, not a message bubble', () => {
     const { container } = render(ChatMessage, {
       props: {
         message: goalRow({ action: 'set', goal: 'Ship the goal strip' }),
@@ -90,6 +90,36 @@ describe('ChatMessage - goal_command notice', () => {
     );
     // Only a "Current goal" row offers Edit
     expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
+  });
+
+  it('expands a goal notice to the full goal with clickable links', async () => {
+    const goal = 'Follow https://example.com/contract then land the daemon first';
+    render(ChatMessage, {
+      props: {
+        message: goalRow({ action: 'set', goal }),
+        isStreaming: false,
+        agentId: 'agent-1',
+      },
+    });
+    const toggle = screen.getByRole('button', { name: m.chat_goalNotice_set_label({ goal }) });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('link', { name: 'https://example.com/contract' })).toBeNull();
+
+    await fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const details = screen.getByTestId('goal-notice-details');
+    expect(details.textContent).toBe(m.chat_goalNotice_set_label({ goal }));
+    expect(
+      screen.getByRole('link', { name: 'https://example.com/contract' }).getAttribute('href'),
+    ).toBe('https://example.com/contract');
+  });
+
+  it('does not offer expansion on a notice without a goal', () => {
+    render(ChatMessage, {
+      props: { message: goalRow({ action: 'cleared', goal: null }), isStreaming: false },
+    });
+    expect(screen.queryByRole('button', { expanded: false })).toBeNull();
   });
 
   it('renders a cleared notice and a no-goal shown notice', () => {

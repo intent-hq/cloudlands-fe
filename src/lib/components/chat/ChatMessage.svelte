@@ -1809,7 +1809,7 @@
 {:else if secretRequestNotice}
   <SecretRequestNotice notice={secretRequestNotice} />
 {:else if goalNotice}
-  <!-- Daemon-persisted conversation goal notice row - centered inline divider -->
+  <!-- Daemon-persisted conversation goal notice row - left-aligned operational row -->
   <GoalNotice
     notice={goalNotice}
     fallbackText={extractAllContent(message) || undefined}
