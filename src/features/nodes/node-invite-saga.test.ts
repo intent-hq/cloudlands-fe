@@ -283,12 +283,12 @@ describe('paste an intent://node link', () => {
     expect(store.state.nodes.paste.error?.code).toBe('machine-unreachable');
   });
 
-  it('names a tunnel-only link "this node"', async () => {
+  it('names a tunnel-only link "this runner"', async () => {
     inspectReply = { ok: true, pendingId: 'inv-p1', label: null };
     submit(LINK);
     await vi.waitFor(() =>
       expect(ui.confirm).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Make this node available to Build box?' }),
+        expect.objectContaining({ title: 'Make this runner available to Build box?' }),
       ),
     );
   });

@@ -49,7 +49,7 @@ describe('Machines and Nodes', () => {
     const pi = nodes.querySelector('[data-device-row="pi-node"]') as HTMLElement;
     expect(within(gpu).queryByText('Runs agents for Build box')).toBeNull();
     expect(within(pi).queryByText('Not used by Build box')).toBeNull();
-    const machines = view.container.querySelector('[aria-label="Machines"]') as HTMLElement;
+    const machines = view.container.querySelector('[aria-label="Hosts"]') as HTMLElement;
     expect(within(machines).getByText('Studio Mac')).toBeTruthy();
     expect(within(machines).queryByText('GPU rig')).toBeNull();
   });
