@@ -123,6 +123,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import GoalNotice from '$features/conversation-goal/components/GoalNotice.svelte';
+  import { getGoalNotice } from '$features/conversation-goal/utils/goal-command';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
   import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
@@ -405,6 +407,9 @@
 
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
+
+  // Daemon-persisted conversation goal row (metadata type "goal_command")
+  let goalNotice = $derived(getGoalNotice(message));
 
   // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
   let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
@@ -1803,6 +1808,15 @@
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if secretRequestNotice}
   <SecretRequestNotice notice={secretRequestNotice} />
+{:else if goalNotice}
+  <!-- Daemon-persisted conversation goal notice row - centered inline divider -->
+  <GoalNotice
+    notice={goalNotice}
+    fallbackText={extractAllContent(message) || undefined}
+    workspaceId={getOwningWorkspaceId()}
+    {agentId}
+    readonly={readOnly}
+  />
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />

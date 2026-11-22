@@ -79,7 +79,10 @@
   import { requestAutocompletion } from '$features/autocomplete/autocomplete-client';
   import {
     findSlashCommandContext,
+    rankSlashBuiltins,
     rankSlashSkills,
+    withoutShadowedSkills,
+    type SlashBuiltinCommand,
     type SlashCommandContext,
   } from './slash-skill-command';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
@@ -208,6 +211,8 @@
     skillsLoading?: boolean;
     skillsError?: string | null;
     onSkillsRetry?: () => void;
+    /** Built-in commands listed above skills when the slash token starts the prompt. */
+    slashCommands?: readonly SlashBuiltinCommand[];
     /** A remote agent's `/` menu: shown when its machine offers nothing. */
     slashEmptyLabel?: string;
     /** A remote agent's `/` menu: a muted row under the list. */
@@ -258,6 +263,7 @@
     skillsLoading = false,
     skillsError = null,
     onSkillsRetry,
+    slashCommands = [],
     slashEmptyLabel,
     slashNotice,
     unavailableSkillTitle,
@@ -395,7 +401,16 @@
   const slashListboxId = `slash-skill-listbox-${componentId}`;
   let slashActiveOptionId = $state<string | undefined>();
 
-  const filteredSkills = $derived(slashContext ? rankSlashSkills(skills, slashContext.query) : []);
+  // The prompt text the active slash context was read from (built-ins need its start).
+  let slashPromptText = $state('');
+  const filteredCommands = $derived(
+    slashContext ? rankSlashBuiltins(slashCommands, slashPromptText, slashContext) : [],
+  );
+  const filteredSkills = $derived(
+    slashContext
+      ? rankSlashSkills(withoutShadowedSkills(skills, filteredCommands), slashContext.query)
+      : [],
+  );
   const slashContextKey = $derived(
     slashContext ? `${slashContext.from}:${slashContext.to}:${slashContext.query}` : null,
   );
@@ -404,7 +419,8 @@
       slashContext !== null &&
       slashContextKey !== dismissedSlashContext &&
       slashContext.from !== dismissedSlashFrom &&
-      (filteredSkills.length > 0 ||
+      (filteredCommands.length > 0 ||
+        filteredSkills.length > 0 ||
         (slashEmptyLabel !== undefined && slashContext.query === '' && !skillsLoading)) &&
       isEditable,
   );
@@ -472,6 +488,7 @@
       dismissedSlashContext = null;
       dismissedSlashFrom = null;
     }
+    slashPromptText = prompt;
     slashContext = nextContext;
     if (nextContext && options?.dismissNewContext) dismissedSlashContext = slashContextKey;
   }
@@ -504,6 +521,27 @@
       .focus()
       .insertContentAt(range, content)
       .setTextSelection(range.from + 2)
+      .run();
+  }
+
+  function selectSlashCommand(command: SlashBuiltinCommand) {
+    if (!editor || !slashContext) return;
+    // Same serialization as refreshSlashContext so the offsets line up.
+    const prompt = slashPrompt(editor);
+    const cursorOffset = slashTextBeforeCursor(editor).length;
+    const range = {
+      from: editor.state.selection.from - slashContext.query.length - 1,
+      to: editor.state.selection.from + slashContext.to - cursorOffset,
+    };
+    const needsSpace =
+      slashContext.to === prompt.length || !/^\s/u.test(prompt.slice(slashContext.to));
+    const text = `/${command.name}`;
+    // Plain text, not a skill chip: the daemon reads the leading token.
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(range, { type: 'text', text: needsSpace ? `${text} ` : text })
+      .setTextSelection(range.from + text.length + 1)
       .run();
   }
 
@@ -1987,6 +2025,7 @@
         <SlashSkillSuggestionList
           bind:this={slashSuggestionList}
           listboxId={slashListboxId}
+          commands={filteredCommands}
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
@@ -1994,6 +2033,7 @@
           notice={slashNotice}
           onRetry={onSkillsRetry}
           onSelect={selectSlashSkill}
+          onSelectCommand={selectSlashCommand}
           onDismiss={dismissSlashMenu}
           onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}
         />

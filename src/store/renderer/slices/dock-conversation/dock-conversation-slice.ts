@@ -163,6 +163,14 @@ export const dockConversationDeliveryTracked = createAction<
 export const dockConversationDraftAdmitted = createAction<
   [workspaceId: string, agentId: string, revision: number]
 >('dockConversation/draftAdmitted');
+/**
+ * A `/goal` command (conversation goal) was accepted: clear this exact draft
+ * revision. Commands have no pending submission to track, so the composer's
+ * own submission id is carried directly.
+ */
+export const dockConversationCommandAdmitted = createAction<
+  [workspaceId: string, agentId: string, revision: number, composerSubmissionId: string | null]
+>('dockConversation/commandAdmitted');
 export const dockConversationDraftRecovered = createAction<
   [workspaceId: string, agentId: string, revision: number, contextFingerprint: string]
 >('dockConversation/draftRecovered');
@@ -650,6 +658,25 @@ dockConversationReducer.with(
           }),
         }
       : state;
+  },
+);
+dockConversationReducer.with(
+  dockConversationCommandAdmitted,
+  (state, { payload: [ws, agent, revision, composerSubmissionId] }) => {
+    const draft = draftFor(state, ws, agent);
+    if (draft.revision !== revision) return state;
+    return {
+      ...state,
+      drafts: upsertItem(state.drafts, {
+        ...draft,
+        text: '',
+        revision: revision + 1,
+        hasAttachments: false,
+        clearRevision: revision + 1,
+        clearSubmissionId: composerSubmissionId ?? undefined,
+        retryRevision: undefined,
+      }),
+    };
   },
 );
 dockConversationReducer.with(

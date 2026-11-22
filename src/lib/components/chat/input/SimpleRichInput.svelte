@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { GOAL_COMMAND_NAME } from '$features/conversation-goal/utils/goal-command';
+  import type { SlashBuiltinCommand } from './slash-skill-command';
   import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectConversationGoalSupported,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
@@ -433,6 +438,14 @@
           }
         : undefined,
     ),
+  );
+  // Built-in `/goal` (conversation goal): an agent conversation on a daemon
+  // that advertises `conversationGoal: 1`.
+  const goalSupported$ = selectConversationGoalSupported();
+  const slashCommands = $derived<SlashBuiltinCommand[]>(
+    agentId && $goalSupported$
+      ? [{ name: GOAL_COMMAND_NAME, description: m.chat_slashCommand_goal_description() }]
+      : [],
   );
   const composerSkills = $derived(
     skillsMachine ? (remoteSkillsCopy.hideSkills ? [] : $agentSkills$.skills) : $skills$,
@@ -1969,6 +1982,7 @@
         }}
         workspace={workspace ?? undefined}
         skills={composerSkills}
+        {slashCommands}
         skillsLoading={composerSkillsLoading}
         skillsError={composerSkillsError}
         slashEmptyLabel={remoteSkillsCopy.emptyLabel}

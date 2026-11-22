@@ -100,6 +100,7 @@
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
   import DockHeaderLinkButton from './DockHeaderLinkButton.svelte';
+  import GoalStrip from '$features/conversation-goal/components/GoalStrip.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -399,6 +400,8 @@
         >{/if}
     {/snippet}
   </ScreenHeader>
+
+  <GoalStrip workspaceId={workspaceId ?? workspace?.id} agentId={agentId ?? undefined} />
 
   {#snippet noticeLine()}
     {#if notices?.register}

@@ -99,3 +99,33 @@ export function applySlashSkillSelection(
     cursorOffset: context.from + command.length + 1,
   };
 }
+
+/** A client-offered slash command (e.g. `/goal`), listed above skills. */
+export type SlashBuiltinCommand = {
+  name: string;
+  description: string;
+};
+
+/**
+ * Built-in commands matching the active slash token. They apply only to the
+ * whole message, so they are offered only when the token starts the prompt.
+ */
+export function rankSlashBuiltins(
+  commands: readonly SlashBuiltinCommand[],
+  prompt: string,
+  context: SlashCommandContext,
+): SlashBuiltinCommand[] {
+  if (prompt.slice(0, context.from).trim() !== '') return [];
+  const normalizedQuery = context.query.toLowerCase();
+  return commands.filter((command) => command.name.toLowerCase().startsWith(normalizedQuery));
+}
+
+/** A built-in command wins over a skill with the same name: hide that skill. */
+export function withoutShadowedSkills(
+  skills: readonly SkillInfo[],
+  commands: readonly SlashBuiltinCommand[],
+): readonly SkillInfo[] {
+  if (commands.length === 0) return skills;
+  const names = new Set(commands.map((command) => command.name.toLowerCase()));
+  return skills.filter((skill) => !names.has(skill.name.toLowerCase()));
+}

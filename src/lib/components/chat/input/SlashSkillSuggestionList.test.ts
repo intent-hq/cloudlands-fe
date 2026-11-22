@@ -145,4 +145,57 @@ describe('SlashSkillSuggestionList', () => {
     expect(onRetry).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  describe('built-in commands', () => {
+    const goal = { name: 'goal', description: 'Pin a goal to this conversation' };
+
+    it('lists the built-in first and selects it with Enter', async () => {
+      const onSelect = vi.fn();
+      const onSelectCommand = vi.fn();
+      render(SlashSkillSuggestionList, {
+        props: { commands: [goal], items, onSelect, onSelectCommand },
+      });
+      const options = screen.getAllByRole('option');
+      expect(options.map((option) => option.getAttribute('aria-label'))).toEqual([
+        'goal',
+        'review',
+        'research',
+      ]);
+      expect(options[0].getAttribute('aria-selected')).toBe('true');
+
+      await fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Enter' });
+      expect(onSelectCommand).toHaveBeenCalledWith(goal);
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('keeps the built-in selectable while skills load or fail', async () => {
+      const onSelectCommand = vi.fn();
+      const view = render(SlashSkillSuggestionList, {
+        props: { commands: [goal], loading: true, items, onSelect: vi.fn(), onSelectCommand },
+      });
+      expect(screen.getAllByRole('option')).toHaveLength(1);
+      expect(screen.getByRole('status').textContent).toContain('Loading skills');
+      await fireEvent.click(screen.getByRole('option', { name: 'goal' }));
+      expect(onSelectCommand).toHaveBeenCalledWith(goal);
+
+      await view.rerender({
+        commands: [goal],
+        loading: false,
+        error: 'boom',
+        items,
+        onSelect: vi.fn(),
+        onSelectCommand,
+      });
+      expect(screen.getAllByRole('option')).toHaveLength(1);
+      expect(screen.getByRole('alert')).toBeTruthy();
+    });
+
+    it('shows no empty state when only the built-in matches', () => {
+      render(SlashSkillSuggestionList, {
+        props: { commands: [goal], items: [], onSelect: vi.fn() },
+      });
+      expect(screen.getAllByRole('option')).toHaveLength(1);
+      expect(screen.queryByText('No matching skills')).toBeNull();
+    });
+  });
 });
