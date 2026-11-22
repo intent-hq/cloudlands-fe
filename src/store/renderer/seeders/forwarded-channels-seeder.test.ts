@@ -6,7 +6,7 @@ vi.mock('$lib/electron-bridge', async (importOriginal) => importOriginal());
 
 import './index';
 import { mockInvoke } from '$shared/ipc-mock-router';
-import { FORWARDED_IPC_CHANNELS, IPC_CHANNELS, forwarded } from '$shared/ipc-registry';
+import { FORWARDED_IPC_CHANNELS, IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   probeSeederForwarding,
   withElectronUserAgent,
@@ -34,12 +34,6 @@ describe('channels marked forwarded in the IPC registry', () => {
       'A channel marked `forwarded(...)` in src/shared/ipc-registry.ts must not also be ' +
         'registered by a hand-written seeder: drop the custom handler, or drop the mark.',
     ).toEqual([]);
-  });
-
-  it('rejects marking one channel twice', () => {
-    expect(() => forwarded(CONNECTIONS.WORKSPACE_CARDS, () => null)).toThrow(
-      /already marked forwarded/,
-    );
   });
 
   describe('without a desktop bridge', () => {

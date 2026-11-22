@@ -32,7 +32,7 @@ const forwardedChannels = new Map<string, BrowserFallback>();
 export const FORWARDED_IPC_CHANNELS: ReadonlyMap<string, BrowserFallback> = forwardedChannels;
 
 /** Mark a main-owned request channel; see the module comment. Returns `channel`. */
-export function forwarded<C extends string>(channel: C, browserFallback: BrowserFallback): C {
+function forwarded<C extends string>(channel: C, browserFallback: BrowserFallback): C {
   if (forwardedChannels.has(channel)) {
     throw new Error(`IPC channel '${channel}' is already marked forwarded`);
   }
