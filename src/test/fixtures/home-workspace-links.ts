@@ -35,12 +35,14 @@ export function setupHomeWorkspaceLinksFixtures({
   repository,
   nodeOwned,
   githubLinkDefaultAction = 'show-choices',
+  messageSuffix = '',
 }: {
   href: string;
   title: string;
   repository: boolean;
   nodeOwned: boolean;
   githubLinkDefaultAction?: GithubLinkDefaultAction;
+  messageSuffix?: string;
 }) {
   const ownerId = WorkspaceId('preview-owner');
   const targetId = WorkspaceId('preview-other');
@@ -130,7 +132,7 @@ export function setupHomeWorkspaceLinksFixtures({
         id: 'preview-link-message',
         role: 'assistant',
         timestamp,
-        contentBlocks: [{ type: 'text', text: `[Review destination](${href})` }],
+        contentBlocks: [{ type: 'text', text: `[Review destination](${href})${messageSuffix}` }],
       },
     ],
     ...(nodeOwned ? { nodePath: '/remote/node/checkout' } : {}),

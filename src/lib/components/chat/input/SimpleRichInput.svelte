@@ -606,6 +606,12 @@
     return false;
   }
 
+  /** Insert text at the composer cursor without sending. */
+  export function insertText(text: string): boolean {
+    if (disposed || inputLocked || (disabled && !editableWhileDisabled)) return false;
+    return tiptap?.insertPlainText(text) ?? false;
+  }
+
   // Export clear method for parent components
   /** The text the editor holds now, including just-committed screen evidence. */
   export function getValue(): string {

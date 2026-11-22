@@ -19,7 +19,8 @@
  *    turns).
  * 3. Release handling — release on a chat suggestion sends it right away,
  *    like clicking it; release on a used prompt inserts it at the cursor of
- *    the focused text input (never auto-sends). Cancel, an empty direction,
+ *    the focused text input, or into the target chat's composer when nothing
+ *    editable has focus (never auto-sends). Cancel, an empty direction,
  *    and a centered release do nothing. "Centered" means the stick dwelled inside the selection
  *    radius for {@link DEFAULT_CENTER_DWELL_MS} before release, so the
  *    spring snap-back through the hysteresis band still commits.
@@ -190,7 +191,9 @@ export function installHardwareConsolePromptPickerJoystick(
       }
       return;
     }
-    if (slot?.kind === 'prompt' && !insertText(slot.text)) {
+    if (slot?.kind !== 'prompt' || insertText(slot.text)) return;
+    // Nothing editable has focus (Home's preview chat): use the chat's composer.
+    if (!getSuggestions()?.insert?.(slot.text)) {
       logger.info('Radial prompt release with no focused text input; insertion skipped');
     }
   };
