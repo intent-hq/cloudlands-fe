@@ -35,6 +35,26 @@ function splitSvelte(text) {
 // (newlines kept), so offsets and lines match the component.
 export const svelteScriptText = (text) => splitSvelte(text).script;
 
+// Each `<script>` block of a component, in order: `{ openTag, isModule, text }`. `text` is
+// the component with everything but this block's content blanked, so a source parsed
+// from it (under a `.ts` name, not the component's) keeps the component's offsets and
+// lines.
+export function svelteScriptBlocks(text) {
+  const blocks = [];
+  for (const match of text.matchAll(SVELTE_BLOCK_PATTERN)) {
+    const [, openTag, content] = match;
+    if (openTag === undefined) continue;
+    const contentStart = match.index + openTag.length;
+    const contentEnd = contentStart + content.length;
+    blocks.push({
+      openTag,
+      isModule: /\smodule\b|\scontext\s*=\s*["']module["']/.test(openTag),
+      text: blank(text.slice(0, contentStart)) + content + blank(text.slice(contentEnd)),
+    });
+  }
+  return blocks;
+}
+
 // The component's markup in place, with script and style blocks and HTML comments
 // blanked. Markup is not parsed; a check can only search it as text.
 export const svelteMarkupText = (text) => splitSvelte(text).markup;

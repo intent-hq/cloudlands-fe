@@ -231,6 +231,25 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('ignores a script block inside an HTML comment', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          '  const count = 1;',
+          '</script>',
+          '<!-- <script lang="ts">const old = "Save your old work";</script> -->',
+          '<div>{count}</div>',
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.output).not.toContain('Save your old work');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
   it('preserves template interpolation and multiline string locations around nested regexes', () => {
     withFixture(
       {

@@ -40,6 +40,7 @@ import {
   SKIP_DIRS,
 } from './hardcoded-strings-scope.mjs';
 import { scriptArgs } from './script-args.mjs';
+import { svelteMarkupText, svelteScriptText } from './source-ast-lib.mjs';
 
 const ROOT = process.cwd();
 const DEFAULT_BASELINE = resolve(ROOT, 'scripts/hardcoded-strings-baseline.json');
@@ -372,19 +373,12 @@ function findTagEnd(src, openIndex) {
   return -1;
 }
 
-function extractSvelteParts(src) {
-  const scripts = [];
-  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi;
-  let m;
-  while ((m = scriptRe.exec(src)) !== null) {
-    scripts.push({ text: m[1], index: m.index + m[0].indexOf('>') + 1 });
-  }
-  // Blank scripts, styles, and HTML comments out of the template (line-preserving).
-  const template = src
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\b[^>]*>/gi, (block) => blankSpan(block))
-    .replace(/<!--[\s\S]*?-->/g, (c) => blankSpan(c));
-  return { template, scripts };
-}
+// The markup (scripts, styles and HTML comments blanked) and the script code (markup
+// blanked), both at the component's offsets.
+const extractSvelteParts = (src) => ({
+  template: svelteMarkupText(src),
+  scripts: [{ text: svelteScriptText(src), index: 0 }],
+});
 
 function checkTemplateText(src, template, start, end, violations) {
   const raw = template.slice(start, end);

@@ -188,6 +188,31 @@ describe('Electron helper path check', () => {
       expect(messages(fixed)).toEqual([]);
     });
 
+    it('does not follow an import inside an HTML-commented Svelte script', () => {
+      const root = tree({
+        'src/backend/connections-store.ts': 'export function createConnectionsStore() {}',
+        'src/browser/Capture.svelte': [
+          '<script lang="ts">',
+          '  export const capture = () => {};',
+          '</script>',
+          '<!--',
+          '<script>',
+          "  import { createConnectionsStore } from '../backend/connections-store';",
+          '  createConnectionsStore();',
+          '</script>',
+          '-->',
+        ],
+        'test/electron-capture.fixture.ts': harness(
+          'src/browser/Capture.svelte',
+          ["if (id === '../backend/connections-store') return '\\0backend';"],
+          ["if (id === '\\0backend') return 'export function createConnectionsStore() {}';"],
+        ),
+      });
+      expect(messages(root)).toEqual([
+        "resolveId stub === '../backend/connections-store' matches no import reachable from src/browser/Capture.svelte",
+      ]);
+    });
+
     it('flags a suffix stub that now intercepts a different module (the dock fixture)', () => {
       const files = {
         'src/backend/connections-store.ts': [

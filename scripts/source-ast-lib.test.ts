@@ -12,6 +12,7 @@ import {
   propertyValue,
   stringValue,
   svelteMarkupText,
+  svelteScriptBlocks,
   svelteScriptText,
   ts,
   walk,
@@ -171,6 +172,21 @@ describe('source AST helper', () => {
       expect(markup).not.toContain('instance');
       expect(markup).not.toContain('ghost');
       expect(markup).not.toContain('.a {');
+    });
+
+    it('splits a component into one same-length text per script block', () => {
+      const blocks = svelteScriptBlocks(page);
+      expect(blocks.map((block) => block.isModule)).toEqual([true, false]);
+      expect(blocks.map((block) => block.text.length)).toEqual([page.length, page.length]);
+      const [module, instance] = blocks.map((block) =>
+        findObjectLiterals(parseSource(block.text), 'id').map((object) => lineOf(object)),
+      );
+      expect(module).toEqual([2]);
+      expect(instance).toEqual([6]);
+      expect(blocks[1].openTag).toBe(
+        '<script lang="ts" generics="T extends Map<string, { a: 1 }>">',
+      );
+      expect(svelteScriptBlocks('<script context="module">x</script>')[0].isModule).toBe(true);
     });
 
     it('reads a component without a script block as empty code', () => {
