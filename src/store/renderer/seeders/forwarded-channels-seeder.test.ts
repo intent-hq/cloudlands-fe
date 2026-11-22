@@ -3,9 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // test-setup stubs the bridge globally; the probe needs seeders to see the
 // real bridge (e.g. `isElectron()` reads `window.electronAPI`).
 vi.mock('$lib/electron-bridge', async (importOriginal) => importOriginal());
+// Record every seeder registration: the router keeps only the last one per channel.
+vi.mock('$shared/ipc-mock-router', async (importOriginal) => {
+  const router = await importOriginal<typeof import('$shared/ipc-mock-router')>();
+  return { ...router, registerMockIpcHandler: vi.fn(router.registerMockIpcHandler) };
+});
 
 import './index';
-import { mockInvoke } from '$shared/ipc-mock-router';
+import { mockInvoke, registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { FORWARDED_IPC_CHANNELS, IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   probeSeederForwarding,
@@ -21,7 +26,22 @@ describe('channels marked forwarded in the IPC registry', () => {
     expect(FORWARDED_IPC_CHANNELS.has(MACHINE_SETUP.SSH_START)).toBe(true);
   });
 
-  it('forward verbatim to main, and no custom seeder replaces the stand-in', async () => {
+  it('are registered by the shared seeder only', () => {
+    const registrations = new Map<string, number>();
+    for (const [channel] of vi.mocked(registerMockIpcHandler).mock.calls) {
+      registrations.set(channel, (registrations.get(channel) ?? 0) + 1);
+    }
+    const shared = [...FORWARDED_IPC_CHANNELS.keys()].filter(
+      (channel) => registrations.get(channel) !== 1,
+    );
+    expect(
+      shared,
+      'A channel marked `forwarded(...)` in src/shared/ipc-registry.ts must not also be ' +
+        'registered by a hand-written seeder: drop the custom handler, or drop the mark.',
+    ).toEqual([]);
+  });
+
+  it('forward verbatim to main', async () => {
     const notVerbatim = await withElectronUserAgent(async () => {
       const failed: string[] = [];
       for (const channel of FORWARDED_IPC_CHANNELS.keys()) {
@@ -29,11 +49,7 @@ describe('channels marked forwarded in the IPC registry', () => {
       }
       return failed;
     });
-    expect(
-      notVerbatim,
-      'A channel marked `forwarded(...)` in src/shared/ipc-registry.ts must not also be ' +
-        'registered by a hand-written seeder: drop the custom handler, or drop the mark.',
-    ).toEqual([]);
+    expect(notVerbatim).toEqual([]);
   });
 
   describe('without a desktop bridge', () => {
