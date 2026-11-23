@@ -86,16 +86,13 @@
   );
 </script>
 
+<!-- The label says what it does; a line shows only when sync cannot run or write. -->
 {#snippet syncDescription()}
-  <span class="block">{m.settings_backendSync_toggle_description()}</span>
   {#if !supported && loaded}
     <span class="block">{m.settings_backendSync_unsupported_description()}</span>
   {/if}
-  {#if supported && enabled}
-    {#if status === null}
-      <span class="block">{m.settings_backendSync_status_checking()}</span>
-    {:else if status.state === 'active'}
-      <!-- A working sync needs no line: the toggle says it is on. -->
+  {#if supported && enabled && status}
+    {#if status.state === 'active'}
       {#if status.errorCount}
         <span class="block text-warning-ink">{m.settings_backendSync_status_degraded()}</span>
       {/if}

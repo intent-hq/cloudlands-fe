@@ -46,7 +46,6 @@
   import type { MachineOrderRow } from '$shared/types/remote-machines';
   import { connectionForMachine } from '$features/remote-machines/remote-machines-utils';
   import type { RemoteMachine } from '$shared/types/remote-machines';
-  import BackendsWithAccessSection from '$features/remote-machines/BackendsWithAccessSection.svelte';
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
   import CloudMachineRow from '$features/cloud-machines/CloudMachineRow.svelte';
   import {
@@ -67,7 +66,10 @@
   } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { faCirclePlus, faCloud } from '$lib/icons/phosphor-icons';
-  import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
+  import {
+    machineSetupInstallPicked,
+    machineSetupOpened,
+  } from '$features/machine-setup/machine-setup-slice';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
 
   let {
@@ -116,6 +118,12 @@
   /** The provider of the entry being added. */
   let newCloudProvider = $state<CloudProviderKind>(untrack(() => initialCloudProvider));
   const cloudKinds$ = selectCloudProviderKinds();
+
+  /** Add runner → the wizard's Install a runner steps. */
+  function installRunner() {
+    appStore.dispatch(machineSetupOpened('pick', 'runner'));
+    appStore.dispatch(machineSetupInstallPicked('node'));
+  }
 
   function addCloud(provider: CloudProviderKind) {
     newCloudProvider = provider;
@@ -328,13 +336,19 @@
       {/snippet}
     </ListView>
     {#if !$hostManagesConnections$ && $keychainSync$?.supported}
-      <div
-        id="backend-sync"
-        class="scroll-mt-20 rounded-xl border border-border bg-card px-4 py-3 sm:px-5"
-      >
-        <BackendSyncSettings />
-      </div>
+      <div id="backend-sync" class="scroll-mt-20"><BackendSyncSettings /></div>
     {/if}
+    <div class="flex">
+      <Button
+        variant="ghost"
+        size="sm"
+        class="-ml-2.5"
+        data-testid="add-host"
+        onclick={() => appStore.dispatch(machineSetupOpened('pick', 'host'))}
+      >
+        {@render addLabel(m.settings_devices_addHost_label())}
+      </Button>
+    </div>
   </section>
 
   {#if $orderVisible$}
@@ -398,89 +412,72 @@
     </section>
   {/if}
 
-  {#snippet addLabel()}
+  {#if !$orderVisible$}<RemoteMachinesSection />{/if}
+
+  {#snippet addLabel(label: string)}
     <Fa icon={faPlus} class="mr-1.5" size="xs" />
-    {m.settings_devices_add_label()}
+    {label}
   {/snippet}
 
-  <div class="flex justify-end">
-    {#if !canAddCloud}
-      <!-- Only one way to add a machine: open the wizard, no one-item menu. -->
-      <Button
-        variant="ghost"
-        size="sm"
-        data-testid="add-machine-menu"
-        onclick={() => appStore.dispatch(machineSetupOpened())}
-      >
-        {@render addLabel()}
-      </Button>
-    {:else}
-      <Menu.Root bind:open={addMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
-              {@render addLabel()}
-            </Button>
-          {/snippet}
-        </Menu.Trigger>
-        <Menu.Content align="end" class="w-80">
-          <Menu.Item
-            onSelect={() => appStore.dispatch(machineSetupOpened())}
-            data-testid="add-machine-setup"
-          >
-            {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
-            <span class="flex min-w-0 flex-col">
-              <span>{m.machineSetup_addMenu_label()}</span>
-              <span class="type-caption text-muted-foreground"
-                >{m.machineSetup_addMenu_description()}</span
+  {#if $remoteVisible$ || canAddCloud}
+    <div class="-mt-5 flex" data-add-runner>
+      {#if !canAddCloud}
+        <Button
+          variant="ghost"
+          size="sm"
+          class="-ml-2.5"
+          data-testid="add-machine-menu"
+          onclick={installRunner}
+        >
+          {@render addLabel(m.settings_devices_addRunner_label())}
+        </Button>
+      {:else}
+        <Menu.Root bind:open={addMenuOpen}>
+          <Menu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                variant="ghost"
+                size="sm"
+                class="-ml-2.5"
+                data-testid="add-machine-menu"
               >
-            </span>
-          </Menu.Item>
-          {#if $cloudKinds$.length === 1}
-            <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
-              {#snippet leading()}<Fa icon={faCloud} />{/snippet}
-              <span class="flex min-w-0 flex-col">
-                <span>{m.cloudMachines_addMenu_e2b_label()}</span>
-                <span class="type-caption text-muted-foreground"
-                  >{m.cloudMachines_addMenu_e2b_description()}</span
-                >
-              </span>
-            </Menu.Item>
-          {:else}
-            <Menu.Sub bind:open={addCloudOpen}>
-              <Menu.SubTrigger data-testid="add-cloud-machine">
+                {@render addLabel(m.settings_devices_addRunner_label())}
+              </Button>
+            {/snippet}
+          </Menu.Trigger>
+          <Menu.Content align="start" class="w-56">
+            {#if $remoteVisible$}
+              <Menu.Item onSelect={installRunner} data-testid="add-machine-setup">
+                {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
+                {m.machineSetup_pick_node_label()}
+              </Menu.Item>
+            {/if}
+            {#if $cloudKinds$.length === 1}
+              <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
                 {#snippet leading()}<Fa icon={faCloud} />{/snippet}
-                <span class="flex min-w-0 flex-col">
-                  <span>{m.cloudMachines_addMenu_cloud_label()}</span>
-                  <span class="type-caption text-muted-foreground"
-                    >{m.cloudMachines_addMenu_cloud_description()}</span
-                  >
-                </span>
-              </Menu.SubTrigger>
-              <Menu.SubContent class="w-80">
-                {#each $cloudKinds$ as kind (kind)}
-                  <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
-                    <span class="flex min-w-0 flex-col">
-                      <span>{cloudProviderName(kind)}</span>
-                      <span class="type-caption text-muted-foreground"
-                        >{kind === 'northflank'
-                          ? m.cloudMachines_addMenu_northflank_description()
-                          : kind === 'agent37'
-                            ? m.cloudMachines_addMenu_agent37_description()
-                            : kind === 'vercel'
-                              ? m.cloudMachines_addMenu_vercel_description()
-                              : m.cloudMachines_addMenu_e2b_description()}</span
-                      >
-                    </span>
-                  </Menu.Item>
-                {/each}
-              </Menu.SubContent>
-            </Menu.Sub>
-          {/if}
-        </Menu.Content>
-      </Menu.Root>
-    {/if}
-  </div>
+                {m.cloudMachines_addMenu_e2b_label()}
+              </Menu.Item>
+            {:else}
+              <Menu.Sub bind:open={addCloudOpen}>
+                <Menu.SubTrigger data-testid="add-cloud-machine">
+                  {#snippet leading()}<Fa icon={faCloud} />{/snippet}
+                  {m.cloudMachines_addMenu_cloud_label()}
+                </Menu.SubTrigger>
+                <Menu.SubContent class="w-56">
+                  {#each $cloudKinds$ as kind (kind)}
+                    <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
+                      {cloudProviderName(kind)}
+                    </Menu.Item>
+                  {/each}
+                </Menu.SubContent>
+              </Menu.Sub>
+            {/if}
+          </Menu.Content>
+        </Menu.Root>
+      {/if}
+    </div>
+  {/if}
 
   {#if removeError}
     <div
@@ -493,9 +490,6 @@
       </Button>
     </div>
   {/if}
-
-  {#if !$orderVisible$}<RemoteMachinesSection />{/if}
-  <BackendsWithAccessSection />
 </div>
 
 {#snippet orderedRow(entry: MachineOrderRow, order: MachineOrderControls)}

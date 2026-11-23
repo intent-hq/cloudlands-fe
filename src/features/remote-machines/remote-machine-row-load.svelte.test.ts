@@ -6,14 +6,14 @@
  * host's CPU and memory. A runner that is not connected falls back to this
  * host's agents there.
  */
-import { render, waitFor, within } from '@testing-library/svelte';
+import { render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { store } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { setupMachineOrderFixture } from '../../test/machine-order-preview';
 import { setupNodesFixture } from '../../test/nodes-preview';
 import MachineLoad from './MachineLoad.svelte';
-import MachineName from './MachineName.svelte';
 import { machineLoadFacts } from './remote-machines-messages';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 
@@ -44,7 +44,7 @@ describe('runner load on a machine row', () => {
     expect(document.querySelectorAll('[data-machine-load]')).toHaveLength(1);
   });
 
-  it('shows the count at 0 when the runner reports CPU and memory, with load facts in the name tooltip', async () => {
+  it('shows the count at 0 when the runner reports CPU and memory, and lists only the reported facts', () => {
     store.init();
     const machine: RemoteMachine = {
       id: 'd-idle',
@@ -64,29 +64,10 @@ describe('runner load on a machine row', () => {
     const { container } = render(MachineLoad, { props: { machine } });
     expect(container.querySelector('[data-machine-load]')?.textContent).toBe('0 agents running');
 
-    render(MachineName, {
-      props: {
-        name: machine.name,
-        platform: null,
-        providers: [],
-        facts: machineLoadFacts(machine),
-        tooltipOpen: true,
-      },
-    });
-    const tooltip = await waitFor(() => {
-      const shown = document.querySelector<HTMLElement>('[data-machine-tooltip]');
-      expect(shown).not.toBeNull();
-      return shown as HTMLElement;
-    });
-    // Short label/value facts, no sentences; no CPU row when the runner does not report it.
-    expect(
-      [...tooltip.querySelectorAll('[data-machine-fact]')].map((fact) => [
-        fact.getAttribute('data-machine-fact'),
-        fact.textContent?.trim(),
-      ]),
-    ).toEqual([
-      ['Agents', '0 of 4'],
-      ['Memory', '2Gi of 16Gi'],
+    // The limit and memory become name-tooltip facts; no CPU fact when the runner does not report it.
+    expect(machineLoadFacts(machine).map((fact) => fact.label)).toEqual([
+      m.remoteMachines_details_agents_label(),
+      m.remoteMachines_details_memory_label(),
     ]);
   });
 

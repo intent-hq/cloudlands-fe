@@ -5,15 +5,14 @@
 -->
 <script lang="ts">
   import GraphIcon from 'phosphor-svelte/lib/GraphIcon';
-  import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
-  import AgentProviderIcon, {
-    hasProviderIcon,
-  } from '$features/agent/components/AgentProviderIcon.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
-  import MachinePlatformIcon from './MachinePlatformIcon.svelte';
-  import type { MachinePlatform, MachineRowProvider } from './machine-facts';
+  import {
+    machinePlatformName,
+    type MachinePlatform,
+    type MachineRowProvider,
+  } from './machine-facts';
   import type { MachineFact } from './remote-machines-messages';
 
   let {
@@ -87,12 +86,7 @@
     {#snippet content()}
       <div class="flex min-w-40 flex-col gap-3" data-machine-tooltip>
         {#if hostOnly}
-          <span class="flex items-start gap-2">
-            <span class="first-line-icon w-3.5 text-muted-foreground" aria-hidden="true">
-              <GraphIcon size={14} />
-            </span>
-            <span>{m.settings_devices_hostOnly_tooltip()}</span>
-          </span>
+          <span>{m.settings_devices_hostOnly_tooltip()}</span>
         {/if}
         {#if facts.length > 0 || hasPlatform || providers.length > 0}
           <dl
@@ -103,22 +97,16 @@
           >
             {#each facts as fact (fact.label)}
               <dt class="text-muted-foreground">{fact.label}</dt>
-              <dd class="flex min-w-0 items-start gap-2" data-machine-fact={fact.label}>
-                {#if fact.warning}
-                  <span class="first-line-icon" aria-hidden="true">{@render dot()}</span>
-                {/if}
-                <span class="wrap-anywhere">{fact.value}</span>
+              <dd
+                class={cn('min-w-0 wrap-anywhere', fact.warning && 'text-warning-ink')}
+                data-machine-fact={fact.label}
+              >
+                {fact.value}
               </dd>
             {/each}
             {#if hasPlatform}
               <dt class="text-muted-foreground">{m.settings_devices_operatingSystem_label()}</dt>
-              <dd class="min-w-0">
-                {#if platform}
-                  <MachinePlatformIcon {platform} labeled />
-                {:else}
-                  {platformFallback}
-                {/if}
-              </dd>
+              <dd class="min-w-0">{platform ? machinePlatformName(platform) : platformFallback}</dd>
             {/if}
             {#if providers.length > 0}
               <dt id={providersLabelId} class="text-muted-foreground">
@@ -127,22 +115,10 @@
               <dd
                 role="list"
                 aria-labelledby={providersLabelId}
-                class="flex min-w-0 flex-col gap-1.5"
+                class="flex min-w-0 flex-col gap-1"
               >
                 {#each providers as entry (entry.id)}
-                  <span role="listitem" class="flex min-w-0 items-start gap-2">
-                    <span
-                      class="first-line-icon w-3.5 text-muted-foreground [&_svg]:m-0"
-                      aria-hidden="true"
-                    >
-                      {#if hasProviderIcon(entry.id)}
-                        <AgentProviderIcon providerId={entry.id} size={14} monochrome />
-                      {:else}
-                        <RobotIcon size={14} />
-                      {/if}
-                    </span>
-                    <span class="wrap-anywhere">{entry.name}</span>
-                  </span>
+                  <span role="listitem" class="wrap-anywhere">{entry.name}</span>
                 {/each}
               </dd>
             {/if}

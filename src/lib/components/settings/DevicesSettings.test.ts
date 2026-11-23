@@ -293,10 +293,11 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('This computer')).toBeTruthy();
     await switchTo();
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
-    expect(dispatchSpy.mock.calls.map(([action]) => (action as { type: string }).type)).toContain(
-      'machineSetup/opened',
-    );
+    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_addHost_label() }));
+    const opened = dispatchSpy.mock.calls
+      .map(([action]) => action as { type: string; payload?: unknown[] })
+      .find((action) => action.type === 'machineSetup/opened');
+    expect(opened?.payload).toEqual(['pick', 'host']);
   });
 
   it('preserves local icon editing and Mobile configuration with personal capabilities enabled', async () => {

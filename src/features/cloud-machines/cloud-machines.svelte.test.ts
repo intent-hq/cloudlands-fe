@@ -78,7 +78,9 @@ describe('Add machine', () => {
     seed('add-cloud-menu');
     store.dispatch(setLabsRemoteAgentsEnabled(false));
     const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
-    expect(await view.findByTestId('add-machine-menu')).toBeTruthy();
+    // Nothing to add as a runner: only Add host remains.
+    expect(await view.findByTestId('add-host')).toBeTruthy();
+    expect(view.queryByTestId('add-machine-menu')).toBeNull();
     expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.queryByTestId('add-cloud-northflank')).toBeNull();
   });

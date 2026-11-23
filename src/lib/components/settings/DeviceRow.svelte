@@ -60,6 +60,7 @@
   import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
   import {
     selectCurrentBackendLabel,
+    selectExecutorBackends,
     selectLocalMachineFingerprint,
     selectRemoteMachineFailures,
     selectRemoteMachineOperations,
@@ -67,7 +68,9 @@
     selectRemoteMachinesVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import {
+    executorRevokeRequested,
     remoteMachineExposeRequested,
+    remoteMachineFailureDismissed,
     remoteMachineUnexposeRequested,
   } from '$features/remote-machines/remote-machines-slice';
   import {
@@ -79,8 +82,10 @@
   import {
     machineLoadFacts,
     needsNodeFact,
+    remoteMachineFailureMessage,
     type MachineFact,
   } from '$features/remote-machines/remote-machines-messages';
+  import { getActiveLocale } from '$lib/i18n/locale';
   import {
     machineRowNeedsNode,
     machineRowPlatform,
@@ -344,6 +349,15 @@
   // A node, or a row in the ordered runner list.
   const runnerRow = $derived(isNode || !!order);
   const showLoad = $derived(!!exposedMachine && runnerRow);
+  // Hosts that may run agents on the host this window shows: a fact and a Revoke item on its row.
+  const executorBackends$ = selectExecutorBackends();
+  const hostsWithAccess = $derived(isCurrent && $remoteSupported$ ? $executorBackends$ : []);
+  const accessFailures = $derived(
+    hostsWithAccess.flatMap((backend) => {
+      const failure = $remoteFailures$[backend.credentialId];
+      return failure ? [{ backend, failure }] : [];
+    }),
+  );
   const nameFacts = $derived.by((): MachineFact[] => {
     const pinnedVersion = $pinnedVersion$;
     const nodeFact =
@@ -365,6 +379,17 @@
         : []),
       ...(showLoad ? machineLoadFacts(exposedMachine) : []),
       ...(nodeFact ? [nodeFact] : []),
+      ...(hostsWithAccess.length > 0
+        ? [
+            {
+              label: m.remoteMachines_backends_title(),
+              value: new Intl.ListFormat(getActiveLocale(), {
+                style: 'long',
+                type: 'conjunction',
+              }).format(hostsWithAccess.map((backend) => backend.backendName)),
+            },
+          ]
+        : []),
     ];
   });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
@@ -431,6 +456,13 @@
           },
         ]
       : []),
+    ...hostsWithAccess.map((backend): ActionDefinition => ({
+      id: `revoke:${backend.credentialId}`,
+      label: m.remoteMachines_revokeAccess_label({ host: backend.backendName }),
+      icon: faLinkSlash,
+      destructive: true,
+      disabled: $remoteOperations$[backend.credentialId] === 'revoking',
+    })),
     ...(order?.actions ?? []),
   ]);
 
@@ -525,6 +557,9 @@
       case 'remove':
         onRequestRemove(device);
         break;
+      default:
+        if (id.startsWith('revoke:'))
+          appStore.dispatch(executorRevokeRequested(id.slice('revoke:'.length)));
     }
   }
 
@@ -774,6 +809,24 @@
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
+
+  {#each accessFailures as { backend, failure } (backend.credentialId)}
+    <div class="flex items-center justify-between gap-3 px-4 pb-3 sm:px-5" role="alert">
+      <p class="type-body text-danger">
+        {remoteMachineFailureMessage(failure, {
+          machine: backend.backendName,
+          backend: backend.backendName,
+        })}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={() => appStore.dispatch(remoteMachineFailureDismissed(backend.credentialId))}
+      >
+        {m.remoteMachines_failure_dismiss_label()}
+      </Button>
+    </div>
+  {/each}
 
   {#if $remoteSupported$}
     <RemoteMachineNotice

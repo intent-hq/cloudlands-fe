@@ -105,7 +105,6 @@ describe('BackendSyncSettings', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
-    expect(screen.queryByText(m.settings_backendSync_status_checking())).toBeNull();
     expect(screen.queryByText(m.settings_backendSync_status_unavailable())).toBeNull();
   });
 
@@ -128,14 +127,6 @@ describe('BackendSyncSettings', () => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
     expect(screen.queryByText(m.settings_backendSync_status_degraded())).toBeNull();
-  });
-
-  it('shows the checking line while enabled with no verdict yet', async () => {
-    mocks.syncState.value = { supported: true, enabled: true, status: null };
-    render(BackendSyncSettings);
-    await waitFor(() => {
-      expect(screen.getByText(m.settings_backendSync_status_checking())).toBeTruthy();
-    });
   });
 
   it('shows the unavailable status plus the helper-reported message', async () => {
