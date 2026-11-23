@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "Le sandbox E2B a disparu",
   "cloudMachines_error_sandboxLost_description": "E2B a supprimé le sandbox. Le travail poussé par l'agent est conservé ; son prochain message démarre un nouveau sandbox.",
   "cloudMachines_relay_host": "Relais : {host}",
-  "cloudMachines_relay_default": "Relais par défaut",
   "cloudMachines_error_relayUnreachable_title": "Votre relais est injoignable",
   "cloudMachines_error_relayUnreachable_description": "La machine cloud n’a pas pu joindre le relais à {host}. Vérifiez que le relais fonctionne, ou videz le relais dans les Réglages pour utiliser les relais par défaut, puis réessayez.",
   "cloudMachines_error_relayUnreachable_noHost_description": "La machine cloud n’a pas pu joindre votre relais. Vérifiez que le relais fonctionne, ou videz le relais dans les Réglages pour utiliser les relais par défaut, puis réessayez.",

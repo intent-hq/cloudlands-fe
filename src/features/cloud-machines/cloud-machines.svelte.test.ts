@@ -11,7 +11,6 @@ import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import {
   AGENT37_ENTRY,
   E2B_PROVIDER,
-  E2B_SANDBOXES,
   GROUPED_SANDBOXES,
   TEAM_ENTRY,
   VERCEL_ENTRY,
@@ -229,7 +228,7 @@ describe('sandboxes grouped by workspace', () => {
       row.getAttribute('data-cloud-sandbox'),
     );
   const list = (sandboxes = GROUPED_SANDBOXES) =>
-    render(CloudSandboxList, { sandboxes, entryId: E2B_PROVIDER.id, entryName: E2B_PROVIDER.name });
+    render(CloudSandboxList, { sandboxes, entryName: E2B_PROVIDER.name });
 
   it('puts groups with running sandboxes first, then running rows, newest first', () => {
     seed('sandboxes-grouped');
@@ -245,11 +244,10 @@ describe('sandboxes grouped by workspace', () => {
     expect(all.every((group) => toggle(group).getAttribute('aria-expanded') === 'true')).toBe(true);
   });
 
-  it('keeps the summary, and rows show agent, state, starter and uptime only', () => {
+  it('rows show agent, state, starter and uptime only', () => {
     seed('sandboxes-grouped');
     const view = list();
     const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
-    expect(section.textContent).toContain('Sandboxes · 4 running · 2 paused');
     const row = view.container.querySelector('[data-cloud-sandbox="sb-2"]') as HTMLElement;
     expect(row.textContent!.replace(/\s+/g, ' ').trim()).toBe(
       'Docs sweeper · Sam · 1 h 12 min Running',
@@ -322,7 +320,7 @@ describe('sandboxes grouped by workspace', () => {
     expect(view.container.querySelector('[data-cloud-relay]')).toBeNull();
   });
 
-  it('names the relay its sandboxes use, or the default relays', () => {
+  it('names a custom relay its sandboxes use, and nothing for the default relays', () => {
     const props = { entry: E2B_PROVIDER, editing: false, onEdit: () => {}, onClose: () => {} };
     seed('relay');
     const custom = render(CloudMachineRow, props);
@@ -333,9 +331,8 @@ describe('sandboxes grouped by workspace', () => {
     restore?.();
     seed('connected');
     const fallback = render(CloudMachineRow, props);
-    expect(fallback.container.querySelector('[data-cloud-relay]')?.textContent).toBe(
-      'Default relays',
-    );
+    expect(fallback.container.querySelector('[data-cloud-sandboxes]')).not.toBeNull();
+    expect(fallback.container.querySelector('[data-cloud-relay]')).toBeNull();
   });
 });
 
@@ -345,7 +342,9 @@ describe('sandbox list under a cloud runner', () => {
     view.container.querySelector(`[data-cloud-machine-row="${id}"]`) as HTMLElement;
   const toggle = (root: HTMLElement) =>
     root.querySelector('[data-cloud-sandboxes-toggle]') as HTMLButtonElement;
-  const summary = (root: HTMLElement) => toggle(root).textContent!.replace(/\s+/g, ' ').trim();
+  const counts = (root: HTMLElement) =>
+    root.querySelector('[data-cloud-sandbox-counts]')?.textContent?.replace(/\s+/g, ' ').trim();
+  const list = (root: HTMLElement) => root.querySelector('[data-cloud-sandboxes]');
   const rowCount = (root: HTMLElement) => root.querySelectorAll('[data-cloud-sandbox]').length;
   const e2bRow = () =>
     render(CloudMachineRow, {
@@ -355,22 +354,38 @@ describe('sandbox list under a cloud runner', () => {
       onClose: () => {},
     });
 
-  it('is collapsed by default and shows the running and paused counts', () => {
+  it('is one row by default, with the running and paused counts on it', () => {
     seed('connected', collapsed);
     const view = e2bRow();
-    const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
-    expect(toggle(section).getAttribute('aria-expanded')).toBe('false');
-    expect(summary(section)).toBe('Sandboxes · 2 running · 1 paused');
-    expect(rowCount(section)).toBe(0);
-    expect(section.querySelector('[data-cloud-sandbox-group]')).toBeNull();
-    expect(section.querySelector('[data-cloud-relay]')).not.toBeNull();
+    expect(toggle(view.container).getAttribute('aria-expanded')).toBe('false');
+    expect(counts(view.container)).toBe('2 running · 1 paused');
+    expect(list(view.container)).toBeNull();
+    expect(view.queryByText('E2B dashboard')).toBeNull();
   });
 
-  it('expands and collapses, and remembers it per runner for the session', async () => {
+  it('opens from the row and keeps the counts on it', async () => {
+    seed('connected', collapsed);
+    const view = e2bRow();
+    await fireEvent.click(view.container.querySelector('[data-slot="list-row"]')!);
+    expect(toggle(view.container).getAttribute('aria-expanded')).toBe('true');
+    expect(rowCount(view.container)).toBe(3);
+    expect(counts(view.container)).toBe('2 running · 1 paused');
+    expect(list(view.container)?.textContent).toContain('E2B dashboard');
+    await fireEvent.click(toggle(view.container));
+    expect(list(view.container)).toBeNull();
+  });
+
+  it('does not toggle from the row menu', async () => {
+    seed('connected', collapsed);
+    const view = e2bRow();
+    await fireEvent.click(view.getByRole('button', { name: /Actions for E2B/ }));
+    expect(toggle(view.container).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('remembers open or collapsed per runner for the session', async () => {
     seed('entries', collapsed);
     const view = render(DevicesSettings);
     await fireEvent.click(toggle(row(view, 'e2b')));
-    expect(toggle(row(view, 'e2b')).getAttribute('aria-expanded')).toBe('true');
     expect(rowCount(row(view, 'e2b'))).toBe(3);
     expect(rowCount(row(view, TEAM_ENTRY.id))).toBe(0);
 
@@ -378,8 +393,6 @@ describe('sandbox list under a cloud runner', () => {
     const again = render(DevicesSettings);
     expect(rowCount(row(again, 'e2b'))).toBe(3);
     expect(toggle(row(again, TEAM_ENTRY.id)).getAttribute('aria-expanded')).toBe('false');
-    await fireEvent.click(toggle(row(again, 'e2b')));
-    expect(rowCount(row(again, 'e2b'))).toBe(0);
   });
 
   it('keeps each workspace group collapsible once the list is open', async () => {
@@ -392,30 +405,28 @@ describe('sandbox list under a cloud runner', () => {
     expect(rowCount(view.container)).toBe(2);
   });
 
-  it('leaves out a zero count, and every count when none run or are paused', () => {
+  it('opens a collapsed list while a sandbox there has failed, so the error shows', () => {
     seed('connected', collapsed);
-    const paused = E2B_SANDBOXES.filter((machine) => machine.cloud?.state === 'paused');
-    const onlyPaused = render(CloudSandboxList, { sandboxes: paused, entryId: 'e2b' });
-    expect(summary(onlyPaused.container)).toBe('Sandboxes · 1 paused');
-    onlyPaused.unmount();
-
-    const running = E2B_SANDBOXES.filter((machine) => machine.cloud?.state === 'running');
-    const onlyRunning = render(CloudSandboxList, { sandboxes: running, entryId: 'e2b' });
-    expect(summary(onlyRunning.container)).toBe('Sandboxes · 2 running');
-    onlyRunning.unmount();
-
-    const settling = E2B_SANDBOXES.map((machine, index) => ({
-      ...machine,
-      cloud: { ...machine.cloud!, state: index === 0 ? 'pausing' : 'resuming' },
-    }));
-    const none = render(CloudSandboxList, { sandboxes: settling, entryId: 'e2b' });
-    expect(summary(none.container)).toBe('Sandboxes');
+    store.dispatch(cloudMachineOperationSettled('sb-1', { message: 'Pause failed' }));
+    const view = e2bRow();
+    expect(toggle(view.container).getAttribute('aria-expanded')).toBe('true');
+    expect(view.getByRole('alert').textContent).toContain('Pause failed');
   });
 
-  it("names an Agent37 runner's list Instances", () => {
+  it('has no toggle or counts without sandboxes', () => {
+    seed('connected-no-sandboxes', collapsed);
+    const view = e2bRow();
+    expect(toggle(view.container)).toBeNull();
+    expect(counts(view.container)).toBeUndefined();
+  });
+
+  it("names an Agent37 runner's list Instances", async () => {
     seed('agent37-providers', collapsed);
     const view = render(DevicesSettings);
-    expect(summary(row(view, AGENT37_ENTRY.id))).toBe('Instances · 1 running · 1 paused');
+    const agent37 = row(view, AGENT37_ENTRY.id);
+    expect(counts(agent37)).toBe('1 running · 1 paused');
+    await fireEvent.click(toggle(agent37));
+    expect(list(agent37)?.textContent).toContain('Instances');
   });
 });
 

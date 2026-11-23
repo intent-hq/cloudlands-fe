@@ -187,16 +187,24 @@ function relayHost(url: string): string {
 }
 
 /**
- * The relay an entry's running sandboxes use; null without one, since a paused
- * sandbox picks up the current setting only at its next resume.
+ * The custom relay an entry's running sandboxes use; null for the default relays
+ * or without a running sandbox, since a paused one picks up the setting at resume.
  */
 export function cloudEntryRelayLabel(sandboxes: readonly RemoteMachine[]): string | null {
-  const sandbox = sandboxes.find((row) => row.cloud?.state === 'running');
-  if (!sandbox?.cloud) return null;
-  const url = sandbox.cloud.relayUrl;
-  return url
-    ? m.cloudMachines_relay_host({ host: relayHost(url) })
-    : m.cloudMachines_relay_default();
+  const url = sandboxes.find((row) => row.cloud?.state === 'running')?.cloud?.relayUrl;
+  return url ? m.cloudMachines_relay_host({ host: relayHost(url) }) : null;
+}
+
+/** "2 running · 1 paused" with a zero count left out; null when none run or are paused. */
+export function cloudSandboxCountsLabel(sandboxes: readonly RemoteMachine[]): string | null {
+  const count = (state: string) => sandboxes.filter((row) => row.cloud?.state === state).length;
+  const running = count('running');
+  const paused = count('paused');
+  const parts = [
+    running > 0 ? m.cloudMachines_sandboxes_running_count({ count: String(running) }) : null,
+    paused > 0 ? m.cloudMachines_sandboxes_paused_count({ count: String(paused) }) : null,
+  ].filter((part) => part !== null);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** Sandboxes of one workspace; `key` is the workspace id, or "" for Other. */

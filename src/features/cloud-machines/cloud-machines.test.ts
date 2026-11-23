@@ -63,6 +63,7 @@ import { cloudProfileBlockReason, startOnCloud } from './cloud-machines-selector
 import {
   cloudDashboardUrl,
   cloudEntryRelayLabel,
+  cloudSandboxCountsLabel,
   cloudErrorText,
   formatUptime,
   liveRunningSeconds,
@@ -898,11 +899,11 @@ describe('self-hosted relay', () => {
     ).not.toHaveProperty('relayUrl');
   });
 
-  it('names the relay of a running sandbox only, since a paused one changes at resume', () => {
+  it('names a custom relay of a running sandbox only, since a paused one changes at resume', () => {
     const [running, , paused] = E2B_SANDBOXES;
     expect(cloudEntryRelayLabel([])).toBeNull();
     expect(cloudEntryRelayLabel([withRelay(paused!, RELAY)])).toBeNull();
-    expect(cloudEntryRelayLabel([withRelay(running!)])).toBe(m.cloudMachines_relay_default());
+    expect(cloudEntryRelayLabel([withRelay(running!)])).toBeNull();
     expect(
       cloudEntryRelayLabel([
         withRelay(paused!, 'https://old.example.com/map'),
@@ -912,6 +913,16 @@ describe('self-hosted relay', () => {
     expect(cloudEntryRelayLabel([withRelay(running!, 'not a url')])).toBe(
       m.cloudMachines_relay_host({ host: 'not a url' }),
     );
+  });
+
+  it('counts running and paused sandboxes, leaving out a zero count', () => {
+    const [running, , paused] = E2B_SANDBOXES;
+    const settling = (state: string) => ({ ...running!, cloud: { ...running!.cloud!, state } });
+    expect(cloudSandboxCountsLabel(E2B_SANDBOXES)).toBe('2 running · 1 paused');
+    expect(cloudSandboxCountsLabel([running!])).toBe('1 running');
+    expect(cloudSandboxCountsLabel([paused!])).toBe('1 paused');
+    expect(cloudSandboxCountsLabel([settling('pausing'), settling('resuming')])).toBeNull();
+    expect(cloudSandboxCountsLabel([])).toBeNull();
   });
 
   it('reads relay-unreachable with the relay it could not use', () => {

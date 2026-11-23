@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "E2B 샌드박스가 사라졌습니다",
   "cloudMachines_error_sandboxLost_description": "E2B가 샌드박스를 제거했습니다. 에이전트가 푸시한 작업은 유지되며, 다음 메시지가 새 샌드박스를 시작합니다.",
   "cloudMachines_relay_host": "릴레이: {host}",
-  "cloudMachines_relay_default": "기본 릴레이",
   "cloudMachines_error_relayUnreachable_title": "릴레이에 연결할 수 없습니다",
   "cloudMachines_error_relayUnreachable_description": "클라우드 머신이 {host}의 릴레이에 연결하지 못했습니다. 릴레이가 실행 중인지 확인하거나, 설정에서 릴레이를 비워 기본 릴레이를 사용한 다음 다시 시도하세요.",
   "cloudMachines_error_relayUnreachable_noHost_description": "클라우드 머신이 릴레이에 연결하지 못했습니다. 릴레이가 실행 중인지 확인하거나, 설정에서 릴레이를 비워 기본 릴레이를 사용한 다음 다시 시도하세요.",

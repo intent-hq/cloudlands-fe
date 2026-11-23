@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "The E2B sandbox is gone",
   "cloudMachines_error_sandboxLost_description": "E2B removed the sandbox. The work the agent pushed is kept; its next message starts a new sandbox.",
   "cloudMachines_relay_host": "Relay: {host}",
-  "cloudMachines_relay_default": "Default relays",
   "cloudMachines_error_relayUnreachable_title": "Can't reach your relay",
   "cloudMachines_error_relayUnreachable_description": "The cloud machine could not reach the relay at {host}. Check that the relay is running, or clear the relay in Settings to use the default relays, then try again.",
   "cloudMachines_error_relayUnreachable_noHost_description": "The cloud machine could not reach your relay. Check that the relay is running, or clear the relay in Settings to use the default relays, then try again.",

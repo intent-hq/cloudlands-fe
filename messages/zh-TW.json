@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "E2B 沙盒已不存在",
   "cloudMachines_error_sandboxLost_description": "E2B 移除了該沙盒。代理已推送的工作會保留；它的下一則訊息會啟動新的沙盒。",
   "cloudMachines_relay_host": "中繼：{host}",
-  "cloudMachines_relay_default": "預設中繼",
   "cloudMachines_error_relayUnreachable_title": "無法連線到你的中繼",
   "cloudMachines_error_relayUnreachable_description": "雲端機器無法連線到 {host} 上的中繼。請確認中繼正在執行，或在設定中清空中繼以使用預設中繼，然後再試一次。",
   "cloudMachines_error_relayUnreachable_noHost_description": "雲端機器無法連線到你的中繼。請確認中繼正在執行，或在設定中清空中繼以使用預設中繼，然後再試一次。",

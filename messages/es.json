@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "El sandbox de E2B ya no existe",
   "cloudMachines_error_sandboxLost_description": "E2B eliminó el sandbox. El trabajo que el agente subió se conserva; su siguiente mensaje inicia un sandbox nuevo.",
   "cloudMachines_relay_host": "Relé: {host}",
-  "cloudMachines_relay_default": "Relés predeterminados",
   "cloudMachines_error_relayUnreachable_title": "No se puede acceder a tu relé",
   "cloudMachines_error_relayUnreachable_description": "La máquina en la nube no pudo acceder al relé en {host}. Comprueba que el relé esté funcionando, o borra el relé en Ajustes para usar los relés predeterminados, y vuelve a intentarlo.",
   "cloudMachines_error_relayUnreachable_noHost_description": "La máquina en la nube no pudo acceder a tu relé. Comprueba que el relé esté funcionando, o borra el relé en Ajustes para usar los relés predeterminados, y vuelve a intentarlo.",

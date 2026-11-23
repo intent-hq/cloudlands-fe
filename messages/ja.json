@@ -8711,7 +8711,6 @@
   "cloudMachines_error_sandboxLost_title": "E2B サンドボックスがなくなりました",
   "cloudMachines_error_sandboxLost_description": "E2B がサンドボックスを削除しました。エージェントがプッシュした作業は残っています。次のメッセージで新しいサンドボックスが起動します。",
   "cloudMachines_relay_host": "リレー: {host}",
-  "cloudMachines_relay_default": "既定のリレー",
   "cloudMachines_error_relayUnreachable_title": "リレーに接続できません",
   "cloudMachines_error_relayUnreachable_description": "クラウドマシンが {host} のリレーに接続できませんでした。リレーが動作しているか確認するか、設定でリレーを空にして既定のリレーを使ってから、もう一度お試しください。",
   "cloudMachines_error_relayUnreachable_noHost_description": "クラウドマシンがリレーに接続できませんでした。リレーが動作しているか確認するか、設定でリレーを空にして既定のリレーを使ってから、もう一度お試しください。",
