@@ -13,6 +13,9 @@ import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { setupMachineOrderFixture } from '../../test/machine-order-preview';
 import { setupNodesFixture } from '../../test/nodes-preview';
 import MachineLoad from './MachineLoad.svelte';
+import MachineName from './MachineName.svelte';
+import { machineLoadFacts } from './remote-machines-messages';
+import type { RemoteMachine } from '$shared/types/remote-machines';
 
 let restore: (() => void) | null = null;
 afterEach(() => {
@@ -41,38 +44,49 @@ describe('runner load on a machine row', () => {
     expect(document.querySelectorAll('[data-machine-load]')).toHaveLength(1);
   });
 
-  it('shows the count at 0 when the runner reports CPU and memory, so the tooltip is reachable', async () => {
+  it('shows the count at 0 when the runner reports CPU and memory, with load facts in the name tooltip', async () => {
     store.init();
-    const { container } = render(MachineLoad, {
+    const machine: RemoteMachine = {
+      id: 'd-idle',
+      name: 'Idle runner',
+      hosts: [],
+      port: 1,
+      fingerprint: 'EE',
+      state: 'connected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+      capabilities: {
+        providers: [],
+        capacity: { runningAgents: 0, agentCap: 4 },
+        resources: { memoryUsedBytes: 2 * 1024 ** 3, memoryTotalBytes: 16 * 1024 ** 3 },
+      },
+    };
+    const { container } = render(MachineLoad, { props: { machine } });
+    expect(container.querySelector('[data-machine-load]')?.textContent).toBe('0 agents running');
+
+    render(MachineName, {
       props: {
+        name: machine.name,
+        platform: null,
+        providers: [],
+        facts: machineLoadFacts(machine),
         tooltipOpen: true,
-        machine: {
-          id: 'd-idle',
-          name: 'Idle runner',
-          hosts: [],
-          port: 1,
-          fingerprint: 'EE',
-          state: 'connected',
-          runningAgents: 0,
-          addedAt: '2026-11-01T00:00:00Z',
-          capabilities: {
-            providers: [],
-            capacity: { runningAgents: 0, agentCap: 4 },
-            resources: { memoryUsedBytes: 2 * 1024 ** 3, memoryTotalBytes: 16 * 1024 ** 3 },
-          },
-        },
       },
     });
-    const load = container.querySelector('[data-machine-load]') as HTMLElement;
-    expect(load.textContent).toBe('0 agents running');
     const tooltip = await waitFor(() => {
-      const shown = document.querySelector<HTMLElement>('[data-machine-load-tooltip]');
+      const shown = document.querySelector<HTMLElement>('[data-machine-tooltip]');
       expect(shown).not.toBeNull();
       return shown as HTMLElement;
     });
-    expect([...tooltip.children].map((line) => line.textContent)).toEqual([
-      "0 of 4 agent slots in use, counting agents from every host and the runner's own",
-      '2Gi of 16Gi memory in use',
+    // Short label/value facts, no sentences; no CPU row when the runner does not report it.
+    expect(
+      [...tooltip.querySelectorAll('[data-machine-fact]')].map((fact) => [
+        fact.getAttribute('data-machine-fact'),
+        fact.textContent?.trim(),
+      ]),
+    ).toEqual([
+      ['Agents', '0 of 4'],
+      ['Memory', '2Gi of 16Gi'],
     ]);
   });
 

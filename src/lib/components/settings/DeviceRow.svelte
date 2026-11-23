@@ -77,8 +77,9 @@
   import MachineName from '$features/remote-machines/MachineName.svelte';
   import MachineProviderAvailability from '$features/remote-machines/MachineProviderAvailability.svelte';
   import {
-    machineLoadDetails,
-    needsNodeDetail,
+    machineLoadFacts,
+    needsNodeFact,
+    type MachineFact,
   } from '$features/remote-machines/remote-machines-messages';
   import {
     machineRowNeedsNode,
@@ -342,14 +343,27 @@
   });
   // Runner rows only (a node, or a row in the ordered runner list).
   const showLoad = $derived(!!exposedMachine && (isNode || !!order));
-  const nameDetails = $derived.by(() => {
-    const needsNodeLine =
+  const nameFacts = $derived.by((): MachineFact[] => {
+    const pinnedVersion = $pinnedVersion$;
+    const nodeFact =
       providers.length === 0 && !device.providers && machineRowReport(exposedMachine)
-        ? needsNodeDetail(needsNode)
+        ? needsNodeFact(needsNode)
         : null;
     return [
-      ...(showLoad ? machineLoadDetails(exposedMachine) : []),
-      ...(needsNodeLine ? [needsNodeLine] : []),
+      ...(versionWarning && device.daemonVersion && pinnedVersion
+        ? [
+            {
+              label: m.settings_devices_version_label(),
+              value: m.settings_devices_versionBehind_value({
+                daemonVersion: device.daemonVersion.replace(/^v/, ''),
+                pinnedVersion: pinnedVersion.replace(/^v/, ''),
+              }),
+              warning: true,
+            },
+          ]
+        : []),
+      ...(showLoad ? machineLoadFacts(exposedMachine) : []),
+      ...(nodeFact ? [nodeFact] : []),
     ];
   });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
@@ -713,14 +727,14 @@
         {providers}
         hostOnly={isOrchestrator}
         {versionWarning}
-        details={nameDetails}
+        facts={nameFacts}
       />
     {/snippet}
     {#snippet meta()}
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         {#if exposedMachine}
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
-          {#if showLoad}<MachineLoad machine={exposedMachine} tooltip={false} />{/if}
+          {#if showLoad}<MachineLoad machine={exposedMachine} />{/if}
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
         {/if}
