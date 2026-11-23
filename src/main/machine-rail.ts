@@ -281,9 +281,11 @@ function observeWindow(window: BrowserWindowType): void {
   window.on('leave-full-screen', relayout);
   // A window that becomes active again focuses its frame page; hand keyboard
   // focus to the machine on screen, so its shortcuts work without a click.
-  // Skip a view that already has it: refocusing re-activates the window on
-  // Linux/X11, and two frames then trade focus without end.
+  // webContents.focus() also raises its window (macOS, Linux/X11). Skip it when
+  // the view already has focus, or when the event is stale and the user has
+  // since moved to another window: otherwise two frames trade focus without end.
   window.on('focus', () => {
+    if (!window.isFocused()) return;
     const shown = getShownRendererWebContents(window);
     if (shown !== window.webContents && !shown.isDestroyed() && !shown.isFocused()) {
       shown.focus();
