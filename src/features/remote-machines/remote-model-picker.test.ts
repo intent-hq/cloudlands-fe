@@ -272,6 +272,27 @@ describe('buildMachineModelGroups', () => {
     ]);
   });
 
+  it('prefers catalog labels over fallbackLabel and passes the base provider id', () => {
+    const seen: string[] = [];
+    const groups = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'claude-code': [{ value: 'opus', label: 'Opus 5.5' }] },
+      catalogProfiles: [],
+      fallbackLabel: (id, provider) => {
+        seen.push(`${provider}:${id}`);
+        return 'fallback';
+      },
+    });
+    expect(groups[0].options.map((option) => option.label)).toEqual([
+      'Opus 5.5',
+      'fallback',
+      'fallback',
+    ]);
+    expect(seen).toEqual(['claude-code:sonnet', 'claude-code:only-on-machine']);
+  });
+
   it('offers a signed-out Default only when it brings credentials (unknown counts as yes)', () => {
     expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
     const build = (
