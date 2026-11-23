@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import { AgentStatus, type AgentSession } from '$shared/types';
+import type { GoalSetBy } from '$shared/types/agent-session';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import {
   bulkUpsertSessions,
@@ -24,7 +25,7 @@ beforeAll(() => {
 });
 afterAll(() => dispose?.());
 
-function seed(goal?: string, goalSetBy?: typeof alice): void {
+function seed(goal?: string, goalSetBy?: GoalSetBy): void {
   store.dispatch(
     bulkUpsertSessions([
       {
