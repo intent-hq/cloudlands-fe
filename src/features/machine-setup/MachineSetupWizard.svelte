@@ -86,7 +86,7 @@
   });
 
   type PickId = 'paste' | 'details' | 'backend' | 'node';
-  const pickCards = $derived([
+  const allPickCards = $derived([
     {
       id: 'paste' as PickId,
       icon: faLink,
@@ -116,6 +116,16 @@
         ]
       : []),
   ]);
+  // Add host offers only host cards; Add runner only the runner card.
+  const pickCards = $derived(
+    allPickCards.filter((card) =>
+      setup.kind === 'host'
+        ? card.id !== 'node'
+        : setup.kind === 'runner'
+          ? card.id === 'node'
+          : true,
+    ),
+  );
 
   type MethodId = 'ssh' | 'manual';
   const methodCards = $derived([

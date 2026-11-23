@@ -30,14 +30,14 @@
     },
   });
   // An older runner: it does not push its count, so the row shows this
-  // host's agents there and no tooltip.
+  // host's agents there and the tooltip has no load facts.
   const OLDER = runner({
     capabilities: { providers: [], capacity: { runningAgents: 2, agentCap: 4 } },
   });
 
   export const preview = definePreview({
     id: 'machine-load',
-    title: "A runner row's agent count and its CPU and memory tooltip",
+    title: "A runner row's agent count, with agents, CPU and memory in its name tooltip",
     defaultState: 'busy',
     states: {
       busy: { props: { machine: BUSY } },
@@ -50,12 +50,19 @@
 
 <script lang="ts">
   import MachineLoad from './MachineLoad.svelte';
+  import MachineName from './MachineName.svelte';
+  import { machineLoadFacts } from './remote-machines-messages';
   let { machine }: { machine: RemoteMachine } = $props();
 </script>
 
-<!-- The tooltip opens above the count, so the count sits low in the frame. -->
-<div
-  class="flex h-48 w-full min-w-0 items-end justify-center bg-background p-6 text-sm text-foreground"
->
-  <span class="text-muted-foreground"><MachineLoad {machine} tooltipOpen /></span>
+<!-- The name tooltip opens above the row, so the row sits low in the frame. -->
+<div class="flex h-56 w-full min-w-0 items-end gap-2 bg-background p-6 text-sm text-foreground">
+  <MachineName
+    name={machine.name}
+    platform={null}
+    providers={[]}
+    facts={machineLoadFacts(machine)}
+    tooltipOpen
+  />
+  <span class="text-muted-foreground"><MachineLoad {machine} /></span>
 </div>

@@ -89,12 +89,12 @@ vi.mock('$lib/components/ui/toast', () => ({
 
 import DevicesSettings from './DevicesSettings.svelte';
 
-/** Click the visible Switch to button on a host row. */
+/** Pick Switch to from a host row's actions menu. */
 async function switchTo(deviceName = 'Studio Mac') {
-  const row = screen.getByText(deviceName).closest('article') as HTMLElement;
-  await fireEvent.click(
-    within(row).getByRole('button', { name: m.settings_devices_switchTo_label() }),
-  );
+  await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
+  const item = await screen.findByRole('menuitem', { name: m.settings_devices_switchTo_label() });
+  await fireEvent.click(item);
+  await waitForLayerExit(item);
 }
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
@@ -293,10 +293,11 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('This computer')).toBeTruthy();
     await switchTo();
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
-    expect(dispatchSpy.mock.calls.map(([action]) => (action as { type: string }).type)).toContain(
-      'machineSetup/opened',
-    );
+    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_addHost_label() }));
+    const opened = dispatchSpy.mock.calls
+      .map(([action]) => action as { type: string; payload?: unknown[] })
+      .find((action) => action.type === 'machineSetup/opened');
+    expect(opened?.payload).toEqual(['pick', 'host']);
   });
 
   it('preserves local icon editing and Mobile configuration with personal capabilities enabled', async () => {
@@ -613,7 +614,9 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
 
       // Version warnings stay informational even without update support.
-      expect(screen.getAllByRole('button', { name: '0.9.0' })).toHaveLength(2);
+      expect(
+        screen.getAllByRole('img', { name: /intentd v0\.9\.0 is older than the bundled version/ }),
+      ).toHaveLength(2);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
       await screen.findByRole('menuitem', { name: 'Edit' });
@@ -1043,8 +1046,11 @@ describe('DevicesSettings', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
       await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
-      expect(await screen.findByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+      const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
+      // The Hosts sync row reports the same failed write on its own.
+      expect((await within(form).findByRole('alert')).textContent).toContain(
+        m.settings_devices_enableSync_error(),
+      );
     });
 
     it('disables the cloud toggle with an explanation where keychain sync is unsupported', async () => {

@@ -17,7 +17,7 @@ import OnboardingAgentMachinesNotice from './OnboardingAgentMachinesNotice.svelt
 
 const openButton = (root: HTMLElement) =>
   Array.from(root.querySelectorAll('button')).find((b) =>
-    (b.textContent ?? '').includes('Open Settings → Hosts'),
+    (b.textContent ?? '').includes('Open Settings → Machines'),
   );
 
 beforeEach(() => mocks.goto.mockReset());

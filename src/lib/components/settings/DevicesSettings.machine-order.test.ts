@@ -11,7 +11,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
-import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
@@ -138,9 +137,7 @@ function asMember() {
 }
 
 function orderedSection() {
-  return screen.getByRole('region', {
-    name: m.remoteMachines_order_title({ backend: m.layout_daemonStatus_localConnection_label() }),
-  });
+  return screen.getByRole('region', { name: m.nodes_section_title() });
 }
 
 /** The row ids of the ordered list, top to bottom. */
@@ -192,7 +189,7 @@ describe('Settings → Machines with machineOrder: 1', () => {
     seed();
     render(DevicesSettings);
 
-    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    const hosts = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(within(hosts).queryByRole('article', { name: 'Spare box' })).not.toBeNull();
     expect(within(hosts).queryByRole('article', { name: 'Studio Mac' })).not.toBeNull();
     // Its runner row is the plain runner row: the host row (and its edit
@@ -354,13 +351,7 @@ describe('Settings → Machines with machineOrder: 1', () => {
     seed({ order: [ORDER[1]] });
     render(DevicesSettings);
 
-    expect(
-      screen.getByText(
-        m.remoteMachines_order_description({
-          backend: m.layout_daemonStatus_localConnection_label(),
-        }),
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(m.remoteMachines_order_description())).toBeTruthy();
     expect(orderedSection().querySelector('[data-machine-order-handle]')).toBeNull();
   });
 });
@@ -396,9 +387,7 @@ describe('Settings → Machines against another backend', () => {
   }
 
   function remoteOrderedSection() {
-    return screen.getByRole('region', {
-      name: m.remoteMachines_order_title({ backend: formatConnectionLabel(spare) }),
-    });
+    return screen.getByRole('region', { name: m.nodes_section_title() });
   }
 
   // cloudlands-fe#4494 follow-up: the host row of this computer shows once.
@@ -407,7 +396,7 @@ describe('Settings → Machines against another backend', () => {
     render(DevicesSettings);
 
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
-    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    const hosts = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(hosts.querySelector('#device-local-name')).not.toBeNull();
     const row = remoteOrderedSection().querySelector<HTMLElement>(
       '[data-machine-order-row="machine:d-laptop"]',
@@ -429,7 +418,7 @@ describe('Settings → Machines against another backend', () => {
     );
     render(DevicesSettings);
 
-    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
+    const machines = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(machines.querySelector('#device-local-name')).not.toBeNull();
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
   });
@@ -478,20 +467,29 @@ describe('Settings → Machines against another backend', () => {
     ).not.toBeNull();
   });
 
-  it('offers Switch to on every other host and shows Current on this one', async () => {
+  it('offers Switch to in the menu of every other host and shows Current on this one', async () => {
     seedRemoteBackend();
     render(DevicesSettings);
 
     const hostRow = (id: string) =>
-      document.querySelector(`#device-${id}-name`)!.closest('article')!;
+      document.querySelector<HTMLElement>(`#device-${id}-name`)!.closest('article')!;
     expect(hostRow('spare').querySelector('[data-current-host]')?.textContent).toBe(
       m.settings_devices_current_label(),
     );
-    expect(hostRow('spare').querySelector('[data-switch-to-host]')).toBeNull();
-    expect(hostRow('local').querySelector('[data-switch-to-host]')).not.toBeNull();
+    // Switch to lives in the row menu, never as a button on the row.
+    expect(
+      within(hostRow('local')).queryByRole('button', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
+    await openMenu(hostRow('spare'));
+    await screen.findByRole('menuitem', { name: m.settings_devices_edit_label() });
+    expect(
+      screen.queryByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
+    await fireEvent.keyDown(document.body, { key: 'Escape' });
 
+    await openMenu(hostRow('studio'));
     await fireEvent.click(
-      within(hostRow('studio')).getByRole('button', { name: m.settings_devices_switchTo_label() }),
+      await screen.findByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
     );
     const requested = dispatch.mock.calls
       .map(([action]) => action as { type: string; payload?: { intent?: unknown } })
@@ -501,7 +499,7 @@ describe('Settings → Machines against another backend', () => {
     ]);
   });
 
-  it('offers no Switch to on a runner-only node', () => {
+  it('offers no Switch to on a runner-only node', async () => {
     const node: ConnectionRecord = { ...spare, id: 'gpu', label: 'GPU node', daemonMode: 'node' };
     seedRemoteBackend();
     store.dispatch(
@@ -513,9 +511,13 @@ describe('Settings → Machines against another backend', () => {
     );
     render(DevicesSettings);
 
-    const row = document.querySelector('#device-gpu-name')!.closest('article')!;
-    expect(row.querySelector('[data-switch-to-host]')).toBeNull();
+    const row = document.querySelector<HTMLElement>('#device-gpu-name')!.closest('article')!;
     expect(row.querySelector('[data-current-host]')).toBeNull();
+    await openMenu(row);
+    await screen.findByRole('menuitem', { name: m.settings_devices_edit_label() });
+    expect(
+      screen.queryByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
   });
 
   it('lists a regular host as its own runner', () => {

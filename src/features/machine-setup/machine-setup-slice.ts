@@ -56,9 +56,13 @@ export interface SshRunState {
   remoteTurnedOn: boolean;
 }
 
+/** Which cards the wizard offers: hosts only, runners only, or both (null). */
+export type MachineSetupKind = 'host' | 'runner' | null;
+
 export interface MachineSetupState {
   open: boolean;
   screen: MachineSetupScreen;
+  kind: MachineSetupKind;
   target: MachineSetupTarget;
   ssh: SshRunState | null;
   /** The last SSH login (no secret), to prefill the next one. */
@@ -72,15 +76,16 @@ const SSH_LOG_LIMIT = 400;
 const initialState: MachineSetupState = {
   open: false,
   screen: 'pick',
+  kind: null,
   target: 'backend',
   ssh: null,
   lastLogin: null,
   agentAvailable: null,
 };
 
-/** Open the wizard on its cards (the Add machine menu, the rail). */
+/** Open the wizard on its cards (Add host, Add runner, the rail). */
 export const machineSetupOpened =
-  createAction<[screen?: MachineSetupScreen]>('machineSetup/opened');
+  createAction<[screen?: MachineSetupScreen, kind?: MachineSetupKind]>('machineSetup/opened');
 /** Close it: stops a paste test or an SSH run; nothing more is saved. */
 export const machineSetupClosed = createAction('machineSetup/closed');
 /** Show another screen (cards, Back). */
@@ -125,10 +130,11 @@ export const sshSetupDone = createAction<[lingerUser: string | null, remoteTurne
 
 export const machineSetupReducer = createReducer<MachineSetupState>(initialState);
 
-machineSetupReducer.with(machineSetupOpened, (state, { payload: [screen] }) => ({
+machineSetupReducer.with(machineSetupOpened, (state, { payload: [screen, kind] }) => ({
   ...state,
   open: true,
   screen: screen ?? 'pick',
+  kind: kind ?? null,
   target: 'backend',
   ssh: null,
 }));

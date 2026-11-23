@@ -73,7 +73,7 @@ export function sortByMachineOrder<T extends { id: string; kind?: 'machine' | 'c
 }
 
 /**
- * The runners a host lists in Settings → Hosts: its stored order, without the
+ * The runners a host lists in Settings → Machines: its stored order, without the
  * host's own row (`kind: "local"`) while it runs as an orchestrator, which
  * never runs agents itself (PROTOCOL `methods/nodes.md` → "Orchestrator mode").
  */

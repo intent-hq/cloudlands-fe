@@ -192,7 +192,7 @@ describe('openBrowserAccessBackend', () => {
     expect(open).toHaveBeenCalledWith('/?backend=remote-1', '_blank', 'noopener');
   });
 
-  it("lands Switch to on the opened host's Settings → Hosts", () => {
+  it("lands Switch to on the opened host's Settings → Machines", () => {
     const open = vi.fn();
     openBrowserAccessBackend('remote-1', open, vi.fn(), false, '/settings?tab=devices');
     expect(open).toHaveBeenCalledWith(

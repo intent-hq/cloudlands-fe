@@ -39,7 +39,7 @@
 
   function setupStartOnFixture(scenario: string) {
     if (scenario.startsWith('start-on-orchestrator'))
-      // An orchestrator: Mac Studio is first in Settings → Hosts but unreachable.
+      // An orchestrator: Mac Studio is first in Settings → Machines but unreachable.
       return setupStartOnPreview(
         [
           startOnPreviewMachine('d-studio', 'Mac Studio', 'unreachable'),
@@ -125,7 +125,7 @@
       'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
       // The open machine list: backend and machine rows both show their platform.
       'start-on-open': { props: { state: 'start-on-open' } },
-      // An orchestrator: its first usable runner in Settings → Hosts order is preselected.
+      // An orchestrator: its first usable runner in Settings → Machines order is preselected.
       'start-on-orchestrator': { props: { state: 'start-on-orchestrator' } },
       'start-on-orchestrator-open': { props: { state: 'start-on-orchestrator-open' } },
     },

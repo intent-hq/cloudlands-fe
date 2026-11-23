@@ -8,13 +8,13 @@ for (const width of [1200, 390]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 700 });
     await mount(InitialAgentPicker, { props: { state: 'start-on-unreachable' } });
-    const trigger = page.getByRole('button', { name: /^Machine / });
+    const trigger = page.getByRole('button', { name: /^Runner / });
     await expect(trigger).toContainText('intent1');
     await trigger.click();
-    const popup = page.getByRole('dialog', { name: 'Machine', exact: true });
-    const search = popup.getByRole('combobox', { name: 'Machine', exact: true });
+    const popup = page.getByRole('dialog', { name: 'Runner', exact: true });
+    const search = popup.getByRole('combobox', { name: 'Runner', exact: true });
     await expect(search).toBeFocused();
-    await expect(search).toHaveAttribute('placeholder', 'Search machines');
+    await expect(search).toHaveAttribute('placeholder', 'Search runners');
     await expect(popup).toBeInViewport({ ratio: 1 });
     await expect(popup.getByRole('option', { name: /^Lab PC/ })).toHaveAttribute(
       'aria-disabled',
@@ -55,7 +55,7 @@ for (const width of [1200, 390]) {
 
 test('Model row leaves the machine to Start On', async ({ mount, page }) => {
   await mount(InitialAgentPicker, { props: { state: 'start-on-machine' } });
-  const startOn = page.getByRole('button', { name: /^Machine / });
+  const startOn = page.getByRole('button', { name: /^Runner / });
   await expect(startOn).toContainText('Mac mini');
   const model = page.getByRole('button', { name: /^Model\b/ });
   await expect(model).toBeVisible();

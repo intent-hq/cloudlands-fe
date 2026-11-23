@@ -31,7 +31,7 @@ export function formatLocalMachineLabel(_conn: { machineName?: string | null }):
 }
 
 /**
- * Settings → Hosts row label: the local entry reads "This computer"; every
+ * Settings → Machines row label: the local entry reads "This computer"; every
  * saved connection reads its plain name (the host on screen shows Current).
  */
 export function formatMachineRowLabel(

@@ -110,3 +110,9 @@ export function machineRowNeedsNode(
     .filter((provider) => provider.visible !== false && provider.status === 'prerequisite-missing')
     .map((provider) => catalogName(provider.id) ?? provider.id);
 }
+
+/** The operating system's brand name for a machine row. */
+export function machinePlatformName(platform: MachinePlatform): string {
+  // i18n-ignore (operating system brand names)
+  return { macos: 'macOS', windows: 'Windows', linux: 'Linux' }[platform];
+}

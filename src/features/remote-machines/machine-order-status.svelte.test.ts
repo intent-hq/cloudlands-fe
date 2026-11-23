@@ -44,11 +44,11 @@ describe('machine status pills in the ordered list', () => {
     expect(within(row(section, 'Team project')).queryByText(/Runs agents for/)).toBeNull();
   });
 
-  it('keeps the ready cloud entry status for assistive tech on its dot', () => {
+  it('gives a ready cloud runner no status dot', () => {
     const section = renderOrdered('owner');
     expect(
-      within(row(section, 'Team project')).getByRole('img', { name: /^Runs agents for/ }),
-    ).toBeTruthy();
+      within(row(section, 'Team project')).queryByRole('img', { name: /^Runs agents for/ }),
+    ).toBeNull();
   });
 
   it('keeps every exception pill', () => {

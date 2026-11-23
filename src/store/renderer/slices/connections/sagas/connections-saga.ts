@@ -362,7 +362,7 @@ async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenC
       undefined,
       undefined,
       pageHost.backendId === null,
-      // Switch to lands on the host's Settings → Hosts, as in the desktop app.
+      // Switch to lands on the host's Settings → Machines, as in the desktop app.
       params.switchTo ? `/settings?tab=${SWITCH_TO_SETTINGS_TAB}` : '/',
     );
   }

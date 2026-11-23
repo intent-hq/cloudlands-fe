@@ -23,7 +23,7 @@
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { remoteMachineBadge } from './remote-machines-messages';
+  import { machineLoadFacts, needsNodeFact } from './remote-machines-messages';
   import MachineLoad from './MachineLoad.svelte';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
@@ -84,21 +84,9 @@
       $connections$.find((connection) => connection.id === connectionId)?.daemonMode,
     );
   });
-  // Green while the backend holds a link to it, grey without one; a
-  // problem shows its badge colour, and the badge names it.
-  const dot = $derived.by((): { class: string; label: string | null } => {
-    if (machine.state === 'connected')
-      return {
-        class: 'bg-success',
-        label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
-      };
-    if (machine.state === 'disconnected')
-      return {
-        class: 'bg-muted-foreground/50',
-        label: m.settings_devices_statusDisconnected_label(),
-      };
-    const badge = remoteMachineBadge(machine, $backendLabel$);
-    return { class: badge.color === 'red' ? 'bg-danger' : 'bg-warning', label: null };
+  const facts = $derived.by(() => {
+    const nodeFact = providers.length === 0 && report ? needsNodeFact(needsNode) : null;
+    return [...machineLoadFacts(machine), ...(nodeFact ? [nodeFact] : [])];
   });
   const actions = $derived<ActionDefinition[]>(
     withOrderActions(
@@ -135,27 +123,18 @@
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            dot.class,
-          )}
-          role={dot.label ? 'status' : undefined}
-          aria-label={dot.label
-            ? m.settings_devices_status_ariaLabel({ status: dot.label })
-            : undefined}
-          aria-hidden={dot.label ? undefined : 'true'}
-          data-remote-machine-dot={machine.state}
-        ></span>
         <DeviceIcon record={{ os: machine.platform?.os }} size={20} class="text-foreground" />
       </span>
     {/snippet}
     {#snippet title()}
-      <MachineName name={machine.name} {platform} {platformFallback} {providers} />
+      <MachineName name={machine.name} {platform} {platformFallback} {providers} {facts} />
     {/snippet}
     {#snippet meta()}
-      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
-        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
+      <span
+        data-slot="machine-row-meta"
+        class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
+      >
+        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} showDisconnected />
         <MachineLoad {machine} />
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
