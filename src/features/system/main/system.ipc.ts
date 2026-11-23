@@ -125,6 +125,7 @@ import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc'
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { notificationClickTarget } from '../../../shared/notification-click-target';
 import { isDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';
 import { openExternal } from '../../../main/open-external';
 
@@ -1530,8 +1531,8 @@ export function setupSystemIPC() {
                 if (pending?.window !== newWindow) break;
                 if (pending.target !== target) continue;
                 contents.send('notification:navigate', {
-                  ...target,
-                  ...(target.workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+                  ...notificationClickTarget(target.workspaceId, target.agentId),
+                  ...(target.workspaceTarget ? { workspaceTarget: target.workspaceTarget } : {}),
                 });
                 break;
               }
