@@ -21,7 +21,7 @@ describe('lockedDockPlacement', () => {
     expect(lockedDockPlacement(false, display.id)).toBeNull();
   });
 
-  it('floats at the top-left of the primary display on Intent OS', () => {
+  it('floats at the top-left of the display at the layout origin on Intent OS', () => {
     expect(lockedDockPlacement(true, display.id)).toEqual({
       kind: 'floating',
       displayId: 3,

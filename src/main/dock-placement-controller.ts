@@ -132,9 +132,14 @@ export class DockPlacementController {
     this.layout();
   }
 
-  /** Intent OS: the one placement the dock may have (lockedDockPlacement), else null. */
+  /**
+   * Intent OS: the one placement the dock may have (lockedDockPlacement), else
+   * null. Its display is the one at the layout origin, where sway puts the dock
+   * (absolute 0,0), not Electron's primary display: with two screens they can
+   * differ.
+   */
   private lockedPlacement(): DockPlacement | null {
-    return lockedDockPlacement(isIntentOs(), screen.getPrimaryDisplay().id);
+    return lockedDockPlacement(isIntentOs(), screen.getDisplayNearestPoint({ x: 0, y: 0 }).id);
   }
 
   async initialize(): Promise<void> {
@@ -164,7 +169,7 @@ export class DockPlacementController {
 
   private display(): DockDisplayGeometry | null {
     if (this.displays.length === 0) return null;
-    // The primary display can change (a screen plugged in): follow it.
+    // The screens can change (one plugged in): follow the one at the origin.
     const locked = this.lockedPlacement();
     if (locked) this.placement = locked;
     return resolveDockDisplay(this.placement, this.displays, screen.getPrimaryDisplay().id);
