@@ -3,6 +3,7 @@
   import SettingsSection from './SettingsSection.svelte';
   import SettingsControl from './SettingsControl.svelte';
   import { matchesSettingsSearch, resolveSetting } from './schema';
+  import { getSettingsSearchQuery } from './settings-search-context';
   import type {
     SettingsCustomControls,
     SettingsDescriptionSnippets,
@@ -24,17 +25,23 @@
     embedded?: boolean;
     compact?: boolean;
   } = $props();
-  const sections = $derived(
+  const scopeQuery = getSettingsSearchQuery();
+  const visibleSections = (query: string) =>
     schema.sections
       .filter((section) => section.when?.() ?? true)
       .map((section) => ({
         ...section,
         entries: section.entries.filter(
-          (entry) => (entry.when?.() ?? true) && matchesSettingsSearch(entry, searchQuery),
+          (entry) => (entry.when?.() ?? true) && matchesSettingsSearch(entry, query),
         ),
       }))
-      .filter((section) => section.entries.length > 0),
-  );
+      .filter((section) => section.entries.length > 0);
+  // A page search that matched this form elsewhere (a title or status text) shows every row.
+  const sections = $derived.by(() => {
+    if (searchQuery) return visibleSections(searchQuery);
+    const scoped = visibleSections(scopeQuery());
+    return scoped.length > 0 ? scoped : visibleSections('');
+  });
   const hasLabelTarget = (kind: string) =>
     ['select', 'input', 'number', 'path', 'keybinding'].includes(kind);
 </script>

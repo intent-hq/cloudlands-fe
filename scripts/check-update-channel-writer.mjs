@@ -17,7 +17,7 @@ export const WRITER_PATH =
   'src/store/renderer/slices/user-preferences/sagas/update-channel-saga.ts';
 // UI surfaces that change the channel; each must dispatch the Redux action.
 export const DISPATCH_SITES = Object.freeze([
-  'src/routes/(app)/settings/+page.svelte',
+  'src/features/settings/sections/UpdatesSettingsSection.svelte',
   'src/lib/components/chat/proposals/settings-proposal-actions.ts',
 ]);
 

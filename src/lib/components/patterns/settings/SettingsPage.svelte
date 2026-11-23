@@ -23,6 +23,7 @@
     onSelect,
     agentsNavigation,
     hiddenTabs = [],
+    searching = false,
     sidebarHeader,
     sidebarFooter,
     children,
@@ -39,6 +40,8 @@
     agentsNavigation: Snippet;
     /** Tabs withheld from this client (e.g. administrator-only sections for a collaborator). */
     hiddenTabs?: readonly SettingsTab[];
+    /** A settings search replaces the active tab's pane, so no tab reads as current. */
+    searching?: boolean;
     sidebarHeader?: Snippet;
     sidebarFooter?: Snippet;
     children?: Snippet;
@@ -50,7 +53,12 @@
     class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar dark:border-border"
   >
     {@render sidebarHeader?.()}
-    <SettingsSidebarNav {activeTab} {onSelect} {agentsNavigation} {hiddenTabs} />
+    <SettingsSidebarNav
+      activeTab={searching ? undefined : activeTab}
+      {onSelect}
+      {agentsNavigation}
+      {hiddenTabs}
+    />
     {@render sidebarFooter?.()}
   </aside>
 

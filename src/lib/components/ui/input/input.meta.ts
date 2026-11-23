@@ -30,6 +30,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/features/onboarding/messages/LocalRepoTab.svelte',
     'src/features/onboarding/messages/NewProjectTab.svelte',
     'src/features/passkeys/PasskeyDialog.svelte',
+    'src/features/settings/search/SettingsSearchField.svelte',
     'src/lib/component-catalog/CatalogShell.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',

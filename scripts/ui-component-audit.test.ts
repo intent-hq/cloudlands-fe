@@ -180,11 +180,12 @@ describe('UI component inventory gate', () => {
     expect(toggleGroup?.callers).toEqual([
       'src/features/hud/media-editor/recording/DockRecordingSendOptions.svelte',
       'src/features/session-import/ImportSessionList.svelte',
+      'src/features/settings/sections/AppearanceSettingsSection.svelte',
+      'src/features/settings/sections/FontSettingsSection.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',
       'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
-      'src/routes/(app)/settings/+page.svelte',
     ]);
     expect(dropdownMenu?.callers.length).toBeLessThanOrEqual(11);
     expect(dropdownMenu?.callers).toEqual([...new Set(dropdownMenu?.callers)].sort());
