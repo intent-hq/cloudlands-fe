@@ -336,13 +336,13 @@
       {/snippet}
     </ListView>
     {#if !$hostManagesConnections$ && $keychainSync$?.supported}
-      <div id="backend-sync" class="scroll-mt-20"><BackendSyncSettings /></div>
+      <div id="backend-sync" class="scroll-mt-20 pt-2"><BackendSyncSettings /></div>
     {/if}
-    <div class="flex">
+    <div class="flex justify-end">
       <Button
         variant="ghost"
         size="sm"
-        class="-ml-2.5"
+        class="-mr-2.5"
         data-testid="add-host"
         onclick={() => appStore.dispatch(machineSetupOpened('pick', 'host'))}
       >
@@ -420,12 +420,12 @@
   {/snippet}
 
   {#if $remoteVisible$ || canAddCloud}
-    <div class="-mt-5 flex" data-add-runner>
+    <div class="-mt-5 flex justify-end" data-add-runner>
       {#if !canAddCloud}
         <Button
           variant="ghost"
           size="sm"
-          class="-ml-2.5"
+          class="-mr-2.5"
           data-testid="add-machine-menu"
           onclick={installRunner}
         >
@@ -439,14 +439,14 @@
                 {...props}
                 variant="ghost"
                 size="sm"
-                class="-ml-2.5"
+                class="-mr-2.5"
                 data-testid="add-machine-menu"
               >
                 {@render addLabel(m.settings_devices_addRunner_label())}
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.Content align="start" class="w-56">
+          <Menu.Content align="end" class="w-56">
             {#if $remoteVisible$}
               <Menu.Item onSelect={installRunner} data-testid="add-machine-setup">
                 {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}

@@ -86,8 +86,9 @@
   );
 </script>
 
-<!-- The label says what it does; a line shows only when sync cannot run or write. -->
+<!-- A status line shows only when sync cannot run or write. -->
 {#snippet syncDescription()}
+  <span class="block">{m.settings_backendSync_toggle_description()}</span>
   {#if !supported && loaded}
     <span class="block">{m.settings_backendSync_unsupported_description()}</span>
   {/if}
