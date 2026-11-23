@@ -519,11 +519,13 @@
       {#key $collaborationContext$}<GuestSessionsSettings />{/key}
     </div>
   {:else if id === 'passkeys'}
-    <DevicePasskeysSettings
-      passkeys={$devicePasskeys$}
-      onRetry={() => appStore.dispatch(devicePasskeysRequested())}
-      onDelete={(credentialId) => appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
-    />
+    <div id="passkeys" class="scroll-mt-20">
+      <DevicePasskeysSettings
+        passkeys={$devicePasskeys$}
+        onRetry={() => appStore.dispatch(devicePasskeysRequested())}
+        onDelete={(credentialId) => appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
+      />
+    </div>
   {:else if id === 'git-workspace'}
     <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
       <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
@@ -587,7 +589,7 @@
   {:else if id === 'agent-features'}
     <AgentFeaturesSettings />
   {:else if id === 'dock-lab'}
-    <div>
+    <div id="dock-lab" class="scroll-mt-20">
       <h2 class="type-title mb-3 text-foreground">
         {m.settings_dockLab_label()}
       </h2>
