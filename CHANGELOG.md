@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.375.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.375.0...v2.375.1) (2026-11-23)
+
+
+### 🐛 Bug Fixes
+
+* **remote-machines:** never offer an orchestrator as a runner ([#4946](https://github.com/intent-hq/cloudlands-fe/issues/4946)) ([fe53b6c](https://github.com/intent-hq/cloudlands-fe/commit/fe53b6ce1aa2023f87bdcd8253a9663ae3c6e6b4))
+* reopen the workspace tab when undoing a delete ([#4966](https://github.com/intent-hq/cloudlands-fe/issues/4966)) ([954bb7d](https://github.com/intent-hq/cloudlands-fe/commit/954bb7dbbe42f0550a5202ec686e4f7089d63784))
+
 ## [2.375.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.374.2...v2.375.0) (2026-11-23)
 
 
