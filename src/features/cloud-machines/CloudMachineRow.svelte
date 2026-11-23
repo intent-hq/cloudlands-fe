@@ -79,6 +79,8 @@
     now?: number;
     /** In the ordered runner list: Move up / Move down. */
     order?: MachineOrderControls;
+    /** Listed among hosts (older backends): the status dot keeps the hosts' icon column. */
+    statusDot?: boolean;
   }
 
   let {
@@ -91,6 +93,7 @@
     first = false,
     now,
     order,
+    statusDot = false,
   }: Props = $props();
   const kind = $derived(entry?.provider ?? newProvider);
 
@@ -241,15 +244,17 @@
   >
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            status?.dot ?? 'bg-transparent',
-          )}
-          role={pillHidden ? 'img' : undefined}
-          aria-label={pillHidden ? status?.label : undefined}
-          aria-hidden={pillHidden ? undefined : 'true'}
-        ></span>
+        {#if statusDot}
+          <span
+            class={cn(
+              'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+              status?.dot ?? 'bg-transparent',
+            )}
+            role={pillHidden ? 'img' : undefined}
+            aria-label={pillHidden ? status?.label : undefined}
+            aria-hidden={pillHidden ? undefined : 'true'}
+          ></span>
+        {/if}
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
     {/snippet}
@@ -371,7 +376,14 @@
   {:else if sandboxes.length > 0}
     <div id={listId} hidden={!listOpen}>
       {#if listOpen}
-        <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
+        <!-- Sandbox names start under the runner name: row padding + (dot) + icon + gap - sandbox dot. -->
+        <CloudSandboxList
+          {sandboxes}
+          entryName={entry.name}
+          provider={kind}
+          {now}
+          class={statusDot ? 'pl-13 sm:pl-14' : 'pl-7.5 sm:pl-8.5'}
+        />
       {/if}
     </div>
   {/if}

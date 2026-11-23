@@ -46,9 +46,11 @@ describe('remote machine rows while disconnected', () => {
     expect(within(studio).getByText('No providers ready')).toBeTruthy();
   });
 
-  it('adds no "Disconnected" pill', () => {
-    const section = renderDisconnected();
-    expect(within(row(section, 'Garage node')).queryByText(/disconnected/i)).toBeNull();
+  it('says Disconnected as plain text, not a pill', () => {
+    const garage = row(renderDisconnected(), 'Garage node');
+    const label = garage.querySelector('[data-runner-disconnected]') as HTMLElement;
+    expect(label.textContent).toBe('Disconnected');
+    expect(label.closest('[data-slot="badge"]')).toBeNull();
   });
 
   it('omits the provider availability warning on cloud rows', () => {
@@ -57,7 +59,7 @@ describe('remote machine rows while disconnected', () => {
   });
 });
 
-describe('status dots and platforms in the ordered list', () => {
+describe('runner status and platforms in the ordered list', () => {
   function renderState(state: Parameters<typeof setupMachineOrderFixture>[0]) {
     store.init();
     restore = setupMachineOrderFixture(state);
@@ -67,16 +69,15 @@ describe('status dots and platforms in the ordered list', () => {
   const dot = (element: HTMLElement) =>
     element.querySelector('[data-remote-machine-dot]') as HTMLElement;
 
-  it('greys a machine without a live link and names the state', () => {
+  it('names a runner without a live link in its meta, with no dot', () => {
     const garage = row(renderState('disconnected'), 'Garage node');
-    expect(dot(garage).dataset.remoteMachineDot).toBe('disconnected');
-    expect(dot(garage).getAttribute('aria-label')).toMatch(/disconnected/i);
+    expect(dot(garage)).toBeNull();
+    expect(within(garage).getByText('Disconnected')).toBeTruthy();
   });
 
-  it('colours a problem and leaves its name to the badge', () => {
+  it('leaves a problem to its badge, with no dot', () => {
     const garage = row(renderState('exceptions'), 'Garage node');
-    expect(dot(garage).dataset.remoteMachineDot).toBe('unreachable');
-    expect(dot(garage).getAttribute('aria-hidden')).toBe('true');
+    expect(dot(garage)).toBeNull();
     expect(within(garage).getByText('Unreachable')).toBeTruthy();
   });
 

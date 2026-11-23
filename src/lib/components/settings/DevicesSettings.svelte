@@ -297,7 +297,7 @@
             onRequestRemove={requestRemove}
           />
         {:else if item.kind === 'cloud'}
-          {@render cloudRow(item)}
+          {@render cloudRow(item, false, undefined, true)}
         {/if}
       {/snippet}
       {#snippet loading()}
@@ -508,7 +508,7 @@
   {/if}
 {/snippet}
 
-{#snippet cloudRow(item: CloudRow, first = false, order?: MachineOrderControls)}
+{#snippet cloudRow(item: CloudRow, first = false, order?: MachineOrderControls, statusDot = false)}
   {@const formKey = item.entry?.id ?? NEW_CLOUD_ENTRY}
   <CloudMachineRow
     entry={item.entry}
@@ -516,6 +516,7 @@
     initialDraft={item.entry ? undefined : initialCloudDraft}
     {first}
     {order}
+    {statusDot}
     editing={cloudEditing === formKey}
     onEdit={() => (cloudEditing = formKey)}
     onClose={() => {

@@ -46,9 +46,11 @@
     provider?: CloudProviderKind;
     /** Fixed clock for previews and tests; live otherwise. */
     now?: number;
+    /** Left padding that lines each sandbox name up with the runner's name. */
+    class?: string;
   }
 
-  let { sandboxes, entryName, provider = 'e2b', now: fixedNow }: Props = $props();
+  let { sandboxes, entryName, provider = 'e2b', now: fixedNow, class: className }: Props = $props();
   const copy = $derived(cloudProviderCopy(provider));
 
   const readAt$ = selectCloudSandboxReadAt();
@@ -184,8 +186,12 @@
   </div>
 {/snippet}
 
-<section class="space-y-1 px-4 pb-3 sm:px-5" aria-label={copy.listTitle} data-cloud-sandboxes>
-  {#if relay}<p class="type-caption text-muted-foreground" data-cloud-relay>{relay}</p>{/if}
+<section
+  class={cn('space-y-1 px-4 pb-3 sm:px-5', className)}
+  aria-label={copy.listTitle}
+  data-cloud-sandboxes
+>
+  {#if relay}<p class="pl-4.5 type-caption text-muted-foreground" data-cloud-relay>{relay}</p>{/if}
   {#each groups as group (group.key)}
     {#if group.sandboxes.length === 1}
       <!-- One sandbox needs no group: its workspace shows in the row. -->

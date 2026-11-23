@@ -341,8 +341,9 @@
       isOrchestrator ? 'orchestrator' : null,
     );
   });
-  // Runner rows only (a node, or a row in the ordered runner list).
-  const showLoad = $derived(!!exposedMachine && (isNode || !!order));
+  // A node, or a row in the ordered runner list.
+  const runnerRow = $derived(isNode || !!order);
+  const showLoad = $derived(!!exposedMachine && runnerRow);
   const nameFacts = $derived.by((): MachineFact[] => {
     const pinnedVersion = $pinnedVersion$;
     const nodeFact =
@@ -708,14 +709,15 @@
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            statusClass(openStatus),
-          )}
-          role="status"
-          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-        ></span>
+        <!-- Runner rows carry no dot: a problem shows its badge. -->
+        {#if !runnerRow}<span
+            class={cn(
+              'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+              statusClass(openStatus),
+            )}
+            role="status"
+            aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+          ></span>{/if}
         <DeviceIcon record={device} size={20} class="text-foreground" />
       </span>
     {/snippet}
@@ -731,9 +733,16 @@
       />
     {/snippet}
     {#snippet meta()}
-      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+      <span
+        data-slot="machine-row-meta"
+        class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
+      >
         {#if exposedMachine}
-          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+          <RemoteMachineBadge
+            machine={exposedMachine}
+            backendLabel={$backendLabel$}
+            showDisconnected={runnerRow}
+          />
           {#if showLoad}<MachineLoad machine={exposedMachine} />{/if}
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
