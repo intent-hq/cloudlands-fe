@@ -8,6 +8,7 @@
   "agent_contextBreakdown_owner_intent_label": "*",
   "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "browser_viewport_dimensions_label": "*",
+  "chat_goalNotice_attributed_ariaLabel": ["de", "es", "fr", "ko"],
   "chat_agentCard_background_badge": ["ja", "ko", "de"],
   "chat_agentCard_menu_harnessVersion_label": ["zh-CN", "zh-TW", "de", "fr", "es"],
   "chat_agentThread_assistant_label": ["fr"],
