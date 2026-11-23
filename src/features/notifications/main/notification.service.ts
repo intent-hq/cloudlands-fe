@@ -182,15 +182,20 @@ function pickInAppNotificationRenderer(scope: WindowHostScope): Electron.WebCont
   return null;
 }
 
-/** The click target of a notification about `workspaceId`, as the native banner routes it. */
+/**
+ * The click target of a notification about `workspaceId`: the workspace and
+ * the agent that went idle, or (chief) the Assistant thread.
+ */
 function notificationNavigateTarget(
   workspaceId: string | undefined,
   agentId: string | undefined,
 ): NotificationNavigateTarget | undefined {
   if (!workspaceId) return undefined;
-  return workspaceId === CHIEF_WORKSPACE_ID
-    ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
-    : { workspaceId };
+  return {
+    workspaceId,
+    ...(workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+    ...(agentId ? { agentId } : {}),
+  };
 }
 
 /**
@@ -1063,14 +1068,8 @@ export class NotificationService {
           });
           return;
         }
-        if (!workspaceId) return;
-        // Chief completions route to the sidebar Assistant panel (the chief
-        // workspace page is hidden); everything else keeps the bare
-        // `{ workspaceId }` payload.
-        const payload =
-          workspaceId === CHIEF_WORKSPACE_ID
-            ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
-            : { workspaceId };
+        const payload = notificationNavigateTarget(workspaceId, agentId);
+        if (!payload) return;
         const navigate = (contents: Electron.WebContents | null): void => {
           if (contents && !contents.isDestroyed()) {
             contents.send('notification:navigate', payload);
@@ -1173,26 +1172,21 @@ export class NotificationService {
   ): void {
     const frame = isMachineRailEnabled() ? framesByRecentFocus().find(isTargetFrame) : undefined;
     if (!frame) {
-      this.openWindowForNotificationClick(workspaceId, backendId);
+      this.openWindowForNotificationClick(workspaceId, backendId, agentId);
       return;
     }
     void (async () => {
       try {
         const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
-        // The Assistant has no workspace page to open: once the machine is
-        // ready its view opens the Assistant panel instead.
-        const isChief = workspaceId === CHIEF_WORKSPACE_ID;
-        const route = isChief ? undefined : workspaceId;
+        // An agent or the Assistant (no workspace page) opens once the
+        // machine's view is ready, so the machine joins on its home.
+        const navigation = notificationNavigateTarget(workspaceId, agentId);
+        const followUp = navigation?.chief || navigation?.agentId ? navigation : undefined;
+        const route = followUp ? undefined : workspaceId;
         if (await openInvitedMachineInWindow(frame, backendId, route)) {
           claimActivationFocus(frame);
           activateAppOnMac();
-          if (isChief) {
-            await selectMachineForClick(frame, backendId, {
-              workspaceId: CHIEF_WORKSPACE_ID,
-              chief: true,
-              ...(agentId ? { agentId } : {}),
-            });
-          }
+          if (followUp) await selectMachineForClick(frame, backendId, followUp);
           logger.info('Notification click added the machine to the recent frame', {
             workspaceId,
             backendId,
@@ -1214,12 +1208,14 @@ export class NotificationService {
    * fresh app window bound to the emitting backend, loaded directly on the
    * workspace route (home for
    * chief completions, whose workspace page is hidden). Loading the route
-   * up-front avoids racing a `notification:navigate` IPC against a renderer
-   * that has not registered its listeners yet.
+   * up-front, and queuing the agent for the renderer to pull, avoids racing
+   * a `notification:navigate` IPC against a renderer that has not registered
+   * its listeners yet.
    */
   private openWindowForNotificationClick(
     workspaceId?: string,
     backendId: string = LOCAL_CONNECTION_ID,
+    agentId?: string,
   ): void {
     void (async () => {
       try {
@@ -1230,7 +1226,17 @@ export class NotificationService {
         const existingMain = getMainWindow();
         const setAsMain = !existingMain || existingMain.isDestroyed();
         const { workArea } = screen.getPrimaryDisplay();
-        await createWindowForSession({ route, bounds: workArea }, setAsMain, backendId);
+        const window = await createWindowForSession(
+          { route, bounds: workArea },
+          setAsMain,
+          backendId,
+        );
+        // The renderer pulls the agent (or Assistant thread) once it starts.
+        const navigation = notificationNavigateTarget(workspaceId, agentId);
+        const contents = window ? rendererFor(window, backendId) : null;
+        if (contents && (navigation?.chief || navigation?.agentId)) {
+          deliverNotificationNavigation(contents, false, navigation);
+        }
         activateAppOnMac();
         logger.info('Notification click opened a new window (no suitable window was live)', {
           workspaceId,
