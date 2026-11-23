@@ -241,7 +241,7 @@ describe('sandboxes grouped by workspace', () => {
     expect(rowIds(view.container)).toEqual(['sb-6', 'sb-1', 'sb-4', 'sb-2', 'sb-5', 'sb-3']);
   });
 
-  it('rows show agent, workspace when ungrouped, starter, uptime and state only', () => {
+  it('rows show the agent over its workspace when ungrouped, starter and uptime, with a state dot', () => {
     seed('sandboxes-grouped');
     const view = list();
     const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
@@ -250,7 +250,12 @@ describe('sandboxes grouped by workspace', () => {
         .querySelector(`[data-cloud-sandbox="${id}"]`)!
         .textContent!.replace(/\s+/g, ' ')
         .trim();
-    expect(text('sb-2')).toBe('Docs sweeper · Protocol docs · Sam · 1 h 12 min Running');
+    expect(text('sb-2')).toBe('Docs sweeper Protocol docs · Sam · 1 h 12 min');
+    expect(
+      view.container
+        .querySelector('[data-cloud-sandbox="sb-2"] [data-cloud-sandbox-status]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Running');
     // Grouped rows and the Other workspace do not repeat a workspace.
     expect(text('sb-1')).not.toContain('Fix flaky CI');
     expect(

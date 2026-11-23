@@ -8,7 +8,8 @@
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
-  import { Badge, type BadgeColor } from '$lib/components/ui/badge';
+  import type { BadgeColor } from '$lib/components/ui/badge';
+  import { cn } from '$lib/utils';
   import { ListView } from '$lib/components/patterns/collection';
   import { Button, Tooltip } from '$lib/components/patterns/settings/custom-controls';
   import {
@@ -70,6 +71,12 @@
 
   const relay = $derived(cloudEntryRelayLabel(sandboxes));
 
+  const DOT_CLASS: Record<string, string> = {
+    green: 'bg-success',
+    gray: 'bg-muted-foreground/60',
+    amber: 'bg-warning',
+  };
+
   function stateBadge(state: string): { label: string; color: BadgeColor } {
     switch (state) {
       case 'running':
@@ -121,35 +128,34 @@
   {@const failure = failureText(machine.id)}
   {@const label = sandboxLabel(machine, entryName)}
   {@const link = activeLink($context$.agentLinks[machine.id], now)}
-  <div class="py-1" data-cloud-sandbox={machine.id} data-cloud-sandbox-state={cloud?.state}>
+  <div class="py-1.5" data-cloud-sandbox={machine.id} data-cloud-sandbox-state={cloud?.state}>
     <div class="flex items-center gap-3">
-      <!-- Narrow rows drop the workspace and starter, then the uptime, so the name and state stay. -->
-      <div class="@container flex min-w-0 flex-1 items-center gap-1.5 type-body">
-        {#if link}
-          <Button
-            variant="link"
-            size="sm"
-            class="h-auto min-w-16 shrink justify-start px-0 type-body text-foreground"
-            onclick={() => navigateToDesktopAgent(link.workspaceId, link.agentId)}
-            data-cloud-sandbox-agent-link>{label}</Button
-          >
-        {:else}
-          <span class="min-w-16 truncate text-foreground">{label}</span>
-        {/if}
-        {#if workspace}
-          <span class="shrink-0 text-muted-foreground @max-xs:hidden" aria-hidden="true">·</span>
+      <div class="flex min-w-0 flex-1 items-start gap-2.5">
+        <Tooltip content={badge.label} class="first-line-icon">
           <span
-            class="min-w-0 max-w-40 truncate text-muted-foreground @max-xs:hidden"
-            data-cloud-sandbox-workspace>{workspace}</span
-          >
-        {/if}
-        <span class="shrink-0 text-muted-foreground @max-xs:hidden" aria-hidden="true">·</span>
-        <span class="min-w-0 max-w-40 truncate text-muted-foreground @max-xs:hidden"
-          >{startedBy(machine)}</span
-        >
-        <span class="shrink-0 text-muted-foreground @max-3xs:hidden" aria-hidden="true">·</span>
-        <span class="shrink-0 text-muted-foreground @max-3xs:hidden">{formatUptime(seconds)}</span>
-        <Badge variant="dot" color={badge.color} class="ml-0.5 shrink-0">{badge.label}</Badge>
+            role="img"
+            aria-label={badge.label}
+            class={cn('size-2 rounded-full', DOT_CLASS[badge.color])}
+            data-cloud-sandbox-status
+          ></span>
+        </Tooltip>
+        <div class="min-w-0 flex-1">
+          {#if link}
+            <Button
+              variant="link"
+              size="sm"
+              class="h-auto max-w-full justify-start px-0 type-caption text-foreground"
+              onclick={() => navigateToDesktopAgent(link.workspaceId, link.agentId)}
+              data-cloud-sandbox-agent-link>{label}</Button
+            >
+          {:else}
+            <p class="truncate type-caption text-foreground">{label}</p>
+          {/if}
+          <p class="truncate type-caption text-muted-foreground" data-cloud-sandbox-details>
+            {#if workspace}<span data-cloud-sandbox-workspace>{workspace}</span
+              >{' · '}{/if}{startedBy(machine)}{' · '}{formatUptime(seconds)}
+          </p>
+        </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <Tooltip content={m.cloudMachines_pause_label()}>
@@ -179,14 +185,14 @@
       </div>
     </div>
     {#if failure}
-      <p class="type-body text-danger" role="alert">{failure}</p>
+      <p class="pl-4.5 type-caption text-danger" role="alert">{failure}</p>
     {/if}
   </div>
 {/snippet}
 
 <section class="space-y-1 px-4 pb-3 sm:px-5" aria-label={copy.listTitle} data-cloud-sandboxes>
   <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-    <p class="type-body text-muted-foreground">
+    <p class="type-caption text-muted-foreground">
       {copy.listLabel}
       {#if relay}<span class="whitespace-nowrap"
           ><span aria-hidden="true">·</span> <span data-cloud-relay>{relay}</span></span
@@ -217,7 +223,7 @@
         <Button
           variant="plain"
           size="xs"
-          class="-mx-1 h-7 max-w-full shrink gap-1.5 px-1 type-body text-muted-foreground hover:text-foreground"
+          class="-mx-1 h-7 max-w-full shrink gap-1.5 px-1 type-caption text-muted-foreground hover:text-foreground"
           labelClass="text-foreground"
           aria-expanded={open}
           aria-label={m.cloudMachines_sandboxes_group_ariaLabel_many({
