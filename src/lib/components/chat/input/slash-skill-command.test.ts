@@ -4,7 +4,9 @@ import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import {
   applySlashSkillSelection,
   findSlashCommandContext,
+  rankSlashBuiltins,
   rankSlashSkills,
+  withoutShadowedSkills,
 } from './slash-skill-command';
 
 function skill(name: string, description: string, location = `/skills/${name}`): SkillInfo {
@@ -118,5 +120,24 @@ describe('applySlashSkillSelection', () => {
       text: '/review ',
       cursorOffset: 8,
     });
+  });
+});
+
+describe('built-in slash commands', () => {
+  const goal = { name: 'goal', description: 'Pin a goal to this conversation' };
+
+  it('offers a built-in only when the slash token starts the prompt', () => {
+    const at = (prompt: string) => findSlashCommandContext(prompt)!;
+    expect(rankSlashBuiltins([goal], '/', at('/'))).toEqual([goal]);
+    expect(rankSlashBuiltins([goal], '  /go', at('  /go'))).toEqual([goal]);
+    expect(rankSlashBuiltins([goal], '/GO', at('/GO'))).toEqual([goal]);
+    expect(rankSlashBuiltins([goal], 'set /go', at('set /go'))).toEqual([]);
+    expect(rankSlashBuiltins([goal], '/review', at('/review'))).toEqual([]);
+  });
+
+  it('hides a skill shadowed by a built-in of the same name', () => {
+    const skills = [skill('goal', 'A goal skill'), skill('review', 'Review a change')];
+    expect(withoutShadowedSkills(skills, [goal]).map((entry) => entry.name)).toEqual(['review']);
+    expect(withoutShadowedSkills(skills, [])).toBe(skills);
   });
 });

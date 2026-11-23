@@ -400,3 +400,44 @@ describe('TipTapEditor slash skills', () => {
     });
   });
 });
+
+describe('TipTapEditor built-in slash commands', () => {
+  const goal = { name: 'goal', description: 'Set the conversation goal' };
+  const withGoalSkill: SkillInfo[] = [
+    ...skills,
+    { name: 'goal', description: 'A skill named goal', location: '/skills/goal' },
+  ];
+
+  it('lists /goal first at the prompt start, hides a same-named skill, and inserts plain text', async () => {
+    const { component, editor } = await mountEditor({
+      skills: withGoalSkill,
+      slashCommands: [goal],
+    });
+    component.insertText('/g');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+    const options = screen.getAllByRole('option');
+    const names = options.map((option) => option.textContent?.trim());
+    // The built-in leads; the same-named skill is hidden (fuzzy skill matches may follow).
+    expect(names[0]).toBe('goal');
+    expect(names.filter((name) => name === 'goal')).toHaveLength(1);
+    await fireEvent.click(options[0]!);
+    await waitFor(() => expect(component.getTextContent()).toBe('/goal '));
+    // Plain text, not a skill chip: the daemon reads the leading token.
+    expect(editor.querySelector('[data-type="skill-command"]')).toBeNull();
+  });
+
+  it('is not offered mid-prompt', async () => {
+    const { component } = await mountEditor({ slashCommands: [goal] });
+    component.insertText('please /go');
+    await tick();
+    expect(screen.queryByRole('option', { name: /goal/ })).toBeNull();
+  });
+
+  it('closes the menu once /goal is fully typed so Enter sends it', async () => {
+    const { component } = await mountEditor({ slashCommands: [goal] });
+    component.insertText('/goa');
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+    component.insertText('l');
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+});

@@ -55,7 +55,12 @@ import {
   takeLatestFromSelector,
   type SelectorChannelPayload,
 } from '@themislib/themis/saga';
-import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  selectConversationGoalSupported,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
+import { isGoalCommandText } from '$features/conversation-goal/utils/goal-command';
+import { sendDockGoalCommand } from './dock-goal-command';
 import { call, fork, put, take, takeLatest, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import {
   createCollection,
@@ -520,6 +525,25 @@ function* sendReply(
         !evidence))
   )
     return;
+  // A `/goal` command refuses every attachment itself, before the file limit.
+  if (
+    !retry &&
+    clickedDraft &&
+    selectConversationGoalSupported.select(appStore.state) &&
+    isGoalCommandText(clickedDraft.text)
+  ) {
+    yield* sendDockGoalCommand({
+      generation,
+      workspaceId,
+      agentId,
+      text: clickedDraft.text,
+      revision: clickedDraft.revision,
+      composerSubmissionId: prompt?.submissionId ?? null,
+      hasAttachments: blocks.imageBlocks.length > 0 || blocks.fileBlocks.length > 0 || !!evidence,
+      isCurrent: () => current(generation, authority),
+    });
+    return;
+  }
   // A restored or pasted draft can exceed the ordinary-file limit the editor enforces on add.
   // Evidence screenshots and clips are separate; refusal keeps the draft and admits nothing.
   const ordinaryFiles = clickedItems.filter(

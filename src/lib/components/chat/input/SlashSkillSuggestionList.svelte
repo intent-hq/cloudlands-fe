@@ -5,8 +5,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { menuItem } from '$lib/components/ui/menu';
+  import type { SlashBuiltinCommand } from './slash-skill-command';
 
   interface Props {
+    /** Built-in commands, listed first and selectable while skills load. */
+    commands?: readonly SlashBuiltinCommand[];
     items?: readonly SkillInfo[];
     loading?: boolean;
     error?: string | null;
@@ -16,6 +19,7 @@
     /** A muted row under the list. */
     notice?: string;
     onSelect: (skill: SkillInfo) => void;
+    onSelectCommand?: (command: SlashBuiltinCommand) => void;
     onDismiss?: () => void;
     onRetry?: () => void;
     onActiveOptionChange?: (optionId: string | undefined) => void;
@@ -23,6 +27,7 @@
 
   const componentId = $props.id();
   let {
+    commands = [],
     items = [],
     loading = false,
     error = null,
@@ -30,6 +35,7 @@
     emptyLabel,
     notice,
     onSelect,
+    onSelectCommand,
     onDismiss,
     onRetry,
     onActiveOptionChange,
@@ -38,14 +44,28 @@
   let selectedIndex = $state(0);
   let listElement = $state<HTMLDivElement>();
 
+  type Entry =
+    { kind: 'command'; command: SlashBuiltinCommand } | { kind: 'skill'; skill: SkillInfo };
+  const skillsReady = $derived(!loading && !error);
+  const entries = $derived<Entry[]>([
+    ...commands.map((command) => ({ kind: 'command' as const, command })),
+    ...(skillsReady ? items.map((skill) => ({ kind: 'skill' as const, skill })) : []),
+  ]);
   const selectedOptionId = $derived(
-    !loading && !error && items[selectedIndex] ? optionId(items[selectedIndex]) : undefined,
+    entries[selectedIndex] ? entryOptionId(entries[selectedIndex]) : undefined,
   );
   function optionId(item: SkillInfo) {
     return `${componentId}-option-${encodeURIComponent(`${item.name}:${item.location}`)}`;
   }
+  function commandOptionId(command: SlashBuiltinCommand) {
+    return `${componentId}-command-${encodeURIComponent(command.name)}`;
+  }
+  function entryOptionId(entry: Entry) {
+    return entry.kind === 'command' ? commandOptionId(entry.command) : optionId(entry.skill);
+  }
 
   $effect(() => {
+    commands;
     items;
     loading;
     error;
@@ -63,33 +83,35 @@
   }
 
   function moveSelection(delta: number) {
-    if (items.length === 0) return;
-    selectedIndex = (selectedIndex + delta + items.length) % items.length;
+    if (entries.length === 0) return;
+    selectedIndex = (selectedIndex + delta + entries.length) % entries.length;
     scrollToSelected();
   }
 
   function selectItem(index: number) {
-    const item = items[index];
-    if (item && !loading && !error) onSelect(item);
+    const entry = entries[index];
+    if (!entry) return;
+    if (entry.kind === 'command') onSelectCommand?.(entry.command);
+    else onSelect(entry.skill);
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
-    if ((loading || error) && event.key !== 'Escape') return false;
+    if (entries.length === 0 && event.key !== 'Escape') return false;
     switch (event.key) {
       case 'ArrowUp':
-        if (items.length === 0) return false;
+        if (entries.length === 0) return false;
         event.preventDefault();
         event.stopPropagation();
         moveSelection(-1);
         return true;
       case 'ArrowDown':
-        if (items.length === 0) return false;
+        if (entries.length === 0) return false;
         event.preventDefault();
         event.stopPropagation();
         moveSelection(1);
         return true;
       case 'Enter':
-        if (items.length === 0) return false;
+        if (entries.length === 0) return false;
         event.preventDefault();
         event.stopPropagation();
         selectItem(selectedIndex);
@@ -114,6 +136,52 @@
 <div
   class="slash-skill-suggestion-list w-full max-w-72 overflow-hidden rounded-(--radius-medium) border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
 >
+  {#if entries.length > 0}
+    <div
+      id={listboxId}
+      class="slash-skill-options"
+      role="listbox"
+      aria-label={m.chat_slashSkillSuggestionList_ariaLabel()}
+      aria-activedescendant={selectedOptionId}
+      tabindex="-1"
+      bind:this={listElement}
+      onkeydown={handleKeyDown}
+    >
+      {#each entries as entry, index (entryOptionId(entry))}
+        {@const name = entry.kind === 'command' ? entry.command.name : entry.skill.name}
+        <Tooltip
+          content={entry.kind === 'command' ? entry.command.description : entry.skill.description}
+          side="right"
+          align="start"
+          size="sm"
+          class="w-full"
+        >
+          <Button
+            type="button"
+            id={entryOptionId(entry)}
+            variant="ghost"
+            size="sm"
+            labelClass="type-body"
+            class={cn(
+              menuItem(),
+              'slash-skill-option h-auto rounded-none border-0 bg-transparent py-1.5 text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 active:border-0',
+              selectedIndex === index && 'active',
+            )}
+            role="option"
+            tabindex={-1}
+            aria-label={name}
+            aria-selected={selectedIndex === index}
+            data-slash-command={entry.kind === 'command' ? name : undefined}
+            onpointerenter={() => (selectedIndex = index)}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => selectItem(index)}
+          >
+            <span class="type-body">{name}</span>
+          </Button>
+        </Tooltip>
+      {/each}
+    </div>
+  {/if}
   {#if loading}
     <div class="slash-skill-state" role="status" aria-live="polite">
       {m.chat_slashSkillSuggestionList_loading_label()}
@@ -130,50 +198,12 @@
         >
       {/if}
     </div>
-  {:else if items.length === 0}
+  {:else if entries.length === 0}
     <div class="slash-skill-state" role="status">
       {emptyLabel ?? m.chat_slashSkillSuggestionList_noResults_label()}
     </div>
-  {:else}
-    <div
-      id={listboxId}
-      class="slash-skill-options"
-      role="listbox"
-      aria-label={m.chat_slashSkillSuggestionList_ariaLabel()}
-      aria-activedescendant={selectedOptionId}
-      tabindex="-1"
-      bind:this={listElement}
-      onkeydown={handleKeyDown}
-    >
-      {#each items as item, index (`${item.name}:${item.location}`)}
-        <Tooltip content={item.description} side="right" align="start" size="sm" class="w-full">
-          <Button
-            type="button"
-            id={optionId(item)}
-            variant="ghost"
-            size="sm"
-            labelClass="type-body"
-            class={cn(
-              menuItem(),
-              'slash-skill-option h-auto rounded-none border-0 bg-transparent py-1.5 text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 active:border-0',
-              selectedIndex === index && 'active',
-            )}
-            role="option"
-            tabindex={-1}
-            aria-label={item.name}
-            aria-selected={selectedIndex === index}
-            onpointerenter={() => (selectedIndex = index)}
-            onpointerdown={(event) => event.preventDefault()}
-            onclick={() => selectItem(index)}
-          >
-            <span class="type-body">{item.name}</span>
-          </Button>
-        </Tooltip>
-      {/each}
-    </div>
-    {#if notice}
-      <div class="slash-skill-notice" role="note">{notice}</div>
-    {/if}
+  {:else if notice && items.length > 0}
+    <div class="slash-skill-notice" role="note">{notice}</div>
   {/if}
 </div>
 

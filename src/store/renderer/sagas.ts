@@ -34,6 +34,7 @@ import { providerAvailabilitySaga } from './slices/agent-availability/sagas/prov
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
 import { agentFailureToastSaga } from './slices/agent-session/sagas/agent-failure-toast-saga';
 import { agentMutationSaga } from './slices/agent-session/sagas/agent-mutation-saga';
+import { conversationGoalSaga } from '$features/conversation-goal/conversation-goal-saga';
 import { agentModelSaga } from './slices/agent-model/sagas/agent-model-saga';
 import { agentStreamSaga } from './slices/agent-session/sagas/agent-stream-saga';
 import { editRegenerateSaga } from './slices/agent-session/sagas/edit-regenerate-saga';
@@ -202,6 +203,7 @@ export const sagas = [
   agentCreationSaga,
   backgroundExecutorSaga,
   agentMutationSaga,
+  conversationGoalSaga,
   agentModelSaga,
   editRegenerateSaga,
   regenerateFromMessageSaga,

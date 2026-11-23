@@ -19,7 +19,7 @@ import {
   resetMockBackend,
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
-import { LiveAgentsClient } from './live-agents-client';
+import { LiveAgentsClient, normalizeAgent } from './live-agents-client';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 
 describe('LiveAgentsClient mutations (fake transport)', () => {
@@ -1433,6 +1433,119 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       agentId: 'agent-1',
       workspaceId: 'ws-1',
       changes: { notificationsMuted: false },
+    });
+  });
+
+  it('sendGoalCommand sends only the text with interpretCommands and reads the command result', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      command: { name: 'goal', action: 'set', goal: 'Ship it', noticeMessageId: 'notice-1' },
+    }));
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.sendGoalCommand({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        content: '/goal Ship it',
+      }),
+    ).toEqual({
+      ok: true,
+      command: { action: 'set', goal: 'Ship it', noticeMessageId: 'notice-1' },
+    });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.sendMessage',
+        params: {
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          content: '/goal Ship it',
+          interpretCommands: true,
+        },
+      },
+    ]);
+  });
+
+  it('sendGoalCommand reports an ordinary delivery as command: null', async () => {
+    backend.onRequest('agent.sendMessage', () => ({
+      success: true,
+      queued: false,
+      messageId: 'm',
+    }));
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendGoalCommand({ agentId: 'agent-1', workspaceId: 'ws-1', content: '/goal' }),
+    ).toEqual({ ok: true, command: null });
+  });
+
+  it('sendGoalCommand classifies the documented -32602 refusals', async () => {
+    backend.onRequest('agent.sendMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'goal is too long (max 1000 characters)', {
+          rpcCode: -32602,
+          data: { code: 'goal-too-long', maxLength: 1000 },
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendGoalCommand({ agentId: 'agent-1', workspaceId: 'ws-1', content: '/goal x' }),
+    ).toEqual({ ok: false, error: { kind: 'tooLong' } });
+  });
+
+  it('normalizeAgent reads goal as a non-empty string, else unset', () => {
+    const base = { id: 'agent-1', workspaceId: 'ws-1' };
+    expect(normalizeAgent({ ...base, goal: 'Ship it' }).goal).toBe('Ship it');
+    expect(normalizeAgent({ ...base }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: null }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: '' }).goal).toBeUndefined();
+    expect(normalizeAgent({ ...base, goal: 42 }).goal).toBeUndefined();
+  });
+
+  it('setGoal maps the agent-retired refusal by data.code', async () => {
+    backend.onRequest('agent.setGoal', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'agent is retired', {
+          rpcCode: -32602,
+          data: { code: 'agent-retired' },
+        }),
+      );
+    });
+    expect(
+      await new LiveAgentsClient().setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'x' }),
+    ).toEqual({ ok: false, error: { kind: 'retired' } });
+  });
+
+  it('setGoal forwards agent.setGoal, including a null removal', async () => {
+    const results = [
+      { action: 'set', goal: 'Ship it', noticeMessageId: 'n-1' },
+      { action: 'cleared', goal: null, noticeMessageId: 'n-2' },
+    ];
+    backend.onRequest('agent.setGoal', () => results.shift());
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'Ship it' }),
+    ).toEqual({ ok: true, result: { action: 'set', goal: 'Ship it', noticeMessageId: 'n-1' } });
+    expect(await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: null })).toEqual({
+      ok: true,
+      result: { action: 'cleared', goal: null, noticeMessageId: 'n-2' },
+    });
+    expect(backend.requests.map((request) => request.params)).toEqual([
+      { agentId: 'agent-1', workspaceId: 'ws-1', goal: 'Ship it' },
+      { agentId: 'agent-1', workspaceId: 'ws-1', goal: null },
+    ]);
+  });
+
+  it('setGoal folds a transport failure into a failed outcome', async () => {
+    backend.onRequest('agent.setGoal', () => {
+      throw new Error('socket closed');
+    });
+    const client = new LiveAgentsClient();
+    expect(await client.setGoal({ agentId: 'agent-1', workspaceId: 'ws-1', goal: 'x' })).toEqual({
+      ok: false,
+      error: { kind: 'failed', message: 'socket closed' },
     });
   });
 

@@ -113,6 +113,7 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import {
     selectCanAdministerHost,
+    selectConversationGoalSupported,
     selectHostRole,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
@@ -491,6 +492,11 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ChatContentLane from './ChatContentLane.svelte';
   import ChatTurnNotice from './ChatTurnNotice.svelte';
+  import GoalStrip from '$features/conversation-goal/components/GoalStrip.svelte';
+  import { goalCommandSendRequested } from '$features/conversation-goal/conversation-goal-actions';
+  import { isGoalCommandText } from '$features/conversation-goal/utils/goal-command';
+  import { goalErrorMessage } from '$features/conversation-goal/utils/goal-error-message';
+  import { InputMessage } from '$lib/components/ui/input-message';
   import { rendersReasoningAsText, suggestedPromptsFromBlocks } from './prepare-message-blocks';
   import { getModelChangeNotice } from './model-change-notice';
   import { getEffortChangeNotice } from './effort-change-notice';
@@ -6382,6 +6388,8 @@
 
   function performLocalSendCleanup(options: {
     clearInput?: boolean;
+    /** Keep context chips and checked panels (a `/goal` command never sends them). */
+    keepContext?: boolean;
     followBottom?: boolean;
     historyText?: string | null;
   }) {
@@ -6406,13 +6414,15 @@
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
       draftManager.invalidatePendingRestore();
-      setContextItems([]);
-      // Checked panels/selections were folded into this send; uncheck them so
-      // they do not ride along with the next message. A selection write still
-      // deferred to the next frame must land first, or it would re-check
-      // itself after the cleanup.
-      flushPendingSelectionWrites();
-      appStore.dispatch(clearMultiPanelChecked());
+      if (!options.keepContext) {
+        setContextItems([]);
+        // Checked panels/selections were folded into this send; uncheck them so
+        // they do not ride along with the next message. A selection write still
+        // deferred to the next frame must land first, or it would re-check
+        // itself after the cleanup.
+        flushPendingSelectionWrites();
+        appStore.dispatch(clearMultiPanelChecked());
+      }
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
@@ -6443,6 +6453,60 @@
   });
   onDestroy(() => pendingEvidenceSend?.controller.abort());
 
+  // Conversation goal: a leading `/goal` composer send is a daemon command,
+  // not a message. It gets no optimistic bubble, launch animation or thinking
+  // state; the composer clears only when the daemon accepts it.
+  const goalSupported$ = selectConversationGoalSupported();
+  let goalCommandError = $state<string | null>(null);
+  // The agent whose `/goal` request is in flight; a late outcome for another
+  // agent (the panel switched) is ignored and never blocks this one.
+  let goalCommandPendingAgent: string | null = null;
+  $effect(() => {
+    void inputValue;
+    void agentId;
+    goalCommandError = null;
+  });
+
+  function sendGoalCommand(text: string): boolean {
+    if (!$goalSupported$ || !workspace || !isGoalCommandText(text)) return false;
+    if (goalCommandPendingAgent === agentId) return true;
+    const sentAgentId = agentId;
+    const capture = draftManager.captureDraft();
+    const { imageBlocks, fileBlocks } = extractAttachmentBlocks([
+      ...getContextItems(),
+      ...(inputComponent?.getInlineImageContextItems?.() ?? []),
+    ]);
+    if (imageBlocks.length > 0 || fileBlocks.length > 0 || (capture?.attachments.length ?? 0) > 0) {
+      goalCommandError = goalErrorMessage({ kind: 'attachments' });
+      return true;
+    }
+    goalCommandPendingAgent = sentAgentId;
+    goalCommandError = null;
+    void appStore
+      .dispatch(goalCommandSendRequested(workspace.id, sentAgentId, text))
+      .then((outcome) => {
+        if (agentId !== sentAgentId) return;
+        if (!outcome.ok) {
+          goalCommandError = goalErrorMessage(outcome.error);
+          return;
+        }
+        if (capture ? draftManager.isCurrentDraft(capture) : inputValue === text)
+          void performLocalSendCleanup({
+            clearInput: true,
+            keepContext: true,
+            followBottom: true,
+            historyText: text,
+          });
+      })
+      .catch(() => {
+        if (agentId === sentAgentId) goalCommandError = goalErrorMessage({ kind: 'failed' });
+      })
+      .finally(() => {
+        if (goalCommandPendingAgent === sentAgentId) goalCommandPendingAgent = null;
+      });
+    return true;
+  }
+
   // Handle sending messages
   function handleSend(text: string, source: ChatSendSource) {
     // Gather DOM state only. Validation, queue decisions, serialization,
@@ -6456,6 +6520,7 @@
       return;
     }
     flushPendingDraftWrite();
+    if (source === 'composer' && sendGoalCommand(text)) return;
 
     // A suggested prompt sends bare and leaves the composer intact; only a
     // composer submit reads (and afterwards clears) the composer's context.
@@ -6736,6 +6801,8 @@
     const pickedMentions = inputComponent?.getPickedMentionsMetadata?.();
     if (!workspace || !isActive) return;
     flushPendingDraftWrite();
+    // A command never interrupts the running turn: it applies at once.
+    if (sendGoalCommand(text)) return;
 
     logger.info('Force submit triggered', { agentId });
 
@@ -7206,6 +7273,14 @@
       onClose={closeSearch}
     />
   {/if}
+
+  <!-- Pinned conversation goal (hidden when unset or unsupported) -->
+  <GoalStrip
+    workspaceId={workspace?.id}
+    {agentId}
+    readonly={isRetiredSession}
+    class="relative z-20 shrink-0"
+  />
 
   <!-- Messages Area -->
   <div class="chat-transcript-area w-full relative flex-1 flex flex-col min-h-0 z-10">
@@ -8642,6 +8717,13 @@
                       {agentId}
                       class="pointer-events-none absolute inset-x-0 bottom-full mb-1 bg-background"
                     />
+                  {/if}
+                  {#if goalCommandError}
+                    <InputMessage
+                      tone="error"
+                      class="mb-1.5 {COMPOSER_INSET_CLASS}"
+                      data-testid="goal-command-error">{goalCommandError}</InputMessage
+                    >
                   {/if}
                   <SimpleRichInput
                     bind:this={inputComponent}

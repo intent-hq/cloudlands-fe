@@ -37,6 +37,7 @@ export function admitLegacyPrincipal(
     workspaceAutoArchiveOptOut?: 1;
     gitlabCheckout?: boolean;
     sessionImport?: 1;
+    conversationGoal?: 1;
   } = {},
   daemonMode?: DaemonMode,
 ): void {

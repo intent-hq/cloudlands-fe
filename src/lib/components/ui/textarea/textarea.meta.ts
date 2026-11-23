@@ -12,6 +12,7 @@ export const textareaMetadata = parseUiComponentMetadata({
   callers: [
     'src/features/accept-changes/components/NativeReviewAttempt.svelte',
     'src/features/accept-changes/components/NativeSidebarReview.svelte',
+    'src/features/conversation-goal/components/GoalEditorDialog.svelte',
     'src/features/discussions/components/DiscussionThread.svelte',
     'src/features/hud/components/dock-composer-media.preview.svelte',
     'src/features/hud/media-editor/screenshot/ScreenshotCanvas.svelte',

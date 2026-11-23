@@ -45,6 +45,13 @@ import type {
 } from '../app-client';
 import { collectListPages } from '$shared/paged-list';
 import { backendRequest } from './backend-transport';
+import {
+  classifyGoalRequestError,
+  parseGoalCommandResult,
+  parseSetGoalResult,
+  type GoalCommandOutcome,
+  type SetGoalOutcome,
+} from '$features/conversation-goal/utils/goal-command';
 import type { RpcProposalItem, RpcProposalResolution } from '$shared/types/rpc-proposal';
 import {
   parseSecretListing,
@@ -121,6 +128,9 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   // §5.54 profile state is presence-detected and must clear when omitted, so
   // write both fields explicitly: a merge of this row then drops stale flags.
   session.usingEarlierProfileSettings = raw.usingEarlierProfileSettings === true ? true : undefined;
+  // Conversation goal: omitted when unset, so write it explicitly — a row
+  // without `goal` replaces the previous one as unset (full-row deltas).
+  session.goal = typeof raw.goal === 'string' && raw.goal.length > 0 ? raw.goal : undefined;
   session.providerReplacementRequired = readProviderReplacementRequired(
     raw.providerReplacementRequired,
   );
@@ -1029,6 +1039,54 @@ export class LiveAgentsClient implements AgentsClient {
       workspaceId: params.workspaceId,
       changes: { pinned: params.pinned },
     });
+  }
+  async sendGoalCommand(params: {
+    agentId: string;
+    workspaceId: string;
+    content: string;
+  }): Promise<GoalCommandOutcome> {
+    // A command send carries only the text and the opt-in flag: metadata or
+    // ids would make it an ordinary message, and attachments are refused.
+    try {
+      const response = await backendRequest<unknown>('agent.sendMessage', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        content: params.content,
+        interpretCommands: true,
+      });
+      if (
+        response &&
+        typeof response === 'object' &&
+        (response as { success?: unknown }).success === false
+      ) {
+        const error = (response as { error?: unknown }).error;
+        return {
+          ok: false,
+          error: { kind: 'failed', ...(typeof error === 'string' ? { message: error } : {}) },
+        };
+      }
+      return { ok: true, command: parseGoalCommandResult(response) };
+    } catch (error) {
+      return { ok: false, error: classifyGoalRequestError(error) };
+    }
+  }
+  async setGoal(params: {
+    agentId: string;
+    workspaceId: string;
+    goal: string | null;
+  }): Promise<SetGoalOutcome> {
+    try {
+      const result = parseSetGoalResult(
+        await backendRequest<unknown>('agent.setGoal', {
+          agentId: params.agentId,
+          workspaceId: params.workspaceId,
+          goal: params.goal,
+        }),
+      );
+      return result ? { ok: true, result } : { ok: false, error: { kind: 'failed' } };
+    } catch (error) {
+      return { ok: false, error: classifyGoalRequestError(error) };
+    }
   }
   async setPermissionPolicy(params: {
     agentId: string;

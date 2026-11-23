@@ -43,6 +43,8 @@ interface HostCapabilities {
   remoteAgentSkills?: 1;
   /** `agent.importableSessions.list` / `agent.importSession`: New Workspace → Import a session. */
   sessionImport?: 1;
+  /** Conversation goal: `/goal`, `agent.setGoal`, `goal` on sessions (PROTOCOL `methods/agents.md`). */
+  conversationGoal?: 1;
   invitationAccountSearch?: boolean;
   workspaceGuestRoles?: boolean;
   hostMembership: boolean;
@@ -101,6 +103,7 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
     ...(bag.remoteScripts === 1 ? { remoteScripts: 1 as const } : {}),
     ...(bag.remoteAgentSkills === 1 ? { remoteAgentSkills: 1 as const } : {}),
     ...(bag.sessionImport === 1 ? { sessionImport: 1 as const } : {}),
+    ...(bag.conversationGoal === 1 ? { conversationGoal: 1 as const } : {}),
     invitationAccountSearch: bag.invitationAccountSearch === 1,
     workspaceGuestRoles: bag.workspaceGuestRoles === 1,
     hostMembership: bag.hostMembership === 1,

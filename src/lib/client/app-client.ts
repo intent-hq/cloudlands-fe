@@ -1,4 +1,8 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type {
+  GoalCommandOutcome,
+  SetGoalOutcome,
+} from '$features/conversation-goal/utils/goal-command';
 import type { MoveHomeTarget, WorkspaceHome } from '$shared/types/workspace-home';
 import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
@@ -1103,6 +1107,27 @@ export interface AgentsClient {
     workspaceId: string;
     pinned: boolean;
   }): Promise<MutationResult>;
+  /**
+   * Send a `/goal` command (`agent.sendMessage` with `interpretCommands: true`;
+   * PROTOCOL `methods/agents.md` "Conversation goal"). Only plain text rides
+   * the request: no ids, attachments or metadata, so the daemon parses it.
+   * `command: null` means the daemon delivered it as an ordinary message.
+   */
+  sendGoalCommand(params: {
+    agentId: string;
+    workspaceId: string;
+    content: string;
+  }): Promise<GoalCommandOutcome>;
+  /**
+   * Set, replace or remove (`null` / empty) the conversation goal
+   * (`agent.setGoal`). The daemon emits `agent:updated { goal }` and a
+   * `goal_command` notice row when it writes.
+   */
+  setGoal(params: {
+    agentId: string;
+    workspaceId: string;
+    goal: string | null;
+  }): Promise<SetGoalOutcome>;
   /**
    * Set or clear the per-chat permission policy override
    * (`agent.update { changes: { permissionPolicy } }`, §5.5). `null` resets to

@@ -353,6 +353,14 @@ export interface AgentSession extends AgentNodeFields {
   pinned?: boolean;
 
   /**
+   * User-set conversation goal (`goal`, AgentLite / `agent.getSession`; see
+   * PROTOCOL `methods/agents.md` "Conversation goal"). Omitted when unset.
+   * Written only by `/goal` sends and `agent.setGoal`; `agent:updated
+   * { goal }` converges it (`null` there means removed).
+   */
+  goal?: string;
+
+  /**
    * Per-chat permission policy override (`permissionPolicy`, §5.5 AgentLite).
    * Set via `agent.update { changes: { permissionPolicy } }`; `null` means the
    * daemon default applies. A daemon that supports the override always sends
