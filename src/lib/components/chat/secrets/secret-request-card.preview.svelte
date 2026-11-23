@@ -3,7 +3,15 @@
   import type { SecretRequestCardState } from './pending-secret-requests';
 
   type Scene =
-    'pending' | 'states' | 'failed' | 'sending' | 'stack' | 'edge' | 'collapsed' | 'collapsed-many';
+    | 'pending'
+    | 'states'
+    | 'failed'
+    | 'sending'
+    | 'stack'
+    | 'edge'
+    | 'collapsed'
+    | 'collapsed-many'
+    | 'full-width';
 
   interface Props {
     scene?: Scene;
@@ -22,6 +30,7 @@
       edge: { props: { scene: 'edge' } },
       collapsed: { props: { scene: 'collapsed' } },
       'collapsed-many': { props: { scene: 'collapsed-many' } },
+      'full-width': { props: { scene: 'full-width' } },
     },
   });
 
@@ -111,8 +120,11 @@
   ]);
 </script>
 
-<div class="flex w-full max-w-xl flex-col gap-2 bg-background p-4 text-foreground">
-  {#if scene === 'pending'}
+<div
+  class="flex w-full flex-col gap-2 bg-background p-4 text-foreground"
+  class:max-w-xl={scene !== 'full-width'}
+>
+  {#if scene === 'pending' || scene === 'full-width'}
     <SecretRequestCards transcript={expanded} workspaceId="preview" agentId="preview-expanded" />
   {:else if scene === 'failed'}
     <SecretRequestCard
