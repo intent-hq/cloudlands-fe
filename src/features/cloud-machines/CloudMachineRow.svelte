@@ -149,28 +149,31 @@
   // Sandboxes run Linux; a running one's own report wins.
   const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os || 'linux'));
 
-  const status = $derived.by((): { label: string; color: BadgeColor } | null => {
+  const status = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
     if (!entry) return null;
     switch (entry.state) {
       case 'ready':
         return {
           label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
           color: 'green',
+          dot: 'bg-success',
         };
       case 'key-rejected':
         return {
           label: cloudProviderCopy(kind).keyRejected,
           color: 'red',
+          dot: 'bg-danger',
         };
       default:
         return {
           label: cloudProviderCopy(kind).unreachable,
           color: 'amber',
+          dot: 'bg-warning',
         };
     }
   });
 
-  // A ready entry shows no pill.
+  // A ready entry shows no pill; the dot carries it.
   const pillHidden = $derived(entry?.state === 'ready');
   // The counts follow a separator only after other meta text.
   const hasDetails = $derived(!!providerLabel || !!entry?.northflank?.region || !!entry?.agent37);
@@ -238,8 +241,15 @@
   >
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <!-- No status dot: a problem shows its pill. The spacer keeps the icon column. -->
-        <span class="size-2.5" aria-hidden="true"></span>
+        <span
+          class={cn(
+            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+            status?.dot ?? 'bg-transparent',
+          )}
+          role={pillHidden ? 'img' : undefined}
+          aria-label={pillHidden ? status?.label : undefined}
+          aria-hidden={pillHidden ? undefined : 'true'}
+        ></span>
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
     {/snippet}
