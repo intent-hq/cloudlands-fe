@@ -9460,6 +9460,13 @@
   "chat_goalNotice_none_label": "Kein Ziel gesetzt. Sende /goal und beschreibe, wann es fertig ist.",
   "chat_goalNotice_edit_label": "Bearbeiten",
   "chat_goalNotice_fallback_label": "Ziel geändert",
+  "chat_goalStrip_setBy_label": "Festgelegt von {name}",
+  "chat_goalStrip_setByYou_label": "Von dir festgelegt",
+  "chat_goalStrip_setByFormerMember_label": "Von einem ehemaligen Mitglied festgelegt",
+  "chat_goalNotice_by_label": "von {name}",
+  "chat_goalNotice_byYou_label": "von dir",
+  "chat_goalNotice_byFormerMember_label": "von einem ehemaligen Mitglied",
+  "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Ein Ziel an diese Unterhaltung anheften",
   "chat_goal_retired_error": "Diese Unterhaltung ist stillgelegt, daher kann ihr Ziel nicht geändert werden.",
   "chat_goal_workspaceRetired_error": "Dieser Arbeitsbereich ist stillgelegt, daher kann sein Ziel nicht geändert werden."

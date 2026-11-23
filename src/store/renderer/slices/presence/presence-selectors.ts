@@ -45,7 +45,8 @@ export const selectPresenceCaptureDrawingActive = store.createSelector(
 export const selectPresenceContext = store.createSelector((state): string | null =>
   selectCollaborationReady.select(state) ? selectPrincipalActionContext.select(state) : null,
 );
-const currentPresence = (state: StoreState): boolean => {
+/** Presence rows (roster, `ownPrincipalId`) belong to the window's current principal context. */
+export const isPresenceContextCurrent = (state: StoreState): boolean => {
   const context = selectPresenceContext.select(state);
   return context !== null && state.presence.context === context;
 };
@@ -70,7 +71,7 @@ const rosterMembers = (presence: PresenceState, workspaceId: string): PresenceMe
 /** The workspace row when it is shared (`memberCount > 1`); `undefined` gates both people selectors off. */
 const sharedWorkspace = (state: StoreState, workspaceId: string): Workspace | undefined => {
   const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-  return currentPresence(state) && workspace && (workspace.memberCount ?? 1) > 1
+  return isPresenceContextCurrent(state) && workspace && (workspace.memberCount ?? 1) > 1
     ? workspace
     : undefined;
 };
@@ -263,7 +264,7 @@ export const selectAgentTypingPeople = store.createSelector<
 const selectDiscussionTypingWorkspace = store.createSelector((state): string | null => {
   const id = state.presence.discussionComposerWorkspaceId;
   return id &&
-    currentPresence(state) &&
+    isPresenceContextCurrent(state) &&
     sharedWorkspace(state, id) &&
     state.presence.windowVisible &&
     state.tabState.currentTabId === id &&

@@ -1172,6 +1172,9 @@ type SessionComparisonSnapshot = Pick<
 > & {
   messageCount: number;
   wireMessageCount: number | undefined;
+  goalSetByPrincipalId: string | undefined;
+  goalSetByDisplayName: string | null | undefined;
+  goalSetByLogin: string | null | undefined;
   lastMessageId: AgentMessage['id'] | undefined;
   wireLastMessageId: string | undefined;
   lastMessageBlockCount: number;
@@ -1237,6 +1240,9 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     effectivePermissionPolicy: session.effectivePermissionPolicy,
     // A goal write never advances `updatedAt`; a read carrying it must land.
     goal: session.goal,
+    goalSetByPrincipalId: session.goalSetBy?.principalId,
+    goalSetByDisplayName: session.goalSetBy?.displayName,
+    goalSetByLogin: session.goalSetBy?.login,
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,

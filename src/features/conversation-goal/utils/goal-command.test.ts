@@ -5,8 +5,11 @@ import {
   goalFromAgentUpdated,
   isGoalCommandText,
   parseGoalCommandResult,
+  parseGoalSetBy,
   parseSetGoalResult,
 } from './goal-command';
+
+const alice = { principalId: 'p-alice', displayName: 'Alice', login: 'alice' };
 
 describe('isGoalCommandText (mirrors the daemon recognition rule)', () => {
   it.each([
@@ -187,6 +190,73 @@ describe('classifyGoalRequestError', () => {
     expect(classifyGoalRequestError({ rpcCode: -32003, message: 'forbidden' })).toEqual({
       kind: 'failed',
       message: 'forbidden',
+    });
+  });
+});
+
+describe('goalSetBy attribution', () => {
+  it('reads a principal with nullable profile fields and rejects malformed values', () => {
+    expect(parseGoalSetBy(alice)).toEqual(alice);
+    expect(parseGoalSetBy({ principalId: 'p-1' })).toEqual({
+      principalId: 'p-1',
+      displayName: null,
+      login: null,
+    });
+    expect(parseGoalSetBy({ principalId: 'p-1', displayName: 3, login: null })).toEqual({
+      principalId: 'p-1',
+      displayName: null,
+      login: null,
+    });
+    expect(parseGoalSetBy({ principalId: ' ' })).toBeUndefined();
+    expect(parseGoalSetBy({ displayName: 'x' })).toBeUndefined();
+    expect(parseGoalSetBy(null)).toBeUndefined();
+    expect(parseGoalSetBy('p-1')).toBeUndefined();
+  });
+
+  it('keeps goalSetBy on command and setGoal results only while a goal is set', () => {
+    expect(
+      parseGoalCommandResult({
+        success: true,
+        queued: false,
+        command: { name: 'goal', action: 'set', goal: 'Ship', goalSetBy: alice },
+      }),
+    ).toStrictEqual({ action: 'set', goal: 'Ship', goalSetBy: alice });
+    expect(parseSetGoalResult({ action: 'cleared', goal: null, goalSetBy: alice })).toStrictEqual({
+      action: 'cleared',
+      goal: null,
+    });
+    expect(parseSetGoalResult({ action: 'updated', goal: 'B', goalSetBy: alice })).toStrictEqual({
+      action: 'updated',
+      goal: 'B',
+      goalSetBy: alice,
+    });
+    expect(parseSetGoalResult({ action: 'updated', goal: 'B' })).toStrictEqual({
+      action: 'updated',
+      goal: 'B',
+    });
+  });
+
+  it('replaces the attribution with every agent:updated goal write', () => {
+    expect(goalFromAgentUpdated({ agentId: 'a', goal: 'Ship', goalSetBy: alice })).toStrictEqual({
+      present: true,
+      goal: 'Ship',
+      goalSetBy: alice,
+    });
+    // Unknown writer (null) and an older daemon (absent) both clear it.
+    expect(goalFromAgentUpdated({ agentId: 'a', goal: 'Ship', goalSetBy: null })).toStrictEqual({
+      present: true,
+      goal: 'Ship',
+      goalSetBy: undefined,
+    });
+    expect(goalFromAgentUpdated({ agentId: 'a', goal: 'Ship' })).toStrictEqual({
+      present: true,
+      goal: 'Ship',
+      goalSetBy: undefined,
+    });
+    expect(goalFromAgentUpdated({ agentId: 'a', goal: null, goalSetBy: null })).toStrictEqual({
+      present: true,
+      goal: undefined,
+      goalSetBy: undefined,
     });
   });
 });

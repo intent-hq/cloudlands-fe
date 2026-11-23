@@ -4,6 +4,8 @@
   interface Props {
     goal?: string;
     readonly?: boolean;
+    /** Who set the goal in a shared workspace; omitted = personal workspace. */
+    setBy?: 'member' | 'self' | 'former';
   }
 
   // i18n-ignore (sample goal text supplied as fixture content)
@@ -22,6 +24,9 @@
       long: { props: { goal: longGoal } },
       links: { props: { goal: linkedGoal } },
       readonly: { props: { goal: longGoal, readonly: true } },
+      'shared-member': { props: { goal: shortGoal, setBy: 'member' } },
+      'shared-self': { props: { goal: shortGoal, setBy: 'self' } },
+      'shared-former': { props: { goal: longGoal, setBy: 'former' } },
     },
   });
 </script>
@@ -35,28 +40,69 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import GoalStrip from './GoalStrip.svelte';
   import GoalNotice from './GoalNotice.svelte';
+  import {
+    presenceContextReceived,
+    presenceMembersReceived,
+    presenceWorkspacesReceived,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import type { GoalSetBy } from '$shared/types/agent-session';
+  import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 
-  let { goal = '', readonly = false }: Props = $props();
+  let { goal = '', readonly = false, setBy }: Props = $props();
   const workspaceId = 'preview-goal-strip';
   const agentId = 'preview-goal-agent';
   const createdAt = '2026-11-22T08:00:00Z';
 
-  store.dispatch(
-    setWorkspaceEntity({
-      id: WorkspaceId(workspaceId),
-      title: 'Conversation goal',
-      branch: 'preview',
-      path: '/preview/project',
-      changesets: [],
-      timeline: [],
-      conversationInfo: [],
-      status: WorkspaceStatus.Active,
-      createdAt,
-      updatedAt: createdAt,
-    }),
-  );
-
   admitLegacyPrincipal('owner', { conversationGoal: 1 });
+
+  // i18n-ignore (sample member names supplied as fixture content)
+  const ownPrincipalId = 'preview-goal-me';
+  const rosterMember = (principalId: string, displayName: string, login: string) =>
+    ({
+      principalId,
+      displayName,
+      login,
+      avatarUrl: null,
+      role: 'collaborator',
+      addedAt: createdAt,
+    }) as WorkspaceMember;
+  const setters: Record<NonNullable<Props['setBy']>, GoalSetBy> = {
+    member: { principalId: 'preview-goal-alice', displayName: 'Alice Rivera', login: 'alice' },
+    self: { principalId: ownPrincipalId, displayName: 'Sam Lee', login: 'sam' },
+    former: { principalId: 'preview-goal-left', displayName: null, login: null },
+  };
+  const goalSetBy = $derived(setBy ? setters[setBy] : undefined);
+
+  // A shared workspace (memberCount 2) with a known roster; personal otherwise.
+  $effect(() => {
+    const shared = !!setBy;
+    store.dispatch(
+      setWorkspaceEntity({
+        id: WorkspaceId(workspaceId),
+        title: 'Conversation goal',
+        branch: 'preview',
+        path: '/preview/project',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        status: WorkspaceStatus.Active,
+        createdAt,
+        updatedAt: createdAt,
+        memberCount: shared ? 2 : 1,
+      }),
+    );
+    if (!shared) return;
+    const context = selectPresenceContext.select(store.state);
+    if (context) store.dispatch(presenceContextReceived(context, ownPrincipalId));
+    store.dispatch(presenceWorkspacesReceived([workspaceId]));
+    store.dispatch(
+      presenceMembersReceived(workspaceId, [
+        rosterMember(ownPrincipalId, 'Sam Lee', 'sam'),
+        rosterMember('preview-goal-alice', 'Alice Rivera', 'alice'),
+      ]),
+    );
+  });
 
   $effect(() => {
     store.dispatch(
@@ -72,6 +118,7 @@
             createdAt,
             updatedAt: createdAt,
             goal,
+            ...(goalSetBy ? { goalSetBy } : {}),
           } as unknown as AgentSession,
         ],
         { preserveExplicitRuntimeFlags: true },
@@ -85,6 +132,15 @@
     <GoalStrip {workspaceId} {agentId} {readonly} />
     <div class="h-16"></div>
   </div>
-  <GoalNotice notice={{ action: 'shown', goal }} {workspaceId} {agentId} {readonly} />
+  <GoalNotice
+    notice={{
+      action: 'shown',
+      goal,
+      ...(goalSetBy ? { fromPrincipalId: goalSetBy.principalId } : {}),
+    }}
+    {workspaceId}
+    {agentId}
+    {readonly}
+  />
   <GoalNotice notice={{ action: 'cleared', goal: null }} {workspaceId} {agentId} {readonly} />
 </div>

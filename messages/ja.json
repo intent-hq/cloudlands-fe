@@ -9460,6 +9460,13 @@
   "chat_goalNotice_none_label": "目標は設定されていません。/goal に続けて完了の状態を送信してください。",
   "chat_goalNotice_edit_label": "編集",
   "chat_goalNotice_fallback_label": "目標が変更されました",
+  "chat_goalStrip_setBy_label": "{name} が設定",
+  "chat_goalStrip_setByYou_label": "あなたが設定",
+  "chat_goalStrip_setByFormerMember_label": "元メンバーが設定",
+  "chat_goalNotice_by_label": "{name} による",
+  "chat_goalNotice_byYou_label": "あなたによる",
+  "chat_goalNotice_byFormerMember_label": "元メンバーによる",
+  "chat_goalNotice_attributed_ariaLabel": "{text}（{attribution}）",
   "chat_slashCommand_goal_description": "この会話に目標を固定",
   "chat_goal_retired_error": "この会話はリタイア済みのため、目標を変更できません。",
   "chat_goal_workspaceRetired_error": "このワークスペースはリタイア済みのため、目標を変更できません。"

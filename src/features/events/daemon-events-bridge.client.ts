@@ -1636,12 +1636,15 @@ function projectAgentMetadata(
     metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     for (const key of Object.keys(data)) consumed.add(key);
   }
-  // Conversation goal (`agent:updated { agentId, goal }`): a string sets it,
-  // `null` removes it. The payload is self-sufficient, so no `agent.get`.
+  // Conversation goal (`agent:updated { agentId, goal, goalSetBy }`): a
+  // string sets it, `null` removes it, and the attribution travels with it.
+  // The payload is self-sufficient, so no `agent.get`.
   const goal = goalFromAgentUpdated(data);
   if (goal.present) {
     updates.goal = goal.goal;
+    updates.goalSetBy = goal.goalSetBy;
     consumed.add('goal');
+    consumed.add('goalSetBy');
   }
   if (consumed.size === 1) return false;
   const metadata = applyAgentMetadataPatch(session.metadata, metadataPatch);

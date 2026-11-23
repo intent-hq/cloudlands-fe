@@ -48,6 +48,7 @@ import { backendRequest } from './backend-transport';
 import {
   classifyGoalRequestError,
   parseGoalCommandResult,
+  parseGoalSetBy,
   parseSetGoalResult,
   type GoalCommandOutcome,
   type SetGoalOutcome,
@@ -131,6 +132,7 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   // Conversation goal: omitted when unset, so write it explicitly — a row
   // without `goal` replaces the previous one as unset (full-row deltas).
   session.goal = typeof raw.goal === 'string' && raw.goal.length > 0 ? raw.goal : undefined;
+  session.goalSetBy = session.goal ? parseGoalSetBy(raw.goalSetBy) : undefined;
   session.providerReplacementRequired = readProviderReplacementRequired(
     raw.providerReplacementRequired,
   );

@@ -2,7 +2,8 @@
   /**
    * Pinned conversation goal under the chat header: one truncated line with
    * an expand control, Edit (pre-filled editor) and Remove goal. Hidden when
-   * no goal is set or the daemon lacks `conversationGoal: 1`.
+   * no goal is set or the daemon lacks `conversationGoal: 1`. In a shared
+   * workspace the label also says who set the goal ("Set by Alice").
    */
   import Fa from 'svelte-fa';
   import { toStore } from 'svelte/store';
@@ -21,6 +22,8 @@
   import { selectConversationGoalSupported } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentGoal } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { goalSetRequested } from '../conversation-goal-actions';
+  import { selectGoalAttribution } from '../goal-attribution-selectors';
+  import { goalStripAttributionLabel } from '../utils/goal-attribution';
   import { goalErrorMessage } from '../utils/goal-error-message';
   import GoalEditorDialog from './GoalEditorDialog.svelte';
   import GoalText from './GoalText.svelte';
@@ -38,6 +41,10 @@
   const supported$ = selectConversationGoalSupported();
   const goal$ = selectAgentGoal(toStore(() => agentId ?? ''));
   const goal = $derived($supported$ && agentId && workspaceId ? $goal$ : null);
+  const attribution$ = $derived(selectGoalAttribution(workspaceId ?? '', agentId ?? ''));
+  const attributionLabel = $derived(
+    goal && $attribution$ ? goalStripAttributionLabel($attribution$) : null,
+  );
 
   const contentId = $props.id();
   let expanded = $state(false);
@@ -94,6 +101,13 @@
       >
         <Fa icon={faFlag} class="size-3" />
         {m.chat_goalStrip_label()}
+        {#if attributionLabel}
+          <span
+            class="max-w-40 truncate font-normal text-subtle"
+            title={attributionLabel}
+            data-testid="goal-strip-attribution">{attributionLabel}</span
+          >
+        {/if}
       </span>
       <div
         bind:this={textElement}
