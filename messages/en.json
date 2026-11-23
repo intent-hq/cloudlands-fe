@@ -8230,6 +8230,8 @@
   "workspace_discussion_mentionAgents_label": "Agents",
   "workspace_discussion_mentionUsers_label": "People",
   "workspace_discussion_mentions_label": "Mention someone",
+  "workspace_discussion_attachImage_label": "Attach image",
+  "workspace_discussion_imageUploadFailed_error": "Couldn't upload image",
   "workspace_discussion_messageActions_label": "Message actions",
   "workspace_discussion_multipleUnsupported_label": "This host does not support multiple discussions yet. Update Intent on the host to continue.",
   "workspace_discussion_new_label": "New",

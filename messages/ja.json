@@ -8230,6 +8230,8 @@
   "workspace_discussion_mentionAgents_label": "エージェント",
   "workspace_discussion_mentionUsers_label": "ユーザー",
   "workspace_discussion_mentions_label": "メンションする",
+  "workspace_discussion_attachImage_label": "画像を添付",
+  "workspace_discussion_imageUploadFailed_error": "画像をアップロードできませんでした",
   "workspace_discussion_messageActions_label": "メッセージの操作",
   "workspace_discussion_multipleUnsupported_label": "このホストは複数のディスカッションに未対応です。ホストのIntentを更新してください。",
   "workspace_discussion_new_label": "新着",

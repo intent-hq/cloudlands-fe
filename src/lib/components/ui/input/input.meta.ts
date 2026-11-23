@@ -16,6 +16,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/dev-console/DaemonLinksView.svelte',
     'src/features/dev-console/TrafficInspector.svelte',
+    'src/features/discussions/components/DiscussionImagePicker.svelte',
     'src/features/home/HomeNewLabelDialog.svelte',
     'src/features/home/HomeSearch.svelte',
     'src/features/home/assistant-panels.preview.svelte',

@@ -157,6 +157,7 @@ export function discussionReplyFirstLine(body: string) {
   return (
     body
       .split(/\r?\n/)
+      .map((line) => line.replace(/^!\[([^\]\n]*)\]\(workspace-asset:\/\/[^\s()]+\)$/, '$1'))
       .find((line) => line.trim())
       ?.trim() ?? ''
   );

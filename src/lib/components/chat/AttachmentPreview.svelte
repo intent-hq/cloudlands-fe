@@ -36,6 +36,8 @@
     // For base64 image data (from loaded messages)
     imageData?: string;
     imageMimeType?: string;
+    /** Already stored image, such as a workspace asset URL. */
+    imageUrl?: string;
     onRemove?: (id: string) => void;
     class?: string;
     /** Display mode - 'chip' for small inline preview, 'thumbnail' for larger Slack-style preview */
@@ -74,6 +76,7 @@
     file,
     imageData,
     imageMimeType,
+    imageUrl,
     onRemove,
     class: className = '',
     variant = 'chip',
@@ -92,7 +95,7 @@
     previewable
       ? imageData && imageMimeType
         ? `data:${canonicalImageMimeType(imageMimeType)};base64,${imageData}`
-        : fileThumbnailUrl
+        : (imageUrl ?? fileThumbnailUrl)
       : null,
   );
 

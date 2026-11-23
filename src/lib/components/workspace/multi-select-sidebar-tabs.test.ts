@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSelectedTabs } from './multi-select-sidebar-tabs';
+import { normalizeSelectedTabs, orderSelectedTabs } from './multi-select-sidebar-tabs';
+import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+import type { StoreState } from '$store/renderer/types';
 
 describe('multi-select sidebar tabs', () => {
   it('keeps valid selections and migrates the old overview to agents', () => {
@@ -23,6 +25,19 @@ describe('multi-select sidebar tabs', () => {
     expect([...normalizeSelectedTabs(['people'], true, true)]).toEqual(['people']);
     expect([...normalizeSelectedTabs(['people'], false, false)]).toEqual(['agents']);
     expect([...normalizeSelectedTabs(['people', 'context'], true, false)]).toEqual(['context']);
+  });
+
+  it('opens People above Agents by default only when the workspace has people', () => {
+    const fresh = selectMultiSelectSidebarSelectedTabIds.select(
+      { sidebarNav: { multiSelectSelectedTabIdsByWorkspaceId: {} } } as unknown as StoreState,
+      'ws-1',
+    );
+    expect(orderSelectedTabs(normalizeSelectedTabs(fresh, false, true))).toEqual([
+      'people',
+      'agents',
+    ]);
+    expect(orderSelectedTabs(normalizeSelectedTabs(fresh, false, false))).toEqual(['agents']);
+    expect(orderSelectedTabs(normalizeSelectedTabs(['agents'], false, true))).toEqual(['agents']);
   });
 });
 

@@ -8230,6 +8230,8 @@
   "workspace_discussion_mentionAgents_label": "에이전트",
   "workspace_discussion_mentionUsers_label": "사용자",
   "workspace_discussion_mentions_label": "멘션하기",
+  "workspace_discussion_attachImage_label": "이미지 첨부",
+  "workspace_discussion_imageUploadFailed_error": "이미지를 업로드할 수 없습니다",
   "workspace_discussion_messageActions_label": "메시지 작업",
   "workspace_discussion_multipleUnsupported_label": "이 호스트는 아직 여러 대화를 지원하지 않습니다. 호스트의 Intent를 업데이트하세요.",
   "workspace_discussion_new_label": "새 메시지",

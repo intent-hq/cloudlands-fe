@@ -8230,6 +8230,8 @@
   "workspace_discussion_mentionAgents_label": "Agenten",
   "workspace_discussion_mentionUsers_label": "Personen",
   "workspace_discussion_mentions_label": "Jemanden erwähnen",
+  "workspace_discussion_attachImage_label": "Bild anhängen",
+  "workspace_discussion_imageUploadFailed_error": "Bild konnte nicht hochgeladen werden",
   "workspace_discussion_messageActions_label": "Nachrichtenaktionen",
   "workspace_discussion_multipleUnsupported_label": "Dieser Host unterstützt noch keine mehreren Diskussionen. Aktualisiere Intent auf dem Host.",
   "workspace_discussion_new_label": "Neu",
