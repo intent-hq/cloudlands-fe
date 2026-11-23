@@ -65,6 +65,7 @@ import { framesHolding, frameToShow, isMachineInUse, isMachineRendered } from '.
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { decorateWindowTitle } from './utils/resolve-app-title';
 import { queueDeepLinkForRenderer } from '../features/deeplink/main/pending-deep-links';
+import type { DeepLinkAction } from '../features/deeplink/deep-link-handler';
 import { FRAME_ROUTE } from '../shared/frame-route';
 import {
   buildLoadUrl,
@@ -686,7 +687,7 @@ async function addMachine(
 export async function openInvitedMachineInWindow(
   window: BrowserWindowType,
   id: string,
-  workspaceId?: string,
+  open?: string | DeepLinkAction,
   mayOpen: () => boolean = () => true,
 ): Promise<boolean> {
   if (!isMachineRailEnabled() || !isChatWindow(window) || !mayOpen()) return false;
@@ -695,7 +696,7 @@ export async function openInvitedMachineInWindow(
   if (holder) {
     const shown = selectMachineInFrame(holder, id);
     if (!shown) return false;
-    showOpenedMachine(holder, shown.contents, workspaceId);
+    showOpenedMachine(holder, shown.contents, open);
     return true;
   }
   // A machine that cannot be in a rail (this app's own daemon, a node) keeps its own window.
@@ -711,18 +712,22 @@ export async function openInvitedMachineInWindow(
   // The rail was turned off or the window closed meanwhile: the machine still needs a window.
   if (!isMachineRailEnabled() || window.isDestroyed()) return false;
   if (!mayOpen()) return true;
-  showOpenedMachine(window, ensureView(window, id).webContents, workspaceId);
+  showOpenedMachine(window, ensureView(window, id).webContents, open);
   return true;
 }
 
-/** Queue `workspaceId` (if any) for the opened machine's view and bring its frame to the front. */
+/**
+ * Queue `open` (a workspace id, or a deep link such as a notification click)
+ * for the opened machine's view and bring its frame to the front.
+ */
 function showOpenedMachine(
   window: BrowserWindowType,
   contents: Electron.WebContents,
-  workspaceId: string | undefined,
+  open: string | DeepLinkAction | undefined,
 ): void {
-  if (workspaceId)
-    queueDeepLinkForRenderer(contents, { type: 'open', params: { id: workspaceId } });
+  if (typeof open === 'string')
+    queueDeepLinkForRenderer(contents, { type: 'open', params: { id: open } });
+  else if (open) queueDeepLinkForRenderer(contents, open);
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
