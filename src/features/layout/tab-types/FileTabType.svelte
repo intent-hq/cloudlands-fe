@@ -38,6 +38,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
   import { fileContentKey } from '$features/file/utils/file-content-key';
+  import { requestHtmlFilePreview } from '$features/file/utils/html-file-preview';
   import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
   import { notify } from '$lib/components/patterns/notify';
   import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
@@ -206,7 +207,8 @@
 
   // Track the last processed timestamp to detect new navigation requests
   let lastJumpTimestamp = $state<number | undefined>(undefined);
-  let markdownPreview = $state(true); // default to rich text for markdown files
+  let previewEnabled = $state(true);
+  let openedHtmlSourcePath = $state<string | null>(null);
 
   // Extract line from tab.data when tab changes
   // Uses jumpTimestamp to detect changes even when navigating to the same line
@@ -217,7 +219,7 @@
 
     lastJumpTimestamp = timestamp;
     jumpToLine = { line };
-    markdownPreview = false;
+    previewEnabled = false;
   });
 
   // Computed values
@@ -308,6 +310,39 @@
   );
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
+  const isHtmlFile = $derived(/\.html?$/i.test(tab.filePath ?? ''));
+  let htmlPreview = $state.raw<{ source: string; document: string | null }>();
+  const htmlPreviewIsCurrent = $derived(htmlPreview?.source === fileContent);
+  const hasPreview = $derived(
+    isMarkdownFile || (isHtmlFile && !(htmlPreviewIsCurrent && htmlPreview?.document === null)),
+  );
+  const isPreviewing = $derived(hasPreview && previewEnabled);
+
+  $effect(() => {
+    if (!isActive || !isHtmlFile || !isPreviewing || isFileBinary || fileError) return;
+    const source = fileContent;
+    if (source === null || htmlPreviewIsCurrent) return;
+    return requestHtmlFilePreview(source, (document) => {
+      htmlPreview = { source, document };
+      if (document === null) previewEnabled = false;
+    });
+  });
+
+  $effect(() => {
+    if (isHtmlFile && !isPreviewing && tab.filePath) openedHtmlSourcePath = tab.filePath;
+  });
+
+  $effect(() => {
+    if (!isHtmlFile || !isPreviewing || !isActive || !isPanelFocused) return;
+    function goToSourceLine(event: Event) {
+      const line = (event as CustomEvent<{ line: number }>).detail?.line;
+      if (!line) return;
+      jumpToLine = { line };
+      previewEnabled = false;
+    }
+    window.addEventListener('workspace:go-to-line', goToSourceLine);
+    return () => window.removeEventListener('workspace:go-to-line', goToSourceLine);
+  });
 
   // Media cannot use the UTF-8 file.read fallback. Confirm the exact contained
   // path first, then use the existing bounded ignored-artifact resolver. Hold
@@ -625,6 +660,23 @@
 
 <svelte:window onkeydown={(event) => isActive && handleKeyDown(event)} />
 
+{#snippet sourceEditor(visible: boolean)}
+  <CodeEditor
+    bind:this={codeEditorRef}
+    bind:value={getFileContentForEditor, setFileContentFromEditor}
+    language={fileLanguage}
+    readOnly={isReadOnly}
+    fileName={tab.filePath}
+    {workspaceId}
+    filePath={tab.filePath}
+    lineWrapping={$lineWrapping}
+    lineChanges={$diffIndicators ? fileLineChanges : []}
+    jumpTo={jumpToLine}
+    externalContentVersion={fileLastUpdated}
+    isPanelFocused={visible && isPanelFocused}
+  />
+{/snippet}
+
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
   {#if !isOutsideWorkspace && !isReadOnly && !isFileBinary}
@@ -635,13 +687,14 @@
       embedded
       showFold={false}
       showSplit={false}
-      showPreview={isMarkdownFile}
-      previewEnabled={markdownPreview}
-      onTogglePreview={() => (markdownPreview = !markdownPreview)}
-      showWrap={!isMarkdownFile || !markdownPreview}
+      showPreview={hasPreview}
+      previewLabel={isHtmlFile ? m.ui_viewSettings_htmlPreview_label() : undefined}
+      {previewEnabled}
+      onTogglePreview={() => (previewEnabled = !previewEnabled)}
+      showWrap={!isPreviewing}
       wrapEnabled={$lineWrapping}
       onToggleWrap={() => appStore.dispatch(toggleLineWrapping())}
-      showDiff={!isReadOnly && (!isMarkdownFile || !markdownPreview)}
+      showDiff={!isReadOnly && !isPreviewing}
       diffEnabled={$diffIndicators}
       onToggleDiff={() => appStore.dispatch(toggleDiffIndicators())}
     />
@@ -719,7 +772,7 @@
       <div class="flex items-center justify-center h-full text-subtle">
         <p>{m.layout_fileTab_preparing_label()}</p>
       </div>
-    {:else if fileLoading}
+    {:else if fileLoading && (!isHtmlFile || fileContent === null)}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-2">
           {#each [...Array(20).keys()] as i (i)}
@@ -784,7 +837,7 @@
           allowDownload={!isReadOnly && downloadReady}
           {downloading}
         />
-      {:else if isMarkdownFile && markdownPreview}
+      {:else if isMarkdownFile && isPreviewing}
         <div class="h-full overflow-auto p-4">
           <MarkdownViewer
             content={fileContent}
@@ -794,21 +847,36 @@
             renderDiagrams
           />
         </div>
+      {:else if isHtmlFile}
+        <div class="relative size-full">
+          {#if !isPreviewing || openedHtmlSourcePath === tab.filePath}
+            <div class="size-full" class:invisible={isPreviewing} inert={isPreviewing}>
+              {@render sourceEditor(!isPreviewing)}
+            </div>
+          {/if}
+          {#if htmlPreview?.document != null}
+            {@const visible = isPreviewing && htmlPreviewIsCurrent}
+            <iframe
+              title={m.ui_viewSettings_htmlPreview_label()}
+              sandbox=""
+              referrerpolicy="no-referrer"
+              srcdoc={htmlPreview.document}
+              class="absolute inset-0 block size-full border-0 bg-background"
+              class:invisible={!visible}
+              inert={!visible}
+            ></iframe>
+          {/if}
+          {#if isPreviewing && !htmlPreviewIsCurrent}
+            <div
+              class="absolute inset-0 flex items-center justify-center text-subtle"
+              role="status"
+            >
+              {m.layout_fileTab_preparing_label()}
+            </div>
+          {/if}
+        </div>
       {:else}
-        <CodeEditor
-          bind:this={codeEditorRef}
-          bind:value={getFileContentForEditor, setFileContentFromEditor}
-          language={fileLanguage}
-          readOnly={isReadOnly}
-          fileName={tab.filePath}
-          {workspaceId}
-          filePath={tab.filePath}
-          lineWrapping={$lineWrapping}
-          lineChanges={$diffIndicators ? fileLineChanges : []}
-          jumpTo={jumpToLine}
-          externalContentVersion={fileLastUpdated}
-          {isPanelFocused}
-        />
+        {@render sourceEditor(true)}
       {/if}
     {:else}
       <div class="flex items-center justify-center h-full text-subtle">

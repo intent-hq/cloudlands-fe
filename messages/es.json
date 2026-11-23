@@ -6724,6 +6724,7 @@
   "ui_viewSettings_editor_label": "Edición",
   "ui_viewSettings_foldUnchanged_label": "Plegar lo no modificado",
   "ui_viewSettings_font_label": "Fuente",
+  "ui_viewSettings_htmlPreview_label": "Vista previa de HTML",
   "ui_viewSettings_markdownPreview_label": "Vista previa de Markdown",
   "ui_viewSettings_noteViewMode_label": "Vista de nota",
   "ui_viewSettings_rawMarkdown_label": "Markdown sin formato",

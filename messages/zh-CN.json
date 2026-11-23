@@ -6724,6 +6724,7 @@
   "ui_viewSettings_editor_label": "编辑器",
   "ui_viewSettings_foldUnchanged_label": "折叠未更改部分",
   "ui_viewSettings_font_label": "字体",
+  "ui_viewSettings_htmlPreview_label": "HTML 预览",
   "ui_viewSettings_markdownPreview_label": "Markdown 预览",
   "ui_viewSettings_noteViewMode_label": "笔记视图",
   "ui_viewSettings_rawMarkdown_label": "原始 Markdown",

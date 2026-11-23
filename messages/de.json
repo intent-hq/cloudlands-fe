@@ -6724,6 +6724,7 @@
   "ui_viewSettings_editor_label": "Editoransicht",
   "ui_viewSettings_foldUnchanged_label": "Unverändertes einklappen",
   "ui_viewSettings_font_label": "Schriftart",
+  "ui_viewSettings_htmlPreview_label": "HTML-Vorschau",
   "ui_viewSettings_markdownPreview_label": "Markdown-Vorschau",
   "ui_viewSettings_noteViewMode_label": "Notizansicht",
   "ui_viewSettings_rawMarkdown_label": "Markdown-Quelltext",

@@ -37,8 +37,9 @@
     showDiff?: boolean;
     diffEnabled?: boolean;
     onToggleDiff?: () => void;
-    /** Show rich Markdown preview toggle (for Markdown files) */
+    /** Show the rendered file preview toggle */
     showPreview?: boolean;
+    previewLabel?: string;
     previewEnabled?: boolean;
     onTogglePreview?: () => void;
     /** Show aggregate file expansion toggle */
@@ -67,6 +68,7 @@
     diffEnabled = false,
     onToggleDiff,
     showPreview = false,
+    previewLabel = m.ui_viewSettings_markdownPreview_label(),
     previewEnabled = false,
     onTogglePreview,
     showExpand = false,
@@ -95,7 +97,7 @@
       closeOnSelect={false}
       onCheckedChange={onTogglePreview}
     >
-      {m.ui_viewSettings_markdownPreview_label()}
+      {previewLabel}
     </Menu.CheckboxItem>
   {/if}
   {#if showExpand}
