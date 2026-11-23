@@ -55,6 +55,7 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
@@ -606,7 +607,9 @@ describe('workspaceOperationsSaga', () => {
     latestUndo()?.();
     await settle();
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
-    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
+    expect(getItem(run.state().workspace.workspaces, 'ws-1' as WorkspaceId)).toMatchObject({
+      id: 'ws-1',
+    });
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).not.toContainEqual(
       expect.objectContaining({ type: 'tabState/openWorkspaceTab' }),
