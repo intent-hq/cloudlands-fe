@@ -46,7 +46,7 @@ const CHANNELS = IPC_CHANNELS.PASSKEYS;
 const base64url = z
   .string()
   .regex(/^[A-Za-z0-9_-]*$/)
-  .max(16_384);
+  .max(262_144);
 const descriptor: z.ZodType<PasskeyCredentialDescriptor> = z.object({
   id: base64url,
   transports: z.array(z.string().max(32)).max(8).optional(),
