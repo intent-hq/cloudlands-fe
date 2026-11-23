@@ -219,7 +219,11 @@ function* clearTombstoneAfterGrace(
  * `{ cancelled: false }` (already committed) surfaces "could not undo"
  * without resurrecting it.
  */
-function* deleteWithUndo(workspace: Workspace, operation: WorkspaceDeletion): SagaGenerator<void> {
+function* deleteWithUndo(
+  workspace: Workspace,
+  operation: WorkspaceDeletion,
+  closedTab: boolean,
+): SagaGenerator<void> {
   if (!operation.begin()) return;
   const undo = createUndoChannel();
   let restored = false;
@@ -276,6 +280,16 @@ function* deleteWithUndo(workspace: Workspace, operation: WorkspaceDeletion): Sa
       if (cancel.ok && cancel.data.cancelled) {
         operation.restore();
         restored = true;
+        if (closedTab) {
+          try {
+            yield* call(showWorkspaceSaga, workspace.id);
+          } catch (error) {
+            logger.warn('Failed to navigate to the restored workspace', {
+              workspaceId: workspace.id,
+              error,
+            });
+          }
+        }
         return;
       }
       notify.error(m.workspace_ops_undoFailed_error());
@@ -310,9 +324,9 @@ function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): Saga
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
   }
-  yield* call(navigateAwayIfViewing, workspaceId);
+  const closedTab = yield* call(navigateAwayIfViewing, workspaceId);
   const current = yield* selectWorkspaceById.effect(workspaceId);
-  if (current && operation.current()) yield* call(deleteWithUndo, current, operation);
+  if (current && operation.current()) yield* call(deleteWithUndo, current, operation, closedTab);
 }
 
 function* confirmDelete(): SagaGenerator<void> {
@@ -323,9 +337,9 @@ function* confirmDelete(): SagaGenerator<void> {
   if (!workspace) return;
   const operation = captureWorkspaceDeletion(workspace);
   if (!operation) return;
-  yield* call(navigateAwayIfViewing, workspaceId);
+  const closedTab = yield* call(navigateAwayIfViewing, workspaceId);
   const current = yield* selectWorkspaceById.effect(workspaceId);
-  if (current && operation.current()) yield* call(deleteWithUndo, current, operation);
+  if (current && operation.current()) yield* call(deleteWithUndo, current, operation, closedTab);
 }
 
 function* confirmArchive(): SagaGenerator<void> {

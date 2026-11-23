@@ -55,6 +55,7 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
@@ -539,6 +540,8 @@ describe('workspaceOperationsSaga', () => {
       data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
     });
     mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: true } });
+    // ws-1 is on screen, so delete closes its tab
+    mocks.navigate.mockResolvedValue(true);
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
     await settle();
@@ -582,6 +585,35 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
     expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
+    // Delete closed the tab; Undo reopens and focuses it, like archive Undo
+    expect(mocks.navigateToRoute).toHaveBeenCalledExactlyOnceWith('/workspace/ws-1');
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('leaves navigation alone on Undo when the deleted workspace was not on screen', async () => {
+    mocks.deleteWorkspace.mockResolvedValue({
+      ok: true,
+      data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+    });
+    mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: true } });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await settle();
+    latestUndo()?.();
+    await settle();
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(getItem(run.state().workspace.workspaces, 'ws-1' as WorkspaceId)).toMatchObject({
+      id: 'ws-1',
+    });
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.flat()).not.toContainEqual(
+      expect.objectContaining({ type: 'tabState/openWorkspaceTab' }),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -593,6 +625,7 @@ describe('workspaceOperationsSaga', () => {
       data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
     });
     mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: false } });
+    mocks.navigate.mockResolvedValue(true);
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
     await vi.advanceTimersByTimeAsync(50);
@@ -603,6 +636,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
     expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
     // Drain the detached tombstone-grace timer so it cannot bleed across tests

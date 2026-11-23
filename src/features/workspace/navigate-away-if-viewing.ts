@@ -23,9 +23,10 @@ function isViewingWorkspace(workspaceId: string): boolean {
  * SvelteKit `goto` that `+layout.svelte`
  * exposes on `window.__app_goto` so this module never imports `$app/*` — which
  * the (pre-existing) main-process typecheck graph cannot resolve.
+ * Resolves `true` when it closed the tab.
  */
-export async function navigateAwayIfViewing(workspaceId: string): Promise<void> {
-  if (!isViewingWorkspace(workspaceId)) return;
+export async function navigateAwayIfViewing(workspaceId: string): Promise<boolean> {
+  if (!isViewingWorkspace(workspaceId)) return false;
   const { closeWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
   const { selectCurrentWorkspaceTabId } =
     await import('$store/renderer/slices/tab-state/tab-state-selectors');
@@ -40,6 +41,7 @@ export async function navigateAwayIfViewing(workspaceId: string): Promise<void> 
 
   const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
   if (goto) await goto(target);
+  return true;
 }
 
 /**
