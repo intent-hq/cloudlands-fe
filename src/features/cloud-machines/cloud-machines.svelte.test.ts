@@ -338,7 +338,7 @@ describe('sandboxes grouped by workspace', () => {
 
 describe('sandbox list under a cloud runner', () => {
   const collapsed = { listsOpen: false };
-  const row = (view: ReturnType<typeof render>, id: string) =>
+  const row = (view: { container: HTMLElement }, id: string) =>
     view.container.querySelector(`[data-cloud-machine-row="${id}"]`) as HTMLElement;
   const toggle = (root: HTMLElement) =>
     root.querySelector('[data-cloud-sandboxes-toggle]') as HTMLButtonElement;

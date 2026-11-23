@@ -113,6 +113,7 @@
 
   const listId = $props.id();
   const counts = $derived(cloudSandboxCountsLabel(sandboxes));
+  const showCounts = $derived(!!counts && !editing);
   const expandable = $derived(!!entry && !editing && sandboxes.length > 0);
   // A failed Pause or Delete keeps the list open so its error shows.
   const sandboxFailed = $derived(sandboxes.some((machine) => !!$failures$[machine.id]));
@@ -163,9 +164,8 @@
   // A ready entry shows no pill; the dot carries it.
   const pillHidden = $derived(entry?.state === 'ready');
   // The counts follow a separator only after other meta text.
-  const metaHasText = $derived(
-    !pillHidden || !!providerLabel || !!entry?.northflank?.region || !!entry?.agent37,
-  );
+  const hasDetails = $derived(!!providerLabel || !!entry?.northflank?.region || !!entry?.agent37);
+  const metaHasText = $derived(!pillHidden || hasDetails);
 
   const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
 
@@ -204,7 +204,7 @@
 </script>
 
 <article
-  class={cn(!first && 'border-t border-border')}
+  class={cn('@container', !first && 'border-t border-border')}
   aria-label={name}
   aria-busy={removing}
   data-cloud-machine-row={entry?.id ?? NEW_CLOUD_ENTRY}
@@ -213,6 +213,8 @@
   <ListRow
     class={cn(
       'items-center px-4 sm:px-5 [&>[data-slot]]:self-center',
+      // A narrow row moves its meta line under the name instead of squeezing the name out.
+      '[&_div:has(>[data-slot=list-row-title])]:flex-wrap [&_div:has(>[data-slot=list-row-title])]:gap-y-0.5',
       expandable && 'cursor-pointer',
     )}
     onclick={onRowClick}
@@ -253,19 +255,24 @@
         {#if status}
           {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
           {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}
-          {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
-          {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
-              >{entry.northflank.region}</span
-            >{/if}
-          {#if entry?.agent37}<span aria-hidden="true">·</span><span data-agent37-placement
-              >{agent37TypeLabel(entry.agent37.instanceType)}
-              <span aria-hidden="true">·</span>
-              {agent37RegionLabel(entry.agent37.region)}</span
-            >{/if}
-          {#if counts && !editing}{#if metaHasText}<span aria-hidden="true">·</span>{/if}<span
-              class="whitespace-nowrap"
-              data-cloud-sandbox-counts>{counts}</span
-            >{/if}
+          <!-- Narrow rows with counts drop the provider details, so the name and counts stay. -->
+          {#if hasDetails}
+            <span class={cn('inline-flex items-center gap-1.5', showCounts && '@max-md:hidden')}>
+              {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
+              {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
+                  >{entry.northflank.region}</span
+                >{/if}
+              {#if entry?.agent37}<span aria-hidden="true">·</span><span data-agent37-placement
+                  >{agent37TypeLabel(entry.agent37.instanceType)}
+                  <span aria-hidden="true">·</span>
+                  {agent37RegionLabel(entry.agent37.region)}</span
+                >{/if}
+            </span>
+          {/if}
+          {#if showCounts}{#if metaHasText}<span
+                aria-hidden="true"
+                class={cn(pillHidden && '@max-md:hidden')}>·</span
+              >{/if}<span class="whitespace-nowrap" data-cloud-sandbox-counts>{counts}</span>{/if}
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}
