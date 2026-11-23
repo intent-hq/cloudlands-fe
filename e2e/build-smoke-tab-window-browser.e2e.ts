@@ -162,6 +162,35 @@ async function expectBrowserShown(tabId: string, pagePath: string): Promise<void
     });
 }
 
+/**
+ * The windows that show a page whose address ends with `pagePath` (visible,
+ * non-empty bounds), as 'tab' for a tab window and 'other' for any other.
+ */
+async function windowsShowingPage(pagePath: string): Promise<Array<'tab' | 'other'>> {
+  return app.evaluate(({ BrowserWindow, WebContentsView }, wanted) => {
+    const kinds: Array<'tab' | 'other'> = [];
+    for (const window of BrowserWindow.getAllWindows()) {
+      const views = window.contentView.children.filter(
+        (view): view is Electron.WebContentsView => view instanceof WebContentsView,
+      );
+      const isTabWindow = [window.webContents, ...views.map((view) => view.webContents)].some(
+        (contents) => contents.getURL().includes('/tab-window/'),
+      );
+      const shows = views.some((view) => {
+        const bounds = view.getBounds();
+        return (
+          view.getVisible() &&
+          bounds.width > 0 &&
+          bounds.height > 0 &&
+          view.webContents.getURL().endsWith(wanted)
+        );
+      });
+      if (shows) kinds.push(isTabWindow ? 'tab' : 'other');
+    }
+    return kinds;
+  }, pagePath);
+}
+
 async function dumpDiagnostics(tabId: string): Promise<void> {
   await fs.mkdir(SCREENSHOT_DIR, { recursive: true });
   await screenshot(`failed-${tabId}`).catch(() => undefined);
@@ -254,40 +283,69 @@ async function machineViewPage(): Promise<Page> {
   return found!;
 }
 
-test.describe('Build Smoke — browser after a tab window', () => {
-  test.beforeEach(async () => {
-    server = createServer((request, response) => {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(`<!doctype html><title>${request.url}</title><h1>${request.url}</h1>`);
-    });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const repo = createTempRepo();
-    repoPath = repo.repoPath;
-    repoCleanup = repo.cleanup;
-    const launched = await launchPackagedApp({
-      extraEnv: { MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js') },
-      localPrefs: { browserViewsInMainEnabled: true },
-    });
-    app = launched.app;
-    page = await machineViewPage();
+/**
+ * Serve test pages, make a repo, and launch the app. Intent OS sets only
+ * INTENT_OS=1 (its launcher does); the Labs setting is on by its default
+ * there. Elsewhere the test turns the Labs setting on.
+ */
+async function launch(intentOs: boolean, prefs: Record<string, unknown> = {}): Promise<void> {
+  server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(`<!doctype html><title>${request.url}</title><h1>${request.url}</h1>`);
   });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const repo = createTempRepo();
+  repoPath = repo.repoPath;
+  repoCleanup = repo.cleanup;
+  const launched = await launchPackagedApp({
+    extraEnv: {
+      MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
+      ...(intentOs ? { INTENT_OS: '1' } : {}),
+    },
+    localPrefs: intentOs ? prefs : { browserViewsInMainEnabled: true, ...prefs },
+  });
+  app = launched.app;
+  page = await machineViewPage();
+}
 
-  test.afterEach(async () => {
-    await exitPackagedApp(app);
-    server?.close();
-    try {
-      repoCleanup?.();
-    } catch {
-      /* best-effort */
-    }
-  });
+async function tearDown(): Promise<void> {
+  await exitPackagedApp(app);
+  server?.close();
+  try {
+    repoCleanup?.();
+  } catch {
+    /* best-effort */
+  }
+}
+
+test.describe('Build Smoke — browser after a tab window', () => {
+  test.beforeEach(() => launch(false));
+  test.afterEach(tearDown);
 
   for (const how of ['shortcut', 'menu'] as const) {
     test(`every browser shows after open in own window (${how}) and move back`, async () => {
       await runScenario(how);
     });
   }
+});
+
+test.describe('Build Smoke — browser tab window on Intent OS', () => {
+  test.beforeEach(() => launch(true));
+  test.afterEach(tearDown);
+
+  test('the page shows in its tab window, not in the main window', async () => {
+    await runScenario('shortcut');
+  });
+});
+
+test.describe('Build Smoke — browser tab window on Intent OS with the dock', () => {
+  test.beforeEach(() => launch(true, { dockEnabled: true }));
+  test.afterEach(tearDown);
+
+  test('the page shows in its tab window with the dock on', async () => {
+    await runScenario('shortcut');
+  });
 });
 
 /** Open the active browser tab `tabId` in its own window by the shortcut or the tab menu. */
@@ -349,6 +407,18 @@ async function runScenario(how: 'shortcut' | 'menu'): Promise<void> {
       { timeout: 20_000, message: 'a tab window opened' },
     )
     .toBe(true);
+  // The page moved with the tab: the tab window shows it, the main window does not.
+  await expect
+    .poll(() => windowsShowingPage('/first'), {
+      timeout: 20_000,
+      message: 'the first page shows in the tab window only',
+    })
+    .toEqual(['tab'])
+    .catch(async (error: unknown) => {
+      await dumpDiagnostics(`${how}-tab-window`);
+      throw error;
+    });
+  await dumpDiagnostics(`${how}-after-own-window`);
   await page.bringToFront();
   await screenshot(`${how}-2-after-own-window`);
 
