@@ -331,7 +331,7 @@ export function buildMachineModelGroups({
       const known = labelled.get(modelId);
       return known
         ? { ...known, value: modelId }
-        : { value: modelId, label: fallbackLabel?.(modelId, base) ?? modelId };
+        : { value: modelId, label: fallbackLabel?.(modelId, ref) ?? modelId };
     });
     if (options.length === 0) {
       // Nothing to pick: no tab, unless the machine's list isn't in yet.

@@ -293,6 +293,23 @@ describe('buildMachineModelGroups', () => {
     expect(seen).toEqual(['claude-code:sonnet', 'claude-code:only-on-machine']);
   });
 
+  it('passes the profile-qualified ref to fallbackLabel for a profile row', () => {
+    const compatible: ProviderProfileSummary = {
+      ...work,
+      remoteCompatible: true,
+      remoteIncompatibility: undefined,
+    };
+    const groups = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code@p-work'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: [compatible],
+      fallbackLabel: (id, provider) => `${provider}/${id}`,
+    });
+    expect(groups[0].options[0].label).toBe('claude-code@p-work/opus');
+  });
+
   it('offers a signed-out Default only when it brings credentials (unknown counts as yes)', () => {
     expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
     const build = (
