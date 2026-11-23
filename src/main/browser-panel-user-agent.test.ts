@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  browserPanelUserAgent,
-  withChromeBrand,
-  withChromeBrandHeaders,
-} from './browser-panel-user-agent';
+import { browserPanelUserAgent, withChromeBrandHeaders } from './browser-panel-user-agent';
 
 const ELECTRON_UA =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) intent-cloudlands/2.381.1 Chrome/142.0.7444.59 Electron/44.0.0 Safari/537.36';
