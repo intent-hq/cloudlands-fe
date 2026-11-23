@@ -221,6 +221,66 @@ describe('HTML to Markdown Conversion', () => {
       expect(result).toBe('```mermaid\nsay &quot;hi&quot;\n```');
     });
   });
+
+  // TipTap's TableCell/TableHeader wrap cell content in <p> (intent-hq/intent#9903).
+  describe('Table cells in editor HTML shape', () => {
+    const table = (cell: string) =>
+      `<div class="tableWrapper"><table class="note-table"><tbody><tr><th class="note-table-header"><p>Name</p></th><th class="note-table-header"><p>Value</p></th></tr><tr><td class="note-table-cell"><p>alpha</p></td><td class="note-table-cell">${cell}</td></tr></tbody></table></div>`;
+    const row = (cell: string) => `| Name | Value |\n| --- | --- |\n| alpha | ${cell} |`;
+
+    it('keeps a link and bold text', () => {
+      const html = table('<p><a href="https://example.test/a">docs</a> and <strong>b</strong></p>');
+      expect(processHTMLToMarkdown(html)).toBe(row('[docs](https://example.test/a) and **b**'));
+    });
+
+    it('keeps italic and inline code', () => {
+      const html = table('<p><em>it</em> then <code>run()</code></p>');
+      expect(processHTMLToMarkdown(html)).toBe(row('*it* then `run()`'));
+    });
+
+    it('keeps a mention chip token', async () => {
+      const chipHtml = await processMarkdownToHTML('@src/a.ts:10');
+      const chip = /<span[^>]*data-mention[\s\S]*?<\/span>/.exec(chipHtml)?.[0];
+      expect(chip).toBeTruthy();
+      const token = processHTMLToMarkdown(`<p>${chip}</p>`);
+      expect(token).toContain('src/a.ts:10');
+
+      expect(processHTMLToMarkdown(table(`<p>see ${chip}</p>`))).toBe(row(`see ${token}`));
+    });
+
+    it('keeps an inline image', () => {
+      const html = table('<p>logo <img src="https://example.test/i.png" alt="i"></p>');
+      expect(processHTMLToMarkdown(html)).toBe(row('logo ![i](https://example.test/i.png)'));
+    });
+
+    it('escapes a literal pipe, also inside code', () => {
+      const html = table('<p>a | b <code>x|y</code></p>');
+      expect(processHTMLToMarkdown(html)).toBe(row('a \\| b `x\\|y`'));
+    });
+
+    it('keeps a backslash before a pipe on one row, stable across saves', async () => {
+      const html = table(String.raw`<p>a\|b <code>c\|d</code> <code>e\\|f</code></p>`);
+      const markdown = row(
+        String.raw`a\\\|b ` + '`' + String.raw`c\|d` + '` `' + String.raw`e\\\|f` + '`',
+      );
+      expect(processHTMLToMarkdown(html)).toBe(markdown);
+
+      const reloaded = processHTMLToMarkdown(await processMarkdownToHTML(markdown));
+      expect(reloaded).toBe(markdown);
+    });
+
+    it('serializes an empty cell as an empty column', () => {
+      expect(processHTMLToMarkdown(table('<p></p>'))).toBe(row(''));
+    });
+
+    it('joins several paragraphs and hard breaks with <br> on one row', () => {
+      expect(processHTMLToMarkdown(table('<p>one</p><p><strong>two</strong></p>'))).toBe(
+        row('one<br>**two**'),
+      );
+      expect(processHTMLToMarkdown(table('<p>a<br>b</p>'))).toBe(row('a<br>b'));
+    });
+  });
+
   // A saved code fence must read back to the same fence: marked 18.2 reads
   // the blank line a fence's content ends with as part of its text
   // ("```\n\n```" is "\n"; 18.0 gave ""), so a block written back as
