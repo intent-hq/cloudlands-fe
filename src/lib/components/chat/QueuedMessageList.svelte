@@ -14,7 +14,11 @@
     queuedMessagePermissions,
   } from '$lib/utils/queued-message-permissions';
   import { hasParsedMention, mentionTokensToText } from '$lib/services/mentions/registry';
-  import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
+  import {
+    presentQueuedMessageText,
+    stripCollaboratorSenderPreamble,
+    type CollaboratorSenderAttribution,
+  } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
   import ArrowUUpLeftIcon from 'phosphor-svelte/lib/ArrowUUpLeftIcon';
@@ -102,6 +106,8 @@
     /** Presence identity affects attribution display only. */
     presentationPrincipalId?: string | null;
     ownerPrincipalId?: string | null;
+    /** Predicted preamble for the viewer's own sends, used before the daemon serves their author. */
+    ownSender?: CollaboratorSenderAttribution | null;
     isHostOwner?: boolean;
   }
 
@@ -122,6 +128,7 @@
     ownPrincipalId = null,
     presentationPrincipalId = ownPrincipalId,
     ownerPrincipalId = null,
+    ownSender = null,
     isHostOwner = false,
   }: Props = $props();
 
@@ -262,7 +269,11 @@
     message: Pick<QueuedMessage, 'messageMetadata' | 'author'>,
     text: string,
   ): string {
-    return presentQueuedMessageText(message, text, ownerPrincipalId);
+    const presented = presentQueuedMessageText(message, text, ownerPrincipalId);
+    const author = message.author as { principalId?: string } | null | undefined;
+    if (presented !== text || !ownSender || author?.principalId !== ownSender.author.principalId)
+      return presented;
+    return stripCollaboratorSenderPreamble(text, ownSender);
   }
   type EditOperation = { messageId: string; token: number; releasing: boolean };
   let editOperationSequence = 0;

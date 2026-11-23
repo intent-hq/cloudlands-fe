@@ -8550,6 +8550,7 @@
                 ownPrincipalId={queuePrincipalId}
                 presentationPrincipalId={$presenceOwnPrincipalId$}
                 ownerPrincipalId={workspace?.ownerPrincipalId}
+                ownSender={ownPendingSender}
                 isHostOwner={$isHostOwner$}
                 onsendall={handleSendAllQueuedMessages}
                 onclearall={handleClearAllQueuedMessages}
