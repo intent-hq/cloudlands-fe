@@ -78,6 +78,11 @@ describe('searchSettings', () => {
     expect(hits.every((hit) => hit.rows === null && hit.rowQuery === '')).toBe(true);
   });
 
+  it('finds the host sync switch that the Machines list renders', () => {
+    const query = m.settings_backendSync_toggle_label();
+    expect(hitsOf(query).map((hit) => hit.id)).toContain('devices');
+  });
+
   it('requires every query term, in any order and case', () => {
     const label = m.settings_appearance_reduceMotionOnBattery_label();
     const [first, ...rest] = label.split(/\s+/);

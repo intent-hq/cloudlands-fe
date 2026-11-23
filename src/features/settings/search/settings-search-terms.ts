@@ -180,6 +180,7 @@ export const SETTINGS_SEARCH_TERMS: Readonly<Record<string, () => string[]>> = {
     m.settings_section_toolApprovals(),
   ],
   devices: () => [
+    m.settings_backendSync_toggle_label(),
     m.settings_devices_accentBlue_label(),
     m.settings_devices_accentEmerald_label(),
     m.settings_devices_accentIndigo_label(),
