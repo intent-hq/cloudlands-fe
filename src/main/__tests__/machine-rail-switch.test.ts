@@ -714,16 +714,21 @@ describe('a frame open on the local machine', () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     await invoke(RAIL.READY, viewOf('b').webContents);
     await invoke(RAIL.SHOWN, viewOf('b').webContents);
-    viewOf('b').webContents.focus.mockClear();
-    for (const listener of fakes.windowListeners.focus ?? []) listener();
-    expect(viewOf('b').webContents.focus).toHaveBeenCalled();
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(true);
+    try {
+      viewOf('b').webContents.focus.mockClear();
+      for (const listener of fakes.windowListeners.focus ?? []) listener();
+      expect(viewOf('b').webContents.focus).toHaveBeenCalled();
 
-    await invoke(RAIL.SELECT, local(), { id: 'local' });
-    viewOf('b').webContents.focus.mockClear();
-    local().focus.mockClear();
-    for (const listener of fakes.windowListeners.focus ?? []) listener();
-    expect(local().focus).toHaveBeenCalled();
-    expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+      await invoke(RAIL.SELECT, local(), { id: 'local' });
+      viewOf('b').webContents.focus.mockClear();
+      local().focus.mockClear();
+      for (const listener of fakes.windowListeners.focus ?? []) listener();
+      expect(local().focus).toHaveBeenCalled();
+      expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    } finally {
+      focused.mockRestore();
+    }
   });
 
   it('leaves keyboard focus alone when the machine on screen already has it', async () => {
@@ -733,10 +738,33 @@ describe('a frame open on the local machine', () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     await invoke(RAIL.READY, viewOf('b').webContents);
     await invoke(RAIL.SHOWN, viewOf('b').webContents);
-    viewOf('b').webContents.focus.mockClear();
-    viewOf('b').webContents.isFocused.mockReturnValue(true);
-    for (const listener of fakes.windowListeners.focus ?? []) listener();
-    expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(true);
+    try {
+      viewOf('b').webContents.focus.mockClear();
+      viewOf('b').webContents.isFocused.mockReturnValue(true);
+      for (const listener of fakes.windowListeners.focus ?? []) listener();
+      expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    } finally {
+      focused.mockRestore();
+    }
+  });
+
+  it('does not take focus back on a focus event that arrives after the window lost it', async () => {
+    // On macOS webContents.focus() also raises its window. A late focus event
+    // for a window the user already left raised it over the new one, whose
+    // own late event raised it back: two windows swapped places until a
+    // switch landed between events.
+    await invoke(RAIL.ADD, local(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.SHOWN, viewOf('b').webContents);
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(false);
+    try {
+      viewOf('b').webContents.focus.mockClear();
+      for (const listener of fakes.windowListeners.focus ?? []) listener();
+      expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    } finally {
+      focused.mockRestore();
+    }
   });
 
   /** Fire `event` on `contents` as Electron would. */

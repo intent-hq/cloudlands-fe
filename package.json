@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.374.1",
+  "version": "2.374.2",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -349,7 +349,7 @@
     "font-list": "^2.0.2",
     "ignore": "^7.0.16",
     "katex": "0.19.1",
-    "marked": "^18.0.11",
+    "marked": "^18.2.1",
     "node-pty": "1.1.0",
     "pdfjs-dist": "6.5.438",
     "ssh2": "^1.17.0",

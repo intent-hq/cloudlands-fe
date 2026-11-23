@@ -139,6 +139,10 @@
   let fitGeneration = 0;
   let settledGeneration = $state(0);
   let decodedSource = $derived(decodeHtmlEntities(decodeBase64(code)));
+  // Empty as `renderDiagram` reads it: by the decoded source, not the
+  // attribute — a blank source stored as base64 ("Cg==" for the "\n" of a
+  // fence holding one blank line) holds no diagram either.
+  let isEmptySource = $derived(!decodedSource.trim());
   const MermaidActorIcon = getPhosphorIconComponent(faUser);
 
   function readMermaidThemeSignature(): string {
@@ -1878,7 +1882,7 @@ ${source}`;
       ? 'error'
       : renderedSvg
         ? 'rendered'
-        : !code?.trim() && !isStreaming
+        : isEmptySource && !isStreaming
           ? 'empty'
           : 'pending',
   );
@@ -1968,7 +1972,7 @@ ${source}`;
         <pre>{decodedSource}</pre>
       </div>
     {/if}
-  {:else if !code?.trim() && !isStreaming}
+  {:else if isEmptySource && !isStreaming}
     <div class="mermaid-empty" role="status">
       <strong>{m.markdown_mermaid_noCode_label()}</strong>
       <span>{m.markdown_mermaid_noCode_description()}</span>

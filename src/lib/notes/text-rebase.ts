@@ -2458,10 +2458,10 @@ function tableCells(
   return cells.length > 1 ? cells : undefined;
 }
 
-/** A character reference as the renderer passes one to the note editor's HTML parser: `&name;`, `&#ddd;` or `&#xhh;`. */
+/** A character reference as a note writes one: `&name;`, `&#ddd;` or `&#xhh;`. */
 const CHARACTER_REFERENCE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});/g;
 
-/** The text the note editor shows for the character `reference`: as its HTML parser decodes it, or as written. */
+/** The text the note editor shows for the character `reference`: as the renderer and its HTML parser decode it, or as written. */
 function decodeReference(reference: string): string {
   return decodeCharacterReference(reference) ?? reference;
 }
@@ -2471,8 +2471,10 @@ function decodeReference(reference: string): string {
  * letters go: a link read by the renderer's own `tokenizer` (the inline form,
  * then a reference every label resolves in, as `imageAt` reads an image)
  * stands as its label, an image as nothing, a character reference as the
- * editor's HTML parser shows it (`decodeReference` — the standard's table
- * and arithmetic, no DOM, so a cell of any length is one pass). The rest is
+ * editor shows it (`decodeReference` — marked's arithmetic for a numeric
+ * reference, the standard's table for a named one, no DOM, so a cell of any
+ * length is one pass) — but in a URL, which shows as written
+ * (`decodeOutsideUrls`). The rest is
  * kept as written — formatting is letterless, and a reference the note
  * leaves undefined shows its letters either way. `cell` itself when the
  * tokenizer could not be made.
@@ -2487,11 +2489,47 @@ function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string
     if (!reader) return cell;
     const link = linkAt(reader, cell.slice(at));
     if (!link) continue;
-    out += cell.slice(pos, at) + link.text;
+    out += decodeOutsideUrls(cell.slice(pos, at), reader) + decodeReferences(link.text);
     pos = at + link.length;
   }
-  out += cell.slice(pos);
-  return out.indexOf('&') === -1 ? out : out.replace(CHARACTER_REFERENCE, decodeReference);
+  if (pos === 0 && cell.indexOf('&') === -1) return cell;
+  const reader = tokenizer();
+  if (!reader) return cell;
+  return out + decodeOutsideUrls(cell.slice(pos), reader);
+}
+
+/** `text` with every character reference as the note editor shows it (`decodeReference`). */
+function decodeReferences(text: string): string {
+  return text.indexOf('&') === -1 ? text : text.replace(CHARACTER_REFERENCE, decodeReference);
+}
+
+/**
+ * Where marked may read a URL outside a link: the starts its GFM text rule
+ * stops at to try one — a protocol in any case anywhere, `www.` only at the
+ * start or after a blank, `*`, `_`, `~` or `(` (the tokenizer's `url`
+ * decides whether one is there, and how far it runs).
+ */
+const URL_START = /(?:[hH][tT][tT][pP][sS]?|[fF][tT][pP]):\/\/|(?<![^\s*_~(])www\./g;
+
+/**
+ * `text` — no link in it — as the note editor shows it as far as character
+ * references go: decoded (`decodeReferences`) but in a URL marked reads
+ * with `tokenizer`, which shows its references as written (marked 18.2,
+ * as CommonMark and GFM ask: `www.a.test/?b&amp;c` shows `&amp;`).
+ */
+function decodeOutsideUrls(text: string, tokenizer: Tokenizer): string {
+  if (text.indexOf('&') === -1) return text;
+  let out = '';
+  let pos = 0;
+  URL_START.lastIndex = 0;
+  for (let start = URL_START.exec(text); start; start = URL_START.exec(text)) {
+    const url = tokenizer.url(text.slice(start.index));
+    if (!url) continue;
+    out += decodeReferences(text.slice(pos, start.index)) + url.raw;
+    pos = start.index + url.raw.length;
+    URL_START.lastIndex = pos;
+  }
+  return out + decodeReferences(text.slice(pos));
 }
 
 /** Definitions every label resolves in. */
