@@ -4,7 +4,7 @@
  * Settings → Machines with E2B: the Add machine menu, the setup form, the
  * E2B row with its live sandboxes, and the state each one shows.
  */
-import { fireEvent, render, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
@@ -371,7 +371,6 @@ describe('sandbox list under a cloud runner', () => {
     expect(toggle(view.container).getAttribute('aria-expanded')).toBe('false');
     expect(counts(view.container)).toBe('2 running · 1 paused');
     expect(list(view.container)).toBeNull();
-    expect(view.queryByRole('link', { name: 'Open E2B dashboard' })).toBeNull();
   });
 
   it('opens from the row and keeps the counts on it', async () => {
@@ -381,9 +380,7 @@ describe('sandbox list under a cloud runner', () => {
     expect(toggle(view.container).getAttribute('aria-expanded')).toBe('true');
     expect(rowCount(view.container)).toBe(3);
     expect(counts(view.container)).toBe('2 running · 1 paused');
-    expect(view.getByRole('link', { name: 'Open E2B dashboard' }).textContent?.trim()).toBe(
-      'Dashboard',
-    );
+    expect(view.queryByRole('link', { name: 'Open E2B dashboard' })).toBeNull();
     await fireEvent.click(toggle(view.container));
     expect(list(view.container)).toBeNull();
   });
@@ -441,7 +438,7 @@ describe('sandbox list under a cloud runner', () => {
     const agent37 = row(view, AGENT37_ENTRY.id);
     expect(counts(agent37)).toBe('1 running · 1 paused');
     await fireEvent.click(toggle(agent37));
-    expect(list(agent37)?.textContent).toContain('Instances');
+    expect(list(agent37)?.getAttribute('aria-label')).toBe('Agent37 instances');
   });
 });
 
@@ -1187,7 +1184,7 @@ describe('Vercel form', () => {
     expect(error).not.toContain('404');
   });
 
-  it('lists the sandboxes of a Vercel entry, with Open Vercel', () => {
+  it('lists the sandboxes of a Vercel entry, with Open Vercel in its menu', async () => {
     seed('vercel-providers');
     const view = render(DevicesSettings);
     const row = view.container.querySelector(
@@ -1197,6 +1194,7 @@ describe('Vercel form', () => {
     const list = row.querySelector('[data-cloud-sandboxes]');
     expect(list?.getAttribute('aria-label')).toBe('Vercel sandboxes');
     expect(list?.textContent).toContain('Preview deployer');
-    expect(list?.querySelector('a[href="https://vercel.com/dashboard"]')).not.toBeNull();
+    await fireEvent.click(within(row).getByRole('button', { name: /^Actions for / }));
+    expect(await screen.findByRole('menuitem', { name: 'Open Vercel' })).toBeTruthy();
   });
 });

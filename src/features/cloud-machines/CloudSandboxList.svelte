@@ -12,12 +12,7 @@
   import { cn } from '$lib/utils';
   import { ListView } from '$lib/components/patterns/collection';
   import { Button, Tooltip } from '$lib/components/patterns/settings/custom-controls';
-  import {
-    faArrowUpRightFromSquare,
-    faChevronDown,
-    faPause,
-    faTrash,
-  } from '$lib/icons/phosphor-icons';
+  import { faChevronDown, faPause, faTrash } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type { RemoteMachine } from '$shared/types/remote-machines';
   import type { CloudProviderKind } from '$shared/types/cloud-machines';
@@ -33,7 +28,6 @@
   import { navigateToDesktopAgent } from '$features/desktop/desktop-agent-navigation';
   import { cloudMachineDeleteRequested, cloudMachinePauseRequested } from './cloud-machines-slice';
   import {
-    cloudDashboardUrl,
     cloudEntryRelayLabel,
     cloudErrorText,
     formatUptime,
@@ -191,27 +185,7 @@
 {/snippet}
 
 <section class="space-y-1 px-4 pb-3 sm:px-5" aria-label={copy.listTitle} data-cloud-sandboxes>
-  <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-    <p class="type-caption text-muted-foreground">
-      {copy.listLabel}
-      {#if relay}<span class="whitespace-nowrap"
-          ><span aria-hidden="true">·</span> <span data-cloud-relay>{relay}</span></span
-        >{/if}
-    </p>
-    <Button
-      variant="ghost"
-      size="sm"
-      href={cloudDashboardUrl(provider)}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={copy.dashboardOpen}
-      class="-mr-2 text-muted-foreground hover:text-foreground"
-      data-cloud-dashboard-link
-    >
-      {m.cloudMachines_dashboardShort_label()}
-      {#snippet trailingIcon()}<Fa icon={faArrowUpRightFromSquare} class="size-3.5!" />{/snippet}
-    </Button>
-  </div>
+  {#if relay}<p class="type-caption text-muted-foreground" data-cloud-relay>{relay}</p>{/if}
   {#each groups as group (group.key)}
     {#if group.sandboxes.length === 1}
       <!-- One sandbox needs no group: its workspace shows in the row. -->

@@ -10,7 +10,14 @@
   import { Badge, type BadgeColor } from '$lib/components/ui/badge';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
-  import { faChevronDown, faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
+  import {
+    faArrowUpRightFromSquare,
+    faChevronDown,
+    faCloud,
+    faPen,
+    faTrash,
+  } from '$lib/icons/phosphor-icons';
+  import { openExternalUrl } from '$lib/utils/open-external';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -41,6 +48,7 @@
     agent37TypeLabel,
     cloudEntryNameError,
     cloudErrorText,
+    cloudDashboardUrl,
     cloudProviderCopy,
     cloudSandboxCountsLabel,
   } from './cloud-machines-format';
@@ -141,31 +149,28 @@
   // Sandboxes run Linux; a running one's own report wins.
   const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os || 'linux'));
 
-  const status = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
+  const status = $derived.by((): { label: string; color: BadgeColor } | null => {
     if (!entry) return null;
     switch (entry.state) {
       case 'ready':
         return {
           label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
           color: 'green',
-          dot: 'bg-success',
         };
       case 'key-rejected':
         return {
           label: cloudProviderCopy(kind).keyRejected,
           color: 'red',
-          dot: 'bg-danger',
         };
       default:
         return {
           label: cloudProviderCopy(kind).unreachable,
           color: 'amber',
-          dot: 'bg-warning',
         };
     }
   });
 
-  // A ready entry shows no pill; the dot carries it.
+  // A ready entry shows no pill.
   const pillHidden = $derived(entry?.state === 'ready');
   // The counts follow a separator only after other meta text.
   const hasDetails = $derived(!!providerLabel || !!entry?.northflank?.region || !!entry?.agent37);
@@ -176,6 +181,11 @@
   function ownActions(): ActionDefinition[] {
     return entry
       ? [
+          {
+            id: 'dashboard',
+            label: cloudProviderCopy(kind).dashboardOpen,
+            icon: faArrowUpRightFromSquare,
+          },
           { id: 'edit', label: m.cloudMachines_edit_label(), icon: faPen },
           {
             id: 'remove',
@@ -190,7 +200,8 @@
 
   function onAction(id: string) {
     if (order?.onAction(id) || !entry) return;
-    if (id === 'edit') onEdit();
+    if (id === 'dashboard') void openExternalUrl(cloudDashboardUrl(kind));
+    else if (id === 'edit') onEdit();
     else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested(entry.id));
   }
 
@@ -225,15 +236,8 @@
   >
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            status?.dot ?? 'bg-transparent',
-          )}
-          role={pillHidden ? 'img' : undefined}
-          aria-label={pillHidden ? status?.label : undefined}
-          aria-hidden={pillHidden ? undefined : 'true'}
-        ></span>
+        <!-- No status dot: a problem shows its pill. The spacer keeps the icon column. -->
+        <span class="size-2.5" aria-hidden="true"></span>
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
     {/snippet}
