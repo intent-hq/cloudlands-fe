@@ -200,8 +200,10 @@
 
   function onAction(id: string) {
     if (order?.onAction(id) || !entry) return;
-    if (id === 'dashboard') void openExternalUrl(cloudDashboardUrl(kind));
-    else if (id === 'edit') onEdit();
+    if (id === 'dashboard') {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- opens the provider dashboard in the system browser, not a domain data fetch
+      void openExternalUrl(cloudDashboardUrl(kind));
+    } else if (id === 'edit') onEdit();
     else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested(entry.id));
   }
 
