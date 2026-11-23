@@ -168,6 +168,16 @@ window.on('focus', async () => {
 });`,
     },
     {
+      name: 'a fresh guard after a for-await loop',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  for await (const update of updates) applyUpdate(update);
+  if (!window.isFocused()) return;
+  view.webContents.focus();
+});`,
+    },
+    {
       name: 'a handler that cannot be resolved in this file',
       code: `
 import { onFocus } from './focus';
@@ -348,6 +358,18 @@ window.on('focus', async () => {
   } while (await more());
 });`,
       errors: [error(5), error(8), error(9), error(11)],
+    },
+    {
+      name: 'a for-await loop between the guard and focus()',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  for await (const update of updates) {
+    applyUpdate(update);
+  }
+  view.webContents.focus();
+});`,
+      errors: [error(7)],
     },
     {
       name: 'a TypeScript-cast emitter and computed keys',

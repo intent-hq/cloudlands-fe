@@ -187,14 +187,16 @@ function enclosingFunction(node) {
   return current;
 }
 
-// An await or yield in `fn` itself, between `start` and the end of `call`, that runs
-// before focus(): focus can move to another window while it waits. An await of the
-// focus() call itself runs after it.
+// An await, yield or for-await loop in `fn` itself, between `start` and the end of
+// `call`, that runs before focus(): focus can move to another window while it waits. An
+// await of the focus() call itself runs after it.
 function suspendsBefore(fn, start, call, visitorKeys) {
   const visit = (node) => {
     if (node !== fn && FUNCTION_TYPES.has(node.type)) return false;
     if (
-      (node.type === 'AwaitExpression' || node.type === 'YieldExpression') &&
+      (node.type === 'AwaitExpression' ||
+        node.type === 'YieldExpression' ||
+        (node.type === 'ForOfStatement' && node.await)) &&
       node.range[0] >= start &&
       node.range[1] <= call.range[1] &&
       (node.range[1] <= call.range[0] || node.range[0] >= call.range[0])
