@@ -211,11 +211,11 @@ async function showWebNotification(
         // window.focus() can throw in exotic embeddings; navigation still runs.
       }
       if (workspaceId) {
-        void handleNotificationNavigate({
-          workspaceId,
-          ...(workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
-          ...(agentId ? { agentId } : {}),
-        });
+        const payload =
+          workspaceId === CHIEF_WORKSPACE_ID
+            ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
+            : { workspaceId };
+        void handleNotificationNavigate(payload);
       }
       notification.close();
     };

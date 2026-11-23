@@ -55,7 +55,6 @@ import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import type { AgentIdleEvent } from '$features/events/types';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
@@ -814,9 +813,6 @@ describe('web-notification-service', () => {
 
       expect(focusSpy).toHaveBeenCalled();
       expect(goto).toHaveBeenCalledWith('/workspace/ws-1');
-      expect(mockAppStore.dispatch).toHaveBeenCalledWith(
-        openAgentTabRequested('ws-1', { agentId: 'agent-1' }),
-      );
       expect(MockNotification.instances[0].close).toHaveBeenCalled();
       focusSpy.mockRestore();
     });

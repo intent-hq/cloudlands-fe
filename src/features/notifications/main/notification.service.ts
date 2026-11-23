@@ -57,6 +57,7 @@ import {
 import { ANY_HOST, type WindowHostScope } from '../../system/main/window-workspace-tracking';
 import {
   deliverNotificationNavigation,
+  notificationDeepLink,
   type NotificationNavigation,
 } from '../../deeplink/main/pending-deep-links';
 
@@ -1161,9 +1162,10 @@ export class NotificationService {
   /**
    * Notification-click fallback when no frame holds the emitting machine.
    * With the machine rail on, the machine joins the most recently focused
-   * frame, opening the workspace in its view; a frame that cannot take it (a
-   * full rail, or this app's own daemon) leaves it to a new frame, as with
-   * the rail off.
+   * frame and the click's navigation (workspace and agent, or the Assistant
+   * thread) is queued for the view that shows it; a frame that cannot take
+   * it (a full rail, or this app's own daemon) leaves it to a new frame, as
+   * with the rail off.
    */
   private openMachineForNotificationClick(
     workspaceId?: string,
@@ -1178,15 +1180,11 @@ export class NotificationService {
     void (async () => {
       try {
         const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
-        // An agent or the Assistant (no workspace page) opens once the
-        // machine's view is ready, so the machine joins on its home.
         const navigation = notificationNavigateTarget(workspaceId, agentId);
-        const followUp = navigation?.chief || navigation?.agentId ? navigation : undefined;
-        const route = followUp ? undefined : workspaceId;
-        if (await openInvitedMachineInWindow(frame, backendId, route)) {
+        const open = navigation ? notificationDeepLink(navigation) : undefined;
+        if (await openInvitedMachineInWindow(frame, backendId, open)) {
           claimActivationFocus(frame);
           activateAppOnMac();
-          if (followUp) await selectMachineForClick(frame, backendId, followUp);
           logger.info('Notification click added the machine to the recent frame', {
             workspaceId,
             backendId,
@@ -1199,7 +1197,7 @@ export class NotificationService {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      this.openWindowForNotificationClick(workspaceId, backendId);
+      this.openWindowForNotificationClick(workspaceId, backendId, agentId);
     })();
   }
 
@@ -1233,9 +1231,11 @@ export class NotificationService {
         );
         // The renderer pulls the agent (or Assistant thread) once it starts.
         const navigation = notificationNavigateTarget(workspaceId, agentId);
-        const contents = window ? rendererFor(window, backendId) : null;
-        if (contents && (navigation?.chief || navigation?.agentId)) {
-          deliverNotificationNavigation(contents, false, navigation);
+        if (navigation?.chief || navigation?.agentId) {
+          const contents = window ? rendererFor(window, backendId) : null;
+          if (contents) deliverNotificationNavigation(contents, false, navigation);
+          else
+            logger.warn('New window has no view of the machine; agent not opened', { backendId });
         }
         activateAppOnMac();
         logger.info('Notification click opened a new window (no suitable window was live)', {

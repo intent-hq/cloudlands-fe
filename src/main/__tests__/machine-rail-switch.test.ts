@@ -870,6 +870,20 @@ describe('a frame open on the local machine', () => {
       ]);
     });
 
+    it('queues a notification click on the view that shows the machine, even in another frame', async () => {
+      otherFrame(['c', 'b']);
+      const click = {
+        type: 'notification',
+        params: { workspaceId: 'shared-ws', agentId: 'agent-1' },
+      } as const;
+
+      expect(await openInvitedMachineInWindow(fakes.window as never, 'b', click)).toBe(true);
+
+      const { consumePendingDeepLinks } =
+        await import('../../features/deeplink/main/pending-deep-links');
+      expect(consumePendingDeepLinks(viewOf('b').webContents.id as never).actions).toEqual([click]);
+    });
+
     it('selects through the window command seam, and adds a machine no frame holds', async () => {
       const other = otherFrame(['c', 'b']);
       const selected = selectFrameMachine(other as never, 'b');

@@ -3407,12 +3407,6 @@ describe('NotificationService routing by frame (one machine in several frames)',
   }
   type Frame = ReturnType<typeof makeFrame>;
 
-  /** `contents` is the view of REMOTE_ID that just joined `window`, now on screen. */
-  function showJoined(window: unknown, contents: MockContents): void {
-    bindMachineViewToBackend(window as never, contents as never, REMOTE_ID);
-    setShownMachineView(window as never, contents as never);
-  }
-
   /** Per-renderer workspace registry behind the system.ipc fakes. */
   type Entry = { contents: MockContents; backendId: string; workspaceId: string; viewing: boolean };
   let entries: Entry[];
@@ -3750,55 +3744,26 @@ describe('NotificationService routing by frame (one machine in several frames)',
       ]);
     });
 
-    it('rail on: queues the Assistant for a joined machine that is not ready in time', async () => {
-      const frame = makeFrame(1, LOCAL_ID);
-      setFrames(frame);
-      const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => {
-        showJoined(window, added);
-        return { window, contents: added, ready: Promise.resolve(false) };
-      });
-
-      await clickBanner(CHIEF_WORKSPACE_ID);
-      await flush();
-
-      expect(payloads(added, 'notification:navigate')).toEqual([]);
-      expect(consumePendingDeepLinks(added.id).actions).toEqual([
-        {
-          type: 'notification',
-          params: { workspaceId: CHIEF_WORKSPACE_ID, chief: 'true', agentId: 'agent-self' },
-        },
-      ]);
-    });
-
-    it('rail on: adds a machine no frame holds to the most recently focused frame and opens the agent', async () => {
+    it('rail on: adds a machine no frame holds to the most recently focused frame, queuing the agent for it', async () => {
       const older = makeFrame(1, LOCAL_ID);
       const recent = makeFrame(2, 'remote-2');
       setFrames(older, recent);
       focus(older);
       focus(recent);
       focus(null);
-      const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => {
-        showJoined(window, added);
-        return { window, contents: added, ready: Promise.resolve(true) };
-      });
 
       await clickBanner();
 
-      // The navigation below opens the workspace, so the machine joins on its home.
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        recent.window,
-        REMOTE_ID,
-        undefined,
-      );
-      expect(payloads(added, 'notification:navigate')).toEqual([
-        { workspaceId: 'workspace-1', agentId: 'agent-self' },
-      ]);
+      // The rail queues the click on whichever view ends up showing the machine.
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(recent.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      });
+      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
       expect(createWindowForSessionMock).not.toHaveBeenCalled();
     });
 
-    it('rail on: a notification with no agent joins the machine on the workspace route', async () => {
+    it('rail on: a notification with no agent still opens its workspace in the joined machine', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
       const service = new NotificationService();
@@ -3811,52 +3776,43 @@ describe('NotificationService routing by frame (one machine in several frames)',
       mockNotificationInstances[0].handlers['click']();
       await flush();
 
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        frame.window,
-        REMOTE_ID,
-        'workspace-1',
-      );
-      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(frame.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: 'workspace-1' },
+      });
     });
 
-    it('rail on: opens the Assistant in a machine no frame held, once it joins the recent frame', async () => {
+    it('rail on: queues the Assistant thread for a machine no frame held', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
-      const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => {
-        showJoined(window, added);
-        return { window, contents: added, ready: Promise.resolve(true) };
-      });
 
       await clickBanner(CHIEF_WORKSPACE_ID);
 
-      // The Assistant has no workspace page: the machine joins on its home.
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        frame.window,
-        REMOTE_ID,
-        undefined,
-      );
-      expect(selectMachineInFrameMock).toHaveBeenCalledWith(frame.window, REMOTE_ID);
-      expect(payloads(added, 'notification:navigate')).toEqual([
-        { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
-      ]);
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(frame.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: CHIEF_WORKSPACE_ID, chief: 'true', agentId: 'agent-self' },
+      });
+      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
       expect(createWindowForSessionMock).not.toHaveBeenCalled();
     });
 
-    it('rail on: opens a new frame when the recent frame cannot take the machine', async () => {
+    it('rail on: opens a new frame, still with the agent, when the recent frame cannot take the machine', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
       openInvitedMachineInWindowMock.mockResolvedValue(false);
+      let opened: Frame | undefined;
+      createWindowForSessionMock.mockImplementation(async () => {
+        opened = makeFrame(9, REMOTE_ID);
+        return opened.window;
+      });
 
       await clickBanner();
 
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        frame.window,
-        REMOTE_ID,
-        undefined,
-      );
       expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
       expect(createWindowForSessionMock.mock.calls[0][2]).toBe(REMOTE_ID);
+      expect(consumePendingDeepLinks(opened!.renderer(REMOTE_ID).id).actions).toEqual([
+        { type: 'notification', params: { workspaceId: 'workspace-1', agentId: 'agent-self' } },
+      ]);
     });
 
     it('rail off: opens a machine no frame holds in a new frame, as before', async () => {
