@@ -69,8 +69,8 @@ describe('ChatMessage - goal_command notice', () => {
     const notice = container.querySelector('.goal-notice');
     expect(notice).toBeTruthy();
     expect(container.querySelector('[data-message-role]')).toBeNull();
-    // Drawn by the shared divider the model-change notices use.
-    expect(notice!.querySelector('[role="status"]')).toBeTruthy();
+    // A row holding the expand control is not a live region.
+    expect(notice!.querySelector('[role="status"]')).toBeNull();
     // The full text is on hover of the one-line label.
     const toggle = screen.getByRole('button', {
       name: m.chat_goalNotice_set_label({ goal: 'Ship the goal strip' }),
@@ -120,6 +120,8 @@ describe('ChatMessage - goal_command notice', () => {
     expect(cleared.getByTestId('goal-notice-text').textContent).toBe(
       m.chat_goalNotice_cleared_label(),
     );
+    // Without a toggle the divider announces like the model-change notices.
+    expect(cleared.getByRole('status').textContent?.trim()).toBe(m.chat_goalNotice_cleared_label());
     cleared.unmount();
 
     render(ChatMessage, {

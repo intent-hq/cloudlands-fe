@@ -24,7 +24,21 @@ describe('ChatInlineDivider', () => {
     expect(screen.getByText('Goal removed.')).toBeTruthy();
   });
 
-  it('renders the change notices', () => {
+  it('keeps a host class and lets it override the default margin', () => {
+    const { container } = render(ChatInlineDivider, {
+      props: { icon: faFlag, children: label, class: 'model-change-notice my-0' },
+    });
+    const row = container.firstElementChild!;
+    // The class merge is the contract: GoalNotice relies on my-0 replacing my-4.
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- merge contract
+    expect(row.classList.contains('model-change-notice')).toBe(true);
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- merge contract
+    expect(row.classList.contains('my-0')).toBe(true);
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- merge contract
+    expect(row.classList.contains('my-4')).toBe(false);
+  });
+
+  it('is what EffortChangeNotice renders', () => {
     render(EffortChangeNotice, { props: { notice: { from: 'low', to: 'high' } } });
     expect(screen.getByRole('status').querySelector('svg')).toBeTruthy();
   });

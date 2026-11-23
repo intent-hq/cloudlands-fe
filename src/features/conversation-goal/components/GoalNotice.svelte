@@ -61,6 +61,8 @@
   const attributionLabel = $derived(
     attribution$ && $attribution$ ? goalNoticeAttributionLabel($attribution$) : null,
   );
+  // The toggle's name carries the attribution, so the visible copy is hidden
+  // from screen readers on rows with a toggle.
   const rowLabel = $derived(
     attributionLabel
       ? m.chat_goalNotice_attributed_ariaLabel({ text, attribution: attributionLabel })
@@ -69,11 +71,12 @@
 </script>
 
 <div class="goal-notice my-4 min-w-0" data-testid="goal-notice">
-  <ChatInlineDivider icon={faFlag} class="my-0">
+  <!-- A row holding the expand control is not a live region. -->
+  <ChatInlineDivider icon={faFlag} class="my-0" role={notice.goal ? null : 'status'}>
     {#if notice.goal}
       <Button
         variant="plain"
-        class="h-auto min-w-0 shrink justify-start text-xs text-muted-foreground hover:text-foreground"
+        class="h-auto min-w-0 shrink justify-start text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         title={text}
         aria-label={rowLabel}
         aria-expanded={expanded}
@@ -88,6 +91,7 @@
       <span
         class="max-w-40 flex-shrink-0 truncate opacity-80"
         title={attributionLabel}
+        aria-hidden={notice.goal ? 'true' : undefined}
         data-testid="goal-notice-attribution">{attributionLabel}</span
       >
     {/if}
