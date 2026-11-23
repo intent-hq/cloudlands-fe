@@ -757,9 +757,14 @@ describe('a frame open on the local machine', () => {
     await invoke(RAIL.ADD, local(), { id: 'b' });
     await invoke(RAIL.READY, viewOf('b').webContents);
     await invoke(RAIL.SHOWN, viewOf('b').webContents);
-    viewOf('b').webContents.focus.mockClear();
-    for (const listener of fakes.windowListeners.focus ?? []) listener();
-    expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    const focused = vi.spyOn(fakes.window, 'isFocused').mockReturnValue(false);
+    try {
+      viewOf('b').webContents.focus.mockClear();
+      for (const listener of fakes.windowListeners.focus ?? []) listener();
+      expect(viewOf('b').webContents.focus).not.toHaveBeenCalled();
+    } finally {
+      focused.mockRestore();
+    }
   });
 
   /** Fire `event` on `contents` as Electron would. */
