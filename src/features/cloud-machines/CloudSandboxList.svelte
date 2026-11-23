@@ -1,7 +1,8 @@
 <!--
   Settings → a cloud entry: its live sandboxes (Northflank services, Agent37 instances) and the relay they use, of everyone who runs agents on
   this backend, grouped by workspace (running first), with who started each,
-  uptime, Pause and Delete. Uptime advances locally between reads while a sandbox runs.
+  uptime, Pause and Delete. The runner row above carries the counts and opens this list.
+  Uptime advances locally between reads while a sandbox runs.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
@@ -62,8 +63,6 @@
   onDestroy(() => clearInterval(timer));
   const now = $derived(fixedNow ?? tick);
 
-  const running = $derived(sandboxes.filter((row) => row.cloud?.state === 'running').length);
-  const paused = $derived(sandboxes.filter((row) => row.cloud?.state === 'paused').length);
   const relay = $derived(cloudEntryRelayLabel(sandboxes));
 
   function stateBadge(state: string): { label: string; color: BadgeColor } {
@@ -116,9 +115,10 @@
 >
   <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1">
     <p class="type-body text-muted-foreground">
-      {copy.listSummary({ running: String(running), paused: String(paused) })}
-      {#if relay}<span aria-hidden="true">·</span>
-        <span class="whitespace-nowrap" data-cloud-relay>{relay}</span>{/if}
+      {copy.listLabel}
+      {#if relay}<span class="whitespace-nowrap"
+          ><span aria-hidden="true">·</span> <span data-cloud-relay>{relay}</span></span
+        >{/if}
     </p>
     <Button
       variant="link"

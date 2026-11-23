@@ -1,7 +1,7 @@
 <!--
   Settings → one E2B, Northflank, Agent37 or Vercel entry; the meta line names its provider. Before setup it holds the inline setup form; after,
-  it names the template and size, and lists the entry's live sandboxes under
-  it. With named entries (Nodes), the name renames in place. Editing reopens
+  it names the template and size, and the counts of its live sandboxes; the row
+  opens their list (collapsed by default, kept per entry for the session). With named entries (Nodes), the name renames in place. Editing reopens
   the form; Remove deletes the entry's key and every sandbox it started.
 -->
 <script lang="ts">
@@ -10,7 +10,7 @@
   import { Badge, type BadgeColor } from '$lib/components/ui/badge';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
-  import { faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
+  import { faChevronDown, faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -42,7 +42,9 @@
     cloudEntryNameError,
     cloudErrorText,
     cloudProviderCopy,
+    cloudSandboxCountsLabel,
   } from './cloud-machines-format';
+  import { expandedSandboxLists } from './sandbox-groups.svelte';
   import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
   import { machinePlatform } from '$features/remote-machines/machine-facts';
   import CloudMachineSetupForm from './CloudMachineSetupForm.svelte';
@@ -109,6 +111,29 @@
   );
   let renameError = $state<string | null>(null);
 
+  const listId = $props.id();
+  const counts = $derived(cloudSandboxCountsLabel(sandboxes));
+  const showCounts = $derived(!!counts && !editing);
+  const expandable = $derived(!!entry && !editing && sandboxes.length > 0);
+  // A failed Pause or Delete keeps the list open so its error shows.
+  const sandboxFailed = $derived(sandboxes.some((machine) => !!$failures$[machine.id]));
+  const listOpen = $derived(
+    expandable && !!entry && (expandedSandboxLists.has(entry.id) || sandboxFailed),
+  );
+
+  function toggleList() {
+    if (!entry) return;
+    if (listOpen) expandedSandboxLists.delete(entry.id);
+    else expandedSandboxLists.add(entry.id);
+  }
+
+  function onRowClick(event: MouseEvent) {
+    if (!expandable) return;
+    const target = event.target as Element | null;
+    if (target?.closest('button, a, input, textarea, [role="menu"], [role="menuitem"]')) return;
+    toggleList();
+  }
+
   // Sandboxes run Linux; a running one's own report wins.
   const platformIcon = $derived(machinePlatform(sandboxes[0]?.platform?.os || 'linux'));
 
@@ -138,6 +163,9 @@
 
   // A ready entry shows no pill; the dot carries it.
   const pillHidden = $derived(entry?.state === 'ready');
+  // The counts follow a separator only after other meta text.
+  const hasDetails = $derived(!!providerLabel || !!entry?.northflank?.region || !!entry?.agent37);
+  const metaHasText = $derived(!pillHidden || hasDetails);
 
   const actions = $derived<ActionDefinition[]>(withOrderActions(ownActions(), order));
 
@@ -176,13 +204,21 @@
 </script>
 
 <article
-  class={cn(!first && 'border-t border-border')}
+  class={cn('@container', !first && 'border-t border-border')}
   aria-label={name}
   aria-busy={removing}
   data-cloud-machine-row={entry?.id ?? NEW_CLOUD_ENTRY}
   data-cloud-provider={kind}
 >
-  <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
+  <ListRow
+    class={cn(
+      'items-center px-4 sm:px-5 [&>[data-slot]]:self-center',
+      // A narrow row moves its meta line under the name instead of squeezing the name out.
+      '[&_div:has(>[data-slot=list-row-title])]:flex-wrap [&_div:has(>[data-slot=list-row-title])]:gap-y-0.5',
+      expandable && 'cursor-pointer',
+    )}
+    onclick={onRowClick}
+  >
     {#snippet leading()}
       <span class="flex items-center gap-3">
         <span
@@ -219,21 +255,49 @@
         {#if status}
           {#if platformIcon}<MachinePlatformIcon platform={platformIcon} />{/if}
           {#if !pillHidden}<Badge variant="dot" color={status.color}>{status.label}</Badge>{/if}
-          {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
-          {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
-              >{entry.northflank.region}</span
-            >{/if}
-          {#if entry?.agent37}<span aria-hidden="true">·</span><span data-agent37-placement
-              >{agent37TypeLabel(entry.agent37.instanceType)}
-              <span aria-hidden="true">·</span>
-              {agent37RegionLabel(entry.agent37.region)}</span
-            >{/if}
+          <!-- Narrow rows with counts drop the provider details, so the name and counts stay. -->
+          {#if hasDetails}
+            <span class={cn('inline-flex items-center gap-1.5', showCounts && '@max-md:hidden')}>
+              {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
+              {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
+                  >{entry.northflank.region}</span
+                >{/if}
+              {#if entry?.agent37}<span aria-hidden="true">·</span><span data-agent37-placement
+                  >{agent37TypeLabel(entry.agent37.instanceType)}
+                  <span aria-hidden="true">·</span>
+                  {agent37RegionLabel(entry.agent37.region)}</span
+                >{/if}
+            </span>
+          {/if}
+          {#if showCounts}{#if metaHasText}<span
+                aria-hidden="true"
+                class={cn(pillHidden && '@max-md:hidden')}>·</span
+              >{/if}<span class="whitespace-nowrap" data-cloud-sandbox-counts>{counts}</span>{/if}
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}
       </span>
     {/snippet}
     {#snippet trailing()}
+      {#if expandable}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={cloudProviderCopy(kind).listTitle}
+          aria-expanded={listOpen}
+          aria-controls={listId}
+          onclick={toggleList}
+          data-cloud-sandboxes-toggle
+        >
+          <span
+            class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {listOpen
+              ? ''
+              : '-rotate-90'}"
+          >
+            <Fa icon={faChevronDown} class="size-3.5!" />
+          </span>
+        </Button>
+      {/if}
       {#if actions.length > 0}
         <RowActions
           alwaysVisible
@@ -285,6 +349,10 @@
       {onClose}
     />
   {:else if sandboxes.length > 0}
-    <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
+    <div id={listId} hidden={!listOpen}>
+      {#if listOpen}
+        <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
+      {/if}
+    </div>
   {/if}
 </article>

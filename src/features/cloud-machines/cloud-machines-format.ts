@@ -47,7 +47,7 @@ export function cloudProviderCopy(provider: CloudProviderKind) {
         ownerOnly: m.cloudMachines_northflank_error_ownerOnly(),
         saved: m.cloudMachines_northflank_saved_toast(),
         listTitle: m.cloudMachines_northflank_services_title(),
-        listSummary: m.cloudMachines_northflank_services_summary,
+        listLabel: m.cloudMachines_northflank_services_label(),
         dashboard: m.cloudMachines_northflank_dashboard_label(),
         dashboardOpen: m.cloudMachines_northflank_dashboardOpen_label(),
         deleteTitle: m.cloudMachines_northflank_delete_confirmTitle,
@@ -63,7 +63,7 @@ export function cloudProviderCopy(provider: CloudProviderKind) {
         ownerOnly: m.cloudMachines_agent37_error_ownerOnly(),
         saved: m.cloudMachines_agent37_saved_toast(),
         listTitle: m.cloudMachines_agent37_instances_title(),
-        listSummary: m.cloudMachines_agent37_instances_summary,
+        listLabel: m.cloudMachines_agent37_instances_label(),
         dashboard: m.cloudMachines_agent37_dashboard_label(),
         dashboardOpen: m.cloudMachines_agent37_dashboardOpen_label(),
         deleteTitle: m.cloudMachines_agent37_delete_confirmTitle,
@@ -79,7 +79,7 @@ export function cloudProviderCopy(provider: CloudProviderKind) {
         ownerOnly: m.cloudMachines_vercel_error_ownerOnly(),
         saved: m.cloudMachines_vercel_saved_toast(),
         listTitle: m.cloudMachines_vercel_sandboxes_title(),
-        listSummary: m.cloudMachines_sandboxes_summary,
+        listLabel: m.cloudMachines_sandboxes_label(),
         dashboard: m.cloudMachines_vercel_dashboard_label(),
         dashboardOpen: m.cloudMachines_vercel_dashboardOpen_label(),
         deleteTitle: m.cloudMachines_delete_confirmTitle,
@@ -95,7 +95,7 @@ export function cloudProviderCopy(provider: CloudProviderKind) {
         ownerOnly: m.cloudMachines_error_ownerOnly(),
         saved: m.cloudMachines_saved_toast(),
         listTitle: m.cloudMachines_sandboxes_title(),
-        listSummary: m.cloudMachines_sandboxes_summary,
+        listLabel: m.cloudMachines_sandboxes_label(),
         dashboard: m.cloudMachines_dashboard_label(),
         dashboardOpen: m.cloudMachines_dashboardOpen_label(),
         deleteTitle: m.cloudMachines_delete_confirmTitle,
@@ -187,16 +187,24 @@ function relayHost(url: string): string {
 }
 
 /**
- * The relay an entry's running sandboxes use; null without one, since a paused
- * sandbox picks up the current setting only at its next resume.
+ * The custom relay an entry's running sandboxes use; null for the default relays
+ * or without a running sandbox, since a paused one picks up the setting at resume.
  */
 export function cloudEntryRelayLabel(sandboxes: readonly RemoteMachine[]): string | null {
-  const sandbox = sandboxes.find((row) => row.cloud?.state === 'running');
-  if (!sandbox?.cloud) return null;
-  const url = sandbox.cloud.relayUrl;
-  return url
-    ? m.cloudMachines_relay_host({ host: relayHost(url) })
-    : m.cloudMachines_relay_default();
+  const url = sandboxes.find((row) => row.cloud?.state === 'running')?.cloud?.relayUrl;
+  return url ? m.cloudMachines_relay_host({ host: relayHost(url) }) : null;
+}
+
+/** "2 running · 1 paused" with a zero count left out; null when none run or are paused. */
+export function cloudSandboxCountsLabel(sandboxes: readonly RemoteMachine[]): string | null {
+  const count = (state: string) => sandboxes.filter((row) => row.cloud?.state === state).length;
+  const running = count('running');
+  const paused = count('paused');
+  const parts = [
+    running > 0 ? m.cloudMachines_sandboxes_running_count({ count: String(running) }) : null,
+    paused > 0 ? m.cloudMachines_sandboxes_paused_count({ count: String(paused) }) : null,
+  ].filter((part) => part !== null);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** Sandboxes of one workspace; `key` is the workspace id, or "" for Other. */

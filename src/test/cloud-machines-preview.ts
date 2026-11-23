@@ -28,6 +28,7 @@ import type {
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   collapsedSandboxGroups,
+  expandedSandboxLists,
   sandboxGroupId,
 } from '$features/cloud-machines/sandbox-groups.svelte';
 
@@ -342,8 +343,14 @@ const DISK_SETTINGS: CloudDiskSettings = {
   },
 };
 
-/** Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture. */
-export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
+/**
+ * Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture.
+ * Sandbox lists start open so scenes show their rows; `listsOpen: false` keeps the app's default.
+ */
+export function setupCloudMachinesFixture(
+  state: CloudMachinesPreviewState,
+  { listsOpen = true }: { listsOpen?: boolean } = {},
+) {
   const restoreRemote = setupRemoteMachinesFixture('available');
   for (const workspace of WORKSPACES)
     store.dispatch(
@@ -508,8 +515,12 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   if (grouped) setPendingAgentDeletion({ wsId: 'ws-perf', agentId: 'agent-sb-3' });
   if (state === 'sandboxes-collapsed')
     collapsedSandboxGroups.add(sandboxGroupId(E2B_PROVIDER.name, 'ws-ci'));
+  if (listsOpen)
+    for (const entry of [E2B_PROVIDER, TEAM_ENTRY, NORTHFLANK_ENTRY, AGENT37_ENTRY, VERCEL_ENTRY])
+      expandedSandboxLists.add(entry.id);
   return () => {
     collapsedSandboxGroups.clear();
+    expandedSandboxLists.clear();
     if (grouped) removePendingAgentDeletion('agent-sb-3');
     for (const workspace of WORKSPACES) store.dispatch(removeWorkspaceEntity(workspace.id));
     restoreRemote();
