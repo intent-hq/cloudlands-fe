@@ -114,7 +114,7 @@ export function runningAgentsLabel(count: number): string {
 }
 
 /** The tooltip on a runner's machine-wide agent count: slots in use against its cap. */
-export function machineLoadTooltip(load: RemoteMachineCapacity): string {
+function machineLoadTooltip(load: RemoteMachineCapacity): string {
   return m.remoteMachines_agents_load_tooltip({
     count: formatInteger(load.runningAgents),
     cap: formatInteger(load.agentCap),
@@ -122,7 +122,7 @@ export function machineLoadTooltip(load: RemoteMachineCapacity): string {
 }
 
 /** The full CPU and memory lines of a runner row's tooltip. */
-export function machineResourcesTooltip(resources: RemoteMachineResources): string[] {
+function machineResourcesTooltip(resources: RemoteMachineResources): string[] {
   return [
     ...(resources.cpuPercent === undefined
       ? []
