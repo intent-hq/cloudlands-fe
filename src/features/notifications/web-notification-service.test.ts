@@ -12,6 +12,7 @@ const { mockState, mockPlayNotificationSound } = vi.hoisted(() => ({
   mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
 }));
 
+// The sound gate reads userPreferences from the app store.
 vi.mock('$store/renderer/store', () => ({
   store: { state: mockState, dispatch: vi.fn() },
 }));
