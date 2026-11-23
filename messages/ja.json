@@ -8690,6 +8690,7 @@
   "cloudMachines_agent_stopping": "停止中",
   "cloudMachines_dashboard_label": "E2B ダッシュボード",
   "cloudMachines_dashboardOpen_label": "E2B ダッシュボードを開く",
+  "cloudMachines_dashboardShort_label": "ダッシュボード",
   "cloudMachines_delete_label": "削除",
   "cloudMachines_deleteFor_ariaLabel": "{agent} のサンドボックスを削除",
   "cloudMachines_delete_confirmTitle": "{agent} のサンドボックスを削除しますか？",

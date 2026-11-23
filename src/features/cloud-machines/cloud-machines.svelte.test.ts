@@ -235,24 +235,27 @@ describe('sandboxes grouped by workspace', () => {
     seed('sandboxes-grouped');
     const view = list();
     const all = groups(view.container);
-    expect(all.map(header)).toEqual([
-      'Fix flaky CI · 3',
-      'Protocol docs · 1',
-      'Other · 1',
-      'Startup time · 1',
-    ]);
-    expect(all.map(rowIds)).toEqual([['sb-6', 'sb-1', 'sb-4'], ['sb-2'], ['sb-5'], ['sb-3']]);
-    expect(all.every((group) => toggle(group).getAttribute('aria-expanded') === 'true')).toBe(true);
+    // Only a workspace with more than one sandbox is a collapsible group.
+    expect(all.map(header)).toEqual(['Fix flaky CI · 3']);
+    expect(toggle(all[0]!).getAttribute('aria-expanded')).toBe('true');
+    expect(rowIds(view.container)).toEqual(['sb-6', 'sb-1', 'sb-4', 'sb-2', 'sb-5', 'sb-3']);
   });
 
-  it('rows show agent, state, starter and uptime only', () => {
+  it('rows show agent, workspace when ungrouped, starter, uptime and state only', () => {
     seed('sandboxes-grouped');
     const view = list();
     const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
-    const row = view.container.querySelector('[data-cloud-sandbox="sb-2"]') as HTMLElement;
-    expect(row.textContent!.replace(/\s+/g, ' ').trim()).toBe(
-      'Docs sweeper · Sam · 1 h 12 min Running',
-    );
+    const text = (id: string) =>
+      view.container
+        .querySelector(`[data-cloud-sandbox="${id}"]`)!
+        .textContent!.replace(/\s+/g, ' ')
+        .trim();
+    expect(text('sb-2')).toBe('Docs sweeper · Protocol docs · Sam · 1 h 12 min Running');
+    // Grouped rows and the Other workspace do not repeat a workspace.
+    expect(text('sb-1')).not.toContain('Fix flaky CI');
+    expect(
+      view.container.querySelector('[data-cloud-sandbox="sb-5"] [data-cloud-sandbox-workspace]'),
+    ).toBeNull();
     expect(section.textContent).not.toMatch(/\$|≈/u);
   });
 
@@ -264,7 +267,7 @@ describe('sandboxes grouped by workspace', () => {
     expect(toggle(ci).getAttribute('aria-expanded')).toBe('false');
     expect(rowIds(ci)).toEqual([]);
     expect(header(ci)).toBe('Fix flaky CI · 3');
-    expect(rowIds(groups(view.container)[1]!)).toEqual(['sb-2']);
+    expect(view.container.querySelector('[data-cloud-sandbox="sb-2"]')).not.toBeNull();
 
     view.unmount();
     const again = list();
@@ -303,10 +306,12 @@ describe('sandboxes grouped by workspace', () => {
     }
   });
 
-  it('puts every sandbox under Other when no workspace is known', () => {
+  it('shows a lone sandbox of an unknown workspace with no group or workspace name', () => {
     seed('sandboxes-grouped');
     const view = list(GROUPED_SANDBOXES.filter((row) => row.cloud?.workspaceId === 'ws-elsewhere'));
-    expect(groups(view.container).map(header)).toEqual(['Other · 1']);
+    expect(groups(view.container)).toEqual([]);
+    expect(rowIds(view.container)).toEqual(['sb-5']);
+    expect(view.container.querySelector('[data-cloud-sandbox-workspace]')).toBeNull();
   });
 
   it('shows no list without sandboxes', () => {
@@ -361,7 +366,7 @@ describe('sandbox list under a cloud runner', () => {
     expect(toggle(view.container).getAttribute('aria-expanded')).toBe('false');
     expect(counts(view.container)).toBe('2 running · 1 paused');
     expect(list(view.container)).toBeNull();
-    expect(view.queryByText('E2B dashboard')).toBeNull();
+    expect(view.queryByRole('link', { name: 'Open E2B dashboard' })).toBeNull();
   });
 
   it('opens from the row and keeps the counts on it', async () => {
@@ -371,7 +376,9 @@ describe('sandbox list under a cloud runner', () => {
     expect(toggle(view.container).getAttribute('aria-expanded')).toBe('true');
     expect(rowCount(view.container)).toBe(3);
     expect(counts(view.container)).toBe('2 running · 1 paused');
-    expect(list(view.container)?.textContent).toContain('E2B dashboard');
+    expect(view.getByRole('link', { name: 'Open E2B dashboard' }).textContent?.trim()).toBe(
+      'Dashboard',
+    );
     await fireEvent.click(toggle(view.container));
     expect(list(view.container)).toBeNull();
   });
@@ -388,22 +395,24 @@ describe('sandbox list under a cloud runner', () => {
     const view = render(DevicesSettings);
     await fireEvent.click(toggle(row(view, 'e2b')));
     expect(rowCount(row(view, 'e2b'))).toBe(3);
-    expect(rowCount(row(view, TEAM_ENTRY.id))).toBe(0);
+    // A runner with one sandbox shows it, with no toggle.
+    expect(rowCount(row(view, TEAM_ENTRY.id))).toBe(1);
+    expect(toggle(row(view, TEAM_ENTRY.id))).toBeNull();
 
     view.unmount();
     const again = render(DevicesSettings);
     expect(rowCount(row(again, 'e2b'))).toBe(3);
-    expect(toggle(row(again, TEAM_ENTRY.id)).getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle(row(again, 'e2b')));
+    expect(rowCount(row(again, 'e2b'))).toBe(0);
   });
 
-  it('keeps each workspace group collapsible once the list is open', async () => {
+  it('lists one sandbox per workspace as plain rows, with no group toggles', async () => {
     seed('connected', collapsed);
     const view = e2bRow();
     await fireEvent.click(toggle(view.container));
-    const group = view.container.querySelector('[data-cloud-sandbox-group]') as HTMLElement;
-    await fireEvent.click(group.querySelector('[data-cloud-sandbox-group-toggle]')!);
-    expect(group.querySelectorAll('[data-cloud-sandbox]')).toHaveLength(0);
-    expect(rowCount(view.container)).toBe(2);
+    expect(view.container.querySelector('[data-cloud-sandbox-group]')).toBeNull();
+    expect(view.container.querySelectorAll('[data-cloud-sandbox-workspace]')).toHaveLength(3);
+    expect(rowCount(view.container)).toBe(3);
   });
 
   it('opens a collapsed list while a sandbox there has failed, so the error shows', () => {

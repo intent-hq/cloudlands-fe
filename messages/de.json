@@ -8690,6 +8690,7 @@
   "cloudMachines_agent_stopping": "wird beendet",
   "cloudMachines_dashboard_label": "E2B-Dashboard",
   "cloudMachines_dashboardOpen_label": "E2B-Dashboard öffnen",
+  "cloudMachines_dashboardShort_label": "Dashboard",
   "cloudMachines_delete_label": "Löschen",
   "cloudMachines_deleteFor_ariaLabel": "Sandbox von {agent} löschen",
   "cloudMachines_delete_confirmTitle": "Sandbox von {agent} löschen?",

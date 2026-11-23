@@ -8690,6 +8690,7 @@
   "cloudMachines_agent_stopping": "stopping",
   "cloudMachines_dashboard_label": "E2B dashboard",
   "cloudMachines_dashboardOpen_label": "Open E2B dashboard",
+  "cloudMachines_dashboardShort_label": "Dashboard",
   "cloudMachines_delete_label": "Delete",
   "cloudMachines_deleteFor_ariaLabel": "Delete the sandbox of {agent}",
   "cloudMachines_delete_confirmTitle": "Delete the sandbox of {agent}?",

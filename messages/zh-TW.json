@@ -8690,6 +8690,7 @@
   "cloudMachines_agent_stopping": "正在停止",
   "cloudMachines_dashboard_label": "E2B 控制台",
   "cloudMachines_dashboardOpen_label": "開啟 E2B 控制台",
+  "cloudMachines_dashboardShort_label": "控制台",
   "cloudMachines_delete_label": "刪除",
   "cloudMachines_deleteFor_ariaLabel": "刪除 {agent} 的沙盒",
   "cloudMachines_delete_confirmTitle": "刪除 {agent} 的沙盒？",

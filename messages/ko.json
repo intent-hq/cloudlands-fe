@@ -8690,6 +8690,7 @@
   "cloudMachines_agent_stopping": "중지 중",
   "cloudMachines_dashboard_label": "E2B 대시보드",
   "cloudMachines_dashboardOpen_label": "E2B 대시보드 열기",
+  "cloudMachines_dashboardShort_label": "대시보드",
   "cloudMachines_delete_label": "삭제",
   "cloudMachines_deleteFor_ariaLabel": "{agent}의 샌드박스 삭제",
   "cloudMachines_delete_confirmTitle": "{agent}의 샌드박스를 삭제할까요?",

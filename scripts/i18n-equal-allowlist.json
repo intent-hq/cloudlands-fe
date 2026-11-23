@@ -258,6 +258,7 @@
   "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
   "presence_person_roleStatus": "*",
   "remoteMachines_failure_attempt_label": ["de", "es", "ja", "ko"],
+  "cloudMachines_dashboardShort_label": ["de"],
   "remoteMachines_details_agents_label": ["fr"],
   "remoteMachines_details_cpu_label": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
   "repository_prRemote_option_label": "*",

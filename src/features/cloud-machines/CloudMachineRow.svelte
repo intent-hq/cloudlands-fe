@@ -114,11 +114,15 @@
   const listId = $props.id();
   const counts = $derived(cloudSandboxCountsLabel(sandboxes));
   const showCounts = $derived(!!counts && !editing);
-  const expandable = $derived(!!entry && !editing && sandboxes.length > 0);
+  // One sandbox is always shown: a toggle for a single row adds nothing.
+  const expandable = $derived(!!entry && !editing && sandboxes.length > 1);
   // A failed Pause or Delete keeps the list open so its error shows.
   const sandboxFailed = $derived(sandboxes.some((machine) => !!$failures$[machine.id]));
   const listOpen = $derived(
-    expandable && !!entry && (expandedSandboxLists.has(entry.id) || sandboxFailed),
+    !!entry &&
+      !editing &&
+      (sandboxes.length === 1 ||
+        (expandable && (expandedSandboxLists.has(entry.id) || sandboxFailed))),
   );
 
   function toggleList() {
