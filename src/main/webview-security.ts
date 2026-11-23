@@ -17,6 +17,7 @@
  */
 
 import { app, session, systemPreferences } from 'electron';
+import { browserPanelUserAgent } from './browser-panel-user-agent';
 import { openExternal } from './open-external';
 import { isSystemBrowserDisabled } from './web-link-routing';
 import * as path from 'path';
@@ -810,6 +811,9 @@ function setupBrowserPanelSession(): void {
       return isBrowserPanelPermissionAllowed(permission);
     },
   );
+
+  // Google sign-in and account pages reject a user agent that names Electron.
+  browserSession.setUserAgent(browserPanelUserAgent(browserSession.getUserAgent(), app.getName()));
 
   logger.info('Browser panel session configured', { partition: BROWSER_PANEL_PARTITION });
 }
