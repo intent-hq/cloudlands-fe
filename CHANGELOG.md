@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.376.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.375.1...v2.376.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* show who set the conversation goal in shared workspaces ([#4967](https://github.com/intent-hq/cloudlands-fe/issues/4967)) ([ba19dd7](https://github.com/intent-hq/cloudlands-fe/commit/ba19dd7dc1c8a1e2ff5e26b9a8b8a72928e01ac9))
+
 ## [2.375.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.375.0...v2.375.1) (2026-11-23)
 
 
