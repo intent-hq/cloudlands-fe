@@ -17,7 +17,7 @@
  */
 
 import { app, session, systemPreferences } from 'electron';
-import { browserPanelUserAgent } from './browser-panel-user-agent';
+import { browserPanelUserAgent, withChromeBrandHeaders } from './browser-panel-user-agent';
 import { openExternal } from './open-external';
 import { isSystemBrowserDisabled } from './web-link-routing';
 import * as path from 'path';
@@ -812,8 +812,12 @@ function setupBrowserPanelSession(): void {
     },
   );
 
-  // Google sign-in and account pages reject a user agent that names Electron.
+  // Google sign-in and account pages reject a browser that is not Chrome: drop
+  // Electron from the user agent and claim the Google Chrome client-hint brand.
   browserSession.setUserAgent(browserPanelUserAgent(browserSession.getUserAgent(), app.getName()));
+  browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    callback({ requestHeaders: withChromeBrandHeaders(details.requestHeaders) });
+  });
 
   logger.info('Browser panel session configured', { partition: BROWSER_PANEL_PARTITION });
 }
