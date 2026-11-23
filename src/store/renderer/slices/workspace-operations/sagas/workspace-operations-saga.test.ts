@@ -582,6 +582,12 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
     expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
+    // Delete closed the tab; Undo reopens and focuses it, like archive Undo
+    expect(mocks.navigateToRoute).toHaveBeenCalledExactlyOnceWith('/workspace/ws-1');
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -603,6 +609,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
     expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
     // Drain the detached tombstone-grace timer so it cannot bleed across tests

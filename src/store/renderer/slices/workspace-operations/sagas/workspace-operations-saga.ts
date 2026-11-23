@@ -276,6 +276,15 @@ function* deleteWithUndo(workspace: Workspace, operation: WorkspaceDeletion): Sa
       if (cancel.ok && cancel.data.cancelled) {
         operation.restore();
         restored = true;
+        // Delete closed the workspace's tab; Undo reopens and focuses it.
+        try {
+          yield* call(showWorkspaceSaga, workspace.id);
+        } catch (error) {
+          logger.warn('Failed to navigate to the restored workspace', {
+            workspaceId: workspace.id,
+            error,
+          });
+        }
         return;
       }
       notify.error(m.workspace_ops_undoFailed_error());
