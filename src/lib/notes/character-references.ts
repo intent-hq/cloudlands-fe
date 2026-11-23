@@ -1,7 +1,8 @@
 /**
- * Character references — `&name;`, `&#ddd;`, `&#xhh;` — decoded as the HTML
- * parser that builds the note editor's document decodes them, without a DOM:
- * the standard's table of names and its remapping of numeric references.
+ * Character references — `&name;`, `&#ddd;`, `&#xhh;` — decoded as the note
+ * editor shows them in the text of a note, without a DOM: a numeric reference
+ * as the renderer's marked decodes it, a named one as the HTML parser that
+ * builds the editor's document decodes it — the standard's table of names.
  */
 
 /**
@@ -23,15 +24,6 @@ const NAMED_CHARACTER_REFERENCES =
  */
 const LEGACY_CHARACTER_REFERENCES =
   'AElig AMP Aacute Acirc Agrave Aring Atilde Auml COPY Ccedil ETH Eacute Ecirc Egrave Euml GT Iacute Icirc Igrave Iuml LT Ntilde Oacute Ocirc Ograve Oslash Otilde Ouml QUOT REG THORN Uacute Ucirc Ugrave Uuml Yacute aacute acirc acute aelig agrave amp aring atilde auml brvbar ccedil cedil cent copy curren deg divide eacute ecirc egrave eth euml frac12 frac14 frac34 gt iacute icirc iexcl igrave iquest iuml laquo lt macr micro middot nbsp not ntilde oacute ocirc ograve ordf ordm oslash otilde ouml para plusmn pound quot raquo reg sect shy sup1 sup2 sup3 szlig thorn times uacute ucirc ugrave uml uuml yacute yen yuml';
-
-/**
- * What the parser shows for a numeric reference to U+0080 to U+009F, in
- * order: the windows-1252 characters of the standard's table, and the code
- * point itself where the table has none.
- */
-const REMAPPED_CONTROLS =
-  '\u20AC\u0081\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u008D\u017D\u008F' +
-  '\u0090\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u009D\u017E\u0178';
 
 let references: Map<string, string> | undefined;
 let legacyReferences: Set<string> | undefined;
@@ -65,11 +57,15 @@ function legacyCharacterReference(name: string): string | undefined {
 }
 
 /**
- * The text the parser shows for the character `reference` (`&name;`,
- * `&#ddd;` or `&#xhh;`, as written): a numeric reference as its code
- * point — U+FFFD for null, a surrogate or one beyond U+10FFFF, a
- * windows-1252 character for a C1 control (`REMAPPED_CONTROLS`) — and a
- * named reference as the table gives it, in the case it gives it, or as
+ * The text the note editor shows for the character `reference` (`&name;`,
+ * `&#ddd;` or `&#xhh;`, as written) in the text of a note. A numeric
+ * reference is decoded by marked, as CommonMark decodes it, before the HTML
+ * parser sees it: its code point — U+FFFD for null, a surrogate or one
+ * beyond U+10FFFF — with no windows-1252 remapping of a C1 control (the
+ * parser's, which `&#128;` met as `€` until marked 18.0.14); the parser then
+ * reads the decoded character as written, so a carriage return shows as the
+ * line feed it normalizes one to. A named reference reaches the parser as
+ * written, and shows as the table gives it, in the case it gives it, or as
  * the legacy name it opens with and the rest (`legacyCharacterReference`);
  * `undefined` for a name the table does not know, which shows as written.
  */
@@ -81,6 +77,6 @@ export function decodeCharacterReference(reference: string): string | undefined 
   const hex = reference.charCodeAt(2) === 120 || reference.charCodeAt(2) === 88;
   const code = parseInt(reference.slice(hex ? 3 : 2, -1), hex ? 16 : 10);
   if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '\uFFFD';
-  if (code >= 0x80 && code <= 0x9f) return REMAPPED_CONTROLS[code - 0x80];
+  if (code === 13) return '\n';
   return String.fromCodePoint(code);
 }

@@ -159,6 +159,19 @@ function parsedReferences(references: string[]): string[] {
   return (document.documentElement.textContent ?? '').split('\uE001').slice(1, -1);
 }
 
+/**
+ * The text the note editor's document shows for each of `references`
+ * written in a paragraph: rendered as the renderer renders a note — marked
+ * decodes a numeric reference in text itself, as CommonMark does, and leaves
+ * a named one to the HTML parser — and parsed by the HTML parser, in one
+ * document, set apart as `parsedReferences` sets them apart.
+ */
+async function renderedReferences(references: string[]): Promise<string[]> {
+  const html = await processMarkdownToHTML(`\uE001${references.join('\uE001')}\uE001`);
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  return (document.body.textContent ?? '').trim().split('\uE001').slice(1, -1);
+}
+
 /** A markdown piece and whether the editor projects it into the plain text. */
 type Piece = [markdown: string, shared: boolean];
 
@@ -2749,10 +2762,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
           /\[🙂🙂\]\(https:\/\/sync\/emoji\)/g,
         ],
         ['entity', '&amp;&amp;', '&&', /&amp;&amp;/g],
-        // A character reference beyond HTML's five: the editor's HTML parser
-        // shows it as its character, whatever its case, so the cell's key
-        // must be decoded as that parser decodes — the standard's table of
-        // names, its remapping of a numeric reference — and without it: a
+        // A character reference beyond HTML's five: the editor shows it as
+        // its character, whatever its case, so the cell's key must be
+        // decoded as the editor decodes — marked's arithmetic for a numeric
+        // reference, the HTML parser's table of names — and without it: a
         // parse per reference was 20 000 parses on a cell of 20 000, past
         // the deadline too. (Decoded from a hand list of the five,
         // `A&eacute;B` was keyed `AeacuteB` and `&AMP;&AMP;` `AMPAMP` —
@@ -2764,9 +2777,52 @@ describe('alignment of link syntax the lexer does not account for', () => {
         ['registered between letters', 'A&reg;B', 'A®B', /A&reg;B/g],
         ['uppercase entity', '&AMP;&AMP;', '&&', /&AMP;&AMP;/g],
         ['numeric accented', 'A&#233;&#xE9;B', 'AééB', /A&#233;&#xE9;B/g],
-        ['numeric control remapped', '&#128;&#x80;', '€€', /&#128;&#x80;/g],
+        // A numeric reference to a C1 control shows as the control: marked
+        // decodes it before the HTML parser could remap it to windows-1252
+        // (`&#128;` was `€` until marked 18.0.14 left it to the parser).
+        ['numeric control', '&#128;&#x80;', '\u0080\u0080', /&#128;&#x80;/g],
+        ['numeric windows-1252 control', '&#150;&#x9F;', '\u0096\u009F', /&#150;&#x9F;/g],
         ['numeric null', '&#0;&#0;', '\uFFFD\uFFFD', /&#0;&#0;/g],
         ['numeric surrogate', '&#xD800;&#57343;', '\uFFFD\uFFFD', /&#xD800;&#57343;/g],
+        // A carriage return a reference spells shows as the line feed the
+        // HTML parser normalizes the one marked writes to.
+        ['numeric carriage return', '!&#13;?', '!', /!&#13;\?/g],
+        // A tag in a cell is text to the renderer, which escapes it before
+        // marked lexes: a C1 control in it is decoded by marked, not left
+        // to the HTML parser to remap (`&#150;` is no `–`).
+        [
+          'tag holding a numeric control',
+          '<kbd>&#150;&#x97;</kbd>',
+          '<kbd>',
+          /<kbd>&#150;&#x97;<\/kbd>/g,
+        ],
+        // A reference marked decodes to `&` is no reference again (marked
+        // 18.0.14 decoded `&#38;amp;` twice, to `&`).
+        ['decoded ampersand', '&#38;amp;&#x26;lt;', '&amp;&lt;', /&#38;amp;&#x26;lt;/g],
+        // A URL shows its references as written (marked 18.2, as CommonMark
+        // and GFM ask), bare or in angle brackets — which the renderer
+        // escapes, so they are a bare one's too. (Decoded, the cell was keyed
+        // `wwwxtestab` against the `wwwxtestaampb` of its plain-text line.)
+        [
+          'URL holding a reference',
+          'www.x.test/?a&amp;b',
+          'www.x.test/?a&amp;b',
+          /www\.x\.test\/\?a&amp;b/g,
+        ],
+        [
+          'angle-bracketed URL holding a reference',
+          '<ftp://y.test/?c&amp;d>',
+          'ftp://y.test/?c&amp;d',
+          /<ftp:\/\/y\.test\/\?c&amp;d>/g,
+        ],
+        // `www.` starts a URL only at the start or after a blank, `*`, `_`,
+        // `~` or `(`: after a `<` its references are decoded.
+        [
+          'bracketed www text holding a reference',
+          '<www.z.test/?e&amp;f>',
+          'www.z.test/?e&f',
+          /<www\.z\.test\/\?e&amp;f>/g,
+        ],
       ] as Array<[string, string, string, RegExp]>
     ).flatMap(([kind, cell, needle, pattern]) =>
       CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [
@@ -3148,9 +3204,11 @@ describe('alignment of link syntax the lexer does not account for', () => {
         'para\n[ref]: https://example.test/i.png',
         'before',
       ],
+      // Blanks inside a label are part of it: `r ef` is not `ref`. (Blanks
+      // around a label are not — see IMAGES_SHOWN.)
       [
         'a reference whose label a definition does not match in its blanks',
-        '![visible tk87z][ ref ]',
+        '![visible tk87z][r ef]',
         '[ref]: https://example.test/i.png',
         'after',
       ],
@@ -3179,6 +3237,14 @@ describe('alignment of link syntax the lexer does not account for', () => {
         'a reference whose label a definition nests a bracket in',
         '![visible tk87z][re[f]',
         '[re[f]: u.png',
+        'after',
+      ],
+      // A bare destination holds a parenthesis only in a balanced pair: one
+      // left open is no definition (marked 18.2; 18.0 took it for one).
+      [
+        'a reference whose definition leaves a parenthesis open',
+        '![visible tk87z][ref]',
+        '[ref]: https://example.test/i.png(x',
         'after',
       ],
       ['a destination holding a vertical tab', '![visible tk87z](not\u000bvalid)', '', 'after'],
@@ -3228,6 +3294,32 @@ describe('alignment of link syntax the lexer does not account for', () => {
       ['an empty destination', '![alt tk87z]()', '', 'after'],
       ['a destination after a blank', '![alt tk87z]( u.png)', '', 'after'],
       ['a destination between blanks', '![alt tk87z]( u.png )', '', 'after'],
+      // A label is matched trimmed, as CommonMark normalizes it (marked
+      // since 18.0.14): the blanks around a reference's label or a
+      // definition's do not keep them apart.
+      // A label is matched case folded, as CommonMark normalizes it (marked
+      // 18.2; 18.0 only lowercased it, and `ẞ` is `ß` lowercased).
+      [
+        'a reference whose label a definition matches case folded',
+        '![alt tk87z][ẞ]',
+        '[SS]: https://example.test/i.png',
+        'after',
+      ],
+      // Brackets in a label nest to any depth in matched pairs (marked 18.2;
+      // 18.0 read one level).
+      ['a label holding brackets two deep', '![alt [x [y]] tk87z](u.png)', '', 'after'],
+      [
+        'a reference whose label holds blanks around it a definition resolves',
+        '![alt tk87z][ ref ]',
+        '[ref]: https://example.test/i.png',
+        'after',
+      ],
+      [
+        'a reference a definition whose label holds blanks around it resolves',
+        '![alt tk87z][ref]',
+        '[ ref ]: https://example.test/i.png',
+        'after',
+      ],
       [
         'a reference whose label escapes a bracket',
         '![alt tk87z][re\\]f]',
@@ -4718,19 +4810,22 @@ describe('rebaseText', () => {
 });
 
 // The table and arithmetic that decode a character reference stand in for the
-// HTML parser that builds the note editor's document: the parser is the
-// oracle, asked once for every reference in a single document.
+// renderer and the HTML parser that build the note editor's document: they
+// are the oracle, asked once for every reference in a single document.
 describe('character references', () => {
-  it('decodes every named reference of the standard as the HTML parser does', () => {
+  it('decodes every named reference of the standard as the HTML parser does', async () => {
     const names = [...namedCharacterReferences().keys()];
     expect(names).toHaveLength(2125);
-    const shown = parsedReferences(names.map((name) => `&${name};`));
-    const decoded = names.map((name) => decodeCharacterReference(`&${name};`));
+    const references = names.map((name) => `&${name};`);
+    const shown = parsedReferences(references);
+    const decoded = references.map((reference) => decodeCharacterReference(reference));
     expect(decoded).toEqual(shown);
     expect(shown.filter((text, i) => text === `&${names[i]};`)).toEqual([]);
+    // The renderer leaves a named reference to the parser.
+    expect(await renderedReferences(references)).toEqual(shown);
   });
 
-  it('decodes a numeric reference as the HTML parser does, remaps and all', () => {
+  it('decodes a numeric reference as marked does, with no remap the HTML parser alone would make', async () => {
     const codes = Array.from({ length: 0x300 }, (_, i) => i).concat([
       0xd7ff, 0xd800, 0xdbff, 0xdc00, 0xdfff, 0xe000, 0xfffd, 0xfffe, 0xffff, 0x10000, 0x1f642,
       0x10ffff, 0x110000, 9_999_999,
@@ -4740,11 +4835,15 @@ describe('character references', () => {
       `&#x${code.toString(16)};`,
       `&#X${code.toString(16).toUpperCase()};`,
     ]);
-    const shown = parsedReferences(references);
+    const shown = await renderedReferences(references);
     expect(references.map((reference) => decodeCharacterReference(reference))).toEqual(shown);
+    // Left to the HTML parser, a C1 control would be remapped: the renderer
+    // must be the oracle, not the parser alone.
+    expect(parsedReferences(['&#128;', '&#x9F;'])).toEqual(['€', 'Ÿ']);
+    expect(await renderedReferences(['&#128;', '&#x9F;'])).toEqual(['\u0080', '\u009F']);
   });
 
-  it('reads a name the standard does not give as the HTML parser does: a legacy name it opens with, or as written', () => {
+  it('reads a name the standard does not give as the HTML parser does: a legacy name it opens with, or as written', async () => {
     const references = [
       '&bogus;',
       '&Eacute1;',
@@ -4775,5 +4874,6 @@ describe('character references', () => {
     expect(references.map((reference) => decodeCharacterReference(reference) ?? reference)).toEqual(
       shown,
     );
+    expect(await renderedReferences(references)).toEqual(shown);
   });
 });
