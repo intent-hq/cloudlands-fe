@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "Actions pour {name}",
   "remoteMachines_agents_running_many": "{count} agents en cours",
   "remoteMachines_agents_running_one": "{count} agent en cours",
-  "remoteMachines_backends_title": "Hôtes ayant accès",
+  "remoteMachines_runnerFor_label": "Runner pour",
   "remoteMachines_exposeAction_label": "Permettre à {backend} d'exécuter des agents ici",
   "remoteMachines_expose_confirmTitle": "Permettre à {backend} d'exécuter des agents sur {machine} ?",
   "remoteMachines_expose_confirm_label": "Autoriser",

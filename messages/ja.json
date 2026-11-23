@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "{name} の操作",
   "remoteMachines_agents_running_many": "{count} 個のエージェントが実行中",
   "remoteMachines_agents_running_one": "{count} 個のエージェントが実行中",
-  "remoteMachines_backends_title": "アクセスできるホスト",
+  "remoteMachines_runnerFor_label": "ランナーの提供先",
   "remoteMachines_exposeAction_label": "{backend} がここでエージェントを実行できるようにする",
   "remoteMachines_expose_confirmTitle": "{backend} が {machine} でエージェントを実行できるようにしますか？",
   "remoteMachines_expose_confirm_label": "許可",

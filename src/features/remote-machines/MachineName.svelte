@@ -91,7 +91,7 @@
         {#if facts.length > 0 || hasPlatform || providers.length > 0}
           <dl
             class={cn(
-              'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5',
+              'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3',
               hostOnly && 'border-t border-border pt-3',
             )}
           >
@@ -115,7 +115,7 @@
               <dd
                 role="list"
                 aria-labelledby={providersLabelId}
-                class="flex min-w-0 flex-col gap-1"
+                class="flex min-w-0 flex-col gap-0.5"
               >
                 {#each providers as entry (entry.id)}
                   <span role="listitem" class="wrap-anywhere">{entry.name}</span>

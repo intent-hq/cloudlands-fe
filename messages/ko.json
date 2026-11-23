@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "{name} 작업",
   "remoteMachines_agents_running_many": "에이전트 {count}개 실행 중",
   "remoteMachines_agents_running_one": "에이전트 {count}개 실행 중",
-  "remoteMachines_backends_title": "액세스 권한이 있는 호스트",
+  "remoteMachines_runnerFor_label": "러너 대상",
   "remoteMachines_exposeAction_label": "{backend}이(가) 여기서 에이전트를 실행하도록 허용",
   "remoteMachines_expose_confirmTitle": "{backend}이(가) {machine}에서 에이전트를 실행하도록 허용할까요?",
   "remoteMachines_expose_confirm_label": "허용",

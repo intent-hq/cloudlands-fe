@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "Actions for {name}",
   "remoteMachines_agents_running_many": "{count} agents running",
   "remoteMachines_agents_running_one": "{count} agent running",
-  "remoteMachines_backends_title": "Hosts with access",
+  "remoteMachines_runnerFor_label": "Runner for",
   "remoteMachines_exposeAction_label": "Let {backend} run agents here",
   "remoteMachines_expose_confirmTitle": "Let {backend} run agents on {machine}?",
   "remoteMachines_expose_confirm_label": "Allow",

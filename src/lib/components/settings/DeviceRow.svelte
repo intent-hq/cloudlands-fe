@@ -382,7 +382,7 @@
       ...(hostsWithAccess.length > 0
         ? [
             {
-              label: m.remoteMachines_backends_title(),
+              label: m.remoteMachines_runnerFor_label(),
               value: new Intl.ListFormat(getActiveLocale(), {
                 style: 'long',
                 type: 'conjunction',

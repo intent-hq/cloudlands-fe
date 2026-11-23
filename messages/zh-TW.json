@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "{name} 的操作",
   "remoteMachines_agents_running_many": "{count} 個代理程式執行中",
   "remoteMachines_agents_running_one": "{count} 個代理程式執行中",
-  "remoteMachines_backends_title": "具有存取權的主機",
+  "remoteMachines_runnerFor_label": "執行器服務於",
   "remoteMachines_exposeAction_label": "允許 {backend} 在此執行代理程式",
   "remoteMachines_expose_confirmTitle": "要允許 {backend} 在 {machine} 上執行代理程式嗎？",
   "remoteMachines_expose_confirm_label": "允許",

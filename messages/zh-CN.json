@@ -8562,7 +8562,7 @@
   "remoteMachines_actionsFor_ariaLabel": "{name} 的操作",
   "remoteMachines_agents_running_many": "{count} 个智能体运行中",
   "remoteMachines_agents_running_one": "{count} 个智能体运行中",
-  "remoteMachines_backends_title": "有访问权限的主机",
+  "remoteMachines_runnerFor_label": "运行器服务于",
   "remoteMachines_exposeAction_label": "允许 {backend} 在此运行智能体",
   "remoteMachines_expose_confirmTitle": "要允许 {backend} 在 {machine} 上运行智能体吗？",
   "remoteMachines_expose_confirm_label": "允许",
