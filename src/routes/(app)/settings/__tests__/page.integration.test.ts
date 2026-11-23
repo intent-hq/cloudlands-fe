@@ -552,7 +552,7 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it.each(['devices', 'machines'])('maps the compatible #%s hash to Hosts', async (hash) => {
+  it.each(['devices', 'machines'])('maps the compatible #%s hash to Machines', async (hash) => {
     const { container } = renderSettings(`/settings#${hash}`);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Machines' }).getAttribute('aria-current')).toBe(

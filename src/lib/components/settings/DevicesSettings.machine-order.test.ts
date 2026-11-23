@@ -11,7 +11,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
-import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
@@ -138,9 +137,7 @@ function asMember() {
 }
 
 function orderedSection() {
-  return screen.getByRole('region', {
-    name: m.remoteMachines_order_title({ backend: m.layout_daemonStatus_localConnection_label() }),
-  });
+  return screen.getByRole('region', { name: m.nodes_section_title() });
 }
 
 /** The row ids of the ordered list, top to bottom. */
@@ -192,7 +189,7 @@ describe('Settings → Machines with machineOrder: 1', () => {
     seed();
     render(DevicesSettings);
 
-    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    const hosts = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(within(hosts).queryByRole('article', { name: 'Spare box' })).not.toBeNull();
     expect(within(hosts).queryByRole('article', { name: 'Studio Mac' })).not.toBeNull();
     // Its runner row is the plain runner row: the host row (and its edit
@@ -396,9 +393,7 @@ describe('Settings → Machines against another backend', () => {
   }
 
   function remoteOrderedSection() {
-    return screen.getByRole('region', {
-      name: m.remoteMachines_order_title({ backend: formatConnectionLabel(spare) }),
-    });
+    return screen.getByRole('region', { name: m.nodes_section_title() });
   }
 
   // cloudlands-fe#4494 follow-up: the host row of this computer shows once.
@@ -407,7 +402,7 @@ describe('Settings → Machines against another backend', () => {
     render(DevicesSettings);
 
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
-    const hosts = screen.getByRole('list', { name: m.settings_devices_title() });
+    const hosts = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(hosts.querySelector('#device-local-name')).not.toBeNull();
     const row = remoteOrderedSection().querySelector<HTMLElement>(
       '[data-machine-order-row="machine:d-laptop"]',
@@ -429,7 +424,7 @@ describe('Settings → Machines against another backend', () => {
     );
     render(DevicesSettings);
 
-    const machines = screen.getByRole('list', { name: m.settings_devices_title() });
+    const machines = screen.getByRole('list', { name: m.settings_devices_hosts_title() });
     expect(machines.querySelector('#device-local-name')).not.toBeNull();
     expect(document.querySelectorAll('#device-local-name')).toHaveLength(1);
   });

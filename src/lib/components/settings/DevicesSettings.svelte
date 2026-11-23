@@ -264,58 +264,60 @@
   }
 </script>
 
-<div class="space-y-5">
-  <div>
-    <h2 class="type-title mb-3 text-foreground">
-      {m.settings_devices_title()}
-    </h2>
-    <p class="max-w-2xl type-body text-muted-foreground">
-      {m.settings_devices_description()}
-    </p>
-  </div>
-
-  <ListView
-    virtualize={false}
-    items={listRows}
-    getKey={rowKey}
-    getText={rowText}
-    status={$loaded$ ? 'ready' : 'loading'}
-    ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
-  >
-    {#snippet row({ item, index })}
-      {#if item.kind === 'device'}
-        {@const device = item.device}
-        <DeviceRow
-          {device}
-          last={index === listRows.length - 1}
-          highlighted={$highlightId$ === device.id}
-          panelMode={activeDeviceId === device.id ? activePanel : null}
-          onOpenPanel={(panel) => openPanel(device.id, panel)}
-          onClosePanel={closePanel}
-          onRequestRemove={requestRemove}
-        />
-      {:else if item.kind === 'cloud'}
-        {@render cloudRow(item)}
-      {/if}
-    {/snippet}
-    {#snippet loading()}
-      <p
-        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
-        role="status"
-      >
-        {m.settings_devices_loading_label()}
+<div class="space-y-8">
+  <section class="space-y-3" aria-labelledby="hosts-title" data-hosts-section>
+    <div>
+      <h2 id="hosts-title" class="type-title text-foreground">
+        {m.settings_devices_hosts_title()}
+      </h2>
+      <p class="max-w-2xl type-body text-muted-foreground">
+        {m.settings_devices_hosts_description()}
       </p>
-    {/snippet}
-    {#snippet empty()}
-      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
-        <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">
-          {m.settings_devices_empty_description()}
+    </div>
+
+    <ListView
+      virtualize={false}
+      items={listRows}
+      getKey={rowKey}
+      getText={rowText}
+      status={$loaded$ ? 'ready' : 'loading'}
+      ariaLabel={m.settings_devices_hosts_title()}
+      class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
+    >
+      {#snippet row({ item, index })}
+        {#if item.kind === 'device'}
+          {@const device = item.device}
+          <DeviceRow
+            {device}
+            last={index === listRows.length - 1}
+            highlighted={$highlightId$ === device.id}
+            panelMode={activeDeviceId === device.id ? activePanel : null}
+            onOpenPanel={(panel) => openPanel(device.id, panel)}
+            onClosePanel={closePanel}
+            onRequestRemove={requestRemove}
+          />
+        {:else if item.kind === 'cloud'}
+          {@render cloudRow(item)}
+        {/if}
+      {/snippet}
+      {#snippet loading()}
+        <p
+          class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
+          role="status"
+        >
+          {m.settings_devices_loading_label()}
         </p>
-      </div>
-    {/snippet}
-  </ListView>
+      {/snippet}
+      {#snippet empty()}
+        <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
+          <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
+          <p class="mt-1 type-body text-muted-foreground">
+            {m.settings_devices_empty_description()}
+          </p>
+        </div>
+      {/snippet}
+    </ListView>
+  </section>
 
   {#if $orderVisible$}
     <OrderedMachinesList
@@ -336,7 +338,7 @@
   {:else if nodeRows.length > 0}
     <section class="space-y-3" aria-labelledby="nodes-title" data-nodes-section>
       <div>
-        <h3 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h3>
+        <h2 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h2>
         <p class="max-w-2xl type-body text-muted-foreground">
           {m.nodes_section_description()}
         </p>

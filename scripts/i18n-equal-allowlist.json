@@ -274,6 +274,7 @@
   "settings_connections_sentry_orgSlug_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
   "settings_devices_mobile_title": "*",
   "settings_devices_version_label": ["de", "fr"],
+  "settings_devices_hosts_title": ["de", "es"],
   "settings_dockLab_label": ["de"],
   "settings_fontStyle_mono": ["de", "fr", "es"],
   "settings_fontStyle_sans": ["fr"],
