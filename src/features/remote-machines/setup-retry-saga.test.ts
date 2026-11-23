@@ -21,6 +21,9 @@ import {
 } from '../../test/mocks/backend-transport.mock';
 import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { AgentStatus, type AgentSession } from '$shared/types';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { remoteSetupRetryRequested, setupRetryKey } from './remote-machines-slice';
 import { setupRetrySaga } from './setup-retry-saga';
 
@@ -35,6 +38,33 @@ function dispatch(action: { type: string }) {
   channel.put(action);
 }
 const pending = () => store.state.remoteMachines.pending[setupRetryKey(PARAMS.agentId)];
+/** The agent's session row with the given setup, as `agent:updated` stores it. */
+const upsertSetup = (setup: AgentSession['setup']) =>
+  dispatch(
+    bulkUpsertSessions(
+      [
+        {
+          id: AgentId(PARAMS.agentId),
+          backendSessionId: null,
+          workspaceId: WorkspaceId(PARAMS.workspaceId),
+          name: 'iOS build fixer',
+          status: AgentStatus.Idle,
+          messages: [],
+          createdAt: '2026-11-23T09:00:00Z',
+          updatedAt: '2026-11-23T09:00:00Z',
+          nodeId: 'node-mac',
+          effectiveIsolation: 'isolated',
+          setup,
+        } as AgentSession,
+      ],
+      { preserveExplicitRuntimeFlags: true },
+    ),
+  );
+const FAILED = { state: 'failed' as const, exitCode: 2, startedAt: '2026-11-23T09:00:00Z' };
+const RUNNING_REPLY = {
+  agentId: PARAMS.agentId,
+  setup: { state: 'running', startedAt: '2026-11-23T09:05:00Z' },
+};
 const retryRequests = () => backend.requests.filter((r) => r.method === 'agent.retrySetup');
 
 beforeEach(() => {
@@ -97,5 +127,36 @@ describe('setupRetrySaga', () => {
     expect(title).toContain('Mac mini');
     expect(options).toEqual({ description: message });
     await vi.waitFor(() => expect(pending()).toBeUndefined());
+  });
+
+  it('keeps the retry pending after the reply until agent:updated moves setup out of failed', async () => {
+    upsertSetup(FAILED);
+    backend.onRequest('agent.retrySetup', () => RUNNING_REPLY);
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    await vi.waitFor(() => expect(retryRequests()).toHaveLength(1));
+    // The reply alone does not release it, and a second press sends nothing.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pending()).toBe('retrying-setup');
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    expect(retryRequests()).toHaveLength(1);
+    // The session is not patched from the reply.
+    expect(store.state.agentSessions.byAgentId[PARAMS.agentId]?.setup?.state).toBe('failed');
+
+    upsertSetup({ state: 'running', startedAt: '2026-11-23T09:05:00Z' });
+    await vi.waitFor(() => expect(pending()).toBeUndefined());
+  });
+
+  it('clears a pending retry on reconnect', async () => {
+    upsertSetup(FAILED);
+    backend.onRequest('agent.retrySetup', () => RUNNING_REPLY);
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    await vi.waitFor(() => expect(retryRequests()).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pending()).toBe('retrying-setup');
+    dispatch(backendReconnected());
+    await vi.waitFor(() => expect(pending()).toBeUndefined());
+    // The saga is free again: a new press sends a new request.
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    await vi.waitFor(() => expect(retryRequests()).toHaveLength(2));
   });
 });

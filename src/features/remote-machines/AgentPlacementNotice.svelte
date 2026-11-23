@@ -11,7 +11,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { writable } from 'svelte/store';
+  import { derived, writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faCircleExclamation, faTriangleExclamation } from '$lib/icons/phosphor-icons';
@@ -24,9 +24,12 @@
   } from '$lib/components/chat/operational-disclosure-row';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentIsRunning,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { selectRemoteSetupRetrySupported } from '$store/renderer/slices/principal/principal-selectors';
+  import { selectCanRetryRemoteSetup } from '$store/renderer/slices/principal/principal-selectors';
   import {
     agentCloudStartFailure,
     agentCloudWaking,
@@ -162,15 +165,18 @@
   );
   let outputOpen = $state(false);
 
-  const setupRetrySupported$ = selectRemoteSetupRetrySupported();
+  // Host owners only: `agent.retrySetup` refuses members and guests.
+  const canRetrySetup$ = selectCanRetryRemoteSetup();
   const operations$ = selectRemoteMachineOperations();
+  // The daemon refuses a retry while the agent runs a turn (`agent-busy`).
+  const agentRunning$ = selectAgentIsRunning(derived(agentIdStore, (id) => id ?? ''));
   const setupRetryInFlight = $derived(!!$operations$[setupRetryKey(agentId)]);
   // Shown while the setup failed and while its retry runs, so the card keeps its place.
   const showSetupRetry = $derived(
-    $setupRetrySupported$ && (canRetrySetup(true, setup) || kind === 'setup-running'),
+    $canRetrySetup$ && (canRetrySetup(true, setup) || kind === 'setup-running'),
   );
   const setupRetryDisabled = $derived(
-    setupRetryInFlight || !canRetrySetup($setupRetrySupported$, setup),
+    setupRetryInFlight || $agentRunning$ || !canRetrySetup($canRetrySetup$, setup),
   );
 
   // A retried run opens its live log, also when another client started it.
@@ -306,11 +312,7 @@
     data-agent-setup-state={setup?.state}
   >
     <div class="flex items-center gap-2 type-body font-family-child">
-      <span
-        class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
-        role="status"
-        aria-live={rerunning ? 'polite' : undefined}
-      >
+      <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" role="status">
         <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
           {#if rerunning}
             <IntentMarkLoader size={14} />
