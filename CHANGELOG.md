@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.378.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.377.1...v2.378.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* **cloud-machines:** disk field for providers that report a disk setting ([#4977](https://github.com/intent-hq/cloudlands-fe/issues/4977)) ([af34a71](https://github.com/intent-hq/cloudlands-fe/commit/af34a71c263d18c9c697f7375c3d0359da5f0c45))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.280 ([#4985](https://github.com/intent-hq/cloudlands-fe/issues/4985)) ([bc1bcd2](https://github.com/intent-hq/cloudlands-fe/commit/bc1bcd2992e0a707142951f1f6c25c167034873c))
+
 ## [2.377.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.377.0...v2.377.1) (2026-11-23)
 
 
