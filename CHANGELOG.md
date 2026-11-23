@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.380.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.380.1...v2.380.2) (2026-11-23)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** cap inline form width when full-width chat is on ([#4996](https://github.com/intent-hq/cloudlands-fe/issues/4996)) ([bc9c3c2](https://github.com/intent-hq/cloudlands-fe/commit/bc9c3c26c880fe03c9cbab35de1a6fe14766b521))
+* **lightbox:** pan only overflowing images and add arrow-key navigation ([#4995](https://github.com/intent-hq/cloudlands-fe/issues/4995)) ([c6c65f2](https://github.com/intent-hq/cloudlands-fe/commit/c6c65f2273b6e65fd972645251c07de8c3fddf0f))
+
 ## [2.380.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.380.0...v2.380.1) (2026-11-23)
 
 
