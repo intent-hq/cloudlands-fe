@@ -256,6 +256,8 @@ interface BuildMachineModelGroupsParams {
    */
   defaultHasOverrides?: Record<string, boolean>;
   useDefaultOption?: DropdownOption;
+  /** Name for a reported model the catalog rows don't list (e.g. a remembered name). */
+  fallbackLabel?: (modelId: string, providerId: string) => string | undefined;
 }
 
 /**
@@ -287,6 +289,7 @@ export function buildMachineModelGroups({
   defaultHasOverrides,
   useDefaultOption,
   allowAutoPick = false,
+  fallbackLabel,
 }: BuildMachineModelGroupsParams): DropdownGroup[] {
   const defaults = { defaultRemoteLaunch, defaultRemoteIncompatibility, defaultHasOverrides };
   const reported = new Map(
@@ -326,7 +329,9 @@ export function buildMachineModelGroups({
             .map((option) => splitLegacyCompoundId(option.value).modelId);
     const options = modelIds.map((modelId): DropdownOption => {
       const known = labelled.get(modelId);
-      return known ? { ...known, value: modelId } : { value: modelId, label: modelId };
+      return known
+        ? { ...known, value: modelId }
+        : { value: modelId, label: fallbackLabel?.(modelId, base) ?? modelId };
     });
     if (options.length === 0) {
       // Nothing to pick: no tab, unless the machine's list isn't in yet.

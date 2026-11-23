@@ -255,6 +255,23 @@ describe('buildMachineModelGroups', () => {
     expect(byKey['claude-code'].label).toBe('label:claude-code');
   });
 
+  it('names a reported model the catalog lacks through fallbackLabel', () => {
+    const [claude] = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'claude-code': [] },
+      catalogProfiles: [],
+      fallbackLabel: (id, provider) =>
+        provider === 'claude-code' && id === 'opus' ? 'Opus 5.5' : undefined,
+    });
+    expect(claude.options.map((option) => option.label)).toEqual([
+      'Opus 5.5',
+      'sonnet',
+      'only-on-machine',
+    ]);
+  });
+
   it('offers a signed-out Default only when it brings credentials (unknown counts as yes)', () => {
     expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
     const build = (
