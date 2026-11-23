@@ -12,6 +12,7 @@
 
 import type { BrowserWindow, WebContents } from 'electron';
 import type { DeepLinkAction } from '../deep-link-handler';
+import type { NotificationClickTarget } from '../../../shared/notification-click-target';
 import { getShownRendererWebContents } from '../../../main/window-backend';
 
 /** Payload of the `deep-link` nudge: "your window has queued actions". */
@@ -46,13 +47,6 @@ export function queueDeepLinkForRenderer(contents: WebContents, action: DeepLink
   contents.send('deep-link', DEEP_LINK_NUDGE);
 }
 
-/** Where a notification click goes: a workspace, or (chief) the Assistant thread. */
-export interface NotificationNavigation {
-  workspaceId: string;
-  chief?: boolean;
-  agentId?: string;
-}
-
 /**
  * Deliver a notification click's navigation to `contents`. A renderer that
  * reported ready gets it pushed; one that did not (still starting past the
@@ -61,7 +55,7 @@ export interface NotificationNavigation {
 export function deliverNotificationNavigation(
   contents: WebContents,
   ready: boolean,
-  navigation: NotificationNavigation,
+  navigation: NotificationClickTarget,
 ): void {
   if (contents.isDestroyed()) return;
   if (ready) {
@@ -72,7 +66,7 @@ export function deliverNotificationNavigation(
 }
 
 /** A notification click's navigation as a deep link the renderer pulls from its queue. */
-export function notificationDeepLink(navigation: NotificationNavigation): DeepLinkAction {
+export function notificationDeepLink(navigation: NotificationClickTarget): DeepLinkAction {
   return {
     type: 'notification',
     params: {

@@ -52,6 +52,7 @@ import {
 } from '../../agent-session/agent-session-selectors';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { notificationClickTarget } from '$shared/notification-click-target';
 import {
   selectNotificationEnabled,
   selectSoundOnlyWhenUnfocused,
@@ -211,11 +212,7 @@ function* showBrowserNotification(
       }
       const payload = discussion
         ? { workspaceId, discussion }
-        : {
-            workspaceId,
-            ...(workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
-            ...(agentId ? { agentId } : {}),
-          };
+        : notificationClickTarget(workspaceId, agentId);
       void handleNotificationNavigate(payload);
       notification.close();
     };

@@ -58,8 +58,11 @@ import { ANY_HOST, type WindowHostScope } from '../../system/main/window-workspa
 import {
   deliverNotificationNavigation,
   notificationDeepLink,
-  type NotificationNavigation,
 } from '../../deeplink/main/pending-deep-links';
+import {
+  notificationClickTarget,
+  type NotificationClickTarget,
+} from '../../../shared/notification-click-target';
 
 const logger = new Logger('NotificationService');
 
@@ -184,22 +187,6 @@ function pickInAppNotificationRenderer(scope: WindowHostScope): Electron.WebCont
 }
 
 /**
- * The click target of a notification about `workspaceId`: the workspace and
- * the agent that went idle, or (chief) the Assistant thread.
- */
-function notificationNavigateTarget(
-  workspaceId: string | undefined,
-  agentId: string | undefined,
-): NotificationNavigateTarget | undefined {
-  if (!workspaceId) return undefined;
-  return {
-    workspaceId,
-    ...(workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
-    ...(agentId ? { agentId } : {}),
-  };
-}
-
-/**
  * Pick the frame a notification click should focus. Resolved at CLICK time
  * (a banner can sit in Notification Center while the user moves the workspace
  * between frames). With `backendId`, only frames that hold that machine
@@ -252,7 +239,7 @@ function pickNotificationClickTarget(
 async function selectMachineForClick(
   frame: BrowserWindow,
   machineId: string,
-  navigation: NotificationNavigation,
+  navigation: NotificationClickTarget,
   isLive: () => boolean = () => true,
 ): Promise<void> {
   const { selectMachineInFrame } = await import('../../../main/machine-rail');
@@ -276,18 +263,6 @@ function activateAppOnMac(): void {
   if (process.platform !== 'darwin') return;
   app.show();
   app.focus({ steal: true });
-}
-
-/**
- * Click-navigation target attached to `notification:show` when the OS banner
- * was skipped because the app was frontmost (electron#51885). The renderer
- * shows a clickable in-app toast that routes through the same navigation as
- * `notification:navigate`.
- */
-interface NotificationNavigateTarget {
-  workspaceId: string;
-  chief?: boolean;
-  agentId?: string;
 }
 
 /**
@@ -771,7 +746,7 @@ export class NotificationService {
           content,
           backendId,
           workspaceId,
-          notificationNavigateTarget(workspaceId, event.data.agentId),
+          notificationClickTarget(workspaceId, event.data.agentId),
           toastRenderer,
         );
         return;
@@ -910,7 +885,7 @@ export class NotificationService {
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
-    navigateTarget?: NotificationNavigateTarget,
+    navigateTarget?: NotificationClickTarget,
     toastRenderer?: Electron.WebContents,
     inApp = false,
   ): void {
@@ -1069,7 +1044,7 @@ export class NotificationService {
           });
           return;
         }
-        const payload = notificationNavigateTarget(workspaceId, agentId);
+        const payload = notificationClickTarget(workspaceId, agentId);
         if (!payload) return;
         const navigate = (contents: Electron.WebContents | null): void => {
           if (contents && !contents.isDestroyed()) {
@@ -1151,7 +1126,7 @@ export class NotificationService {
       content,
       scope,
       workspaceId,
-      notificationNavigateTarget(workspaceId, agentId),
+      notificationClickTarget(workspaceId, agentId),
       renderer,
       true,
     );
@@ -1180,7 +1155,7 @@ export class NotificationService {
     void (async () => {
       try {
         const { openInvitedMachineInWindow } = await import('../../../main/machine-rail');
-        const navigation = notificationNavigateTarget(workspaceId, agentId);
+        const navigation = notificationClickTarget(workspaceId, agentId);
         const open = navigation ? notificationDeepLink(navigation) : undefined;
         if (await openInvitedMachineInWindow(frame, backendId, open)) {
           claimActivationFocus(frame);
@@ -1230,7 +1205,7 @@ export class NotificationService {
           backendId,
         );
         // The renderer pulls the agent (or Assistant thread) once it starts.
-        const navigation = notificationNavigateTarget(workspaceId, agentId);
+        const navigation = notificationClickTarget(workspaceId, agentId);
         if (navigation?.chief || navigation?.agentId) {
           const contents = window ? rendererFor(window, backendId) : null;
           if (contents) deliverNotificationNavigation(contents, false, navigation);
