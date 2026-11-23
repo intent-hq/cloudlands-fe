@@ -10,6 +10,8 @@ export const switchMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/settings/sections/AnimationsSettingsSection.svelte',
+    'src/features/settings/sections/UpdatesSettingsSection.svelte',
     'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
@@ -22,7 +24,6 @@ export const switchMetadata = {
     'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
     'src/lib/components/workspace/sidebar/McpServersSection.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
-    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/switch/switch.test.ts',

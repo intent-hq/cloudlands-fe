@@ -15,57 +15,73 @@
   interface Props {
     tab: 'providers' | 'connections';
     workspaceId?: WorkspaceId | null;
+    /** Section anchor id to render alone (settings search); omitted renders the whole tab. */
+    only?: string;
   }
 
-  let { tab, workspaceId }: Props = $props();
+  let { tab, workspaceId, only }: Props = $props();
+  const shows = (id: string) => !only || only === id;
   const pluginsSupported$ = selectAgentPluginsSupported();
 </script>
 
 {#if tab === 'providers'}
-  <div id="providers" data-highlight-id="providers" use:highlightTarget class="scroll-mt-20">
-    <ProviderSelector />
-  </div>
-  <div
-    id="utility-default-model"
-    data-highlight-id="utility-default-model"
-    use:highlightTarget
-    class="mt-10"
-  >
-    <h2 class="type-title mb-3 text-foreground">
-      {m.settings_section_defaults()}
-    </h2>
-    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-      <section data-slot="settings-section-body" class="px-6 py-4">
-        <DefaultAgentModelSettings {workspaceId} />
-      </section>
-      <section data-slot="settings-section-body" class="px-6 py-4">
-        <h3 class="type-title mb-5 text-foreground">
-          {m.settings_section_quickActions()}
-        </h3>
-        <BackgroundAgentSettings />
-      </section>
+  {#if shows('providers')}
+    <div id="providers" data-highlight-id="providers" use:highlightTarget class="scroll-mt-20">
+      <ProviderSelector />
     </div>
-  </div>
+  {/if}
+  {#if shows('utility-default-model')}
+    <div
+      id="utility-default-model"
+      data-highlight-id="utility-default-model"
+      use:highlightTarget
+      class={only ? undefined : 'mt-10'}
+    >
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_defaults()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <DefaultAgentModelSettings {workspaceId} />
+        </section>
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <h3 class="type-title mb-5 text-foreground">
+            {m.settings_section_quickActions()}
+          </h3>
+          <BackgroundAgentSettings />
+        </section>
+      </div>
+    </div>
+  {/if}
 {:else}
-  <div id="integrations" data-highlight-id="integrations" use:highlightTarget class="scroll-mt-20">
-    <h2 class="type-title mb-3 text-foreground">
-      {m.settings_tab_accounts()}
-    </h2>
-    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-      <section data-slot="settings-section-body" class="px-6 py-4">
-        <ConnectionsSettings />
-      </section>
+  {#if shows('integrations')}
+    <div
+      id="integrations"
+      data-highlight-id="integrations"
+      use:highlightTarget
+      class="scroll-mt-20"
+    >
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_tab_accounts()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <ConnectionsSettings />
+        </section>
+      </div>
     </div>
-  </div>
+  {/if}
 
-  <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget>
-    <h2 class="type-title mb-3 text-foreground">
-      {m.settings_section_mcpServers()}
-    </h2>
-    <McpServersSettings />
-  </div>
+  {#if shows('mcp-servers')}
+    <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_mcpServers()}
+      </h2>
+      <McpServersSettings />
+    </div>
+  {/if}
 
-  {#if $pluginsSupported$}
+  {#if $pluginsSupported$ && shows('plugins')}
     <div id="plugins" data-highlight-id="plugins" use:highlightTarget class="scroll-mt-20">
       <h2 class="type-title mb-3 text-foreground">
         {m.settings_section_plugins()}

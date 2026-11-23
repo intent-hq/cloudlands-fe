@@ -21,11 +21,12 @@ export const toggleGroupMetadata = {
   callers: [
     'src/features/hud/media-editor/recording/DockRecordingSendOptions.svelte',
     'src/features/session-import/ImportSessionList.svelte',
+    'src/features/settings/sections/AppearanceSettingsSection.svelte',
+    'src/features/settings/sections/FontSettingsSection.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
-    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle-group/toggle-group.test.ts',

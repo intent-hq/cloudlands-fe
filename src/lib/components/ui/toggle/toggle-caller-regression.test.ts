@@ -110,6 +110,8 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
+        'src/features/settings/sections/AnimationsSettingsSection.svelte',
+        'src/features/settings/sections/UpdatesSettingsSection.svelte',
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
@@ -122,7 +124,6 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
-        'src/routes/(app)/settings/+page.svelte',
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
@@ -131,11 +132,12 @@ describe('B2 caller metadata regression', () => {
       'toggle-group': [
         'src/features/hud/media-editor/recording/DockRecordingSendOptions.svelte',
         'src/features/session-import/ImportSessionList.svelte',
+        'src/features/settings/sections/AppearanceSettingsSection.svelte',
+        'src/features/settings/sections/FontSettingsSection.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
-        'src/routes/(app)/settings/+page.svelte',
       ],
     };
 

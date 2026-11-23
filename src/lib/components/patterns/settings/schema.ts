@@ -15,10 +15,22 @@ export function resolveSetting<T>(value: Resolvable<T> | undefined, fallback: T)
   return typeof value === 'function' ? (value as () => T)() : value;
 }
 
+/** Lower-cased whitespace-separated terms of a settings search query. */
+function settingsSearchTerms(query: string): string[] {
+  return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** True when every term of `query` occurs in `text`; an empty query matches everything. */
+export function matchesSettingsSearchText(text: string, query: string): boolean {
+  const terms = settingsSearchTerms(query);
+  if (terms.length === 0) return true;
+  const haystack = text.toLocaleLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
 export function matchesSettingsSearch(entry: SettingEntry, query: string): boolean {
-  const normalized = query.trim().toLocaleLowerCase();
-  if (!normalized) return true;
-  return [entry.label, entry.description, entry.featureCode, entry.id]
-    .filter(Boolean)
-    .some((value) => value!.toLocaleLowerCase().includes(normalized));
+  return matchesSettingsSearchText(
+    [entry.label, entry.description, entry.featureCode, entry.id].filter(Boolean).join(' '),
+    query,
+  );
 }

@@ -1,20 +1,9 @@
 <script lang="ts">
-  import {
-    SettingsDisclosure,
-    SettingsFieldRow,
-    SettingsSection,
-  } from '$lib/components/patterns/settings';
+  import { SettingsDisclosure, SettingsSection } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
-  import {
-    selectIsReadyToInstall,
-    selectShareUpdateStatistics,
-  } from '$store/renderer/slices/auto-update/auto-update-selectors';
-  import {
-    installUpdate,
-    setShareUpdateStatistics,
-    simulateSetState,
-  } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { selectIsReadyToInstall } from '$store/renderer/slices/auto-update/auto-update-selectors';
+  import { installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { showReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-slice';
   import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
@@ -24,7 +13,6 @@
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
-  import FontPicker from '$features/settings/FontPicker.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
@@ -34,55 +22,30 @@
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
-  import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
-  import ChatAppearanceSettings from '$lib/components/settings/ChatAppearanceSettings.svelte';
-  import ChatAuroraSettings from '$lib/components/settings/ChatAuroraSettings.svelte';
-  import MenuBarAutoHideSettings from '$lib/components/settings/MenuBarAutoHideSettings.svelte';
-  import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
-  import PauseAnimationsWhenUnfocusedSettings from '$lib/components/settings/PauseAnimationsWhenUnfocusedSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
-  import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
-  import { Switch } from '$lib/components/ui/switch';
-  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectHostManagesConnections } from '$store/renderer/slices/connections/connections-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
+    selectAgentPluginsSupported,
     selectPrincipalActionContext,
     selectHostAdministrationDenied,
   } from '$store/renderer/slices/principal/principal-selectors';
-  import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
-  import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
   import {
     resetNotificationSettings,
     setAgentFontStyle,
-    setCodeFontFamily,
     setNoteFontStyle,
-    setShellTransparencyEnabled,
-    setUpdateChannel,
-    type AgentFontStyle,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import {
-    selectAgentFontStyle,
-    selectCodeFontFamily,
-    selectCodeFontFamilyCSS,
-    selectCodeFontOptions,
-    selectIsNoteMonospace,
-    selectLabsMultiplayerEnabled,
-    selectNoteFontStyle,
-    selectShellTransparencyEnabled,
-    selectUpdateChannel,
-  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { isUpdateChannel } from '$features/auto-update/types';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import DevicePasskeysSettings from '$features/passkeys/DevicePasskeysSettings.svelte';
   import {
     selectDevicePasskeys,
@@ -92,8 +55,6 @@
     devicePasskeyDeleteRequested,
     devicePasskeysRequested,
   } from '$store/renderer/slices/device-passkeys/device-passkeys-slice';
-
-  import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
   import { resolveHashToTarget } from '$shared/app-ui-targets';
   import { isSettingsTab, resolveHashTab } from './settings-hash-tab';
@@ -104,31 +65,32 @@
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
-  import MachineRailSettings from '$lib/components/settings/MachineRailSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
   import { workspaceIdFromRouteParam } from '$lib/utils/workspace-route-context';
-  import { onMount, untrack } from 'svelte';
+  import AppearanceSettingsSection from '$features/settings/sections/AppearanceSettingsSection.svelte';
+  import FontSettingsSection from '$features/settings/sections/FontSettingsSection.svelte';
+  import UpdatesSettingsSection from '$features/settings/sections/UpdatesSettingsSection.svelte';
+  import AnimationsSettingsSection from '$features/settings/sections/AnimationsSettingsSection.svelte';
+  import DeveloperSettingsSection from '$features/settings/sections/DeveloperSettingsSection.svelte';
+  import SettingsSearchField from '$features/settings/search/SettingsSearchField.svelte';
+  import SettingsSearchResults from '$features/settings/search/SettingsSearchResults.svelte';
+  import {
+    SETTINGS_SEARCH_SECTIONS,
+    searchSettings,
+  } from '$features/settings/search/settings-search-index';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
 
   const isReadyToInstall$ = selectIsReadyToInstall();
-  const updateChannel$ = selectUpdateChannel();
-  const shareUpdateStatistics$ = selectShareUpdateStatistics();
-  const noteFontStyle = selectNoteFontStyle();
-  const isNoteMonospace = selectIsNoteMonospace();
-  const agentFontStyle = selectAgentFontStyle();
-  const codeFontFamily = selectCodeFontFamily();
-  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const codeFontOptions = selectCodeFontOptions();
-  const shellTransparencyEnabled = selectShellTransparencyEnabled();
-  const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const pluginsSupported$ = selectAgentPluginsSupported();
   // intent-web serves this page and owns the machines list: there is no
   // keychain sync and no mobile pairing on that host.
   const hostManagesConnections$ = selectHostManagesConnections();
@@ -255,6 +217,7 @@
   let aiBehaviorView = $state<AIBehaviorView>({ type: 'system-prompt' });
 
   function selectAiBehaviorView(view: AIBehaviorView) {
+    searchQuery = '';
     aiBehaviorView = view;
     const tab = view.type === 'system-prompt' ? 'agent-behavior' : 'specialists';
     requestedTab = tab;
@@ -320,32 +283,7 @@
 
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
-  let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
-
-  // Theme options
-  const themeOptions = [
-    { value: 'light', label: m.settings_theme_light() },
-    { value: 'dark', label: m.settings_theme_dark() },
-    { value: 'system', label: m.settings_theme_system() },
-  ];
-
-  // Font style options
-  const fontStyleOptions = [
-    { value: 'sans', label: m.settings_fontStyle_sans() },
-    { value: 'monospace', label: m.settings_fontStyle_mono() },
-  ];
-
-  function handleNoteFontChange(value: string | string[]) {
-    appStore.dispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
-  }
-
-  function handleAgentFontChange(value: string | string[]) {
-    appStore.dispatch(setAgentFontStyle(value as AgentFontStyle));
-  }
-
-  function handleCodeFontChange(value: string) {
-    appStore.dispatch(setCodeFontFamily(value));
-  }
+  let appearanceSectionRef: AppearanceSettingsSection | undefined = $state();
 
   // App version from Electron
   let appVersion = $state('');
@@ -394,6 +332,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
+    searchQuery = '';
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -425,55 +364,11 @@
     }, 100);
   }
 
-  function handleThemeChange(newTheme: string | string[]) {
-    appStore.dispatch(requestThemePreferenceChange(newTheme as ThemePreference));
-  }
-
-  const updateChannelOptions = [
-    {
-      value: 'stable',
-      get label() {
-        return m.settings_updateChannel_stable_label();
-      },
-    },
-    {
-      value: 'beta',
-      get label() {
-        return m.settings_updateChannel_beta_label();
-      },
-    },
-    {
-      value: 'alpha',
-      get label() {
-        return m.settings_updateChannel_alpha_label();
-      },
-    },
-    {
-      value: 'disabled',
-      get label() {
-        return m.settings_updateChannel_disabled_label();
-      },
-    },
-  ];
-
-  const updateChannelLabel = $derived(
-    updateChannelOptions.find((option) => option.value === $updateChannel$)?.label ??
-      m.settings_updateChannel_stable_label(),
-  );
-
-  function handleUpdateChannelChange(value: string) {
-    if (!isUpdateChannel(value)) return;
-    // Dispatch only: the update-channel persistence saga is the single
-    // owner of the SET_CHANNEL write (persist + feed switch). A direct
-    // setChannel call here would issue a duplicate write.
-    appStore.dispatch(setUpdateChannel(value));
-  }
-
   function handleResetInterfaceSystem() {
     // Reset theme
     appStore.dispatch(requestThemePreferenceChange('system'));
     // Clear custom color theme
-    colorThemeSettingsRef?.clearTheme();
+    appearanceSectionRef?.clearTheme();
     // Reset font styles
     appStore.dispatch(setNoteFontStyle('sans'));
     appStore.dispatch(setAgentFontStyle('sans'));
@@ -482,10 +377,64 @@
     // Reset Git & Workspace settings
     gitWorkspaceSettingsRef?.resetToDefaults();
   }
+  // Settings search: one section registry drives the tab panes and the results.
+  let searchQuery = $state('');
+  const searching = $derived(searchQuery.trim().length > 0);
+
+  function isAvailable(id: string): boolean {
+    const section = SETTINGS_SEARCH_SECTIONS.find((entry) => entry.id === id);
+    if (section && hiddenTabs.includes(section.tab)) return false;
+    switch (id) {
+      case 'menu-bar-auto-hide':
+        return isElectronPlatform() && !isMacPlatform();
+      case 'machine-rail':
+      case 'dock-lab':
+        return isElectronPlatform();
+      case 'plugins':
+        return $pluginsSupported$;
+      case 'backend-sync':
+      case 'tunnel-relay':
+        return !$hostManagesConnections$;
+      case 'hardware':
+        return showHardwareSection;
+      case 'connection':
+        return udsSocketPath !== null;
+      default:
+        return true;
+    }
+  }
+
+  const searchGroups = $derived(searching ? searchSettings(searchQuery, isAvailable) : []);
+  const tabSections = $derived(
+    SETTINGS_SEARCH_SECTIONS.filter((entry) => entry.tab === activeTab && isAvailable(entry.id)),
+  );
+
+  $effect(() => {
+    if (searching) untrack(resetContentScroll);
+  });
+  $effect(() => {
+    if (searchGroups.some((group) => group.hits.some((hit) => hit.section.id === 'hardware'))) {
+      untrack(() => (hardwareOpen = true));
+    }
+  });
+
+  function selectTab(tab: SettingsTab) {
+    searchQuery = '';
+    setActiveTab(tab);
+  }
+
+  function openSearchResult(tab: SettingsTab, sectionId: string) {
+    selectTab(tab);
+    const url = new URL(window.location.href);
+    url.hash = sectionId;
+    window.history.replaceState({}, '', url.toString());
+    handleHashNavigation();
+  }
 </script>
 
 {#snippet sidebarHeader()}
   <SettingsSidebarBack onBack={navigateBackFromSettings} />
+  <SettingsSearchField value={searchQuery} onchange={(value) => (searchQuery = value)} />
 {/snippet}
 
 {#snippet agentsNavigation()}
@@ -493,7 +442,7 @@
     workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
-    isActive={activeTab === 'specialists'}
+    isActive={activeTab === 'specialists' && !searching}
   />
 {/snippet}
 
@@ -531,10 +480,221 @@
   </div>
 {/snippet}
 
+{#snippet titledCard(id: string, title: string, body: Snippet)}
+  <div {id} data-highlight-id={id} use:highlightTarget>
+    <h2 class="type-title mb-3 text-foreground">{title}</h2>
+    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+      <section data-slot="settings-section-body" class="px-6 py-4">{@render body()}</section>
+    </div>
+  </div>
+{/snippet}
+
+{#snippet openInBody()}<OpenInAppsSettings />{/snippet}
+{#snippet githubLinksBody()}<GitHubLinkSettings />{/snippet}
+{#snippet languageBody()}<LanguageSettings />{/snippet}
+{#snippet agentBackendBody()}<AgentBackendSettings />{/snippet}
+{#snippet rtkBody()}<RtkSettings />{/snippet}
+
+<!-- Every searchable section; `show` picks the rows of sections that have them. -->
+{#snippet settingsSection(id: string, show: (row: string) => boolean)}
+  {#if id === 'providers' || id === 'utility-default-model'}
+    <AdministratorSettings tab="providers" only={id} workspaceId={settingsWorkspaceId} />
+  {:else if id === 'integrations' || id === 'mcp-servers' || id === 'plugins'}
+    <AdministratorSettings tab="connections" only={id} workspaceId={settingsWorkspaceId} />
+  {:else if id === 'devices'}
+    <div id="devices" class="scroll-mt-20">
+      <DevicesSettings />
+    </div>
+  {:else if id === 'backend-sync'}
+    <DevicesConnectionSections />
+  {:else if id === 'mobile'}
+    <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
+      <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+        <MobileSettings />
+      </div>
+    </div>
+  {:else if id === 'collaboration'}
+    <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
+    <div id="collaboration" class="scroll-mt-20">
+      {#key $collaborationContext$}<GuestSessionsSettings />{/key}
+    </div>
+  {:else if id === 'passkeys'}
+    <DevicePasskeysSettings
+      passkeys={$devicePasskeys$}
+      onRetry={() => appStore.dispatch(devicePasskeysRequested())}
+      onDelete={(credentialId) => appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
+    />
+  {:else if id === 'git-workspace'}
+    <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
+      <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
+    </div>
+  {:else if id === 'theme'}
+    <AppearanceSettingsSection bind:this={appearanceSectionRef} {show} />
+  {:else if id === 'font-style'}
+    <FontSettingsSection {show} />
+  {:else if id === 'language'}
+    {@render titledCard('language', m.settings_language_section_title(), languageBody)}
+  {:else if id === 'updates'}
+    <UpdatesSettingsSection {show} />
+  {:else if id === 'open-in'}
+    {@render titledCard('open-in', m.settings_section_openIn(), openInBody)}
+  {:else if id === 'github-link-action'}
+    {@render titledCard(
+      'github-link-action',
+      m.settings_githubLinks_section_title(),
+      githubLinksBody,
+    )}
+  {:else if id === 'notifications'}
+    <NotificationSettings />
+  {:else if id === 'licenses'}
+    <SettingsSection id="licenses" title={m.settings_licenses_title_label()}>
+      <div class="px-6 py-4">
+        <a
+          href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="type-body cursor-pointer text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >{m.settings_licenses_tailcat_description()}</a
+        >
+      </div>
+    </SettingsSection>
+  {:else if id === 'global-instructions'}
+    <div
+      id="global-instructions"
+      data-highlight-id="global-instructions"
+      use:highlightTarget
+      class="min-w-0"
+    >
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_globalInstructions()}
+      </h2>
+      <AIBehaviorEditor activeView={{ type: 'system-prompt' }} workspaceId={settingsWorkspaceId} />
+    </div>
+  {:else if id === 'performance'}
+    <AnimationsSettingsSection {show} />
+  {:else if id === 'agent-backend'}
+    {@render titledCard('agent-backend', m.settings_section_agentBackend(), agentBackendBody)}
+  {:else if id === 'cli-optimization'}
+    {@render titledCard('cli-optimization', m.settings_section_cliOptimization(), rtkBody)}
+  {:else if id === 'workspace-api'}
+    <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
+    <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_workspaceApi()}
+      </h2>
+      <WorkspaceApiSettings />
+    </div>
+  {:else if id === 'agent-features'}
+    <AgentFeaturesSettings />
+  {:else if id === 'dock-lab'}
+    <div>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_dockLab_label()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <DockLabSettings />
+      </div>
+    </div>
+  {:else if id === 'voice'}
+    <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_voice()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <VoiceSettings />
+        </section>
+      </div>
+    </div>
+  {:else if id === 'autocomplete'}
+    <AutocompleteSettings />
+  {:else if id === 'keyboard-shortcuts'}
+    <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_keyboardShortcuts()}
+      </h2>
+      <div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
+        <KeyboardShortcutsSettings />
+      </div>
+    </div>
+  {:else if id === 'hardware'}
+    <!-- Hardware (only when a supported device is detectable) -->
+    <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_hardware()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-2">
+          <SettingsDisclosure
+            label={m.settings_hardware_creatorMicro_label()}
+            flush
+            bind:open={hardwareOpen}
+          >
+            <div class="type-body -mr-8 -mb-5 -ml-6 mt-2 border-t border-border text-foreground">
+              <HardwareConsoleSettings embedded />
+            </div>
+          </SettingsDisclosure>
+        </section>
+      </div>
+    </div>
+  {:else if id === 'labs'}
+    <LabsSettings />
+  {:else if id === 'tunnel-relay'}
+    <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
+    <TunnelRelaySettings />
+  {:else if id === 'connection' && udsSocketPath}
+    <!-- Connection (UDS only; hidden for WS/unknown transports) -->
+    <div id="connection" data-highlight-id="connection" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_connection()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <p class="type-body font-medium text-foreground">
+                {m.settings_connection_socket_label()}
+              </p>
+              <p class="type-body text-subtle mt-0.5 font-mono select-text break-all">
+                {udsSocketPath}
+              </p>
+            </div>
+            <CopyButton text={udsSocketPath} class="shrink-0" />
+          </div>
+        </section>
+      </div>
+    </div>
+  {:else if id === 'reset'}
+    <div id="reset" data-highlight-id="general" use:highlightTarget>
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_reset()}
+      </h2>
+      <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+        <section data-slot="settings-section-body" class="px-6 py-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="type-body font-medium text-foreground">
+                {m.settings_reset_label()}
+              </p>
+              <p class="type-body text-subtle">
+                {m.settings_reset_description()}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
+              {m.settings_reset_button()}
+            </Button>
+          </div>
+        </section>
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
 <SettingsPage
   title={m.settings_page_title()}
   {activeTab}
-  onSelect={setActiveTab}
+  onSelect={selectTab}
+  {searching}
   {agentsNavigation}
   {hiddenTabs}
   {sidebarHeader}
@@ -547,53 +707,28 @@
       class="min-h-0 flex-1 overflow-auto"
     >
       <main
-        class="mx-auto flex min-h-full {activeTab === 'specialists'
+        class="mx-auto flex min-h-full {activeTab === 'specialists' && !searching
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
           : 'max-w-4xl'} flex-col gap-6 pr-8 pl-6 py-6"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
-        <!-- Providers / Connections (administrator-owned; withheld from collaborator-only clients) -->
-        {#if (activeTab === 'providers' || activeTab === 'connections') && !hiddenTabs.includes(activeTab)}
-          <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
-        {/if}
-
-        {#if activeTab === 'devices'}
-          <div id="devices" class="scroll-mt-20">
-            <DevicesSettings />
-          </div>
-
-          {#if !$hostManagesConnections$}
-            <DevicesConnectionSections />
+        {#if searching}
+          <SettingsSearchResults groups={searchGroups} onOpen={openSearchResult}>
+            {#snippet section(hit)}
+              {@render settingsSection(
+                hit.section.id,
+                (row) => isAvailable(row) && (hit.rows === null || hit.rows.includes(row)),
+              )}
+            {/snippet}
+          </SettingsSearchResults>
+        {:else if activeTab === 'providers' || activeTab === 'connections'}
+          <!-- Administrator-owned; withheld from collaborator-only clients -->
+          {#if !hiddenTabs.includes(activeTab)}
+            <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
           {/if}
-        {/if}
-
-        {#if activeTab === 'mobile' && !hiddenTabs.includes('mobile')}
-          <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
-            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
-              <MobileSettings />
-            </div>
-          </div>
-        {/if}
-
-        <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
-          <div id="collaboration" class="scroll-mt-20">
-            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
-          </div>
-        {/if}
-
-        {#if activeTab === 'passkeys' && $devicePasskeysAvailable$}
-          <DevicePasskeysSettings
-            passkeys={$devicePasskeys$}
-            onRetry={() => appStore.dispatch(devicePasskeysRequested())}
-            onDelete={(credentialId) =>
-              appStore.dispatch(devicePasskeyDeleteRequested(credentialId))}
-          />
-        {/if}
-
-        <!-- Hidden specialist editor destination -->
-        {#if activeTab === 'specialists'}
+        {:else if activeTab === 'specialists'}
+          <!-- Hidden specialist editor destination -->
           <div class="min-w-0 grow xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
             <div
               id="specialist-editor"
@@ -608,576 +743,13 @@
               />
             </div>
           </div>
-        {/if}
-
-        <!-- Setup -->
-        {#if activeTab === 'setup'}
-          <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
-            <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
-          </div>
-        {/if}
-
-        <!-- Display -->
-        {#if activeTab === 'display'}
-          <!-- Theme -->
-          <div id="theme" data-highlight-id="appearance" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_appearance()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <SettingsFieldRow id="settings-theme-label-field" label={m.settings_theme_label()}>
-                  <ToggleGroup.Root
-                    variant="outline"
-                    type="single"
-                    bind:value={() => $themePreference, handleThemeChange}
-                    size="sm"
-                    aria-label={m.settings_theme_label()}
-                    class="ml-4 shrink-0"
-                  >
-                    {#each themeOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
-                        {option.label}
-                      </ToggleGroup.Item>
-                    {/each}
-                  </ToggleGroup.Root>
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="color-theme"
-                data-highlight-id="color-theme"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <ColorThemeSettings bind:this={colorThemeSettingsRef} />
-              </section>
-              <ChatAppearanceSettings />
-              {#if isElectronPlatform() && !isMacPlatform()}
-                <section
-                  id="menu-bar-auto-hide"
-                  data-highlight-id="menu-bar-auto-hide"
-                  use:highlightTarget
-                  data-slot="settings-section-body"
-                  class="px-6 py-4"
-                >
-                  <MenuBarAutoHideSettings />
-                </section>
-              {/if}
-              {#if isElectronPlatform()}
-                <section
-                  id="machine-rail"
-                  data-highlight-id="machine-rail"
-                  use:highlightTarget
-                  data-slot="settings-section-body"
-                  class="px-6 py-4"
-                >
-                  <MachineRailSettings />
-                </section>
-              {/if}
-            </div>
-          </div>
-
-          <div id="font-style" data-highlight-id="font-style" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_fontStyle()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section
-                id="note-font"
-                data-highlight-id="note-font"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-font-notes-label-field"
-                  label={m.settings_font_notes_label()}
-                >
-                  {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-                      class:font-mono={$isNoteMonospace}
-                    >
-                      {m.settings_font_notes_description()}
-                    </span>{/snippet}
-                  <ToggleGroup.Root
-                    variant="outline"
-                    type="single"
-                    bind:value={() => $noteFontStyle, handleNoteFontChange}
-                    size="sm"
-                    aria-label={m.settings_font_notes_label()}
-                    class="ml-4 shrink-0"
-                  >
-                    {#each fontStyleOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
-                        {option.label}
-                      </ToggleGroup.Item>
-                    {/each}
-                  </ToggleGroup.Root>
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="agent-chat-font"
-                data-highlight-id="agent-chat-font"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-font-agentChat-label-field"
-                  label={m.settings_font_agentChat_label()}
-                >
-                  {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-                      class:font-mono={$agentFontStyle === 'monospace'}
-                    >
-                      {m.settings_font_agentChat_description()}
-                    </span>{/snippet}
-                  <ToggleGroup.Root
-                    variant="outline"
-                    type="single"
-                    bind:value={() => $agentFontStyle, handleAgentFontChange}
-                    size="sm"
-                    aria-label={m.settings_font_agentChat_label()}
-                    class="ml-4 shrink-0"
-                  >
-                    {#each fontStyleOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
-                        {option.label}
-                      </ToggleGroup.Item>
-                    {/each}
-                  </ToggleGroup.Root>
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="code-font"
-                data-highlight-id="code-font"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-font-code-label-field"
-                  label={m.settings_font_code_label()}
-                  description={m.settings_font_code_description()}
-                >
-                  {#snippet control({ labelId, descriptionId })}
-                    <div class="w-45 max-w-full flex-shrink-0">
-                      <FontPicker
-                        value={$codeFontFamily}
-                        options={$codeFontOptions}
-                        fontFamily={$codeFontFamilyCSS}
-                        ariaLabelledby={labelId}
-                        ariaDescribedby={descriptionId}
-                        onchange={handleCodeFontChange}
-                      />
-                    </div>
-                  {/snippet}
-                </SettingsFieldRow>
-              </section>
-            </div>
-          </div>
-
-          <!-- Language -->
-          <div id="language" data-highlight-id="language" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_language_section_title()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <LanguageSettings />
-              </section>
-            </div>
-          </div>
-        {/if}
-
-        <!-- App Behavior -->
-        {#if activeTab === 'app-behavior'}
-          <!-- Updates -->
-          <div id="updates" data-highlight-id="updates" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_updates()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <SettingsFieldRow
-                  id="settings-updateChannel-label-field"
-                  label={m.settings_updateChannel_label()}
-                  description={m.settings_updateChannel_description()}
-                >
-                  <div class="w-45 flex-shrink-0">
-                    <Select.Root value={$updateChannel$} onchange={handleUpdateChannelChange}>
-                      <Select.Trigger aria-label={m.settings_updateChannel_ariaLabel()}>
-                        <span class="truncate">{updateChannelLabel}</span>
-                      </Select.Trigger>
-                      <Select.Content portal class="max-h-75 w-45">
-                        {#each updateChannelOptions as option (option.value)}
-                          <Select.Item value={option.value}>
-                            <span class="truncate">{option.label}</span>
-                          </Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
-                </SettingsFieldRow>
-              </section>
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <SettingsFieldRow
-                  id="settings-shareUpdateStatistics-label-field"
-                  label={m.settings_shareUpdateStatistics_label()}
-                  description={m.settings_shareUpdateStatistics_description()}
-                  info={m.settings_shareUpdateStatistics_info()}
-                >
-                  <Switch
-                    id="share-update-statistics-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$shareUpdateStatistics$}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setShareUpdateStatistics(enabled))}
-                    ariaLabel={m.settings_shareUpdateStatistics_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-            </div>
-          </div>
-
-          <div id="open-in" data-highlight-id="open-in" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_openIn()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <OpenInAppsSettings />
-              </section>
-            </div>
-          </div>
-          <div id="github-link-action" data-highlight-id="github-link-action" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_githubLinks_section_title()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <GitHubLinkSettings />
-              </section>
-            </div>
-          </div>
-          <NotificationSettings />
-
-          <SettingsSection id="licenses" title={m.settings_licenses_title_label()}>
-            <div class="px-6 py-4">
-              <a
-                href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="type-body cursor-pointer text-muted-foreground underline underline-offset-4 hover:text-foreground"
-                >{m.settings_licenses_tailcat_description()}</a
-              >
-            </div>
-          </SettingsSection>
-        {/if}
-
-        <!-- Agent Behavior -->
-        {#if activeTab === 'agent-behavior'}
-          <div
-            id="global-instructions"
-            data-highlight-id="global-instructions"
-            use:highlightTarget
-            class="min-w-0"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_globalInstructions()}
-            </h2>
-            <AIBehaviorEditor
-              activeView={{ type: 'system-prompt' }}
-              workspaceId={settingsWorkspaceId}
-            />
-          </div>
-        {/if}
-
-        <!-- Performance -->
-        {#if activeTab === 'performance'}
-          <div id="performance" data-highlight-id="performance" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_animationsAndEffects()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <ChatAuroraSettings />
-              <section
-                id="translucent-window"
-                data-highlight-id="translucent-window"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-appearance-translucentWindow-label-field"
-                  label={m.settings_appearance_translucentWindow_label()}
-                  description={m.settings_appearance_translucentWindow_description()}
-                >
-                  <Switch
-                    id="translucent-window-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$shellTransparencyEnabled}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setShellTransparencyEnabled(enabled))}
-                    ariaLabel={m.settings_appearance_translucentWindow_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="reduce-motion-on-battery"
-                data-highlight-id="reduce-motion-on-battery"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <ReduceMotionOnBatterySettings />
-              </section>
-              <section
-                id="pause-animations-when-unfocused"
-                data-highlight-id="pause-animations-when-unfocused"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <PauseAnimationsWhenUnfocusedSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Agent Backend -->
-          <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_agentBackend()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <AgentBackendSettings />
-              </section>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Token Savings -->
-        {#if activeTab === 'token-savings'}
-          <div id="cli-optimization" data-highlight-id="cli-optimization" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_cliOptimization()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <RtkSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
-          <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_workspaceApi()}
-            </h2>
-            <WorkspaceApiSettings />
-          </div>
-
-          <AgentFeaturesSettings />
-        {/if}
-
-        <!-- Inputs -->
-        {#if activeTab === 'input'}
-          {#if isElectronPlatform()}
-            <div>
-              <h2 class="type-title mb-3 text-foreground">
-                {m.settings_dockLab_label()}
-              </h2>
-              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <DockLabSettings />
-              </div>
-            </div>
-          {/if}
-
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_voice()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <VoiceSettings />
-              </section>
-            </div>
-          </div>
-
-          <AutocompleteSettings />
-
-          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_keyboardShortcuts()}
-            </h2>
-            <div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
-              <KeyboardShortcutsSettings />
-            </div>
-          </div>
-
-          <!-- Hardware (only when a supported device is detectable) -->
-          {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
-              <h2 class="type-title mb-3 text-foreground">
-                {m.settings_section_hardware()}
-              </h2>
-              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section data-slot="settings-section-body" class="px-6 py-2">
-                  <SettingsDisclosure
-                    label={m.settings_hardware_creatorMicro_label()}
-                    flush
-                    bind:open={hardwareOpen}
-                  >
-                    <div
-                      class="type-body -mr-8 -mb-5 -ml-6 mt-2 border-t border-border text-foreground"
-                    >
-                      <HardwareConsoleSettings embedded />
-                    </div>
-                  </SettingsDisclosure>
-                </section>
-              </div>
-            </div>
-          {/if}
-        {/if}
-
-        <!-- Advanced -->
-        {#if activeTab === 'advanced'}
-          <LabsSettings />
-          <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
-          {#if !$hostManagesConnections$}
-            <TunnelRelaySettings />
-          {/if}
-
-          <!-- Connection (UDS only; hidden for WS/unknown transports) -->
-          {#if udsSocketPath}
-            <div id="connection" data-highlight-id="connection" use:highlightTarget>
-              <h2 class="type-title mb-3 text-foreground">
-                {m.settings_section_connection()}
-              </h2>
-              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section data-slot="settings-section-body" class="px-6 py-4">
-                  <div class="flex items-center justify-between gap-4">
-                    <div class="min-w-0">
-                      <p class="type-body font-medium text-foreground">
-                        {m.settings_connection_socket_label()}
-                      </p>
-                      <p class="type-body text-subtle mt-0.5 font-mono select-text break-all">
-                        {udsSocketPath}
-                      </p>
-                    </div>
-                    <CopyButton text={udsSocketPath} class="shrink-0" />
-                  </div>
-                </section>
-              </div>
-            </div>
-          {/if}
-
-          <!-- Reset -->
-          <div id="reset" data-highlight-id="general" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_reset()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="type-body font-medium text-foreground">
-                      {m.settings_reset_label()}
-                    </p>
-                    <p class="type-body text-subtle">
-                      {m.settings_reset_description()}
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
-                    {m.settings_reset_button()}
-                  </Button>
-                </div>
-              </section>
-            </div>
-          </div>
-
-          <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
-          {#if isDevMode}
-            <div id="developer" data-highlight-id="developer" use:highlightTarget>
-              <h2 class="type-title mb-3 text-foreground">
-                <!-- i18n-ignore (dev-only) -->
-                Developer
-              </h2>
-              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section data-slot="settings-section-body" class="px-6 py-4">
-                  <div class="flex flex-col gap-2">
-                    <!-- i18n-ignore (dev-only) -->
-                    <span class="type-body font-medium">Update Toast Simulation</span>
-                    <div class="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onclick={() =>
-                          appStore.dispatch(
-                            simulateSetState({
-                              toastVisible: true,
-                              status: 'downloading',
-                              updateInfo: {
-                                version: '99.0.0',
-                                releaseDate: new Date().toISOString(),
-                                releaseNotes: 'Simulated',
-                              },
-                              progress: {
-                                percent: 50,
-                                bytesPerSecond: 2500000,
-                                transferred: 25000000,
-                                total: 50000000,
-                              },
-                              error: null,
-                            }),
-                          )}
-                      >
-                        <!-- i18n-ignore (dev-only) -->
-                        Simulate Update Flow
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onclick={() =>
-                          appStore.dispatch(
-                            simulateSetState({
-                              toastVisible: true,
-                              status: 'not-available',
-                              currentVersion: '1.0.0-dev',
-                            }),
-                          )}
-                      >
-                        <!-- i18n-ignore (dev-only) -->
-                        Simulate No Update
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onclick={() =>
-                          appStore.dispatch(
-                            simulateSetState({
-                              toastVisible: false,
-                              status: 'idle',
-                              currentVersion: '1.0.0-dev',
-                              updateInfo: null,
-                              progress: null,
-                              error: null,
-                              channel: 'stable',
-                            }),
-                          )}
-                      >
-                        <!-- i18n-ignore (dev-only) -->
-                        Reset
-                      </Button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </div>
+        {:else}
+          {#each tabSections as entry (entry.id)}
+            {@render settingsSection(entry.id, isAvailable)}
+          {/each}
+          <!-- Developer section (dev mode only; never searchable) -->
+          {#if activeTab === 'advanced' && isDevMode}
+            <DeveloperSettingsSection />
           {/if}
         {/if}
       </main>
