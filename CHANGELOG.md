@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.379.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.378.0...v2.379.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* **cloud-machines:** collapse a cloud runner's sandbox list by default ([#4978](https://github.com/intent-hq/cloudlands-fe/issues/4978)) ([b150ad1](https://github.com/intent-hq/cloudlands-fe/commit/b150ad1c39851f039a0d60b6292389b3e048a43b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.281 ([#4989](https://github.com/intent-hq/cloudlands-fe/issues/4989)) ([2339f90](https://github.com/intent-hq/cloudlands-fe/commit/2339f908b0a03af7b2966ba383ec180082057c50))
+
 ## [2.378.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.377.1...v2.378.0) (2026-11-23)
 
 
