@@ -329,7 +329,7 @@ export const GROUPED_SANDBOXES: RemoteMachine[] = [
 ];
 
 /** What a backend with Northflank and Agent37 reports as `diskSettings`. */
-export const DISK_SETTINGS: CloudDiskSettings = {
+const DISK_SETTINGS: CloudDiskSettings = {
   northflank: { minGiB: 6, maxGiB: 500, defaultGiB: 20 },
   agent37: {
     minGiB: 4,
