@@ -539,6 +539,8 @@ describe('workspaceOperationsSaga', () => {
       data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
     });
     mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: true } });
+    // ws-1 is on screen, so delete closes its tab
+    mocks.navigate.mockResolvedValue(true);
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
     await settle();
@@ -592,6 +594,27 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('leaves navigation alone on Undo when the deleted workspace was not on screen', async () => {
+    mocks.deleteWorkspace.mockResolvedValue({
+      ok: true,
+      data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+    });
+    mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: true } });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestDeleteWorkspace('ws-1'));
+    await settle();
+    latestUndo()?.();
+    await settle();
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.flat()).not.toContainEqual(
+      expect.objectContaining({ type: 'tabState/openWorkspaceTab' }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('does not resurrect the workspace when cancelDelete reports the race-safe cancelled:false', async () => {
     vi.useFakeTimers();
     mocks.deleteWorkspace.mockResolvedValue({
@@ -599,6 +622,7 @@ describe('workspaceOperationsSaga', () => {
       data: { scheduled: true, deleteAt: new Date(Date.now() + 15_000).toISOString() },
     });
     mocks.cancelDelete.mockResolvedValue({ ok: true, data: { cancelled: false } });
+    mocks.navigate.mockResolvedValue(true);
     const run = harness([workspace('ws-1')]);
     run.send(requestDeleteWorkspace('ws-1'));
     await vi.advanceTimersByTimeAsync(50);
