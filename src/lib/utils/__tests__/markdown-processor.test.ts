@@ -842,16 +842,14 @@ Some additional notes here.
         '| two<br>lines |  |',
       ].join('\n');
       const html = await processMarkdownToHTML(markdown, { workspaceId: 'test-workspace' });
-      const editor = new Editor({
-        ...createEditorConfig({
-          workspaceId: 'test-workspace',
-          noteId: 'test-note',
+      const editor = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: html,
           onUpdate: () => {},
-          onSelectionUpdate: () => {},
           editable: true,
         }),
-        content: html,
-      });
+      );
 
       const editorHtml = editor.getHTML();
       editor.destroy();
