@@ -1115,9 +1115,9 @@ export function showWorkspaceInBackendWindow(backendId: string, workspaceId: str
 }
 
 /**
- * Show Settings → Hosts in a frame holding `backendId`, as
+ * Show Settings → Machines in a frame holding `backendId`, as
  * {@link showWorkspaceInBackendWindow} shows a workspace ("Switch to" in
- * Settings → Hosts). Returns false when no frame holds the machine.
+ * Settings → Machines). Returns false when no frame holds the machine.
  */
 export function showHostsSettingsInBackendWindow(backendId: string): boolean {
   const target = showInFrame(backendId);

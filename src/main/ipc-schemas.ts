@@ -1250,7 +1250,7 @@ export const ConnectionsOpenSchema = z.object({
     .strict()
     .refine((target) => (target.agentId === undefined) !== (target.tabId === undefined))
     .optional(),
-  /** "Switch to" in Settings → Hosts: show the backend, then its Settings → Hosts. */
+  /** "Switch to" in Settings → Machines: show the backend, then its Settings → Machines. */
   switchTo: z.literal(true).optional(),
 });
 

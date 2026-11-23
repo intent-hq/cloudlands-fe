@@ -174,7 +174,7 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
       return;
     case 'settings':
       if (params.beta !== undefined) return yield* call(switchUpdateChannel, params.beta);
-      // "Switch to" in Settings → Hosts opens the same tab on the host it shows.
+      // "Switch to" in Settings → Machines opens the same tab on the host it shows.
       if (params.tab === SWITCH_TO_SETTINGS_TAB)
         return yield* call(navigateToRoute, `/settings?tab=${SWITCH_TO_SETTINGS_TAB}`);
       return yield* call(navigateToRoute, '/settings');

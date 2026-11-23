@@ -1,5 +1,5 @@
 <!--
-  Settings → Hosts with `machineOrder: 1`: the current host's runners, every
+  Settings → Machines with `machineOrder: 1`: the current host's runners, every
   place it can run agents, in its stored order (PROTOCOL `methods/nodes.md` →
   "Ordered machine list"). New agents start on the first row that can take them.
   The owner reorders by dragging a row's handle or with the Move up / Move

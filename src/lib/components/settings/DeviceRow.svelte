@@ -488,7 +488,7 @@
     appStore.dispatch(connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id }));
   }
 
-  /** Show this host (in the host rail when it is on), then its Settings → Hosts. */
+  /** Show this host (in the host rail when it is on), then its Settings → Machines. */
   function switchToHost() {
     appStore.dispatch(
       connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id, switchTo: true }),

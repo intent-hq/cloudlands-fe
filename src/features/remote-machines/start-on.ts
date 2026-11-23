@@ -160,7 +160,7 @@ export function startOnBackendLabel(options: readonly StartOnOption[], fallback 
 
 /**
  * The preselected Start On row: the first usable row in the host's order from
- * Settings → Hosts (the host itself when it runs agents and comes first; a
+ * Settings → Machines (the host itself when it runs agents and comes first; a
  * runner that can't take an agent is skipped). With nothing usable, the first
  * row, so the picker shows why it can't start; no placement without rows.
  */

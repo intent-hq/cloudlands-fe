@@ -271,7 +271,7 @@ describe('intent://settings', () => {
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings');
   });
 
-  it('opens Settings → Hosts for the link "Switch to" queues on the host it shows', async () => {
+  it('opens Settings → Machines for the link "Switch to" queues on the host it shows', async () => {
     await run({ type: 'settings', params: { tab: 'devices' } });
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings?tab=devices');
   });
