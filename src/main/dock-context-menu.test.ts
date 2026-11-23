@@ -185,6 +185,14 @@ describe('dock context menu items', () => {
     ]);
   });
 
+  it('leaves out the move items when the dock cannot move (Intent OS)', () => {
+    const template = buildDockContextMenuTemplate(vi.fn(), {}, undefined, undefined, false);
+    expect(template.filter((item) => item.type !== 'separator').map((item) => item.label)).toEqual([
+      m.dock_logo_open_label(),
+      m.dock_menu_turnOff_label(),
+    ]);
+  });
+
   it('runs the chosen command against the dock window, and nothing once it is gone', async () => {
     const dock = fakeWindow();
     const pending = showDockContextMenu(dock as never, {

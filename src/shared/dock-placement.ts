@@ -122,6 +122,29 @@ export interface DockDisplayGeometry {
 }
 
 export const DEFAULT_DOCK_PLACEMENT: DockPlacement = { kind: 'notch', displayId: null };
+
+/**
+ * The window title of the dock. Intent OS (sway) finds the dock by this title:
+ * its window rules float the dock at the top-left of the first workspace, and
+ * its window service never gives the dock a workspace of its own
+ * (intent-hq/intent-os). Every Intent window has the same app id, so the title
+ * is the only thing that tells the dock apart. Keep the two repos in step.
+ */
+export const DOCK_WINDOW_TITLE = 'Intent Dock';
+
+/**
+ * The fixed placement of the dock on Intent OS, or null where the user places
+ * it. A Wayland app cannot place its own windows: sway puts the dock at the
+ * top-left of the screen, so the dock floats there on the primary display, and
+ * moving it does nothing. At the top-left it opens down and to the right, so
+ * it stays fully on screen when it expands.
+ */
+export function lockedDockPlacement(
+  intentOs: boolean,
+  primaryDisplayId: number,
+): Extract<DockPlacement, { kind: 'floating' }> | null {
+  return intentOs ? { kind: 'floating', displayId: primaryDisplayId, x: 0, y: 0 } : null;
+}
 const DOCK_NOTCH_MIN_HEIGHT = 32;
 /**
  * A collapsed notch wing hugs its control: the mark's 28px grip button behind its 6px
