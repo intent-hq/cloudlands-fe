@@ -22,13 +22,17 @@
  * with event 'focus' (guard on `<emitter>.isFocused()`), or app 'browser-window-focus'
  * (guard on the window parameter; a handler without a plain window parameter cannot be
  * guarded, so every focus() in it is flagged). The handler is an inline function or a
- * function declared in the same file. Every `<x>.focus()` call in it is flagged, whatever `x` is: in
- * the main process each focus() (WebContents, BrowserWindow, app) can raise a window.
+ * function declared in the same file. Every `<x>.focus()` call in it is flagged, whatever
+ * `x` is: in the main process each focus() (WebContents, BrowserWindow, app) can raise a
+ * window.
+ *
  * A call is allowed after an early `if (!<window>.isFocused()) return;` (also in an `||`
- * chain, or as `isFocused() === false`), or inside `if (<window>.isFocused()) { ... }`.
- * The check must be in the function that calls focus(), with no await or yield between
- * them: a timer, promise or other callback runs later, so it needs its own check (even a
- * synchronous one such as forEach, which the rule cannot tell apart).
+ * chain, or as `isFocused() === false`; `continue`, `break` or `throw` exit too) in any
+ * block around it, or inside `if (<window>.isFocused()) { ... }`. The check must be in
+ * the function that calls focus(), with no await or yield from the check to the end of
+ * the call, and none anywhere in a loop that repeats the call after the check. A timer,
+ * promise or other callback runs later, so it needs its own check (even a synchronous
+ * one such as forEach, which the rule cannot tell apart).
  * Helpers called from the handler, and handlers passed as `this.<name>`, are not followed.
  */
 
@@ -158,14 +162,22 @@ function focusedCheck(node, windowText, sourceCode) {
   return null;
 }
 
-function alwaysReturns(statement) {
-  if (statement?.type === 'ReturnStatement') return true;
-  return statement?.type === 'BlockStatement' && alwaysReturns(statement.body.at(-1));
+const EXIT_TYPES = new Set([
+  'ReturnStatement',
+  'ThrowStatement',
+  'ContinueStatement',
+  'BreakStatement',
+]);
+
+// Control never reaches the statements after this one in its block.
+function alwaysExits(statement) {
+  if (EXIT_TYPES.has(statement?.type)) return true;
+  return statement?.type === 'BlockStatement' && alwaysExits(statement.body.at(-1));
 }
 
-// The isFocused() call of an early-return guard statement, or null.
+// The isFocused() call of an early-exit guard statement, or null.
 function guardCheck(statement, windowText, sourceCode) {
-  if (statement.type !== 'IfStatement' || !alwaysReturns(statement.consequent)) return null;
+  if (statement.type !== 'IfStatement' || !alwaysExits(statement.consequent)) return null;
   return notFocusedCheck(statement.test, windowText, sourceCode);
 }
 
@@ -200,31 +212,62 @@ function suspendsBefore(fn, start, call, visitorKeys) {
   return visit(fn);
 }
 
+const LOOP_TYPES = new Set([
+  'ForStatement',
+  'ForInStatement',
+  'ForOfStatement',
+  'WhileStatement',
+  'DoWhileStatement',
+]);
+
+// An await or yield anywhere in `root`, outside nested functions.
+function suspendsWithin(root, visitorKeys) {
+  const visit = (node) => {
+    if (FUNCTION_TYPES.has(node.type)) return false;
+    if (node.type === 'AwaitExpression' || node.type === 'YieldExpression') return true;
+    if (node.type === 'ForOfStatement' && node.await) return true;
+    for (const key of visitorKeys[node.type] ?? []) {
+      const value = node[key];
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child.type === 'string' && visit(child)) return true;
+      }
+    }
+    return false;
+  };
+  return visit(root);
+}
+
 // The check must run in the function that calls focus(), with no await between: a guard
 // in the handler does not cover a timer, promise or other callback that runs later.
 function isGuarded(call, windowText, sourceCode) {
   if (windowText === null) return false;
   const fn = enclosingFunction(call);
-  // From the isFocused() call to the end of the focus() call, receiver and arguments
-  // included: an await anywhere in that span makes the check stale.
-  const fresh = (check) => !suspendsBefore(fn, check.range[1], call, sourceCode.visitorKeys);
-  if (fn.body.type === 'BlockStatement') {
-    let check = null;
-    for (const statement of fn.body.body) {
-      if (statement.range[1] > call.range[0]) break;
-      check = guardCheck(statement, windowText, sourceCode) ?? check;
-    }
-    if (check && fresh(check)) return true;
-  }
+  const { visitorKeys } = sourceCode;
+  const checks = [];
+  const loops = [];
   let child = call;
   for (let node = call.parent; node && node !== fn; node = node.parent) {
+    if (node.type === 'BlockStatement') {
+      for (const statement of node.body) {
+        if (statement === child) break;
+        const check = guardCheck(statement, windowText, sourceCode);
+        if (check) checks.push(check);
+      }
+    }
     if (node.type === 'IfStatement' && node.consequent === child) {
       const check = focusedCheck(node.test, windowText, sourceCode);
-      if (check && fresh(check)) return true;
+      if (check) checks.push(check);
     }
+    if (LOOP_TYPES.has(node.type)) loops.push(node);
     child = node;
   }
-  return false;
+  // Stale if anything suspends from the isFocused() call to the end of the focus() call
+  // (receiver and arguments included), or anywhere in a loop that starts after the check
+  // and repeats the focus() call.
+  const fresh = (check) =>
+    !suspendsBefore(fn, check.range[1], call, visitorKeys) &&
+    !loops.some((loop) => loop.range[0] >= check.range[1] && suspendsWithin(loop, visitorKeys));
+  return checks.some(fresh);
 }
 
 function collectFocusCalls(root, visitorKeys) {

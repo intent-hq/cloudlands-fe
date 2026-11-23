@@ -144,6 +144,30 @@ window.on('focus', async () => {
 });`,
     },
     {
+      name: 'a loop without an await, and a fresh check in each iteration',
+      code: `
+window.on('focus', () => {
+  if (!window.isFocused()) return;
+  for (const view of views) view.webContents.focus();
+});
+window.on('focus', async () => {
+  for (const view of views) {
+    if (!window.isFocused()) return;
+    view.webContents.focus();
+    await refresh();
+  }
+  while (pending()) {
+    if (!window.isFocused()) continue;
+    other.webContents.focus();
+    await refresh();
+  }
+  for (const view of views) {
+    if (window.isFocused()) view.webContents.focus();
+    await refresh();
+  }
+});`,
+    },
+    {
       name: 'a handler that cannot be resolved in this file',
       code: `
 import { onFocus } from './focus';
@@ -307,6 +331,23 @@ window.on('focus', async () => {
   view.webContents.focus(await options());
 });`,
       errors: [error(4), error(5)],
+    },
+    {
+      name: 'a check before a loop goes stale across iterations that await',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  for (const view of views) {
+    view.webContents.focus();
+    await refresh();
+  }
+  while (pending()) await other.webContents.focus();
+  for await (const view of viewStream()) view.webContents.focus();
+  do {
+    view.webContents.focus();
+  } while (await more());
+});`,
+      errors: [error(5), error(8), error(9), error(11)],
     },
     {
       name: 'a TypeScript-cast emitter and computed keys',
