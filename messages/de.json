@@ -9464,6 +9464,7 @@
   "chat_goalNotice_by_label": "von {name}",
   "chat_goalNotice_byYou_label": "von dir",
   "chat_goalNotice_byFormerMember_label": "von einem ehemaligen Mitglied",
+  "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Ein Ziel an diese Unterhaltung anheften",
   "chat_goal_retired_error": "Diese Unterhaltung ist stillgelegt, daher kann ihr Ziel nicht geändert werden.",
   "chat_goal_workspaceRetired_error": "Dieser Arbeitsbereich ist stillgelegt, daher kann sein Ziel nicht geändert werden."

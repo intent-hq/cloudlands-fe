@@ -47,6 +47,7 @@
   } from '$store/renderer/slices/presence/presence-slice';
   import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import type { GoalSetBy } from '$shared/types/agent-session';
+  import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 
   let { goal = '', readonly = false, setBy }: Props = $props();
   const workspaceId = 'preview-goal-strip';
@@ -92,7 +93,8 @@
       }),
     );
     if (!shared) return;
-    store.dispatch(presenceContextReceived('preview-goal-strip', ownPrincipalId));
+    const context = selectPresenceContext.select(store.state);
+    if (context) store.dispatch(presenceContextReceived(context, ownPrincipalId));
     store.dispatch(presenceWorkspacesReceived([workspaceId]));
     store.dispatch(
       presenceMembersReceived(workspaceId, [

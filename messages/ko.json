@@ -9464,6 +9464,7 @@
   "chat_goalNotice_by_label": "{name} 님",
   "chat_goalNotice_byYou_label": "나",
   "chat_goalNotice_byFormerMember_label": "이전 멤버",
+  "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "이 대화에 목표 고정",
   "chat_goal_retired_error": "이 대화는 종료되어 목표를 변경할 수 없습니다.",
   "chat_goal_workspaceRetired_error": "이 워크스페이스는 종료되어 목표를 변경할 수 없습니다."

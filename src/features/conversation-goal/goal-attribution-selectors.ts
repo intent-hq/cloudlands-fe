@@ -1,6 +1,7 @@
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import type { Workspace } from '$shared/types';
+import { isPresenceContextCurrent } from '$store/renderer/slices/presence/presence-selectors';
 import {
   resolveGoalAttribution,
   sameGoalAttribution,
@@ -15,7 +16,10 @@ const lastByKey = new Map<string, GoalAttribution | null>();
  * Who set the goal of `agentId` (or, with `principalId`, who wrote a goal
  * notice row), or null when nothing should be shown. Only a shared workspace
  * (`Workspace.memberCount > 1`) shows attribution; a personal one never does,
- * even when the daemon served `goalSetBy`.
+ * even when the daemon served `goalSetBy`. Fails closed while the presence
+ * rows are not the current principal's (`principal.me` unresolved, or a
+ * context switch in progress): a stale roster or own principal could show the
+ * viewer's name instead of "you", or call someone else "you".
  */
 export const selectGoalAttribution = store.createSelector(
   (state, workspaceId: string, agentId: string, principalId?: string): GoalAttribution | null => {
@@ -23,14 +27,20 @@ export const selectGoalAttribution = store.createSelector(
       ? getItem(state.workspace.workspaces, workspaceId as Workspace['id'])
       : undefined;
     let next: GoalAttribution | null = null;
-    if (workspace && (workspace.memberCount ?? 1) > 1) {
+    const ownPrincipalId = state.presence.ownPrincipalId;
+    if (
+      workspace &&
+      (workspace.memberCount ?? 1) > 1 &&
+      ownPrincipalId &&
+      isPresenceContextCurrent(state)
+    ) {
       const snapshot = agentId ? state.agentSessions?.byAgentId[agentId]?.goalSetBy : undefined;
       const roster = state.presence.members[workspaceId];
       next = resolveGoalAttribution({
         principalId: principalId ?? snapshot?.principalId,
         snapshot,
         members: roster ? getItems(roster) : null,
-        ownPrincipalId: state.presence.ownPrincipalId,
+        ownPrincipalId,
       });
     }
     const key = `${workspaceId}\u0000${agentId}\u0000${principalId ?? ''}`;

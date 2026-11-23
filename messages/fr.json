@@ -9464,6 +9464,7 @@
   "chat_goalNotice_by_label": "par {name}",
   "chat_goalNotice_byYou_label": "par vous",
   "chat_goalNotice_byFormerMember_label": "par un ancien membre",
+  "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Épingler un objectif à cette conversation",
   "chat_goal_retired_error": "Cette conversation est retirée, son objectif ne peut donc pas être modifié.",
   "chat_goal_workspaceRetired_error": "Cet espace de travail est retiré, son objectif ne peut donc pas être modifié."

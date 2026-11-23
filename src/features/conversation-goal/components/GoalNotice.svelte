@@ -74,7 +74,11 @@
   const attributionLabel = $derived(
     attribution$ && $attribution$ ? goalNoticeAttributionLabel($attribution$) : null,
   );
-  const rowLabel = $derived(attributionLabel ? `${text} ${attributionLabel}` : text);
+  const rowLabel = $derived(
+    attributionLabel
+      ? m.chat_goalNotice_attributed_ariaLabel({ text, attribution: attributionLabel })
+      : text,
+  );
   const canEdit = $derived(
     !readonly &&
       !$retired$ &&

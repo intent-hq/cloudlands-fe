@@ -13,8 +13,10 @@ import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-s
 import {
   presenceContextReceived,
   presenceMembersReceived,
+  presenceOwnPrincipalReceived,
   presenceWorkspacesReceived,
 } from '$store/renderer/slices/presence/presence-slice';
+import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import GoalStrip from '../GoalStrip.svelte';
@@ -101,7 +103,7 @@ let dispose: (() => void) | undefined;
 beforeAll(() => {
   dispose = store.init();
   admitLegacyPrincipal('owner', { conversationGoal: 1 });
-  store.dispatch(presenceContextReceived('goal-attribution-test', ME));
+  store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, ME));
 });
 
 afterEach(() => cleanup());
@@ -169,6 +171,21 @@ describe('goal strip attribution', () => {
         }),
       ),
     ).toBe(m.chat_goalStrip_setByFormerMember_label());
+  });
+
+  it('fails closed while the viewer principal is unknown', () => {
+    const ids = seed({
+      memberCount: 2,
+      goalSetBy: { principalId: ME, displayName: 'Me Myself', login: 'me' },
+      members: [me, alice],
+    });
+    store.dispatch(presenceOwnPrincipalReceived(null));
+    try {
+      // Never the viewer's own name in place of "you".
+      expect(stripAttribution(ids)).toBeNull();
+    } finally {
+      store.dispatch(presenceOwnPrincipalReceived(ME));
+    }
   });
 
   it('shows nothing for an unattributed goal in a shared workspace', () => {

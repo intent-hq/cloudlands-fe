@@ -9464,6 +9464,7 @@
   "chat_goalNotice_by_label": "來自 {name}",
   "chat_goalNotice_byYou_label": "來自你",
   "chat_goalNotice_byFormerMember_label": "來自前成員",
+  "chat_goalNotice_attributed_ariaLabel": "{text}（{attribution}）",
   "chat_slashCommand_goal_description": "為此對話釘選一個目標",
   "chat_goal_retired_error": "此對話已停用，無法變更其目標。",
   "chat_goal_workspaceRetired_error": "此工作區已停用，無法變更其目標。"

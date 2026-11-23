@@ -9464,6 +9464,7 @@
   "chat_goalNotice_by_label": "by {name}",
   "chat_goalNotice_byYou_label": "by you",
   "chat_goalNotice_byFormerMember_label": "by a former member",
+  "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Pin a goal to this conversation",
   "chat_goal_retired_error": "This conversation is retired, so its goal can't be changed.",
   "chat_goal_workspaceRetired_error": "This workspace is retired, so its goal can't be changed."
