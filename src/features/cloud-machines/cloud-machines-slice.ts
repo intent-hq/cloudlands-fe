@@ -4,6 +4,7 @@ import {
   DEFAULT_CLOUD_MACHINE_ID,
   type Agent37InstanceType,
   type Agent37Region,
+  type CloudDiskSettings,
   type CloudMachineConfigureInput,
   type CloudMachineErrorData,
   type CloudMachineProvider,
@@ -22,6 +23,7 @@ export interface CloudFormDraft {
   projectId?: string;
   instanceType?: Agent37InstanceType;
   region?: Agent37Region;
+  diskGiB?: string;
   teamId?: string;
   image?: string;
 }
@@ -55,6 +57,8 @@ export interface CloudMachinesState {
   entries: boolean;
   /** `cloudMachineProviders`: the providers a new entry can use; `["e2b"]` when not listed. */
   providerKinds: CloudProviderKind[];
+  /** `cloudMachines.list` `diskSettings`: the kinds whose entries take a disk size. */
+  diskSettings: CloudDiskSettings;
   /** Saved entries by id; without `entries`, only "e2b". */
   providers: Record<string, CloudMachineProvider>;
   /** Live sandboxes (machine rows with `cloud`), by machine id. */
@@ -72,6 +76,7 @@ const initialCloudMachinesState: CloudMachinesState = {
   loaded: false,
   entries: false,
   providerKinds: ['e2b'],
+  diskSettings: {},
   providers: {},
   machines: {},
   readAt: {},
@@ -87,6 +92,7 @@ export const cloudMachinesLoaded = createAction<
       supported: boolean;
       entries?: boolean;
       providerKinds?: CloudProviderKind[];
+      diskSettings?: CloudDiskSettings;
       providers: CloudMachineProvider[];
       machines: RemoteMachine[];
       readAt: number;
@@ -148,6 +154,7 @@ cloudMachinesReducer.with(cloudMachinesLoaded, (state, { payload: [snapshot] }) 
   loaded: snapshot.supported,
   entries: snapshot.supported && snapshot.entries === true,
   providerKinds: snapshot.providerKinds?.length ? snapshot.providerKinds : ['e2b'],
+  diskSettings: snapshot.diskSettings ?? {},
   providers: Object.fromEntries(
     snapshot.providers
       .filter((provider) => keepEntry(snapshot.entries === true, provider.id))

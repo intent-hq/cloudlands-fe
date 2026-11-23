@@ -465,6 +465,51 @@ describe('cloud machines saga — Northflank', () => {
     expect(store.state.cloudMachines.providers[NORTHFLANK_ENTRY.id]).toEqual(NORTHFLANK_ENTRY);
   });
 
+  it('reads the disk setting of each kind that takes one, skipping malformed ones', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [],
+      machines: [],
+      providerKinds: ['e2b', 'northflank', 'agent37', 'vercel'],
+      diskSettings: {
+        northflank: { minGiB: 6, maxGiB: 500, defaultGiB: 20 },
+        agent37: {
+          minGiB: 4,
+          maxGiB: 100,
+          defaultGiB: 20,
+          sizeMaxGiB: { default: { '2x4': 12, '4x8': 20, huge: 'no' }, vm: { '2x4': 100 } },
+        },
+        vercel: { minGiB: 10, maxGiB: 5, defaultGiB: 7 },
+        modal: { minGiB: 1, maxGiB: 2, defaultGiB: 1 },
+      },
+    }));
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.diskSettings).toEqual({
+      northflank: { minGiB: 6, maxGiB: 500, defaultGiB: 20 },
+      agent37: {
+        minGiB: 4,
+        maxGiB: 100,
+        defaultGiB: 20,
+        sizeMaxGiB: { default: { '2x4': 12, '4x8': 20 }, vm: { '2x4': 100 } },
+      },
+    });
+  });
+
+  it('sends diskGiB only for a kind that takes one', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: NORTHFLANK_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(cloudMachinesConfigureRequested({ cloudMachineId: NORTHFLANK_ENTRY.id, diskGiB: 40 }));
+    await settle();
+    expect(requests().at(-1)?.params).toMatchObject({ diskGiB: 40 });
+    dispatch(cloudMachinesConfigureRequested({ cloudMachineId: E2B_PROVIDER.id, diskGiB: 40 }));
+    await settle();
+    expect(requests().at(-1)?.params).not.toHaveProperty('diskGiB');
+  });
+
   it('offers only E2B without cloudMachineProviders, even if the list names more', async () => {
     const mock = backend({ remoteMachines: 1, cloudMachines: 1, cloudMachineEntries: 1 });
     mock.onRequest('cloudMachines.list', () => ({
