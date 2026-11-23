@@ -1,9 +1,9 @@
 import { supportsImageActions } from '$lib/utils/image-actions';
 
 /** Marks a container (the chat transcript) whose image openers form one gallery. */
-export const LIGHTBOX_GALLERY_ATTRIBUTE = 'data-lightbox-gallery';
+const LIGHTBOX_GALLERY_ATTRIBUTE = 'data-lightbox-gallery';
 /** Marks a control that opens an image lightbox when clicked. */
-export const LIGHTBOX_OPENER_ATTRIBUTE = 'data-lightbox-opener';
+const LIGHTBOX_OPENER_ATTRIBUTE = 'data-lightbox-opener';
 
 const OPENER_SELECTOR = `[${LIGHTBOX_OPENER_ATTRIBUTE}], .markdown-content img`;
 
