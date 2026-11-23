@@ -1503,6 +1503,17 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(normalizeAgent({ ...base, goal: 42 }).goal).toBeUndefined();
   });
 
+  it('normalizeAgent reads goalSetBy only beside a goal', () => {
+    const base = { id: 'agent-1', workspaceId: 'ws-1' };
+    const setBy = { principalId: 'p-alice', displayName: 'Alice', login: null };
+    expect(normalizeAgent({ ...base, goal: 'Ship it', goalSetBy: setBy }).goalSetBy).toEqual(setBy);
+    expect(normalizeAgent({ ...base, goal: 'Ship it' }).goalSetBy).toBeUndefined();
+    expect(normalizeAgent({ ...base, goalSetBy: setBy }).goalSetBy).toBeUndefined();
+    expect(
+      normalizeAgent({ ...base, goal: 'Ship it', goalSetBy: { displayName: 'x' } }).goalSetBy,
+    ).toBeUndefined();
+  });
+
   it('setGoal maps the agent-retired refusal by data.code', async () => {
     backend.onRequest('agent.setGoal', () => {
       throw new BackendError(

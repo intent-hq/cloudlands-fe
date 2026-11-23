@@ -5,6 +5,8 @@
  * animation and thinking state, then reconciles from the `command` result.
  */
 
+import type { GoalSetBy } from '$shared/types/agent-session';
+
 /** Daemon-enforced goal length cap (`-32602` above it). */
 export const GOAL_MAX_LENGTH = 1000;
 
@@ -32,6 +34,8 @@ type GoalNoticeAction = GoalCommandAction | 'cleared';
 export interface GoalCommandResult {
   action: GoalCommandAction;
   goal: string | null;
+  /** Who wrote the goal after the command; absent when unknown or unset. */
+  goalSetBy?: GoalSetBy;
   /** Absent when the goal write landed but its notice row could not be written. */
   noticeMessageId?: string;
 }
@@ -39,6 +43,7 @@ export interface GoalCommandResult {
 export interface SetGoalResult {
   action: SetGoalAction;
   goal: string | null;
+  goalSetBy?: GoalSetBy;
   noticeMessageId?: string;
 }
 
@@ -56,13 +61,35 @@ function goalValue(value: unknown): string | null | undefined {
 }
 
 /**
+ * Read a `goalSetBy` value (`{ principalId, displayName, login }`), or
+ * undefined when it is absent, `null` or malformed. A missing or non-string
+ * profile field reads as `null`; a blank principal id is no attribution.
+ */
+export function parseGoalSetBy(value: unknown): GoalSetBy | undefined {
+  if (!record(value)) return undefined;
+  const { principalId, displayName, login } = value;
+  if (typeof principalId !== 'string' || principalId.trim().length === 0) return undefined;
+  return {
+    principalId,
+    displayName: typeof displayName === 'string' ? displayName : null,
+    login: typeof login === 'string' ? login : null,
+  };
+}
+
+/** The attribution that belongs with `goal`: none while the goal is unset. */
+function setByFor(goal: string | null | undefined, value: unknown): { goalSetBy?: GoalSetBy } {
+  const setBy = goal ? parseGoalSetBy(value) : undefined;
+  return setBy ? { goalSetBy: setBy } : {};
+}
+
+/**
  * Read the `command` object of an `agent.sendMessage` / `agent.queueMessage`
  * command result (`{ success: true, queued: false, command }`), or null when
  * the response is an ordinary send.
  */
 export function parseGoalCommandResult(response: unknown): GoalCommandResult | null {
   if (!record(response) || !record(response.command)) return null;
-  const { name, action, goal, noticeMessageId } = response.command;
+  const { name, action, goal, goalSetBy, noticeMessageId } = response.command;
   const parsedGoal = goalValue(goal);
   if (
     name !== GOAL_COMMAND_NAME ||
@@ -74,6 +101,7 @@ export function parseGoalCommandResult(response: unknown): GoalCommandResult | n
   return {
     action: action as GoalCommandAction,
     goal: parsedGoal,
+    ...setByFor(parsedGoal, goalSetBy),
     ...(typeof noticeMessageId === 'string' ? { noticeMessageId } : {}),
   };
 }
@@ -81,13 +109,14 @@ export function parseGoalCommandResult(response: unknown): GoalCommandResult | n
 /** Read an `agent.setGoal` result, or null when it does not match the contract. */
 export function parseSetGoalResult(response: unknown): SetGoalResult | null {
   if (!record(response)) return null;
-  const { action, goal, noticeMessageId } = response;
+  const { action, goal, goalSetBy, noticeMessageId } = response;
   const parsedGoal = goalValue(goal);
   if (typeof action !== 'string' || !SET_GOAL_ACTIONS.has(action) || parsedGoal === undefined)
     return null;
   return {
     action: action as SetGoalAction,
     goal: parsedGoal,
+    ...setByFor(parsedGoal, goalSetBy),
     ...(typeof noticeMessageId === 'string' ? { noticeMessageId } : {}),
   };
 }
@@ -121,14 +150,28 @@ export function getGoalNotice(message: MessageLike | null | undefined): GoalNoti
   };
 }
 
-/** The `agent:updated` goal projection: a string sets, `null` removes, absent is no change. */
+/**
+ * The `agent:updated` goal projection: a string sets, `null` removes, absent
+ * is no change. A goal write carries `goalSetBy` beside it (`null` when the
+ * writer was not a known principal; absent from a daemon that predates it),
+ * so the attribution is replaced with every goal and never outlives it.
+ */
 export function goalFromAgentUpdated(
   data: Record<string, unknown>,
-): { present: true; goal: string | undefined } | { present: false } {
+):
+  | { present: true; goal: string | undefined; goalSetBy: GoalSetBy | undefined }
+  | { present: false } {
   if (!Object.prototype.hasOwnProperty.call(data, 'goal')) return { present: false };
   const goal = data.goal;
-  if (goal === null) return { present: true, goal: undefined };
-  if (typeof goal === 'string') return { present: true, goal: goal.length > 0 ? goal : undefined };
+  if (goal === null) return { present: true, goal: undefined, goalSetBy: undefined };
+  if (typeof goal === 'string') {
+    const next = goal.length > 0 ? goal : undefined;
+    return {
+      present: true,
+      goal: next,
+      goalSetBy: next ? parseGoalSetBy(data.goalSetBy) : undefined,
+    };
+  }
   return { present: false };
 }
 

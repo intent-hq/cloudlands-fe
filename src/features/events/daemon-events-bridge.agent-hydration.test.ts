@@ -298,3 +298,32 @@ it('lands a session read whose only change is the goal (goal writes keep updated
   appStore.dispatch(bulkUpsertSessions([agent]));
   expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBeUndefined();
 });
+
+it('carries goalSetBy with the goal on agent:updated and drops it with the goal', () => {
+  const agent = knownAgent('goal-set-by-live-update');
+  appStore.dispatch(bulkUpsertSessions([agent]));
+  const alice = { principalId: 'p-alice', displayName: 'Alice', login: 'alice' };
+
+  push(agent, 'agent:updated', { goal: 'Ship the release', goalSetBy: alice });
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goalSetBy).toEqual(alice);
+
+  // A write by an unknown principal replaces the attribution with none.
+  push(agent, 'agent:updated', { goal: 'Ship it later', goalSetBy: null });
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBe('Ship it later');
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goalSetBy).toBeUndefined();
+
+  push(agent, 'agent:updated', { goal: 'Ship the release', goalSetBy: alice });
+  push(agent, 'agent:updated', { goal: null, goalSetBy: null });
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goal).toBeUndefined();
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goalSetBy).toBeUndefined();
+  expect(pendingGets).toHaveLength(0);
+});
+
+it('lands a session read whose only change is who set the goal', () => {
+  const agent = { ...knownAgent('goal-set-by-same-updated-at'), goal: 'Keep CI green' };
+  appStore.dispatch(bulkUpsertSessions([agent]));
+  const bob = { principalId: 'p-bob', displayName: null, login: 'bob' };
+
+  appStore.dispatch(bulkUpsertSessions([{ ...agent, goalSetBy: bob }]));
+  expect(appStore.state.agentSessions.byAgentId[agent.id].goalSetBy).toEqual(bob);
+});

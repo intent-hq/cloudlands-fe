@@ -206,6 +206,13 @@ interface ProviderReplacementRequired {
 /** Values accepted by `agent.update { changes: { permissionPolicy } }` (§5.5). */
 export type AgentPermissionPolicy = 'interactive' | 'allow' | 'auto' | 'deny';
 
+/** `goalSetBy` on AgentLite, the session form, and goal results and events. */
+export interface GoalSetBy {
+  principalId: string;
+  displayName: string | null;
+  login: string | null;
+}
+
 export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
@@ -359,6 +366,14 @@ export interface AgentSession extends AgentNodeFields {
    * { goal }` converges it (`null` there means removed).
    */
   goal?: string;
+
+  /**
+   * Who wrote the current goal (`goalSetBy`, PROTOCOL `methods/agents.md`
+   * "Conversation goal" → "Attribution"): the writer's principal plus a
+   * profile snapshot taken at write time. Present only with `goal` and a
+   * known writer; clients show it only in shared workspaces.
+   */
+  goalSetBy?: GoalSetBy;
 
   /**
    * Per-chat permission policy override (`permissionPolicy`, §5.5 AgentLite).

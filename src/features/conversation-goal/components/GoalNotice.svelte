@@ -2,7 +2,8 @@
   /**
    * Transcript row for a daemon-persisted `goal_command` row, in the shared
    * left-aligned operational row pattern: one truncated line that expands to
-   * the full goal (links clickable). A "Current goal" row offers Edit.
+   * the full goal (links clickable). A "Current goal" row offers Edit. In a
+   * shared workspace the row also says who wrote it (`fromPrincipalId`).
    */
   import Fa from 'svelte-fa';
   import { toStore } from 'svelte/store';
@@ -20,6 +21,8 @@
     selectAgentRetired,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { GoalNoticeInfo } from '../utils/goal-command';
+  import { selectGoalAttribution } from '../goal-attribution-selectors';
+  import { goalNoticeAttributionLabel } from '../utils/goal-attribution';
   import GoalEditorDialog from './GoalEditorDialog.svelte';
   import GoalText from './GoalText.svelte';
 
@@ -61,6 +64,17 @@
     }
   });
   const text = $derived(label ?? fallbackText ?? m.chat_goalNotice_fallback_label());
+  // Unattributed rows (personal workspaces, unknown writers) never fall back
+  // to the agent's current `goalSetBy`: that may name a later writer.
+  const attribution$ = $derived(
+    notice.fromPrincipalId
+      ? selectGoalAttribution(workspaceId ?? '', agentId ?? '', notice.fromPrincipalId)
+      : null,
+  );
+  const attributionLabel = $derived(
+    attribution$ && $attribution$ ? goalNoticeAttributionLabel($attribution$) : null,
+  );
+  const rowLabel = $derived(attributionLabel ? `${text} ${attributionLabel}` : text);
   const canEdit = $derived(
     !readonly &&
       !$retired$ &&
@@ -79,6 +93,13 @@
   <span data-testid="goal-notice-text">{text}</span>
 {/snippet}
 {#snippet trailing()}
+  {#if attributionLabel}
+    <span
+      class="max-w-40 truncate type-caption text-subtle"
+      title={attributionLabel}
+      data-testid="goal-notice-attribution">{attributionLabel}</span
+    >
+  {/if}
   {#if canEdit}
     <Button
       variant="link"
@@ -105,7 +126,7 @@
   {expanded}
   controls={notice.goal ? detailsId : undefined}
   {detailsId}
-  ariaLabel={text}
+  ariaLabel={rowLabel}
   onclick={() => (expanded = !expanded)}
   detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground"
   testId="goal-notice"

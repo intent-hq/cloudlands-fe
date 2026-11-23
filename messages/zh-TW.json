@@ -9458,6 +9458,12 @@
   "chat_goalNotice_none_label": "未設定目標。傳送 /goal 並描述完成時的樣子。",
   "chat_goalNotice_edit_label": "編輯",
   "chat_goalNotice_fallback_label": "目標已變更",
+  "chat_goalStrip_setBy_label": "由 {name} 設定",
+  "chat_goalStrip_setByYou_label": "由你設定",
+  "chat_goalStrip_setByFormerMember_label": "由前成員設定",
+  "chat_goalNotice_by_label": "來自 {name}",
+  "chat_goalNotice_byYou_label": "來自你",
+  "chat_goalNotice_byFormerMember_label": "來自前成員",
   "chat_slashCommand_goal_description": "為此對話釘選一個目標",
   "chat_goal_retired_error": "此對話已停用，無法變更其目標。",
   "chat_goal_workspaceRetired_error": "此工作區已停用，無法變更其目標。"
