@@ -26,6 +26,7 @@ import { attachDockCursor } from './dock-cursor';
 import { fixWebContentsZoom } from './fixed-zoom';
 import { createDockPointerPresenceTracker } from './dock-pointer-presence';
 import type { DockPlacementCommand, DockPlacementSnapshot } from '../shared/dock-placement';
+import { DOCK_WINDOW_TITLE } from '../shared/dock-placement';
 import type {
   DockBackendSwitchFailed,
   SwitchDockBackendRequest,
@@ -998,6 +999,8 @@ export function createDockWindow(): BrowserWindow {
   const bounds = getDockBounds(screen.getPrimaryDisplay().workArea);
   const window = new BrowserWindow({
     ...bounds,
+    // A fixed title: Intent OS finds the dock by it (DOCK_WINDOW_TITLE).
+    title: DOCK_WINDOW_TITLE,
     show: false,
     frame: false,
     // Use a borderless NSWindow: the hidden native titlebar otherwise owns the
@@ -1031,6 +1034,8 @@ export function createDockWindow(): BrowserWindow {
   });
 
   dockWindowRef = window;
+  // Keep the title when the dock page sets its own.
+  window.on('page-title-updated', (event) => event.preventDefault());
   // A hidden dock (a capture or system selection) can change while hidden, e.g.
   // collapse as the pointer leaves. macOS then reveals its last frame, an open dock
   // that is not there: clicks fall through it. Repaint on every reveal.
