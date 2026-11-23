@@ -133,6 +133,8 @@ export type RemoteMachineFailureCode =
   | 'machine-update-required'
   | 'machine-unreachable'
   | 'machine-in-use'
+  /** The machine runs as an orchestrator: it never runs agents for another host. */
+  | 'machine-orchestrator'
   | 'failed';
 
 export interface RemoteMachineRouteAttempt {

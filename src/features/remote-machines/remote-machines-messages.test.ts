@@ -45,6 +45,12 @@ describe('remote machine failure messages', () => {
       ),
     ).toContain('it runs 0.9.0; this host needs 0.10.0 or newer');
   });
+
+  it('says an orchestrator never runs agents for other hosts', () => {
+    expect(remoteMachineFailureMessage(failure({ code: 'machine-orchestrator' }), labels)).toBe(
+      "Studio Mac is an orchestrator, so it can't run agents for Build box. To use it, switch to it as a host.",
+    );
+  });
 });
 
 describe('remote machine failure retry', () => {

@@ -51,6 +51,8 @@ export function remoteMachineFailureMessage(failure: RemoteMachineFailure, label
         ? m.remoteMachines_failure_inUse_error_one({ count: formatInteger(count), machine })
         : m.remoteMachines_failure_inUse_error_many({ count: formatInteger(count), machine });
     }
+    case 'machine-orchestrator':
+      return m.remoteMachines_failure_orchestrator_error({ machine, backend });
     case 'failed':
       return m.remoteMachines_failure_generic_error({
         message: failure.message ?? m.workspace_transfer_unknown_error(),

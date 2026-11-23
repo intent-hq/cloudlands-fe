@@ -6,6 +6,7 @@ vi.mock(
 );
 const ui = vi.hoisted(() => ({
   success: vi.fn(),
+  info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
   confirm: vi.fn(async () => true),
@@ -24,6 +25,7 @@ import {
   executorRevokeRequested,
   remoteMachineExposeRequested,
   remoteMachineRefreshRequested,
+  remoteMachineRemoved,
   remoteMachinesRefreshRequested,
   remoteMachineUnexposeRequested,
 } from './remote-machines-slice';
@@ -435,5 +437,24 @@ describe('remote machines saga — orchestrator with the Labs flag off', () => {
     channel.put({ type: 'principal/received' });
     await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
     expect(store.state.remoteMachines.order).toEqual([]);
+  });
+});
+
+describe('a runner that became an orchestrator', () => {
+  it('says it was removed from the runners', async () => {
+    start();
+    dispatch(remoteMachineRemoved('d-mac', { reason: 'orchestrator', name: 'Studio Mac' }));
+    await vi.waitFor(() =>
+      expect(ui.info).toHaveBeenCalledWith(
+        'Studio Mac is now an orchestrator and was removed from your runners.',
+      ),
+    );
+  });
+
+  it('says nothing for an ordinary removal', async () => {
+    start();
+    dispatch(remoteMachineRemoved('d-mac'));
+    await Promise.resolve();
+    expect(ui.info).not.toHaveBeenCalled();
   });
 });

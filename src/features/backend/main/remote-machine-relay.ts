@@ -83,6 +83,7 @@ const DAEMON_CODES: ReadonlySet<RemoteMachineFailureCode> = new Set([
   'machine-update-required',
   'machine-unreachable',
   'machine-in-use',
+  'machine-orchestrator',
 ]);
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -119,9 +120,12 @@ function dataOf(error: unknown): Record<string, unknown> {
 function mapError(error: unknown, side: 'machine' | 'backend'): RemoteMachineFailure {
   const rpcCode = rpcCodeOf(error);
   if (rpcCode === -32601) return fail('machine-update-required', { update: side });
-  if (rpcCode === -32003) return fail('not-owner');
   const data = dataOf(error);
   const message = relayErrorMessage(error);
+  // The machine refuses `executor.mint` while it runs as an orchestrator.
+  if (rpcCode === -32003 && side === 'machine' && data.code === 'orchestrator-mode')
+    return fail('machine-orchestrator', { message });
+  if (rpcCode === -32003) return fail('not-owner');
   const code = data.code as RemoteMachineFailureCode;
   if (!DAEMON_CODES.has(code)) return fail('failed', { message });
   const extra: Partial<RemoteMachineFailure> = { message };

@@ -34,6 +34,7 @@ export type NodesPreviewState =
   | 'wrong-token'
   | 'backend-unsupported'
   | 'labs-off'
+  | 'orchestrator-host'
   | InvitePreviewState;
 
 /** After an `intent://node` link: claiming, claimed (listed under Nodes), and each failure. */
@@ -109,6 +110,18 @@ const MACHINES: ConnectionRecord[] = [
   },
 ];
 
+/** A connected host that runs as an orchestrator: it never runs agents itself. */
+const ORCHESTRATOR_HOST: ConnectionRecord = {
+  id: 'intent-cache',
+  label: 'Intent cache',
+  host: '192.0.2.50',
+  port: 5179,
+  fingerprint: 'AA:50',
+  isLocal: false,
+  status: 'connected',
+  daemonMode: 'orchestrator',
+};
+
 const GPU_RIG: ConnectionRecord = {
   id: 'gpu-rig',
   label: 'GPU rig',
@@ -164,6 +177,7 @@ export function setupNodesFixture(state: NodesPreviewState) {
       'wrong-token',
       'backend-unsupported',
       'labs-off',
+      'orchestrator-host',
     ].includes(state)
       ? []
       : state === 'machines-and-nodes'
@@ -184,7 +198,9 @@ export function setupNodesFixture(state: NodesPreviewState) {
             daemonMode: 'regular',
           } satisfies ConnectionRecord,
         ]
-      : MACHINES;
+      : state === 'orchestrator-host'
+        ? [...MACHINES, ORCHESTRATOR_HOST]
+        : MACHINES;
   store.dispatch(
     connectionsListReceived({
       connections: [...machines, ...nodes],

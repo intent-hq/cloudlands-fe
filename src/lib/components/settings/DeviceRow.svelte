@@ -310,8 +310,10 @@
     $remoteSupported$ ? machineForConnection($remoteMachines$, device, $localFingerprint$) : null,
   );
   // A node has no window keeping it connected; main connects it on demand.
+  // An orchestrator never runs agents for another host, so it is never offered.
   const canExpose = $derived(
     $remoteSupported$ &&
+      !isOrchestrator &&
       device.id !== $currentConnectionId$ &&
       (isNode || openStatus === 'connected') &&
       canOfferExpose(exposedMachine),
