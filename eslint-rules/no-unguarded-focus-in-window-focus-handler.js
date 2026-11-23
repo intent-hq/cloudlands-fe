@@ -1,0 +1,250 @@
+/**
+ * Rejects a `focus()` call in a window focus handler that does not first check the
+ * window still has focus:
+ *
+ *   window.on('focus', () => {
+ *     view.webContents.focus();               // flagged
+ *   });
+ *
+ *   window.on('focus', () => {
+ *     if (!window.isFocused()) return;
+ *     view.webContents.focus();               // allowed
+ *   });
+ *
+ * On macOS and Linux, Electron's WebContents::Focus() also calls
+ * owner_window()->Focus(true), so it raises its window. A 'focus' event can arrive after
+ * the user moved to another window; focusing then raises the old window, which focuses
+ * the other one again, and two windows trade focus without end. Linux/X11 hung the main
+ * process (the frame-window E2E, after cloudlands-fe#4546 added the handler); macOS
+ * swapped windows on screen (intent-hq/intent#9928, fixed by cloudlands-fe#4958).
+ *
+ * Checked handlers: `<emitter>.on|once|addListener|prependListener|prependOnceListener`
+ * with event 'focus' (guard on `<emitter>.isFocused()`), or app 'browser-window-focus'
+ * (guard on the window parameter). The handler is an inline function or a function
+ * declared in the same file. Every `<x>.focus()` call in it is flagged, whatever `x` is: in
+ * the main process each focus() (WebContents, BrowserWindow, app) can raise a window.
+ * A call is allowed after an early `if (!<window>.isFocused()) return;` (also in an `||`
+ * chain, or as `isFocused() === false`), or inside `if (<window>.isFocused()) { ... }`.
+ * Helpers called from the handler are not followed.
+ */
+
+const MESSAGE =
+  "focus() in a window 'focus' handler raises that window again on macOS and Linux " +
+  "(Electron's WebContents::Focus() calls owner_window()->Focus(true)). If the event is " +
+  'stale and the user has moved to another window, two windows trade focus without end: ' +
+  'the main process hung on Linux/X11 (cloudlands-fe#4546) and windows swapped places on ' +
+  'macOS (intent-hq/intent#9928, cloudlands-fe#4958). Start the handler with ' +
+  '`if (!{{window}}.isFocused()) return;`.';
+
+const LISTENER_METHODS = new Set([
+  'on',
+  'once',
+  'addListener',
+  'prependListener',
+  'prependOnceListener',
+]);
+
+const FUNCTION_TYPES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionExpression',
+  'FunctionDeclaration',
+]);
+
+function unwrap(node) {
+  let current = node;
+  while (
+    current?.type === 'ChainExpression' ||
+    current?.type === 'TSAsExpression' ||
+    current?.type === 'TSNonNullExpression'
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function staticString(node) {
+  if (node?.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node?.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    return node.quasis[0].value.cooked;
+  }
+  return null;
+}
+
+function memberName(node) {
+  const target = unwrap(node);
+  if (target?.type !== 'MemberExpression') return null;
+  if (!target.computed && target.property.type === 'Identifier') return target.property.name;
+  return staticString(target.property);
+}
+
+// An inline handler, or a function bound to the handler's name in this file.
+function resolveHandler(node, sourceCode) {
+  const target = unwrap(node);
+  if (FUNCTION_TYPES.has(target?.type)) return target;
+  if (target?.type !== 'Identifier') return null;
+  let scope = sourceCode.getScope(target);
+  while (scope) {
+    const variable = scope.set.get(target.name);
+    if (variable) {
+      for (const def of variable.defs) {
+        if (def.node.type === 'FunctionDeclaration') return def.node;
+        if (
+          def.node.type === 'VariableDeclarator' &&
+          FUNCTION_TYPES.has(unwrap(def.node.init)?.type)
+        ) {
+          return unwrap(def.node.init);
+        }
+      }
+      return null;
+    }
+    scope = scope.upper;
+  }
+  return null;
+}
+
+// `<window>.isFocused()`
+function isFocusedCall(node, windowText, sourceCode) {
+  const call = unwrap(node);
+  if (call?.type !== 'CallExpression' || memberName(call.callee) !== 'isFocused') return false;
+  return sourceCode.getText(unwrap(unwrap(call.callee).object)) === windowText;
+}
+
+// A test that is true whenever the window has lost focus.
+function isNotFocusedTest(node, windowText, sourceCode) {
+  const test = unwrap(node);
+  if (test?.type === 'UnaryExpression' && test.operator === '!') {
+    return isFocusedCall(test.argument, windowText, sourceCode);
+  }
+  if (test?.type === 'BinaryExpression' && ['===', '=='].includes(test.operator)) {
+    const [call, other] = isFocusedCall(test.left, windowText, sourceCode)
+      ? [test.left, test.right]
+      : [test.right, test.left];
+    return (
+      isFocusedCall(call, windowText, sourceCode) &&
+      other.type === 'Literal' &&
+      other.value === false
+    );
+  }
+  if (test?.type === 'LogicalExpression' && test.operator === '||') {
+    return (
+      isNotFocusedTest(test.left, windowText, sourceCode) ||
+      isNotFocusedTest(test.right, windowText, sourceCode)
+    );
+  }
+  return false;
+}
+
+// A test that is false whenever the window has lost focus.
+function isFocusedTest(node, windowText, sourceCode) {
+  const test = unwrap(node);
+  if (isFocusedCall(test, windowText, sourceCode)) return true;
+  if (test?.type === 'LogicalExpression' && test.operator === '&&') {
+    return (
+      isFocusedTest(test.left, windowText, sourceCode) ||
+      isFocusedTest(test.right, windowText, sourceCode)
+    );
+  }
+  return false;
+}
+
+function alwaysReturns(statement) {
+  if (statement?.type === 'ReturnStatement') return true;
+  return statement?.type === 'BlockStatement' && alwaysReturns(statement.body.at(-1));
+}
+
+// End offset of the first top-level `if (!<window>.isFocused()) return;`, or Infinity.
+function guardEnd(handler, windowText, sourceCode) {
+  if (handler.body.type !== 'BlockStatement') return Infinity;
+  for (const statement of handler.body.body) {
+    if (
+      statement.type === 'IfStatement' &&
+      alwaysReturns(statement.consequent) &&
+      isNotFocusedTest(statement.test, windowText, sourceCode)
+    ) {
+      return statement.range[1];
+    }
+  }
+  return Infinity;
+}
+
+function insideFocusedBranch(call, handler, windowText, sourceCode) {
+  let child = call;
+  for (let node = call.parent; node && node !== handler; node = node.parent) {
+    if (
+      node.type === 'IfStatement' &&
+      node.consequent === child &&
+      isFocusedTest(node.test, windowText, sourceCode)
+    ) {
+      return true;
+    }
+    child = node;
+  }
+  return false;
+}
+
+function collectFocusCalls(root, visitorKeys) {
+  const calls = [];
+  const visit = (node) => {
+    if (node.type === 'CallExpression' && memberName(node.callee) === 'focus') calls.push(node);
+    for (const key of visitorKeys[node.type] ?? []) {
+      const value = node[key];
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child.type === 'string') visit(child);
+      }
+    }
+  };
+  visit(root);
+  return calls;
+}
+
+// The window whose focus the handler must check, as source text.
+function focusedWindowText(call, handler, sourceCode) {
+  const event = staticString(call.arguments[0]);
+  const emitter = unwrap(unwrap(call.callee).object);
+  if (event === 'focus') return sourceCode.getText(emitter);
+  if (
+    event === 'browser-window-focus' &&
+    emitter?.type === 'Identifier' &&
+    emitter.name === 'app'
+  ) {
+    const param = handler.params[1];
+    return param?.type === 'Identifier' ? param.name : null;
+  }
+  return null;
+}
+
+export default {
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        "Require a window 'focus' handler to return when the window is no longer focused before it calls focus(), so two windows cannot trade focus without end.",
+    },
+    schema: [],
+    messages: {
+      unguardedFocus: MESSAGE,
+    },
+  },
+  create(context) {
+    const { sourceCode } = context;
+    const checked = new Set();
+    return {
+      CallExpression(node) {
+        if (!LISTENER_METHODS.has(memberName(node.callee))) return;
+        const handler = resolveHandler(node.arguments[1], sourceCode);
+        if (!handler) return;
+        const windowText = focusedWindowText(node, handler, sourceCode);
+        if (windowText === null) return;
+        const key = `${handler.range[0]}:${windowText}`;
+        if (checked.has(key)) return;
+        checked.add(key);
+        const guardedFrom = guardEnd(handler, windowText, sourceCode);
+        for (const call of collectFocusCalls(handler.body, sourceCode.visitorKeys)) {
+          if (call.range[0] >= guardedFrom) continue;
+          if (insideFocusedBranch(call, handler, windowText, sourceCode)) continue;
+          context.report({ node: call, messageId: 'unguardedFocus', data: { window: windowText } });
+        }
+      },
+    };
+  },
+};

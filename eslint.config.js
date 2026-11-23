@@ -48,6 +48,7 @@ import { SHORTCUT_DEFAULTS } from './src/shared/keyboard-shortcut-bindings.ts';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
+import noUnguardedFocusInWindowFocusHandlerRule from './eslint-rules/no-unguarded-focus-in-window-focus-handler.js';
 import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
@@ -100,6 +101,7 @@ const intentPlugin = {
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
     'no-scroll-into-view-prototype-stub': noScrollIntoViewPrototypeStubRule,
     'no-fixed-wait-timeout-in-tests': noFixedWaitTimeoutInTestsRule,
+    'no-unguarded-focus-in-window-focus-handler': noUnguardedFocusInWindowFocusHandlerRule,
     'require-disable-reason': requireDisableReasonRule,
   },
 };
@@ -1035,6 +1037,16 @@ export default [
         },
       ],
     },
+  },
+  // webContents.focus() also raises its window on macOS and Linux, so a window 'focus'
+  // handler that focuses a view on a stale event makes two windows trade focus without
+  // end: a Linux/X11 main-process hang (cloudlands-fe#4546) and swapping windows on macOS
+  // (intent-hq/intent#9928, cloudlands-fe#4958). No baseline: enforced at zero.
+  {
+    files: mainProcessFiles,
+    ignores: ['**/__tests__/**', '**/*.test.ts'],
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-unguarded-focus-in-window-focus-handler': 'error' },
   },
   // Guard raw `dismissedQuestionsMessageId` reads: the dismissal comparison lives
   // in the shared helpers only. See dismissalMarkerRawReadAllowedFiles above.
