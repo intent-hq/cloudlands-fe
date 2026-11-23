@@ -1041,7 +1041,7 @@ export function processHTMLToMarkdown(
   /**
    * Process inline content (text, comments, inline elements) within a block element
    */
-  const processInlineContent = (el: Element): string => {
+  const processInlineContent = (el: Element, hardBreak = '\n'): string => {
     let result = '';
     for (const node of Array.from(el.childNodes)) {
       if (node.nodeType === Node.COMMENT_NODE) {
@@ -1057,11 +1057,11 @@ export function processHTMLToMarkdown(
         const mathSource = validatedMathSource(childEl);
         // Handle inline formatting elements
         if (childEl.tagName === 'STRONG' || childEl.tagName === 'B') {
-          result += `**${processInlineContent(childEl)}**`;
+          result += `**${processInlineContent(childEl, hardBreak)}**`;
         } else if (childEl.tagName === 'EM' || childEl.tagName === 'I') {
-          result += `*${processInlineContent(childEl)}*`;
+          result += `*${processInlineContent(childEl, hardBreak)}*`;
         } else if (childEl.tagName === 'BR') {
-          result += '\n';
+          result += hardBreak;
         } else if (childEl.tagName === 'CODE') {
           result += `\`${childEl.textContent || ''}\``;
         } else if (mathSource) {
@@ -1084,11 +1084,11 @@ export function processHTMLToMarkdown(
             }
           } else {
             // For non-mention spans, process their content (anchors are already converted to comments)
-            result += processInlineContent(childEl);
+            result += processInlineContent(childEl, hardBreak);
           }
         } else if (childEl.tagName === 'A') {
           const href = childEl.getAttribute('href') || '';
-          const text = processInlineContent(childEl);
+          const text = processInlineContent(childEl, hardBreak);
           if (href) {
             result += `[${text}](${href})`;
           } else {
@@ -1130,6 +1130,35 @@ export function processHTMLToMarkdown(
       }
     }
     return result;
+  };
+
+  /**
+   * Serialize a table cell to one GFM row segment. TipTap wraps cell content in
+   * <p>; paragraphs and hard breaks join with <br>, and literal pipes are escaped.
+   */
+  const processTableCell = (cell: Element): string => {
+    const parts: string[] = [];
+    let loose = '';
+    const flushLoose = () => {
+      parts.push(loose);
+      loose = '';
+    };
+    for (const node of Array.from(cell.childNodes)) {
+      if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'P') {
+        flushLoose();
+        parts.push(processInlineContent(node as Element, '<br>'));
+      } else {
+        const holder = document.createElement('span');
+        holder.appendChild(node.cloneNode(true));
+        loose += processInlineContent(holder, '<br>');
+      }
+    }
+    flushLoose();
+    return parts
+      .map((part) => part.replace(/\s*\n\s*/g, ' ').trim())
+      .filter(Boolean)
+      .join('<br>')
+      .replace(/\|/g, '\\|');
   };
 
   /**
@@ -1461,7 +1490,7 @@ export function processHTMLToMarkdown(
         const headerRow = thead.querySelector('tr');
         if (headerRow) {
           const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-          const headerTexts = headerCells.map((cell) => processInlineContent(cell).trim());
+          const headerTexts = headerCells.map(processTableCell);
           rows.push(headerTexts);
 
           // Extract alignments from th elements
@@ -1480,7 +1509,7 @@ export function processHTMLToMarkdown(
         if (thead && tr.parentElement === thead) return;
 
         const cells = Array.from(tr.querySelectorAll('td, th'));
-        const cellTexts = cells.map((cell) => processInlineContent(cell).trim());
+        const cellTexts = cells.map(processTableCell);
         rows.push(cellTexts);
 
         // If no header, get alignments from first row
