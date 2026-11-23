@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
+import { SETTINGS_SEARCH_TERMS } from './settings-search-terms';
 import {
   SETTINGS_SEARCH_SECTIONS,
-  resolveSearchKeys,
   searchSettings,
   type SettingsSearchSection,
 } from './settings-search-index';
@@ -21,13 +21,14 @@ function hitsOf(query: string, isAvailable: (id: string) => boolean = everything
 }
 
 describe('settings search index', () => {
-  it('resolves every search key to at least one catalog message', () => {
-    const unresolved = SETTINGS_SEARCH_SECTIONS.flatMap((section) =>
-      [...(section.keys ?? []), ...(section.rows ?? []).flatMap((row) => row.keys)].filter(
-        (key) => resolveSearchKeys([key]).length === 0,
-      ),
+  it('keys search terms only by known ids and gives every row terms', () => {
+    const sectionIds = SETTINGS_SEARCH_SECTIONS.map((section) => section.id);
+    const rowIds = SETTINGS_SEARCH_SECTIONS.flatMap((section) =>
+      (section.rows ?? []).map((row) => row.id),
     );
-    expect(unresolved).toEqual([]);
+    const known = new Set([...sectionIds, ...rowIds]);
+    expect(Object.keys(SETTINGS_SEARCH_TERMS).filter((id) => !known.has(id))).toEqual([]);
+    expect(rowIds.filter((id) => !SETTINGS_SEARCH_TERMS[id])).toEqual([]);
   });
 
   it('uses unique section and row ids', () => {

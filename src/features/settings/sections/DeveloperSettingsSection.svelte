@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import { simulateSetState } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
