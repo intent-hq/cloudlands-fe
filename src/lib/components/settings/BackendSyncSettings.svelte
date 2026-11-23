@@ -77,7 +77,8 @@
                     ? m.settings_backendSync_saveError()
                     : undefined,
               disabled: () => !supported || !loaded || writing,
-              class: 'py-0 first:pt-0 last:pb-0',
+              // A plain-weight line: the label is the whole explanation.
+              class: 'py-0 first:pt-0 last:pb-0 [&_[data-field-label]]:font-normal',
             },
           ],
         },
@@ -88,7 +89,6 @@
 
 <!-- A status line shows only when sync cannot run or write. -->
 {#snippet syncDescription()}
-  <span class="block">{m.settings_backendSync_toggle_description()}</span>
   {#if !supported && loaded}
     <span class="block">{m.settings_backendSync_unsupported_description()}</span>
   {/if}
