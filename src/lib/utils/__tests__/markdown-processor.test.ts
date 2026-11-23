@@ -419,6 +419,7 @@ Some additional notes here.
 
       const editor = new Editor({
         ...config,
+        element: null,
         content: html,
       });
 
@@ -448,6 +449,7 @@ Some additional notes here.
 
       const editor = new Editor({
         ...config,
+        element: null,
         content: html,
       });
 
@@ -511,6 +513,7 @@ Some additional notes here.
 
       const editor = new Editor({
         ...config,
+        element: null,
         content: html,
       });
 
@@ -554,6 +557,7 @@ Some additional notes here.
 
       const editor = new Editor({
         ...config,
+        element: null,
         content: html,
       });
 
@@ -588,6 +592,7 @@ Some additional notes here.
 
       const editor = new Editor({
         ...config,
+        element: null,
         content: html,
       });
 
