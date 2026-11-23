@@ -573,19 +573,19 @@ describe('settings tab route and focus behavior', () => {
     expect(document.querySelector('#global-instructions')).toBeNull();
   });
 
-  it('switches between Mobile remote access and Machines backend sync', async () => {
+  it('switches between Mobile remote access and Machines', async () => {
     const { container } = renderSettings('/settings?tab=mobile');
     await waitFor(() => expect(container.querySelector('#websocket-api')).not.toBeNull());
-    expect(container.querySelector('#backend-sync')).toBeNull();
+    expect(container.querySelector('#devices')).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
-    await waitFor(() => expect(container.querySelector('#backend-sync')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('#devices')).not.toBeNull());
     expect(container.querySelector('#websocket-api')).toBeNull();
     expect(new URL(window.location.href).searchParams.get('tab')).toBe('devices');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Mobile', exact: true }));
     await waitFor(() => expect(container.querySelector('#websocket-api')).not.toBeNull());
-    expect(container.querySelector('#backend-sync')).toBeNull();
+    expect(container.querySelector('#devices')).toBeNull();
     expect(new URL(window.location.href).searchParams.get('tab')).toBe('mobile');
   });
 
@@ -633,7 +633,8 @@ describe('settings tab route and focus behavior', () => {
     ['/settings#remote-access', 'Mobile', 'websocket-api'],
     ['/settings?tab=devices#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=machines#remote-access', 'Mobile', 'websocket-api'],
-    ['/settings?tab=mobile#backend-sync', 'Machines', 'backend-sync'],
+    // The sync toggle now lives in the Hosts section of Machines.
+    ['/settings?tab=mobile#backend-sync', 'Machines', 'devices'],
     // Legacy deep link from when the section lived on Advanced.
     ['/settings?tab=advanced#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Token Savings', 'agent-features'],

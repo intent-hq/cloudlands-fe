@@ -26,7 +26,6 @@
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import FontPicker from '$features/settings/FontPicker.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
-  import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import AutocompleteSettings from '$lib/components/settings/AutocompleteSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -562,10 +561,6 @@
           <div id="devices" class="scroll-mt-20">
             <DevicesSettings />
           </div>
-
-          {#if !$hostManagesConnections$}
-            <DevicesConnectionSections />
-          {/if}
         {/if}
 
         {#if activeTab === 'mobile' && !hiddenTabs.includes('mobile')}

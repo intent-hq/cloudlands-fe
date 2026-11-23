@@ -13,12 +13,16 @@
     selectConnectionsLoaded,
     selectConnectionWorkflow,
     selectCurrentConnectionId,
+    selectHostManagesConnections,
+    selectKeychainSyncState,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { orderMachineRows } from '$lib/utils/machine-row-order';
   import {
     connectionWorkflowRequested,
     connectionWorkflowCleared,
+    loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
+  import BackendSyncSettings from './BackendSyncSettings.svelte';
   import { store as appStore } from '$store/renderer/store';
   import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
   import RemoteMachineRow from '$features/remote-machines/RemoteMachineRow.svelte';
@@ -233,6 +237,12 @@
   const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
   onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   onMount(() => appStore.dispatch(remoteMachinesRefreshRequested()));
+  // intent-web keeps its own connection list; elsewhere the sync row shows only where iCloud Keychain is supported.
+  const hostManagesConnections$ = selectHostManagesConnections();
+  const keychainSync$ = selectKeychainSyncState();
+  onMount(() => {
+    if (!$hostManagesConnections$) appStore.dispatch(loadKeychainSyncStateRequested());
+  });
   $effect(() => {
     if ($workflow$?.outcome?.kind !== 'done') return;
     appStore.dispatch(connectionWorkflowCleared(consumerId));
@@ -317,6 +327,14 @@
         </div>
       {/snippet}
     </ListView>
+    {#if !$hostManagesConnections$ && $keychainSync$?.supported}
+      <div
+        id="backend-sync"
+        class="scroll-mt-20 rounded-xl border border-border bg-card px-4 py-3 sm:px-5"
+      >
+        <BackendSyncSettings />
+      </div>
+    {/if}
   </section>
 
   {#if $orderVisible$}

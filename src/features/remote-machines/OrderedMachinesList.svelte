@@ -164,7 +164,7 @@
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
       {owner
-        ? m.remoteMachines_order_description({ backend: backendLabel })
+        ? m.remoteMachines_order_description()
         : m.remoteMachines_order_readOnly_description({ backend: backendLabel })}
     </p>
   </div>

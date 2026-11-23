@@ -351,13 +351,7 @@ describe('Settings → Machines with machineOrder: 1', () => {
     seed({ order: [ORDER[1]] });
     render(DevicesSettings);
 
-    expect(
-      screen.getByText(
-        m.remoteMachines_order_description({
-          backend: m.layout_daemonStatus_localConnection_label(),
-        }),
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(m.remoteMachines_order_description())).toBeTruthy();
     expect(orderedSection().querySelector('[data-machine-order-handle]')).toBeNull();
   });
 });

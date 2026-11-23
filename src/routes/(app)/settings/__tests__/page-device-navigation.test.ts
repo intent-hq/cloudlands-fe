@@ -121,7 +121,7 @@ it('reopens Mobile from an older remote-access hash after visiting Hosts', async
   expect(advanced().getAttribute('aria-expanded')).toBe('false');
 });
 
-it('drops Mobile and Backend Sync when intent-web manages the machines', async () => {
+it('drops Mobile and host sync when intent-web manages the machines', async () => {
   storeContext = initAppStore(appStore);
   appStore.dispatch(
     browserHostDetected({

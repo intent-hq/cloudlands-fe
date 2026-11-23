@@ -4,13 +4,33 @@
     setupMachineOrderFixture as setup,
     type MachineOrderPreviewState,
   } from '../../test/machine-order-preview';
+  import { store } from '$store/renderer/store';
+  import {
+    keychainSyncStateCleared,
+    keychainSyncStateReceived,
+  } from '$store/renderer/slices/connections/connections-slice';
   const state = (name: MachineOrderPreviewState) => ({ props: {}, setup: () => setup(name) });
+  // On a Mac, the Hosts section also shows the iCloud Keychain sync toggle.
+  const macState = {
+    props: {},
+    setup: () => {
+      const restore = setup('owner');
+      store.dispatch(
+        keychainSyncStateReceived({ supported: true, enabled: true, status: { state: 'active' } }),
+      );
+      return () => {
+        store.dispatch(keychainSyncStateCleared());
+        restore();
+      };
+    },
+  };
   export const preview = definePreview({
     id: 'machine-order',
     title: 'Hosts and runners in Settings → Machines (machineOrder: 1)',
     defaultState: 'owner',
     states: {
       owner: state('owner'),
+      mac: macState,
       member: state('member'),
       saving: state('saving'),
       unsupported: state('unsupported'),

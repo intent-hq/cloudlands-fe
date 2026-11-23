@@ -1045,8 +1045,11 @@ describe('DevicesSettings', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
       await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
-      expect(await screen.findByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
+      const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
+      // The Hosts sync row reports the same failed write on its own.
+      expect((await within(form).findByRole('alert')).textContent).toContain(
+        m.settings_devices_enableSync_error(),
+      );
     });
 
     it('disables the cloud toggle with an explanation where keychain sync is unsupported', async () => {
