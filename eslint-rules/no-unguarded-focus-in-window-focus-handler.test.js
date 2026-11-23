@@ -109,6 +109,30 @@ app.on('browser-window-focus', () => {
 });`,
     },
     {
+      name: 'a fresh guard inside a deferred callback, without an outer guard',
+      code: `
+window.on('focus', () => {
+  setTimeout(() => {
+    if (!window.isFocused()) return;
+    view.webContents.focus();
+  }, 0);
+});`,
+    },
+    {
+      name: 'a guard repeated after an await, and an await after focus()',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  await refresh();
+  if (!window.isFocused()) return;
+  view.webContents.focus();
+  await log();
+});
+window.on('focus', async () => {
+  if (window.isFocused()) await view.webContents.focus();
+});`,
+    },
+    {
       name: 'a handler that cannot be resolved in this file',
       code: `
 import { onFocus } from './focus';
@@ -221,6 +245,35 @@ app.on('browser-window-focus', () => {
 });
 app.on('browser-window-focus', (_event, { webContents }) => webContents.focus());`,
       errors: [error(4), error(6)],
+    },
+    {
+      name: 'an outer guard does not cover a deferred callback',
+      code: `
+window.on('focus', () => {
+  if (!window.isFocused()) return;
+  setTimeout(() => view.webContents.focus(), 0);
+  queueMicrotask(function () {
+    if (window.isFocused()) other.focus();
+  });
+  Promise.resolve().then(() => view.webContents.focus());
+});`,
+      errors: [error(4), error(8)],
+    },
+    {
+      name: 'an await between the guard and focus()',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  await refresh();
+  view.webContents.focus();
+});
+window.on('focus', async () => {
+  if (window.isFocused()) {
+    await refresh();
+    view.webContents.focus();
+  }
+});`,
+      errors: [error(5), error(10)],
     },
     {
       name: 'a TypeScript-cast emitter and computed keys',

@@ -26,6 +26,9 @@
  * the main process each focus() (WebContents, BrowserWindow, app) can raise a window.
  * A call is allowed after an early `if (!<window>.isFocused()) return;` (also in an `||`
  * chain, or as `isFocused() === false`), or inside `if (<window>.isFocused()) { ... }`.
+ * The check must be in the function that calls focus(), with no await or yield between
+ * them: a timer, promise or other callback runs later, so it needs its own check (even a
+ * synchronous one such as forEach, which the rule cannot tell apart).
  * Helpers called from the handler, and handlers passed as `this.<name>`, are not followed.
  */
 
@@ -35,7 +38,8 @@ const MESSAGE =
   'stale and the user has moved to another window, two windows trade focus without end: ' +
   'the main process hung on Linux/X11 (cloudlands-fe#4546) and windows swapped places on ' +
   'macOS (intent-hq/intent#9928, cloudlands-fe#4958). Start the handler with ' +
-  '`if (!{{window}}.isFocused()) return;`.';
+  '`if (!{{window}}.isFocused()) return;`. In a timer or other callback, or after an ' +
+  'await, repeat the check just before focus().';
 
 const LISTENER_METHODS = new Set([
   'on',
@@ -151,28 +155,65 @@ function alwaysReturns(statement) {
   return statement?.type === 'BlockStatement' && alwaysReturns(statement.body.at(-1));
 }
 
-// End offset of the first top-level `if (!<window>.isFocused()) return;`, or Infinity.
-function guardEnd(handler, windowText, sourceCode) {
-  if (handler.body.type !== 'BlockStatement') return Infinity;
-  for (const statement of handler.body.body) {
-    if (
-      statement.type === 'IfStatement' &&
-      alwaysReturns(statement.consequent) &&
-      isNotFocusedTest(statement.test, windowText, sourceCode)
-    ) {
-      return statement.range[1];
-    }
-  }
-  return Infinity;
+function isGuardStatement(statement, windowText, sourceCode) {
+  return (
+    statement.type === 'IfStatement' &&
+    alwaysReturns(statement.consequent) &&
+    isNotFocusedTest(statement.test, windowText, sourceCode)
+  );
 }
 
-function insideFocusedBranch(call, handler, windowText, sourceCode) {
+function enclosingFunction(node) {
+  let current = node.parent;
+  while (current && !FUNCTION_TYPES.has(current.type)) current = current.parent;
+  return current;
+}
+
+// An await or yield in `fn` itself that finishes between `start` and `end`: focus can
+// move to another window while it waits.
+function suspendsBetween(fn, start, end, visitorKeys) {
+  const visit = (node) => {
+    if (node !== fn && FUNCTION_TYPES.has(node.type)) return false;
+    if (
+      (node.type === 'AwaitExpression' || node.type === 'YieldExpression') &&
+      node.range[0] >= start &&
+      node.range[1] <= end
+    ) {
+      return true;
+    }
+    for (const key of visitorKeys[node.type] ?? []) {
+      const value = node[key];
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child.type === 'string' && visit(child)) return true;
+      }
+    }
+    return false;
+  };
+  return visit(fn);
+}
+
+// The check must run in the function that calls focus(), with no await between: a guard
+// in the handler does not cover a timer, promise or other callback that runs later.
+function isGuarded(call, windowText, sourceCode) {
+  if (windowText === null) return false;
+  const fn = enclosingFunction(call);
+  const callStart = call.range[0];
+  const fresh = (checkEnd) => !suspendsBetween(fn, checkEnd, callStart, sourceCode.visitorKeys);
+  if (fn.body.type === 'BlockStatement') {
+    let guard = null;
+    for (const statement of fn.body.body) {
+      if (statement.range[1] > callStart) break;
+      if (isGuardStatement(statement, windowText, sourceCode)) guard = statement;
+    }
+    if (guard && fresh(guard.range[1])) return true;
+  }
   let child = call;
-  for (let node = call.parent; node && node !== handler; node = node.parent) {
+  for (let node = call.parent; node && node !== fn; node = node.parent) {
     if (
       node.type === 'IfStatement' &&
       node.consequent === child &&
-      isFocusedTest(node.test, windowText, sourceCode)
+      isFocusedTest(node.test, windowText, sourceCode) &&
+      fresh(node.test.range[1])
     ) {
       return true;
     }
@@ -243,10 +284,8 @@ export default {
         const key = `${handler.range[0]}:${windowText}`;
         if (checked.has(key)) return;
         checked.add(key);
-        const guardedFrom = guardEnd(handler, windowText, sourceCode);
         for (const call of collectFocusCalls(handler.body, sourceCode.visitorKeys)) {
-          if (call.range[0] >= guardedFrom) continue;
-          if (insideFocusedBranch(call, handler, windowText, sourceCode)) continue;
+          if (isGuarded(call, windowText, sourceCode)) continue;
           context.report({
             node: call,
             messageId: 'unguardedFocus',
