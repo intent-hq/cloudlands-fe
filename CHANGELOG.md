@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.377.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.376.1...v2.377.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* draw goal notices as centered dividers without Edit ([#4976](https://github.com/intent-hq/cloudlands-fe/issues/4976)) ([d697f0b](https://github.com/intent-hq/cloudlands-fe/commit/d697f0b693e76ec88ec5dc51ae7ca6b79681ed69))
+
+
+### 🐛 Bug Fixes
+
+* name remote model rows with the trigger's label lookup ([#4974](https://github.com/intent-hq/cloudlands-fe/issues/4974)) ([f35eeab](https://github.com/intent-hq/cloudlands-fe/commit/f35eeab63a54746ce0be26a2d41e2feb52366f9f))
+
 ## [2.376.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.376.0...v2.376.1) (2026-11-23)
 
 
