@@ -225,6 +225,19 @@ describe('goal notice attribution', () => {
     expect(noticeAttribution(shared)).toBeNull();
   });
 
+  it('names the writer once to screen readers, in the toggle name', () => {
+    const shared = seed({ memberCount: 2, members: [me, alice] });
+    noticeAttribution(shared, 'p-alice');
+    const text = m.chat_goalNotice_set_label({ goal: 'Ship the attribution' });
+    const attribution = m.chat_goalNotice_by_label({ name: 'Alice' });
+    expect(
+      screen.getByRole('button', {
+        name: m.chat_goalNotice_attributed_ariaLabel({ text, attribution }),
+      }),
+    ).toBeTruthy();
+    expect(screen.getByTestId('goal-notice-attribution').getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('is hidden in a personal workspace', () => {
     expect(noticeAttribution(seed({ memberCount: 1, members: [alice] }), 'p-alice')).toBeNull();
   });

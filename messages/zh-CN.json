@@ -9458,7 +9458,6 @@
   "chat_goalNotice_current_label": "当前目标：{goal}",
   "chat_goalNotice_cleared_label": "已移除目标。",
   "chat_goalNotice_none_label": "未设置目标。发送 /goal 并描述完成时的样子。",
-  "chat_goalNotice_edit_label": "编辑",
   "chat_goalNotice_fallback_label": "目标已更改",
   "chat_goalStrip_setBy_label": "由 {name} 设置",
   "chat_goalStrip_setByYou_label": "由你设置",
