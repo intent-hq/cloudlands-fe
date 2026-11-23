@@ -410,8 +410,8 @@ Some additional notes here.
 
       // Create Tiptap editor with the actual editor config used in the app
       const config = createEditorConfig({
-        workspaceId: 'test-workspace',
-        noteId: 'test-note',
+        element: document.createElement('div'),
+        content: '',
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         editable: true,
@@ -439,8 +439,8 @@ Some additional notes here.
 
       // Create editor
       const config = createEditorConfig({
-        workspaceId: 'test-workspace',
-        noteId: 'test-note',
+        element: document.createElement('div'),
+        content: '',
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         editable: true,
@@ -502,8 +502,8 @@ Some additional notes here.
 
       // Create Tiptap editor
       const config = createEditorConfig({
-        workspaceId: 'test-workspace',
-        noteId: 'test-note',
+        element: document.createElement('div'),
+        content: '',
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         editable: true,
@@ -544,8 +544,8 @@ Some additional notes here.
 
       // Create Tiptap editor with MARKDOWN mode (matching NoteWithComments)
       const config = createEditorConfig({
-        workspaceId: 'test-workspace',
-        noteId: 'test-note',
+        element: document.createElement('div'),
+        content: '',
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         editable: true,
@@ -578,8 +578,8 @@ Some additional notes here.
 
       // Create Tiptap editor with MARKDOWN mode
       const config = createEditorConfig({
-        workspaceId: 'test-workspace',
-        noteId: 'test-note',
+        element: document.createElement('div'),
+        content: '',
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         editable: true,
