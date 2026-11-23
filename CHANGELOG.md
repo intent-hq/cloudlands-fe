@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.381.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.381.0...v2.381.1) (2026-11-23)
+
+
+### 🐛 Bug Fixes
+
+* **passkeys:** accept base64url fields up to 256K ([#5000](https://github.com/intent-hq/cloudlands-fe/issues/5000)) ([8c1e987](https://github.com/intent-hq/cloudlands-fe/commit/8c1e9874ff0c5519fe46c4fb0baeeb6186c579ad))
+
 ## [2.381.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.380.2...v2.381.0) (2026-11-23)
 
 
