@@ -38,6 +38,34 @@ async function setup(
   return { ...result, viewport, content };
 }
 
+/** jsdom has no layout: give the viewport and its image unscaled sizes. */
+function setSizes(
+  viewport: HTMLElement,
+  content: HTMLElement,
+  sizes: { viewport: [number, number]; image: [number, number] },
+) {
+  const image = content.firstElementChild as HTMLElement;
+  Object.defineProperties(viewport, {
+    clientWidth: { configurable: true, value: sizes.viewport[0] },
+    clientHeight: { configurable: true, value: sizes.viewport[1] },
+  });
+  Object.defineProperties(image, {
+    offsetWidth: { configurable: true, value: sizes.image[0] },
+    offsetHeight: { configurable: true, value: sizes.image[1] },
+  });
+}
+
+async function drag(viewport: HTMLElement, from: [number, number], to: [number, number]) {
+  await fireEvent.pointerDown(viewport, {
+    pointerId: 1,
+    button: 0,
+    clientX: from[0],
+    clientY: from[1],
+  });
+  await fireEvent.pointerMove(viewport, { pointerId: 1, clientX: to[0], clientY: to[1] });
+  await fireEvent.pointerUp(viewport, { pointerId: 1, clientX: to[0], clientY: to[1] });
+}
+
 function getScale(content: HTMLElement): number {
   const match = content.getAttribute('style')?.match(/scale\(([\d.]+)\)/);
   expect(match).toBeTruthy();
@@ -162,27 +190,13 @@ describe('ZoomPanViewport', () => {
     expect(getTranslate(content)).toEqual({ x: 0, y: 0 });
   });
 
-  it('drag pans the content and suppresses the subsequent click', async () => {
+  it('drag pans overflowing content and suppresses the subsequent click', async () => {
     const { container, viewport, content } = await setup();
+    setSizes(viewport, content, { viewport: [400, 300], image: [800, 600] });
     const clickSpy = vi.fn();
     container.addEventListener('click', clickSpy);
 
-    await fireEvent.pointerDown(viewport, {
-      pointerId: 1,
-      button: 0,
-      clientX: 10,
-      clientY: 10,
-    });
-    await fireEvent.pointerMove(viewport, {
-      pointerId: 1,
-      clientX: 30,
-      clientY: 25,
-    });
-    await fireEvent.pointerUp(viewport, {
-      pointerId: 1,
-      clientX: 30,
-      clientY: 25,
-    });
+    await drag(viewport, [10, 10], [30, 25]);
 
     expect(getTranslate(content)).toEqual({ x: 20, y: 15 });
 
@@ -195,8 +209,50 @@ describe('ZoomPanViewport', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('does not pan content that fits and leaves its clicks alone', async () => {
+    const { container, viewport, content } = await setup();
+    setSizes(viewport, content, { viewport: [400, 300], image: [200, 100] });
+    const clickSpy = vi.fn();
+    container.addEventListener('click', clickSpy);
+
+    await drag(viewport, [10, 10], [60, 50]);
+    await fireEvent.click(viewport);
+
+    expect(getTranslate(content)).toEqual({ x: 0, y: 0 });
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts panning once zoom makes the content overflow', async () => {
+    const { viewport, content } = await setup();
+    setSizes(viewport, content, { viewport: [400, 300], image: [200, 100] });
+
+    await fireEvent.input(viewport.querySelector('[data-testid="zoom-pan-slider"]')!, {
+      target: { value: '4' },
+    });
+    // Zoomed about the viewport's top-left corner, the 800x400 image is held
+    // with its top-left edges on the viewport's.
+    expect(getTranslate(content)).toEqual({ x: -400, y: -400 });
+
+    // A long drag stops with its bottom-right edges on the viewport's.
+    await drag(viewport, [1000, 1000], [0, 0]);
+    expect(getTranslate(content)).toEqual({ x: -800, y: -500 });
+  });
+
+  it('recenters content that fits again after zooming out', async () => {
+    const { viewport, content } = await setup();
+    setSizes(viewport, content, { viewport: [400, 300], image: [200, 100] });
+    const slider = viewport.querySelector('[data-testid="zoom-pan-slider"]')!;
+
+    await fireEvent.input(slider, { target: { value: '4' } });
+    await drag(viewport, [100, 30], [0, 0]);
+    await fireEvent.input(slider, { target: { value: '0.5' } });
+
+    expect(getTranslate(content)).toEqual({ x: 100, y: 75 });
+  });
+
   it('does not suppress clicks after a sub-threshold drag', async () => {
-    const { container, viewport } = await setup();
+    const { container, viewport, content } = await setup();
+    setSizes(viewport, content, { viewport: [400, 300], image: [800, 600] });
     const clickSpy = vi.fn();
     container.addEventListener('click', clickSpy);
 

@@ -2037,6 +2037,7 @@
                           ? 'animate-pulse'
                           : ''}"
                         aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
+                        data-lightbox-opener
                         onclick={(e) => {
                           openImageLightbox(
                             imageBlock,

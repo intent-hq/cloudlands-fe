@@ -7,12 +7,14 @@
    * Opens images in a full-screen overlay with dark backdrop.
    * Closes on Escape, backdrop click, or X button.
    * Keyboard accessible with focus trap and focus return.
+   * Left/Right arrows open the previous/next image of the opener's gallery.
    */
   import MediaLightbox from './MediaLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { supportsImageActions } from '$lib/utils/image-actions';
+  import { adjacentLightboxOpener } from './lightbox-gallery';
 
   interface Props {
     open?: boolean;
@@ -34,7 +36,9 @@
     showActionsMenu = false,
   }: Props = $props();
 
+  let mediaLightbox: MediaLightbox | undefined = $state();
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
+  let pannable = $state(false);
   let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let imageActionsOpen = $state(false);
 
@@ -44,7 +48,18 @@
 
   function handleKeydown(e: KeyboardEvent) {
     handleCopy(e);
-    if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
+    if (e.defaultPrevented) return;
+    if (!zoomPanViewport?.handleKeydown(e)) handleArrowKey(e);
+  }
+
+  function handleArrowKey(e: KeyboardEvent) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || imageActionsOpen) return;
+    if (e.target instanceof HTMLInputElement) return;
+    const next = adjacentLightboxOpener(openerElement, e.key === 'ArrowLeft' ? -1 : 1);
+    if (!next) return;
+    e.preventDefault();
+    mediaLightbox?.handOffTo(next);
   }
 
   function handleCopy(event: KeyboardEvent | ClipboardEvent) {
@@ -73,6 +88,7 @@
 {/snippet}
 
 <MediaLightbox
+  bind:this={mediaLightbox}
   bind:open
   ariaLabel={m.ui_imageLightbox_preview_ariaLabel()}
   closeLabel={m.ui_imageLightbox_close_ariaLabel()}
@@ -83,12 +99,14 @@
   onCopy={handleCopy}
 >
   {#key imageUrl}
-    <ZoomPanViewport bind:this={zoomPanViewport}>
+    <ZoomPanViewport bind:this={zoomPanViewport} bind:pannable>
       <img
         src={imageUrl}
         alt={imageName}
-        class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
-        draggable="false"
+        class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain {pannable
+          ? ''
+          : 'cursor-default'}"
+        draggable={!pannable}
         data-media-lightbox-content
         oncontextmenu={handleContextMenu}
       />

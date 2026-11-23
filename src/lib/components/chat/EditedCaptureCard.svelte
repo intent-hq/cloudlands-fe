@@ -157,6 +157,7 @@
           wrapContent={false}
           class="image-preview"
           disabled={readOnly}
+          data-lightbox-opener
           aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name: title })}
           onclick={(event) => {
             if (capture.primaryId && event.currentTarget instanceof HTMLButtonElement)
@@ -196,6 +197,7 @@
               aria-label={label}
               tooltip={label}
               disabled={readOnly || !src}
+              data-lightbox-opener
               onclick={(event) => {
                 if (event.currentTarget instanceof HTMLButtonElement)
                   onImage(frame.attachment_id, event.currentTarget);
