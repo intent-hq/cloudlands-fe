@@ -11,6 +11,7 @@ import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import {
   AGENT37_ENTRY,
   E2B_PROVIDER,
+  NORTHFLANK_ENTRY,
   GROUPED_SANDBOXES,
   TEAM_ENTRY,
   VERCEL_ENTRY,
@@ -755,6 +756,147 @@ describe('Agent37 form', () => {
     expect(list?.getAttribute('aria-label')).toBe('Agent37 instances');
     expect(list?.textContent).toContain('Docker image builder');
     expect(list?.textContent).not.toContain('E2B');
+  });
+});
+
+describe('Disk setting', () => {
+  function renderNew(
+    state: CloudMachinesPreviewState,
+    provider: 'e2b' | 'northflank' | 'agent37' | 'vercel',
+  ) {
+    seed(state);
+    const view = render(CloudMachineRow, {
+      entry: null,
+      newProvider: provider,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+      initialDraft: { apiKey: 'secret', projectId: 'intent-agents' },
+    });
+    return view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+  }
+  const disk = (form: HTMLFormElement) =>
+    form.querySelector('input[data-cloud-disk]') as HTMLInputElement | null;
+  const configured = () =>
+    dispatched().find((action) => action.type === 'cloudMachines/configureRequested')
+      ?.payload[0] as Record<string, unknown> | undefined;
+
+  it('starts a new Northflank entry at the default disk and sends a changed one', async () => {
+    const form = renderNew('northflank-setup', 'northflank');
+    expect(disk(form)?.value).toBe('20');
+    expect(form.querySelector('[data-cloud-disk-note]')?.textContent).toContain('new machines');
+    await fireEvent.input(disk(form)!, { target: { value: '250' } });
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ provider: 'northflank', diskGiB: 250 });
+  });
+
+  it('refuses a disk outside the limits and does not save', async () => {
+    const form = renderNew('northflank-setup', 'northflank');
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    await fireEvent.input(disk(form)!, { target: { value: '501' } });
+    expect(form.querySelector('[data-cloud-disk-error]')?.textContent).toContain('6');
+    expect(form.querySelector('[data-cloud-disk-error]')?.textContent).toContain('500');
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(disk(form)!, { target: { value: '5' } });
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(disk(form)!, { target: { value: '6' } });
+    expect(form.querySelector('[data-cloud-disk-error]')).toBeNull();
+    expect(save.disabled).toBe(false);
+  });
+
+  it('lowers an Agent37 disk to the largest the size allows when the type changes, and says so', async () => {
+    const form = renderNew('agent37-setup', 'agent37');
+    const note = () => form.querySelector('[data-cloud-disk-note]')?.textContent ?? '';
+    expect(note()).toContain('4–20 GiB');
+    await fireEvent.click(form.querySelector('[data-agent37-type="vm"]')!);
+    await vi.waitFor(() => expect(note()).toContain('4–100 GiB'));
+    await fireEvent.input(disk(form)!, { target: { value: '60' } });
+    expect(form.querySelector('[data-cloud-disk-clamped]')).toBeNull();
+    await fireEvent.click(form.querySelector('[data-agent37-type="default"]')!);
+    await vi.waitFor(() => expect(disk(form)?.value).toBe('20'));
+    expect(form.querySelector('[data-cloud-disk-clamped]')?.textContent).toContain('20 GiB');
+    await fireEvent.submit(form);
+    expect(configured()).toMatchObject({ instanceType: 'default', diskGiB: 20 });
+  });
+
+  it('shows no disk field for E2B or Vercel', () => {
+    expect(disk(renderNew('vercel-setup', 'vercel'))).toBeNull();
+    expect(disk(renderNew('setup', 'e2b'))).toBeNull();
+  });
+
+  it('shows no disk field on a backend that reports no disk setting', () => {
+    seed('northflank-setup');
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'northflank'],
+        providers: [],
+        machines: [],
+        readAt: Date.now(),
+      }),
+    );
+    const view = render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'northflank',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    expect(view.container.querySelector('input[data-cloud-disk]')).toBeNull();
+  });
+
+  it('keeps a saved Agent37 disk above the size cap when the form opens, and saves it unchanged', async () => {
+    seed('agent37-providers');
+    const entry = {
+      ...AGENT37_ENTRY,
+      size: '2x4' as const,
+      agent37: { instanceType: 'default' as const, region: 'us' as const, diskGiB: 20 },
+    };
+    const view = render(CloudMachineRow, {
+      entry,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(disk(form)?.value).toBe('20');
+    expect(form.querySelector('[data-cloud-disk-clamped]')).toBeNull();
+    expect(form.querySelector('[data-cloud-disk-error]')).toBeNull();
+    expect(form.querySelector('[data-cloud-disk-capped]')?.textContent).toContain('12 GiB');
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await fireEvent.submit(form);
+    expect(configured()).not.toHaveProperty('diskGiB');
+  });
+
+  it('sends no disk for an entry saved without one while the field shows the default', async () => {
+    seed('providers');
+    const { diskGiB: _omitted, ...settings } = NORTHFLANK_ENTRY.northflank!;
+    const view = render(CloudMachineRow, {
+      entry: { ...NORTHFLANK_ENTRY, northflank: settings as typeof NORTHFLANK_ENTRY.northflank },
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(disk(form)?.value).toBe('20');
+    await fireEvent.submit(form);
+    expect(configured()).not.toHaveProperty('diskGiB');
+  });
+
+  it('shows the saved disk of an entry and sends it only when changed', async () => {
+    seed('providers');
+    const view = render(CloudMachineRow, {
+      entry: NORTHFLANK_ENTRY,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(disk(form)?.value).toBe(String(NORTHFLANK_ENTRY.northflank?.diskGiB));
+    await fireEvent.submit(form);
+    expect(configured()).not.toHaveProperty('diskGiB');
   });
 });
 

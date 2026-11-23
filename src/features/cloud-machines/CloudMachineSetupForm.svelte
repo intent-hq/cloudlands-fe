@@ -33,6 +33,7 @@
     DEFAULT_CLOUD_MACHINE_SIZE,
     DEFAULT_IDLE_PAUSE_MINUTES,
     DEFAULT_PAUSED_DELETE_DAYS,
+    cloudDiskMax,
     isCloudMachineSize,
     nextCloudEntryName,
     type Agent37InstanceType,
@@ -45,6 +46,7 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     selectCloudEntries,
+    selectCloudDiskSettings,
     selectCloudEntriesSupported,
     selectCloudFailures,
     selectCloudOperations,
@@ -218,6 +220,53 @@
       : m.cloudMachines_agent37_form_type_default_note(),
   );
   let size = $state<string>(untrack(() => provider?.size ?? DEFAULT_CLOUD_MACHINE_SIZE));
+  // The disk of new machines, only for a kind the backend reports a disk setting for.
+  const diskSettings$ = selectCloudDiskSettings();
+  const diskSetting = $derived($diskSettings$[kind] ?? null);
+  const savedDisk = untrack(() => entry?.northflank?.diskGiB ?? entry?.agent37?.diskGiB ?? null);
+  let disk = $state(
+    untrack(
+      () => initialDraft?.diskGiB ?? String(savedDisk ?? $diskSettings$[kind]?.defaultGiB ?? ''),
+    ),
+  );
+  /** Set when a change of size or type lowered the disk to its new largest value. */
+  let diskClampedTo = $state<number | null>(null);
+  const diskMax = $derived(
+    diskSetting ? cloudDiskMax(diskSetting, size, agent37 ? instanceType : undefined) : 0,
+  );
+  const diskValue = $derived(/^\d+$/u.test(disk.trim()) ? Number(disk.trim()) : NaN);
+  // What the entry has now: the saved disk, or the default of one saved without it.
+  const diskUnchanged = $derived(
+    !!provider && diskValue === (savedDisk ?? diskSetting?.defaultGiB ?? null),
+  );
+  // A saved disk above the size cap stays valid: the backend caps it at each start.
+  const diskInvalid = $derived(
+    !!diskSetting &&
+      !(
+        Number.isSafeInteger(diskValue) &&
+        diskValue >= diskSetting.minGiB &&
+        diskValue <= (diskUnchanged ? diskSetting.maxGiB : diskMax)
+      ),
+  );
+  /** Set while a kept saved disk is above what new machines of this size get. */
+  const diskCappedTo = $derived(
+    diskSetting && !diskInvalid && diskValue > diskMax ? diskMax : null,
+  );
+  // After a change of size or type (or for a new entry's draft), a smaller largest
+  // disk lowers the value, and says so. Opening a saved entry changes nothing.
+  let diskMaxSeen: number | null = null;
+  $effect(() => {
+    const max = diskMax;
+    untrack(() => {
+      const first = diskMaxSeen === null;
+      diskMaxSeen = max;
+      if (first && provider) return;
+      if (diskSetting && Number.isSafeInteger(diskValue) && diskValue > max) {
+        disk = String(max);
+        diskClampedTo = max;
+      }
+    });
+  });
   let idlePause = $state(
     untrack(() => String(provider?.idlePauseMinutes ?? DEFAULT_IDLE_PAUSE_MINUTES)),
   );
@@ -302,6 +351,12 @@
     return !provider || size !== provider.size || apiKey.trim() || apiKeyFrom ? { size } : {};
   }
 
+  /** The disk, when the kind takes one and it is new or changed. */
+  function diskParam(): { diskGiB?: number } {
+    if (!diskSetting || diskInvalid || diskUnchanged) return {};
+    return { diskGiB: diskValue };
+  }
+
   /** Northflank: the project; Agent37: the type and region; Vercel: team, project, image; each when new or changed. */
   function placeParams(): {
     projectId?: string;
@@ -378,13 +433,14 @@
   }
 
   function save() {
-    if (keyRequired || placeMissing || nameError || busy) return;
+    if (keyRequired || placeMissing || nameError || diskInvalid || busy) return;
     submitted = true;
     appStore.dispatch(
       cloudMachinesConfigureRequested({
         ...entryParams(),
         ...placeParams(),
         ...sizeParam(),
+        ...diskParam(),
         idlePauseMinutes: Number(idlePause),
         pausedDeleteDays: Number(pausedDelete),
       }),
@@ -699,6 +755,50 @@
       {/if}
     </div>
 
+    {#if diskSetting}
+      <Label for="{uid}-disk" class="self-start @xl:pt-2">{m.cloudMachines_form_disk_label()}</Label
+      >
+      <div class="min-w-0 space-y-1">
+        <div class="flex items-center gap-2">
+          <Input
+            id="{uid}-disk"
+            inputmode="numeric"
+            autocomplete="off"
+            class="w-24"
+            bind:value={disk}
+            disabled={busy}
+            oninput={() => (diskClampedTo = null)}
+            aria-invalid={diskInvalid ? 'true' : undefined}
+            aria-describedby="{uid}-disk-note"
+            data-cloud-disk
+          />
+          <span class="type-body text-muted-foreground">{m.cloudMachines_form_disk_unit()}</span>
+        </div>
+        {#if diskInvalid}
+          <p class="type-body text-danger" data-cloud-disk-error>
+            {m.cloudMachines_form_disk_invalid({
+              min: String(diskSetting.minGiB),
+              max: String(diskMax),
+            })}
+          </p>
+        {:else if diskClampedTo !== null}
+          <p class="type-body text-foreground" role="status" data-cloud-disk-clamped>
+            {m.cloudMachines_form_disk_clamped({ max: String(diskClampedTo) })}
+          </p>
+        {:else if diskCappedTo !== null}
+          <p class="type-body text-muted-foreground" data-cloud-disk-capped>
+            {m.cloudMachines_form_disk_capped({ max: String(diskCappedTo) })}
+          </p>
+        {/if}
+        <p id="{uid}-disk-note" class="type-body text-muted-foreground" data-cloud-disk-note>
+          {m.cloudMachines_form_disk_note({
+            min: String(diskSetting.minGiB),
+            max: String(diskMax),
+          })}
+        </p>
+      </div>
+    {/if}
+
     <Label for="{uid}-idle" class="self-start @xl:pt-2"
       >{m.cloudMachines_form_idlePause_label()}</Label
     >
@@ -791,7 +891,7 @@
     >
     <Button
       type="submit"
-      disabled={busy || keyRequired || placeMissing || !!nameError}
+      disabled={busy || keyRequired || placeMissing || !!nameError || diskInvalid}
       loading={saving}>{m.cloudMachines_form_save_label()}</Button
     >
   </div>

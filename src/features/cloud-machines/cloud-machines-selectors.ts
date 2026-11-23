@@ -3,6 +3,7 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   DEFAULT_CLOUD_MACHINE_ID,
   cloudProviderName,
+  type CloudDiskSettings,
   type CloudMachineProvider,
   type CloudProviderKind,
 } from '$shared/types/cloud-machines';
@@ -40,6 +41,11 @@ export const selectCloudProviderKinds = store.createSelector((state): CloudProvi
   const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
   return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
 });
+
+/** The disk setting of each kind whose entries take one. */
+export const selectCloudDiskSettings = store.createSelector(
+  (state): CloudDiskSettings => state.cloudMachines?.diskSettings ?? {},
+);
 
 /** `cloudMachineEntries: 1`: entries are named and listed under Nodes. */
 export const selectCloudEntriesSupported = store.createSelector(

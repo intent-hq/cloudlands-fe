@@ -135,6 +135,67 @@ export const VERCEL_SIZES: readonly CloudMachineSizeInfo[] = [
   { id: '8x16', vcpu: 8, memoryMiB: 16384 },
 ];
 
+/** `cloudMachines.list` `diskSettings[kind]`: the `diskGiB` an entry of that kind takes. */
+export interface CloudDiskSetting {
+  minGiB: number;
+  maxGiB: number;
+  defaultGiB: number;
+  /** By instance type, then size: the largest disk a new machine gets (Agent37). */
+  sizeMaxGiB?: Record<string, Partial<Record<CloudMachineSize, number>>>;
+}
+
+/** The kinds that take `diskGiB`, by kind; a kind left out takes none. */
+export type CloudDiskSettings = Partial<Record<CloudProviderKind, CloudDiskSetting>>;
+
+/** The largest disk for `size` on `instanceType`, else the setting's own maximum. */
+export function cloudDiskMax(
+  setting: CloudDiskSetting,
+  size: string,
+  instanceType = 'default',
+): number {
+  const cap = setting.sizeMaxGiB?.[instanceType]?.[size as CloudMachineSize];
+  return cap === undefined
+    ? setting.maxGiB
+    : Math.max(setting.minGiB, Math.min(cap, setting.maxGiB));
+}
+
+function parseDiskSetting(value: unknown): CloudDiskSetting | null {
+  if (!record(value)) return null;
+  const minGiB = positiveInt(value.minGiB);
+  const maxGiB = positiveInt(value.maxGiB);
+  const defaultGiB = positiveInt(value.defaultGiB);
+  if (!minGiB || !maxGiB || !defaultGiB || minGiB > maxGiB) return null;
+  const sizeMaxGiB = record(value.sizeMaxGiB)
+    ? Object.fromEntries(
+        Object.entries(value.sizeMaxGiB).flatMap(([type, caps]) => {
+          if (!record(caps)) return [];
+          const sizes = Object.entries(caps).flatMap(([size, cap]) => {
+            const gib = positiveInt(cap);
+            return isCloudMachineSize(size) && gib ? [[size, gib] as const] : [];
+          });
+          return sizes.length ? [[type, Object.fromEntries(sizes)]] : [];
+        }),
+      )
+    : null;
+  return {
+    minGiB,
+    maxGiB,
+    defaultGiB: Math.min(Math.max(defaultGiB, minGiB), maxGiB),
+    ...(sizeMaxGiB && Object.keys(sizeMaxGiB).length ? { sizeMaxGiB } : {}),
+  };
+}
+
+/** Narrow `cloudMachines.list` `diskSettings`: known kinds with a valid setting only. */
+export function parseCloudDiskSettings(value: unknown): CloudDiskSettings {
+  if (!record(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([kind, setting]) => {
+      const parsed = isCloudProviderKind(kind) ? parseDiskSetting(setting) : null;
+      return parsed ? [[kind, parsed]] : [];
+    }),
+  );
+}
+
 type CloudProviderState = 'ready' | 'key-rejected' | 'unreachable';
 
 /** One named entry (`CloudMachineProvider` on the wire). */
@@ -203,6 +264,8 @@ export interface CloudMachineConfigureInput {
   instanceType?: Agent37InstanceType;
   /** Agent37 only; `eu` and `ap-south` need `instanceType: "vm"`. */
   region?: Agent37Region;
+  /** Northflank and Agent37 only: the disk of new machines. */
+  diskGiB?: number;
   size?: CloudMachineSize;
   idlePauseMinutes?: number;
   pausedDeleteDays?: number;
