@@ -44,7 +44,7 @@ describe('Machines and Nodes', () => {
     seed('machines-and-nodes');
     const view = render(DevicesSettings);
     const nodes = nodesSection(view.container)!;
-    expect(within(nodes).getByText('Runners only run agents for your hosts.')).toBeTruthy();
+    expect(within(nodes).getByText('Computers that run agents for your hosts.')).toBeTruthy();
     const gpu = nodes.querySelector('[data-device-row="gpu-rig"]') as HTMLElement;
     const pi = nodes.querySelector('[data-device-row="pi-node"]') as HTMLElement;
     expect(within(gpu).queryByText('Runs agents for Build box')).toBeNull();
