@@ -10,6 +10,10 @@
    * suppression after a drag so host backdrop-close handlers don't fire),
    * and a bottom control bar with zoom buttons, slider, % readout and reset.
    *
+   * Panning is only possible while the scaled content overflows the
+   * viewport; an axis that fits stays centered and an overflowing axis
+   * cannot be dragged past its edges.
+   *
    * Ephemeral local state only - no Redux.
    */
   import type { Snippet } from 'svelte';
@@ -32,14 +36,23 @@
     maxZoom?: number;
     /** Reports scale changes after the content transform updates. */
     onScaleChange?: (scale: number) => void;
+    /** True while the scaled content overflows the viewport and can be dragged. */
+    pannable?: boolean;
   }
 
-  let { children, minZoom = 0.25, maxZoom = 8, onScaleChange }: Props = $props();
+  let {
+    children,
+    minZoom = 0.25,
+    maxZoom = 8,
+    onScaleChange,
+    pannable = $bindable(false),
+  }: Props = $props();
 
   const KEYBOARD_ZOOM_FACTOR = 1.25;
   const WHEEL_ZOOM_INTENSITY = 0.0015;
   const PINCH_ZOOM_INTENSITY = 0.01;
   const DRAG_CLICK_SUPPRESS_THRESHOLD_PX = 4;
+  const OVERFLOW_TOLERANCE_PX = 0.5;
 
   let scale = $state(1);
   let offsetX = $state(0);
@@ -47,9 +60,67 @@
   let dragging = $state(false);
 
   let viewportElement: HTMLDivElement | null = $state(null);
+  let contentElement: HTMLDivElement | null = $state(null);
+  let viewportSize = $state({ width: 0, height: 0 });
+  let contentSize = $state({ width: 0, height: 0 });
+
+  const overflowX = $derived(
+    contentSize.width * scale > viewportSize.width + OVERFLOW_TOLERANCE_PX,
+  );
+  const overflowY = $derived(
+    contentSize.height * scale > viewportSize.height + OVERFLOW_TOLERANCE_PX,
+  );
 
   $effect(() => {
     onScaleChange?.(scale);
+  });
+
+  $effect(() => {
+    pannable = overflowX || overflowY;
+  });
+
+  /** Unscaled layout sizes: offset sizes ignore the content transform. */
+  function measure() {
+    if (viewportElement) {
+      viewportSize = { width: viewportElement.clientWidth, height: viewportElement.clientHeight };
+    }
+    const child = contentElement?.firstElementChild;
+    if (child instanceof HTMLElement) {
+      contentSize = { width: child.offsetWidth, height: child.offsetHeight };
+    } else if (child) {
+      const rect = child.getBoundingClientRect();
+      contentSize = { width: rect.width / scale, height: rect.height / scale };
+    }
+  }
+
+  /**
+   * The content's child is laid out centered in a viewport-sized box, so
+   * `viewport * (1 - scale) / 2` centers it at any scale. An overflowing
+   * axis may move by half its overflow either way before an edge shows.
+   */
+  function clampAxis(offset: number, viewport: number, content: number): number {
+    const centered = (viewport * (1 - scale)) / 2;
+    const overflow = content * scale - viewport;
+    if (overflow <= OVERFLOW_TOLERANCE_PX) return centered;
+    return Math.min(centered + overflow / 2, Math.max(centered - overflow / 2, offset));
+  }
+
+  function clampOffsets() {
+    offsetX = clampAxis(offsetX, viewportSize.width, contentSize.width);
+    offsetY = clampAxis(offsetY, viewportSize.height, contentSize.height);
+  }
+
+  $effect(() => {
+    const viewport = viewportElement;
+    const content = contentElement;
+    if (!viewport || !content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      measure();
+      clampOffsets();
+    });
+    observer.observe(viewport);
+    if (content.firstElementChild) observer.observe(content.firstElementChild);
+    return () => observer.disconnect();
   });
 
   let dragPointerId: number | null = null;
@@ -76,9 +147,11 @@
     const rect = viewportElement?.getBoundingClientRect();
     const px = rect ? clientX - rect.left : 0;
     const py = rect ? clientY - rect.top : 0;
+    measure();
     offsetX = px - ((px - offsetX) / scale) * next;
     offsetY = py - ((py - offsetY) / scale) * next;
     scale = next;
+    clampOffsets();
   }
 
   function zoomAtCenter(targetScale: number) {
@@ -87,6 +160,7 @@
       zoomAtPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, targetScale);
     } else {
       scale = clampScale(targetScale);
+      clampOffsets();
     }
   }
 
@@ -134,6 +208,10 @@
 
   function handlePointerDown(e: PointerEvent) {
     if (e.button > 0) return;
+    measure();
+    // Content that fits keeps the host's ordinary click and drag behavior.
+    if (!overflowX && !overflowY) return;
+    e.preventDefault();
     dragging = true;
     dragPointerId = e.pointerId;
     lastPointerX = e.clientX;
@@ -152,6 +230,7 @@
     dragDistance += Math.abs(dx) + Math.abs(dy);
     offsetX += dx;
     offsetY += dy;
+    clampOffsets();
     lastPointerX = e.clientX;
     lastPointerY = e.clientY;
   }
@@ -197,7 +276,9 @@
   bind:this={viewportElement}
   class="relative h-full w-full touch-none select-none overflow-hidden {dragging
     ? 'cursor-grabbing'
-    : 'cursor-grab'}"
+    : pannable
+      ? 'cursor-grab'
+      : ''}"
   role="application"
   aria-label={m.ui_zoomPanViewport_viewport_ariaLabel()}
   tabindex="0"
@@ -210,6 +291,7 @@
   onkeydown={handleKeydown}
 >
   <div
+    bind:this={contentElement}
     class="flex h-full w-full items-center justify-center will-change-transform"
     style="transform: translate({offsetX}px, {offsetY}px) scale({scale}); transform-origin: 0 0;"
     data-testid="zoom-pan-content"

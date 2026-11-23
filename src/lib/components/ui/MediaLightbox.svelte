@@ -1,12 +1,18 @@
 <!-- @catalog-exempt: portal-mounted full-screen dialog covered by __tests__/MediaLightbox.test.ts; no catalog fixtures yet -->
 
+<script module lang="ts">
+  // A lightbox that asked another opener to take over, closed once that
+  // lightbox opens so the two swap in one frame.
+  let pendingHandoff: { source: symbol; close: () => void } | null = null;
+</script>
+
 <script lang="ts">
   import {
     getOwnedPopupContext,
     createOwnedPopupRegistration,
   } from '$lib/components/ui/owned-popup-context';
   import type { Snippet } from 'svelte';
-  import { fade } from '$lib/motion';
+  import { fade, type MotionTransitionConfig } from '$lib/motion';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
@@ -40,16 +46,50 @@
   }: Props = $props();
 
   const popupOwner = getOwnedPopupContext();
-  const registerOwnedPopup = createOwnedPopupRegistration(close);
+  const registerOwnedPopup = createOwnedPopupRegistration(() => close());
   let dialogElement: HTMLDivElement | null = $state(null);
   let closeButtonElement: HTMLButtonElement | null = $state(null);
+  const instanceId = Symbol('media-lightbox');
+  let skipFade = false;
 
-  function close() {
+  function close({ handoff = false } = {}) {
     if (!open) return;
+    skipFade = handoff;
+    if (pendingHandoff?.source === instanceId) pendingHandoff = null;
     open = false;
     onClose?.();
-    if (openerElement?.isConnected) openerElement.focus({ preventScroll: true });
+    if (!handoff && openerElement?.isConnected) openerElement.focus({ preventScroll: true });
   }
+
+  /**
+   * Open the media behind another opener. A different lightbox that opens in
+   * response replaces this one without a fade; a host that reuses this
+   * lightbox just swaps its content.
+   */
+  export function handOffTo(opener: HTMLElement) {
+    pendingHandoff = { source: instanceId, close: () => close({ handoff: true }) };
+    opener.scrollIntoView({ block: 'nearest' });
+    opener.click();
+  }
+
+  function lightboxFade(
+    node: Element,
+    _params: unknown,
+    options: { direction?: 'in' | 'out' | 'both' },
+  ): MotionTransitionConfig {
+    if (skipFade) return { duration: 0 };
+    return fade(node, { tier: 'moderate' }, options);
+  }
+
+  $effect.pre(() => {
+    if (!open) return;
+    const handoff = pendingHandoff;
+    skipFade = handoff !== null && handoff.source !== instanceId;
+    if (skipFade && handoff) {
+      pendingHandoff = null;
+      handoff.close();
+    }
+  });
 
   function handleBackdropClick(event: MouseEvent) {
     const target = event.target instanceof Element ? event.target : null;
@@ -81,7 +121,7 @@
 
   $effect(() => {
     if (!open) return;
-    return pushEscapeLayer(close);
+    return pushEscapeLayer(() => close());
   });
 
   $effect(() => {
@@ -105,7 +145,7 @@
       aria-modal="true"
       aria-label={ariaLabel}
       tabindex="-1"
-      transition:fade={{ tier: 'moderate' }}
+      transition:lightboxFade
     >
       <div use:registerOwnedPopup class="absolute right-4 top-4 z-[1002] flex items-center gap-1">
         {#if actions}
@@ -115,7 +155,7 @@
           variant="ghost"
           size="icon"
           class="text-white hover:bg-white/20 hover:text-white"
-          onclick={close}
+          onclick={() => close()}
           aria-label={closeLabel}
           bind:ref={closeButtonElement}
         >
