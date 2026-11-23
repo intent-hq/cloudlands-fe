@@ -2,7 +2,7 @@
  * Notification content builder — a PURE port of the main-process
  * `NotificationService.buildNotificationContent()` + specialist display-name
  * mapping (`src/features/notifications/main/notification.service.ts`), used by
- * the web-platform substitute (`web-notification-service.ts`).
+ * the web build's agent-idle notifications (`notifications-saga.ts`).
  *
  * The main-process original fetches the workspace title itself (via the
  * main-only workspaceService); renderer code must not import from a feature's

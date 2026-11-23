@@ -6,8 +6,8 @@
  * delivery paths route clicks identically:
  *   - Electron: the main-process NotificationService's `notification:navigate`
  *     renderer event (notification-ipc-service middleware).
- *   - Web: the browser Notification `click` handler in
- *     `web-notification-service.ts`.
+ *   - Web: the browser Notification `click` handler in the notifications
+ *     saga (`notifications-saga.ts`).
  *
  * Not under `utils/` because it is NOT dependency-light: it dispatches to the
  * app store and triggers SvelteKit navigation — it is a feature client module
