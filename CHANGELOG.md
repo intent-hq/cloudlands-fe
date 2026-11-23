@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.380.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.379.0...v2.380.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* **remote-machines:** retry a remote agent's failed setup from its card ([#4986](https://github.com/intent-hq/cloudlands-fe/issues/4986)) ([3b7fc03](https://github.com/intent-hq/cloudlands-fe/commit/3b7fc03528eef09255934f4fd361abbe659bcf04))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.282 ([#4991](https://github.com/intent-hq/cloudlands-fe/issues/4991)) ([a123225](https://github.com/intent-hq/cloudlands-fe/commit/a12322591d83a968a48a5a0654f499917ae9e999))
+
 ## [2.379.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.378.0...v2.379.0) (2026-11-23)
 
 
