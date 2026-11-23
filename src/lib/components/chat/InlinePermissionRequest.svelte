@@ -107,7 +107,7 @@
 </script>
 
 <div
-  class="inline-permission-request my-3 rounded-lg border border-border bg-card overflow-hidden"
+  class="inline-permission-request my-3 max-w-160 rounded-lg border border-border bg-card overflow-hidden"
   in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
 >
   <!-- Header with friendly question -->
