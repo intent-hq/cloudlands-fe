@@ -19,7 +19,7 @@ const BRAND_LIST_HEADERS = ['sec-ch-ua', 'sec-ch-ua-full-version-list'];
  * list (`Sec-CH-UA`, `Sec-CH-UA-Full-Version-List`). Electron sends only
  * Chromium and a placeholder brand, which Google reads as a non-Chrome browser.
  */
-export function withChromeBrand(brandList: string): string {
+function withChromeBrand(brandList: string): string {
   if (/"Google Chrome"/.test(brandList)) return brandList;
   const chromium = /"Chromium";v="([^"]+)"/.exec(brandList);
   if (!chromium) return brandList;

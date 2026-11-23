@@ -25,20 +25,22 @@ describe('browserPanelUserAgent', () => {
   });
 });
 
-describe('withChromeBrand', () => {
+const brands = (list: string) => withChromeBrandHeaders({ 'sec-ch-ua': list })['sec-ch-ua'];
+
+describe('withChromeBrandHeaders', () => {
   it('adds Google Chrome at the Chromium version', () => {
-    expect(withChromeBrand('"Chromium";v="142", "Not_A Brand";v="99"')).toBe(
+    expect(brands('"Chromium";v="142", "Not_A Brand";v="99"')).toBe(
       '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
     );
-    expect(withChromeBrand('"Not_A Brand";v="99.0.0.0", "Chromium";v="142.0.7444.59"')).toBe(
+    expect(brands('"Not_A Brand";v="99.0.0.0", "Chromium";v="142.0.7444.59"')).toBe(
       '"Not_A Brand";v="99.0.0.0", "Chromium";v="142.0.7444.59", "Google Chrome";v="142.0.7444.59"',
     );
   });
 
   it('leaves a list that already names Google Chrome, or lacks Chromium, unchanged', () => {
     const chrome = '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"';
-    expect(withChromeBrand(chrome)).toBe(chrome);
-    expect(withChromeBrand('"Not_A Brand";v="99"')).toBe('"Not_A Brand";v="99"');
+    expect(brands(chrome)).toBe(chrome);
+    expect(brands('"Not_A Brand";v="99"')).toBe('"Not_A Brand";v="99"');
   });
 
   it('rewrites only the brand-list headers, whatever their case', () => {
