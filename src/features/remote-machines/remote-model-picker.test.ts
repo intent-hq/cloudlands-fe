@@ -255,6 +255,61 @@ describe('buildMachineModelGroups', () => {
     expect(byKey['claude-code'].label).toBe('label:claude-code');
   });
 
+  it('names a reported model the catalog lacks through fallbackLabel', () => {
+    const [claude] = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'claude-code': [] },
+      catalogProfiles: [],
+      fallbackLabel: (id, provider) =>
+        provider === 'claude-code' && id === 'opus' ? 'Opus 5.5' : undefined,
+    });
+    expect(claude.options.map((option) => option.label)).toEqual([
+      'Opus 5.5',
+      'sonnet',
+      'only-on-machine',
+    ]);
+  });
+
+  it('prefers catalog labels over fallbackLabel and passes the base provider id', () => {
+    const seen: string[] = [];
+    const groups = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'claude-code': [{ value: 'opus', label: 'Opus 5.5' }] },
+      catalogProfiles: [],
+      fallbackLabel: (id, provider) => {
+        seen.push(`${provider}:${id}`);
+        return 'fallback';
+      },
+    });
+    expect(groups[0].options.map((option) => option.label)).toEqual([
+      'Opus 5.5',
+      'fallback',
+      'fallback',
+    ]);
+    expect(seen).toEqual(['claude-code:sonnet', 'claude-code:only-on-machine']);
+  });
+
+  it('passes the profile-qualified ref to fallbackLabel for a profile row', () => {
+    const compatible: ProviderProfileSummary = {
+      ...work,
+      remoteCompatible: true,
+      remoteIncompatibility: undefined,
+    };
+    const groups = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code@p-work'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: [compatible],
+      fallbackLabel: (id, provider) => `${provider}/${id}`,
+    });
+    expect(groups[0].options[0].label).toBe('claude-code@p-work/opus');
+  });
+
   it('offers a signed-out Default only when it brings credentials (unknown counts as yes)', () => {
     expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
     const build = (

@@ -20,7 +20,11 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { CloudMachineProvider, CloudProviderKind } from '$shared/types/cloud-machines';
+import type {
+  CloudDiskSettings,
+  CloudMachineProvider,
+  CloudProviderKind,
+} from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   collapsedSandboxGroups,
@@ -55,6 +59,7 @@ export type CloudMachinesPreviewState =
   | 'agent37-add-menu'
   | 'agent37-setup'
   | 'agent37-setup-vm'
+  | 'agent37-setup-disk-clamped'
   | 'agent37-setup-error'
   | 'agent37-providers'
   | 'vercel-add-menu'
@@ -77,6 +82,7 @@ const AGENT37_SCENES: readonly CloudMachinesPreviewState[] = [
   'agent37-add-menu',
   'agent37-setup',
   'agent37-setup-vm',
+  'agent37-setup-disk-clamped',
   'agent37-setup-error',
   'agent37-providers',
 ];
@@ -323,6 +329,20 @@ export const GROUPED_SANDBOXES: RemoteMachine[] = [
   ),
 ];
 
+/** What a backend with Northflank and Agent37 reports as `diskSettings`. */
+const DISK_SETTINGS: CloudDiskSettings = {
+  northflank: { minGiB: 6, maxGiB: 500, defaultGiB: 20 },
+  agent37: {
+    minGiB: 4,
+    maxGiB: 100,
+    defaultGiB: 20,
+    sizeMaxGiB: {
+      default: { '2x4': 12, '4x8': 20, '4x16': 40, '4x32': 80 },
+      vm: { '2x4': 100, '4x8': 100, '4x16': 100, '4x32': 100 },
+    },
+  },
+};
+
 /**
  * Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture.
  * Sandbox lists start open so scenes show their rows; `listsOpen: false` keeps the app's default.
@@ -380,6 +400,7 @@ export function setupCloudMachinesFixture(
               : agent37
                 ? ['e2b', 'northflank', 'agent37']
                 : ['e2b', 'northflank']) satisfies CloudProviderKind[],
+            diskSettings: DISK_SETTINGS,
           }
         : {}),
       providers: northflank

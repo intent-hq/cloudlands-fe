@@ -33,25 +33,8 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectAllNotes: readable<unknown[]>([]),
 }));
 
-const retired = vi.hoisted(() => ({ value: false }));
-
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentMessageById: readable<unknown>(undefined),
-  selectAgentGoal: readable<string | null>('Ship the goal strip'),
-  selectAgentRetired: Object.assign(
-    () => ({
-      subscribe: (run: (v: boolean) => void) => {
-        run(retired.value);
-        return () => {};
-      },
-    }),
-    { select: () => retired.value },
-  ),
-}));
-
-vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  selectConversationGoalSupported: readable<boolean>(true),
 }));
 
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
@@ -75,7 +58,7 @@ function goalRow(metadata: Record<string, unknown>, text = 'Goal set: x'): Agent
 }
 
 describe('ChatMessage - goal_command notice', () => {
-  it('renders a set notice as an operational row, not a message bubble', () => {
+  it('renders a set notice as a centered inline divider, not a message bubble', () => {
     const { container } = render(ChatMessage, {
       props: {
         message: goalRow({ action: 'set', goal: 'Ship the goal strip' }),
@@ -83,13 +66,21 @@ describe('ChatMessage - goal_command notice', () => {
         agentId: 'agent-1',
       },
     });
-    expect(container.querySelector('.goal-notice')).toBeTruthy();
+    const notice = container.querySelector('.goal-notice');
+    expect(notice).toBeTruthy();
     expect(container.querySelector('[data-message-role]')).toBeNull();
+    // A row holding the expand control is not a live region.
+    expect(notice!.querySelector('[role="status"]')).toBeNull();
+    // The full text is on hover of the one-line label.
+    const toggle = screen.getByRole('button', {
+      name: m.chat_goalNotice_set_label({ goal: 'Ship the goal strip' }),
+    });
+    expect(toggle.getAttribute('title')).toBe(
+      m.chat_goalNotice_set_label({ goal: 'Ship the goal strip' }),
+    );
     expect(screen.getByTestId('goal-notice-text').textContent).toBe(
       m.chat_goalNotice_set_label({ goal: 'Ship the goal strip' }),
     );
-    // Only a "Current goal" row offers Edit
-    expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
   });
 
   it('expands a goal notice to the full goal with clickable links', async () => {
@@ -129,6 +120,8 @@ describe('ChatMessage - goal_command notice', () => {
     expect(cleared.getByTestId('goal-notice-text').textContent).toBe(
       m.chat_goalNotice_cleared_label(),
     );
+    // Without a toggle the divider announces like the model-change notices.
+    expect(cleared.getByRole('status').textContent?.trim()).toBe(m.chat_goalNotice_cleared_label());
     cleared.unmount();
 
     render(ChatMessage, {
@@ -137,7 +130,7 @@ describe('ChatMessage - goal_command notice', () => {
     expect(screen.getByTestId('goal-notice-text').textContent).toBe(m.chat_goalNotice_none_label());
   });
 
-  it('offers Edit on a "Current goal" row of a writable conversation', () => {
+  it('never offers Edit, even on a "Current goal" row of a writable conversation', () => {
     render(ChatMessage, {
       props: {
         message: goalRow({ action: 'shown', goal: 'Ship the goal strip' }),
@@ -146,37 +139,13 @@ describe('ChatMessage - goal_command notice', () => {
         workspace: { id: 'ws-1' } as never,
       },
     });
-    expect(screen.getByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeTruthy();
-  });
-
-  it('hides Edit on a read-only conversation', () => {
-    render(ChatMessage, {
-      props: {
-        message: goalRow({ action: 'shown', goal: 'Ship the goal strip' }),
-        isStreaming: false,
-        agentId: 'agent-1',
-        workspace: { id: 'ws-1' } as never,
-        readOnly: true,
-      },
-    });
+    // The goal strip owns Edit and Remove; transcript notices only report.
+    expect(
+      screen.getByRole('button', {
+        name: m.chat_goalNotice_current_label({ goal: 'Ship the goal strip' }),
+      }),
+    ).toBeTruthy();
     expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
-  });
-
-  it('hides Edit on a retired conversation even when the host passes no readOnly', () => {
-    retired.value = true;
-    try {
-      render(ChatMessage, {
-        props: {
-          message: goalRow({ action: 'shown', goal: 'Ship the goal strip' }),
-          isStreaming: false,
-          agentId: 'agent-1',
-          workspace: { id: 'ws-1' } as never,
-        },
-      });
-      expect(screen.queryByRole('button', { name: m.chat_goalStrip_edit_ariaLabel() })).toBeNull();
-    } finally {
-      retired.value = false;
-    }
   });
 
   it('falls back to the row text for an unknown action', () => {

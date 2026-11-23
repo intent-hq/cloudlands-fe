@@ -52,6 +52,7 @@
       'agent37-add-menu': sceneState('agent37-add-menu'),
       'agent37-setup': sceneState('agent37-setup'),
       'agent37-setup-vm': sceneState('agent37-setup-vm'),
+      'agent37-setup-disk-clamped': sceneState('agent37-setup-disk-clamped'),
       'agent37-setup-error': sceneState('agent37-setup-error'),
       'agent37-providers': sceneState('agent37-providers'),
       'vercel-add-menu': sceneState('vercel-add-menu'),
@@ -202,16 +203,19 @@
               apiKey: 'preview-key-not-real',
               instanceType: 'vm',
               region: 'ap-south',
+              diskGiB: '60',
             }
-          : scene === 'vercel-setup-image' || scene === 'vercel-setup-error'
-            ? {
-                name: 'Vercel Pro',
-                apiKey: 'preview-token-not-real',
-                teamId: 'team_preview0000000000000000',
-                projectId: 'prj_preview000000000000000000',
-                ...(scene === 'vercel-setup-image' ? { image: 'acme/images/intent-node' } : {}),
-              }
-            : undefined}
+          : scene === 'agent37-setup-disk-clamped'
+            ? { name: 'Agent37', apiKey: 'preview-key-not-real', diskGiB: '60' }
+            : scene === 'vercel-setup-image' || scene === 'vercel-setup-error'
+              ? {
+                  name: 'Vercel Pro',
+                  apiKey: 'preview-token-not-real',
+                  teamId: 'team_preview0000000000000000',
+                  projectId: 'prj_preview000000000000000000',
+                  ...(scene === 'vercel-setup-image' ? { image: 'acme/images/intent-node' } : {}),
+                }
+              : undefined}
       initialCloudEdit={scene === 'entries-edit' ? 'e2b' : undefined}
       initialAddMenuOpen={scene === 'add-menu' ||
         scene === 'add-cloud-menu' ||

@@ -8,7 +8,7 @@
    * distinct from user/assistant bubbles — the row is informational and was
    * never sent to the provider.
    */
-  import Fa from 'svelte-fa';
+  import ChatInlineDivider from './ChatInlineDivider.svelte';
   import { toStore } from 'svelte/store';
   import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
   import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -47,11 +47,6 @@
   });
 </script>
 
-<div class="provider-rehomed-notice my-4 flex w-full min-w-0 items-center gap-3" role="status">
-  <div class="h-px min-w-4 flex-1 bg-border"></div>
-  <span class="flex min-w-0 shrink items-start gap-2 text-left text-xs text-muted-foreground">
-    <Fa icon={faArrowRightArrowLeft} class="mt-0.5 h-3 w-3 flex-shrink-0" />
-    <span class="min-w-0 break-words">{label}</span>
-  </span>
-  <div class="h-px min-w-4 flex-1 bg-border"></div>
-</div>
+<ChatInlineDivider icon={faArrowRightArrowLeft} class="provider-rehomed-notice">
+  <span class="min-w-0 break-words">{label}</span>
+</ChatInlineDivider>

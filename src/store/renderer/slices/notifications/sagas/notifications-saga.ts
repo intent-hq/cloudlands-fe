@@ -211,9 +211,11 @@ function* showBrowserNotification(
       }
       const payload = discussion
         ? { workspaceId, discussion }
-        : workspaceId === CHIEF_WORKSPACE_ID
-          ? { workspaceId, chief: true, agentId }
-          : { workspaceId };
+        : {
+            workspaceId,
+            ...(workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+            ...(agentId ? { agentId } : {}),
+          };
       void handleNotificationNavigate(payload);
       notification.close();
     };

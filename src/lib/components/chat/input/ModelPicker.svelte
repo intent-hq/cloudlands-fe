@@ -1625,6 +1625,7 @@
         defaultHasOverrides: $defaultHasOverrides$,
         useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
         allowAutoPick: !agentId,
+        fallbackLabel: (modelId, providerId) => getModelLabel(modelId, providerId),
       });
     }
     return buildGroupedModelOptions({

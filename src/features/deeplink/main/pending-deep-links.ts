@@ -68,14 +68,19 @@ export function deliverNotificationNavigation(
     contents.send('notification:navigate', navigation);
     return;
   }
-  queueDeepLinkForRenderer(contents, {
+  queueDeepLinkForRenderer(contents, notificationDeepLink(navigation));
+}
+
+/** A notification click's navigation as a deep link the renderer pulls from its queue. */
+export function notificationDeepLink(navigation: NotificationNavigation): DeepLinkAction {
+  return {
     type: 'notification',
     params: {
       workspaceId: navigation.workspaceId,
       ...(navigation.chief ? { chief: 'true' } : {}),
       ...(navigation.agentId ? { agentId: navigation.agentId } : {}),
     },
-  });
+  };
 }
 
 /**

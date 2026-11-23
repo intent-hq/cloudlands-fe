@@ -227,7 +227,7 @@ describe('notification sagas', () => {
       title: 'My Space - Implementor',
       body: 'Finished',
       inApp: true,
-      navigateTarget: { workspaceId: 'ws-1' },
+      navigateTarget: { workspaceId: 'ws-1', agentId: 'agent-1' },
     });
     await flush();
     expect(mocks.sound).toHaveBeenCalledTimes(1);
@@ -239,7 +239,7 @@ describe('notification sagas', () => {
     expect(title).toBe('My Space - Implementor');
     expect(options.description).toBe('Finished');
     options.action?.onClick();
-    expect(mocks.navigate.mock.calls).toEqual([[{ workspaceId: 'ws-1' }]]);
+    expect(mocks.navigate.mock.calls).toEqual([[{ workspaceId: 'ws-1', agentId: 'agent-1' }]]);
     task.cancel();
     await task.toPromise();
   });
@@ -369,7 +369,7 @@ describe('notification sagas', () => {
     MockNotification.instances[0].onclick?.();
     await flush();
     expect(focus).toHaveBeenCalledTimes(1);
-    expect(mocks.navigate.mock.calls).toEqual([[{ workspaceId: 'ws-1' }]]);
+    expect(mocks.navigate.mock.calls).toEqual([[{ workspaceId: 'ws-1', agentId: 'agent-1' }]]);
     expect(MockNotification.instances[0].close.mock.calls).toEqual([[]]);
     task.cancel();
     await task.toPromise();

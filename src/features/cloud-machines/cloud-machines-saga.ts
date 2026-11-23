@@ -9,8 +9,10 @@ import { call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redu
 import { m } from '$shared/paraglide/messages.js';
 import {
   isCloudProviderKind,
+  parseCloudDiskSettings,
   parseCloudMachineError,
   parseCloudMachineProvider,
+  type CloudDiskSettings,
   type CloudMachineConfigureInput,
   type CloudMachineProvider,
   type CloudProviderKind,
@@ -63,6 +65,13 @@ function secretParams(
     ...(provider === 'agent37' && input.instanceType ? { instanceType: input.instanceType } : {}),
     ...(provider === 'agent37' && input.region ? { region: input.region } : {}),
   };
+}
+
+/** `diskGiB` only for a kind the backend reports a disk setting for; any other is `invalid-params`. */
+function diskParams(provider: CloudProviderKind, input: CloudMachineConfigureInput) {
+  return input.diskGiB !== undefined && store.state.cloudMachines.diskSettings[provider]
+    ? { diskGiB: input.diskGiB }
+    : {};
 }
 
 /** The provider of an entry: its own when saved, else the one asked for. */
@@ -122,11 +131,13 @@ async function readList(withKinds: boolean): Promise<{
   providers: CloudMachineProvider[];
   machines: RemoteMachine[];
   providerKinds: CloudProviderKind[];
+  diskSettings: CloudDiskSettings;
 }> {
   const result = await backendRequest<{
     providers?: unknown;
     machines?: unknown;
     providerKinds?: unknown;
+    diskSettings?: unknown;
   }>('cloudMachines.list');
   // `providerKinds` counts only with `cloudMachineProviders: 1`; else E2B alone.
   const kinds =
@@ -135,6 +146,7 @@ async function readList(withKinds: boolean): Promise<{
       : [];
   return {
     providerKinds: kinds.length > 0 ? kinds : ['e2b'],
+    diskSettings: withKinds ? parseCloudDiskSettings(result?.diskSettings) : {},
     providers: Array.isArray(result?.providers)
       ? result.providers.flatMap((value) => parseCloudMachineProvider(value) ?? [])
       : [],
@@ -189,6 +201,7 @@ function* configure(
       ...(entries && input.cloudMachineId ? { cloudMachineId: input.cloudMachineId } : {}),
       ...(entries && input.name ? { name: input.name } : {}),
       ...secretParams(kind, input, entries),
+      ...diskParams(kind, input),
       ...(input.size ? { size: input.size } : {}),
       ...(input.idlePauseMinutes !== undefined ? { idlePauseMinutes: input.idlePauseMinutes } : {}),
       ...(input.pausedDeleteDays !== undefined ? { pausedDeleteDays: input.pausedDeleteDays } : {}),

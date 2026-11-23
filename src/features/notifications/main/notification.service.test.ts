@@ -997,7 +997,7 @@ describe('NotificationService viewing gate (focused window on the workspace)', (
     expect(focused.webContents.send).toHaveBeenCalledWith(
       'notification:show',
       expect.objectContaining({
-        navigateTarget: { workspaceId: 'workspace-1' },
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
       }),
     );
   });
@@ -1090,7 +1090,7 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
         expect.objectContaining({
           title: expect.any(String),
           body: expect.any(String),
-          navigateTarget: { workspaceId: 'workspace-1' },
+          navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
         }),
       ],
     ]);
@@ -1117,7 +1117,9 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
     expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
     expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
       'notification:show',
-      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      }),
     );
     const backgroundCalls = backgroundWindow.webContents.send.mock.calls.filter(
       ([channel]) => channel === 'notification:show',
@@ -1146,7 +1148,9 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
 
     expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
       'notification:show',
-      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      }),
     );
     const viewCalls = hiddenView.send.mock.calls.filter(
       ([channel]) => channel === 'notification:show',
@@ -1191,7 +1195,7 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
     expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
       'notification:show',
       expect.objectContaining({
-        navigateTarget: { workspaceId: 'workspace-closed' },
+        navigateTarget: { workspaceId: 'workspace-closed', agentId: 'agent-self' },
       }),
     );
   });
@@ -1304,7 +1308,7 @@ describe('NotificationService on Intent OS (in-app notifications)', () => {
       expect.objectContaining({
         title: expect.any(String),
         inApp: true,
-        navigateTarget: { workspaceId: 'workspace-1' },
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
       }),
     ]);
   });
@@ -1668,6 +1672,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     expect(regularWindow.focus).toHaveBeenCalled();
     expect(regularWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
+      agentId: 'agent-self',
     });
     expect(hudWindow.focus).not.toHaveBeenCalled();
     expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
@@ -1694,6 +1699,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
 
     expect(workspaceWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
+      agentId: 'agent-self',
     });
     expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
       'notification:navigate',
@@ -1834,6 +1840,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     );
     expect(otherWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
+      agentId: 'agent-self',
     });
   });
 
@@ -1863,6 +1870,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     expect(regularWindow.focus).toHaveBeenCalled();
     expect(regularWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
+      agentId: 'agent-self',
     });
     expect(hudWindow.focus).not.toHaveBeenCalled();
     expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
@@ -2308,6 +2316,7 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
     expect(onlyWindow.focus).toHaveBeenCalled();
     expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-closed',
+      agentId: 'agent-self',
     });
   });
 });
@@ -2415,7 +2424,7 @@ describe('NotificationService chief-of-staff special-case', () => {
     });
   });
 
-  it('non-chief clicks keep the bare { workspaceId } payload (regression)', async () => {
+  it('non-chief clicks open the agent that went idle', async () => {
     const onlyWindow = createMockWindow(24);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
 
@@ -2436,6 +2445,7 @@ describe('NotificationService chief-of-staff special-case', () => {
 
     expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
+      agentId: 'agent-self',
     });
   });
 });
@@ -2799,7 +2809,7 @@ describe('NotificationService click-time window targeting (multiple windows, rem
 
     expect(windowB.focus).toHaveBeenCalled();
     expect(navigateCalls(windowB)).toEqual([
-      ['notification:navigate', { workspaceId: 'workspace-1' }],
+      ['notification:navigate', { workspaceId: 'workspace-1', agentId: 'agent-self' }],
     ]);
     expect(windowA.focus).not.toHaveBeenCalled();
     expect(navigateCalls(windowA)).toEqual([]);
@@ -2822,7 +2832,7 @@ describe('NotificationService click-time window targeting (multiple windows, rem
 
     expect(viewingWindow.focus).toHaveBeenCalled();
     expect(navigateCalls(viewingWindow)).toEqual([
-      ['notification:navigate', { workspaceId: 'workspace-1' }],
+      ['notification:navigate', { workspaceId: 'workspace-1', agentId: 'agent-self' }],
     ]);
     expect(backgroundTabWindow.focus).not.toHaveBeenCalled();
     expect(navigateCalls(backgroundTabWindow)).toEqual([]);
@@ -2845,7 +2855,7 @@ describe('NotificationService click-time window targeting (multiple windows, rem
 
     expect(remoteWindow.focus).toHaveBeenCalled();
     expect(navigateCalls(remoteWindow)).toEqual([
-      ['notification:navigate', { workspaceId: 'remote-workspace' }],
+      ['notification:navigate', { workspaceId: 'remote-workspace', agentId: 'agent-self' }],
     ]);
     expect(localWindow.focus).not.toHaveBeenCalled();
     expect(navigateCalls(localWindow)).toEqual([]);
@@ -3090,7 +3100,9 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
 
     expect(mockNotificationInstances.length).toBe(0);
     expect(showPayloads(remoteWindow)).toEqual([
-      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      }),
     ]);
     expect(showPayloads(localWindow)).toEqual([]);
   });
@@ -3151,7 +3163,9 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     await service.handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
 
     expect(showPayloads(remoteWindow)).toEqual([
-      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+      expect.objectContaining({
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      }),
     ]);
     expect(showPayloads(localWindow)).toEqual([]);
   });
@@ -3276,7 +3290,7 @@ describe('NotificationService in-app popup host routing (notification:show)', ()
     expect(child.send).toHaveBeenCalledExactlyOnceWith(
       'notification:show',
       expect.objectContaining({
-        navigateTarget: { workspaceId: 'workspace-1' },
+        navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
       }),
     );
     expect(window.webContents.send).not.toHaveBeenCalled();
@@ -3392,12 +3406,6 @@ describe('NotificationService routing by frame (one machine in several frames)',
     return { window, views, renderer, show };
   }
   type Frame = ReturnType<typeof makeFrame>;
-
-  /** `contents` is the view of REMOTE_ID that just joined `window`, now on screen. */
-  function showJoined(window: unknown, contents: MockContents): void {
-    bindMachineViewToBackend(window as never, contents as never, REMOTE_ID);
-    setShownMachineView(window as never, contents as never);
-  }
 
   /** Per-renderer workspace registry behind the system.ipc fakes. */
   type Entry = { contents: MockContents; backendId: string; workspaceId: string; viewing: boolean };
@@ -3544,7 +3552,9 @@ describe('NotificationService routing by frame (one machine in several frames)',
 
       expect(mockNotificationInstances).toHaveLength(0);
       expect(payloads(frame.renderer(REMOTE_ID), 'notification:show')).toEqual([
-        expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+        expect.objectContaining({
+          navigateTarget: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+        }),
       ]);
       expect(payloads(frame.window.webContents, 'notification:show')).toEqual([]);
       const sound = payloads(other.renderer(REMOTE_ID), 'notification:show');
@@ -3617,7 +3627,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       expect(own.window.focus).not.toHaveBeenCalled();
       expect(selectMachineInFrameMock).toHaveBeenCalledWith(railed.window, REMOTE_ID);
       expect(payloads(railed.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
-        { workspaceId: 'workspace-1' },
+        { workspaceId: 'workspace-1', agentId: 'agent-self' },
       ]);
       expect(payloads(railed.window.webContents, 'notification:navigate')).toEqual([]);
       expect(getActivationFocusClaim()).toBe(railed.window);
@@ -3637,7 +3647,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       // The frame already shows the machine: nothing to select.
       expect(selectMachineInFrameMock).not.toHaveBeenCalled();
       expect(payloads(second.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
-        { workspaceId: 'workspace-1' },
+        { workspaceId: 'workspace-1', agentId: 'agent-self' },
       ]);
     });
 
@@ -3653,7 +3663,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       await clickBanner();
       expect(second.window.focus).toHaveBeenCalled();
       expect(payloads(second.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
-        { workspaceId: 'workspace-1' },
+        { workspaceId: 'workspace-1', agentId: 'agent-self' },
       ]);
 
       // The user focuses another frame holding the machine while the banner waits.
@@ -3690,7 +3700,7 @@ describe('NotificationService routing by frame (one machine in several frames)',
       markReady(true);
       await flush();
       expect(payloads(frame.renderer(REMOTE_ID), 'notification:navigate')).toEqual([
-        { workspaceId: 'workspace-1' },
+        { workspaceId: 'workspace-1', agentId: 'agent-self' },
       ]);
       expect(payloads(frame.window.webContents, 'notification:navigate')).toEqual([]);
     });
@@ -3730,32 +3740,11 @@ describe('NotificationService routing by frame (one machine in several frames)',
       // A renderer still starting has no listener: a push would be dropped.
       expect(payloads(view, 'notification:navigate')).toEqual([]);
       expect(consumePendingDeepLinks(view.id).actions).toEqual([
-        { type: 'notification', params: { workspaceId: 'workspace-1' } },
+        { type: 'notification', params: { workspaceId: 'workspace-1', agentId: 'agent-self' } },
       ]);
     });
 
-    it('rail on: queues the Assistant for a joined machine that is not ready in time', async () => {
-      const frame = makeFrame(1, LOCAL_ID);
-      setFrames(frame);
-      const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => {
-        showJoined(window, added);
-        return { window, contents: added, ready: Promise.resolve(false) };
-      });
-
-      await clickBanner(CHIEF_WORKSPACE_ID);
-      await flush();
-
-      expect(payloads(added, 'notification:navigate')).toEqual([]);
-      expect(consumePendingDeepLinks(added.id).actions).toEqual([
-        {
-          type: 'notification',
-          params: { workspaceId: CHIEF_WORKSPACE_ID, chief: 'true', agentId: 'agent-self' },
-        },
-      ]);
-    });
-
-    it('rail on: adds a machine no frame holds to the most recently focused frame', async () => {
+    it('rail on: adds a machine no frame holds to the most recently focused frame, queuing the agent for it', async () => {
       const older = makeFrame(1, LOCAL_ID);
       const recent = makeFrame(2, 'remote-2');
       setFrames(older, recent);
@@ -3765,52 +3754,65 @@ describe('NotificationService routing by frame (one machine in several frames)',
 
       await clickBanner();
 
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        recent.window,
-        REMOTE_ID,
-        'workspace-1',
-      );
+      // The rail queues the click on whichever view ends up showing the machine.
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(recent.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: 'workspace-1', agentId: 'agent-self' },
+      });
+      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
       expect(createWindowForSessionMock).not.toHaveBeenCalled();
     });
 
-    it('rail on: opens the Assistant in a machine no frame held, once it joins the recent frame', async () => {
+    it('rail on: a notification with no agent still opens its workspace in the joined machine', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
-      const added = makeContents();
-      selectMachineInFrameMock.mockImplementation((window: unknown) => {
-        showJoined(window, added);
-        return { window, contents: added, ready: Promise.resolve(true) };
+      const service = new NotificationService();
+      (service as any).showNotification(
+        { title: 'T', body: 'B' },
+        'workspace-1',
+        undefined,
+        REMOTE_ID,
+      );
+      mockNotificationInstances[0].handlers['click']();
+      await flush();
+
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(frame.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: 'workspace-1' },
       });
+    });
+
+    it('rail on: queues the Assistant thread for a machine no frame held', async () => {
+      const frame = makeFrame(1, LOCAL_ID);
+      setFrames(frame);
 
       await clickBanner(CHIEF_WORKSPACE_ID);
 
-      // The Assistant has no workspace page: the machine joins on its home.
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        frame.window,
-        REMOTE_ID,
-        undefined,
-      );
-      expect(selectMachineInFrameMock).toHaveBeenCalledWith(frame.window, REMOTE_ID);
-      expect(payloads(added, 'notification:navigate')).toEqual([
-        { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
-      ]);
+      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(frame.window, REMOTE_ID, {
+        type: 'notification',
+        params: { workspaceId: CHIEF_WORKSPACE_ID, chief: 'true', agentId: 'agent-self' },
+      });
+      expect(selectMachineInFrameMock).not.toHaveBeenCalled();
       expect(createWindowForSessionMock).not.toHaveBeenCalled();
     });
 
-    it('rail on: opens a new frame when the recent frame cannot take the machine', async () => {
+    it('rail on: opens a new frame, still with the agent, when the recent frame cannot take the machine', async () => {
       const frame = makeFrame(1, LOCAL_ID);
       setFrames(frame);
       openInvitedMachineInWindowMock.mockResolvedValue(false);
+      let opened: Frame | undefined;
+      createWindowForSessionMock.mockImplementation(async () => {
+        opened = makeFrame(9, REMOTE_ID);
+        return opened.window;
+      });
 
       await clickBanner();
 
-      expect(openInvitedMachineInWindowMock).toHaveBeenCalledWith(
-        frame.window,
-        REMOTE_ID,
-        'workspace-1',
-      );
       expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
       expect(createWindowForSessionMock.mock.calls[0][2]).toBe(REMOTE_ID);
+      expect(consumePendingDeepLinks(opened!.renderer(REMOTE_ID).id).actions).toEqual([
+        { type: 'notification', params: { workspaceId: 'workspace-1', agentId: 'agent-self' } },
+      ]);
     });
 
     it('rail off: opens a machine no frame holds in a new frame, as before', async () => {
@@ -3819,6 +3821,11 @@ describe('NotificationService routing by frame (one machine in several frames)',
       setFrames(frame);
       focus(frame);
       focus(null);
+      let opened: Frame | undefined;
+      createWindowForSessionMock.mockImplementation(async () => {
+        opened = makeFrame(9, REMOTE_ID);
+        return opened.window;
+      });
 
       await clickBanner();
 
@@ -3828,6 +3835,10 @@ describe('NotificationService routing by frame (one machine in several frames)',
       expect(session).toEqual(expect.objectContaining({ route: '/workspace/workspace-1' }));
       expect(backendId).toBe(REMOTE_ID);
       expect(frame.window.focus).not.toHaveBeenCalled();
+      // The new frame's renderer opens the agent once it starts.
+      expect(consumePendingDeepLinks(opened!.renderer(REMOTE_ID).id).actions).toEqual([
+        { type: 'notification', params: { workspaceId: 'workspace-1', agentId: 'agent-self' } },
+      ]);
     });
 
     it('keeps the Assistant id per host when picking the frame', async () => {
