@@ -2,8 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { store } from '$store/renderer/store';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
-import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
-import type { SetGoalOutcome } from './utils/goal-command';
+import {
+  bulkUpsertSessions,
+  updateSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { GoalCommandOutcome, SetGoalOutcome } from './utils/goal-command';
 
 const agents = vi.hoisted(() => ({ setGoal: vi.fn(), sendGoalCommand: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { agents } }));
@@ -90,5 +93,50 @@ describe('goal requests reconcile goalSetBy from the result', () => {
     await requestGoalCommand(WS, AGENT, '/goal By an unknown principal');
     expect(session().goal).toBe('By an unknown principal');
     expect(session().goalSetBy).toBeUndefined();
+  });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  it('ignores a delayed /goal response once a newer goal projection has landed', async () => {
+    seed('X', alice);
+    const pending = deferred<GoalCommandOutcome>();
+    agents.sendGoalCommand.mockReturnValue(pending.promise);
+    const request = requestGoalCommand(WS, AGENT, '/goal');
+    // Bob's X -> Y -> X writes arrive as agent:updated pushes meanwhile.
+    store.dispatch(updateSession(AGENT, { goal: 'Y', goalSetBy: bob }));
+    store.dispatch(updateSession(AGENT, { goal: 'X', goalSetBy: bob }));
+    pending.resolve({ ok: true, command: { action: 'shown', goal: 'X', goalSetBy: alice } });
+    await request;
+    expect(session().goal).toBe('X');
+    expect(session().goalSetBy).toEqual(bob);
+  });
+
+  it('ignores a delayed setGoal response after same-value pushes (A -> B -> A)', async () => {
+    seed('X', alice);
+    const pending = deferred<SetGoalOutcome>();
+    agents.setGoal.mockReturnValue(pending.promise);
+    const request = requestSetGoal(WS, AGENT, 'Z');
+    store.dispatch(updateSession(AGENT, { goal: 'Y', goalSetBy: bob }));
+    store.dispatch(updateSession(AGENT, { goal: 'X', goalSetBy: alice }));
+    pending.resolve({ ok: true, result: { action: 'updated', goal: 'Z', goalSetBy: bob } });
+    await request;
+    expect(session().goal).toBe('X');
+    expect(session().goalSetBy).toEqual(alice);
+  });
+
+  it('ignores a delayed response after a session read changed the goal', async () => {
+    seed('X', alice);
+    const pending = deferred<SetGoalOutcome>();
+    agents.setGoal.mockReturnValue(pending.promise);
+    const request = requestSetGoal(WS, AGENT, 'Z');
+    seed('W', bob);
+    pending.resolve({ ok: true, result: { action: 'updated', goal: 'Z', goalSetBy: alice } });
+    await request;
+    expect(session().goal).toBe('W');
+    expect(session().goalSetBy).toEqual(bob);
   });
 });
