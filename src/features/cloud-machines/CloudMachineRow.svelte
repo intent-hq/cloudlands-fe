@@ -285,6 +285,6 @@
       {onClose}
     />
   {:else if sandboxes.length > 0}
-    <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
+    <CloudSandboxList {sandboxes} entryId={entry.id} entryName={entry.name} provider={kind} {now} />
   {/if}
 </article>

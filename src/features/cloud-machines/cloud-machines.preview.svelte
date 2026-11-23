@@ -10,7 +10,8 @@
     | 'start-on'
     | 'start-on-needs-profile'
     | 'start-on-entries'
-    | 'start-on-providers';
+    | 'start-on-providers'
+    | 'lists-collapsed';
   interface Props {
     scene?: Scene;
   }
@@ -58,6 +59,10 @@
       'vercel-setup-image': sceneState('vercel-setup-image'),
       'vercel-setup-error': sceneState('vercel-setup-error'),
       'vercel-providers': sceneState('vercel-providers'),
+      'lists-collapsed': {
+        props: { scene: 'lists-collapsed' },
+        setup: () => setup('agent37-providers', { listsOpen: false }),
+      },
       'start-on-providers': {
         props: { scene: 'start-on-providers' },
         setup: () => setup('providers'),

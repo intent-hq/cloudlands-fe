@@ -11,6 +11,7 @@ import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import {
   AGENT37_ENTRY,
   E2B_PROVIDER,
+  E2B_SANDBOXES,
   GROUPED_SANDBOXES,
   TEAM_ENTRY,
   VERCEL_ENTRY,
@@ -34,9 +35,9 @@ const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('$features/desktop/desktop-agent-navigation', () => ({ navigateToDesktopAgent }));
 
 let restore: (() => void) | null = null;
-function seed(state: CloudMachinesPreviewState) {
+function seed(state: CloudMachinesPreviewState, options?: { listsOpen?: boolean }) {
   store.init();
-  restore = setupCloudMachinesFixture(state);
+  restore = setupCloudMachinesFixture(state, options);
   vi.spyOn(store, 'dispatch');
 }
 
@@ -228,7 +229,7 @@ describe('sandboxes grouped by workspace', () => {
       row.getAttribute('data-cloud-sandbox'),
     );
   const list = (sandboxes = GROUPED_SANDBOXES) =>
-    render(CloudSandboxList, { sandboxes, entryName: E2B_PROVIDER.name });
+    render(CloudSandboxList, { sandboxes, entryId: E2B_PROVIDER.id, entryName: E2B_PROVIDER.name });
 
   it('puts groups with running sandboxes first, then running rows, newest first', () => {
     seed('sandboxes-grouped');
@@ -248,7 +249,7 @@ describe('sandboxes grouped by workspace', () => {
     seed('sandboxes-grouped');
     const view = list();
     const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
-    expect(section.textContent).toContain('4 running, 2 paused');
+    expect(section.textContent).toContain('Sandboxes · 4 running · 2 paused');
     const row = view.container.querySelector('[data-cloud-sandbox="sb-2"]') as HTMLElement;
     expect(row.textContent!.replace(/\s+/g, ' ').trim()).toBe(
       'Docs sweeper · Sam · 1 h 12 min Running',
@@ -335,6 +336,86 @@ describe('sandboxes grouped by workspace', () => {
     expect(fallback.container.querySelector('[data-cloud-relay]')?.textContent).toBe(
       'Default relays',
     );
+  });
+});
+
+describe('sandbox list under a cloud runner', () => {
+  const collapsed = { listsOpen: false };
+  const row = (view: ReturnType<typeof render>, id: string) =>
+    view.container.querySelector(`[data-cloud-machine-row="${id}"]`) as HTMLElement;
+  const toggle = (root: HTMLElement) =>
+    root.querySelector('[data-cloud-sandboxes-toggle]') as HTMLButtonElement;
+  const summary = (root: HTMLElement) => toggle(root).textContent!.replace(/\s+/g, ' ').trim();
+  const rowCount = (root: HTMLElement) => root.querySelectorAll('[data-cloud-sandbox]').length;
+  const e2bRow = () =>
+    render(CloudMachineRow, {
+      entry: E2B_PROVIDER,
+      editing: false,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+
+  it('is collapsed by default and shows the running and paused counts', () => {
+    seed('connected', collapsed);
+    const view = e2bRow();
+    const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
+    expect(toggle(section).getAttribute('aria-expanded')).toBe('false');
+    expect(summary(section)).toBe('Sandboxes · 2 running · 1 paused');
+    expect(rowCount(section)).toBe(0);
+    expect(section.querySelector('[data-cloud-sandbox-group]')).toBeNull();
+    expect(section.querySelector('[data-cloud-relay]')).not.toBeNull();
+  });
+
+  it('expands and collapses, and remembers it per runner for the session', async () => {
+    seed('entries', collapsed);
+    const view = render(DevicesSettings);
+    await fireEvent.click(toggle(row(view, 'e2b')));
+    expect(toggle(row(view, 'e2b')).getAttribute('aria-expanded')).toBe('true');
+    expect(rowCount(row(view, 'e2b'))).toBe(3);
+    expect(rowCount(row(view, TEAM_ENTRY.id))).toBe(0);
+
+    view.unmount();
+    const again = render(DevicesSettings);
+    expect(rowCount(row(again, 'e2b'))).toBe(3);
+    expect(toggle(row(again, TEAM_ENTRY.id)).getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle(row(again, 'e2b')));
+    expect(rowCount(row(again, 'e2b'))).toBe(0);
+  });
+
+  it('keeps each workspace group collapsible once the list is open', async () => {
+    seed('connected', collapsed);
+    const view = e2bRow();
+    await fireEvent.click(toggle(view.container));
+    const group = view.container.querySelector('[data-cloud-sandbox-group]') as HTMLElement;
+    await fireEvent.click(group.querySelector('[data-cloud-sandbox-group-toggle]')!);
+    expect(group.querySelectorAll('[data-cloud-sandbox]')).toHaveLength(0);
+    expect(rowCount(view.container)).toBe(2);
+  });
+
+  it('leaves out a zero count, and every count when none run or are paused', () => {
+    seed('connected', collapsed);
+    const paused = E2B_SANDBOXES.filter((machine) => machine.cloud?.state === 'paused');
+    const onlyPaused = render(CloudSandboxList, { sandboxes: paused, entryId: 'e2b' });
+    expect(summary(onlyPaused.container)).toBe('Sandboxes · 1 paused');
+    onlyPaused.unmount();
+
+    const running = E2B_SANDBOXES.filter((machine) => machine.cloud?.state === 'running');
+    const onlyRunning = render(CloudSandboxList, { sandboxes: running, entryId: 'e2b' });
+    expect(summary(onlyRunning.container)).toBe('Sandboxes · 2 running');
+    onlyRunning.unmount();
+
+    const settling = E2B_SANDBOXES.map((machine, index) => ({
+      ...machine,
+      cloud: { ...machine.cloud!, state: index === 0 ? 'pausing' : 'resuming' },
+    }));
+    const none = render(CloudSandboxList, { sandboxes: settling, entryId: 'e2b' });
+    expect(summary(none.container)).toBe('Sandboxes');
+  });
+
+  it("names an Agent37 runner's list Instances", () => {
+    seed('agent37-providers', collapsed);
+    const view = render(DevicesSettings);
+    expect(summary(row(view, AGENT37_ENTRY.id))).toBe('Instances · 1 running · 1 paused');
   });
 });
 
