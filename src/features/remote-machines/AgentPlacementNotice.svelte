@@ -322,7 +322,6 @@
           <span class="text-muted-foreground">
             {m.remoteAgent_notice_retryingSetup_title({ machine: location.name })}
           </span>
-          <span class="text-subtle">{m.remoteAgent_notice_runningSetup_description()}</span>
         {:else}
           <span class="font-medium text-warning-ink">
             {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
