@@ -831,4 +831,33 @@ Some additional notes here.
       expect(cached).not.toContain('onerror');
     });
   });
+
+  describe('Tables through the TipTap editor', () => {
+    it('keeps inline formatting in table cells unchanged (intent-hq/intent#9903)', async () => {
+      const markdown = [
+        '| Name | Link |',
+        '| --- | --- |',
+        '| alpha | [docs](https://example.test/a) and **b** |',
+        '| *it* | `x\\|y` a \\| b |',
+        '| two<br>lines |  |',
+      ].join('\n');
+      const html = await processMarkdownToHTML(markdown, { workspaceId: 'test-workspace' });
+      const editor = new Editor({
+        ...createEditorConfig({
+          workspaceId: 'test-workspace',
+          noteId: 'test-note',
+          onUpdate: () => {},
+          onSelectionUpdate: () => {},
+          editable: true,
+        }),
+        content: html,
+      });
+
+      const editorHtml = editor.getHTML();
+      editor.destroy();
+
+      expect(editorHtml).toContain('<td class="note-table-cell"><p>');
+      expect(processHTMLToMarkdown(editorHtml, { workspaceId: 'test-workspace' })).toBe(markdown);
+    });
+  });
 });
