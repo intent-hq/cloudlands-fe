@@ -11,6 +11,7 @@ import { invitationAccountSearchSaga } from './slices/invitation-account-search/
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
+import { setupRetrySaga } from '$features/remote-machines/setup-retry-saga';
 import { nodesSaga } from '$features/nodes/nodes-saga';
 import { cloudMachinesSaga } from '$features/cloud-machines/cloud-machines-saga';
 import { machineSetupSaga } from '$features/machine-setup/machine-setup-saga';
@@ -299,6 +300,7 @@ export const sagas = [
   browserClientsSaga,
   personalDevicesSaga,
   remoteMachinesSaga,
+  setupRetrySaga,
   nodesSaga,
   cloudMachinesSaga,
   machineSetupSaga,

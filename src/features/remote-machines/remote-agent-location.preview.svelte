@@ -9,6 +9,9 @@
     | 'remote-preparing-checkout'
     | 'remote-running-setup'
     | 'remote-setup-failed'
+    | 'remote-setup-retry'
+    | 'remote-setup-retrying'
+    | 'remote-setup-retry-refused'
     | 'remote-update-required'
     | 'remote-failed'
     | 'machine-unreachable'
@@ -60,6 +63,10 @@
       'remote-preparing-checkout': sceneState('remote-preparing-checkout'),
       'remote-running-setup': sceneState('remote-running-setup'),
       'remote-setup-failed': sceneState('remote-setup-failed'),
+      // Retry setup (`remoteSetupRetry: 1`): idle, the retried run, and a refused retry.
+      'remote-setup-retry': sceneState('remote-setup-retry'),
+      'remote-setup-retrying': sceneState('remote-setup-retrying'),
+      'remote-setup-retry-refused': sceneState('remote-setup-retry-refused'),
       'remote-update-required': sceneState('remote-update-required'),
       'remote-failed': sceneState('remote-failed'),
       'machine-unreachable': sceneState('machine-unreachable'),
@@ -148,6 +155,7 @@
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { MOCK_PROVIDER_CATALOG } from '../../test/fixtures/provider-catalog.fixture';
+  import { notifySetupRetryRefused } from './setup-retry';
 
   let { scene = 'remote-running' }: Props = $props();
 
@@ -304,6 +312,14 @@
     'Progress: resolved 1843, reused 1790, downloaded 53, added 1843, done',
     '',
   ].join('\n');
+  const FAILED_SETUP: AgentSession['setup'] = {
+    state: 'failed',
+    exitCode: 2,
+    startedAt: '2026-11-02T08:24:10.000Z',
+    finishedAt: '2026-11-02T08:25:02.000Z',
+    output: `${SETUP_OUTPUT}$ cargo build --locked\nerror: failed to download \`serde v1.0.228\`\nmake: *** [bootstrap] Error 2\nSetup script failed in 52s (exit code 2)\n`,
+    outputTruncated: true,
+  };
   const SETUP: Partial<Record<Scene, AgentSession['setup']>> = {
     'remote-preparing-checkout': {
       state: 'pending',
@@ -314,14 +330,22 @@
       startedAt: '2026-11-02T08:24:10.000Z',
       output: SETUP_OUTPUT,
     },
-    'remote-setup-failed': {
-      state: 'failed',
-      exitCode: 2,
-      startedAt: '2026-11-02T08:24:10.000Z',
-      finishedAt: '2026-11-02T08:25:02.000Z',
-      output: `${SETUP_OUTPUT}$ cargo build --locked\nerror: failed to download \`serde v1.0.228\`\nmake: *** [bootstrap] Error 2\nSetup script failed in 52s (exit code 2)\n`,
-      outputTruncated: true,
+    'remote-setup-failed': FAILED_SETUP,
+    'remote-setup-retry': FAILED_SETUP,
+    'remote-setup-retry-refused': FAILED_SETUP,
+    'remote-setup-retrying': {
+      state: 'running',
+      startedAt: '2026-11-02T08:31:40.000Z',
+      output:
+        '$ make bootstrap\n\u001b[32m✓\u001b[0m rustup toolchain 1.92.0 installed\npnpm install --frozen-lockfile\n',
     },
+  };
+  const isSetupRetryScene = (s: Scene) => s.startsWith('remote-setup-retr');
+  // The refused scene's daemon answer: the agent is not running on the machine.
+  const REFUSED_RETRY = {
+    ok: false as const,
+    code: 'agent-not-running' as const,
+    message: 'The agent is not running on Mac mini. Send it a message to start it, then retry.', // i18n-ignore (sample daemon message supplied as fixture content)
   };
 
   // Agents on E2B: a sandbox row while it runs or is paused; start fields and errors otherwise.
@@ -553,6 +577,19 @@
 
   let ready = $state(false);
   let pickerOpened = $state(false);
+  let retryRefused = $state(false);
+
+  // The refusal toast a refused retry shows (previews run no sagas).
+  $effect(() => {
+    if (!ready || scene !== 'remote-setup-retry-refused') return;
+    notifySetupRetryRefused('Mac mini', REFUSED_RETRY);
+    const timer = setInterval(() => {
+      if (!document.querySelector('[data-sonner-toast]')) return;
+      clearInterval(timer);
+      retryRefused = true;
+    }, 100);
+    return () => clearInterval(timer);
+  });
 
   // Open the composer's model picker so its empty state shows in the capture.
   $effect(() => {
@@ -574,7 +611,6 @@
     const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
     const previousLabs = store.state.userPreferences?.labsRemoteAgentsEnabled === true;
     const previousProviders = selectProviderCatalogEntries.select(store.state);
-    admitLegacyPrincipal();
     store.dispatch(
       setWorkspaceEntity({
         id: WorkspaceId(WS),
@@ -612,6 +648,7 @@
 
   $effect(() => {
     const s = scene;
+    admitLegacyPrincipal('owner', isSetupRetryScene(s) ? { remoteSetupRetry: 1 } : {});
     store.dispatch(setLabsRemoteAgentsEnabled(s !== 'labs-off'));
     if (isPickerScene(s)) {
       store.dispatch(providerCatalogLoaded(pickerCatalog(s)));
@@ -694,7 +731,11 @@
 <div
   class="flex h-[720px] w-full min-w-0 bg-background text-foreground"
   data-remote-agent-location-scene={scene}
-  data-ready={ready && (pickerOpened || !OPEN_PICKER_SCENES.includes(scene)) ? '' : undefined}
+  data-ready={ready &&
+  (pickerOpened || !OPEN_PICKER_SCENES.includes(scene)) &&
+  (retryRefused || scene !== 'remote-setup-retry-refused')
+    ? ''
+    : undefined}
 >
   <aside class="flex w-[300px] shrink-0 flex-col border-r border-border bg-sidebar">
     <h6 class="px-4 pb-1 pt-4 text-ui font-semibold text-foreground">Agents</h6>

@@ -135,3 +135,12 @@ export const selectWorkspaceCreationVisible = store.createSelector(
 export const selectConversationGoalSupported = store.createSelector(
   (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.conversationGoal === 1,
 );
+
+/**
+ * The connected daemon retries a remote agent's failed setup
+ * (`server.capabilities.remoteSetupRetry === 1`, `agent.retrySetup`). False
+ * while the principal snapshot is not ready.
+ */
+export const selectRemoteSetupRetrySupported = store.createSelector(
+  (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.remoteSetupRetry === 1,
+);

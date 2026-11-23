@@ -145,6 +145,7 @@ describe('renderer app saga registry', () => {
       'browserClientsSaga',
       'personalDevicesSaga',
       'remoteMachinesSaga',
+      'setupRetrySaga',
       'nodesSaga',
       'cloudMachinesSaga',
       'machineSetupSaga',

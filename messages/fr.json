@@ -9474,5 +9474,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Épingler un objectif à cette conversation",
   "chat_goal_retired_error": "Cette conversation est retirée, son objectif ne peut donc pas être modifié.",
-  "chat_goal_workspaceRetired_error": "Cet espace de travail est retiré, son objectif ne peut donc pas être modifié."
+  "chat_goal_workspaceRetired_error": "Cet espace de travail est retiré, son objectif ne peut donc pas être modifié.",
+  "remoteAgent_setupRetry_label": "Relancer la configuration",
+  "remoteAgent_setupRetry_failed_title": "Impossible de relancer la configuration sur {machine}",
+  "remoteAgent_setupRetry_unsupported_error": "Ce backend nécessite une version plus récente d'Intent pour relancer la configuration.",
+  "remoteAgent_setupRetry_generic_error": "Réessayez dans un instant.",
+  "remoteAgent_notice_retryingSetup_title": "Nouvelle exécution de la configuration sur {machine}"
 }

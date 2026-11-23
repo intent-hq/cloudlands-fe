@@ -9474,5 +9474,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "이 대화에 목표 고정",
   "chat_goal_retired_error": "이 대화는 종료되어 목표를 변경할 수 없습니다.",
-  "chat_goal_workspaceRetired_error": "이 워크스페이스는 종료되어 목표를 변경할 수 없습니다."
+  "chat_goal_workspaceRetired_error": "이 워크스페이스는 종료되어 목표를 변경할 수 없습니다.",
+  "remoteAgent_setupRetry_label": "설정 다시 시도",
+  "remoteAgent_setupRetry_failed_title": "{machine}에서 설정을 다시 시도할 수 없습니다",
+  "remoteAgent_setupRetry_unsupported_error": "설정을 다시 시도하려면 이 백엔드에 최신 버전의 Intent가 필요합니다.",
+  "remoteAgent_setupRetry_generic_error": "잠시 후 다시 시도하세요.",
+  "remoteAgent_notice_retryingSetup_title": "{machine}에서 설정을 다시 실행하는 중"
 }
