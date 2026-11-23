@@ -141,6 +141,7 @@
           ? m.chat_imageBlock_thumbnail_tooltip()
           : undefined}
         data-image-thumbnail={dataIsThumbnail || undefined}
+        data-lightbox-opener
       >
         <img
           src={imageUrl}

@@ -236,7 +236,7 @@ describe('Devices current-person UI through the actual store and IPC transport',
       const stopApi = store.runSaga(websocketApiSaga);
       try {
         render(DevicesSettings);
-        await screen.findByRole('button', { name: m.settings_devices_add_label() });
+        await screen.findByRole('button', { name: m.settings_devices_addHost_label() });
         expect(
           screen.queryByRole('region', { name: m.settings_personalDevices_title() }),
         ).toBeNull();

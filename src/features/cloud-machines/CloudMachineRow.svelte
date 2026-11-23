@@ -10,7 +10,14 @@
   import { Badge, type BadgeColor } from '$lib/components/ui/badge';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
-  import { faChevronDown, faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
+  import {
+    faArrowUpRightFromSquare,
+    faChevronDown,
+    faCloud,
+    faPen,
+    faTrash,
+  } from '$lib/icons/phosphor-icons';
+  import { openExternalUrl } from '$lib/utils/open-external';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -41,6 +48,7 @@
     agent37TypeLabel,
     cloudEntryNameError,
     cloudErrorText,
+    cloudDashboardUrl,
     cloudProviderCopy,
     cloudSandboxCountsLabel,
   } from './cloud-machines-format';
@@ -71,6 +79,8 @@
     now?: number;
     /** In the ordered runner list: Move up / Move down. */
     order?: MachineOrderControls;
+    /** Listed among hosts (older backends): the status dot keeps the hosts' icon column. */
+    statusDot?: boolean;
   }
 
   let {
@@ -83,6 +93,7 @@
     first = false,
     now,
     order,
+    statusDot = false,
   }: Props = $props();
   const kind = $derived(entry?.provider ?? newProvider);
 
@@ -114,11 +125,15 @@
   const listId = $props.id();
   const counts = $derived(cloudSandboxCountsLabel(sandboxes));
   const showCounts = $derived(!!counts && !editing);
-  const expandable = $derived(!!entry && !editing && sandboxes.length > 0);
+  // One sandbox is always shown: a toggle for a single row adds nothing.
+  const expandable = $derived(!!entry && !editing && sandboxes.length > 1);
   // A failed Pause or Delete keeps the list open so its error shows.
   const sandboxFailed = $derived(sandboxes.some((machine) => !!$failures$[machine.id]));
   const listOpen = $derived(
-    expandable && !!entry && (expandedSandboxLists.has(entry.id) || sandboxFailed),
+    !!entry &&
+      !editing &&
+      (sandboxes.length === 1 ||
+        (expandable && (expandedSandboxLists.has(entry.id) || sandboxFailed))),
   );
 
   function toggleList() {
@@ -172,6 +187,11 @@
   function ownActions(): ActionDefinition[] {
     return entry
       ? [
+          {
+            id: 'dashboard',
+            label: cloudProviderCopy(kind).dashboardOpen,
+            icon: faArrowUpRightFromSquare,
+          },
           { id: 'edit', label: m.cloudMachines_edit_label(), icon: faPen },
           {
             id: 'remove',
@@ -186,7 +206,10 @@
 
   function onAction(id: string) {
     if (order?.onAction(id) || !entry) return;
-    if (id === 'edit') onEdit();
+    if (id === 'dashboard') {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- opens the provider dashboard in the system browser, not a domain data fetch
+      void openExternalUrl(cloudDashboardUrl(kind));
+    } else if (id === 'edit') onEdit();
     else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested(entry.id));
   }
 
@@ -221,15 +244,17 @@
   >
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            status?.dot ?? 'bg-transparent',
-          )}
-          role={pillHidden ? 'img' : undefined}
-          aria-label={pillHidden ? status?.label : undefined}
-          aria-hidden={pillHidden ? undefined : 'true'}
-        ></span>
+        {#if statusDot}
+          <span
+            class={cn(
+              'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+              status?.dot ?? 'bg-transparent',
+            )}
+            role={pillHidden ? 'img' : undefined}
+            aria-label={pillHidden ? status?.label : undefined}
+            aria-hidden={pillHidden ? undefined : 'true'}
+          ></span>
+        {/if}
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
     {/snippet}
@@ -351,7 +376,14 @@
   {:else if sandboxes.length > 0}
     <div id={listId} hidden={!listOpen}>
       {#if listOpen}
-        <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
+        <!-- Sandbox names start under the runner name: row padding + (dot) + icon + gap - sandbox dot. -->
+        <CloudSandboxList
+          {sandboxes}
+          entryName={entry.name}
+          provider={kind}
+          {now}
+          class={statusDot ? 'pl-13 sm:pl-14' : 'pl-7.5 sm:pl-8.5'}
+        />
       {/if}
     </div>
   {/if}

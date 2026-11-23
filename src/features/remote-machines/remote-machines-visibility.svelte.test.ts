@@ -11,7 +11,6 @@ import { store } from '$store/renderer/store';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { ExecutorBackend, RemoteMachine } from '$shared/types/remote-machines';
-import BackendsWithAccessSection from './BackendsWithAccessSection.svelte';
 import RemoteMachinesSection from './RemoteMachinesSection.svelte';
 import { remoteMachinesLoaded } from './remote-machines-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
@@ -86,9 +85,7 @@ describe.each([
     seed(labs, supported);
     expect(selectRemoteMachinesVisible.select(store.state)).toBe(visible);
     const machines = render(RemoteMachinesSection);
-    const backends = render(BackendsWithAccessSection);
     expect(machines.queryByText('Studio Mac') !== null).toBe(visible);
-    expect(backends.queryByText('Build box') !== null).toBe(visible);
   });
 });
 

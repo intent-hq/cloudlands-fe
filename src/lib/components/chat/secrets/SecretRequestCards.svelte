@@ -176,7 +176,7 @@
         />
       </div>
     {:else}
-      <div in:springIn={{ tier: 'moderate', y: 8, scale: 1 }}>
+      <div class="mx-auto max-w-160" in:springIn={{ tier: 'moderate', y: 8, scale: 1 }}>
         {#each visible as { request, state } (request.requestId)}
           <div
             class="not-first:pt-2"

@@ -7315,6 +7315,7 @@
     <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
+      data-lightbox-gallery
       use:fillChatViewport={{
         enabled:
           isActive &&

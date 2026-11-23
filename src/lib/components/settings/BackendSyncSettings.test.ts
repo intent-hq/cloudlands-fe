@@ -99,13 +99,13 @@ describe('BackendSyncSettings', () => {
     );
   });
 
-  it('renders an enabled ON toggle and the active status on macOS', async () => {
+  it('renders an enabled ON toggle with no status line while sync works on macOS', async () => {
     mocks.syncState.value = ACTIVE;
     render(BackendSyncSettings);
     await waitFor(() => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
-    expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
+    expect(screen.queryByText(m.settings_backendSync_status_unavailable())).toBeNull();
   });
 
   it('shows the degraded note when active with write errors', async () => {
@@ -116,26 +116,17 @@ describe('BackendSyncSettings', () => {
     };
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
+      expect(screen.getByText(m.settings_backendSync_status_degraded())).toBeTruthy();
     });
-    expect(screen.getByText(m.settings_backendSync_status_degraded())).toBeTruthy();
   });
 
   it('hides the degraded note on a clean active status', async () => {
     mocks.syncState.value = ACTIVE;
     render(BackendSyncSettings);
     await waitFor(() => {
-      expect(screen.getByText(m.settings_backendSync_status_active())).toBeTruthy();
+      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
     expect(screen.queryByText(m.settings_backendSync_status_degraded())).toBeNull();
-  });
-
-  it('shows the checking line while enabled with no verdict yet', async () => {
-    mocks.syncState.value = { supported: true, enabled: true, status: null };
-    render(BackendSyncSettings);
-    await waitFor(() => {
-      expect(screen.getByText(m.settings_backendSync_status_checking())).toBeTruthy();
-    });
   });
 
   it('shows the unavailable status plus the helper-reported message', async () => {
@@ -157,7 +148,7 @@ describe('BackendSyncSettings', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
     });
-    expect(screen.queryByText(m.settings_backendSync_status_active())).toBeNull();
+    expect(screen.queryByText(m.settings_backendSync_status_degraded())).toBeNull();
   });
 
   it('dispatches setKeychainSyncEnabled with the exact payload on toggle', async () => {

@@ -1,13 +1,7 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { onDestroy, untrack } from 'svelte';
-  import {
-    Button,
-    Input,
-    Label,
-    Switch,
-    Tooltip,
-  } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Input, Label, Switch } from '$lib/components/patterns/settings/custom-controls';
   import {
     ListRow,
     ListView,
@@ -51,6 +45,7 @@
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
+    faArrowRightArrowLeft,
     faArrowsRotate,
     faCopy,
     faLinkSlash,
@@ -65,6 +60,7 @@
   import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
   import {
     selectCurrentBackendLabel,
+    selectExecutorBackends,
     selectLocalMachineFingerprint,
     selectRemoteMachineFailures,
     selectRemoteMachineOperations,
@@ -72,7 +68,9 @@
     selectRemoteMachinesVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import {
+    executorRevokeRequested,
     remoteMachineExposeRequested,
+    remoteMachineFailureDismissed,
     remoteMachineUnexposeRequested,
   } from '$features/remote-machines/remote-machines-slice';
   import {
@@ -80,8 +78,14 @@
     machineForConnection,
   } from '$features/remote-machines/remote-machines-utils';
   import MachineName from '$features/remote-machines/MachineName.svelte';
-  import HostOnlyMarker from '$features/remote-machines/HostOnlyMarker.svelte';
   import MachineProviderAvailability from '$features/remote-machines/MachineProviderAvailability.svelte';
+  import {
+    machineLoadFacts,
+    needsNodeFact,
+    remoteMachineFailureMessage,
+    type MachineFact,
+  } from '$features/remote-machines/remote-machines-messages';
+  import { getActiveLocale } from '$lib/i18n/locale';
   import {
     machineRowNeedsNode,
     machineRowPlatform,
@@ -302,6 +306,10 @@
       pinnedVersion: pinnedVersion.replace(/^v/, ''),
     });
   });
+  // The version shows only as an orange dot, while it is behind this app's pin.
+  const versionWarning = $derived(
+    openStatus === 'connected' && device.intentdVersion ? daemonBehindTooltip : null,
+  );
   const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
   // Daemon-to-daemon: owner machines (never guest sessions, which this list
   // never holds) that are connected and are not the current backend can be
@@ -338,6 +346,65 @@
       isOrchestrator ? 'orchestrator' : null,
     );
   });
+  // A node, or a row in the ordered runner list.
+  const runnerRow = $derived(isNode || !!order);
+  const showLoad = $derived(!!exposedMachine && runnerRow);
+  // Hosts that may run agents on the host this window shows: a fact and a Revoke item on its row.
+  const executorBackends$ = selectExecutorBackends();
+  const hostsWithAccess = $derived(isCurrent && $remoteSupported$ ? $executorBackends$ : []);
+  const accessFailures = $derived(
+    hostsWithAccess.flatMap((backend) => {
+      const failure = $remoteFailures$[backend.credentialId];
+      return failure ? [{ backend, failure }] : [];
+    }),
+  );
+  const nameFacts = $derived.by((): MachineFact[] => {
+    const pinnedVersion = $pinnedVersion$;
+    const nodeFact =
+      providers.length === 0 && !device.providers && machineRowReport(exposedMachine)
+        ? needsNodeFact(needsNode)
+        : null;
+    const version = (device.intentdVersion ?? device.daemonVersion)?.replace(/^v/, '');
+    return [
+      { label: m.settings_devices_status_label(), value: statusLabel(openStatus) },
+      ...(versionWarning && device.daemonVersion && pinnedVersion
+        ? [
+            {
+              label: m.settings_devices_version_label(),
+              value: m.settings_devices_versionBehind_value({
+                daemonVersion: device.daemonVersion.replace(/^v/, ''),
+                pinnedVersion: pinnedVersion.replace(/^v/, ''),
+              }),
+              warning: true,
+            },
+          ]
+        : version
+          ? [{ label: m.settings_devices_version_label(), value: version }]
+          : []),
+      ...(!device.isLocal && device.host
+        ? [
+            {
+              label: m.settings_devices_address_label(),
+              // i18n-ignore (host and port)
+              value: device.port ? `${device.host}:${device.port}` : device.host,
+            },
+          ]
+        : []),
+      ...(showLoad ? machineLoadFacts(exposedMachine) : []),
+      ...(nodeFact ? [nodeFact] : []),
+      ...(hostsWithAccess.length > 0
+        ? [
+            {
+              label: m.remoteMachines_runnerFor_label(),
+              value: new Intl.ListFormat(getActiveLocale(), {
+                style: 'long',
+                type: 'conjunction',
+              }).format(hostsWithAccess.map((backend) => backend.backendName)),
+            },
+          ]
+        : []),
+    ];
+  });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
   const unexposing = $derived(
     !!exposedMachine && $remoteOperations$[exposedMachine.id] === 'removing',
@@ -347,6 +414,16 @@
   );
   const remoteFailure = $derived($remoteFailures$[remoteFailureKey] ?? null);
   const rowActions = $derived.by((): ActionDefinition[] => [
+    ...(canSwitchTo
+      ? [
+          {
+            id: 'switchTo',
+            label: m.settings_devices_switchTo_label(),
+            icon: faArrowRightArrowLeft,
+            disabled: $openWorkflow$?.phase === 'running',
+          },
+        ]
+      : []),
     ...(canUpdateDaemon
       ? [
           {
@@ -392,6 +469,13 @@
           },
         ]
       : []),
+    ...hostsWithAccess.map((backend): ActionDefinition => ({
+      id: `revoke:${backend.credentialId}`,
+      label: m.remoteMachines_revokeAccess_label({ host: backend.backendName }),
+      icon: faLinkSlash,
+      destructive: true,
+      disabled: $remoteOperations$[backend.credentialId] === 'revoking',
+    })),
     ...(order?.actions ?? []),
   ]);
 
@@ -449,7 +533,7 @@
     appStore.dispatch(connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id }));
   }
 
-  /** Show this host (in the host rail when it is on), then its Settings → Hosts. */
+  /** Show this host (in the host rail when it is on), then its Settings → Machines. */
   function switchToHost() {
     appStore.dispatch(
       connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id, switchTo: true }),
@@ -466,6 +550,9 @@
   function handleRowAction(id: string) {
     if (order?.onAction(id)) return;
     switch (id) {
+      case 'switchTo':
+        switchToHost();
+        break;
       case 'update':
         void requestDaemonUpdate();
         break;
@@ -483,6 +570,9 @@
       case 'remove':
         onRequestRemove(device);
         break;
+      default:
+        if (id.startsWith('revoke:'))
+          appStore.dispatch(executorRevokeRequested(id.slice('revoke:'.length)));
     }
   }
 
@@ -667,40 +757,43 @@
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
       <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            statusClass(openStatus),
-          )}
-          role="status"
-          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-        ></span>
+        <!-- Runner rows carry no dot: a problem shows its badge. -->
+        {#if !runnerRow}<span
+            class={cn(
+              'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+              statusClass(openStatus),
+            )}
+            role="status"
+            aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+          ></span>{/if}
         <DeviceIcon record={device} size={20} class="text-foreground" />
       </span>
     {/snippet}
     {#snippet title()}
-      <!-- The name truncates; the hub marker after it stays visible. -->
-      <span class="flex min-w-0 max-w-full items-center gap-1.5">
-        <span class="min-w-0 truncate">
-          <MachineName name={displayName} id={`device-${device.id}-name`} {platform} {providers} />
-        </span>
-        {#if isOrchestrator}<HostOnlyMarker />{/if}
-      </span>
+      <MachineName
+        name={displayName}
+        id={`device-${device.id}-name`}
+        {platform}
+        {providers}
+        hostOnly={isOrchestrator}
+        {versionWarning}
+        facts={nameFacts}
+      />
     {/snippet}
     {#snippet meta()}
-      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+      <span
+        data-slot="machine-row-meta"
+        class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
+      >
         {#if exposedMachine}
-          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
-          <!-- Runner rows only (a node, or a row in the ordered runner list): the Hosts list omits it. -->
-          {#if isNode || order}<MachineLoad machine={exposedMachine} />{/if}
+          <RemoteMachineBadge
+            machine={exposedMachine}
+            backendLabel={$backendLabel$}
+            showDisconnected={runnerRow}
+          />
+          {#if showLoad}<MachineLoad machine={exposedMachine} />{/if}
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
-        {/if}
-        <!-- The version shows only when it is behind this app's pin. -->
-        {#if openStatus === 'connected' && device.intentdVersion && daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
-            <span>{device.intentdVersion}</span>
-          </Tooltip>
         {/if}
         {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine)}
           <MachineProviderAvailability {needsNode} />
@@ -711,16 +804,6 @@
       {#if isCurrent}
         <span class="type-caption whitespace-nowrap text-muted-foreground" data-current-host
           >{m.settings_devices_current_label()}</span
-        >
-      {:else if canSwitchTo}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          class="whitespace-nowrap"
-          data-switch-to-host
-          disabled={$openWorkflow$?.phase === 'running'}
-          onclick={switchToHost}>{m.settings_devices_switchTo_label()}</Button
         >
       {/if}
       <RowActions
@@ -739,6 +822,24 @@
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
+
+  {#each accessFailures as { backend, failure } (backend.credentialId)}
+    <div class="flex items-center justify-between gap-3 px-4 pb-3 sm:px-5" role="alert">
+      <p class="type-body text-danger">
+        {remoteMachineFailureMessage(failure, {
+          machine: backend.backendName,
+          backend: backend.backendName,
+        })}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={() => appStore.dispatch(remoteMachineFailureDismissed(backend.credentialId))}
+      >
+        {m.remoteMachines_failure_dismiss_label()}
+      </Button>
+    </div>
+  {/each}
 
   {#if $remoteSupported$}
     <RemoteMachineNotice

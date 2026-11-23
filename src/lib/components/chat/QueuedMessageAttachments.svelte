@@ -116,6 +116,7 @@
         size="compact"
         class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-xs"
         data-testid="queued-image-thumbnail"
+        data-lightbox-opener
         onclick={(e) => {
           e.stopPropagation();
           openImageLightbox(block, e.currentTarget as HTMLButtonElement, i);

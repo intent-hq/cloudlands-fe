@@ -507,8 +507,8 @@ export interface OpenConnectionParams {
   /** Open this agent once the window shows (the recent-agent switcher). */
   agent?: ConnectionAgentTarget;
   /**
-   * "Switch to" in Settings → Hosts: show the backend (joining the window's
-   * host rail when it is on), then open its Settings → Hosts.
+   * "Switch to" in Settings → Machines: show the backend (joining the window's
+   * host rail when it is on), then open its Settings → Machines.
    */
   switchTo?: true;
 }

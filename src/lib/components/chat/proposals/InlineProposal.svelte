@@ -175,64 +175,68 @@
     data-inline-proposal
     data-pending-proposal-key={isPending ? proposalId : undefined}
   >
-    {#if isPending && proposal.kind === 'rpc-call'}
-      <RpcCallProposalCard
-        {proposal}
-        onResolve={(decision) => resolveRpcProposal(agentId, workspaceId, proposalId, decision)}
-      />
-    {:else if isPending}
-      {#if initialDraftLoaded}
-        <ProposalCard
+    <div class="max-w-160">
+      {#if isPending && proposal.kind === 'rpc-call'}
+        <RpcCallProposalCard
           {proposal}
-          lifecycleId={localProposalId}
-          resolvedCreatedWorkspaceId={daemonCreatedWorkspaceId}
-          proposer={$agentSession$}
-          suppressLocalDiscard
-          {initialDraft}
-          onDraftChange={handleDraftChange}
-          onApply={(detail) => applyProposal(agentId, detail, messageId)}
-          onDiscard={() =>
-            proposal.kind === 'workspace-transfer'
-              ? handleConfirmDismiss()
-              : (confirmingDismiss = true)}
-          onUndo={undoProposal}
+          onResolve={(decision) => resolveRpcProposal(agentId, workspaceId, proposalId, decision)}
         />
-      {/if}
-    {:else}
-      <section
-        class="flex min-w-0 w-full items-center gap-3 rounded-(--radius-medium) border border-border bg-card px-3 py-2.5"
-        data-inline-proposal-outcome={isApplied ? 'applied' : 'dismissed'}
-        data-proposal-id={proposalId}
-      >
-        <div class="min-w-0 flex-1">
-          <p class="type-body truncate font-medium text-foreground">{proposal.preview.title}</p>
-          {#if launchError}
-            <p class="type-caption text-warning-ink" data-testid="proposal-launch-error">
-              {launchError}
-            </p>
-          {:else}
-            <p
-              class={isApplied ? 'type-caption text-success' : 'type-caption text-muted-foreground'}
-            >
-              {isApplied && proposal.kind === 'workspace-create'
-                ? m.chat_proposalCard_workspaceCreated_label()
-                : isApplied
-                  ? m.chat_shared_appliedStatus_label()
-                  : m.chat_shared_dismissedStatus_label()}
-            </p>
-          {/if}
-        </div>
-        {#if createdWorkspaceId}
-          <a href={`/workspace/${createdWorkspaceId}`} onclick={handleOpenWorkspace}>
-            <Button size="sm">{m.chat_proposalCard_openWorkspace_label()}</Button>
-          </a>
-        {:else if canUndo}
-          <Button variant="outline" size="sm" onclick={() => undoProposal(localProposalId)}>
-            {m.chat_shared_undo_label()}
-          </Button>
+      {:else if isPending}
+        {#if initialDraftLoaded}
+          <ProposalCard
+            {proposal}
+            lifecycleId={localProposalId}
+            resolvedCreatedWorkspaceId={daemonCreatedWorkspaceId}
+            proposer={$agentSession$}
+            suppressLocalDiscard
+            {initialDraft}
+            onDraftChange={handleDraftChange}
+            onApply={(detail) => applyProposal(agentId, detail, messageId)}
+            onDiscard={() =>
+              proposal.kind === 'workspace-transfer'
+                ? handleConfirmDismiss()
+                : (confirmingDismiss = true)}
+            onUndo={undoProposal}
+          />
         {/if}
-      </section>
-    {/if}
+      {:else}
+        <section
+          class="flex min-w-0 w-full items-center gap-3 rounded-(--radius-medium) border border-border bg-card px-3 py-2.5"
+          data-inline-proposal-outcome={isApplied ? 'applied' : 'dismissed'}
+          data-proposal-id={proposalId}
+        >
+          <div class="min-w-0 flex-1">
+            <p class="type-body truncate font-medium text-foreground">{proposal.preview.title}</p>
+            {#if launchError}
+              <p class="type-caption text-warning-ink" data-testid="proposal-launch-error">
+                {launchError}
+              </p>
+            {:else}
+              <p
+                class={isApplied
+                  ? 'type-caption text-success'
+                  : 'type-caption text-muted-foreground'}
+              >
+                {isApplied && proposal.kind === 'workspace-create'
+                  ? m.chat_proposalCard_workspaceCreated_label()
+                  : isApplied
+                    ? m.chat_shared_appliedStatus_label()
+                    : m.chat_shared_dismissedStatus_label()}
+              </p>
+            {/if}
+          </div>
+          {#if createdWorkspaceId}
+            <a href={`/workspace/${createdWorkspaceId}`} onclick={handleOpenWorkspace}>
+              <Button size="sm">{m.chat_proposalCard_openWorkspace_label()}</Button>
+            </a>
+          {:else if canUndo}
+            <Button variant="outline" size="sm" onclick={() => undoProposal(localProposalId)}>
+              {m.chat_shared_undo_label()}
+            </Button>
+          {/if}
+        </section>
+      {/if}
+    </div>
   </div>
 {/if}
 

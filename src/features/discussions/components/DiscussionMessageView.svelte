@@ -22,6 +22,8 @@
   import type { DiscussionMessage } from '$shared/types/workspace-discussion';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   import DiscussionMessageBody from './DiscussionMessageBody.svelte';
+  import DiscussionMessageImages from './DiscussionMessageImages.svelte';
+  import { splitDiscussionBody } from '../discussion-images';
   import DiscussionReactionPicker from './DiscussionReactionPicker.svelte';
   import DiscussionReactionChips from './DiscussionReactionChips.svelte';
   import { discussionActionOverlay } from './discussion-action-overlay';
@@ -94,6 +96,7 @@
       event,
     );
   }
+  const bodyParts = $derived(splitDiscussionBody(message.body, workspaceId));
   const hasActions = $derived(!status && !!(onReply || onReaction || onCopy));
   let reactionMenuOpen = $state(false);
   let moreMenuOpen = $state(false);
@@ -267,19 +270,22 @@
               </DiscussionCollapsibleBody>
             {/key}
           {:else}
-            <p
-              class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
-            >
-              <DiscussionMessageBody
-                body={message.body}
-                workspaceId={workspaceId ?? ''}
-                {sourcePanelId}
-                {agentMentions}
-                {mentionNames}
-                {agentNames}
-                mode="text"
-              />
-            </p>
+            {#if bodyParts.text}<p
+                class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
+              >
+                <DiscussionMessageBody
+                  body={bodyParts.text}
+                  workspaceId={workspaceId ?? ''}
+                  {sourcePanelId}
+                  {agentMentions}
+                  {mentionNames}
+                  {agentNames}
+                  mode="text"
+                />
+              </p>{/if}
+            {#if bodyParts.images.length}<div class:mt-2={!!bodyParts.text.trim()}>
+                <DiscussionMessageImages images={bodyParts.images} />
+              </div>{/if}
             {@render messageReferences()}
           {/if}
         </div>

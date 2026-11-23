@@ -1,13 +1,19 @@
+<!--
+  A machine row's name and its one tooltip: the host-only role, then short
+  label/value facts (version, load, operating system, providers). The name
+  truncates; the hub marker and the orange version dot after it stay visible.
+-->
 <script lang="ts">
-  import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
-  import AgentProviderIcon, {
-    hasProviderIcon,
-  } from '$features/agent/components/AgentProviderIcon.svelte';
+  import GraphIcon from 'phosphor-svelte/lib/GraphIcon';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
-  import MachinePlatformIcon from './MachinePlatformIcon.svelte';
-  import type { MachinePlatform, MachineRowProvider } from './machine-facts';
+  import {
+    machinePlatformName,
+    type MachinePlatform,
+    type MachineRowProvider,
+  } from './machine-facts';
+  import type { MachineFact } from './remote-machines-messages';
 
   let {
     name,
@@ -15,65 +21,108 @@
     platform,
     platformFallback,
     providers,
+    hostOnly = false,
+    versionWarning = null,
+    facts = [],
+    tooltipOpen = false,
   }: {
     name: string;
     id?: string;
     platform: MachinePlatform | null;
     platformFallback?: string | null;
     providers: MachineRowProvider[];
+    /** An orchestrator: it runs no agents and sends them to runners. */
+    hostOnly?: boolean;
+    /** Its intentd is older than this app's: an orange dot after the name (its accessible name). */
+    versionWarning?: string | null;
+    /** Short facts such as version, agents, CPU and memory, listed before the OS. */
+    facts?: MachineFact[];
+    /** Previews and tests: show the tooltip without hovering. */
+    tooltipOpen?: boolean;
   } = $props();
 
   const providersLabelId = $props.id();
   const hasPlatform = $derived(!!(platform || platformFallback));
+  const hasTooltip = $derived(hostOnly || facts.length > 0 || hasPlatform || providers.length > 0);
 </script>
 
-{#snippet label()}
-  <span {id}>{name}</span>
+{#snippet dot()}
+  <span class="size-2 shrink-0 rounded-full bg-warning" aria-hidden="true"></span>
 {/snippet}
 
-{#if hasPlatform || providers.length > 0}
+{#snippet label()}
+  <span class="flex min-w-0 items-center gap-1.5">
+    <span {id} class="min-w-0 truncate">{name}</span>
+    {#if hostOnly}
+      <span
+        role="img"
+        aria-label={m.settings_devices_hostOnly_tooltip()}
+        data-host-only-marker
+        class="inline-flex shrink-0 text-muted-foreground"
+      >
+        <GraphIcon size={15} aria-hidden="true" />
+      </span>
+    {/if}
+    {#if versionWarning}
+      <span
+        role="img"
+        aria-label={versionWarning}
+        data-version-warning
+        class="inline-flex shrink-0"
+      >
+        {@render dot()}
+      </span>
+    {/if}
+  </span>
+{/snippet}
+
+{#if hasTooltip}
   <TooltipRich
+    open={tooltipOpen}
     align="start"
-    class="inline rounded-sm focus-visible:-outline-offset-1"
+    class="flex max-w-full min-w-0 rounded-sm focus-visible:-outline-offset-1"
     contentContainerClass="px-4! py-3!"
   >
     {#snippet content()}
-      <div class="flex min-w-36 flex-col gap-3">
-        {#if hasPlatform}
-          <div class="flex flex-col gap-1.5">
-            <span class="type-caption font-medium text-muted-foreground">
-              {m.settings_devices_operatingSystem_label()}
-            </span>
-            {#if platform}
-              <MachinePlatformIcon {platform} labeled />
-            {:else}
-              <span>{platformFallback}</span>
-            {/if}
-          </div>
+      <div class="flex min-w-40 flex-col gap-3" data-machine-tooltip>
+        {#if hostOnly}
+          <span>{m.settings_devices_hostOnly_tooltip()}</span>
         {/if}
-        {#if providers.length > 0}
-          <div class={cn('flex flex-col gap-1.5', hasPlatform && 'border-t border-border pt-3')}>
-            <span id={providersLabelId} class="type-caption font-medium text-muted-foreground">
-              {m.settings_devices_providers_label()}
-            </span>
-            <div role="list" aria-labelledby={providersLabelId} class="flex flex-col gap-1.5">
-              {#each providers as entry (entry.id)}
-                <span role="listitem" class="flex min-w-0 items-start gap-2">
-                  <span
-                    class="first-line-icon w-3.5 text-muted-foreground [&_svg]:m-0"
-                    aria-hidden="true"
-                  >
-                    {#if hasProviderIcon(entry.id)}
-                      <AgentProviderIcon providerId={entry.id} size={14} monochrome />
-                    {:else}
-                      <RobotIcon size={14} />
-                    {/if}
-                  </span>
-                  <span class="wrap-anywhere">{entry.name}</span>
-                </span>
-              {/each}
-            </div>
-          </div>
+        {#if facts.length > 0 || hasPlatform || providers.length > 0}
+          <dl
+            class={cn(
+              'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3',
+              hostOnly && 'border-t border-border pt-3',
+            )}
+          >
+            {#each facts as fact (fact.label)}
+              <dt class="text-muted-foreground">{fact.label}</dt>
+              <dd
+                class={cn('min-w-0 wrap-anywhere', fact.warning && 'text-warning-ink')}
+                data-machine-fact={fact.label}
+              >
+                {fact.value}
+              </dd>
+            {/each}
+            {#if hasPlatform}
+              <dt class="text-muted-foreground">{m.settings_devices_operatingSystem_label()}</dt>
+              <dd class="min-w-0">{platform ? machinePlatformName(platform) : platformFallback}</dd>
+            {/if}
+            {#if providers.length > 0}
+              <dt id={providersLabelId} class="text-muted-foreground">
+                {m.settings_devices_providers_label()}
+              </dt>
+              <dd
+                role="list"
+                aria-labelledby={providersLabelId}
+                class="flex min-w-0 flex-col gap-0.5"
+              >
+                {#each providers as entry (entry.id)}
+                  <span role="listitem" class="wrap-anywhere">{entry.name}</span>
+                {/each}
+              </dd>
+            {/if}
+          </dl>
         {/if}
       </div>
     {/snippet}

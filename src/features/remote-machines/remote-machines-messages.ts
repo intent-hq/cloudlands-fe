@@ -1,11 +1,8 @@
 import { m } from '$shared/paraglide/messages.js';
-import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
-import type {
-  RemoteMachine,
-  RemoteMachineCapacity,
-  RemoteMachineFailure,
-  RemoteMachineResources,
-} from '$shared/types/remote-machines';
+import { formatBytesBinary, formatInteger, formatNumber } from '$lib/i18n/format';
+import { getActiveLocale } from '$lib/i18n/locale';
+import { machineRowLoad, machineRowResources } from './machine-facts';
+import type { RemoteMachine, RemoteMachineFailure } from '$shared/types/remote-machines';
 
 interface Labels {
   machine: string;
@@ -111,23 +108,54 @@ export function runningAgentsLabel(count: number): string {
     : m.remoteMachines_agents_running_many({ count: formatInteger(count) });
 }
 
-/** The tooltip on a runner's machine-wide agent count: slots in use against its cap. */
-export function machineLoadTooltip(load: RemoteMachineCapacity): string {
-  return m.remoteMachines_agents_load_tooltip({
-    count: formatInteger(load.runningAgents),
-    cap: formatInteger(load.agentCap),
-  });
+/** One label and short value in a machine row's tooltip. */
+export interface MachineFact {
+  label: string;
+  value: string;
+  /** Shown with the orange dot, such as an outdated version. */
+  warning?: boolean;
 }
 
-/** The full CPU and memory lines of a runner row's tooltip. */
-export function machineResourcesTooltip(resources: RemoteMachineResources): string[] {
-  return [
-    ...(resources.cpuPercent === undefined
-      ? []
-      : [m.remoteMachines_load_cpu_tooltip({ percent: formatInteger(resources.cpuPercent) })]),
-    m.remoteMachines_load_memory_tooltip({
-      used: formatBytesBinary(resources.memoryUsedBytes),
-      total: formatBytesBinary(resources.memoryTotalBytes),
-    }),
-  ];
+function ofValue(used: string, total: string): string {
+  return m.remoteMachines_details_ofValue({ used, total });
+}
+
+/** A runner's agents, CPU and memory; empty when it reports none. */
+export function machineLoadFacts(machine: RemoteMachine | null): MachineFact[] {
+  const load = machineRowLoad(machine);
+  const resources = machineRowResources(machine);
+  const facts: MachineFact[] = [];
+  if (load)
+    facts.push({
+      label: m.remoteMachines_details_agents_label(),
+      value: ofValue(formatInteger(load.runningAgents), formatInteger(load.agentCap)),
+    });
+  if (resources?.cpuPercent !== undefined)
+    facts.push({
+      label: m.remoteMachines_details_cpu_label(),
+      value: formatNumber(resources.cpuPercent / 100, {
+        style: 'percent',
+        maximumFractionDigits: 0,
+      }),
+    });
+  if (resources)
+    facts.push({
+      label: m.remoteMachines_details_memory_label(),
+      value: ofValue(
+        formatBytesBinary(resources.memoryUsedBytes),
+        formatBytesBinary(resources.memoryTotalBytes),
+      ),
+    });
+  return facts;
+}
+
+/** The providers Node.js would unlock on a runner with none ready. */
+export function needsNodeFact(needsNode: string[]): MachineFact | null {
+  if (needsNode.length === 0) return null;
+  return {
+    label: m.remoteMachines_needsNode_label(),
+    value: new Intl.ListFormat(getActiveLocale(), { style: 'long', type: 'conjunction' }).format(
+      needsNode,
+    ),
+  };
 }

@@ -121,7 +121,7 @@ describe('parseMachineOrder', () => {
   });
 });
 
-describe('hostRunnerRows (Settings → Hosts runner list)', () => {
+describe('hostRunnerRows (Settings → Machines runner list)', () => {
   it('lists a regular host as its own runner', () => {
     expect(hostRunnerRows(ORDER, 'regular')).toEqual(ORDER);
     expect(hostRunnerRows(ORDER, null)).toEqual(ORDER);

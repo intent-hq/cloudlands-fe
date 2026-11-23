@@ -14,7 +14,6 @@
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
-  import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import AutocompleteSettings from '$lib/components/settings/AutocompleteSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -392,7 +391,6 @@
         return isElectronPlatform();
       case 'plugins':
         return $pluginsSupported$;
-      case 'backend-sync':
       case 'tunnel-relay':
         return !$hostManagesConnections$;
       case 'hardware':
@@ -505,8 +503,6 @@
     <div id="devices" class="scroll-mt-20">
       <DevicesSettings />
     </div>
-  {:else if id === 'backend-sync'}
-    <DevicesConnectionSections />
   {:else if id === 'mobile'}
     <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
       <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>

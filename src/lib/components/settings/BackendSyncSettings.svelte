@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Backend Sync Settings (T4)
+   * Keep hosts in sync between machines (Settings → Machines → Hosts).
    *
-   * Opt-in toggle for syncing remote backend connections via iCloud Keychain,
+   * Opt-in toggle for syncing remote host connections via iCloud Keychain,
    * plus the current availability status. macOS-only: elsewhere the toggle
    * renders disabled with a short explanation (`supported` comes from main —
    * the renderer never sniffs the platform itself).
@@ -77,7 +77,8 @@
                     ? m.settings_backendSync_saveError()
                     : undefined,
               disabled: () => !supported || !loaded || writing,
-              class: 'py-0 first:pt-0 last:pb-0',
+              // A plain-weight line: the label is the whole explanation.
+              class: 'py-0 first:pt-0 last:pb-0 [&_[data-field-label]]:font-normal',
             },
           ],
         },
@@ -86,16 +87,13 @@
   );
 </script>
 
+<!-- A status line shows only when sync cannot run or write. -->
 {#snippet syncDescription()}
-  <span class="block">{m.settings_backendSync_toggle_description()}</span>
   {#if !supported && loaded}
     <span class="block">{m.settings_backendSync_unsupported_description()}</span>
   {/if}
-  {#if supported && enabled}
-    {#if status === null}
-      <span class="block">{m.settings_backendSync_status_checking()}</span>
-    {:else if status.state === 'active'}
-      <span class="block text-success">{m.settings_backendSync_status_active()}</span>
+  {#if supported && enabled && status}
+    {#if status.state === 'active'}
       {#if status.errorCount}
         <span class="block text-warning-ink">{m.settings_backendSync_status_degraded()}</span>
       {/if}

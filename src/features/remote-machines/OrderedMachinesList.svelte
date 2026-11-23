@@ -1,5 +1,5 @@
 <!--
-  Settings → Hosts with `machineOrder: 1`: the current host's runners, every
+  Settings → Machines with `machineOrder: 1`: the current host's runners, every
   place it can run agents, in its stored order (PROTOCOL `methods/nodes.md` →
   "Ordered machine list"). New agents start on the first row that can take them.
   The owner reorders by dragging a row's handle or with the Move up / Move
@@ -159,12 +159,12 @@
   bind:this={listElement}
 >
   <div>
-    <h3 id="machine-order-title" class="type-title text-foreground">
-      {m.remoteMachines_order_title({ backend: backendLabel })}
-    </h3>
+    <h2 id="machine-order-title" class="type-title text-foreground">
+      {m.nodes_section_title()}
+    </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
       {owner
-        ? m.remoteMachines_order_description({ backend: backendLabel })
+        ? m.remoteMachines_order_description()
         : m.remoteMachines_order_readOnly_description({ backend: backendLabel })}
     </p>
   </div>
@@ -175,7 +175,7 @@
       getKey={machineOrderId}
       getText={(entry) => entry.name}
       status="ready"
-      ariaLabel={m.remoteMachines_order_title({ backend: backendLabel })}
+      ariaLabel={m.nodes_section_title()}
       class="overflow-visible [&>div>div[aria-hidden=true]]:hidden"
     >
       {#snippet row({ item, index })}

@@ -72,11 +72,6 @@ export const SETTINGS_SEARCH_SECTIONS: readonly SettingsSearchSection[] = [
     title: () => m.settings_sidebar_devices_label(),
   },
   {
-    id: 'backend-sync',
-    tab: 'devices',
-    title: () => m.settings_section_backendSync(),
-  },
-  {
     id: 'mobile',
     tab: 'mobile',
     title: () => m.settings_sidebar_mobile_label(),

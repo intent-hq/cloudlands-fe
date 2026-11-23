@@ -3299,7 +3299,7 @@ describe('connections:* IPC handlers', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('connections:open with switchTo shows the host, then its Settings → Hosts', async () => {
+  it('connections:open with switchTo shows the host, then its Settings → Machines', async () => {
     const { mod, openOrFocus } = await loadModule();
     const order: string[] = [];
     openOrFocus.mockImplementation(async (id: string) => {

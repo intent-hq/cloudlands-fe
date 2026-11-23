@@ -13,12 +13,16 @@
     selectConnectionsLoaded,
     selectConnectionWorkflow,
     selectCurrentConnectionId,
+    selectHostManagesConnections,
+    selectKeychainSyncState,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { orderMachineRows } from '$lib/utils/machine-row-order';
   import {
     connectionWorkflowRequested,
     connectionWorkflowCleared,
+    loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
+  import BackendSyncSettings from './BackendSyncSettings.svelte';
   import { store as appStore } from '$store/renderer/store';
   import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
   import RemoteMachineRow from '$features/remote-machines/RemoteMachineRow.svelte';
@@ -42,7 +46,6 @@
   import type { MachineOrderRow } from '$shared/types/remote-machines';
   import { connectionForMachine } from '$features/remote-machines/remote-machines-utils';
   import type { RemoteMachine } from '$shared/types/remote-machines';
-  import BackendsWithAccessSection from '$features/remote-machines/BackendsWithAccessSection.svelte';
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
   import CloudMachineRow from '$features/cloud-machines/CloudMachineRow.svelte';
   import {
@@ -63,7 +66,10 @@
   } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { faCirclePlus, faCloud } from '$lib/icons/phosphor-icons';
-  import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
+  import {
+    machineSetupInstallPicked,
+    machineSetupOpened,
+  } from '$features/machine-setup/machine-setup-slice';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
 
   let {
@@ -112,6 +118,12 @@
   /** The provider of the entry being added. */
   let newCloudProvider = $state<CloudProviderKind>(untrack(() => initialCloudProvider));
   const cloudKinds$ = selectCloudProviderKinds();
+
+  /** Add runner → the wizard's Install a runner steps. */
+  function installRunner() {
+    appStore.dispatch(machineSetupOpened('pick', 'runner'));
+    appStore.dispatch(machineSetupInstallPicked('node'));
+  }
 
   function addCloud(provider: CloudProviderKind) {
     newCloudProvider = provider;
@@ -233,6 +245,12 @@
   const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
   onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   onMount(() => appStore.dispatch(remoteMachinesRefreshRequested()));
+  // intent-web keeps its own connection list; elsewhere the sync row shows only where iCloud Keychain is supported.
+  const hostManagesConnections$ = selectHostManagesConnections();
+  const keychainSync$ = selectKeychainSyncState();
+  onMount(() => {
+    if (!$hostManagesConnections$) appStore.dispatch(loadKeychainSyncStateRequested());
+  });
   $effect(() => {
     if ($workflow$?.outcome?.kind !== 'done') return;
     appStore.dispatch(connectionWorkflowCleared(consumerId));
@@ -264,58 +282,74 @@
   }
 </script>
 
-<div class="space-y-5">
-  <div>
-    <h2 class="type-title mb-3 text-foreground">
-      {m.settings_devices_title()}
-    </h2>
-    <p class="max-w-2xl type-body text-muted-foreground">
-      {m.settings_devices_description()}
-    </p>
-  </div>
-
-  <ListView
-    virtualize={false}
-    items={listRows}
-    getKey={rowKey}
-    getText={rowText}
-    status={$loaded$ ? 'ready' : 'loading'}
-    ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
-  >
-    {#snippet row({ item, index })}
-      {#if item.kind === 'device'}
-        {@const device = item.device}
-        <DeviceRow
-          {device}
-          last={index === listRows.length - 1}
-          highlighted={$highlightId$ === device.id}
-          panelMode={activeDeviceId === device.id ? activePanel : null}
-          onOpenPanel={(panel) => openPanel(device.id, panel)}
-          onClosePanel={closePanel}
-          onRequestRemove={requestRemove}
-        />
-      {:else if item.kind === 'cloud'}
-        {@render cloudRow(item)}
-      {/if}
-    {/snippet}
-    {#snippet loading()}
-      <p
-        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
-        role="status"
-      >
-        {m.settings_devices_loading_label()}
+<div class="space-y-8">
+  <section class="space-y-3" aria-labelledby="hosts-title" data-hosts-section>
+    <div>
+      <h2 id="hosts-title" class="type-title text-foreground">
+        {m.settings_devices_hosts_title()}
+      </h2>
+      <p class="max-w-2xl type-body text-muted-foreground">
+        {m.settings_devices_hosts_description()}
       </p>
-    {/snippet}
-    {#snippet empty()}
-      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
-        <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">
-          {m.settings_devices_empty_description()}
+    </div>
+
+    <ListView
+      virtualize={false}
+      items={listRows}
+      getKey={rowKey}
+      getText={rowText}
+      status={$loaded$ ? 'ready' : 'loading'}
+      ariaLabel={m.settings_devices_hosts_title()}
+      class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
+    >
+      {#snippet row({ item, index })}
+        {#if item.kind === 'device'}
+          {@const device = item.device}
+          <DeviceRow
+            {device}
+            last={index === listRows.length - 1}
+            highlighted={$highlightId$ === device.id}
+            panelMode={activeDeviceId === device.id ? activePanel : null}
+            onOpenPanel={(panel) => openPanel(device.id, panel)}
+            onClosePanel={closePanel}
+            onRequestRemove={requestRemove}
+          />
+        {:else if item.kind === 'cloud'}
+          {@render cloudRow(item, false, undefined, true)}
+        {/if}
+      {/snippet}
+      {#snippet loading()}
+        <p
+          class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
+          role="status"
+        >
+          {m.settings_devices_loading_label()}
         </p>
-      </div>
-    {/snippet}
-  </ListView>
+      {/snippet}
+      {#snippet empty()}
+        <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
+          <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
+          <p class="mt-1 type-body text-muted-foreground">
+            {m.settings_devices_empty_description()}
+          </p>
+        </div>
+      {/snippet}
+    </ListView>
+    {#if !$hostManagesConnections$ && $keychainSync$?.supported}
+      <div id="backend-sync" class="scroll-mt-20 pt-2"><BackendSyncSettings /></div>
+    {/if}
+    <div class="flex justify-end">
+      <Button
+        variant="ghost"
+        size="sm"
+        class="-mr-2.5"
+        data-testid="add-host"
+        onclick={() => appStore.dispatch(machineSetupOpened('pick', 'host'))}
+      >
+        {@render addLabel(m.settings_devices_addHost_label())}
+      </Button>
+    </div>
+  </section>
 
   {#if $orderVisible$}
     <OrderedMachinesList
@@ -336,7 +370,7 @@
   {:else if nodeRows.length > 0}
     <section class="space-y-3" aria-labelledby="nodes-title" data-nodes-section>
       <div>
-        <h3 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h3>
+        <h2 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h2>
         <p class="max-w-2xl type-body text-muted-foreground">
           {m.nodes_section_description()}
         </p>
@@ -378,89 +412,72 @@
     </section>
   {/if}
 
-  {#snippet addLabel()}
+  {#if !$orderVisible$}<RemoteMachinesSection />{/if}
+
+  {#snippet addLabel(label: string)}
     <Fa icon={faPlus} class="mr-1.5" size="xs" />
-    {m.settings_devices_add_label()}
+    {label}
   {/snippet}
 
-  <div class="flex justify-end">
-    {#if !canAddCloud}
-      <!-- Only one way to add a machine: open the wizard, no one-item menu. -->
-      <Button
-        variant="ghost"
-        size="sm"
-        data-testid="add-machine-menu"
-        onclick={() => appStore.dispatch(machineSetupOpened())}
-      >
-        {@render addLabel()}
-      </Button>
-    {:else}
-      <Menu.Root bind:open={addMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
-              {@render addLabel()}
-            </Button>
-          {/snippet}
-        </Menu.Trigger>
-        <Menu.Content align="end" class="w-80">
-          <Menu.Item
-            onSelect={() => appStore.dispatch(machineSetupOpened())}
-            data-testid="add-machine-setup"
-          >
-            {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
-            <span class="flex min-w-0 flex-col">
-              <span>{m.machineSetup_addMenu_label()}</span>
-              <span class="type-caption text-muted-foreground"
-                >{m.machineSetup_addMenu_description()}</span
+  {#if $remoteVisible$ || canAddCloud}
+    <div class="-mt-5 flex justify-end" data-add-runner>
+      {#if !canAddCloud}
+        <Button
+          variant="ghost"
+          size="sm"
+          class="-mr-2.5"
+          data-testid="add-machine-menu"
+          onclick={installRunner}
+        >
+          {@render addLabel(m.settings_devices_addRunner_label())}
+        </Button>
+      {:else}
+        <Menu.Root bind:open={addMenuOpen}>
+          <Menu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                variant="ghost"
+                size="sm"
+                class="-mr-2.5"
+                data-testid="add-machine-menu"
               >
-            </span>
-          </Menu.Item>
-          {#if $cloudKinds$.length === 1}
-            <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
-              {#snippet leading()}<Fa icon={faCloud} />{/snippet}
-              <span class="flex min-w-0 flex-col">
-                <span>{m.cloudMachines_addMenu_e2b_label()}</span>
-                <span class="type-caption text-muted-foreground"
-                  >{m.cloudMachines_addMenu_e2b_description()}</span
-                >
-              </span>
-            </Menu.Item>
-          {:else}
-            <Menu.Sub bind:open={addCloudOpen}>
-              <Menu.SubTrigger data-testid="add-cloud-machine">
+                {@render addLabel(m.settings_devices_addRunner_label())}
+              </Button>
+            {/snippet}
+          </Menu.Trigger>
+          <Menu.Content align="end" class="w-56">
+            {#if $remoteVisible$}
+              <Menu.Item onSelect={installRunner} data-testid="add-machine-setup">
+                {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
+                {m.machineSetup_pick_node_label()}
+              </Menu.Item>
+            {/if}
+            {#if $cloudKinds$.length === 1}
+              <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
                 {#snippet leading()}<Fa icon={faCloud} />{/snippet}
-                <span class="flex min-w-0 flex-col">
-                  <span>{m.cloudMachines_addMenu_cloud_label()}</span>
-                  <span class="type-caption text-muted-foreground"
-                    >{m.cloudMachines_addMenu_cloud_description()}</span
-                  >
-                </span>
-              </Menu.SubTrigger>
-              <Menu.SubContent class="w-80">
-                {#each $cloudKinds$ as kind (kind)}
-                  <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
-                    <span class="flex min-w-0 flex-col">
-                      <span>{cloudProviderName(kind)}</span>
-                      <span class="type-caption text-muted-foreground"
-                        >{kind === 'northflank'
-                          ? m.cloudMachines_addMenu_northflank_description()
-                          : kind === 'agent37'
-                            ? m.cloudMachines_addMenu_agent37_description()
-                            : kind === 'vercel'
-                              ? m.cloudMachines_addMenu_vercel_description()
-                              : m.cloudMachines_addMenu_e2b_description()}</span
-                      >
-                    </span>
-                  </Menu.Item>
-                {/each}
-              </Menu.SubContent>
-            </Menu.Sub>
-          {/if}
-        </Menu.Content>
-      </Menu.Root>
-    {/if}
-  </div>
+                {m.cloudMachines_addMenu_e2b_label()}
+              </Menu.Item>
+            {:else}
+              <Menu.Sub bind:open={addCloudOpen}>
+                <Menu.SubTrigger data-testid="add-cloud-machine">
+                  {#snippet leading()}<Fa icon={faCloud} />{/snippet}
+                  {m.cloudMachines_addMenu_cloud_label()}
+                </Menu.SubTrigger>
+                <Menu.SubContent class="w-56">
+                  {#each $cloudKinds$ as kind (kind)}
+                    <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
+                      {cloudProviderName(kind)}
+                    </Menu.Item>
+                  {/each}
+                </Menu.SubContent>
+              </Menu.Sub>
+            {/if}
+          </Menu.Content>
+        </Menu.Root>
+      {/if}
+    </div>
+  {/if}
 
   {#if removeError}
     <div
@@ -473,9 +490,6 @@
       </Button>
     </div>
   {/if}
-
-  {#if !$orderVisible$}<RemoteMachinesSection />{/if}
-  <BackendsWithAccessSection />
 </div>
 
 {#snippet orderedRow(entry: MachineOrderRow, order: MachineOrderControls)}
@@ -506,7 +520,7 @@
   {/if}
 {/snippet}
 
-{#snippet cloudRow(item: CloudRow, first = false, order?: MachineOrderControls)}
+{#snippet cloudRow(item: CloudRow, first = false, order?: MachineOrderControls, statusDot = false)}
   {@const formKey = item.entry?.id ?? NEW_CLOUD_ENTRY}
   <CloudMachineRow
     entry={item.entry}
@@ -514,6 +528,7 @@
     initialDraft={item.entry ? undefined : initialCloudDraft}
     {first}
     {order}
+    {statusDot}
     editing={cloudEditing === formKey}
     onEdit={() => (cloudEditing = formKey)}
     onClose={() => {

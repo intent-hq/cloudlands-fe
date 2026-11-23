@@ -4456,7 +4456,7 @@ export function openBackendWindow(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
-    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    /** "Switch to": show Settings → Machines once the backend's window shows. */
     switchTo?: boolean;
   },
 ): Promise<{ id: string }> {
@@ -4472,7 +4472,7 @@ function performOpenBackendWindowOwned(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
-    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    /** "Switch to": show Settings → Machines once the backend's window shows. */
     switchTo?: boolean;
   },
   parent?: PoolOwner,
@@ -4491,7 +4491,7 @@ async function performOpenBackendWindowOriginal(
     workspaceId?: string;
     /** Open this agent once the backend's window shows (the recent-agent switcher). */
     agent?: ConnectionAgentTarget;
-    /** "Switch to": show Settings → Hosts once the backend's window shows. */
+    /** "Switch to": show Settings → Machines once the backend's window shows. */
     switchTo?: boolean;
   },
   owner?: PoolOwner,

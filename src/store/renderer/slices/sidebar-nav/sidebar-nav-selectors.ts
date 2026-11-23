@@ -214,7 +214,8 @@ export const selectPinnedWorkspaceIds = store.createSelector((state): string[] =
 
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
   (state, workspaceId: string): string[] =>
-    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['overview'],
+    // Without a saved choice, People opens above Agents; it drops out when there are no people.
+    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['people', 'agents'],
 );
 
 export const selectWorkspaceNoteOrder = store.createSelector(
