@@ -74,6 +74,7 @@
   "chat_toolDetails_noteCount_many": ["fr"],
   "chat_toolDetails_noteCount_one": ["fr"],
   "chat_toolDetails_pr_badge": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "cloudMachines_form_disk_unit": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
   "codeReview_commentCard_severityImportant_label": ["fr"],
   "codeReview_commentCard_severitySuggestion_label": ["fr"],
   "codeReview_panel_review_label": ["de"],
