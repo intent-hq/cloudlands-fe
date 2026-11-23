@@ -94,6 +94,21 @@ function onFocus() {
 this.window.on('focus', onFocus);`,
     },
     {
+      name: 'a handler passed in as a parameter is not its enclosing function',
+      code: `
+function attach(win, onFocus) {
+  win.on('focus', onFocus);
+  win.webContents.focus();
+}`,
+    },
+    {
+      name: 'a browser-window-focus handler without focus() and without a window parameter',
+      code: `
+app.on('browser-window-focus', () => {
+  void rebuildMenu();
+});`,
+    },
+    {
       name: 'a handler that cannot be resolved in this file',
       code: `
 import { onFocus } from './focus';
@@ -196,6 +211,16 @@ app.on('browser-window-focus', (_event, win) => {
   win.webContents.focus();
 });`,
       errors: [error(3, 'win')],
+    },
+    {
+      name: 'a browser-window-focus handler with no window parameter cannot be guarded',
+      code: `
+app.on('browser-window-focus', () => {
+  if (!mainWindow.isFocused()) return;
+  mainWindow.webContents.focus();
+});
+app.on('browser-window-focus', (_event, { webContents }) => webContents.focus());`,
+      errors: [error(4), error(6)],
     },
     {
       name: 'a TypeScript-cast emitter and computed keys',

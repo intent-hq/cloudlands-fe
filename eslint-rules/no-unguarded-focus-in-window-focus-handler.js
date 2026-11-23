@@ -20,12 +20,13 @@
  *
  * Checked handlers: `<emitter>.on|once|addListener|prependListener|prependOnceListener`
  * with event 'focus' (guard on `<emitter>.isFocused()`), or app 'browser-window-focus'
- * (guard on the window parameter). The handler is an inline function or a function
- * declared in the same file. Every `<x>.focus()` call in it is flagged, whatever `x` is: in
+ * (guard on the window parameter; a handler without a plain window parameter cannot be
+ * guarded, so every focus() in it is flagged). The handler is an inline function or a
+ * function declared in the same file. Every `<x>.focus()` call in it is flagged, whatever `x` is: in
  * the main process each focus() (WebContents, BrowserWindow, app) can raise a window.
  * A call is allowed after an early `if (!<window>.isFocused()) return;` (also in an `||`
  * chain, or as `isFocused() === false`), or inside `if (<window>.isFocused()) { ... }`.
- * Helpers called from the handler are not followed.
+ * Helpers called from the handler, and handlers passed as `this.<name>`, are not followed.
  */
 
 const MESSAGE =
@@ -87,11 +88,8 @@ function resolveHandler(node, sourceCode) {
     const variable = scope.set.get(target.name);
     if (variable) {
       for (const def of variable.defs) {
-        if (def.node.type === 'FunctionDeclaration') return def.node;
-        if (
-          def.node.type === 'VariableDeclarator' &&
-          FUNCTION_TYPES.has(unwrap(def.node.init)?.type)
-        ) {
+        if (def.type === 'FunctionName') return def.node;
+        if (def.type === 'Variable' && FUNCTION_TYPES.has(unwrap(def.node.init)?.type)) {
           return unwrap(def.node.init);
         }
       }
@@ -104,6 +102,7 @@ function resolveHandler(node, sourceCode) {
 
 // `<window>.isFocused()`
 function isFocusedCall(node, windowText, sourceCode) {
+  if (windowText === null) return false;
   const call = unwrap(node);
   if (call?.type !== 'CallExpression' || memberName(call.callee) !== 'isFocused') return false;
   return sourceCode.getText(unwrap(unwrap(call.callee).object)) === windowText;
@@ -197,18 +196,23 @@ function collectFocusCalls(root, visitorKeys) {
   return calls;
 }
 
-// The window whose focus the handler must check, as source text.
-function focusedWindowText(call, handler, sourceCode) {
+// The window whose focus the handler must check, as source text (`guard`; null when the
+// handler has no name for it, so no guard can match), or null for other listeners.
+function focusedWindow(call, handler, sourceCode) {
   const event = staticString(call.arguments[0]);
   const emitter = unwrap(unwrap(call.callee).object);
-  if (event === 'focus') return sourceCode.getText(emitter);
+  if (event === 'focus') {
+    const text = sourceCode.getText(emitter);
+    return { guard: text, label: text };
+  }
   if (
     event === 'browser-window-focus' &&
     emitter?.type === 'Identifier' &&
     emitter.name === 'app'
   ) {
     const param = handler.params[1];
-    return param?.type === 'Identifier' ? param.name : null;
+    if (param?.type === 'Identifier') return { guard: param.name, label: param.name };
+    return { guard: null, label: 'window' };
   }
   return null;
 }
@@ -233,8 +237,9 @@ export default {
         if (!LISTENER_METHODS.has(memberName(node.callee))) return;
         const handler = resolveHandler(node.arguments[1], sourceCode);
         if (!handler) return;
-        const windowText = focusedWindowText(node, handler, sourceCode);
-        if (windowText === null) return;
+        const target = focusedWindow(node, handler, sourceCode);
+        if (!target) return;
+        const windowText = target.guard;
         const key = `${handler.range[0]}:${windowText}`;
         if (checked.has(key)) return;
         checked.add(key);
@@ -242,7 +247,11 @@ export default {
         for (const call of collectFocusCalls(handler.body, sourceCode.visitorKeys)) {
           if (call.range[0] >= guardedFrom) continue;
           if (insideFocusedBranch(call, handler, windowText, sourceCode)) continue;
-          context.report({ node: call, messageId: 'unguardedFocus', data: { window: windowText } });
+          context.report({
+            node: call,
+            messageId: 'unguardedFocus',
+            data: { window: target.label },
+          });
         }
       },
     };
