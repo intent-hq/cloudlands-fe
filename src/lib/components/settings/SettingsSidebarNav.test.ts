@@ -89,7 +89,7 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Hosts' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Mobile' }));
 
     expect(onSelect.mock.calls).toEqual([['devices'], ['mobile']]);

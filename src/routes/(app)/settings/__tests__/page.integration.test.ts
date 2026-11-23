@@ -535,8 +535,8 @@ describe('settings tab route and focus behavior', () => {
     ['notifications', 'General', 'page'],
     ['general', 'Appearance', 'page'],
     ['connections', 'Connections', 'page'],
-    ['devices', 'Hosts', 'page'],
-    ['machines', 'Hosts', 'page'],
+    ['devices', 'Machines', 'page'],
+    ['machines', 'Machines', 'page'],
     ['mobile', 'Mobile', 'page'],
     ['interface-system', 'Appearance', 'page'],
     ['input', 'Inputs', 'page'],
@@ -555,7 +555,7 @@ describe('settings tab route and focus behavior', () => {
   it.each(['devices', 'machines'])('maps the compatible #%s hash to Hosts', async (hash) => {
     const { container } = renderSettings(`/settings#${hash}`);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Hosts' }).getAttribute('aria-current')).toBe(
+      expect(screen.getByRole('button', { name: 'Machines' }).getAttribute('aria-current')).toBe(
         'page',
       ),
     );
@@ -578,7 +578,7 @@ describe('settings tab route and focus behavior', () => {
     await waitFor(() => expect(container.querySelector('#websocket-api')).not.toBeNull());
     expect(container.querySelector('#backend-sync')).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Hosts' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
     await waitFor(() => expect(container.querySelector('#backend-sync')).not.toBeNull());
     expect(container.querySelector('#websocket-api')).toBeNull();
     expect(new URL(window.location.href).searchParams.get('tab')).toBe('devices');
@@ -633,7 +633,7 @@ describe('settings tab route and focus behavior', () => {
     ['/settings#remote-access', 'Mobile', 'websocket-api'],
     ['/settings?tab=devices#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=machines#remote-access', 'Mobile', 'websocket-api'],
-    ['/settings?tab=mobile#backend-sync', 'Hosts', 'backend-sync'],
+    ['/settings?tab=mobile#backend-sync', 'Machines', 'backend-sync'],
     // Legacy deep link from when the section lived on Advanced.
     ['/settings?tab=advanced#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Token Savings', 'agent-features'],

@@ -23,7 +23,11 @@
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { remoteMachineBadge } from './remote-machines-messages';
+  import {
+    machineLoadDetails,
+    needsNodeDetail,
+    remoteMachineBadge,
+  } from './remote-machines-messages';
   import MachineLoad from './MachineLoad.svelte';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
@@ -83,6 +87,10 @@
       (id) => entries.find((entry) => entry.id === id)?.displayName,
       $connections$.find((connection) => connection.id === connectionId)?.daemonMode,
     );
+  });
+  const details = $derived.by(() => {
+    const needsNodeLine = providers.length === 0 && report ? needsNodeDetail(needsNode) : null;
+    return [...machineLoadDetails(machine), ...(needsNodeLine ? [needsNodeLine] : [])];
   });
   // Green while the backend holds a link to it, grey without one; a
   // problem shows its badge colour, and the badge names it.
@@ -151,12 +159,12 @@
       </span>
     {/snippet}
     {#snippet title()}
-      <MachineName name={machine.name} {platform} {platformFallback} {providers} />
+      <MachineName name={machine.name} {platform} {platformFallback} {providers} {details} />
     {/snippet}
     {#snippet meta()}
       <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
         <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
-        <MachineLoad {machine} />
+        <MachineLoad {machine} tooltip={false} />
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
             >{m.remoteMachines_scriptsUpdate_label()}</span

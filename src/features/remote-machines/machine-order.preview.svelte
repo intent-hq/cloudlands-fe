@@ -7,7 +7,7 @@
   const state = (name: MachineOrderPreviewState) => ({ props: {}, setup: () => setup(name) });
   export const preview = definePreview({
     id: 'machine-order',
-    title: 'Hosts and runners in Settings → Hosts (machineOrder: 1)',
+    title: 'Hosts and runners in Settings → Machines (machineOrder: 1)',
     defaultState: 'owner',
     states: {
       owner: state('owner'),

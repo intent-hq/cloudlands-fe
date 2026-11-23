@@ -10,28 +10,24 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import type { RemoteMachine } from '$shared/types/remote-machines';
   import { machineRowLoad, machineRowResources } from './machine-facts';
-  import {
-    machineLoadTooltip,
-    machineResourcesTooltip,
-    runningAgentsLabel,
-  } from './remote-machines-messages';
+  import { machineLoadDetails, runningAgentsLabel } from './remote-machines-messages';
 
   let {
     machine,
     tooltipOpen = false,
+    tooltip = true,
   }: {
     machine: RemoteMachine;
     /** Tests and previews: show the tooltip without hovering. */
     tooltipOpen?: boolean;
+    /** Off in machine rows: the name's tooltip carries these lines. */
+    tooltip?: boolean;
   } = $props();
 
   const load = $derived(machineRowLoad(machine));
   const resources = $derived(machineRowResources(machine));
   const running = $derived(load ? load.runningAgents : machine.runningAgents);
-  const lines = $derived([
-    ...(load ? [machineLoadTooltip(load)] : []),
-    ...(resources ? machineResourcesTooltip(resources) : []),
-  ]);
+  const lines = $derived(tooltip ? machineLoadDetails(machine) : []);
 </script>
 
 {#snippet details()}

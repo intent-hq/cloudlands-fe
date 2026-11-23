@@ -510,6 +510,6 @@ for (const orchestrator of ['machine', 'no-machine'] as const) {
     // Only the no-machine warning shows; with a machine there is no note.
     await expect(notice).toHaveCount(orchestrator === 'machine' ? 0 : 1);
     if (orchestrator === 'no-machine')
-      await expect(notice.getByRole('button', { name: 'Open Settings → Hosts' })).toBeVisible();
+      await expect(notice.getByRole('button', { name: 'Open Settings → Machines' })).toBeVisible();
   });
 }

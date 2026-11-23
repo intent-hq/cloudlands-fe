@@ -1,7 +1,7 @@
+<!-- Why a runner has no providers ready. The row's name tooltip names the
+  providers Node.js would unlock. -->
 <script lang="ts">
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
-  import { getActiveLocale } from '$lib/i18n/locale';
   let {
     needsNode,
   }: {
@@ -10,17 +10,6 @@
   } = $props();
 </script>
 
-{#if needsNode.length > 0}
-  <Tooltip
-    content={m.remoteMachines_needsNode_tooltip({
-      providers: new Intl.ListFormat(getActiveLocale(), {
-        style: 'long',
-        type: 'conjunction',
-      }).format(needsNode),
-    })}
-  >
-    <span>{m.remoteMachines_needsNode_label()}</span>
-  </Tooltip>
-{:else}
-  <span>{m.remoteMachines_noProviders_label()}</span>
-{/if}
+<span>
+  {needsNode.length > 0 ? m.remoteMachines_needsNode_label() : m.remoteMachines_noProviders_label()}
+</span>

@@ -110,7 +110,7 @@ it('reopens Mobile from an older remote-access hash after visiting Hosts', async
   await waitFor(() => expect(mobileTab.getAttribute('aria-current')).toBe('page'));
   await fireEvent.click(advanced());
   await waitFor(() => expect(advanced().getAttribute('aria-expanded')).toBe('true'));
-  await fireEvent.click(within(navigation).getByRole('button', { name: 'Hosts', exact: true }));
+  await fireEvent.click(within(navigation).getByRole('button', { name: 'Machines', exact: true }));
   await waitFor(() => expect(document.getElementById('devices')).not.toBeNull());
   expect(document.getElementById('websocket-api')).toBeNull();
   window.history.replaceState({}, '', '/settings#remote-access');
@@ -139,7 +139,7 @@ it('drops Mobile and Backend Sync when intent-web manages the machines', async (
   const navigation = screen.getByRole('navigation', { name: 'Settings' });
   expect(within(navigation).queryByRole('button', { name: 'Mobile', exact: true })).toBeNull();
   await waitFor(() => expect(document.getElementById('websocket-api')).toBeNull());
-  await fireEvent.click(within(navigation).getByRole('button', { name: 'Hosts', exact: true }));
+  await fireEvent.click(within(navigation).getByRole('button', { name: 'Machines', exact: true }));
   await waitFor(() => expect(document.getElementById('devices')).not.toBeNull());
   expect(document.getElementById('backend-sync')).toBeNull();
 });

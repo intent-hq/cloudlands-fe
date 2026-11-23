@@ -1,5 +1,7 @@
 import { m } from '$shared/paraglide/messages.js';
 import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
+import { getActiveLocale } from '$lib/i18n/locale';
+import { machineRowLoad, machineRowResources } from './machine-facts';
 import type {
   RemoteMachine,
   RemoteMachineCapacity,
@@ -130,4 +132,25 @@ export function machineResourcesTooltip(resources: RemoteMachineResources): stri
       total: formatBytesBinary(resources.memoryTotalBytes),
     }),
   ];
+}
+
+/** A runner's slots, CPU and memory lines; empty when it reports none. */
+export function machineLoadDetails(machine: RemoteMachine | null): string[] {
+  const load = machineRowLoad(machine);
+  const resources = machineRowResources(machine);
+  return [
+    ...(load ? [machineLoadTooltip(load)] : []),
+    ...(resources ? machineResourcesTooltip(resources) : []),
+  ];
+}
+
+/** Why a runner has no providers ready: the ones Node.js would unlock. */
+export function needsNodeDetail(needsNode: string[]): string | null {
+  if (needsNode.length === 0) return null;
+  return m.remoteMachines_needsNode_tooltip({
+    providers: new Intl.ListFormat(getActiveLocale(), {
+      style: 'long',
+      type: 'conjunction',
+    }).format(needsNode),
+  });
 }

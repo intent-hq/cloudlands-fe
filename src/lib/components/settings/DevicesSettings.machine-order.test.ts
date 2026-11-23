@@ -478,20 +478,29 @@ describe('Settings → Machines against another backend', () => {
     ).not.toBeNull();
   });
 
-  it('offers Switch to on every other host and shows Current on this one', async () => {
+  it('offers Switch to in the menu of every other host and shows Current on this one', async () => {
     seedRemoteBackend();
     render(DevicesSettings);
 
     const hostRow = (id: string) =>
-      document.querySelector(`#device-${id}-name`)!.closest('article')!;
+      document.querySelector<HTMLElement>(`#device-${id}-name`)!.closest('article')!;
     expect(hostRow('spare').querySelector('[data-current-host]')?.textContent).toBe(
       m.settings_devices_current_label(),
     );
-    expect(hostRow('spare').querySelector('[data-switch-to-host]')).toBeNull();
-    expect(hostRow('local').querySelector('[data-switch-to-host]')).not.toBeNull();
+    // Switch to lives in the row menu, never as a button on the row.
+    expect(
+      within(hostRow('local')).queryByRole('button', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
+    await openMenu(hostRow('spare'));
+    await screen.findByRole('menuitem', { name: m.settings_devices_edit_label() });
+    expect(
+      screen.queryByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
+    await fireEvent.keyDown(document.body, { key: 'Escape' });
 
+    await openMenu(hostRow('studio'));
     await fireEvent.click(
-      within(hostRow('studio')).getByRole('button', { name: m.settings_devices_switchTo_label() }),
+      await screen.findByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
     );
     const requested = dispatch.mock.calls
       .map(([action]) => action as { type: string; payload?: { intent?: unknown } })
@@ -501,7 +510,7 @@ describe('Settings → Machines against another backend', () => {
     ]);
   });
 
-  it('offers no Switch to on a runner-only node', () => {
+  it('offers no Switch to on a runner-only node', async () => {
     const node: ConnectionRecord = { ...spare, id: 'gpu', label: 'GPU node', daemonMode: 'node' };
     seedRemoteBackend();
     store.dispatch(
@@ -513,9 +522,13 @@ describe('Settings → Machines against another backend', () => {
     );
     render(DevicesSettings);
 
-    const row = document.querySelector('#device-gpu-name')!.closest('article')!;
-    expect(row.querySelector('[data-switch-to-host]')).toBeNull();
+    const row = document.querySelector<HTMLElement>('#device-gpu-name')!.closest('article')!;
     expect(row.querySelector('[data-current-host]')).toBeNull();
+    await openMenu(row);
+    await screen.findByRole('menuitem', { name: m.settings_devices_edit_label() });
+    expect(
+      screen.queryByRole('menuitem', { name: m.settings_devices_switchTo_label() }),
+    ).toBeNull();
   });
 
   it('lists a regular host as its own runner', () => {
