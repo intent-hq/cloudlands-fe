@@ -9458,7 +9458,6 @@
   "chat_goalNotice_current_label": "Objetivo actual: {goal}",
   "chat_goalNotice_cleared_label": "Objetivo quitado.",
   "chat_goalNotice_none_label": "No hay objetivo. Envía /goal seguido de cómo se ve el trabajo terminado.",
-  "chat_goalNotice_edit_label": "Editar",
   "chat_goalNotice_fallback_label": "Objetivo cambiado",
   "chat_goalStrip_setBy_label": "Establecido por {name}",
   "chat_goalStrip_setByYou_label": "Establecido por ti",

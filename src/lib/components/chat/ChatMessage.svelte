@@ -1809,13 +1809,12 @@
 {:else if secretRequestNotice}
   <SecretRequestNotice notice={secretRequestNotice} />
 {:else if goalNotice}
-  <!-- Daemon-persisted conversation goal notice row - left-aligned operational row -->
+  <!-- Daemon-persisted conversation goal notice row - centered inline divider -->
   <GoalNotice
     notice={goalNotice}
     fallbackText={extractAllContent(message) || undefined}
     workspaceId={getOwningWorkspaceId()}
     {agentId}
-    readonly={readOnly}
   />
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->

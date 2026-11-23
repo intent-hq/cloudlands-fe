@@ -40,6 +40,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import GoalStrip from './GoalStrip.svelte';
   import GoalNotice from './GoalNotice.svelte';
+  import ModelChangeNotice from '$lib/components/chat/ModelChangeNotice.svelte';
   import {
     presenceContextReceived,
     presenceMembersReceived,
@@ -132,6 +133,10 @@
     <GoalStrip {workspaceId} {agentId} {readonly} />
     <div class="h-16"></div>
   </div>
+  <!-- Reference: goal notices share the model-change divider style. -->
+  <ModelChangeNotice
+    notice={{ from: 'opus', to: 'sonnet', fromProvider: 'claude-code', toProvider: 'claude-code' }}
+  />
   <GoalNotice
     notice={{
       action: 'shown',
@@ -140,7 +145,6 @@
     }}
     {workspaceId}
     {agentId}
-    {readonly}
   />
-  <GoalNotice notice={{ action: 'cleared', goal: null }} {workspaceId} {agentId} {readonly} />
+  <GoalNotice notice={{ action: 'cleared', goal: null }} {workspaceId} {agentId} />
 </div>

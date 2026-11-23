@@ -1,29 +1,20 @@
 <script lang="ts">
   /**
-   * Transcript row for a daemon-persisted `goal_command` row, in the shared
-   * left-aligned operational row pattern: one truncated line that expands to
-   * the full goal (links clickable). A "Current goal" row offers Edit. In a
-   * shared workspace the row also says who wrote it (`fromPrincipalId`).
+   * Transcript row for a daemon-persisted `goal_command` row, drawn as the
+   * same centered inline divider as model-change notices: one truncated line
+   * (full goal on hover) that expands below to the full goal (links
+   * clickable). Notices never edit the goal: the goal strip owns Edit and
+   * Remove. In a shared workspace the row also says who wrote it
+   * (`fromPrincipalId`).
    */
-  import Fa from 'svelte-fa';
-  import { toStore } from 'svelte/store';
   import { faFlag } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
-  import {
-    CHAT_OPERATIONAL_ICON_CLASS,
-    OPERATIONAL_EXPANDED_CONTENT_CLASS,
-  } from '$lib/components/chat/operational-disclosure-row';
+  import ChatInlineDivider from '$lib/components/chat/ChatInlineDivider.svelte';
+  import { animatedHeight } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectConversationGoalSupported } from '$store/renderer/slices/principal/principal-selectors';
-  import {
-    selectAgentGoal,
-    selectAgentRetired,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { GoalNoticeInfo } from '../utils/goal-command';
   import { selectGoalAttribution } from '../goal-attribution-selectors';
   import { goalNoticeAttributionLabel } from '../utils/goal-attribution';
-  import GoalEditorDialog from './GoalEditorDialog.svelte';
   import GoalText from './GoalText.svelte';
 
   interface Props {
@@ -32,20 +23,16 @@
     fallbackText?: string;
     workspaceId?: string;
     agentId?: string;
-    /** Retired conversations are read-only: no Edit. */
-    readonly?: boolean;
   }
 
-  let { notice, fallbackText, workspaceId, agentId, readonly = false }: Props = $props();
+  let { notice, fallbackText, workspaceId, agentId }: Props = $props();
 
-  const supported$ = selectConversationGoalSupported();
-  const agentId$ = toStore(() => agentId ?? '');
-  const currentGoal$ = selectAgentGoal(agentId$);
-  // Retired conversations are read-only even when the transcript host does
-  // not pass `readonly` (the chat panel renders rows without it).
-  const retired$ = selectAgentRetired(agentId$);
-  let editing = $state(false);
   let expanded = $state(false);
+  // Collapsing keeps the details mounted until the height animation ends.
+  let detailsRetained = $state(false);
+  $effect(() => {
+    if (expanded) detailsRetained = true;
+  });
   const detailsId = $props.id();
 
   const label = $derived.by((): string | null => {
@@ -79,68 +66,52 @@
       ? m.chat_goalNotice_attributed_ariaLabel({ text, attribution: attributionLabel })
       : text,
   );
-  const canEdit = $derived(
-    !readonly &&
-      !$retired$ &&
-      $supported$ &&
-      !!workspaceId &&
-      !!agentId &&
-      notice.action === 'shown' &&
-      notice.goal !== null,
-  );
 </script>
 
-{#snippet leading()}
-  <Fa icon={faFlag} class="{CHAT_OPERATIONAL_ICON_CLASS} text-subtle opacity-50" />
-{/snippet}
-{#snippet summary()}
-  <span data-testid="goal-notice-text">{text}</span>
-{/snippet}
-{#snippet trailing()}
-  {#if attributionLabel}
-    <span
-      class="max-w-40 truncate type-caption text-subtle"
-      title={attributionLabel}
-      data-testid="goal-notice-attribution">{attributionLabel}</span
+<div class="goal-notice my-4 min-w-0" data-testid="goal-notice">
+  <ChatInlineDivider icon={faFlag} class="my-0">
+    {#if notice.goal}
+      <Button
+        variant="plain"
+        class="h-auto min-w-0 shrink justify-start text-xs text-muted-foreground hover:text-foreground"
+        title={text}
+        aria-label={rowLabel}
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        onclick={() => (expanded = !expanded)}
+        ><span class="min-w-0 truncate" data-testid="goal-notice-text">{text}</span></Button
+      >
+    {:else}
+      <span class="min-w-0 truncate" title={text} data-testid="goal-notice-text">{text}</span>
+    {/if}
+    {#if attributionLabel}
+      <span
+        class="max-w-40 flex-shrink-0 truncate opacity-80"
+        title={attributionLabel}
+        data-testid="goal-notice-attribution">{attributionLabel}</span
+      >
+    {/if}
+  </ChatInlineDivider>
+  {#if notice.goal}
+    <div
+      id={detailsId}
+      inert={!expanded}
+      aria-hidden={!expanded}
+      use:animatedHeight={{
+        open: expanded,
+        onClosed: () => {
+          if (!expanded) detailsRetained = false;
+        },
+      }}
     >
+      {#if expanded || detailsRetained}
+        <div
+          class="mx-auto max-w-prose whitespace-pre-wrap px-7 pt-2 text-center text-xs text-muted-foreground [overflow-wrap:anywhere]"
+          data-testid="goal-notice-details"
+        >
+          <GoalText {text} {workspaceId} />
+        </div>
+      {/if}
+    </div>
   {/if}
-  {#if canEdit}
-    <Button
-      variant="link"
-      size="sm"
-      class="h-auto p-0 type-caption"
-      aria-label={m.chat_goalStrip_edit_ariaLabel()}
-      onclick={() => (editing = true)}>{m.chat_goalNotice_edit_label()}</Button
-    >
-  {/if}
-{/snippet}
-{#snippet detailsBody()}
-  <div class="whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="goal-notice-details">
-    <GoalText {text} {workspaceId} />
-  </div>
-{/snippet}
-
-<ChatOperationalRow
-  {leading}
-  {summary}
-  {trailing}
-  details={notice.goal ? detailsBody : undefined}
-  animateDetailsHeight
-  interactive={!!notice.goal}
-  {expanded}
-  controls={notice.goal ? detailsId : undefined}
-  {detailsId}
-  ariaLabel={rowLabel}
-  onclick={() => (expanded = !expanded)}
-  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground"
-  testId="goal-notice"
-  class="goal-notice my-1"
-/>
-{#if canEdit && workspaceId && agentId}
-  <GoalEditorDialog
-    bind:open={editing}
-    {workspaceId}
-    {agentId}
-    initialGoal={$currentGoal$ ?? notice.goal ?? ''}
-  />
-{/if}
+</div>
