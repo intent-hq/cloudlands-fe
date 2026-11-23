@@ -1,12 +1,7 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { onDestroy, untrack } from 'svelte';
-  import {
-    Button,
-    Input,
-    Label,
-    Switch,
-  } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Input, Label, Switch } from '$lib/components/patterns/settings/custom-controls';
   import {
     ListRow,
     ListView,
