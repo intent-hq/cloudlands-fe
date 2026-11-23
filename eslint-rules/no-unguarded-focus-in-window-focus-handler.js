@@ -112,42 +112,50 @@ function isFocusedCall(node, windowText, sourceCode) {
   return sourceCode.getText(unwrap(unwrap(call.callee).object)) === windowText;
 }
 
-// A test that is true whenever the window has lost focus.
-function isNotFocusedTest(node, windowText, sourceCode) {
+function later(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return a.range[1] >= b.range[1] ? a : b;
+}
+
+// The `<window>.isFocused()` call that makes the test true whenever the window has lost
+// focus, or null.
+function notFocusedCheck(node, windowText, sourceCode) {
   const test = unwrap(node);
   if (test?.type === 'UnaryExpression' && test.operator === '!') {
-    return isFocusedCall(test.argument, windowText, sourceCode);
+    return isFocusedCall(test.argument, windowText, sourceCode) ? test.argument : null;
   }
   if (test?.type === 'BinaryExpression' && ['===', '=='].includes(test.operator)) {
     const [call, other] = isFocusedCall(test.left, windowText, sourceCode)
       ? [test.left, test.right]
       : [test.right, test.left];
-    return (
+    const matches =
       isFocusedCall(call, windowText, sourceCode) &&
       other.type === 'Literal' &&
-      other.value === false
-    );
+      other.value === false;
+    return matches ? call : null;
   }
   if (test?.type === 'LogicalExpression' && test.operator === '||') {
-    return (
-      isNotFocusedTest(test.left, windowText, sourceCode) ||
-      isNotFocusedTest(test.right, windowText, sourceCode)
+    return later(
+      notFocusedCheck(test.left, windowText, sourceCode),
+      notFocusedCheck(test.right, windowText, sourceCode),
     );
   }
-  return false;
+  return null;
 }
 
-// A test that is false whenever the window has lost focus.
-function isFocusedTest(node, windowText, sourceCode) {
+// The `<window>.isFocused()` call that makes the test false whenever the window has lost
+// focus, or null.
+function focusedCheck(node, windowText, sourceCode) {
   const test = unwrap(node);
-  if (isFocusedCall(test, windowText, sourceCode)) return true;
+  if (isFocusedCall(test, windowText, sourceCode)) return test;
   if (test?.type === 'LogicalExpression' && test.operator === '&&') {
-    return (
-      isFocusedTest(test.left, windowText, sourceCode) ||
-      isFocusedTest(test.right, windowText, sourceCode)
+    return later(
+      focusedCheck(test.left, windowText, sourceCode),
+      focusedCheck(test.right, windowText, sourceCode),
     );
   }
-  return false;
+  return null;
 }
 
 function alwaysReturns(statement) {
@@ -155,12 +163,10 @@ function alwaysReturns(statement) {
   return statement?.type === 'BlockStatement' && alwaysReturns(statement.body.at(-1));
 }
 
-function isGuardStatement(statement, windowText, sourceCode) {
-  return (
-    statement.type === 'IfStatement' &&
-    alwaysReturns(statement.consequent) &&
-    isNotFocusedTest(statement.test, windowText, sourceCode)
-  );
+// The isFocused() call of an early-return guard statement, or null.
+function guardCheck(statement, windowText, sourceCode) {
+  if (statement.type !== 'IfStatement' || !alwaysReturns(statement.consequent)) return null;
+  return notFocusedCheck(statement.test, windowText, sourceCode);
 }
 
 function enclosingFunction(node) {
@@ -169,15 +175,17 @@ function enclosingFunction(node) {
   return current;
 }
 
-// An await or yield in `fn` itself that finishes between `start` and `end`: focus can
-// move to another window while it waits.
-function suspendsBetween(fn, start, end, visitorKeys) {
+// An await or yield in `fn` itself, between `start` and the end of `call`, that runs
+// before focus(): focus can move to another window while it waits. An await of the
+// focus() call itself runs after it.
+function suspendsBefore(fn, start, call, visitorKeys) {
   const visit = (node) => {
     if (node !== fn && FUNCTION_TYPES.has(node.type)) return false;
     if (
       (node.type === 'AwaitExpression' || node.type === 'YieldExpression') &&
       node.range[0] >= start &&
-      node.range[1] <= end
+      node.range[1] <= call.range[1] &&
+      (node.range[1] <= call.range[0] || node.range[0] >= call.range[0])
     ) {
       return true;
     }
@@ -197,25 +205,22 @@ function suspendsBetween(fn, start, end, visitorKeys) {
 function isGuarded(call, windowText, sourceCode) {
   if (windowText === null) return false;
   const fn = enclosingFunction(call);
-  const callStart = call.range[0];
-  const fresh = (checkEnd) => !suspendsBetween(fn, checkEnd, callStart, sourceCode.visitorKeys);
+  // From the isFocused() call to the end of the focus() call, receiver and arguments
+  // included: an await anywhere in that span makes the check stale.
+  const fresh = (check) => !suspendsBefore(fn, check.range[1], call, sourceCode.visitorKeys);
   if (fn.body.type === 'BlockStatement') {
-    let guard = null;
+    let check = null;
     for (const statement of fn.body.body) {
-      if (statement.range[1] > callStart) break;
-      if (isGuardStatement(statement, windowText, sourceCode)) guard = statement;
+      if (statement.range[1] > call.range[0]) break;
+      check = guardCheck(statement, windowText, sourceCode) ?? check;
     }
-    if (guard && fresh(guard.range[1])) return true;
+    if (check && fresh(check)) return true;
   }
   let child = call;
   for (let node = call.parent; node && node !== fn; node = node.parent) {
-    if (
-      node.type === 'IfStatement' &&
-      node.consequent === child &&
-      isFocusedTest(node.test, windowText, sourceCode) &&
-      fresh(node.test.range[1])
-    ) {
-      return true;
+    if (node.type === 'IfStatement' && node.consequent === child) {
+      const check = focusedCheck(node.test, windowText, sourceCode);
+      if (check && fresh(check)) return true;
     }
     child = node;
   }

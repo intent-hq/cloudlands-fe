@@ -133,6 +133,17 @@ window.on('focus', async () => {
 });`,
     },
     {
+      name: 'an await in the condition before the focus check',
+      code: `
+window.on('focus', async () => {
+  if ((await stale()) || !window.isFocused()) return;
+  view.webContents.focus();
+});
+window.on('focus', async () => {
+  if ((await ready()) && window.isFocused()) view.webContents.focus();
+});`,
+    },
+    {
       name: 'a handler that cannot be resolved in this file',
       code: `
 import { onFocus } from './focus';
@@ -274,6 +285,28 @@ window.on('focus', async () => {
   }
 });`,
       errors: [error(5), error(10)],
+    },
+    {
+      name: 'an await in the condition after the focus check',
+      code: `
+window.on('focus', async () => {
+  if (window.isFocused() && (await ready())) view.webContents.focus();
+});
+window.on('focus', async () => {
+  if (!window.isFocused() || (await stale())) return;
+  view.webContents.focus();
+});`,
+      errors: [error(3), error(7)],
+    },
+    {
+      name: 'an await in the receiver or arguments of focus()',
+      code: `
+window.on('focus', async () => {
+  if (!window.isFocused()) return;
+  (await getView()).webContents.focus();
+  view.webContents.focus(await options());
+});`,
+      errors: [error(4), error(5)],
     },
     {
       name: 'a TypeScript-cast emitter and computed keys',
