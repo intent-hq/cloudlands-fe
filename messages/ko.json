@@ -5127,6 +5127,8 @@
   "settings_devices_operatingSystem_label": "OS",
   "settings_devices_providers_label": "공급자",
   "settings_devices_version_label": "버전",
+  "settings_devices_status_label": "상태",
+  "settings_devices_address_label": "주소",
   "settings_devices_versionBehind_value": "{daemonVersion} (앱: {pinnedVersion})",
   "settings_devices_mobileDisabled_description": "Intent Mobile을 연결하려면 이 기기에서 원격 액세스를 활성화하세요.",
   "settings_devices_mobile_title": "Intent Mobile",

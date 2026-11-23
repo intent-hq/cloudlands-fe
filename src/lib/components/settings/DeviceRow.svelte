@@ -364,7 +364,9 @@
       providers.length === 0 && !device.providers && machineRowReport(exposedMachine)
         ? needsNodeFact(needsNode)
         : null;
+    const version = (device.intentdVersion ?? device.daemonVersion)?.replace(/^v/, '');
     return [
+      { label: m.settings_devices_status_label(), value: statusLabel(openStatus) },
       ...(versionWarning && device.daemonVersion && pinnedVersion
         ? [
             {
@@ -374,6 +376,17 @@
                 pinnedVersion: pinnedVersion.replace(/^v/, ''),
               }),
               warning: true,
+            },
+          ]
+        : version
+          ? [{ label: m.settings_devices_version_label(), value: version }]
+          : []),
+      ...(!device.isLocal && device.host
+        ? [
+            {
+              label: m.settings_devices_address_label(),
+              // i18n-ignore (host and port)
+              value: device.port ? `${device.host}:${device.port}` : device.host,
             },
           ]
         : []),

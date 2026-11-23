@@ -5127,6 +5127,8 @@
   "settings_devices_operatingSystem_label": "OS",
   "settings_devices_providers_label": "プロバイダー",
   "settings_devices_version_label": "バージョン",
+  "settings_devices_status_label": "状態",
+  "settings_devices_address_label": "アドレス",
   "settings_devices_versionBehind_value": "{daemonVersion}（アプリ: {pinnedVersion}）",
   "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
   "settings_devices_mobile_title": "Intent Mobile",

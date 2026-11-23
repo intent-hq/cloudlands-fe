@@ -5127,6 +5127,8 @@
   "settings_devices_operatingSystem_label": "SO",
   "settings_devices_providers_label": "Proveedores",
   "settings_devices_version_label": "Versión",
+  "settings_devices_status_label": "Estado",
+  "settings_devices_address_label": "Dirección",
   "settings_devices_versionBehind_value": "{daemonVersion} (aplicación: {pinnedVersion})",
   "settings_devices_mobileDisabled_description": "Activa el acceso remoto en este dispositivo para conectar Intent Mobile.",
   "settings_devices_mobile_title": "Intent Mobile",

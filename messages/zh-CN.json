@@ -5127,6 +5127,8 @@
   "settings_devices_operatingSystem_label": "系统",
   "settings_devices_providers_label": "提供商",
   "settings_devices_version_label": "版本",
+  "settings_devices_status_label": "状态",
+  "settings_devices_address_label": "地址",
   "settings_devices_versionBehind_value": "{daemonVersion}（应用：{pinnedVersion}）",
   "settings_devices_mobileDisabled_description": "在此设备上启用远程访问以连接 Intent Mobile。",
   "settings_devices_mobile_title": "Intent Mobile",

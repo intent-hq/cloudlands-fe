@@ -5127,6 +5127,8 @@
   "settings_devices_operatingSystem_label": "系統",
   "settings_devices_providers_label": "供應商",
   "settings_devices_version_label": "版本",
+  "settings_devices_status_label": "狀態",
+  "settings_devices_address_label": "位址",
   "settings_devices_versionBehind_value": "{daemonVersion}（應用程式：{pinnedVersion}）",
   "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
   "settings_devices_mobile_title": "Intent Mobile",
