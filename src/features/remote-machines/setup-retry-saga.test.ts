@@ -159,4 +159,30 @@ describe('setupRetrySaga', () => {
     dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
     await vi.waitFor(() => expect(retryRequests()).toHaveLength(2));
   });
+
+  it('releases at once when the new run fails fast, before the reply arrives', async () => {
+    upsertSetup(FAILED);
+    backend.onRequest('agent.retrySetup', () => {
+      // agent:updated with the new run's terminal failure lands first.
+      upsertSetup({ ...FAILED, startedAt: '2026-11-23T09:05:00Z', exitCode: 1 });
+      return RUNNING_REPLY;
+    });
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    await vi.waitFor(() => expect(retryRequests()).toHaveLength(1));
+    await vi.waitFor(() => expect(pending()).toBeUndefined());
+  });
+
+  it('releases at once when the new run is next seen already failed, with no running state', async () => {
+    upsertSetup(FAILED);
+    backend.onRequest('agent.retrySetup', () => RUNNING_REPLY);
+    dispatch(remoteSetupRetryRequested({ ...PARAMS, machine: 'Mac mini' }));
+    await vi.waitFor(() => expect(retryRequests()).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A re-sent row of the old failed run does not release it.
+    upsertSetup(FAILED);
+    expect(pending()).toBe('retrying-setup');
+
+    upsertSetup({ ...FAILED, startedAt: RUNNING_REPLY.setup.startedAt, exitCode: 1 });
+    await vi.waitFor(() => expect(pending()).toBeUndefined());
+  });
 });
