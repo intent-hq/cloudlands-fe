@@ -24,6 +24,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { recentTabFocusRequested } from '$store/renderer/slices/recent-agents/recent-agents-slice';
+import type { NotificationClickTarget } from '$shared/notification-click-target';
 import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
 import {
   openWorkspaceFile,
@@ -38,12 +39,7 @@ const logger = createLogger('NotificationNavigation');
 let navigationGeneration = 0;
 
 /** Payload of `notification:navigate` (sent on notification click). */
-export interface NotificationNavigatePayload {
-  workspaceId?: string;
-  /** Set for chief-of-staff completions — route to the homepage Assistant. */
-  chief?: boolean;
-  /** Exact conversation to select in the target workspace or Assistant. */
-  agentId?: string;
+export interface NotificationNavigatePayload extends Partial<NotificationClickTarget> {
   /** A browser or terminal panel tab to focus in the target workspace (the recent switcher). */
   tabId?: string;
   workspaceTarget?: WorkspaceWindowTarget;
