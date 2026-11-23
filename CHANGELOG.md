@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.375.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.374.2...v2.375.0) (2026-11-23)
+
+
+### 🚀 Features
+
+* add the /goal command, goal strip and goal notices ([#4947](https://github.com/intent-hq/cloudlands-fe/issues/4947)) ([a711004](https://github.com/intent-hq/cloudlands-fe/commit/a711004be4473116dbe2e4035f9e6b1f776254cf))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.278 ([#4968](https://github.com/intent-hq/cloudlands-fe/issues/4968)) ([f517dba](https://github.com/intent-hq/cloudlands-fe/commit/f517dbafc5b1cd398898e582412c35fdb6110631))
+* hide sender preamble on own queued rows before the author is served ([#4965](https://github.com/intent-hq/cloudlands-fe/issues/4965)) ([5bbfc25](https://github.com/intent-hq/cloudlands-fe/commit/5bbfc25417c7ea3653e4f9ba00c146cde5040cda))
+* keep links and inline formatting in table cells on save ([#4963](https://github.com/intent-hq/cloudlands-fe/issues/4963)) ([b0abdfb](https://github.com/intent-hq/cloudlands-fe/commit/b0abdfb939ab793a3719fde4cb5df5792265a315))
+* **machine-rail:** stop windows trading focus on a stale focus event ([#4958](https://github.com/intent-hq/cloudlands-fe/issues/4958)) ([ebe9ab0](https://github.com/intent-hq/cloudlands-fe/commit/ebe9ab0f8d006271eead4611f1f585d1ff0a2c0e))
+* **notes:** update marked to 18.2.1 and follow its reference decoding ([#4945](https://github.com/intent-hq/cloudlands-fe/issues/4945)) ([43390a7](https://github.com/intent-hq/cloudlands-fe/commit/43390a796a175f8b32b2620e0c45b76848a27cc3))
+
 ## [2.374.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.374.1...v2.374.2) (2026-11-23)
 
 
