@@ -258,6 +258,17 @@ describe('HTML to Markdown Conversion', () => {
       expect(processHTMLToMarkdown(html)).toBe(row('a \\| b `x\\|y`'));
     });
 
+    it('keeps a backslash before a pipe on one row, stable across saves', async () => {
+      const html = table(String.raw`<p>a\|b <code>c\|d</code> <code>e\\|f</code></p>`);
+      const markdown = row(
+        String.raw`a\\\|b ` + '`' + String.raw`c\|d` + '` `' + String.raw`e\\\|f` + '`',
+      );
+      expect(processHTMLToMarkdown(html)).toBe(markdown);
+
+      const reloaded = processHTMLToMarkdown(await processMarkdownToHTML(markdown));
+      expect(reloaded).toBe(markdown);
+    });
+
     it('serializes an empty cell as an empty column', () => {
       expect(processHTMLToMarkdown(table('<p></p>'))).toBe(row(''));
     });

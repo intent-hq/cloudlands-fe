@@ -952,6 +952,27 @@ function convertSpanAnchorsToComments(html: string): string {
   return tempDiv.innerHTML;
 }
 
+interface InlineOptions {
+  hardBreak?: string;
+  tableCell?: boolean;
+}
+
+const CELL_INLINE: InlineOptions = { hardBreak: '<br>', tableCell: true };
+
+// GFM splits a row on any pipe after an even run of backslashes, then drops one
+// backslash before each remaining pipe. Text and link targets also unescape backslashes,
+// so doubling the run is exact.
+const escapeCellPipes = (value: string): string =>
+  value.replace(/(\\*)\|/g, (_, slashes: string) => `${slashes}${slashes}\\|`);
+
+// Code and math keep backslashes verbatim, so an odd run cannot survive exactly:
+// it loses one backslash once and then stays stable.
+const escapeCellPipesVerbatim = (value: string): string =>
+  value.replace(
+    /(\\*)\|/g,
+    (_, slashes: string) => `${slashes.length % 2 ? slashes : `${slashes}\\`}|`,
+  );
+
 /**
  * Convert HTML to markdown with proper task list support and nested list indentation
  */
@@ -1041,7 +1062,10 @@ export function processHTMLToMarkdown(
   /**
    * Process inline content (text, comments, inline elements) within a block element
    */
-  const processInlineContent = (el: Element, hardBreak = '\n'): string => {
+  const processInlineContent = (el: Element, opts: InlineOptions = {}): string => {
+    const hardBreak = opts.hardBreak ?? '\n';
+    const text = (value: string) => (opts.tableCell ? escapeCellPipes(value) : value);
+    const verbatim = (value: string) => (opts.tableCell ? escapeCellPipesVerbatim(value) : value);
     let result = '';
     for (const node of Array.from(el.childNodes)) {
       if (node.nodeType === Node.COMMENT_NODE) {
@@ -1051,55 +1075,58 @@ export function processHTMLToMarkdown(
           result += `<!--${comment.data}-->`;
         }
       } else if (node.nodeType === Node.TEXT_NODE) {
-        result += node.textContent || '';
+        result += text(node.textContent || '');
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const childEl = node as Element;
         const mathSource = validatedMathSource(childEl);
         // Handle inline formatting elements
         if (childEl.tagName === 'STRONG' || childEl.tagName === 'B') {
-          result += `**${processInlineContent(childEl, hardBreak)}**`;
+          result += `**${processInlineContent(childEl, opts)}**`;
         } else if (childEl.tagName === 'EM' || childEl.tagName === 'I') {
-          result += `*${processInlineContent(childEl, hardBreak)}*`;
+          result += `*${processInlineContent(childEl, opts)}*`;
         } else if (childEl.tagName === 'BR') {
           result += hardBreak;
         } else if (childEl.tagName === 'CODE') {
-          result += `\`${childEl.textContent || ''}\``;
+          result += `\`${verbatim(childEl.textContent || '')}\``;
         } else if (mathSource) {
-          result += mathSource;
+          result += verbatim(mathSource);
         } else if (childEl.tagName === 'SPAN') {
           const chip = readMentionChip(childEl);
           if (chip) {
             // Preserve canonical @-token using mention metadata
             const label = chip.label || childEl.textContent || '';
             try {
-              result += toPromptToken({
-                type: chip.type as MentionType,
-                id: chip.id || label,
-                label,
-                meta: chip.meta,
-              });
+              result += text(
+                toPromptToken({
+                  type: chip.type as MentionType,
+                  id: chip.id || label,
+                  label,
+                  meta: chip.meta,
+                }),
+              );
             } catch {
               // Fallback if formatter fails
-              result += label ? `@${label}` : '';
+              result += label ? text(`@${label}`) : '';
             }
           } else {
             // For non-mention spans, process their content (anchors are already converted to comments)
-            result += processInlineContent(childEl, hardBreak);
+            result += processInlineContent(childEl, opts);
           }
         } else if (childEl.tagName === 'A') {
           const href = childEl.getAttribute('href') || '';
-          const text = processInlineContent(childEl, hardBreak);
+          const label = processInlineContent(childEl, opts);
           if (href) {
-            result += `[${text}](${href})`;
+            result += `[${label}](${text(href)})`;
           } else {
-            result += text;
+            result += label;
           }
         } else if (childEl.tagName === 'IMG') {
           // Handle inline images
           const rawSrc = childEl.getAttribute('src') || '';
-          const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
-          const alt = childEl.getAttribute('alt') || '';
-          const title = childEl.getAttribute('title');
+          const src = text(workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc);
+          const alt = text(childEl.getAttribute('alt') || '');
+          const rawTitle = childEl.getAttribute('title');
+          const title = rawTitle && text(rawTitle);
           if (title) {
             result += `![${alt}](${src} "${title}")`;
           } else {
@@ -1107,8 +1134,8 @@ export function processHTMLToMarkdown(
           }
         } else if (childEl.tagName === 'VIDEO') {
           const rawSrc = childEl.getAttribute('src') || '';
-          const src = workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc;
-          const name = childEl.getAttribute('data-name') || '';
+          const src = text(workspaceFileMediaUrlToIntentFileUrl(rawSrc) ?? rawSrc);
+          const name = text(childEl.getAttribute('data-name') || '');
           if (src) result += `![${name}](${src})`;
         } else if (
           childEl.tagName === 'DIV' &&
@@ -1125,7 +1152,7 @@ export function processHTMLToMarkdown(
           );
         } else {
           // For other elements, just get text content
-          result += childEl.textContent || '';
+          result += text(childEl.textContent || '');
         }
       }
     }
@@ -1134,7 +1161,7 @@ export function processHTMLToMarkdown(
 
   /**
    * Serialize a table cell to one GFM row segment. TipTap wraps cell content in
-   * <p>; paragraphs and hard breaks join with <br>, and literal pipes are escaped.
+   * <p>; paragraphs and hard breaks join with <br>.
    */
   const processTableCell = (cell: Element): string => {
     const parts: string[] = [];
@@ -1146,19 +1173,18 @@ export function processHTMLToMarkdown(
     for (const node of Array.from(cell.childNodes)) {
       if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'P') {
         flushLoose();
-        parts.push(processInlineContent(node as Element, '<br>'));
+        parts.push(processInlineContent(node as Element, CELL_INLINE));
       } else {
         const holder = document.createElement('span');
         holder.appendChild(node.cloneNode(true));
-        loose += processInlineContent(holder, '<br>');
+        loose += processInlineContent(holder, CELL_INLINE);
       }
     }
     flushLoose();
     return parts
       .map((part) => part.replace(/\s*\n\s*/g, ' ').trim())
       .filter(Boolean)
-      .join('<br>')
-      .replace(/\|/g, '\\|');
+      .join('<br>');
   };
 
   /**
