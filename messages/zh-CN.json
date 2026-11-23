@@ -9475,5 +9475,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text}（{attribution}）",
   "chat_slashCommand_goal_description": "为此对话固定一个目标",
   "chat_goal_retired_error": "此对话已停用，无法更改其目标。",
-  "chat_goal_workspaceRetired_error": "此工作区已停用，无法更改其目标。"
+  "chat_goal_workspaceRetired_error": "此工作区已停用，无法更改其目标。",
+  "remoteAgent_setupRetry_label": "重试设置",
+  "remoteAgent_setupRetry_failed_title": "无法在 {machine} 上重试设置",
+  "remoteAgent_setupRetry_unsupported_error": "此后端需要更新版本的 Intent 才能重试设置。",
+  "remoteAgent_setupRetry_generic_error": "请稍后再试。",
+  "remoteAgent_notice_retryingSetup_title": "正在 {machine} 上重新运行设置"
 }

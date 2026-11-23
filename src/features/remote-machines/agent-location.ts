@@ -37,7 +37,7 @@ export interface AgentMachineLocation {
 }
 
 export type AgentPlacementNoticeKind =
-  'starting' | 'failed' | 'unreachable' | 'revoked' | 'setup-failed';
+  'starting' | 'failed' | 'unreachable' | 'revoked' | 'setup-failed' | 'setup-running';
 
 // Product and architecture names are not translated.
 const OS_LABELS: Record<string, string> = {
@@ -198,7 +198,8 @@ export function agentMachineTooltip(location: AgentMachineLocation): string {
 
 /**
  * The conversation notice for a remote agent: it could not start, its machine
- * revoked access or can't be reached, or it is still starting. Null when it
+ * revoked access or can't be reached, it is still starting, or its setup
+ * failed or runs again after it started. Null when it
  * runs normally (and for local agents).
  */
 export function agentPlacementNoticeKind(
@@ -211,6 +212,8 @@ export function agentPlacementNoticeKind(
   if (location.state === 'unreachable') return 'unreachable';
   if (agent.effectiveIsolation === 'pending' || agent.cloudStart) return 'starting';
   if (agent.setup?.state === 'failed') return 'setup-failed';
+  // A retried setup runs in the started agent's kept checkout.
+  if (agent.setup?.state === 'running') return 'setup-running';
   return null;
 }
 

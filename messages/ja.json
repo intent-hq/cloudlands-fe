@@ -9475,5 +9475,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text}（{attribution}）",
   "chat_slashCommand_goal_description": "この会話に目標を固定",
   "chat_goal_retired_error": "この会話はリタイア済みのため、目標を変更できません。",
-  "chat_goal_workspaceRetired_error": "このワークスペースはリタイア済みのため、目標を変更できません。"
+  "chat_goal_workspaceRetired_error": "このワークスペースはリタイア済みのため、目標を変更できません。",
+  "remoteAgent_setupRetry_label": "セットアップを再試行",
+  "remoteAgent_setupRetry_failed_title": "{machine} でセットアップを再試行できませんでした",
+  "remoteAgent_setupRetry_unsupported_error": "セットアップを再試行するには、このバックエンドで新しいバージョンの Intent が必要です。",
+  "remoteAgent_setupRetry_generic_error": "しばらくしてからもう一度お試しください。",
+  "remoteAgent_notice_retryingSetup_title": "{machine} でセットアップを再実行しています"
 }

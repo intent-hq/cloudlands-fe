@@ -9475,5 +9475,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Pin a goal to this conversation",
   "chat_goal_retired_error": "This conversation is retired, so its goal can't be changed.",
-  "chat_goal_workspaceRetired_error": "This workspace is retired, so its goal can't be changed."
+  "chat_goal_workspaceRetired_error": "This workspace is retired, so its goal can't be changed.",
+  "remoteAgent_setupRetry_label": "Retry setup",
+  "remoteAgent_setupRetry_failed_title": "Couldn't retry setup on {machine}",
+  "remoteAgent_setupRetry_unsupported_error": "This backend needs a newer version of Intent to retry setup.",
+  "remoteAgent_setupRetry_generic_error": "Try again in a moment.",
+  "remoteAgent_notice_retryingSetup_title": "Running setup again on {machine}"
 }

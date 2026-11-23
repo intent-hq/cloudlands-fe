@@ -9475,5 +9475,10 @@
   "chat_goalNotice_attributed_ariaLabel": "{text} ({attribution})",
   "chat_slashCommand_goal_description": "Ein Ziel an diese Unterhaltung anheften",
   "chat_goal_retired_error": "Diese Unterhaltung ist stillgelegt, daher kann ihr Ziel nicht geändert werden.",
-  "chat_goal_workspaceRetired_error": "Dieser Arbeitsbereich ist stillgelegt, daher kann sein Ziel nicht geändert werden."
+  "chat_goal_workspaceRetired_error": "Dieser Arbeitsbereich ist stillgelegt, daher kann sein Ziel nicht geändert werden.",
+  "remoteAgent_setupRetry_label": "Setup wiederholen",
+  "remoteAgent_setupRetry_failed_title": "Setup auf {machine} konnte nicht wiederholt werden",
+  "remoteAgent_setupRetry_unsupported_error": "Dieses Backend benötigt eine neuere Version von Intent, um das Setup zu wiederholen.",
+  "remoteAgent_setupRetry_generic_error": "Versuche es gleich noch einmal.",
+  "remoteAgent_notice_retryingSetup_title": "Setup wird auf {machine} erneut ausgeführt"
 }

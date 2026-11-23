@@ -5,8 +5,12 @@ import type {
   RemoteMachineFailure,
 } from '$shared/types/remote-machines';
 
-/** One pending operation per key: a saved connection id (expose), machine id (remove) or credential id (revoke). */
-export type RemoteMachineOperation = 'exposing' | 'removing' | 'revoking' | 'refreshing';
+/**
+ * One pending operation per key: a saved connection id (expose), machine id
+ * (remove), credential id (revoke) or `setupRetryKey(agentId)` (setup retry).
+ */
+export type RemoteMachineOperation =
+  'exposing' | 'removing' | 'revoking' | 'refreshing' | 'retrying-setup';
 
 export interface RemoteMachinesState {
   /** `client.hello` on the current backend advertises `remoteMachines: 1`. */

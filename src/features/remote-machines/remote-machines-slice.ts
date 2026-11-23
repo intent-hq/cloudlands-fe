@@ -32,6 +32,12 @@ export const remoteMachineRefreshRequested = createAction<[machineId: string]>(
 );
 /** Pending key of a machine's report refresh (machine ids alone key removals). */
 export const machineRefreshKey = (machineId: string) => `refresh:${machineId}`;
+/** Retry a remote agent's failed setup (`agent.retrySetup`); `machine` names it in a refusal. */
+export const remoteSetupRetryRequested = createAction<
+  [params: { workspaceId: string; agentId: string; machine: string }]
+>('remoteMachines/setupRetryRequested');
+/** Pending key of an agent's setup retry request. */
+export const setupRetryKey = (agentId: string) => `setup-retry:${agentId}`;
 export const remoteMachinesLoaded = createAction<
   [
     snapshot: {

@@ -11,7 +11,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { writable } from 'svelte/store';
+  import { derived, writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faCircleExclamation, faTriangleExclamation } from '$lib/icons/phosphor-icons';
@@ -24,8 +24,12 @@
   } from '$lib/components/chat/operational-disclosure-row';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentIsRunning,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectCanRetryRemoteSetup } from '$store/renderer/slices/principal/principal-selectors';
   import {
     agentCloudStartFailure,
     agentCloudWaking,
@@ -41,9 +45,15 @@
   import {
     selectCurrentBackendLabel,
     selectRemoteMachine,
+    selectRemoteMachineOperations,
     selectRemoteMachinesVisible,
   } from './remote-machines-selectors';
-  import { remoteMachinesRefreshRequested } from './remote-machines-slice';
+  import {
+    remoteMachinesRefreshRequested,
+    remoteSetupRetryRequested,
+    setupRetryKey,
+  } from './remote-machines-slice';
+  import { canRetrySetup } from './setup-retry';
 
   let {
     agentId,
@@ -155,6 +165,39 @@
   );
   let outputOpen = $state(false);
 
+  // Host owners only: `agent.retrySetup` refuses members and guests.
+  const canRetrySetup$ = selectCanRetryRemoteSetup();
+  const operations$ = selectRemoteMachineOperations();
+  // The daemon refuses a retry while the agent runs a turn (`agent-busy`).
+  const agentRunning$ = selectAgentIsRunning(derived(agentIdStore, (id) => id ?? ''));
+  const setupRetryInFlight = $derived(!!$operations$[setupRetryKey(agentId)]);
+  // Shown while the setup failed and while its retry runs, so the card keeps its place.
+  const showSetupRetry = $derived(
+    $canRetrySetup$ && (canRetrySetup(true, setup) || kind === 'setup-running'),
+  );
+  const setupRetryDisabled = $derived(
+    setupRetryInFlight || $agentRunning$ || !canRetrySetup($canRetrySetup$, setup),
+  );
+
+  // A retried run opens its live log, also when another client started it.
+  let previousKind: typeof kind = null;
+  $effect(() => {
+    if (kind === 'setup-running' && previousKind !== 'setup-running') outputOpen = true;
+    previousKind = kind;
+  });
+
+  function retrySetup() {
+    const agent = $agent$;
+    if (!agent || setupRetryDisabled) return;
+    appStore.dispatch(
+      remoteSetupRetryRequested({
+        workspaceId: agent.workspaceId,
+        agentId: agent.id,
+        machine: location?.name ?? '',
+      }),
+    );
+  }
+
   const cloudStarting = $derived(!!location?.cloud && kind === 'starting');
   // No `onPhaseLine` for it: the conversation notice has nothing to hide then.
   const cloudWaking = $derived(agentCloudWaking($agent$, $machine$));
@@ -261,22 +304,49 @@
       {/if}
     </div>
   {/if}
-{:else if location && kind === 'setup-failed'}
+{:else if location && (kind === 'setup-failed' || kind === 'setup-running')}
+  {@const rerunning = kind === 'setup-running'}
   <div
     class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    data-agent-placement-notice="setup-failed"
+    data-agent-placement-notice={kind}
+    data-agent-setup-state={setup?.state}
   >
     <div class="flex items-center gap-2 type-body font-family-child">
       <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" role="status">
         <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-          <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+          {#if rerunning}
+            <IntentMarkLoader size={14} />
+          {:else}
+            <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+          {/if}
         </span>
-        <span class="font-medium text-warning-ink">
-          {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
-        </span>
-        <span class="text-subtle">{setupFailedDescription}</span>
+        {#if rerunning}
+          <span class="text-muted-foreground">
+            {m.remoteAgent_notice_retryingSetup_title({ machine: location.name })}
+          </span>
+        {:else}
+          <span class="font-medium text-warning-ink">
+            {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
+          </span>
+          <span class="text-subtle">{setupFailedDescription}</span>
+        {/if}
       </span>
-      {@render outputToggle()}
+      <span class="-my-1 ml-auto flex shrink-0 items-center gap-1">
+        {#if showSetupRetry}
+          <Button
+            variant="outline"
+            size="compact"
+            class="shrink-0"
+            disabled={setupRetryDisabled}
+            loading={setupRetryInFlight}
+            data-setup-retry
+            onclick={retrySetup}
+          >
+            {m.remoteAgent_setupRetry_label()}
+          </Button>
+        {/if}
+        {@render outputToggle()}
+      </span>
     </div>
     {#if outputOpen && canShowOutput}
       {@render setupLog(location.name)}

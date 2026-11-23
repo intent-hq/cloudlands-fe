@@ -38,6 +38,7 @@ export function admitLegacyPrincipal(
     gitlabCheckout?: boolean;
     sessionImport?: 1;
     conversationGoal?: 1;
+    remoteSetupRetry?: 1;
   } = {},
   daemonMode?: DaemonMode,
 ): void {
