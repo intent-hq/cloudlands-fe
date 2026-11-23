@@ -6,7 +6,8 @@
  * delivery paths honor the SAME sound settings the same way:
  *   - Electron: the main-process NotificationService's `notification:show`
  *     renderer event (notification-ipc-service middleware).
- *   - Web: the browser-platform substitute in `web-notification-service.ts`.
+ *   - Web: the notifications saga's browser notifications and the settings
+ *     test notification (`web-notification-service.ts`).
  *
  * Gate semantics (unchanged): `soundEnabled` off = no sound;
  * `soundOnlyWhenUnfocused` on + document focused = no sound; else play at

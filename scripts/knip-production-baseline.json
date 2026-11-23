@@ -561,9 +561,6 @@
     "src/features/notifications/utils/notification-content.ts": [
       "getSpecialistDisplayName"
     ],
-    "src/features/notifications/web-notification-service.ts": [
-      "handleWebAgentIdle"
-    ],
     "src/features/onboarding/messages/directory-picker-view.ts": [
       "favoritesFromHome"
     ],
