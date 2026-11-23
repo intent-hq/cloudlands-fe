@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.381.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.381.1...v2.381.2) (2026-11-23)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** give the dock a fixed title and pin it top-left on Intent OS ([#5003](https://github.com/intent-hq/cloudlands-fe/issues/5003)) ([c1457c3](https://github.com/intent-hq/cloudlands-fe/commit/c1457c35def2050c830720554b4bd621a373359c))
+* **settings:** clean up Settings → Machines ([#4997](https://github.com/intent-hq/cloudlands-fe/issues/4997)) ([e9210ba](https://github.com/intent-hq/cloudlands-fe/commit/e9210ba8dbf9f6b040b709937dbaeae1bbd91b0e))
+
 ## [2.381.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.381.0...v2.381.1) (2026-11-23)
 
 
