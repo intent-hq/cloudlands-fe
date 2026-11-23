@@ -8750,6 +8750,7 @@
   "cloudMachines_form_disk_unit": "GiB",
   "cloudMachines_form_disk_note": "{min}–{max} GiB. Gilt nur für neue Maschinen.",
   "cloudMachines_form_disk_invalid": "Gib eine ganze Zahl von {min} bis {max} ein.",
+  "cloudMachines_form_disk_capped": "Neue Maschinen dieser Größe erhalten {max} GiB.",
   "cloudMachines_form_disk_clamped": "Auf {max} GiB gesenkt, die größte Festplatte für diese Größe.",
   "cloudMachines_form_idlePause_label": "Nach Inaktivität pausieren",
   "cloudMachines_form_pausedDelete_label": "Nach Pause löschen",

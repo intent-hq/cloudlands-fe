@@ -8750,6 +8750,7 @@
   "cloudMachines_form_disk_unit": "GiB",
   "cloudMachines_form_disk_note": "{min}–{max} GiB. Solo se aplica a máquinas nuevas.",
   "cloudMachines_form_disk_invalid": "Introduce un número entero de {min} a {max}.",
+  "cloudMachines_form_disk_capped": "Las máquinas nuevas de este tamaño reciben {max} GiB.",
   "cloudMachines_form_disk_clamped": "Reducido a {max} GiB, el disco más grande para este tamaño.",
   "cloudMachines_form_idlePause_label": "Pausar tras inactividad",
   "cloudMachines_form_pausedDelete_label": "Eliminar tras la pausa",

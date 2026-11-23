@@ -8750,6 +8750,7 @@
   "cloudMachines_form_disk_unit": "GiB",
   "cloudMachines_form_disk_note": "{min}–{max} GiB. 새 머신에만 적용됩니다.",
   "cloudMachines_form_disk_invalid": "{min}~{max} 사이의 정수를 입력하세요.",
+  "cloudMachines_form_disk_capped": "이 크기의 새 머신은 {max} GiB를 받습니다.",
   "cloudMachines_form_disk_clamped": "이 크기의 최대 디스크인 {max} GiB로 낮췄습니다.",
   "cloudMachines_form_idlePause_label": "유휴 후 일시 중지",
   "cloudMachines_form_pausedDelete_label": "일시 중지 후 삭제",

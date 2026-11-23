@@ -8750,6 +8750,7 @@
   "cloudMachines_form_disk_unit": "Gio",
   "cloudMachines_form_disk_note": "{min}–{max} Gio. S’applique uniquement aux nouvelles machines.",
   "cloudMachines_form_disk_invalid": "Saisissez un nombre entier de {min} à {max}.",
+  "cloudMachines_form_disk_capped": "Les nouvelles machines de cette taille reçoivent {max} Gio.",
   "cloudMachines_form_disk_clamped": "Réduit à {max} Gio, le plus grand disque pour cette taille.",
   "cloudMachines_form_idlePause_label": "Pause après inactivité",
   "cloudMachines_form_pausedDelete_label": "Supprimer après la pause",

@@ -497,11 +497,25 @@ describe('cloud machines saga — Northflank', () => {
     });
   });
 
-  it('sends diskGiB only for a kind that takes one', async () => {
+  it('sends diskGiB only for a kind the backend reports a disk setting for', async () => {
     const mock = backend(NF_CAPS);
     mock.onRequest('cloudMachines.configure', () => ({ provider: NORTHFLANK_ENTRY }));
     seedProviders();
     start();
+    dispatch(cloudMachinesConfigureRequested({ cloudMachineId: NORTHFLANK_ENTRY.id, diskGiB: 40 }));
+    await settle();
+    expect(requests().at(-1)?.params).not.toHaveProperty('diskGiB');
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'northflank'],
+        diskSettings: { northflank: { minGiB: 6, maxGiB: 500, defaultGiB: 20 } },
+        providers: [E2B_PROVIDER, NORTHFLANK_ENTRY],
+        machines: [],
+        readAt: 1,
+      }),
+    );
     dispatch(cloudMachinesConfigureRequested({ cloudMachineId: NORTHFLANK_ENTRY.id, diskGiB: 40 }));
     await settle();
     expect(requests().at(-1)?.params).toMatchObject({ diskGiB: 40 });

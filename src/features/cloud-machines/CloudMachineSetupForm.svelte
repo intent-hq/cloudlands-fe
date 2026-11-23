@@ -235,14 +235,32 @@
     diskSetting ? cloudDiskMax(diskSetting, size, agent37 ? instanceType : undefined) : 0,
   );
   const diskValue = $derived(/^\d+$/u.test(disk.trim()) ? Number(disk.trim()) : NaN);
+  // What the entry has now: the saved disk, or the default of one saved without it.
+  const diskUnchanged = $derived(
+    !!provider && diskValue === (savedDisk ?? diskSetting?.defaultGiB ?? null),
+  );
+  // A saved disk above the size cap stays valid: the backend caps it at each start.
   const diskInvalid = $derived(
     !!diskSetting &&
-      !(Number.isSafeInteger(diskValue) && diskValue >= diskSetting.minGiB && diskValue <= diskMax),
+      !(
+        Number.isSafeInteger(diskValue) &&
+        diskValue >= diskSetting.minGiB &&
+        diskValue <= (diskUnchanged ? diskSetting.maxGiB : diskMax)
+      ),
   );
-  // A size or type with a smaller largest disk lowers the value, and says so.
+  /** Set while a kept saved disk is above what new machines of this size get. */
+  const diskCappedTo = $derived(
+    diskSetting && !diskInvalid && diskValue > diskMax ? diskMax : null,
+  );
+  // After a change of size or type (or for a new entry's draft), a smaller largest
+  // disk lowers the value, and says so. Opening a saved entry changes nothing.
+  let diskMaxSeen: number | null = null;
   $effect(() => {
     const max = diskMax;
     untrack(() => {
+      const first = diskMaxSeen === null;
+      diskMaxSeen = max;
+      if (first && provider) return;
       if (diskSetting && Number.isSafeInteger(diskValue) && diskValue > max) {
         disk = String(max);
         diskClampedTo = max;
@@ -335,8 +353,8 @@
 
   /** The disk, when the kind takes one and it is new or changed. */
   function diskParam(): { diskGiB?: number } {
-    if (!diskSetting || diskInvalid) return {};
-    return !provider || diskValue !== savedDisk ? { diskGiB: diskValue } : {};
+    if (!diskSetting || diskInvalid || diskUnchanged) return {};
+    return { diskGiB: diskValue };
   }
 
   /** Northflank: the project; Agent37: the type and region; Vercel: team, project, image; each when new or changed. */
@@ -766,6 +784,10 @@
         {:else if diskClampedTo !== null}
           <p class="type-body text-foreground" role="status" data-cloud-disk-clamped>
             {m.cloudMachines_form_disk_clamped({ max: String(diskClampedTo) })}
+          </p>
+        {:else if diskCappedTo !== null}
+          <p class="type-body text-muted-foreground" data-cloud-disk-capped>
+            {m.cloudMachines_form_disk_capped({ max: String(diskCappedTo) })}
           </p>
         {/if}
         <p id="{uid}-disk-note" class="type-body text-muted-foreground" data-cloud-disk-note>

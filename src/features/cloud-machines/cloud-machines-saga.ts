@@ -67,9 +67,9 @@ function secretParams(
   };
 }
 
-/** `diskGiB` only for a kind that takes one; any other is `invalid-params`. */
+/** `diskGiB` only for a kind the backend reports a disk setting for; any other is `invalid-params`. */
 function diskParams(provider: CloudProviderKind, input: CloudMachineConfigureInput) {
-  return input.diskGiB !== undefined && (provider === 'northflank' || provider === 'agent37')
+  return input.diskGiB !== undefined && store.state.cloudMachines.diskSettings[provider]
     ? { diskGiB: input.diskGiB }
     : {};
 }

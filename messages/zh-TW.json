@@ -8750,6 +8750,7 @@
   "cloudMachines_form_disk_unit": "GiB",
   "cloudMachines_form_disk_note": "{min}–{max} GiB。僅適用於新機器。",
   "cloudMachines_form_disk_invalid": "請輸入 {min} 到 {max} 之間的整數。",
+  "cloudMachines_form_disk_capped": "此規格的新機器獲得 {max} GiB。",
   "cloudMachines_form_disk_clamped": "已降至 {max} GiB，即此規格的最大磁碟。",
   "cloudMachines_form_idlePause_label": "閒置後暫停",
   "cloudMachines_form_pausedDelete_label": "暫停後刪除",

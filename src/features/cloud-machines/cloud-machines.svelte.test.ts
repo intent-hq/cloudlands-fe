@@ -846,6 +846,45 @@ describe('Disk setting', () => {
     expect(view.container.querySelector('input[data-cloud-disk]')).toBeNull();
   });
 
+  it('keeps a saved Agent37 disk above the size cap when the form opens, and saves it unchanged', async () => {
+    seed('agent37-providers');
+    const entry = {
+      ...AGENT37_ENTRY,
+      size: '2x4' as const,
+      agent37: { instanceType: 'default' as const, region: 'us' as const, diskGiB: 20 },
+    };
+    const view = render(CloudMachineRow, {
+      entry,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(disk(form)?.value).toBe('20');
+    expect(form.querySelector('[data-cloud-disk-clamped]')).toBeNull();
+    expect(form.querySelector('[data-cloud-disk-error]')).toBeNull();
+    expect(form.querySelector('[data-cloud-disk-capped]')?.textContent).toContain('12 GiB');
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await fireEvent.submit(form);
+    expect(configured()).not.toHaveProperty('diskGiB');
+  });
+
+  it('sends no disk for an entry saved without one while the field shows the default', async () => {
+    seed('providers');
+    const { diskGiB: _omitted, ...settings } = NORTHFLANK_ENTRY.northflank!;
+    const view = render(CloudMachineRow, {
+      entry: { ...NORTHFLANK_ENTRY, northflank: settings as typeof NORTHFLANK_ENTRY.northflank },
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(disk(form)?.value).toBe('20');
+    await fireEvent.submit(form);
+    expect(configured()).not.toHaveProperty('diskGiB');
+  });
+
   it('shows the saved disk of an entry and sends it only when changed', async () => {
     seed('providers');
     const view = render(CloudMachineRow, {
