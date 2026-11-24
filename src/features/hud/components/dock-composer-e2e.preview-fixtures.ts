@@ -505,9 +505,55 @@ function createSyntheticNative(warmMedia = false) {
 }
 
 /** Install a synthetic native for the next dock pair; returns its controls and an uninstall. */
-export function installSyntheticNative(warmMedia = false) {
+export function installSyntheticNative(warmMedia = false, recordingCompletionFixture = false) {
   const native = createSyntheticNative(warmMedia);
   // The root native-session saga reads the factory when the pair opens.
   configureDockNativeFactory(native.factory);
-  return { native, uninstall: () => configureDockNativeFactory(null) };
+  const completion = {
+    audio: false as false | undefined,
+    probes: [] as Array<{ sourceId: string; sourceRevision: number }>,
+  };
+  if (recordingCompletionFixture) {
+    configureDockNativeFactory(() => {
+      const adapter = native.factory();
+      return {
+        ...adapter,
+        service: {
+          ...adapter.service,
+          stopClip: async (clipId: string) => {
+            native.log.clips.stopped.push(clipId);
+            const result = {
+              ok: true as const,
+              value: {
+                sourcePath: `/synthetic/dock-clips/${clipId}.mp4`,
+                mimeType: 'video/mp4' as const,
+                size: 48_000,
+                durationMs: 1000,
+                hasMicAudio: true,
+                original: {
+                  sourcePath: `/synthetic/dock-clips/${clipId}-original.mp4`,
+                  size: 48_000,
+                  width: 1280,
+                  height: 720,
+                  clearAtMs: [],
+                  hasMicAudio: completion.audio,
+                },
+              },
+            };
+            native.emitEvidence({ type: 'clip-ended', clipId, result });
+            return result;
+          },
+          probeMediaAudio: async ({ media }) => {
+            const identity = { sourceId: media.source.id, sourceRevision: media.source.revision };
+            completion.probes.push(identity);
+            return {
+              ok: true as const,
+              value: { ...identity, trackCount: 0, populatedTrackCount: 0 },
+            };
+          },
+        },
+      };
+    });
+  }
+  return { native, completion, uninstall: () => configureDockNativeFactory(null) };
 }

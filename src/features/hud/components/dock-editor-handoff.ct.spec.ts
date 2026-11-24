@@ -1066,3 +1066,241 @@ for (const terminalFailure of [false, true]) {
     await expect.poll(async () => (await snapshot()).clips).toEqual([]);
   });
 }
+
+for (const audio of ['explicit-none', 'unknown', 'archived-mark'] as const) {
+  test(`remote recording completion: ${audio} skips redundant work and waits for its draft ACK`, async ({
+    mount,
+    page,
+  }, info) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1000, height: 740 });
+    await mount(Harness, {
+      props: {
+        shell: dockRailPreview.states.notch.props,
+        nativePlacementFixture: true,
+        desktopEditorFixture: true,
+        recordingCompletionFixture: true,
+      },
+      hooksConfig: {
+        mockIpc: {
+          'window:get-dock-placement': null,
+          'window:update-dock-placement': null,
+          'window:set-dock-pointer-region': { success: true, supported: true, version: 0 },
+          'window:dock-renderer-ready': { shown: true },
+        },
+      },
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const h = (window as any).__dockComposerE2E;
+          return (
+            !!h?.store.state.dockConversation.nativeCapabilities &&
+            !h.store.state.dockConversation.loading
+          );
+        }),
+      )
+      .toBe(true);
+    await page.evaluate((audio) => {
+      const h = (window as any).__dockComposerE2E;
+      h.store.dispatch({ type: 'hud/dockActivated' });
+      h.completion.audio = audio === 'unknown' ? undefined : false;
+      const inner = window.electronAPI!.invoke.bind(window.electronAPI);
+      const gate = {
+        opens: [] as any[],
+        pending: [] as Array<{ params: any; resolve: () => void }>,
+        acknowledged: [] as string[],
+        automatic: false,
+        pointerVersion: 0,
+      };
+      (window as any).__completionGate = gate;
+      window.electronAPI!.invoke = (async (ch: string, payload: any) => {
+        if (ch.startsWith('dock-capture-editor:hold-')) return true;
+        if (ch === 'dock-capture-editor:open') {
+          gate.opens.push(structuredClone(payload));
+          return { ok: true, openId: `completion-${gate.opens.length}` };
+        }
+        if (ch === 'window:set-dock-pointer-region')
+          return { success: true, supported: true, version: ++gate.pointerVersion };
+        if (payload?.method === 'drafts.set' && !gate.automatic) {
+          await new Promise<void>((resolve) =>
+            gate.pending.push({ params: payload.params, resolve }),
+          );
+          gate.acknowledged.push(JSON.stringify(payload.params.attachments ?? []));
+        }
+        return inner(ch as never, payload);
+      }) as typeof window.electronAPI.invoke;
+      h.holdPlacements(true);
+      const d = h.store.state.dockConversation;
+      h.store.dispatch({
+        type: 'dockConversation/draftChanged',
+        payload: [d.workspaceId, d.agentId, 'Keep this recording draft'],
+      });
+      h.store.dispatch({
+        type: 'dockConversation/evidenceRecordToggleRequested',
+        payload: [d.workspaceId, d.agentId],
+      });
+    }, audio);
+    const state = () =>
+      page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        const g = (window as any).__completionGate;
+        const clips = Object.values(h.store.state.dockConversation.evidence.map ?? {}).flatMap(
+          (e: any) => e.clips ?? [],
+        ) as any[];
+        return {
+          clips,
+          placements: h.calls
+            .filter((c: any) => c.method === 'file.placeAttachment')
+            .map((c: any) => ({ sourcePath: c.params.sourcePath, fileName: c.params.fileName })),
+          probes: h.completion.probes,
+          opens: g.opens,
+          pending: g.pending.map((p: any) => JSON.stringify(p.params.attachments)),
+          acknowledged: g.acknowledged,
+        };
+      });
+    await expect.poll(async () => (await state()).clips[0]?.status).toBe('recording');
+    await expect.poll(async () => (await state()).pending.length).toBeGreaterThan(0);
+    const clipId = (await state()).clips[0].id;
+    if (audio === 'archived-mark') {
+      // Seed a cleared native batch, as restored recording evidence retains it.
+      // No live marks remain; clipboard playback still needs the annotated writer.
+      await page.evaluate((clipId) => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        const evidence = Object.values(d.evidence.map)[0] as any;
+        const clip = evidence.clips.find((c: any) => c.id === clipId);
+        h.store.dispatch({
+          type: 'dockConversation/evidenceClipChanged',
+          payload: [
+            d.workspaceId,
+            d.agentId,
+            clipId,
+            {
+              ...clip,
+              captureHistory: [
+                {
+                  image: { id: 'cleared-recording-image', width: 1280, height: 720 },
+                  mark: {
+                    id: 'cleared-recording-mark',
+                    imageId: 'cleared-recording-image',
+                    tool: 'box',
+                    geometry: { kind: 'rect', x: 20, y: 20, w: 100, h: 80 },
+                    bounds: { x: 20, y: 20, w: 100, h: 80 },
+                    createdAt: 1,
+                    clipId,
+                    clipMs: 100,
+                  },
+                  included: true,
+                  cleared: true,
+                },
+              ],
+            },
+          ],
+        });
+      }, clipId);
+      expect((await state()).clips[0].captureHistory).toHaveLength(1);
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              Object.values(
+                (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map,
+              )[0] as any
+            ).marks,
+        ),
+      ).toEqual([]);
+    }
+    await page.evaluate((clipId) => {
+      const h = (window as any).__dockComposerE2E;
+      const d = h.store.state.dockConversation;
+      h.store.dispatch({
+        type: 'dockConversation/evidenceRecordToggleRequested',
+        payload: [d.workspaceId, d.agentId, clipId],
+      });
+    }, clipId);
+    await expect.poll(async () => (await state()).placements.length).toBe(1);
+    expect((await state()).placements[0].sourcePath).toBe(
+      `/synthetic/dock-clips/${clipId}${audio === 'archived-mark' ? '' : '-original'}.mp4`,
+    );
+    expect((await state()).opens).toEqual([]);
+    // An older ACK cannot admit this recording. Placement remains deferred during it.
+    await page.evaluate(() => (window as any).__completionGate.pending.shift().resolve());
+    await expect.poll(async () => (await state()).acknowledged.length).toBe(1);
+    expect((await state()).opens).toEqual([]);
+    await page.evaluate(() => (window as any).__dockComposerE2E.holdPlacements(false));
+    // Release intermediate snapshots, but retain the exact source-bearing save.
+    await expect
+      .poll(async () => {
+        await page.evaluate(() => {
+          const g = (window as any).__completionGate;
+          while (
+            g.pending.length &&
+            !JSON.stringify(g.pending[0].params.attachments).includes(':original')
+          )
+            g.pending.shift().resolve();
+        });
+        return (await state()).pending.some((p: string) => p.includes(`${clipId}:original`));
+      })
+      .toBe(true);
+    const beforeAck = await state();
+    expect(beforeAck.opens).toEqual([]);
+    expect(beforeAck.placements).toHaveLength(audio === 'archived-mark' ? 2 : 1);
+    expect(beforeAck.probes).toHaveLength(audio === 'unknown' ? 1 : 0);
+    await page.evaluate(() => {
+      const g = (window as any).__completionGate;
+      g.automatic = true;
+      for (const pending of g.pending.splice(0)) pending.resolve();
+    });
+    await expect.poll(async () => (await state()).opens.length).toBe(1);
+    let final = await state();
+    const source = final.clips[0].media.source;
+    expect(final.opens[0]).toMatchObject({
+      kind: 'recording',
+      attachmentId: source.attachmentId,
+      source: { id: `${clipId}:original`, audio: 'none', path: source.path },
+    });
+    expect(final.acknowledged.some((p: string) => p.includes(source.attachmentId))).toBe(true);
+    expect(final.placements).toHaveLength(audio === 'archived-mark' ? 2 : 1);
+    if (audio === 'explicit-none') expect(final.clips[0].hasMicAudio).toBe(false);
+    if (audio === 'archived-mark') {
+      expect(final.clips[0].path).not.toBe(source.path);
+      expect(final.clips[0].path).not.toContain('-original');
+      expect(source.path).toContain('-original');
+    }
+    // Explicit reopening preserves historical no-audio repair even for a clean source.
+    const probesBeforeReopen = final.probes.length;
+    await page.evaluate((clipId) => {
+      const h = (window as any).__dockComposerE2E;
+      const d = h.store.state.dockConversation;
+      h.fixture.emit('dock-capture-editor:changed', { endedOpenId: 'completion-1' });
+      h.store.dispatch({
+        type: 'dockConversation/mediaEditorOpenRequested',
+        payload: [d.workspaceId, d.agentId, clipId],
+      });
+    }, clipId);
+    await expect.poll(async () => (await state()).opens.length).toBe(2);
+    final = await state();
+    expect(final.probes).toHaveLength(probesBeforeReopen + 1);
+    expect(final.placements).toHaveLength(audio === 'archived-mark' ? 2 : 1);
+    const receipt = {
+      scenario: audio,
+      placementRequests: final.placements,
+      originalPlacementsBeforeOpen: 1,
+      bakedPlacementsBeforeOpen: audio === 'archived-mark' ? 1 : 0,
+      archivedMarksRetainBakedPlayback:
+        audio === 'archived-mark' ? final.clips[0].path !== source.path : null,
+      freshAudioProbeRequests: probesBeforeReopen,
+      historicalReopenProbeRequests: final.probes.length - probesBeforeReopen,
+      blockedBeforeExactDraftAck: beforeAck.opens.length === 0,
+      canonicalSourceAtOpen: final.opens[0].source.id === source.id,
+      scope:
+        'Browser production sagas; synthetic native, placement and draft transport. No actual remote network or native editor measured.',
+    };
+    await writeFile(
+      info.outputPath('recording-completion-receipt.json'),
+      JSON.stringify(receipt, null, 2),
+    );
+    await page.screenshot({ path: info.outputPath('recording-completion.png') });
+  });
+}

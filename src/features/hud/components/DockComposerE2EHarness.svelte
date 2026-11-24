@@ -83,6 +83,7 @@
     nativePlacementFixture = false,
     desktopEditorFixture = false,
     warmMedia = false,
+    recordingCompletionFixture = false,
   }: {
     width?: number;
     height?: number;
@@ -92,6 +93,7 @@
     /** Test-only Electron identity for the mocked desktop editor IPC boundary. */
     desktopEditorFixture?: boolean;
     warmMedia?: boolean;
+    recordingCompletionFixture?: boolean;
   } = $props();
   const recording$ = selectDockRecordingIndicator();
   const shortcut$ = selectDockShortcut();
@@ -178,7 +180,10 @@
     const hadLight = root.classList.contains('light');
     root.classList.add('dark');
     root.classList.remove('light');
-    const { native, uninstall } = installSyntheticNative(warmMedia);
+    const { native, completion, uninstall } = installSyntheticNative(
+      warmMedia,
+      recordingCompletionFixture,
+    );
     const calls: ConversationWireCall[] = [];
     const fixture = setupConversationWire((call) => calls.push(call), {
       initialDraft: legacyPickDraft ? createLegacyDraft() : undefined,
@@ -224,6 +229,7 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      completion,
       setCaption(text: string) {
         caption = text;
       },

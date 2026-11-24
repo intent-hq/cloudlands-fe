@@ -1346,13 +1346,24 @@ function* placeFinishedClip(
   }
   const durationMs = Math.min(DOCK_EVIDENCE_LIMITS.clipMs, Math.max(0, file.durationMs));
   const contextItemId = `dock-evidence:${clipId}`;
-  const fileName = `clip-${clipId.slice(0, 8)}.${file.mimeType.split('/')[1] ?? 'webm'}`;
+  const original = file.original;
+  const marked =
+    !!clipOf(workspaceId, agentId, clipId)?.captureHistory?.length ||
+    !!evidenceOf(workspaceId, agentId)?.marks.some((mark) => mark.clipId === clipId);
+  // Clipboard copies use the playback file, so marked clips still need the baked video.
+  const editorOriginal = dockCaptureEditorEnabled() && !marked ? original : undefined;
+  const fileName = editorOriginal
+    ? `clip-${clipId.slice(0, 8)}-original.mp4`
+    : `clip-${clipId.slice(0, 8)}.${file.mimeType.split('/')[1] ?? 'webm'}`;
+  const sourcePath = editorOriginal?.sourcePath ?? file.sourcePath;
+  const mimeType = editorOriginal ? 'video/mp4' : file.mimeType;
+  const hasMicAudio = editorOriginal?.hasMicAudio ?? file.hasMicAudio;
   const staged: ContextItem = {
     id: contextItemId,
     type: 'file',
     label: fileName,
-    sourcePath: file.sourcePath,
-    attachmentMimeType: file.mimeType,
+    sourcePath,
+    attachmentMimeType: mimeType,
     placementStatus: 'placing',
   };
   const withItem = (item: ContextItem) => [
@@ -1367,7 +1378,7 @@ function* placeFinishedClip(
       ...clip,
       status: 'placing',
       durationMs,
-      hasMicAudio: file.hasMicAudio,
+      hasMicAudio,
       contextItemId,
     }),
   );
@@ -1377,8 +1388,8 @@ function* placeFinishedClip(
       workspaceId,
       fileName,
       {
-        sourcePath: file.sourcePath,
-        mimeType: file.mimeType,
+        sourcePath,
+        mimeType,
         idempotencyKey,
       },
       undefined,
@@ -1387,22 +1398,22 @@ function* placeFinishedClip(
       () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding),
     );
     if (!clipOf(workspaceId, agentId, clipId)) return;
-    const original = file.original;
-    const sourcePlacement = original
-      ? yield* call(
-          placeAttachmentViaTransport,
-          workspaceId,
-          `clip-${clipId.slice(0, 8)}-original.mp4`,
-          {
-            sourcePath: original.sourcePath,
-            mimeType: 'video/mp4',
-            idempotencyKey: mintPlacementIdempotencyKey(),
-          },
-          undefined,
-          undefined,
-          () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding),
-        )
-      : placed;
+    const sourcePlacement =
+      original && !editorOriginal
+        ? yield* call(
+            placeAttachmentViaTransport,
+            workspaceId,
+            `clip-${clipId.slice(0, 8)}-original.mp4`,
+            {
+              sourcePath: original.sourcePath,
+              mimeType: 'video/mp4',
+              idempotencyKey: mintPlacementIdempotencyKey(),
+            },
+            undefined,
+            undefined,
+            () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding),
+          )
+        : placed;
     if (!clipOf(workspaceId, agentId, clipId) || !isDockBindingCurrent(binding)) return;
     const source = original
       ? DockMediaSourceSchema.parse({
@@ -1450,7 +1461,7 @@ function* placeFinishedClip(
         status: 'ready',
         captureHistory: clipOf(workspaceId, agentId, clipId)?.captureHistory,
         durationMs,
-        hasMicAudio: file.hasMicAudio,
+        hasMicAudio,
         contextItemId,
         ...(source
           ? {
@@ -1515,7 +1526,7 @@ function* placeFinishedClip(
         ...clip,
         status: 'failed',
         durationMs,
-        hasMicAudio: file.hasMicAudio,
+        hasMicAudio,
         contextItemId,
         error: 'transport',
       }),

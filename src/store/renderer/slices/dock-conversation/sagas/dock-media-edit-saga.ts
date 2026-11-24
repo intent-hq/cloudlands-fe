@@ -590,8 +590,10 @@ function* openEditorWith(
   // an exported Voice Off file or from the annotated writer's append receipt.
   const service = dockMediaNativeService(),
     beforeProbe = row.media;
+  const freshAudioKnown = origin === 'capture' && beforeProbe?.source.audio !== 'unknown';
   if (
     beforeProbe?.source.kind === 'recording' &&
+    !freshAudioKnown &&
     service?.probeMediaAudio &&
     (beforeProbe.source.audio !== 'available' || beforeProbe.transcript?.error === 'no-audio-track')
   ) {
