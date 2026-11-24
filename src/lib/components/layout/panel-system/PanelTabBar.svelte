@@ -1437,7 +1437,8 @@
           </div>
         </Menu.Group>
       {/if}
-      {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors) || activeTab?.type === 'browser'}
+      <!-- A browser page's open-elsewhere actions live in its own ⋮ menu. -->
+      {#if $isWorkspaceHostLocal$ && canOpenExternalEditors && activeTab?.type !== 'browser'}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(
             activeTab,
@@ -1446,17 +1447,7 @@
           )}
           <Menu.Separator />
           <div data-panel-actions-section="open-in">
-            {#if externalTarget.kind === 'browser'}
-              <Menu.CommandItem
-                icon={faArrowUpRightFromSquare}
-                label={m.layout_panelTabBar_openInBrowser_label()}
-                iconWeight="regular"
-                onclick={() => {
-                  openInExternalBrowser(activeTab);
-                  close();
-                }}
-              />
-            {:else if externalTarget.kind === 'path'}
+            {#if externalTarget.kind === 'path'}
               {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
                 {@const WorkspaceActionsMenu = module.default}
                 <WorkspaceActionsMenu
