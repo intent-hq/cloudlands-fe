@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 const backendRequest = vi.hoisted(() => vi.fn());
 const localPermissions = vi.hoisted(() => vi.fn());
+const electron = vi.hoisted(() => ({ present: true }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest,
-  electronAPI: () => ({ invoke: localPermissions }),
+  electronAPI: () => (electron.present ? { invoke: localPermissions } : undefined),
 }));
 import { desktopClient, parseDesktopEvent } from './desktop-client';
 import { permission, request } from './desktop-test-fixtures';
@@ -92,6 +93,23 @@ describe('desktop wire validation', () => {
       expect(backendRequest).toHaveBeenCalledExactlyOnceWith('client.hello', {});
     },
   );
+});
+
+describe('web renderer', () => {
+  // A browser tab is never a desktop executor: the daemon only lets the
+  // primary's own Electron connection read or grant desktop control, so a
+  // web renderer asks nothing and shows no permission switch.
+  it('reads no desktop state without the Electron bridge', async () => {
+    electron.present = false;
+    try {
+      backendRequest.mockReset();
+      backendRequest.mockResolvedValue({ server: { capabilities: { desktopControl: 1 } } });
+      await expect(desktopClient.getState('workspace', 'agent')).rejects.toThrow();
+      expect(backendRequest).not.toHaveBeenCalled();
+    } finally {
+      electron.present = true;
+    }
+  });
 });
 
 describe('native permission check responses', () => {
