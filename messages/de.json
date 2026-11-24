@@ -9474,7 +9474,6 @@
   "remoteAgent_setupRetry_generic_error": "Versuche es gleich noch einmal.",
   "remoteAgent_notice_retryingSetup_title": "Setup wird auf {machine} erneut ausgeführt",
   "settings_sidebarIcons_label": "Seitenleisten-Symbole",
-  "settings_sidebarIcons_description": "Wähle, welche Bereiche in der Workspace-Seitenleiste angezeigt werden. Ein ausgeblendeter Bereich öffnet sich weiterhin über einen Link.",
   "workspace_multiSelectSidebar_hideTab_label": "In Seitenleiste ausblenden",
   "workspace_multiSelectSidebar_sidebarSettings_label": "Seitenleisten-Einstellungen"
 }

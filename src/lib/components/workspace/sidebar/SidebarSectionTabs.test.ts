@@ -16,6 +16,7 @@ const live = await vi.hoisted(async () => {
     people: writable([]),
     invites: writable<WorkspaceInvite[]>([]),
     plainFolder: writable(false),
+    hidden: writable<string[]>([]),
     hasBrowserTabs: writable(false),
     terminals: writable<{ id: string }[]>([]),
     scripts: writable<{ id: string; runtime: { status: string } }[]>([]),
@@ -39,6 +40,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', as
 
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectMultiSelectSidebarSelectedTabIds: () => live.selected,
+  selectHiddenSidebarTabIds: () => live.hidden,
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -80,6 +82,7 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 }
 
 beforeEach(() => {
+  live.hidden.set([]);
   live.agents.set([]);
   live.selected.set(['agents']);
   live.unread.set(false);
@@ -237,6 +240,25 @@ describe('plain-folder workspaces', () => {
     const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
 
     expect(view.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('hidden sidebar icons', () => {
+  it('leaves a hidden icon out of the rail', () => {
+    live.hidden.set(['files', 'changes']);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+
+    expect(view.queryByRole('tab', { name: 'Files' })).toBeNull();
+    expect(view.queryByRole('tab', { name: 'Changes' })).toBeNull();
+    expect(view.getByRole('tab', { name: 'Context' })).toBeTruthy();
+  });
+
+  it('keeps a hidden icon while its section is open', () => {
+    live.hidden.set(['files']);
+    live.selected.set(['files']);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+
+    expect(view.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true');
   });
 });
 

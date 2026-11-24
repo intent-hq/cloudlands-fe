@@ -9474,7 +9474,6 @@
   "remoteAgent_setupRetry_generic_error": "Vuelve a intentarlo en un momento.",
   "remoteAgent_notice_retryingSetup_title": "Ejecutando de nuevo la configuración en {machine}",
   "settings_sidebarIcons_label": "Iconos de la barra lateral",
-  "settings_sidebarIcons_description": "Elige qué secciones se muestran en la barra lateral del espacio de trabajo. Una sección oculta se sigue abriendo desde un enlace.",
   "workspace_multiSelectSidebar_hideTab_label": "Ocultar de la barra lateral",
   "workspace_multiSelectSidebar_sidebarSettings_label": "Ajustes de la barra lateral"
 }

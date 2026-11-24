@@ -4,7 +4,6 @@
   import ChatAppearanceSettings from '$lib/components/settings/ChatAppearanceSettings.svelte';
   import MenuBarAutoHideSettings from '$lib/components/settings/MenuBarAutoHideSettings.svelte';
   import MachineRailSettings from '$lib/components/settings/MachineRailSettings.svelte';
-  import SidebarIconsSettings from '$lib/components/settings/SidebarIconsSettings.svelte';
   import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
@@ -73,17 +72,6 @@
     {/if}
     {#if show('chat-appearance')}
       <ChatAppearanceSettings />
-    {/if}
-    {#if show('sidebar-icons')}
-      <section
-        id="sidebar-icons"
-        data-highlight-id="sidebar-icons"
-        use:highlightTarget
-        data-slot="settings-section-body"
-        class="px-6 py-4"
-      >
-        <SidebarIconsSettings />
-      </section>
     {/if}
     {#if show('menu-bar-auto-hide')}
       <section

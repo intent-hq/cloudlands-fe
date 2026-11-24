@@ -9474,7 +9474,6 @@
   "remoteAgent_setupRetry_generic_error": "请稍后再试。",
   "remoteAgent_notice_retryingSetup_title": "正在 {machine} 上重新运行设置",
   "settings_sidebarIcons_label": "侧边栏图标",
-  "settings_sidebarIcons_description": "选择工作区侧边栏中显示的部分。隐藏的部分仍可通过链接打开。",
   "workspace_multiSelectSidebar_hideTab_label": "从侧边栏隐藏",
   "workspace_multiSelectSidebar_sidebarSettings_label": "侧边栏设置"
 }

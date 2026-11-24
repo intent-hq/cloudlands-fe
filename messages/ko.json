@@ -9474,7 +9474,6 @@
   "remoteAgent_setupRetry_generic_error": "잠시 후 다시 시도하세요.",
   "remoteAgent_notice_retryingSetup_title": "{machine}에서 설정을 다시 실행하는 중",
   "settings_sidebarIcons_label": "사이드바 아이콘",
-  "settings_sidebarIcons_description": "워크스페이스 사이드바에 표시할 섹션을 선택합니다. 숨긴 섹션도 링크로는 열립니다.",
   "workspace_multiSelectSidebar_hideTab_label": "사이드바에서 숨기기",
   "workspace_multiSelectSidebar_sidebarSettings_label": "사이드바 설정"
 }
