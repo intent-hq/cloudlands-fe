@@ -14,6 +14,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 import {
   cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  HIDDEN_SIDEBAR_TABS_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
   MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
@@ -83,6 +84,32 @@ describe('sidebarNavSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  it("follows another host view's hidden-icon change", async () => {
+    storage.getJSON.mockReturnValue(undefined);
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => current },
+      sidebarNavSaga,
+    );
+    await settle();
+    dispatch.mockClear();
+
+    storage.getJSON.mockImplementation((key: string) =>
+      key === HIDDEN_SIDEBAR_TABS_KEY ? ['files', 3, 'changes'] : undefined,
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    window.dispatchEvent(new StorageEvent('storage', { key: HIDDEN_SIDEBAR_TABS_KEY }));
+    await settle();
+    expect(dispatch.mock.calls).toEqual([
+      [hydrateSidebarNav({ hiddenSidebarTabIds: ['files', 'changes'] })],
+    ]);
+
+    task.cancel();
+    window.dispatchEvent(new StorageEvent('storage', { key: HIDDEN_SIDEBAR_TABS_KEY }));
+    await settle();
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('ignores malformed storage', async () => {
