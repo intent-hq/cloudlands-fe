@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.384.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.8...v2.384.0) (2026-11-24)
+
+
+### 🚀 Features
+
+* **sidebar:** hide sidebar section icons ([#5028](https://github.com/intent-hq/cloudlands-fe/issues/5028)) ([6dbaaaa](https://github.com/intent-hq/cloudlands-fe/commit/6dbaaaa6b80942040175985ed87c0818df2f3eba))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep the subscriptions card closed when it switches to agents only ([#5027](https://github.com/intent-hq/cloudlands-fe/issues/5027)) ([680d980](https://github.com/intent-hq/cloudlands-fe/commit/680d9806f50f30b037a35de2fe7b21738f3803e5))
+
 ## [2.383.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.7...v2.383.8) (2026-11-24)
 
 
