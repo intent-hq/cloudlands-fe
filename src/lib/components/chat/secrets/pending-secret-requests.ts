@@ -111,18 +111,28 @@ export interface VisibleSecretRequest {
   cardKey: string;
 }
 
+/** A local answer status, as the stack needs it (from the store). */
+type LocalAnswers = Readonly<Record<string, { status: string } | undefined>>;
+
+function isSettled(status: string | undefined): boolean {
+  return status === 'provided' || status === 'declined';
+}
+
 /**
- * The cards to show. Transcript cards show unless the user hid them, or they
- * expired after the user moved on (an expired request gets no notice, so it
- * would otherwise stay forever). Requests the listing reports as pending but
- * whose card is outside the loaded transcript page also get a card (with no
- * reason), so the user can always answer what keeps the workspace waiting.
+ * The cards to show. Transcript cards show unless the user hid them, they
+ * were answered (here or by another client; a busy agent's notice row can
+ * arrive much later), or they expired after the user moved on (an expired
+ * request gets no notice, so it would otherwise stay forever). Requests the
+ * listing reports as pending but whose card is outside the loaded transcript
+ * page also get a card (with no reason), so the user can always answer what
+ * keeps the workspace waiting.
  */
 export function visibleSecretRequests(
   transcript: SecretRequestTranscript,
   agentId: string,
   entry: AgentSecretListing | null | undefined,
   hidden: Readonly<Record<string, true>>,
+  answers: LocalAnswers = {},
 ): VisibleSecretRequest[] {
   const visible: VisibleSecretRequest[] = [];
   const shown = new Set<string>();
@@ -130,6 +140,7 @@ export function visibleSecretRequests(
     shown.add(request.requestId);
     if (hidden[request.requestId]) continue;
     const state = secretRequestCardState(request.requestId, entry);
+    if (isSettled(state) || isSettled(answers[request.requestId]?.status)) continue;
     if (state === 'expired' && request.supersededByUser) continue;
     const { requestId, agentId: owner, name, reason, messageId } = request;
     visible.push({
@@ -140,6 +151,7 @@ export function visibleSecretRequests(
   }
   for (const pending of entry?.listing?.pendingRequests ?? []) {
     if (shown.has(pending.requestId) || transcript.answered.has(pending.requestId)) continue;
+    if (isSettled(answers[pending.requestId]?.status)) continue;
     visible.push({
       request: { requestId: pending.requestId, agentId, name: pending.name, reason: '' },
       state: 'pending',
@@ -162,9 +174,6 @@ export function isSecretStackCollapsed(
   if (!collapsedCardKeys || visibleCardKeys.length === 0) return false;
   return visibleCardKeys.every((cardKey) => collapsedCardKeys.includes(cardKey));
 }
-
-/** A local answer status, as the stack needs it (from the store). */
-type LocalAnswers = Readonly<Record<string, { status: string } | undefined>>;
 
 /**
  * The cards still waiting on the user: pending or checking per the listing,
