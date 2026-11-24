@@ -161,8 +161,12 @@ export const desktopClient = {
   },
   async getState(workspaceId: string, agentId: string): Promise<DesktopSnapshot> {
     // Only the primary's own Electron connection may read desktop state; a
-    // web renderer would only get desktop-offline/unsupported back.
-    if (!electronAPI()) throw new Error(m.desktop_consent_failed());
+    // web renderer is incapable, the daemon's desktop-unsupported.
+    if (!electronAPI())
+      throw new BackendError({
+        code: 'desktop-unsupported',
+        message: m.desktop_consent_failed(),
+      });
     const hello = await backendRequest<{
       server?: { capabilities?: { desktopControl?: unknown } };
     }>('client.hello', {});

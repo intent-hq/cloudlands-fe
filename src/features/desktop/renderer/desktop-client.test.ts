@@ -104,7 +104,9 @@ describe('web renderer', () => {
     try {
       backendRequest.mockReset();
       backendRequest.mockResolvedValue({ server: { capabilities: { desktopControl: 1 } } });
-      await expect(desktopClient.getState('workspace', 'agent')).rejects.toThrow();
+      await expect(desktopClient.getState('workspace', 'agent')).rejects.toMatchObject({
+        code: 'desktop-unsupported',
+      });
       expect(backendRequest).not.toHaveBeenCalled();
     } finally {
       electron.present = true;
