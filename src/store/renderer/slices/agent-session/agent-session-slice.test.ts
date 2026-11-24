@@ -567,6 +567,7 @@ describe('agent-session-slice reducer', () => {
           metadata: {
             pendingProposals: [{ proposalId: 'p1', messageId: 'm1' }],
             proposalResolutions: { p0: 'applied' },
+            secretRequestResolutions: { 'sec-1': 'declined' },
             lastSeenMessageId: 'm0',
           },
         });
@@ -593,6 +594,7 @@ describe('agent-session-slice reducer', () => {
         expect((stored as any).fileBlocks).toEqual([{ path: 'a.ts' }]);
         expect(stored.metadata?.pendingProposals).toEqual([{ proposalId: 'p1', messageId: 'm1' }]);
         expect(stored.metadata?.proposalResolutions).toEqual({ p0: 'applied' });
+        expect(stored.metadata?.secretRequestResolutions).toEqual({ 'sec-1': 'declined' });
         expect(stored.metadata?.lastSeenMessageId).toBe('m0');
         expect(stored.messageCount).toBe(4);
       });
@@ -643,6 +645,7 @@ describe('agent-session-slice reducer', () => {
         expect(stored.stats).toBeUndefined();
         expect(stored.metadata?.pendingProposals).toBeUndefined();
         expect(stored.metadata?.proposalResolutions).toBeUndefined();
+        expect(stored.metadata?.secretRequestResolutions).toBeUndefined();
         expect(stored.metadata?.lastSeenMessageId).toBe('m0');
       });
 

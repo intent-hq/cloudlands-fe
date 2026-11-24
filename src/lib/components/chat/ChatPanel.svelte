@@ -8683,6 +8683,7 @@
                 transcript={secretRequestTranscript}
                 workspaceId={workspace.id}
                 {agentId}
+                resolutions={$agentSession$?.metadata?.secretRequestResolutions}
               />
             {/if}
             <QuestionComposer
