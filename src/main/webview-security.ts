@@ -573,7 +573,8 @@ export function setupWebviewSecurity(): void {
 
       try {
         const parsed = new URL(url);
-        if (parsed.protocol === 'about:') {
+        // Tracked web popups (sign-in) keep their blank children: those may navigate on.
+        if (parsed.protocol === 'about:' && !isWebviewPopup(contents)) {
           // Open-blank-then-navigate (xterm's OSC 8 default, libraries working around popup
           // blockers): keep the window hidden. Its first web navigation goes through
           // handleNavigation to openExternal, and did-create-window then closes it.
@@ -646,7 +647,7 @@ export function setupWebviewSecurity(): void {
         // guest right after: its popups are web popups, never the HUD.
         if (isBrowserGuest(contents)) return;
         try {
-          if (new URL(details.url).protocol === 'about:') {
+          if (new URL(details.url).protocol === 'about:' && !isWebviewPopup(contents)) {
             closeBlankPopup(popupWindow);
             return;
           }

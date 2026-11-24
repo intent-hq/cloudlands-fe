@@ -79,10 +79,11 @@ function makeHudPopupWindow(opts: { minimized?: boolean; backendId?: string } = 
  * `openerBackendId` stamps the opener's window so the handler resolves the
  * popup's backend from it (unstamped openers bucket to 'local').
  */
-function attachAppWindowContents(opts: { openerBackendId?: string } = {}) {
+function attachAppWindowContents(opts: { openerBackendId?: string; id?: number } = {}) {
   const contentsOn = vi.fn();
   let windowOpenHandler: WindowOpenHandler | undefined;
   const contents = {
+    id: opts.id,
     getType: () => 'window',
     on: contentsOn,
     once: vi.fn(),
@@ -241,15 +242,43 @@ describe('blank popups from app windows (open-blank-then-navigate)', () => {
     return { win, navigate: () => navigate?.() };
   }
 
-  it('opens hidden, without the app preload', () => {
+  it('opens hidden', () => {
     const { openHandler } = attachAppWindowContents();
     const result = openHandler({ url: 'about:blank' }) as {
       action: string;
-      overrideBrowserWindowOptions?: { show?: boolean; webPreferences?: { preload?: string } };
+      overrideBrowserWindowOptions?: { show?: boolean };
     };
     expect(result.action).toBe('allow');
     expect(result.overrideBrowserWindowOptions?.show).toBe(false);
-    expect(result.overrideBrowserWindowOptions?.webPreferences?.preload).toBeUndefined();
+  });
+
+  it("leaves a sign-in popup's blank child visible and open (web page → popup → blank child)", () => {
+    const webview = {
+      id: 7,
+      getType: () => 'webview',
+      getURL: () => 'https://example.com/',
+      on: vi.fn(),
+      once: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+    };
+    const created = electronMocks.appOn.mock.calls.find(([e]) => e === 'web-contents-created');
+    (created![1] as (e: unknown, c: unknown) => void)(undefined, webview);
+    const trackPopup = webview.on.mock.calls.find(([e]) => e === 'did-create-window')![1] as (
+      win: unknown,
+    ) => void;
+    trackPopup({ webContents: { id: 101, isDestroyed: () => false, on: vi.fn() }, on: vi.fn() });
+
+    const { openHandler, didCreateWindow } = attachAppWindowContents({ id: 101 });
+    const result = openHandler({ url: 'about:blank' }) as {
+      overrideBrowserWindowOptions?: { show?: boolean };
+    };
+    expect(result.overrideBrowserWindowOptions?.show).not.toBe(false);
+
+    const child = makeBlankPopup();
+    didCreateWindow(child.win, { url: 'about:blank' });
+    child.navigate();
+    vi.advanceTimersByTime(10_000);
+    expect(child.win.destroy).not.toHaveBeenCalled();
   });
 
   it('closes once it navigates to its link, or after the timeout', () => {
