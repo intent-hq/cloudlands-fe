@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.383.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.1...v2.383.2) (2026-11-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.287 ([#5014](https://github.com/intent-hq/cloudlands-fe/issues/5014)) ([553b141](https://github.com/intent-hq/cloudlands-fe/commit/553b141f8d16bfe6ff8b7796afa2d3c466de5ec1))
+* **secrets:** remove answered secret request cards from the composer ([#5011](https://github.com/intent-hq/cloudlands-fe/issues/5011)) ([845e598](https://github.com/intent-hq/cloudlands-fe/commit/845e59884dfe4321ea2728030423463e27f07217))
+
 ## [2.383.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.0...v2.383.1) (2026-11-24)
 
 
