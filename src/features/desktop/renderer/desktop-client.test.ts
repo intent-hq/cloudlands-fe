@@ -4,7 +4,10 @@ const localPermissions = vi.hoisted(() => vi.fn());
 const electron = vi.hoisted(() => ({ present: true }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest,
-  electronAPI: () => (electron.present ? { invoke: localPermissions } : undefined),
+  electronAPI: () => ({ invoke: localPermissions }),
+}));
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  isElectronPlatform: () => electron.present,
 }));
 import { desktopClient, parseDesktopEvent } from './desktop-client';
 import { permission, request } from './desktop-test-fixtures';
@@ -99,7 +102,7 @@ describe('web renderer', () => {
   // A browser tab is never a desktop executor: the daemon only lets the
   // primary's own Electron connection read or grant desktop control, so a
   // web renderer asks nothing and shows no permission switch.
-  it('reads no desktop state without the Electron bridge', async () => {
+  it('reads no desktop state outside real Electron', async () => {
     electron.present = false;
     try {
       backendRequest.mockReset();
