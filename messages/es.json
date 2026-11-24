@@ -9473,7 +9473,7 @@
   "remoteAgent_setupRetry_unsupported_error": "Este backend necesita una versión más reciente de Intent para reintentar la configuración.",
   "remoteAgent_setupRetry_generic_error": "Vuelve a intentarlo en un momento.",
   "remoteAgent_notice_retryingSetup_title": "Ejecutando de nuevo la configuración en {machine}",
-  "settings_sidebarIcons_label": "Iconos de la barra lateral",
+  "settings_sidebarIcons_label": "Iconos de la barra lateral contraída",
   "workspace_multiSelectSidebar_hideTab_label": "Ocultar de la barra lateral",
   "workspace_multiSelectSidebar_sidebarSettings_label": "Ajustes de la barra lateral"
 }

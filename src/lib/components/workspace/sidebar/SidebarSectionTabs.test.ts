@@ -244,21 +244,24 @@ describe('plain-folder workspaces', () => {
 });
 
 describe('hidden sidebar icons', () => {
-  it('leaves a hidden icon out of the rail', () => {
+  it('leaves hidden icons out of the collapsed rail, even an open section', () => {
     live.hidden.set(['files', 'changes']);
-    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    live.selected.set(['files']);
+    const view = render(SidebarSectionTabs, {
+      props: { workspaceId: 'workspace', orientation: 'vertical' },
+    });
 
     expect(view.queryByRole('tab', { name: 'Files' })).toBeNull();
     expect(view.queryByRole('tab', { name: 'Changes' })).toBeNull();
     expect(view.getByRole('tab', { name: 'Context' })).toBeTruthy();
   });
 
-  it('keeps a hidden icon while its section is open', () => {
-    live.hidden.set(['files']);
-    live.selected.set(['files']);
+  it('keeps every section tab in the expanded sidebar', () => {
+    live.hidden.set(['files', 'changes']);
     const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
 
-    expect(view.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true');
+    expect(view.getByRole('tab', { name: 'Files' })).toBeTruthy();
+    expect(view.getByRole('tab', { name: 'Changes' })).toBeTruthy();
   });
 });
 

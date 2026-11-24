@@ -113,11 +113,11 @@
       ),
     ),
   );
-  // A hidden section keeps its icon while it is open (a link can open it), so it can be closed.
+  // Hidden icons leave only the collapsed rail; the expanded sidebar keeps every section tab.
   const tabs = $derived(
-    availableTabs.filter(
-      ({ id }) => !$hidden$.includes(id) || savedSelection.includes(id as TabId),
-    ),
+    orientation === 'vertical'
+      ? availableTabs.filter(({ id }) => !$hidden$.includes(id))
+      : availableTabs,
   );
 
   function openMenu(tabId: TabId, event: MouseEvent | KeyboardEvent): boolean {
@@ -127,28 +127,18 @@
     return true;
   }
 
-  function hideTab(tabId: TabId) {
-    if (savedSelection.includes(tabId)) {
-      const rest = savedSelection.filter((id) => id !== tabId);
-      store.dispatch(
-        setMultiSelectSidebarSelectedTabs(workspaceId, rest.length > 0 ? rest : ['agents']),
-      );
-    }
-    store.dispatch(setSidebarTabHidden(tabId, true));
-  }
-
   function menuItems(tabId: TabId): SidebarMenuEntry[] {
     const settings: SidebarMenuEntry = {
       id: 'sidebar-settings',
       label: m.workspace_multiSelectSidebar_sidebarSettings_label(),
       onClick: () => void navigateToSettings({ tab: 'display', hash: 'sidebar-icons' }),
     };
-    if (!HIDEABLE_TAB_IDS.has(tabId)) return [settings];
+    if (orientation !== 'vertical' || !HIDEABLE_TAB_IDS.has(tabId)) return [settings];
     return [
       {
         id: 'hide-tab',
         label: m.workspace_multiSelectSidebar_hideTab_label(),
-        onClick: () => hideTab(tabId),
+        onClick: () => store.dispatch(setSidebarTabHidden(tabId, true)),
       },
       { type: 'separator' },
       settings,
