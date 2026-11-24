@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.383.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.382.0...v2.383.0) (2026-11-24)
+
+
+### 🚀 Features
+
+* preview HTML files in a sandbox ([#4992](https://github.com/intent-hq/cloudlands-fe/issues/4992)) ([97fafb4](https://github.com/intent-hq/cloudlands-fe/commit/97fafb4b0571d6bc2dc66eff13290f94686eb0bb))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** identify the browser panel as Google Chrome ([#5005](https://github.com/intent-hq/cloudlands-fe/issues/5005)) ([64562d8](https://github.com/intent-hq/cloudlands-fe/commit/64562d8bd8fd4f7546307e2535095143d65a3c6b))
+
 ## [2.382.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.381.2...v2.382.0) (2026-11-23)
 
 
