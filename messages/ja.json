@@ -6729,6 +6729,7 @@
   "ui_viewSettings_editor_label": "エディター",
   "ui_viewSettings_foldUnchanged_label": "未変更部分を折りたたむ",
   "ui_viewSettings_font_label": "フォント",
+  "ui_viewSettings_htmlPreview_label": "HTML プレビュー",
   "ui_viewSettings_markdownPreview_label": "Markdown プレビュー",
   "ui_viewSettings_noteViewMode_label": "ノート表示",
   "ui_viewSettings_rawMarkdown_label": "Markdown ソース",

@@ -313,6 +313,7 @@
     "monaco-editor": "^0.57.0",
     "node-api-headers": "^1.9.0",
     "node-gyp": "^13.1.0",
+    "parse5": "8.0.1",
     "phosphor-svelte": "^3.1.1",
     "playwright": "^1.65.1",
     "postcss": "^8.5.33",

@@ -6729,6 +6729,7 @@
   "ui_viewSettings_editor_label": "편집기",
   "ui_viewSettings_foldUnchanged_label": "변경되지 않은 부분 접기",
   "ui_viewSettings_font_label": "글꼴",
+  "ui_viewSettings_htmlPreview_label": "HTML 미리보기",
   "ui_viewSettings_markdownPreview_label": "Markdown 미리보기",
   "ui_viewSettings_noteViewMode_label": "노트 보기",
   "ui_viewSettings_rawMarkdown_label": "원시 Markdown",

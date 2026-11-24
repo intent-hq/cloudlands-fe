@@ -6729,6 +6729,7 @@
   "ui_viewSettings_editor_label": "Éditeur",
   "ui_viewSettings_foldUnchanged_label": "Replier les parties inchangées",
   "ui_viewSettings_font_label": "Police",
+  "ui_viewSettings_htmlPreview_label": "Aperçu HTML",
   "ui_viewSettings_markdownPreview_label": "Aperçu Markdown",
   "ui_viewSettings_noteViewMode_label": "Affichage de la note",
   "ui_viewSettings_rawMarkdown_label": "Markdown brut",
