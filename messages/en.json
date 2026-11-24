@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "Running setup again on {machine}",
   "settings_sidebarIcons_label": "Sidebar icons",
   "workspace_multiSelectSidebar_hideTab_label": "Hide from sidebar",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "Sidebar settings"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Sidebar settings",
+  "browser_overflow_fullScreen_label": "Full screen"
 }

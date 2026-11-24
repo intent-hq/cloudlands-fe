@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "{machine} でセットアップを再実行しています",
   "settings_sidebarIcons_label": "サイドバーのアイコン",
   "workspace_multiSelectSidebar_hideTab_label": "サイドバーから隠す",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "サイドバーの設定"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "サイドバーの設定",
+  "browser_overflow_fullScreen_label": "フルスクリーン"
 }

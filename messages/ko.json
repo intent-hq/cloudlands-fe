@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "{machine}에서 설정을 다시 실행하는 중",
   "settings_sidebarIcons_label": "사이드바 아이콘",
   "workspace_multiSelectSidebar_hideTab_label": "사이드바에서 숨기기",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "사이드바 설정"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "사이드바 설정",
+  "browser_overflow_fullScreen_label": "전체 화면"
 }

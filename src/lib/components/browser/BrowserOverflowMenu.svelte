@@ -10,6 +10,7 @@
     faCopy,
     faCrosshairs,
     faDesktop,
+    faExpand,
     faRotate,
     faTerminal,
   } from '@fortawesome/free-solid-svg-icons';
@@ -37,7 +38,10 @@
     onGoForward?: () => void;
     onToggleElementPicker?: () => void | Promise<void>;
     onViewportChange?: (viewport: BrowserTabViewport) => void;
-    onOpenExternal: () => void | Promise<void>;
+    /** Absent on Intent OS, which has no external browser. */
+    onOpenExternal?: () => void | Promise<void>;
+    /** Intent OS: the page alone in a full-screen window of its own. */
+    onFullScreen?: () => void;
     onCopyUrl: () => void | Promise<void>;
     onScreenshot: () => void | Promise<void>;
     onOpenConsole: () => void | Promise<void>;
@@ -60,6 +64,7 @@
     onToggleElementPicker,
     onViewportChange,
     onOpenExternal,
+    onFullScreen,
     onCopyUrl,
     onScreenshot,
     onOpenConsole,
@@ -162,10 +167,17 @@
       </Menu.Sub>
       <Menu.Separator />
     {/if}
-    <Menu.Item onSelect={() => void onOpenExternal()}>
-      <Fa icon={faArrowUpRightFromSquare} size="xs" class="w-4 text-muted-foreground" />
-      {m.browser_overflow_openExternal_label()}
-    </Menu.Item>
+    {#if onFullScreen}
+      <Menu.Item onSelect={() => onFullScreen()}>
+        <Fa icon={faExpand} size="xs" class="w-4 text-muted-foreground" />
+        {m.browser_overflow_fullScreen_label()}
+      </Menu.Item>
+    {:else if onOpenExternal}
+      <Menu.Item onSelect={() => void onOpenExternal()}>
+        <Fa icon={faArrowUpRightFromSquare} size="xs" class="w-4 text-muted-foreground" />
+        {m.browser_overflow_openExternal_label()}
+      </Menu.Item>
+    {/if}
     <Menu.Item onSelect={() => void onCopyUrl()}>
       <Fa icon={faCopy} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_copyUrl_label()}

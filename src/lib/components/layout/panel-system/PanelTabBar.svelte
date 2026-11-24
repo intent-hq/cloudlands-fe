@@ -57,6 +57,7 @@
   import { toggleExpandPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { openTabInOwnWindowRequested } from '$store/renderer/slices/tab-window/tab-window-slice';
   import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
+  import { isIntentOsRenderer } from '$lib/utils/intent-os-renderer';
   import { browserPagesMode } from '$lib/components/browser/main-owned-browser-page';
   import { isTabWindowLayoutId } from '$shared/types/tab-window';
   import {
@@ -208,6 +209,7 @@
     onSplitHorizontal,
   }: Props = $props();
 
+  const intentOs = isIntentOsRenderer();
   // Labs ("Browser pages in the main process"): any tab can open in its own window.
   const canOpenTabWindows = $derived(
     $pagesMode$ === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(layoutId),
@@ -468,21 +470,32 @@
           onClick: () => void pathActions.reveal(tab),
         });
     } else if (tab.type === 'browser' && tab.browserUrl) {
-      items.push(
-        {
-          id: 'copy-url',
-          label: m.layout_panelTabBar_copyUrl_label(),
-          icon: faCopy,
-          shortcut: copyBrowserUrlShortcutHint,
-          onClick: () => void copyBrowserUrl(tab),
-        },
-        {
+      items.push({
+        id: 'copy-url',
+        label: m.layout_panelTabBar_copyUrl_label(),
+        icon: faCopy,
+        shortcut: copyBrowserUrlShortcutHint,
+        onClick: () => void copyBrowserUrl(tab),
+      });
+      // Intent OS has no external browser: the page opens alone, full screen, instead.
+      if (!intentOs) {
+        items.push({
           id: 'open-browser',
           label: m.layout_panelTabBar_openInBrowser_label(),
           icon: faArrowUpRightFromSquare,
           onClick: () => void openInExternalBrowser(tab),
-        },
-      );
+        });
+      } else if (canOpenTabWindows) {
+        items.push({
+          id: 'full-screen',
+          label: m.browser_overflow_fullScreen_label(),
+          icon: faExpand,
+          onClick: () =>
+            appStore.dispatch(
+              openTabInOwnWindowRequested(layoutId ?? workspaceId, workspaceId, tab.id),
+            ),
+        });
+      }
     } else if (tab.type === 'terminal') {
       items.push({
         id: 'copy-terminal-name',

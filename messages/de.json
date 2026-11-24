@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "Setup wird auf {machine} erneut ausgeführt",
   "settings_sidebarIcons_label": "Seitenleisten-Symbole",
   "workspace_multiSelectSidebar_hideTab_label": "In Seitenleiste ausblenden",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "Seitenleisten-Einstellungen"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Seitenleisten-Einstellungen",
+  "browser_overflow_fullScreen_label": "Vollbild"
 }
