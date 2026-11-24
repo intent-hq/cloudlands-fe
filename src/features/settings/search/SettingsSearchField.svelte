@@ -7,17 +7,49 @@
   import { m } from '$shared/paraglide/messages.js';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
+  import { onDestroy, untrack } from 'svelte';
+
+  /** Typing shows at once; the page searches once typing pauses this long. */
+  const SEARCH_DEBOUNCE_MS = 150;
 
   let { value, onchange }: { value: string; onchange: (value: string) => void } = $props();
 
   let input: HTMLInputElement | undefined = $state();
+  let text = $state(untrack(() => value));
+  let sent = untrack(() => value);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const isMac = isMacPlatform();
   const searchShortcut$ = effectiveShortcutReadable('global.search');
 
+  // A reset from the page (choosing a tab clears the query) replaces the typed text.
+  $effect(() => {
+    const next = value;
+    if (next === sent) return;
+    sent = next;
+    clearTimeout(timer);
+    text = next;
+  });
+
+  function send(next: string) {
+    clearTimeout(timer);
+    timer = undefined;
+    sent = next;
+    onchange(next);
+  }
+
+  function type(next: string) {
+    text = next;
+    clearTimeout(timer);
+    timer = setTimeout(() => send(next), SEARCH_DEBOUNCE_MS);
+  }
+
   function clear() {
-    onchange('');
+    text = '';
+    send('');
     input?.focus();
   }
+
+  onDestroy(() => clearTimeout(timer));
 
   // The page owns Mod+F (the global search yields to a local handler that claims it).
   function handleWindowKeydown(event: KeyboardEvent) {
@@ -41,22 +73,23 @@
       bind:ref={input}
       type="search"
       size="compact"
-      {value}
+      value={text}
       placeholder={m.settings_search_placeholder()}
       aria-label={m.settings_search_placeholder()}
       spellcheck={false}
       autocomplete="off"
       class="pr-7 pl-8 [&::-webkit-search-cancel-button]:appearance-none"
-      oninput={(event) => onchange(event.currentTarget.value)}
+      oninput={(event) => type(event.currentTarget.value)}
       onkeydown={(event) => {
-        if (event.key === 'Escape' && value) {
+        if (event.key === 'Enter' && text !== sent) send(text);
+        if (event.key === 'Escape' && text) {
           event.preventDefault();
           event.stopPropagation();
           clear();
         }
       }}
     />
-    {#if value}
+    {#if text}
       <Button
         variant="ghost"
         size="icon-compact"
