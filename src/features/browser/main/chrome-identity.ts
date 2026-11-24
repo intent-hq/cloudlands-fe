@@ -26,6 +26,9 @@ interface UserAgentMetadata {
   wow64: boolean;
 }
 
+// i18n-ignore (browser brand sent to websites, not user-facing)
+const CHROME_BRAND = 'Google Chrome';
+
 const PLATFORM_NAMES: Partial<Record<NodeJS.Platform, string>> = {
   darwin: 'macOS',
   win32: 'Windows',
@@ -43,12 +46,12 @@ export function chromeUserAgentMetadata(env: {
   return {
     brands: [
       { brand: 'Chromium', version: major },
-      { brand: 'Google Chrome', version: major },
+      { brand: CHROME_BRAND, version: major },
       { brand: 'Not_A Brand', version: '99' },
     ],
     fullVersionList: [
       { brand: 'Chromium', version: env.chromeVersion },
-      { brand: 'Google Chrome', version: env.chromeVersion },
+      { brand: CHROME_BRAND, version: env.chromeVersion },
       { brand: 'Not_A Brand', version: '99.0.0.0' },
     ],
     fullVersion: env.chromeVersion,
