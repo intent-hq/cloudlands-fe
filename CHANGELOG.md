@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.383.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.3...v2.383.4) (2026-11-24)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** give browser pages Chrome's user-agent metadata ([#5017](https://github.com/intent-hq/cloudlands-fe/issues/5017)) ([8494fec](https://github.com/intent-hq/cloudlands-fe/commit/8494fece4e8835abf2ef0c624e6100c24d646e18))
+
 ## [2.383.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.2...v2.383.3) (2026-11-24)
 
 
