@@ -218,7 +218,7 @@
   let aiBehaviorView = $state<AIBehaviorView>({ type: 'system-prompt' });
 
   function selectAiBehaviorView(view: AIBehaviorView) {
-    searchQuery = '';
+    resetSearch();
     aiBehaviorView = view;
     const tab = view.type === 'system-prompt' ? 'agent-behavior' : 'specialists';
     requestedTab = tab;
@@ -333,7 +333,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
-    searchQuery = '';
+    resetSearch();
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -380,6 +380,11 @@
   }
   // Settings search: one section registry drives the tab panes and the results.
   let searchQuery = $state('');
+  let searchField: SettingsSearchField | undefined = $state();
+  function resetSearch() {
+    searchQuery = '';
+    searchField?.reset();
+  }
   const searching = $derived(searchQuery.trim().length > 0);
 
   function isAvailable(id: string): boolean {
@@ -420,7 +425,7 @@
   });
 
   function selectTab(tab: SettingsTab) {
-    searchQuery = '';
+    resetSearch();
     setActiveTab(tab);
   }
 
@@ -435,7 +440,11 @@
 
 {#snippet sidebarHeader()}
   <SettingsSidebarBack onBack={navigateBackFromSettings} />
-  <SettingsSearchField value={searchQuery} onchange={(value) => (searchQuery = value)} />
+  <SettingsSearchField
+    bind:this={searchField}
+    value={searchQuery}
+    onchange={(value) => (searchQuery = value)}
+  />
 {/snippet}
 
 {#snippet agentsNavigation()}
