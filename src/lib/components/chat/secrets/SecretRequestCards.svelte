@@ -39,16 +39,16 @@
 
   const secretRequests$ = selectSecretRequestsState();
   const connectionGeneration$ = selectDaemonConnectionGeneration();
+  const answers = $derived($secretRequests$.answers);
   const visible = $derived(
     visibleSecretRequests(
       transcript,
       agentId,
       $secretRequests$.listings[agentId],
       $secretRequests$.hidden,
+      answers,
     ),
   );
-
-  const answers = $derived($secretRequests$.answers);
   const collapsedKeys = $derived($secretRequests$.collapsed[agentId]);
   const awaiting = $derived(awaitingSecretRequests(visible, answers));
   // The first waiting card carries the stack's one Hide.

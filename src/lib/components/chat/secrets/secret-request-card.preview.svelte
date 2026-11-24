@@ -8,6 +8,7 @@
     | 'failed'
     | 'sending'
     | 'stack'
+    | 'answered'
     | 'edge'
     | 'collapsed'
     | 'collapsed-many'
@@ -27,6 +28,7 @@
       failed: { props: { scene: 'failed' } },
       sending: { props: { scene: 'sending' } },
       stack: { props: { scene: 'stack' } },
+      answered: { props: { scene: 'answered' } },
       edge: { props: { scene: 'edge' } },
       collapsed: { props: { scene: 'collapsed' } },
       'collapsed-many': { props: { scene: 'collapsed-many' } },
@@ -70,15 +72,25 @@
   store.dispatch(secretAnswerUpdated('sec-preview-sending', 'sending', 1));
 
   // A collapsed stack per scene: one request, or three.
-  const stack = (agentId: string, names: string[], collapse = true) => {
+  // `answered` names requests already answered whose notice is still queued.
+  const stack = (agentId: string, names: string[], collapse = true, answered: string[] = []) => {
     const ids = names.map((_, index) => `sec-${agentId}-${index}`);
+    const isAnswered = (index: number) => answered.includes(names[index]);
     store.dispatch(
       secretListLoaded(
         agentId,
         {
           secrets: [],
-          pendingRequests: ids.map((requestId, index) => ({ requestId, name: names[index] })),
-          answeredRequests: [],
+          pendingRequests: ids
+            .map((requestId, index) => ({ requestId, name: names[index] }))
+            .filter((_, index) => !isAnswered(index)),
+          answeredRequests: ids
+            .map((requestId, index) => ({
+              requestId,
+              name: names[index],
+              outcome: 'provided' as const,
+            }))
+            .filter((_, index) => isAnswered(index)),
         },
         ids,
         0,
@@ -111,6 +123,12 @@
     'preview-expanded-many',
     ['OPENROUTER_API_KEY', 'GITHUB_TOKEN', 'SENTRY_DSN'],
     false,
+  );
+  const answeredStack = stack(
+    'preview-answered',
+    ['ASC_ISSUER_ID', 'ASC_REPORTS_KEY_ID', 'SENTRY_DSN'],
+    false,
+    ['ASC_ISSUER_ID', 'ASC_REPORTS_KEY_ID'],
   );
   const collapsedOne = stack('preview-collapsed', ['OPENROUTER_API_KEY']);
   const collapsedMany = stack('preview-collapsed-many', [
@@ -146,6 +164,12 @@
       transcript={expandedMany}
       workspaceId="preview"
       agentId="preview-expanded-many"
+    />
+  {:else if scene === 'answered'}
+    <SecretRequestCards
+      transcript={answeredStack}
+      workspaceId="preview"
+      agentId="preview-answered"
     />
   {:else if scene === 'edge'}
     <SecretRequestCard
