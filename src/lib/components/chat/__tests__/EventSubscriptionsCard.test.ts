@@ -232,7 +232,9 @@ describe('EventSubscriptionsCard', () => {
       setEventSubscriptionsExpanded('workspace-a', agentId, !open);
       await renderCard(agentId);
       expect(
-        screen.getByRole('button', { name: 'Subscribed to 3 events' }).getAttribute('aria-expanded'),
+        screen
+          .getByRole('button', { name: 'Subscribed to 3 events' })
+          .getAttribute('aria-expanded'),
       ).toBe(String(!open));
 
       liveSubscriptions.setHooks!([]);
@@ -244,7 +246,9 @@ describe('EventSubscriptionsCard', () => {
       liveSubscriptions.setHooks!([{ agentId, state: 'scheduled' }]);
       await tick();
       expect(
-        screen.getByRole('button', { name: 'Subscribed to 3 events' }).getAttribute('aria-expanded'),
+        screen
+          .getByRole('button', { name: 'Subscribed to 3 events' })
+          .getAttribute('aria-expanded'),
       ).toBe(String(open));
       if (open) expect(screen.getByTestId('event-subscriptions-body')).toBeTruthy();
       else await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
