@@ -275,15 +275,28 @@
     visible = hasSubscriptions;
   });
 
-  $effect(() => {
-    const nextKey = `${workspaceId}:${agentId}:${isolatedPreview?.count ?? 'live'}`;
-    if (nextKey === disclosureKey) return;
-    disclosureKey = nextKey;
+  function loadDisclosure() {
     isCollapsed = isolatedPreview
       ? !(isolatedPreview.initiallyExpanded ?? true)
       : !getEventSubscriptionsExpanded(workspaceId, agentId);
     desiredCollapsed = isCollapsed;
     bodyIsClosing = false;
+  }
+
+  $effect(() => {
+    const nextKey = `${workspaceId}:${agentId}:${isolatedPreview?.count ?? 'live'}`;
+    if (nextKey === disclosureKey) return;
+    disclosureKey = nextKey;
+    loadDisclosure();
+  });
+
+  // An agent-only card's "Waiting for N agents" header saves the same choice as
+  // this header, so read it again when the card turns mixed.
+  let wasAgentOnly: boolean | null = null;
+  $effect.pre(() => {
+    const agentOnly = isAgentOnly;
+    if (wasAgentOnly === true && !agentOnly && !isolatedPreview) untrack(loadDisclosure);
+    wasAgentOnly = agentOnly;
   });
 
   async function toggleCollapsed(event?: MouseEvent) {
@@ -420,6 +433,7 @@
               {compact}
               embedded
               forceWaitingHeader={!isSingleEvent}
+              sharesCardDisclosure={isAgentOnly}
               isActive={isActive && !bodyIsClosing && $agentSubscriptionLane$.visible}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}

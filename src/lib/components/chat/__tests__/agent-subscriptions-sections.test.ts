@@ -140,7 +140,12 @@ import {
   SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
   SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
 } from '../subscription-disclosure';
-import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import {
+  getEventSubscriptionsExpanded,
+  getWaitingAgentsExpanded,
+  resetAgentSubscriptionsViewStateForTests,
+  setEventSubscriptionsExpanded,
+} from '../agent-subscriptions-view-state';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksSucceeded,
@@ -264,11 +269,16 @@ function markTranscriptAuthoritative(agentId: string, totalMessages = 0) {
   );
 }
 
-async function renderWithSnapshot(wsId: string, wire: unknown, compact = false) {
+async function renderWithSnapshot(
+  wsId: string,
+  wire: unknown,
+  compact = false,
+  extraProps: { forceWaitingHeader?: boolean; sharesCardDisclosure?: boolean } = {},
+) {
   resetWorkspace(wsId);
   backendRequestSpy.mockResolvedValue(wire);
   const utils = render(AgentSubscriptions, {
-    props: { workspaceId: wsId, agentId: PARENT, compact },
+    props: { workspaceId: wsId, agentId: PARENT, compact, ...extraProps },
   });
   await flush();
   await flush();
@@ -542,6 +552,27 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       'true',
     );
     expect(screen.getByTestId('one-shot-agent-list')).toBeTruthy();
+  });
+
+  it("opens and closes with the card's own state when it is an agent-only card's header", async () => {
+    const wsId = 'ws-waiting-card-header';
+    const wire = snapshot([oneShotSubscription('watch-two', wsId, ['agent-1', 'agent-2'])]);
+    const props = { forceWaitingHeader: true, sharesCardDisclosure: true };
+    setEventSubscriptionsExpanded(wsId, PARENT, true);
+    const first = await renderWithSnapshot(wsId, wire, false, props);
+    const toggle = screen.getByTestId('one-shot-summary-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.click(toggle);
+    expect(getEventSubscriptionsExpanded(wsId, PARENT)).toBe(false);
+    expect(getWaitingAgentsExpanded(wsId, PARENT)).toBe(false);
+    first.unmount();
+
+    await renderWithSnapshot(wsId, wire, false, props);
+    expect(screen.getByTestId('one-shot-summary-toggle').getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(screen.queryByTestId('one-shot-agent-list')).toBeNull();
   });
 
   it('combines many sources into one full deterministic deduplicated list', async () => {

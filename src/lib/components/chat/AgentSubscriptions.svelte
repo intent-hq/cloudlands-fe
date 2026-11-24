@@ -103,8 +103,10 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
+    getEventSubscriptionsExpanded,
     getFinishedAgentsExpanded,
     getWaitingAgentsExpanded,
+    setEventSubscriptionsExpanded,
     setFinishedAgentsExpanded,
     setWaitingAgentsExpanded,
   } from './agent-subscriptions-view-state';
@@ -145,6 +147,11 @@
     };
     /** Promote the cohort disclosure to the sole header in an agent-only parent card. */
     forceWaitingHeader?: boolean;
+    /**
+     * This header is the card's own header (agent-only card), so it opens and closes
+     * with the card's "Subscribed to N events" header: one choice for the agent.
+     */
+    sharesCardDisclosure?: boolean;
   }
 
   let {
@@ -159,6 +166,7 @@
     participantAvatarItems = $bindable([]),
     isolatedPreview,
     forceWaitingHeader = false,
+    sharesCardDisclosure = false,
   }: Props = $props();
   const componentId = $props.id();
   const waitingAgentListId = `waiting-agent-list-${componentId}`;
@@ -502,12 +510,14 @@
   });
 
   $effect(() => {
-    const nextKey = `${workspaceId}:${agentId}`;
+    const nextKey = `${workspaceId}:${agentId}:${sharesCardDisclosure}`;
     if (nextKey !== waitingDisclosureKey) {
       waitingDisclosureKey = nextKey;
       waitingAgentsCollapsed = isolatedPreview
         ? !(isolatedPreview.initiallyExpanded ?? false)
-        : !getWaitingAgentsExpanded(workspaceId, agentId);
+        : sharesCardDisclosure
+          ? !getEventSubscriptionsExpanded(workspaceId, agentId, false)
+          : !getWaitingAgentsExpanded(workspaceId, agentId);
     }
     if (nextKey === finishedDisclosureKey) return;
     finishedDisclosureKey = nextKey;
@@ -554,7 +564,10 @@
 
   function toggleWaitingAgentsCollapsed() {
     waitingAgentsCollapsed = !waitingAgentsCollapsed;
-    if (!isolatedPreview) setWaitingAgentsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
+    if (isolatedPreview) return;
+    if (sharesCardDisclosure)
+      setEventSubscriptionsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
+    else setWaitingAgentsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
   }
 
   function toggleFinishedAgentsExpanded() {

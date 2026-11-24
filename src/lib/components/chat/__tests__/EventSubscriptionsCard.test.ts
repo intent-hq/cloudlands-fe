@@ -12,6 +12,7 @@ const { liveSubscriptions } = vi.hoisted(() => ({
     monitors: [] as Array<{ agentId: string; state: string }>,
     agents: {} as Record<string, string[]>,
     visibleAgentLanes: new Set<string>(),
+    setHooks: null as ((hooks: Array<{ agentId: string; state: string }>) => void) | null,
   },
 }));
 
@@ -31,8 +32,14 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/MockPrEventSection.svelte')).default,
 }));
 vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', async () => {
-  const { readable } = await import('svelte/store');
-  return { selectBackgroundHooks: () => readable(liveSubscriptions.hooks) };
+  const { writable } = await import('svelte/store');
+  return {
+    selectBackgroundHooks: () => {
+      const hooks = writable(liveSubscriptions.hooks);
+      liveSubscriptions.setHooks = hooks.set;
+      return hooks;
+    },
+  };
 });
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async () => {
   const { derived } = await import('svelte/store');
@@ -215,6 +222,38 @@ describe('EventSubscriptionsCard', () => {
       'false',
     );
   });
+
+  it.each([true, false])(
+    "follows the agent-only header's saved choice (open: %s) when the card turns mixed again",
+    async (open) => {
+      const agentId = 'live-switch';
+      liveSubscriptions.agents[agentId] = ['agent-one', 'agent-two'];
+      liveSubscriptions.hooks = [{ agentId, state: 'scheduled' }];
+      setEventSubscriptionsExpanded('workspace-a', agentId, !open);
+      await renderCard(agentId);
+      expect(
+        screen
+          .getByRole('button', { name: 'Subscribed to 3 events' })
+          .getAttribute('aria-expanded'),
+      ).toBe(String(!open));
+
+      liveSubscriptions.setHooks!([]);
+      await tick();
+      expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
+      // The agent-only header (AgentSubscriptions) saves the user's choice.
+      setEventSubscriptionsExpanded('workspace-a', agentId, open);
+
+      liveSubscriptions.setHooks!([{ agentId, state: 'scheduled' }]);
+      await tick();
+      expect(
+        screen
+          .getByRole('button', { name: 'Subscribed to 3 events' })
+          .getAttribute('aria-expanded'),
+      ).toBe(String(open));
+      if (open) expect(screen.getByTestId('event-subscriptions-body')).toBeTruthy();
+      else await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
+    },
+  );
 
   it('persists a collapsed override across remounts in the session', async () => {
     const first = render(EventSubscriptionsCard, {
