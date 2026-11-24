@@ -16,7 +16,7 @@ const METADATA = chromeUserAgentMetadata({
   chromeVersion: '142.0.7444.59',
   platform: 'linux',
   arch: 'x64',
-  platformVersion: '6.8.0',
+  systemVersion: '6.8.0',
 });
 
 let nextId = 100;
@@ -102,7 +102,7 @@ describe('chromeUserAgentMetadata', () => {
     expect(METADATA).toMatchObject({
       fullVersion: '142.0.7444.59',
       platform: 'Linux',
-      platformVersion: '6.8.0',
+      platformVersion: '',
       architecture: 'x86',
       bitness: '64',
       mobile: false,
@@ -115,17 +115,45 @@ describe('chromeUserAgentMetadata', () => {
         chromeVersion: '142.0.0.0',
         platform: 'darwin',
         arch: 'arm64',
-        platformVersion: '15.1.0',
+        systemVersion: '15.1',
       }),
-    ).toMatchObject({ platform: 'macOS', architecture: 'arm', bitness: '64' });
+    ).toMatchObject({
+      platform: 'macOS',
+      platformVersion: '15.1.0',
+      architecture: 'arm',
+      bitness: '64',
+    });
     expect(
       chromeUserAgentMetadata({
         chromeVersion: '142.0.0.0',
         platform: 'win32',
         arch: 'ia32',
-        platformVersion: '10.0.0',
+        systemVersion: '10.0.19045',
       }),
-    ).toMatchObject({ platform: 'Windows', architecture: 'x86', bitness: '32' });
+    ).toMatchObject({
+      platform: 'Windows',
+      platformVersion: '10.0.0',
+      architecture: 'x86',
+      bitness: '32',
+    });
+  });
+
+  it('reports the Windows API contract, so Windows 11 reads as 13.0.0 or later', () => {
+    const windows = (systemVersion: string) =>
+      chromeUserAgentMetadata({
+        chromeVersion: '152.0.0.0',
+        platform: 'win32',
+        arch: 'x64',
+        systemVersion,
+      }).platformVersion;
+    expect(windows('10.0.22000')).toBe('14.0.0');
+    expect(windows('10.0.22631')).toBe('15.0.0');
+    expect(windows('10.0.26100')).toBe('19.0.0');
+    expect(windows('10.0.17763')).toBe('7.0.0');
+    for (const build of ['10.0.22000', '10.0.22631', '10.0.26100']) {
+      expect(Number.parseInt(windows(build), 10)).toBeGreaterThanOrEqual(13);
+    }
+    expect(Number.parseInt(windows('10.0.19045'), 10)).toBeLessThan(13);
   });
 });
 

@@ -1,4 +1,3 @@
-import os from 'node:os';
 import { app } from 'electron';
 import { Logger } from '../shared/logger';
 import {
@@ -25,10 +24,7 @@ export function setupBrowserChromeIdentity(): void {
       chromeVersion: process.versions.chrome,
       platform: process.platform,
       arch: process.arch,
-      platformVersion:
-        process.platform === 'linux'
-          ? (/^\d+(\.\d+){0,2}/.exec(os.release())?.[0] ?? '')
-          : process.getSystemVersion(),
+      systemVersion: process.getSystemVersion(),
     }),
     warn: (message, detail) => logger.warn(message, detail),
   });

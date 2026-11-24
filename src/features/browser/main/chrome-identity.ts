@@ -35,12 +35,47 @@ const PLATFORM_NAMES: Partial<Record<NodeJS.Platform, string>> = {
   linux: 'Linux',
 };
 
+/**
+ * Windows build where each UniversalApiContract version first ships, newest
+ * first. Chrome reports this contract, not the OS build, as the Windows
+ * platform version (Windows 11 is 13.0.0 or later).
+ */
+const WINDOWS_API_CONTRACTS: ReadonlyArray<readonly [build: number, contract: number]> = [
+  [26100, 19],
+  [22621, 15],
+  [22000, 14],
+  [19041, 10],
+  [18362, 8],
+  [17763, 7],
+  [17134, 6],
+  [16299, 5],
+  [15063, 4],
+  [14393, 3],
+  [10586, 2],
+  [10240, 1],
+];
+
+/** The UA-CH platform version Chrome reports, from Electron's `process.getSystemVersion()`. */
+function chromePlatformVersion(platform: NodeJS.Platform, systemVersion: string): string {
+  const parts = systemVersion.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  if (platform === 'win32') {
+    const build = parts[2] ?? 0;
+    const contract = WINDOWS_API_CONTRACTS.find(([first]) => build >= first)?.[1] ?? 0;
+    return `${contract}.0.0`;
+  }
+  if (platform === 'darwin') {
+    return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0].join('.');
+  }
+  return '';
+}
+
 /** What Google Chrome at `chromeVersion` reports on this platform. */
 export function chromeUserAgentMetadata(env: {
   chromeVersion: string;
   platform: NodeJS.Platform;
   arch: string;
-  platformVersion: string;
+  /** `process.getSystemVersion()`. */
+  systemVersion: string;
 }): UserAgentMetadata {
   const major = env.chromeVersion.split('.')[0];
   return {
@@ -56,7 +91,7 @@ export function chromeUserAgentMetadata(env: {
     ],
     fullVersion: env.chromeVersion,
     platform: PLATFORM_NAMES[env.platform] ?? 'Linux',
-    platformVersion: env.platformVersion,
+    platformVersion: chromePlatformVersion(env.platform, env.systemVersion),
     architecture: env.arch.startsWith('arm') ? 'arm' : 'x86',
     model: '',
     mobile: false,
