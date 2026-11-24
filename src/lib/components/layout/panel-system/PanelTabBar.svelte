@@ -210,6 +210,11 @@
   }: Props = $props();
 
   const intentOs = isIntentOsRenderer();
+  /** A page hosted by another client shows a viewer here, without the browser ⋮ menu. */
+  function isMirroredBrowserTab(tab: PanelTab): boolean {
+    const own = appStore.state?.browserClients?.ownClientId ?? null;
+    return tab.type === 'browser' && tab.hostClientId !== undefined && tab.hostClientId !== own;
+  }
   // Labs ("Browser pages in the main process"): any tab can open in its own window.
   const canOpenTabWindows = $derived(
     $pagesMode$ === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(layoutId),
@@ -1450,8 +1455,9 @@
           </div>
         </Menu.Group>
       {/if}
-      <!-- A browser page's open-elsewhere actions live in its own ⋮ menu. -->
-      {#if $isWorkspaceHostLocal$ && canOpenExternalEditors && activeTab?.type !== 'browser'}
+      <!-- A browser page's open-elsewhere actions live in its own ⋮ menu; a page mirrored
+           from another client renders a viewer without one, so it keeps this item. -->
+      {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors && activeTab?.type !== 'browser') || (activeTab && !intentOs && isMirroredBrowserTab(activeTab))}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(
             activeTab,
@@ -1460,7 +1466,17 @@
           )}
           <Menu.Separator />
           <div data-panel-actions-section="open-in">
-            {#if externalTarget.kind === 'path'}
+            {#if externalTarget.kind === 'browser'}
+              <Menu.CommandItem
+                icon={faArrowUpRightFromSquare}
+                label={m.layout_panelTabBar_openInBrowser_label()}
+                iconWeight="regular"
+                onclick={() => {
+                  openInExternalBrowser(activeTab);
+                  close();
+                }}
+              />
+            {:else if externalTarget.kind === 'path'}
               {#await import('$features/workspace/components/WorkspaceActionsMenu.svelte') then module}
                 {@const WorkspaceActionsMenu = module.default}
                 <WorkspaceActionsMenu
