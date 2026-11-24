@@ -62,6 +62,7 @@
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
+  import { isDockLabAvailable } from '$lib/dock-lab';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
@@ -387,8 +388,9 @@
       case 'menu-bar-auto-hide':
         return isElectronPlatform() && !isMacPlatform();
       case 'machine-rail':
-      case 'dock-lab':
         return isElectronPlatform();
+      case 'dock-lab':
+        return isDockLabAvailable();
       case 'plugins':
         return $pluginsSupported$;
       case 'tunnel-relay':

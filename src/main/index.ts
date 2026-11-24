@@ -354,6 +354,7 @@ import {
 } from './local-prefs';
 import {
   changeDockLabEnabled,
+  isDockLabAvailable,
   isDockLabEnabled,
   loadDockLabEnabled,
   registerDockLabHandlers,
@@ -1103,28 +1104,30 @@ const bootFlow = app.whenReady().then(async () => {
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
-      // Show Intent Dock is the Notch dock setting (always present); the dock commands
-      // exist only while it is on.
-      ...dockWindowMenuItems({
-        labEnabled: isDockLabEnabled(),
-        dockShown: dockMenuController.isEnabled(),
-        labels: {
-          show: m.menu_show_intent_dock(),
-          focus: m.menu_focus_intent_dock(),
-          record: m.dock_shortcut_record_menu(),
-          capture: m.browser_overflow_screenshot_label(),
-          dictate: m.dock_shortcut_dictate_label(),
-          unavailable: m.dock_shortcut_unavailable(),
-        },
-        hint: (action) => {
-          const key = dockShortcutMenuKey(action);
-          return key ? { available: dockShortcutAvailable(action), key } : null;
-        },
-        setNotchDock: changeDockLabEnabled,
-        requestShortcut: (action) => void requestDockShortcut(action),
-        warn: (error) => logger.warn('Failed to change the dock', { error }),
-        refresh: () => void rebuildMenu(),
-      }),
+      // Show Intent Dock is the Notch dock setting (present wherever the dock is
+      // available); the dock commands exist only while it is on.
+      ...(isDockLabAvailable()
+        ? dockWindowMenuItems({
+            labEnabled: isDockLabEnabled(),
+            dockShown: dockMenuController.isEnabled(),
+            labels: {
+              show: m.menu_show_intent_dock(),
+              focus: m.menu_focus_intent_dock(),
+              record: m.dock_shortcut_record_menu(),
+              capture: m.browser_overflow_screenshot_label(),
+              dictate: m.dock_shortcut_dictate_label(),
+              unavailable: m.dock_shortcut_unavailable(),
+            },
+            hint: (action) => {
+              const key = dockShortcutMenuKey(action);
+              return key ? { available: dockShortcutAvailable(action), key } : null;
+            },
+            setNotchDock: changeDockLabEnabled,
+            requestShortcut: (action) => void requestDockShortcut(action),
+            warn: (error) => logger.warn('Failed to change the dock', { error }),
+            refresh: () => void rebuildMenu(),
+          })
+        : []),
       {
         label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+[',

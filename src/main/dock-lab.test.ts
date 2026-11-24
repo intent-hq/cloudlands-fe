@@ -79,6 +79,32 @@ describe('loadDockLabEnabled', () => {
   });
 });
 
+describe('Intent OS', () => {
+  it('keeps the dock off and refuses to turn it on, whatever was saved', async () => {
+    mocks.read.mockResolvedValue(false);
+    await loadDockLabEnabled();
+    vi.stubEnv('INTENT_OS', '1');
+    try {
+      mocks.read.mockResolvedValue(true);
+      await expect(loadDockLabEnabled()).resolves.toBe(false);
+      registerDockLabHandlers({
+        show: async () => void mocks.events.push('show'),
+        hide: () => void mocks.events.push('hide'),
+        onChange: () => void mocks.events.push('change'),
+        restore: async () => true,
+        isDock: () => false,
+      });
+      await expect(changeDockLabEnabled(true)).rejects.toThrow('not available');
+      await startDockLab();
+      expect(isDockLabEnabled()).toBe(false);
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(mocks.events).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('window:set-dock-lab', () => {
   const dock = { id: 'dock' };
   const settings = { id: 'main' };

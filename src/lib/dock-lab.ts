@@ -11,6 +11,8 @@ import { readable } from 'svelte/store';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { isIntentOsRenderer } from '$lib/utils/intent-os-renderer';
 
 interface DockLabIpcLike {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>;
@@ -25,6 +27,11 @@ function getBridge(): DockLabIpcLike | null {
 function parseEnabled(payload: unknown): boolean | null {
   const enabled = (payload as { enabled?: unknown } | null | undefined)?.enabled;
   return typeof enabled === 'boolean' ? enabled : null;
+}
+
+/** The dock is a desktop feature, and Intent OS has none (main refuses to turn it on). */
+export function isDockLabAvailable(): boolean {
+  return isElectronPlatform() && !isIntentOsRenderer();
 }
 
 export const dockLabEnabled = readable(false, (set) => {
