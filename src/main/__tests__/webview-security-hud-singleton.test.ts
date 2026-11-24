@@ -7,7 +7,7 @@
  * backend (deny the popup) instead of allowing a second one, and stamp +
  * register a newly allowed /hud popup as that backend's HUD.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
   appOn: vi.fn(),
@@ -79,10 +79,11 @@ function makeHudPopupWindow(opts: { minimized?: boolean; backendId?: string } = 
  * `openerBackendId` stamps the opener's window so the handler resolves the
  * popup's backend from it (unstamped openers bucket to 'local').
  */
-function attachAppWindowContents(opts: { openerBackendId?: string } = {}) {
+function attachAppWindowContents(opts: { openerBackendId?: string; id?: number } = {}) {
   const contentsOn = vi.fn();
   let windowOpenHandler: WindowOpenHandler | undefined;
   const contents = {
+    id: opts.id,
     getType: () => 'window',
     on: contentsOn,
     once: vi.fn(),
@@ -209,6 +210,91 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
 
     expect(remote.openHandler({ url: 'app://workspaces/hud' })).toEqual({ action: 'deny' });
     expect(remoteHud.focus).toHaveBeenCalled();
+  });
+});
+
+describe('blank popups from app windows (open-blank-then-navigate)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronMocks.getAllWindows.mockReturnValue([]);
+    _resetHudWindowRefForTests();
+    setupWebviewSecurity();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeBlankPopup() {
+    let navigate: (() => void) | undefined;
+    let destroyed = false;
+    const win = {
+      isDestroyed: () => destroyed,
+      destroy: vi.fn(() => {
+        destroyed = true;
+      }),
+      webContents: {
+        once: vi.fn((event: string, handler: () => void) => {
+          if (event === 'will-navigate') navigate = handler;
+        }),
+      },
+    };
+    return { win, navigate: () => navigate?.() };
+  }
+
+  it('opens hidden', () => {
+    const { openHandler } = attachAppWindowContents();
+    const result = openHandler({ url: 'about:blank' }) as {
+      action: string;
+      overrideBrowserWindowOptions?: { show?: boolean };
+    };
+    expect(result.action).toBe('allow');
+    expect(result.overrideBrowserWindowOptions?.show).toBe(false);
+  });
+
+  it("leaves a sign-in popup's blank child visible and open (web page → popup → blank child)", () => {
+    const webview = {
+      id: 7,
+      getType: () => 'webview',
+      getURL: () => 'https://example.com/',
+      on: vi.fn(),
+      once: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+    };
+    const created = electronMocks.appOn.mock.calls.find(([e]) => e === 'web-contents-created');
+    (created![1] as (e: unknown, c: unknown) => void)(undefined, webview);
+    const trackPopup = webview.on.mock.calls.find(([e]) => e === 'did-create-window')![1] as (
+      win: unknown,
+    ) => void;
+    trackPopup({ webContents: { id: 101, isDestroyed: () => false, on: vi.fn() }, on: vi.fn() });
+
+    const { openHandler, didCreateWindow } = attachAppWindowContents({ id: 101 });
+    const result = openHandler({ url: 'about:blank' }) as {
+      overrideBrowserWindowOptions?: { show?: boolean };
+    };
+    expect(result.overrideBrowserWindowOptions?.show).not.toBe(false);
+
+    const child = makeBlankPopup();
+    didCreateWindow(child.win, { url: 'about:blank' });
+    child.navigate();
+    vi.advanceTimersByTime(10_000);
+    expect(child.win.destroy).not.toHaveBeenCalled();
+  });
+
+  it('closes once it navigates to its link, or after the timeout', () => {
+    const { didCreateWindow } = attachAppWindowContents();
+    const navigated = makeBlankPopup();
+    didCreateWindow(navigated.win, { url: 'about:blank' });
+    navigated.navigate();
+    vi.advanceTimersByTime(1);
+    expect(navigated.win.destroy).toHaveBeenCalledTimes(1);
+
+    const idle = makeBlankPopup();
+    didCreateWindow(idle.win, { url: 'about:blank' });
+    vi.advanceTimersByTime(9_999);
+    expect(idle.win.destroy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(idle.win.destroy).toHaveBeenCalledTimes(1);
   });
 });
 

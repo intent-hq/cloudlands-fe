@@ -182,6 +182,8 @@ export class TerminalAdapter {
     const initialFontFamily = options.fontFamily ?? selectCodeFontFamilyCSS.select(appStore.state);
     this.xterm = new Terminal({
       allowProposedApi: true,
+      // OSC 8 hyperlinks: xterm's default opens a blank window and then loads the link in it.
+      linkHandler: { activate: (_event, uri) => this.handleLinkClick(uri) },
       fontFamily: initialFontFamily,
       fontSize: 13,
       lineHeight: 1.2,
