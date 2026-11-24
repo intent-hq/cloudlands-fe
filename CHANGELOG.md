@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.384.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.384.1...v2.384.2) (2026-11-24)
+
+
+### 🐛 Bug Fixes
+
+* **settings:** debounce Settings search so typing never waits on it ([#5033](https://github.com/intent-hq/cloudlands-fe/issues/5033)) ([f964864](https://github.com/intent-hq/cloudlands-fe/commit/f9648648924223fc1859137d9cac4f166a993791))
+
 ## [2.384.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.384.0...v2.384.1) (2026-11-24)
 
 
