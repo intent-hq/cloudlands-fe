@@ -13,6 +13,7 @@
     hydrateAgentsRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
   import { setHomePreviewAgent } from './home-workspaces-slice';
   import { chatViewEnded } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
@@ -72,6 +73,8 @@
     clearTimeout(timeout);
     // Reuse the production read lifecycle without mounting/restoring the workspace layout.
     store.dispatch(hydrateAgentsRequested(workspaceId));
+    // The composer's `/` menu reads workspace skills, which only workspace hydration loads.
+    store.dispatch(loadSkillsRequested(workspaceId));
     // Agent hydration currently logs failures without exposing an error selector.
     // Keep a failed read recoverable instead of leaving a permanent loading skeleton.
     timeout = setTimeout(() => {
