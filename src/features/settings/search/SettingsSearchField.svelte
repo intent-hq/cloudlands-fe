@@ -21,14 +21,16 @@
   const isMac = isMacPlatform();
   const searchShortcut$ = effectiveShortcutReadable('global.search');
 
-  // A reset from the page (choosing a tab clears the query) replaces the typed text.
-  $effect(() => {
-    const next = value;
-    if (next === sent) return;
-    sent = next;
+  /**
+   * The page cleared the search (a tab, result or link opened): drop the typed
+   * text and any pending search, even when the page's query was already empty.
+   */
+  export function reset() {
     clearTimeout(timer);
-    text = next;
-  });
+    timer = undefined;
+    sent = '';
+    text = '';
+  }
 
   function send(next: string) {
     clearTimeout(timer);

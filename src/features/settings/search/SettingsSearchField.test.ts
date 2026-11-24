@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/utils/effective-shortcuts', async () => {
@@ -53,11 +54,13 @@ describe('SettingsSearchField', () => {
     expect(onchange).toHaveBeenCalledTimes(2);
   });
 
-  it("takes the page's reset and drops the pending search", async () => {
-    const { view, onchange, input } = setup('theme');
+  it("takes the page's reset and drops the pending search, from an empty query too", async () => {
+    const { view, onchange, input } = setup('');
 
-    await fireEvent.input(input, { target: { value: 'themes' } });
-    await view.rerender({ value: '', onchange });
+    await fireEvent.input(input, { target: { value: 'theme' } });
+    // The page opened a tab: its query was still empty, so only reset() tells the field.
+    view.component.reset();
+    await tick();
     expect(input.value).toBe('');
 
     vi.advanceTimersByTime(150);
