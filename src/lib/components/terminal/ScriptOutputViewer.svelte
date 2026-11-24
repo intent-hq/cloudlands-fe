@@ -141,6 +141,8 @@
 
     xterm = new Terminal({
       allowProposedApi: true,
+      // OSC 8 hyperlinks: xterm's default opens a blank window and then loads the link in it.
+      linkHandler: { activate: (_event, uri) => openLink(uri) },
       fontFamily: $codeFontFamilyCSS,
       fontSize: 13,
       lineHeight: 1.2,
@@ -168,10 +170,9 @@
     fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
 
-    const webLinksAddon = new WebLinksAddon((_event, uri) => {
-      // Open localhost URLs in browser panel (resolved through
-      // browser:resolve-url first, so remote-mode loads land on the daemon
-      // host or a tunnel port), others externally.
+    // Open localhost URLs in browser panel (resolved through browser:resolve-url
+    // first, so remote-mode loads land on the daemon host or a tunnel port), others externally.
+    function openLink(uri: string) {
       try {
         const url = new URL(uri);
         if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
@@ -196,7 +197,8 @@
       } catch {
         window.open(uri, '_blank');
       }
-    });
+    }
+    const webLinksAddon = new WebLinksAddon((_event, uri) => openLink(uri));
     xterm.loadAddon(webLinksAddon);
 
     xterm.open(xtermContainer);
