@@ -16,7 +16,7 @@
  * to ensure consistency across the codebase.
  */
 
-import { app, session, systemPreferences } from 'electron';
+import { app, session, systemPreferences, type BrowserWindow } from 'electron';
 import { browserPanelUserAgent, withChromeBrandHeaders } from './browser-panel-user-agent';
 import { openExternal } from './open-external';
 import { isSystemBrowserDisabled } from './web-link-routing';
@@ -136,6 +136,18 @@ function isExternalHttpUrl(parsed: URL): boolean {
  */
 function isHudRouteUrl(parsed: URL): boolean {
   return parsed.pathname.startsWith(HUD_ROUTE_PREFIX);
+}
+
+/** How long a hidden blank popup may wait for its link before it closes. */
+const BLANK_POPUP_TTL_MS = 10_000;
+
+/** Close a hidden blank popup once it tries to navigate (the link is routed by then), or on timeout. */
+function closeBlankPopup(popupWindow: BrowserWindow): void {
+  const close = () => {
+    if (!popupWindow.isDestroyed()) popupWindow.destroy();
+  };
+  popupWindow.webContents.once('will-navigate', () => setImmediate(close));
+  setTimeout(close, BLANK_POPUP_TTL_MS).unref?.();
 }
 
 function getSecureWindowPreferences(): Electron.BrowserWindowConstructorOptions {
@@ -561,6 +573,18 @@ export function setupWebviewSecurity(): void {
 
       try {
         const parsed = new URL(url);
+        if (parsed.protocol === 'about:') {
+          // Open-blank-then-navigate (xterm's OSC 8 default, libraries working around popup
+          // blockers): keep the window hidden. Its first web navigation goes through
+          // handleNavigation to openExternal, and did-create-window then closes it.
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              show: false,
+              webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+            },
+          };
+        }
         if (isInternalUrl(parsed)) {
           // HUD per-backend singleton: a popup targeting /hud (renderer
           // window.open, including the window:open-new → window.open bridge
@@ -622,6 +646,10 @@ export function setupWebviewSecurity(): void {
         // guest right after: its popups are web popups, never the HUD.
         if (isBrowserGuest(contents)) return;
         try {
+          if (new URL(details.url).protocol === 'about:') {
+            closeBlankPopup(popupWindow);
+            return;
+          }
           if (isHudRouteUrl(new URL(details.url))) {
             // Prefer the backend captured when the popup was allowed — the
             // opener may have been destroyed since, which would make a fresh

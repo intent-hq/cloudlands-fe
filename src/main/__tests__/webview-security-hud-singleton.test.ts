@@ -7,7 +7,7 @@
  * backend (deny the popup) instead of allowing a second one, and stamp +
  * register a newly allowed /hud popup as that backend's HUD.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
   appOn: vi.fn(),
@@ -209,6 +209,63 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
 
     expect(remote.openHandler({ url: 'app://workspaces/hud' })).toEqual({ action: 'deny' });
     expect(remoteHud.focus).toHaveBeenCalled();
+  });
+});
+
+describe('blank popups from app windows (open-blank-then-navigate)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronMocks.getAllWindows.mockReturnValue([]);
+    _resetHudWindowRefForTests();
+    setupWebviewSecurity();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeBlankPopup() {
+    let navigate: (() => void) | undefined;
+    let destroyed = false;
+    const win = {
+      isDestroyed: () => destroyed,
+      destroy: vi.fn(() => {
+        destroyed = true;
+      }),
+      webContents: {
+        once: vi.fn((event: string, handler: () => void) => {
+          if (event === 'will-navigate') navigate = handler;
+        }),
+      },
+    };
+    return { win, navigate: () => navigate?.() };
+  }
+
+  it('opens hidden, without the app preload', () => {
+    const { openHandler } = attachAppWindowContents();
+    const result = openHandler({ url: 'about:blank' }) as {
+      action: string;
+      overrideBrowserWindowOptions?: { show?: boolean; webPreferences?: { preload?: string } };
+    };
+    expect(result.action).toBe('allow');
+    expect(result.overrideBrowserWindowOptions?.show).toBe(false);
+    expect(result.overrideBrowserWindowOptions?.webPreferences?.preload).toBeUndefined();
+  });
+
+  it('closes once it navigates to its link, or after the timeout', () => {
+    const { didCreateWindow } = attachAppWindowContents();
+    const navigated = makeBlankPopup();
+    didCreateWindow(navigated.win, { url: 'about:blank' });
+    navigated.navigate();
+    vi.advanceTimersByTime(1);
+    expect(navigated.win.destroy).toHaveBeenCalledTimes(1);
+
+    const idle = makeBlankPopup();
+    didCreateWindow(idle.win, { url: 'about:blank' });
+    vi.advanceTimersByTime(9_999);
+    expect(idle.win.destroy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(idle.win.destroy).toHaveBeenCalledTimes(1);
   });
 });
 
