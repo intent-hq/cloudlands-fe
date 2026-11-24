@@ -999,7 +999,6 @@ export function createDockWindow(): BrowserWindow {
   const bounds = getDockBounds(screen.getPrimaryDisplay().workArea);
   const window = new BrowserWindow({
     ...bounds,
-    // A fixed title: Intent OS finds the dock by it (DOCK_WINDOW_TITLE).
     title: DOCK_WINDOW_TITLE,
     show: false,
     frame: false,

@@ -2,8 +2,8 @@
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
   import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
+  import { isDockLabAvailable } from '$lib/utils/dock-lab-availability';
   import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
-  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import DockLabIllustration from './DockLabIllustration.svelte';
 
   const schema = $derived(
@@ -31,7 +31,7 @@
 </script>
 
 <!-- The desktop-only notch control is the first card in Settings › Inputs. -->
-{#if isElectronPlatform()}
+{#if isDockLabAvailable()}
   <section
     id="notch-dock"
     data-highlight-id="notch-dock"

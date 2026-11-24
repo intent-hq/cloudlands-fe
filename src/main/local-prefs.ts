@@ -25,7 +25,6 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { intentOsBooleanDefault } from '../shared/intent-os';
 import { Logger } from '../shared/logger';
 import {
   RETIRED_LOCAL_PREF_KEYS,
@@ -203,11 +202,11 @@ export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void
 }
 
 /**
- * While the dock lab is on, the dock is visible by default (hidden by default
- * on Intent OS); Window menu changes persist locally and always win.
+ * While the dock lab is on, the dock is visible by default; Window menu
+ * changes persist locally and always win.
  */
 export async function getDockEnabledLocalPref(): Promise<boolean> {
-  return intentOsBooleanDefault(await getLocalPref('dockEnabled'), true, false);
+  return (await getLocalPref('dockEnabled')) !== false;
 }
 
 export async function setDockEnabledLocalPref(enabled: boolean): Promise<void> {

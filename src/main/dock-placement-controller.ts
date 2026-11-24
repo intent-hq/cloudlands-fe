@@ -11,7 +11,6 @@ import {
   dockWindowEnvelope,
   findDockSnapTarget,
   floatingDockPlacement,
-  lockedDockPlacement,
   getDockCompactNotchSize,
   parseDockPlacementPreference,
   resolveDockDisplay,
@@ -24,7 +23,6 @@ import {
   type DockPlacementSnapshot,
 } from '../shared/dock-placement';
 import type { DockPointerRect } from '../shared/dock-layout';
-import { isIntentOs } from '../shared/intent-os';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { getLocalPref, setDockPlacementLocalPref } from './local-prefs';
 import { readDockDisplayGeometry } from './dock-display-geometry';
@@ -128,25 +126,10 @@ export class DockPlacementController {
     this.displays = screen
       .getAllDisplays()
       .map(({ id, bounds, workArea }) => ({ id, bounds, workArea, cutout: null }));
-    this.placement = this.lockedPlacement() ?? this.placement;
     this.layout();
   }
 
-  /**
-   * Intent OS: the one placement the dock may have (lockedDockPlacement), else
-   * null. Its display is the one at the layout origin, where sway puts the dock
-   * (absolute 0,0), not Electron's primary display: with two screens they can
-   * differ.
-   */
-  private lockedPlacement(): DockPlacement | null {
-    return lockedDockPlacement(isIntentOs(), screen.getDisplayNearestPoint({ x: 0, y: 0 }).id);
-  }
-
   async initialize(): Promise<void> {
-    if (this.lockedPlacement()) {
-      await this.refreshDisplays();
-      return;
-    }
     const generation = this.mutationGeneration;
     const preference = parseDockPlacementPreference(await getLocalPref('dockPlacement'));
     if (this.disposed) return;
@@ -169,9 +152,6 @@ export class DockPlacementController {
 
   private display(): DockDisplayGeometry | null {
     if (this.displays.length === 0) return null;
-    // The screens can change (one plugged in): follow the one at the origin.
-    const locked = this.lockedPlacement();
-    if (locked) this.placement = locked;
     return resolveDockDisplay(this.placement, this.displays, screen.getPrimaryDisplay().id);
   }
 
@@ -399,16 +379,6 @@ export class DockPlacementController {
     command: Exclude<DockPlacementCommand, { action: 'dismiss' | 'release' | 'focus' }>,
   ): Promise<DockPlacementSnapshot | null> {
     if (this.disposed || this.hiddenForCapture || this.window.isDestroyed()) return this.snapshot;
-    // Intent OS: sway places the dock, so it cannot move.
-    if (
-      this.lockedPlacement() &&
-      (command.action === 'move' ||
-        command.action === 'begin-drag' ||
-        command.action === 'drag' ||
-        command.action === 'end-drag' ||
-        command.action === 'cancel-drag')
-    )
-      return this.snapshot;
     if (command.action === 'move') {
       this.cancelInteraction();
       this.retainedEnvelope = null;

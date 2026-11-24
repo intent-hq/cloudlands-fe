@@ -4,6 +4,7 @@ import { EmptySchema, WindowSetDockLabSchema } from './ipc-schemas';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref } from './local-prefs';
 import { getRendererWebContents } from './window-backend';
+import { isIntentOs } from '../shared/intent-os';
 
 /** Main owns the dock setting; it is on unless the user turned it off. */
 let enabled = false;
@@ -13,8 +14,14 @@ export function isDockLabEnabled(): boolean {
   return enabled;
 }
 
+/** Intent OS has no dock: it stays off there and nothing can turn it on. */
+export function isDockLabAvailable(): boolean {
+  return !isIntentOs();
+}
+
 /** Reads the persisted setting once at startup. A read failure keeps the lab off. */
 export async function loadDockLabEnabled(): Promise<boolean> {
+  if (!isDockLabAvailable()) return enabled;
   try {
     enabled = await getDockLabEnabledLocalPref();
   } catch {
@@ -52,6 +59,7 @@ function setDockLabEnabled(
 ): Promise<boolean> {
   const change = changeChain.then(async () => {
     if (next === enabled) return;
+    if (next && !isDockLabAvailable()) throw new Error('The dock is not available on Intent OS');
     // From elsewhere (Settings), stop capture immediately on a requested disable,
     // even if saving fails. The cached preference stays truthful and the same
     // request remains retryable.
