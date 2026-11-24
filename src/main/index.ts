@@ -160,6 +160,7 @@ import {
   setBrowserWebsiteDarkModeEnabled,
   setupBrowserWebsiteDarkMode,
 } from './browser-website-dark-mode';
+import { setupBrowserChromeIdentity } from './browser-chrome-identity';
 import { getAppWindows, isOffscreenWindow } from './offscreen-window';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
@@ -719,6 +720,7 @@ const bootFlow = app.whenReady().then(async () => {
   // Browser-panel passkeys (Linux): the frame preload must exist before any webview loads.
   setupPasskeysIPC();
   await setupBrowserWebsiteDarkMode();
+  setupBrowserChromeIdentity();
   setupMetaClipboardShortcuts();
   setupRecentAgentPageKeys();
 
