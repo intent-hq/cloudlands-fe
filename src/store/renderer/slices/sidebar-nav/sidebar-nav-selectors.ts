@@ -218,6 +218,10 @@ export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
     state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ['people', 'agents'],
 );
 
+export const selectHiddenSidebarTabIds = store.createSelector(
+  (state): string[] => state.sidebarNav.hiddenSidebarTabIds ?? [],
+);
+
 export const selectWorkspaceNoteOrder = store.createSelector(
   (state, workspaceId: string): string[] =>
     state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],

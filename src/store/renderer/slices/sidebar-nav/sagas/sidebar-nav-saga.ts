@@ -10,6 +10,7 @@ import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectChiefActiveAgentId,
+  selectHiddenSidebarTabIds,
   selectMultiSelectSidebarSelectedTabIds,
   selectLocalPinnedWorkspaceIds,
   selectWorkspaceCollapsedNoteIds,
@@ -19,6 +20,7 @@ import {
 import {
   cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  HIDDEN_SIDEBAR_TABS_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
   MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
@@ -26,6 +28,7 @@ import {
   PINNED_WORKSPACES_KEY,
   setChiefActiveAgentId,
   setMultiSelectSidebarSelectedTabs,
+  setSidebarTabHidden,
   setWorkspaceAutoArchiveDisabled,
   setWorkspaceLabel,
   setWorkspaceNoteOrder,
@@ -108,9 +111,27 @@ function* hydrateSidebarNavState(): SagaGenerator<void> {
     );
     if (tabOrder !== undefined) data.multiSelectTabOrder = tabOrder;
 
+    // A display choice, not host data: one list for every host.
+    const hiddenTabs = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, HIDDEN_SIDEBAR_TABS_KEY),
+    );
+    if (hiddenTabs !== undefined) data.hiddenSidebarTabIds = hiddenTabs;
+
     if (Object.keys(data).length > 0) yield* put(hydrateSidebarNav(data));
   } catch {
     // Hydration is best-effort; malformed or unavailable storage is ignored.
+  }
+}
+
+function* persistHiddenSidebarTabs(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      HIDDEN_SIDEBAR_TABS_KEY,
+      yield* selectHiddenSidebarTabIds.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
   }
 }
 
@@ -284,6 +305,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
   yield* takeEvery(setWorkspaceAutoArchiveDisabled, setWorkspaceAutoArchiveDisabledWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
+  yield* takeEvery(setSidebarTabHidden, persistHiddenSidebarTabs);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
   yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
   yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);

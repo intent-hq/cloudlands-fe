@@ -9472,5 +9472,9 @@
   "remoteAgent_setupRetry_failed_title": "{machine} でセットアップを再試行できませんでした",
   "remoteAgent_setupRetry_unsupported_error": "セットアップを再試行するには、このバックエンドで新しいバージョンの Intent が必要です。",
   "remoteAgent_setupRetry_generic_error": "しばらくしてからもう一度お試しください。",
-  "remoteAgent_notice_retryingSetup_title": "{machine} でセットアップを再実行しています"
+  "remoteAgent_notice_retryingSetup_title": "{machine} でセットアップを再実行しています",
+  "settings_sidebarIcons_label": "サイドバーのアイコン",
+  "settings_sidebarIcons_description": "ワークスペースのサイドバーに表示するセクションを選びます。非表示のセクションもリンクからは開きます。",
+  "workspace_multiSelectSidebar_hideTab_label": "サイドバーから隠す",
+  "workspace_multiSelectSidebar_sidebarSettings_label": "サイドバーの設定"
 }

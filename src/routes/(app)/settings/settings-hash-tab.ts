@@ -91,6 +91,7 @@ const hashToTab: Record<string, SettingsTab> = {
   'notch-dock': 'input',
   'dock-lab': 'input',
   'machine-rail': 'display',
+  'sidebar-icons': 'display',
   'menu-bar-auto-hide': 'display',
   'reduce-motion-on-battery': 'performance',
   'chat-content-width': 'display',

@@ -119,6 +119,7 @@ export const SETTINGS_SEARCH_SECTIONS: readonly SettingsSearchSection[] = [
       {
         id: 'chat-appearance',
       },
+      { id: 'sidebar-icons' },
       { id: 'menu-bar-auto-hide' },
       { id: 'machine-rail' },
     ],

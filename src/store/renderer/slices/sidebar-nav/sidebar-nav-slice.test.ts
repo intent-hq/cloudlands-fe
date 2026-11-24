@@ -5,6 +5,7 @@ import {
   initialState,
   openPanel,
   setMultiSelectSidebarSelectedTabs,
+  setSidebarTabHidden,
   setStatsOverlayOpen,
   sidebarNavReducer,
   toggleWorkspaceCollapsedNote,
@@ -15,6 +16,27 @@ describe('sidebarNavReducer Chief navigation', () => {
     const next = sidebarNavReducer(initialState, openPanel('chief'));
 
     expect(next.panelItem).toBe('chief');
+  });
+});
+
+describe('sidebarNavReducer hidden sidebar icons', () => {
+  it('hides each icon once and shows it again, keeping the others', () => {
+    let state = sidebarNavReducer(initialState, setSidebarTabHidden('files', true));
+    state = sidebarNavReducer(state, setSidebarTabHidden('changes', true));
+    state = sidebarNavReducer(state, setSidebarTabHidden('files', true));
+    expect(state.hiddenSidebarTabIds).toEqual(['changes', 'files']);
+
+    state = sidebarNavReducer(state, setSidebarTabHidden('changes', false));
+    expect(state.hiddenSidebarTabIds).toEqual(['files']);
+    expect(sidebarNavReducer(state, setSidebarTabHidden('context', false))).toEqual(state);
+  });
+
+  it('restores the saved list on hydration', () => {
+    const next = sidebarNavReducer(
+      initialState,
+      hydrateSidebarNav({ hiddenSidebarTabIds: ['context', 'files'] }),
+    );
+    expect(next.hiddenSidebarTabIds).toEqual(['context', 'files']);
   });
 });
 
