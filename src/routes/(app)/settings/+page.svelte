@@ -62,7 +62,7 @@
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
-  import { isDockLabAvailable } from '$lib/dock-lab';
+  import { isDockLabAvailable } from '$lib/utils/dock-lab-availability';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';

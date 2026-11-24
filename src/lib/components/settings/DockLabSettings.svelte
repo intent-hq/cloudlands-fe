@@ -1,7 +1,8 @@
 <script lang="ts">
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
-  import { dockLabEnabled, isDockLabAvailable, setDockLabEnabled } from '$lib/dock-lab';
+  import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
+  import { isDockLabAvailable } from '$lib/utils/dock-lab-availability';
   import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
   import DockLabIllustration from './DockLabIllustration.svelte';
 
