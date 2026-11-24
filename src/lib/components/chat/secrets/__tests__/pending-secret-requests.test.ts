@@ -124,6 +124,28 @@ describe('deriveSecretRequestTranscript', () => {
     expect(getSecretRequestNotice(merged)).toBeNull();
   });
 
+  it('reads every notice in a merged row whose first contribution is a notice', () => {
+    const first = { type: 'secret_declined', source: 'system', requestId: 'sec-a', name: 'A' };
+    const merged = {
+      id: 'u',
+      role: 'user',
+      metadata: {
+        ...first,
+        mergedMessageMetadata: [
+          first,
+          { type: 'secret_declined', source: 'system', requestId: 'sec-b', name: 'B' },
+        ],
+      },
+      contentBlocks: [{ type: 'text', text: 'declined A\n\ndeclined B' }],
+    } as unknown as AgentMessage;
+    const transcript = deriveSecretRequestTranscript([
+      assistant('m1', [card('sec-a', 'A'), card('sec-b', 'B')]),
+      merged,
+    ]);
+    expect(transcript.open).toEqual([]);
+    expect([...transcript.answered].sort()).toEqual(['sec-a', 'sec-b']);
+  });
+
   it('keeps the same transcript for messages with no secret requests', () => {
     const a = deriveSecretRequestTranscript([
       userText('u'),

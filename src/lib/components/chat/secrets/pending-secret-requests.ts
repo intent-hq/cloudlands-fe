@@ -67,10 +67,8 @@ export function deriveSecretRequestTranscript(
     if (message.role !== 'assistant') {
       const notice = getSecretRequestNotice(message);
       if (notice) answered.add(notice.requestId);
-      else {
-        for (const requestId of mergedSecretNoticeIds(message)) answered.add(requestId);
-        if (isRealUserMessage(message)) lastUserIndex = index;
-      }
+      for (const requestId of mergedSecretNoticeIds(message)) answered.add(requestId);
+      if (!notice && isRealUserMessage(message)) lastUserIndex = index;
       return;
     }
     if (!hasSecretRequestBlock(message.contentBlocks)) return;
