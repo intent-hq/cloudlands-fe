@@ -19,6 +19,9 @@ const electronMocks = vi.hoisted(() => ({
   browserPanelSession: {
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
+    getUserAgent: vi.fn(() => 'Mozilla/5.0 Chrome/142.0.0.0 Electron/44.0.0'),
+    setUserAgent: vi.fn(),
+    webRequest: { onBeforeSendHeaders: vi.fn() },
   },
   systemPreferences: {
     getMediaAccessStatus: vi.fn((): string => 'not-determined'),
@@ -27,7 +30,7 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
-  app: { on: electronMocks.appOn },
+  app: { on: electronMocks.appOn, getName: () => 'intent-cloudlands' },
   BrowserWindow: { getAllWindows: electronMocks.getAllWindows },
   session: {
     defaultSession: electronMocks.defaultSession,
