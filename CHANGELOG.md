@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.383.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.5...v2.383.6) (2026-11-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.290 ([#5023](https://github.com/intent-hq/cloudlands-fe/issues/5023)) ([9310877](https://github.com/intent-hq/cloudlands-fe/commit/93108774dbacad41dacde0a1c117c055cbcbee27))
+* **secrets:** settle secret cards from persisted resolutions ([#5013](https://github.com/intent-hq/cloudlands-fe/issues/5013)) ([110a0d7](https://github.com/intent-hq/cloudlands-fe/commit/110a0d7b360d76b3b47a205dc4c9f76285257c8e))
+
 ## [2.383.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.383.4...v2.383.5) (2026-11-24)
 
 
