@@ -420,6 +420,7 @@
               {compact}
               embedded
               forceWaitingHeader={!isSingleEvent}
+              sharesCardDisclosure={isAgentOnly}
               isActive={isActive && !bodyIsClosing && $agentSubscriptionLane$.visible}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}

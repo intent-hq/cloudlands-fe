@@ -83,8 +83,13 @@ function writeEntry(
   if (!memoryOnly) safeLocalStorage.setJSON(STORAGE_KEY, pruned({ ...stored, [key]: entry }));
 }
 
-export function getEventSubscriptionsExpanded(workspaceId: string, agentId: string): boolean {
-  return readEntry(workspaceId, agentId)?.events ?? true;
+/** `fallback` applies until the user chooses: the mixed card opens, an agent-only card stays closed. */
+export function getEventSubscriptionsExpanded(
+  workspaceId: string,
+  agentId: string,
+  fallback = true,
+): boolean {
+  return readEntry(workspaceId, agentId)?.events ?? fallback;
 }
 
 export function setEventSubscriptionsExpanded(
