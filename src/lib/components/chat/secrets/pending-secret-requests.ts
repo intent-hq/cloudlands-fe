@@ -38,6 +38,20 @@ function isRealUserMessage(message: AgentMessage): boolean {
 }
 
 /**
+ * Request ids of notices an older daemon merged into a queued user message
+ * (`mergedMessageMetadata`), so their cards still settle.
+ */
+function mergedSecretNoticeIds(message: AgentMessage): string[] {
+  const merged = (message.metadata as { mergedMessageMetadata?: unknown } | null | undefined)
+    ?.mergedMessageMetadata;
+  if (!Array.isArray(merged)) return [];
+  return merged.flatMap((metadata) => {
+    const notice = getSecretRequestNotice({ metadata: metadata as Record<string, unknown> });
+    return notice ? [notice.requestId] : [];
+  });
+}
+
+/**
  * Read secret-request cards and notices from the loaded transcript. A repeat
  * request re-shows its card with the same `requestId`, so requests are
  * de-duplicated by id, keeping the latest card. Messages without a
@@ -53,7 +67,8 @@ export function deriveSecretRequestTranscript(
     if (message.role !== 'assistant') {
       const notice = getSecretRequestNotice(message);
       if (notice) answered.add(notice.requestId);
-      else if (isRealUserMessage(message)) lastUserIndex = index;
+      for (const requestId of mergedSecretNoticeIds(message)) answered.add(requestId);
+      if (!notice && isRealUserMessage(message)) lastUserIndex = index;
       return;
     }
     if (!hasSecretRequestBlock(message.contentBlocks)) return;
@@ -120,7 +135,8 @@ function isSettled(status: string | undefined): boolean {
 
 /**
  * The cards to show. Transcript cards show unless the user hid them, they
- * were answered (here or by another client; a busy agent's notice row can
+ * were answered (recorded by the daemon in `secretRequestResolutions`, or
+ * reported by `secret.list` or this client; a busy agent's notice row can
  * arrive much later), or they expired after the user moved on (an expired
  * request gets no notice, so it would otherwise stay forever). Requests the
  * listing reports as pending but whose card is outside the loaded transcript
@@ -133,12 +149,13 @@ export function visibleSecretRequests(
   entry: AgentSecretListing | null | undefined,
   hidden: Readonly<Record<string, true>>,
   answers: LocalAnswers = {},
+  resolutions?: Readonly<Record<string, 'provided' | 'declined'>>,
 ): VisibleSecretRequest[] {
   const visible: VisibleSecretRequest[] = [];
   const shown = new Set<string>();
   for (const request of transcript.open) {
     shown.add(request.requestId);
-    if (hidden[request.requestId]) continue;
+    if (hidden[request.requestId] || resolutions?.[request.requestId]) continue;
     const state = secretRequestCardState(request.requestId, entry);
     if (isSettled(state) || isSettled(answers[request.requestId]?.status)) continue;
     if (state === 'expired' && request.supersededByUser) continue;
@@ -150,7 +167,12 @@ export function visibleSecretRequests(
     });
   }
   for (const pending of entry?.listing?.pendingRequests ?? []) {
-    if (shown.has(pending.requestId) || transcript.answered.has(pending.requestId)) continue;
+    if (
+      shown.has(pending.requestId) ||
+      transcript.answered.has(pending.requestId) ||
+      resolutions?.[pending.requestId]
+    )
+      continue;
     if (isSettled(answers[pending.requestId]?.status)) continue;
     visible.push({
       request: { requestId: pending.requestId, agentId, name: pending.name, reason: '' },

@@ -105,6 +105,47 @@ describe('deriveSecretRequestTranscript', () => {
     expect(deriveSecretRequestTranscript(moved).open[0]?.supersededByUser).toBe(true);
   });
 
+  it('reads a notice the daemon merged into a queued user message', () => {
+    const merged = {
+      id: 'u',
+      role: 'user',
+      metadata: {
+        fromPrincipalId: 'p',
+        mergedMessageMetadata: [
+          { fromPrincipalId: 'p' },
+          { type: 'secret_declined', source: 'system', requestId: 'sec-1', name: 'KEY' },
+        ],
+      },
+      contentBlocks: [{ type: 'text', text: 'get rid of the card' }],
+    } as unknown as AgentMessage;
+    const transcript = deriveSecretRequestTranscript([assistant('m1', [card('sec-1')]), merged]);
+    expect(transcript.open).toEqual([]);
+    expect([...transcript.answered]).toEqual(['sec-1']);
+    expect(getSecretRequestNotice(merged)).toBeNull();
+  });
+
+  it('reads every notice in a merged row whose first contribution is a notice', () => {
+    const first = { type: 'secret_declined', source: 'system', requestId: 'sec-a', name: 'A' };
+    const merged = {
+      id: 'u',
+      role: 'user',
+      metadata: {
+        ...first,
+        mergedMessageMetadata: [
+          first,
+          { type: 'secret_declined', source: 'system', requestId: 'sec-b', name: 'B' },
+        ],
+      },
+      contentBlocks: [{ type: 'text', text: 'declined A\n\ndeclined B' }],
+    } as unknown as AgentMessage;
+    const transcript = deriveSecretRequestTranscript([
+      assistant('m1', [card('sec-a', 'A'), card('sec-b', 'B')]),
+      merged,
+    ]);
+    expect(transcript.open).toEqual([]);
+    expect([...transcript.answered].sort()).toEqual(['sec-a', 'sec-b']);
+  });
+
   it('keeps the same transcript for messages with no secret requests', () => {
     const a = deriveSecretRequestTranscript([
       userText('u'),
@@ -200,6 +241,18 @@ describe('visibleSecretRequests', () => {
       'sec-1:pending',
       'sec-old:pending',
     ]);
+  });
+
+  it('drops every request the daemon recorded as answered, with or without a notice', () => {
+    const transcript = deriveSecretRequestTranscript([
+      assistant('m1', [card('sec-1'), card('sec-lost')]),
+    ]);
+    const ids = (resolutions?: Record<string, 'provided' | 'declined'>) =>
+      visibleSecretRequests(transcript, 'agent-a', entry, {}, {}, resolutions).map(
+        (v) => v.request.requestId,
+      );
+    expect(ids()).toEqual(['sec-1', 'sec-lost', 'sec-old']);
+    expect(ids({ 'sec-1': 'declined', 'sec-old': 'provided' })).toEqual(['sec-lost']);
   });
 
   it('never re-adds a listed request that a notice already answered', () => {

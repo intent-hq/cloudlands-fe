@@ -1282,6 +1282,12 @@ export interface AgentMetadata {
   // Lets an applied card open its workspace whoever applied it. Detail-only;
   // absent on older daemons.
   proposalCreatedWorkspaces?: Record<string, string>;
+  // Answered secret requests (PROTOCOL §5.56): requestId → "provided" |
+  // "declined", persisted by the daemon in session metadata (capped, oldest
+  // evicted), served on `agent.get` and converged via `agent:updated`. An id
+  // here settles its card without the transcript notice. Detail-only; absent
+  // on older daemons.
+  secretRequestResolutions?: Record<string, 'provided' | 'declined'>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via

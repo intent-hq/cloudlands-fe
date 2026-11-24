@@ -12662,12 +12662,26 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
         proposalCreatedWorkspaces: { p1: 'ws-created' },
       }),
     );
+    handler(
+      notification('agent:updated', {
+        agentId: AGENT,
+        secretRequestResolutions: { 'sec-1': 'declined', 'sec-2': 'provided' },
+      }),
+    );
+    handler(
+      notification('agent:updated', {
+        agentId: AGENT,
+        secretRequestResolutions: { 'sec-3': 'expired' },
+      }),
+    );
     expect(appStore.state.agentSessions.byAgentId[AGENT]?.metadata).toMatchObject({
       pendingProposals: [],
       proposalResolutions: { p1: 'applied' },
       proposalCreatedWorkspaces: { p1: 'ws-created' },
+      secretRequestResolutions: { 'sec-1': 'declined', 'sec-2': 'provided' },
     });
-    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(1);
+    refreshAgentSessionAfterEventSpy.mockClear();
     handler(notification('agent:updated', { agentId: AGENT, modelId: 'new-provider-model' }));
     expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(1);
   });

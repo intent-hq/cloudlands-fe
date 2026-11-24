@@ -33,9 +33,11 @@
     transcript: SecretRequestTranscript;
     workspaceId: string;
     agentId: string;
+    /** The daemon's answered requests (`secretRequestResolutions`). */
+    resolutions?: Readonly<Record<string, 'provided' | 'declined'>>;
   }
 
-  let { transcript, workspaceId, agentId }: Props = $props();
+  let { transcript, workspaceId, agentId, resolutions }: Props = $props();
 
   const secretRequests$ = selectSecretRequestsState();
   const connectionGeneration$ = selectDaemonConnectionGeneration();
@@ -47,6 +49,7 @@
       $secretRequests$.listings[agentId],
       $secretRequests$.hidden,
       answers,
+      resolutions,
     ),
   );
   const collapsedKeys = $derived($secretRequests$.collapsed[agentId]);

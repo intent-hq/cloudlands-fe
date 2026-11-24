@@ -1586,6 +1586,19 @@ function projectAgentMetadata(
     };
     consumed.add('proposalResolutions');
   }
+  const secretResolutions = data.secretRequestResolutions;
+  if (
+    secretResolutions &&
+    typeof secretResolutions === 'object' &&
+    !Array.isArray(secretResolutions) &&
+    Object.values(secretResolutions).every((value) => value === 'provided' || value === 'declined')
+  ) {
+    metadataPatch.secretRequestResolutions = {
+      op: 'set',
+      value: secretResolutions as Record<string, 'provided' | 'declined'>,
+    };
+    consumed.add('secretRequestResolutions');
+  }
   const createdWorkspaces = data.proposalCreatedWorkspaces;
   if (
     createdWorkspaces &&

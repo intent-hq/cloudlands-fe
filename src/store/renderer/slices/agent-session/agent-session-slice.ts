@@ -779,6 +779,7 @@ const DETAIL_ONLY_METADATA_FIELDS = [
   'pendingProposals',
   'proposalResolutions',
   'proposalCreatedWorkspaces',
+  'secretRequestResolutions',
 ] as const;
 
 function carryForwardDetailFields(
