@@ -9,11 +9,22 @@
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { scrollFade } from '$lib/actions/scroll-fade';
   import { store } from '$store/renderer/store';
-  import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+    selectHiddenSidebarTabIds,
+    selectMultiSelectSidebarSelectedTabIds,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
     activateSidebarSectionRequested,
     setMultiSelectSidebarSelectedTabs,
+    setSidebarTabHidden,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsPlainFolderWorkspace,
     selectIsWorkspaceCollaborator,
@@ -29,6 +40,7 @@
   import {
     TAB_DEFINITIONS,
     GIT_ONLY_TAB_IDS,
+    HIDEABLE_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     normalizeSelectedTabs,
     orderSelectedTabs,
@@ -80,7 +92,9 @@
     (!$collaborator$ && $terminals$.length > 0) ||
       $scripts$.some((script) => isLiveScriptStatus(script.runtime.status)),
   );
-  const tabs = $derived(
+  const hidden$ = selectHiddenSidebarTabIds();
+  let menu = $state<(SidebarContextPosition & { tabId: TabId }) | null>(null);
+  const availableTabs = $derived(
     TAB_DEFINITIONS.filter(
       ({ id }) =>
         (id !== 'people' || showPeople) &&
@@ -99,6 +113,47 @@
       ),
     ),
   );
+  // A hidden section keeps its icon while it is open (a link can open it), so it can be closed.
+  const tabs = $derived(
+    availableTabs.filter(
+      ({ id }) => !$hidden$.includes(id) || savedSelection.includes(id as TabId),
+    ),
+  );
+
+  function openMenu(tabId: TabId, event: MouseEvent | KeyboardEvent): boolean {
+    const position = getSidebarContextPosition(event);
+    if (!position) return false;
+    menu = { ...position, tabId };
+    return true;
+  }
+
+  function hideTab(tabId: TabId) {
+    if (savedSelection.includes(tabId)) {
+      const rest = savedSelection.filter((id) => id !== tabId);
+      store.dispatch(
+        setMultiSelectSidebarSelectedTabs(workspaceId, rest.length > 0 ? rest : ['agents']),
+      );
+    }
+    store.dispatch(setSidebarTabHidden(tabId, true));
+  }
+
+  function menuItems(tabId: TabId): SidebarMenuEntry[] {
+    const settings: SidebarMenuEntry = {
+      id: 'sidebar-settings',
+      label: m.workspace_multiSelectSidebar_sidebarSettings_label(),
+      onClick: () => void navigateToSettings({ tab: 'display', hash: 'sidebar-icons' }),
+    };
+    if (!HIDEABLE_TAB_IDS.has(tabId)) return [settings];
+    return [
+      {
+        id: 'hide-tab',
+        label: m.workspace_multiSelectSidebar_hideTab_label(),
+        onClick: () => hideTab(tabId),
+      },
+      { type: 'separator' },
+      settings,
+    ];
+  }
   // The collapsed rail previews one pane; the saved group shows again once the preview closes.
   const selectedIds = $derived(
     orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)
@@ -231,7 +286,9 @@
             // Arrow focus follows a single pane; a multi-pane group changes only on activation.
             selectSections([tab.id]);
         }}
+        oncontextmenu={(event) => openMenu(tab.id, event)}
         onkeydown={(event) => {
+          if (openMenu(tab.id, event)) return;
           extendSelection = event.shiftKey;
           queueMicrotask(() => {
             extendSelection = false;
@@ -322,6 +379,16 @@
     {/if}
   {/snippet}
 </Tabs.Root>
+
+{#if menu}
+  <SidebarContextMenu
+    x={menu.x}
+    y={menu.y}
+    returnFocus={menu.returnFocus}
+    items={menuItems(menu.tabId)}
+    onClickOutside={() => (menu = null)}
+  />
+{/if}
 
 <style>
   .sidebar-tab-unread {

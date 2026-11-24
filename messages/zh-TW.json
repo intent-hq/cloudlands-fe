@@ -9472,5 +9472,8 @@
   "remoteAgent_setupRetry_failed_title": "無法在 {machine} 上重試設定",
   "remoteAgent_setupRetry_unsupported_error": "此後端需要較新版本的 Intent 才能重試設定。",
   "remoteAgent_setupRetry_generic_error": "請稍後再試。",
-  "remoteAgent_notice_retryingSetup_title": "正在 {machine} 上重新執行設定"
+  "remoteAgent_notice_retryingSetup_title": "正在 {machine} 上重新執行設定",
+  "settings_sidebarIcons_label": "側邊欄圖示",
+  "workspace_multiSelectSidebar_hideTab_label": "從側邊欄隱藏",
+  "workspace_multiSelectSidebar_sidebarSettings_label": "側邊欄設定"
 }

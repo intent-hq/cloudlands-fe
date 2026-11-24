@@ -350,6 +350,14 @@ export const SETTINGS_SEARCH_TERMS: Readonly<Record<string, () => string[]>> = {
     m.settings_appearance_menuBarAutoHide_label(),
   ],
   'machine-rail': () => [m.settings_machineRail_label(), m.settings_machineRail_description()],
+  'sidebar-icons': () => [
+    m.settings_sidebarIcons_label(),
+    m.workspace_multiSelectSidebar_contextTab_label(),
+    m.workspace_multiSelectSidebar_changesTab_label(),
+    m.workspace_multiSelectSidebar_filesTab_label(),
+    m.workspace_multiSelectSidebar_browserTab_label(),
+    m.workspace_multiSelectSidebar_shellTab_label(),
+  ],
   'note-font': () => [m.settings_font_notes_description(), m.settings_font_notes_label()],
   'agent-chat-font': () => [
     m.settings_font_agentChat_description(),

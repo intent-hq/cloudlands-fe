@@ -98,6 +98,15 @@ function isValidTabId(value: string): value is TabId {
 // Managers can use Shells for saved scripts; raw terminals and browsers stay owner-only.
 export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
 
+// Sections the user can hide from the rail. Agents always stays; People shows only with people.
+export const HIDEABLE_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>([
+  'context',
+  'changes',
+  'files',
+  'browser',
+  'shell',
+]);
+
 // Git-only sections never show in plain-folder workspaces (no git, checkout or forge).
 export const GIT_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['changes']);
 

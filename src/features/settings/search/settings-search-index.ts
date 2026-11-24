@@ -124,6 +124,11 @@ export const SETTINGS_SEARCH_SECTIONS: readonly SettingsSearchSection[] = [
     ],
   },
   {
+    id: 'sidebar-icons',
+    tab: 'display',
+    title: () => m.settings_sidebarIcons_label(),
+  },
+  {
     id: 'font-style',
     tab: 'display',
     title: () => m.settings_section_fontStyle(),

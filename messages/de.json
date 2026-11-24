@@ -9472,5 +9472,8 @@
   "remoteAgent_setupRetry_failed_title": "Setup auf {machine} konnte nicht wiederholt werden",
   "remoteAgent_setupRetry_unsupported_error": "Dieses Backend benötigt eine neuere Version von Intent, um das Setup zu wiederholen.",
   "remoteAgent_setupRetry_generic_error": "Versuche es gleich noch einmal.",
-  "remoteAgent_notice_retryingSetup_title": "Setup wird auf {machine} erneut ausgeführt"
+  "remoteAgent_notice_retryingSetup_title": "Setup wird auf {machine} erneut ausgeführt",
+  "settings_sidebarIcons_label": "Seitenleisten-Symbole",
+  "workspace_multiSelectSidebar_hideTab_label": "In Seitenleiste ausblenden",
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Seitenleisten-Einstellungen"
 }

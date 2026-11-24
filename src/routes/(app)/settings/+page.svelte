@@ -63,6 +63,7 @@
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import { isDockLabAvailable } from '$lib/utils/dock-lab-availability';
+  import SidebarIconsSettings from '$lib/components/settings/SidebarIconsSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
@@ -492,6 +493,7 @@
 {#snippet openInBody()}<OpenInAppsSettings />{/snippet}
 {#snippet githubLinksBody()}<GitHubLinkSettings />{/snippet}
 {#snippet languageBody()}<LanguageSettings />{/snippet}
+{#snippet sidebarIconsBody()}<SidebarIconsSettings />{/snippet}
 {#snippet agentBackendBody()}<AgentBackendSettings />{/snippet}
 {#snippet rtkBody()}<RtkSettings />{/snippet}
 
@@ -586,6 +588,8 @@
     </div>
   {:else if id === 'agent-features'}
     <AgentFeaturesSettings />
+  {:else if id === 'sidebar-icons'}
+    {@render titledCard('sidebar-icons', m.settings_sidebarIcons_label(), sidebarIconsBody)}
   {:else if id === 'dock-lab'}
     <div id="dock-lab" class="scroll-mt-20">
       <h2 class="type-title mb-3 text-foreground">

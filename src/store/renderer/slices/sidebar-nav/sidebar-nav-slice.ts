@@ -15,6 +15,7 @@ export const PINNED_WORKSPACES_LABEL_MIGRATION_KEY = 'intent:pinned-workspaces-l
 export const CHIEF_ACTIVE_AGENT_ID_KEY = 'intent:chief-active-agent-id';
 export const MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX = 'multiselect-sidebar-';
 export const MULTISELECT_SIDEBAR_TAB_ORDER_KEY = 'multiselect-sidebar-tab-order';
+export const HIDDEN_SIDEBAR_TABS_KEY = 'intent:hidden-sidebar-tabs';
 export const WORKSPACE_NOTE_ORDER_PREFIX = 'workspace-note-order-';
 export const WORKSPACE_COLLAPSED_NOTES_PREFIX = 'workspace-collapsed-notes-';
 export const WORKSPACE_EXPANDED_NOTES_PREFIX = 'workspace-expanded-notes-';
@@ -28,6 +29,7 @@ export const initialState: SidebarNavState = {
   createModalPrefillRequest: 0,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
+  hiddenSidebarTabIds: [],
   multiSelectSelectedTabIdsByWorkspaceId: {},
   noteOrderByWorkspaceId: {},
   collapsedNoteIdsByWorkspaceId: {},
@@ -93,6 +95,10 @@ export const autoArchiveIdleAfterDaysCleared = createAction(
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');
+/** Hide or show one sidebar section's icon in the rail (Settings › Appearance, or its menu). */
+export const setSidebarTabHidden = createAction<[tabId: string, hidden: boolean]>(
+  'sidebarNav/setSidebarTabHidden',
+);
 export const activateSidebarSectionRequested = createAction<
   [workspaceId: string, sectionId: string, panelLayoutId?: string]
 >('sidebarNav/activateSidebarSectionRequested');
@@ -121,7 +127,10 @@ export const closePanel = createAction('sidebarNav/closePanel');
 
 // Hydration from localStorage
 type SidebarNavHydrationState = Partial<
-  Pick<SidebarNavState, 'pinnedWorkspaceIds' | 'multiSelectTabOrder' | 'chiefActiveAgentId'>
+  Pick<
+    SidebarNavState,
+    'pinnedWorkspaceIds' | 'multiSelectTabOrder' | 'chiefActiveAgentId' | 'hiddenSidebarTabIds'
+  >
 >;
 
 export const hydrateSidebarNav = createAction(
@@ -186,6 +195,10 @@ sidebarNavReducer.with(
     },
   }),
 );
+sidebarNavReducer.with(setSidebarTabHidden, (state, { payload: [tabId, hidden] }) => {
+  const others = state.hiddenSidebarTabIds.filter((id) => id !== tabId);
+  return { ...state, hiddenSidebarTabIds: hidden ? [...others, tabId] : others };
+});
 sidebarNavReducer.with(setWorkspaceNoteOrder, (state, { payload: [workspaceId, noteIds] }) => ({
   ...state,
   noteOrderByWorkspaceId: {

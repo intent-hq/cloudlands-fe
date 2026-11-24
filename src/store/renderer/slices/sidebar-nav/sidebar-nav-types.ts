@@ -23,6 +23,8 @@ export type SidebarNavState = {
   createModalPrefillRequest: number;
   pinnedWorkspaceIds: string[];
   multiSelectTabOrder: string[];
+  /** Sidebar sections the user hid from the icon rail, in every workspace and on every host. */
+  hiddenSidebarTabIds: string[];
   multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
   noteOrderByWorkspaceId: Record<string, string[]>;
   collapsedNoteIdsByWorkspaceId: Record<string, string[]>;

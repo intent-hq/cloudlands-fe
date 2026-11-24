@@ -9472,5 +9472,8 @@
   "remoteAgent_setupRetry_failed_title": "Couldn't retry setup on {machine}",
   "remoteAgent_setupRetry_unsupported_error": "This backend needs a newer version of Intent to retry setup.",
   "remoteAgent_setupRetry_generic_error": "Try again in a moment.",
-  "remoteAgent_notice_retryingSetup_title": "Running setup again on {machine}"
+  "remoteAgent_notice_retryingSetup_title": "Running setup again on {machine}",
+  "settings_sidebarIcons_label": "Sidebar icons",
+  "workspace_multiSelectSidebar_hideTab_label": "Hide from sidebar",
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Sidebar settings"
 }
