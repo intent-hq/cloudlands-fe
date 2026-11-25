@@ -3,7 +3,7 @@
  * onMount defers the initial workspaces load via requestIdleCallback
  * (setTimeout(...,100) fallback under jsdom). The deferral handle must be
  * cancelled by the onMount cleanup, so unmounting before the callback fires
- * must NOT dispatch `loadWorkspacesRequested()` into the (disposed) store —
+ * must NOT dispatch `ensureWorkspacesLoaded()` into the (disposed) store —
  * the origin of the onUserConsoleLog teardown flake class (#1774).
  *
  * Mounts the real root layout with the same heavy-child/side-effect stubs as
@@ -123,7 +123,7 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
-import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+import { ensureWorkspacesLoaded } from '$store/renderer/slices/workspace/workspace-slice';
 import Layout from '../(app)/+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
@@ -137,7 +137,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const loadWorkspacesDispatches = (dispatchSpy: ReturnType<typeof vi.spyOn>) =>
   dispatchSpy.mock.calls.filter(
-    ([action]) => (action as { type?: string })?.type === loadWorkspacesRequested.type,
+    ([action]) => (action as { type?: string })?.type === ensureWorkspacesLoaded.type,
   );
 
 describe('+layout.svelte deferred workspaces load cancellation (intent-hq/monorepo#1865)', () => {
@@ -152,7 +152,7 @@ describe('+layout.svelte deferred workspaces load cancellation (intent-hq/monore
     vi.unstubAllGlobals();
   });
 
-  it('does not dispatch loadWorkspacesRequested when unmounted before the deferred callback fires', async () => {
+  it('does not dispatch ensureWorkspacesLoaded when unmounted before the deferred callback fires', async () => {
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
     const { unmount } = render(Layout, { props: { children: childrenSnippet } });
@@ -163,7 +163,7 @@ describe('+layout.svelte deferred workspaces load cancellation (intent-hq/monore
     expect(loadWorkspacesDispatches(dispatchSpy)).toHaveLength(0);
   });
 
-  it('still dispatches loadWorkspacesRequested when the layout stays mounted', async () => {
+  it('still dispatches ensureWorkspacesLoaded when the layout stays mounted', async () => {
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
     render(Layout, { props: { children: childrenSnippet } });

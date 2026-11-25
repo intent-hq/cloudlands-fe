@@ -223,6 +223,12 @@ export const cleanupRecency = createAction<[workspaceIds: string[]]>('workspace/
 export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
 );
+/**
+ * Load the list unless it is already current for this admission or a read for
+ * it is in flight. Use `loadWorkspacesRequested` when the stored list is known
+ * to be stale.
+ */
+export const ensureWorkspacesLoaded = createAction('workspace/ensureWorkspacesLoaded');
 
 /**
  * Re-read one workspace's membership summary (`memberCount` /

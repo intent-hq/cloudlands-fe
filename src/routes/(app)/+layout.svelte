@@ -2,7 +2,7 @@
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import { navigateToAppRoute } from '$lib/utils/show-workspace';
   import { page } from '$app/stores';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -105,7 +105,6 @@
     selectWindowBackendListedWorkspaces,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
-    selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectBootRouteGateResolved,
@@ -130,7 +129,7 @@
     startVisibleHoldTimer,
   } from '$lib/utils/boot-route-gate';
   import {
-    loadWorkspacesRequested,
+    ensureWorkspacesLoaded,
     recordWorkspaceView,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createLogger } from '$lib/utils/client-logger';
@@ -505,13 +504,13 @@
       if (typeof requestIdleCallback !== 'undefined') {
         workspacesIdleHandle = requestIdleCallback(() => {
           workspacesIdleHandle = null;
-          appStore.dispatch(loadWorkspacesRequested());
+          appStore.dispatch(ensureWorkspacesLoaded());
         });
       } else {
         // Fallback to setTimeout for browsers without requestIdleCallback
         workspacesTimerHandle = setTimeout(() => {
           workspacesTimerHandle = null;
-          appStore.dispatch(loadWorkspacesRequested());
+          appStore.dispatch(ensureWorkspacesLoaded());
         }, 100);
       }
     };
@@ -936,19 +935,6 @@
 
     appStore.dispatch(closeGitCredentialsModal());
   }
-
-  // Keep the workspace list warm when navigating away from workspace pages.
-  beforeNavigate(({ to }: any) => {
-    if (to && !to.url.pathname.startsWith('/workspace/')) {
-      // Load workspaces when navigating to any non-workspace route
-      // This ensures workspaces are loaded for tabs, switcher, and other UI components
-      const state = appStore.state;
-      if (!selectWorkspaceLoading.select(state)) {
-        logger.debug('[+layout] Loading workspaces on navigation to non-workspace page');
-        appStore.dispatch(loadWorkspacesRequested());
-      }
-    }
-  });
 
   // Notify main process about workspace state for menu enabling/disabling
   afterNavigate(({ to }) => {

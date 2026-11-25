@@ -12,7 +12,7 @@ import {
   checkAllProvidersComplete,
   ensureProvidersChecked,
 } from '../../agent-availability/agent-availability-slice';
-import { loadWorkspacesRequested, replaceWorkspaceList } from '../../workspace/workspace-slice';
+import { ensureWorkspacesLoaded, replaceWorkspaceList } from '../../workspace/workspace-slice';
 import { evaluateSetupStateRequested, setupEvaluationCompleted } from '../setup-prompt-slice';
 import { hasReadyProvider } from '../setup-prompt-utils';
 import {
@@ -95,12 +95,12 @@ const settle = async () => {
 };
 
 /**
- * The worker starts by dispatching loadWorkspacesRequested and waiting for
+ * The worker starts by dispatching ensureWorkspacesLoaded and waiting for
  * the resulting replaceWorkspaceList — answer that refresh.
  */
 async function answerWorkspaceRefresh(h: ReturnType<typeof harness>) {
   await settle();
-  expect(h.dispatched.some((a) => a.type === loadWorkspacesRequested.type)).toBe(true);
+  expect(h.dispatched.some((a) => a.type === ensureWorkspacesLoaded.type)).toBe(true);
   h.channel.put(replaceWorkspaceList([]) as never);
   await settle();
 }
@@ -155,7 +155,7 @@ describe('evaluateSetupStateWorker', () => {
     });
     await settle();
     // Blocked on the workspace-list refresh it requested: nothing evaluated.
-    expect(dispatched.some((a) => a.type === loadWorkspacesRequested.type)).toBe(true);
+    expect(dispatched.some((a) => a.type === ensureWorkspacesLoaded.type)).toBe(true);
     expect(completedEvaluations(dispatched)).toEqual([]);
 
     state.workspace.hasLoaded = true;
@@ -182,7 +182,7 @@ describe('evaluateSetupStateWorker', () => {
 
     expect(completedEvaluations(h.dispatched)).toEqual([]);
     expect(h.dispatched.map((action) => action.type)).toEqual([
-      loadWorkspacesRequested.type,
+      ensureWorkspacesLoaded.type,
       ensureProvidersChecked.type,
     ]);
   });
@@ -197,7 +197,7 @@ describe('evaluateSetupStateWorker', () => {
 
       expect(completedEvaluations(h.dispatched)).toEqual([]);
       expect(h.dispatched.map((action) => action.type)).toEqual([
-        loadWorkspacesRequested.type,
+        ensureWorkspacesLoaded.type,
         ensureProvidersChecked.type,
       ]);
     } finally {
@@ -298,7 +298,7 @@ describe('setupPromptSaga', () => {
     try {
       await settle();
       const workspaceLoads = () =>
-        dispatched.filter((action) => action.type === loadWorkspacesRequested.type).length;
+        dispatched.filter((action) => action.type === ensureWorkspacesLoaded.type).length;
       expect(workspaceLoads()).toBe(1);
 
       emit({ status: 'connected' });

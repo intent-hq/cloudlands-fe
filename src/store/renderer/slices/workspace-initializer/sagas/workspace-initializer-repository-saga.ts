@@ -4,6 +4,10 @@ import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects'
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import {
+  selectWorkspaceItems,
+  selectWorkspaceListCurrentForAdmission,
+} from '../../workspace/workspace-selectors';
+import {
   selectCanAdministerHost,
   selectPrincipalActionContext,
   selectWorkspaceCreationVisible,
@@ -19,6 +23,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { handleError } from '$lib/utils/error-handling';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { Workspace } from '$shared/types';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import {
@@ -53,8 +58,14 @@ async function readRegistry(): Promise<{ success: boolean; data?: KnownRepo[] } 
   }
 }
 
-async function readRecentSources() {
-  return Promise.all([workspaceClient.list({ lite: true }), readRegistry()] as const);
+/** A list already current for the admission is reused instead of read again. */
+async function readRecentSources(stored: Workspace[] | null) {
+  return Promise.all([
+    stored
+      ? { ok: true as const, data: stored, complete: true, stored: true }
+      : workspaceClient.list(),
+    readRegistry(),
+  ] as const);
 }
 
 async function readOrigins(
@@ -110,7 +121,10 @@ function* refreshRecentRepositoriesWorker(
     }
     const previous = yield* selectWorkspaceInitializerRecentRepoRefresh.effect(id);
     const deletionTokens = { ...appStore.state.workspace.deletionTokens };
-    const [workspaceList, registry] = yield* call(readRecentSources);
+    const stored = (yield* selectWorkspaceListCurrentForAdmission.effect(admission))
+      ? yield* selectWorkspaceItems.effect()
+      : null;
+    const [workspaceList, registry] = yield* call(readRecentSources, stored);
     if (!(yield* call(refreshCurrent, id, requestId, admission, dispatch))) return;
     if (!workspaceList.ok && !registry?.success) {
       yield* put(
@@ -132,7 +146,7 @@ function* refreshRecentRepositoriesWorker(
     const publish =
       !(yield* selectCanAdministerHost.effect()) ||
       (yield* selectWorkspaceInitializerHydrated.effect());
-    if (workspaceList.ok && publish) {
+    if (workspaceList.ok && !('stored' in workspaceList) && publish) {
       yield* put(
         replaceWorkspaceList(workspaces, {
           complete: workspaceList.complete === true,

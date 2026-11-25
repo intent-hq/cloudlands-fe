@@ -8,6 +8,7 @@ import {
 } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {
   selectCurrentStagedWorkingChanges,
@@ -104,6 +105,21 @@ const selectWorkspaceCapabilitiesReady = store.createSelector((state) => {
     selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
   );
 });
+
+/**
+ * The list was read under this admitted subscription. Events from that
+ * subscription keep it current, so another full read adds nothing.
+ */
+export const selectWorkspaceListCurrentForAdmission = store.createSelector<
+  [context: string | null],
+  boolean
+>(
+  (state, context) =>
+    context !== null &&
+    state.workspace.hasLoaded &&
+    state.workspace.loadedBackendId === getActiveBackendId(state) &&
+    state.workspace.capabilityContext === context,
+);
 
 export const selectWorkspaceIsCreating = store.createSelector((state) => {
   return state.workspace.isCreating;
