@@ -18,7 +18,7 @@ export interface ProviderSwitchTargetOption {
   models: ProviderSwitchModelOption[];
 }
 
-export interface ProviderSwitchAgentOutcome {
+interface ProviderSwitchAgentOutcome {
   status: BulkAgentStatus;
   reason?: string;
 }
