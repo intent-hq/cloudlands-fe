@@ -185,8 +185,8 @@ const count = (value: unknown): number =>
 
 function parseModelLabels(value: unknown): { modelLabels?: Record<string, string> } {
   if (!record(value)) return {};
-  const entries = Object.entries(value).filter(
-    (entry): entry is [string, string] => text(entry[1]),
+  const entries = Object.entries(value).filter((entry): entry is [string, string] =>
+    text(entry[1]),
   );
   return entries.length > 0 ? { modelLabels: Object.fromEntries(entries) } : {};
 }
