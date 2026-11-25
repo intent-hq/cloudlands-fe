@@ -202,3 +202,15 @@ export function remoteAutoPickProfile(
     ) ?? null
   );
 }
+
+/** The machine's own display name for a model, scoped to the provider's base id. */
+export function machineReportedModelLabel(
+  machine: RemoteMachine | null | undefined,
+  providerRef: string,
+  modelId: string,
+): string | undefined {
+  const base = providerRefBaseId(providerRef);
+  return machine?.capabilities?.providers.find((reported) => reported.id === base)?.modelLabels?.[
+    modelId
+  ];
+}

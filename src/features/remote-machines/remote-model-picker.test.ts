@@ -4,6 +4,7 @@ import type { RemoteMachine } from '$shared/types/remote-machines';
 import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
 import {
   isRemoteRefSignedOut,
+  machineReportedModelLabel,
   machineReportFreshness,
   machineReportedModels,
   MACHINE_REPORT_STALE_MS,
@@ -741,5 +742,36 @@ describe('the Default on a remote machine (catalog defaultRemoteLaunch)', () => 
     expect(
       keys({ 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' }, [apiKey], true),
     ).toEqual(['claude-code', 'codex']);
+  });
+});
+
+describe('machineReportedModelLabel', () => {
+  const labelled = (label: string) =>
+    machine({
+      capabilities: {
+        providers: [
+          { id: 'claude-code', status: 'ready', models: ['opus'], modelLabels: { opus: label } },
+          { id: 'codex', status: 'ready', models: ['opus'] },
+        ],
+      },
+    });
+
+  it('reads the active machine labels, so two machines can name one id differently', () => {
+    expect(machineReportedModelLabel(labelled('Opus 5.5'), 'claude-code', 'opus')).toBe('Opus 5.5');
+    expect(machineReportedModelLabel(labelled('Opus Next'), 'claude-code', 'opus')).toBe(
+      'Opus Next',
+    );
+  });
+
+  it('resolves a named profile through its base provider only', () => {
+    expect(machineReportedModelLabel(labelled('Opus 5.5'), 'claude-code@p-work', 'opus')).toBe(
+      'Opus 5.5',
+    );
+    expect(machineReportedModelLabel(labelled('Opus 5.5'), 'codex', 'opus')).toBeUndefined();
+  });
+
+  it('is undefined without a machine or report', () => {
+    expect(machineReportedModelLabel(null, 'claude-code', 'opus')).toBeUndefined();
+    expect(machineReportedModelLabel(machine(), 'claude-code', 'opus')).toBeUndefined();
   });
 });
