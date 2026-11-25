@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.390.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.389.2...v2.390.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **lint:** flag module-level toStore() in the Svelte store rule ([#5067](https://github.com/intent-hq/cloudlands-fe/issues/5067)) ([51d1257](https://github.com/intent-hq/cloudlands-fe/commit/51d12577aac0d42322328cb4b510467dcafee8a9))
+
 ## [2.389.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.389.1...v2.389.2) (2026-11-25)
 
 
