@@ -766,6 +766,7 @@
   "chat_modelPicker_pickAnother_description": "Elija otro modelo para continuar.",
   "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Sin iniciar sesión",
+  "chat_modelPicker_profileSelect_ariaLabel": "Perfil de {provider}",
   "chat_modelPicker_profileSignedOut_hint": "Inicia sesión en la cuenta de este perfil fuera de Intent. Hasta entonces, es posible que sus modelos no funcionen.",
   "chat_modelPicker_providerDefault_label": "Predeterminado del proveedor",
   "chat_modelPicker_providerDisabled_description": "{provider} está deshabilitado en Configuración > Agentes.",

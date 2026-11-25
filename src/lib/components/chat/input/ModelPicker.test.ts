@@ -912,9 +912,8 @@ describe('ModelPicker guest / collaborator lock', () => {
       const labels = within(rail)
         .getAllByRole('tab')
         .map((tab) => tab.getAttribute('aria-label') ?? '');
-      // Default Codex, Key and Default Claude Code; Work can't be sent.
-      expect(labels).toHaveLength(3);
-      expect(labels.every((label) => !/Work/.test(label))).toBe(true);
+      // Codex (Default and Key in its profile select) and Claude Code.
+      expect(labels).toHaveLength(2);
       expect(labels.every((label) => !/Auggie/.test(label))).toBe(true);
       expect(labels.some((label) => /Claude Code.*not signed in/.test(label))).toBe(true);
 
@@ -935,8 +934,11 @@ describe('ModelPicker guest / collaborator lock', () => {
       withMachine();
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
-      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
-      expect(screen.queryByRole('tab', { name: /Work/ })).toBeNull();
+      await fireEvent.click(await screen.findByTestId('model-picker-profile-trigger'));
+      const listboxes = await screen.findAllByRole('listbox');
+      const listbox = listboxes[listboxes.length - 1];
+      expect(within(listbox).getByRole('option', { name: 'Key' })).toBeTruthy();
+      expect(within(listbox).queryByRole('option', { name: /Work/ })).toBeNull();
     });
 
     const withDefaultEnv = (env: unknown[]) => {
@@ -967,7 +969,7 @@ describe('ModelPicker guest / collaborator lock', () => {
       withDefaultEnv([]);
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
-      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
+      expect(await screen.findByRole('tab', { name: /Codex/ })).toBeTruthy();
       expect(screen.queryByRole('tab', { name: /Claude Code/ })).toBeNull();
     });
 
@@ -6592,7 +6594,16 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     expect(screen.queryByTestId('model-picker-profile-group')).toBeNull();
   });
 
-  it('offers each profile as its own tab with its own catalog, and reports its reference on pick', async () => {
+  async function chooseProfile(name: string) {
+    await fireEvent.click(screen.getByTestId('model-picker-profile-trigger'));
+    const listboxes = await screen.findAllByRole('listbox');
+    const listbox = listboxes[listboxes.length - 1];
+    await fireEvent.pointerUp(within(listbox).getByRole('option', { name }), {
+      pointerType: 'mouse',
+    });
+  }
+
+  it('groups profiles under one provider tab, offers them in a profile select, and reports the reference on pick', async () => {
     mockCatalogProfiles.current = [WORK, PERSONAL];
     const onModelChange = vi.fn();
     render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false, onModelChange } });
@@ -6605,15 +6616,21 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     });
     await fireEvent.click(screen.getByRole('button'));
     const tabs = within(screen.getByTestId('model-provider-tabs')).getAllByRole('tab');
-    const labels = tabs.map((tab) => tab.getAttribute('aria-label') ?? '');
-    // Profiles follow their base provider; the base becomes "Default".
-    expect(labels).toHaveLength(4);
-    expect(labels[1]).toMatch(/Codex.*Default/);
-    expect(labels[2]).toMatch(/Codex.*Work/);
-    expect(labels[3]).toMatch(/Codex.*Personal/);
+    expect(tabs).toHaveLength(2);
+    expect(screen.getAllByRole('tab', { name: /Codex/ })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
 
-    await fireEvent.click(screen.getByRole('tab', { name: /Work/ }));
-    // The browsed configuration is named above its models.
+    const trigger = screen.getByTestId('model-picker-profile-trigger');
+    expect(trigger.textContent).toMatch(/Default/);
+    await fireEvent.click(trigger);
+    const listboxes = await screen.findAllByRole('listbox');
+    const options = within(listboxes[listboxes.length - 1])
+      .getAllByRole('option')
+      .map((option) => option.textContent?.trim());
+    expect(options).toEqual(['Default', 'Work', 'Personal']);
+    await fireEvent.click(trigger);
+
+    await chooseProfile('Work');
     expect((await screen.findByTestId('model-picker-profile-group')).textContent).toMatch(
       /Codex.*Work/,
     );
@@ -6623,6 +6640,20 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
       providerId: WORK.providerRef,
       modelId: 'gpt-5-work',
     });
+  });
+
+  it('keeps the browsed profile when switching provider tabs and back', async () => {
+    mockCatalogProfiles.current = [WORK, PERSONAL];
+    render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
+    await chooseProfile('Personal');
+    const tabs = within(screen.getByTestId('model-provider-tabs')).getAllByRole('tab');
+    const other = tabs.find((tab) => !/Codex/.test(tab.getAttribute('aria-label') ?? ''));
+    await fireEvent.click(other!);
+    expect(screen.queryByTestId('model-picker-profile-trigger')).toBeNull();
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
+    expect(screen.getByTestId('model-picker-profile-trigger').textContent).toMatch(/Personal/);
   });
 
   it('shows the selected profile with the model, and follows a rename without changing identity', async () => {
@@ -6786,7 +6817,7 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('marks a signed-out profile in its tab and group without hiding it', async () => {
+  it('marks a signed-out profile in the profile select and group without hiding it', async () => {
     mockCatalogProfiles.current = [WORK, PERSONAL];
     const { providerSettingsReducer, initialState, providerProfileSummaryStatusChanged } =
       await import('$store/renderer/slices/provider-settings/provider-settings-slice');
@@ -6796,14 +6827,20 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     );
     render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
     await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
 
-    const workTab = screen.getByRole('tab', { name: /Work/ });
-    expect(workTab.getAttribute('aria-label')).toMatch(/Not signed in/);
-    expect(screen.getByRole('tab', { name: /Personal/ }).getAttribute('aria-label')).not.toMatch(
+    await fireEvent.click(screen.getByTestId('model-picker-profile-trigger'));
+    const listboxes = await screen.findAllByRole('listbox');
+    const listbox = listboxes[listboxes.length - 1];
+    expect(within(listbox).getByRole('option', { name: /Work.*Not signed in/ })).toBeTruthy();
+    expect(within(listbox).getByRole('option', { name: 'Personal' })).toBeTruthy();
+    await fireEvent.pointerUp(within(listbox).getByRole('option', { name: /Work/ }), {
+      pointerType: 'mouse',
+    });
+
+    expect(screen.getByRole('tab', { name: /Codex/ }).getAttribute('aria-label')).toMatch(
       /Not signed in/,
     );
-
-    await fireEvent.click(workTab);
     const notice = await screen.findByTestId('model-picker-profile-signed-out');
     expect(notice.textContent).toMatch(/Not signed in/);
     // Still selectable: the cue never hides the profile's models.
@@ -6950,7 +6987,7 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
       },
     });
     await fireEvent.click(screen.getByRole('button'));
-    await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
+    await chooseProfile('Work');
     await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Work row/ }));
     const { agentClient } = await import('$features/agent/agent.client');
     await waitFor(() =>

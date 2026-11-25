@@ -16,6 +16,7 @@
   import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
+  import { Select } from '$lib/components/ui/select';
   import {
     Dropdown,
     type DropdownGroupProps,
@@ -250,10 +251,6 @@
   function baseHasProfiles(providerId: string): boolean {
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
     return $providerProfiles$.some((profile) => profile.baseProviderId === baseId);
-  }
-  function profileInitial(providerRef: string): string {
-    const name = findProfileByRef($providerProfiles$, providerRef)?.name.trim() ?? '';
-    return name ? [...name][0].toLocaleUpperCase() : '?';
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -2115,7 +2112,53 @@
     showReasoningFooter || (!remoteScoped && (codexFallbackWarning !== null || showProviderIssue)),
   );
 
-  const railProviderIds = $derived(providerTabIds);
+  // One rail tab per base provider; its profiles (§5.54) are chosen with the
+  // profile select in the search row.
+  function tabBaseId(providerRef: string): string {
+    return normalizeProviderId(providerRefBaseId(providerRef));
+  }
+  const railProviderIds = $derived([...new Set(providerTabIds.map(tabBaseId))]);
+  const activeRailProviderId = $derived(tabBaseId(activeBrowseProviderId));
+  let lastBrowsedRefByBase = $state<Record<string, string>>({});
+  function railTargetRef(baseId: string): string {
+    const refs = providerTabIds.filter((ref) => tabBaseId(ref) === baseId);
+    if (activeRailProviderId === baseId && refs.includes(activeBrowseProviderId))
+      return activeBrowseProviderId;
+    const remembered = lastBrowsedRefByBase[baseId];
+    if (remembered && refs.includes(remembered)) return remembered;
+    if (refs.includes(selectedModelProviderId)) return selectedModelProviderId;
+    return refs[0] ?? baseId;
+  }
+  const activeProfileRefs = $derived(
+    providerTabIds.filter((ref) => tabBaseId(ref) === activeRailProviderId),
+  );
+  function profileOptionLabel(providerRef: string): string {
+    const baseId = tabBaseId(providerRef);
+    const parts = providerRefLabelParts(
+      isProviderProfileRef(providerRef) ? providerRef : baseId,
+      $providerProfiles$,
+      baseId,
+      $providerDefaultNames$,
+    );
+    return providerRefProfileName(parts, $providerProfilesLoaded$) ?? providerDisplayName(providerRef);
+  }
+  const profileSelectItems = $derived(
+    activeProfileRefs.map((ref) => ({ value: ref, label: profileOptionLabel(ref) })),
+  );
+  let profileSelectOpen = $state(false);
+  let profileSelectRoot = $state<HTMLDivElement | null>(null);
+  const profileSelectContentId = $props.id();
+  $effect(() => {
+    if (!profileSelectOpen) return;
+    return pushEscapeLayer(() => {
+      profileSelectOpen = false;
+      queueMicrotask(() =>
+        profileSelectRoot
+          ?.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')
+          ?.focus(),
+      );
+    });
+  });
   let pointerInteraction = $state(false);
 
   function clearModelSearch(event: MouseEvent) {
@@ -2129,6 +2172,11 @@
   function selectProviderTab(providerId: string) {
     providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
+    lastBrowsedRefByBase = { ...lastBrowsedRefByBase, [tabBaseId(providerId)]: providerId };
+  }
+
+  function selectRailProvider(baseId: string) {
+    selectProviderTab(railTargetRef(baseId));
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
@@ -2147,7 +2195,7 @@
 
     event.preventDefault();
     event.stopPropagation();
-    selectProviderTab(railProviderIds[nextIndex] ?? providerId);
+    selectRailProvider(railProviderIds[nextIndex] ?? providerId);
     const tabs = (event.currentTarget as HTMLButtonElement)
       .closest('[role="tablist"]')
       ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
@@ -2985,6 +3033,60 @@
           </Button>
         {/if}
       </span>
+      {#if profileSelectItems.length > 1}
+        <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary around a nested select) -->
+        <div
+          bind:this={profileSelectRoot}
+          class="max-w-32 min-w-0"
+          data-testid="model-picker-profile-select"
+          onkeydown={(event) => {
+            if (event.key === 'Escape' && !profileSelectOpen) return;
+            if (event.key === 'Escape') profileSelectOpen = false;
+            event.stopPropagation();
+          }}
+        >
+          <Select.Root
+            value={activeBrowseProviderId}
+            bind:open={profileSelectOpen}
+            items={profileSelectItems}
+            onchange={(value) => value && selectProviderTab(value)}
+          >
+            <Select.Trigger
+              class="h-7 gap-1 px-2 text-xs"
+              aria-label={m.chat_modelPicker_profileSelect_ariaLabel({
+                provider: baseProviderDisplayName(activeBrowseProviderId),
+              })}
+              aria-controls={profileSelectOpen ? profileSelectContentId : undefined}
+              data-testid="model-picker-profile-trigger"
+            >
+              <span class="min-w-0 flex-1 truncate text-left">
+                {profileOptionLabel(activeBrowseProviderId)}
+              </span>
+              {#if isProfileSignedOut(activeBrowseProviderId)}
+                <span class="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true"></span>
+              {/if}
+            </Select.Trigger>
+            <!-- Dropdown's portal is at z-index 100; its nested popup must sit above it. -->
+            <Select.Content
+              wrapperId={profileSelectContentId}
+              portal
+              class="w-max min-w-(--bits-select-anchor-width) z-[101]!"
+            >
+              {#each profileSelectItems as option (option.value)}
+                <Select.Item value={option.value} label={option.label}>
+                  <span class="flex items-center gap-2">
+                    {option.label}
+                    {#if isProfileSignedOut(option.value)}
+                      <span class="size-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                      <span class="sr-only">{m.settings_providerProfiles_statusError_label()}</span>
+                    {/if}
+                  </span>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+      {/if}
       {#if refreshProviderId && !remoteScoped}
         <!-- aria-disabled, not disabled: keyboard focus stays here through a refresh.
              The end margin puts the icon on the right gutter: 16px = the search row's
@@ -3032,36 +3134,31 @@
             : m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
-          {#each railProviderIds as providerTabId (providerTabId)}
+          {#each railProviderIds as railProviderId (railProviderId)}
+            {@const targetRef = railTargetRef(railProviderId)}
+            {@const railSelected = railProviderId === activeRailProviderId}
             <Button
               variant="ghost"
               size="icon-sm"
               iconOnly={true}
               role="tab"
-              aria-selected={providerTabId === activeBrowseProviderId}
-              aria-label={providerTabLabel(providerTabId)}
-              title={providerTabLabel(providerTabId)}
-              tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
+              aria-selected={railSelected}
+              aria-label={providerTabLabel(targetRef)}
+              title={providerTabLabel(targetRef)}
+              tabindex={railSelected ? 0 : -1}
               class={cn(
                 'relative text-muted-foreground hover:bg-muted/40',
-                providerTabId === activeBrowseProviderId && 'bg-muted text-foreground',
+                railSelected && 'bg-muted text-foreground',
               )}
-              onclick={() => selectProviderTab(providerTabId)}
-              onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
+              onclick={() => selectRailProvider(railProviderId)}
+              onkeydown={(event) => handleProviderTabKeydown(event, railProviderId)}
             >
-              <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
-              {#if isProfileSignedOut(providerTabId) || (remoteScoped && remoteSignedOutCue(providerTabId))}
+              <ProviderIcon providerId={railProviderId} class="size-4" size={16} />
+              {#if isProfileSignedOut(targetRef) || (remoteScoped && remoteSignedOutCue(targetRef))}
                 <span
                   class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
                   aria-hidden="true"
                 ></span>
-              {/if}
-              {#if isProviderProfileRef(providerTabId)}
-                <!-- Tells same-provider profile tabs apart; the tab's label names it. -->
-                <span
-                  class="absolute right-0 bottom-0 min-w-3 rounded-sm bg-popover px-0.5 text-ui-sm leading-3 font-medium text-foreground"
-                  aria-hidden="true">{profileInitial(providerTabId)}</span
-                >
               {/if}
             </Button>
           {/each}
