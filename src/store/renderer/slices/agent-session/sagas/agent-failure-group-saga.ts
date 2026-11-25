@@ -300,22 +300,25 @@ function settleEntry(
   }
 }
 
-/** Clear the chat error of restarted agents, as `redriveRequeuedTurn` does. */
-function* convergeRestarted(outcomes: BulkAgentOutcome[]): SagaGenerator<void> {
-  for (const outcome of outcomes) {
-    if (outcome.status === 'gone') {
-      yield* put(chatErrorCleared(outcome.agentId));
-      continue;
-    }
-    if (outcome.status !== 'switched' && outcome.status !== 'retried') continue;
+/**
+ * Clear the chat error of one restarted agent, as `redriveRequeuedTurn` does,
+ * right when its own retry settles. Skipped once a newer failure is recorded
+ * for the agent: its retry result no longer describes its state.
+ */
+function* convergeOne(outcome: BulkAgentOutcome): SagaGenerator<void> {
+  if (outcome.status === 'gone') {
     yield* put(chatErrorCleared(outcome.agentId));
-    yield* put(
-      updateSession(outcome.agentId, {
-        status: outcome.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
-        stopReason: null,
-      }),
-    );
+    return;
   }
+  if (outcome.status !== 'switched' && outcome.status !== 'retried') return;
+  if (getAgentFailureEntry(outcome.agentId)) return;
+  yield* put(chatErrorCleared(outcome.agentId));
+  yield* put(
+    updateSession(outcome.agentId, {
+      status: outcome.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
+      stopReason: null,
+    }),
+  );
 }
 
 /** "Retry all" from the group toast: `agent.retry` per member, no provider change. */
@@ -332,14 +335,15 @@ export function* retryAllFromToast(
   const snapshots = new Map(group.members.map((entry) => [entry.agentId, entry]));
   try {
     const outcomes = yield* call(
-      runBulkRetry,
-      group.members.map(({ agentId, workspaceId }) => ({ agentId, workspaceId })),
-      {
-        retry: bulkDeps.retry,
-        onAgentDone: (outcome: BulkAgentOutcome) => settleEntry(outcome, snapshots),
-      },
+      runWithRelay,
+      (onAgentDone: (outcome: BulkAgentOutcome) => void) =>
+        runBulkRetry(
+          group.members.map(({ agentId, workspaceId }) => ({ agentId, workspaceId })),
+          { retry: bulkDeps.retry, onAgentDone },
+        ),
+      snapshots,
+      { reportToDialog: false },
     );
-    yield* call(convergeRestarted, outcomes);
     const failed = outcomes.filter((outcome) => outcome.status === 'failed').length;
     if (failed > 0) {
       state.retryNote =
@@ -533,21 +537,24 @@ function workersFor(
 }
 
 /**
- * Run a bulk worker with per-agent progress in the dialog. The worker's
+ * Run a bulk worker and handle each agent as soon as its own calls settle:
+ * registry update, chat-state convergence, dialog progress. The worker's
  * callbacks are plain functions, so outcomes go through a channel that a
- * forked loop turns into dialog actions and registry updates.
+ * forked loop handles. Never batch this to the end of the run: an agent can
+ * fail again while other lanes are still retrying.
  */
-function* runWithDialogProgress(
+function* runWithRelay(
   run: (onAgentDone: (outcome: BulkAgentOutcome) => void) => Promise<BulkAgentOutcome[]>,
   snapshots: Map<string, AgentFailureEntry>,
-  targets?: Map<string, BulkSwitchTarget>,
+  options: { reportToDialog: boolean; targets?: Map<string, BulkSwitchTarget> },
 ): SagaGenerator<BulkAgentOutcome[]> {
   const settled = channel<BulkAgentOutcome>(buffers.expanding());
   const relay = yield* fork(function* () {
     while (true) {
       const outcome = yield* take(settled);
-      settleEntry(outcome, snapshots, targets);
-      yield* put(providerSwitchAgentSettled(outcome));
+      settleEntry(outcome, snapshots, options.targets);
+      yield* call(convergeOne, outcome);
+      if (options.reportToDialog) yield* put(providerSwitchAgentSettled(outcome));
     }
   });
   try {
@@ -616,8 +623,8 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
   bulkHold.hold(heldIds);
   yield* put(providerSwitchRunStarted(items.length));
   try {
-    const outcomes = yield* call(
-      runWithDialogProgress,
+    yield* call(
+      runWithRelay,
       (onAgentDone: (outcome: BulkAgentOutcome) => void) =>
         runBulkProviderSwitch(items, {
           ...bulkDeps,
@@ -627,9 +634,13 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
           },
         }),
       snapshots,
-      new Map(items.flatMap((item) => (item.target ? [[item.agentId, item.target]] : []))),
+      {
+        reportToDialog: true,
+        targets: new Map(
+          items.flatMap((item) => (item.target ? [[item.agentId, item.target]] : [])),
+        ),
+      },
     );
-    yield* call(convergeRestarted, outcomes);
   } finally {
     yield* put(providerSwitchRunFinished());
     bulkHold.release(heldIds);
@@ -647,16 +658,16 @@ export function* retryAllFromDialog(bulkHold: BulkHold): SagaGenerator<void> {
   bulkHold.hold(heldIds);
   yield* put(providerSwitchRunStarted(live.length));
   try {
-    const outcomes = yield* call(
-      runWithDialogProgress,
+    yield* call(
+      runWithRelay,
       (onAgentDone: (outcome: BulkAgentOutcome) => void) =>
         runBulkRetry(
           live.map(({ entry }) => ({ agentId: entry.agentId, workspaceId: entry.workspaceId })),
           { retry: bulkDeps.retry, onAgentDone },
         ),
       snapshots,
+      { reportToDialog: true },
     );
-    yield* call(convergeRestarted, outcomes);
   } finally {
     yield* put(providerSwitchRunFinished());
     bulkHold.release(heldIds);

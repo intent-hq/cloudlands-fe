@@ -471,6 +471,40 @@ describe('agent failure group toasts', () => {
     await task.toPromise();
   });
 
+  it('never overwrites an agent that failed again while another lane was still retrying', async () => {
+    const { task, dispatch } = start();
+    quota('agent-1', 'ws-1', 1);
+    quota('agent-2', 'ws-2', 2);
+    let releaseSecond: (value: { ok: true; redriven: boolean }) => void = () => {};
+    mocks.retry.mockImplementation((agentId: string) =>
+      agentId === 'agent-1'
+        ? Promise.resolve({ ok: true, redriven: true })
+        : new Promise((resolve) => {
+            releaseSecond = resolve;
+          }),
+    );
+    await settle();
+    lastGroupToast().onSwitchAll();
+    await settle();
+    dispatch(providerSwitchConfirmRequested());
+    await settle();
+    // agent-1 restarted and was converged right away; it now fails again.
+    expect(dispatch).toHaveBeenCalledWith(chatErrorCleared('agent-1'));
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'failed again', at: 9 });
+    dispatch.mockClear();
+    releaseSecond({ ok: true, redriven: true });
+    await settle();
+
+    const agentOneWrites = dispatch.mock.calls.filter(([action]) =>
+      JSON.stringify(action).includes('agent-1'),
+    );
+    expect(agentOneWrites).toEqual([]);
+    expect(dispatch).toHaveBeenCalledWith(chatErrorCleared('agent-2'));
+    expect(getAgentFailureEntry('agent-1')?.error).toBe('failed again');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('keeps an agent visible when its switch lands but its restart fails', async () => {
     const { task, dispatch } = start();
     quota('agent-1', 'ws-1', 1);
