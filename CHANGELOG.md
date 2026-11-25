@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.385.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.384.2...v2.385.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **browser:** Full screen instead of Open in external browser on Intent OS ([#5036](https://github.com/intent-hq/cloudlands-fe/issues/5036)) ([8689a7c](https://github.com/intent-hq/cloudlands-fe/commit/8689a7c64dc6b143c6fa66aa54e1aa74dab53716))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.291 ([#5039](https://github.com/intent-hq/cloudlands-fe/issues/5039)) ([a52657c](https://github.com/intent-hq/cloudlands-fe/commit/a52657c736a39641e2fff3f834c83934911cc208))
+* **sidebar:** apply hidden sidebar icons to every host view at once ([#5035](https://github.com/intent-hq/cloudlands-fe/issues/5035)) ([4074e28](https://github.com/intent-hq/cloudlands-fe/commit/4074e2848ccf225a1c1399a3ef49bebb1427b40c))
+* **sidebar:** hide icons from the collapsed rail only ([#5037](https://github.com/intent-hq/cloudlands-fe/issues/5037)) ([ec546b3](https://github.com/intent-hq/cloudlands-fe/commit/ec546b31356f27c90c750ddd48255d7d2e583573))
+
 ## [2.384.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.384.1...v2.384.2) (2026-11-24)
 
 
