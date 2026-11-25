@@ -1064,4 +1064,41 @@ describe('userPreferencesPersistenceSaga', () => {
       await task.toPromise();
     });
   });
+
+  it("follows another host view's change without saving it back", async () => {
+    const run = startPreferenceStore();
+    await settle();
+    mocks.setJSON.mockClear();
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'chat:collapseToolRuns' ? false : undefined,
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: 'workspace-list:showArchived' }));
+    expect(run.getUserPreferences().collapseToolRuns).toBe(true);
+    window.dispatchEvent(new StorageEvent('storage', { key: 'chat:collapseToolRuns' }));
+    await settle();
+
+    expect(run.getUserPreferences().collapseToolRuns).toBe(false);
+    expect(mocks.setJSON.mock.calls).toEqual([]);
+    await run.stop();
+  });
+
+  it('follows provider setup saved by another view of the same host only', async () => {
+    const run = startPreferenceStore();
+    await settle();
+    mocks.getJSON.mockReturnValue(true);
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'backend:remote-1:workspace-list:completedProviderSetup',
+      }),
+    );
+    await settle();
+    expect(run.getUserPreferences().hasCompletedProviderSetup).toBe(false);
+
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: 'workspace-list:completedProviderSetup' }),
+    );
+    await settle();
+    expect(run.getUserPreferences().hasCompletedProviderSetup).toBe(true);
+    await run.stop();
+  });
 });

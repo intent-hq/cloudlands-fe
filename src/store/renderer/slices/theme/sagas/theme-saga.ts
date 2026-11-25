@@ -2,8 +2,8 @@ import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, put, take, takeEvery } from 'typed-redux-saga';
 
 import { ThemeManager } from '$lib/utils/theme';
+import { themePreferenceStorage } from '$lib/utils/theme-storage';
 import { themePresets } from '$lib/utils/theme-presets';
-import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { createLogger } from '$lib/utils/client-logger';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
@@ -143,7 +143,7 @@ function themeError(error: unknown, fallback: string): string {
 function* handlePreference(action: ReturnType<typeof requestThemePreferenceChange>) {
   try {
     const [preference] = action.payload;
-    yield* call([safeLocalStorage, safeLocalStorage.setItem], 'theme', preference);
+    yield* call([themePreferenceStorage, themePreferenceStorage.write], preference);
     const manager: ThemeManager = yield* call([ThemeManager, ThemeManager.getInstance]);
     yield* call(withSuppressedListener, () => manager.setTheme(preference, { persist: false }));
     yield* call(syncThemeManager, manager);

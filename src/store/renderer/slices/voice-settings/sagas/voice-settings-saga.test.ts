@@ -13,8 +13,10 @@ const mocks = vi.hoisted(() => ({
   osAvailable: vi.fn(),
   requestAuthorization: vi.fn(),
   loadEngine: vi.fn(),
+  onEngineChange: vi.fn(() => () => {}),
   saveEngine: vi.fn(),
   loadInputDevice: vi.fn(),
+  onInputDeviceChange: vi.fn(() => () => {}),
   saveInputDevice: vi.fn(),
   resetVocabularyCache: vi.fn(),
 }));
@@ -36,10 +38,12 @@ vi.mock('$features/voice/os-transcription-service', () => ({
 }));
 vi.mock('$features/voice/voice-engine-preference', () => ({
   loadVoiceEnginePreference: mocks.loadEngine,
+  onVoiceEnginePreferenceChange: mocks.onEngineChange,
   saveVoiceEnginePreference: mocks.saveEngine,
 }));
 vi.mock('$features/voice/voice-input-device-preference', () => ({
   loadVoiceInputDevicePreference: mocks.loadInputDevice,
+  onVoiceInputDevicePreferenceChange: mocks.onInputDeviceChange,
   saveVoiceInputDevicePreference: mocks.saveInputDevice,
 }));
 vi.mock('$features/voice/workspace-vocabulary-service', () => ({

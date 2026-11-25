@@ -270,4 +270,28 @@ describe('externalEditorsPersistenceSaga', () => {
 
     expect(storage.setItem.mock.calls).toEqual([]);
   });
+
+  it("follows another view's hidden editors and open action without saving them back", async () => {
+    const { dispatched, task } = startSaga();
+    await settle();
+    storage.setItem.mockClear();
+    storage.getItem.mockImplementation((key: string) => {
+      if (key === 'legacy-settings:hiddenOpenInEditors') return JSON.stringify(['zed']);
+      if (key === 'open-combo-button-last-action') return 'zed';
+      return null;
+    });
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: 'legacy-settings:hiddenOpenInEditors' }),
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: 'open-combo-button-last-action' }));
+    await settle();
+
+    expect(dispatched).toEqual([
+      { type: 'externalEditors/setHiddenEditorIds', payload: [['zed']] },
+      { type: 'externalEditors/setOpenAction', payload: ['zed'] },
+    ]);
+    expect(storage.setItem.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
 });

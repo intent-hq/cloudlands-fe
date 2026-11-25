@@ -3,23 +3,33 @@
  * master volume (default 0.3), shared by the header speaker controls and the
  * HUD sound service. Deliberately HUD-window-local (task spec): NOT Redux
  * userPreferences and NOT the notification sound settings — toggling HUD
- * sounds never affects notification sounds. Each value is exposed as a
+ * sounds never affects notification sounds. Every view of this app shares both
+ * values and follows a change made in another view. Each value is exposed as a
  * reactive readable (for the header controls) plus a synchronous read
  * (`isHudSoundEnabled` / `getHudSoundVolume`) the sound player reads on.
  */
 import { writable, type Readable } from 'svelte/store';
 
-import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { sharedPreference } from '$lib/utils/shared-preference';
 
 /** localStorage key holding 'true' / 'false'; absent = OFF (the default). */
 export const HUD_SOUND_ENABLED_STORAGE_KEY = 'hudSoundEnabled';
 
-function readPersisted(): boolean {
-  return safeLocalStorage.getItem(HUD_SOUND_ENABLED_STORAGE_KEY) === 'true';
-}
+const enabledStorage = sharedPreference<boolean>({
+  key: HUD_SOUND_ENABLED_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => stored === 'true',
+});
 
-let current = readPersisted();
+let current = enabledStorage.read() ?? false;
 const store = writable(current);
+
+// Another view of this app changed it: follow, so this view cannot save a stale value.
+enabledStorage.subscribe((enabled) => {
+  current = enabled ?? false;
+  store.set(current);
+});
 
 /** Reactive enable state (subscribe-only; mutate via the setters below). */
 export const hudSoundEnabled: Readable<boolean> = { subscribe: store.subscribe };
@@ -33,7 +43,7 @@ export function isHudSoundEnabled(): boolean {
 export function setHudSoundEnabled(enabled: boolean): void {
   current = enabled;
   store.set(enabled);
-  safeLocalStorage.setItem(HUD_SOUND_ENABLED_STORAGE_KEY, String(enabled));
+  enabledStorage.write(enabled);
 }
 
 /** Flip the enable state; returns the new value (for the toggle button). */
@@ -54,14 +64,20 @@ function clampVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume));
 }
 
-function readPersistedVolume(): number {
-  const raw = safeLocalStorage.getItem(HUD_SOUND_VOLUME_STORAGE_KEY);
-  if (raw === null || raw === '') return HUD_SOUND_DEFAULT_VOLUME;
-  return clampVolume(Number(raw));
-}
+const volumeStorage = sharedPreference<number>({
+  key: HUD_SOUND_VOLUME_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (stored === '' ? undefined : clampVolume(Number(stored))),
+});
 
-let currentVolume = readPersistedVolume();
+let currentVolume = volumeStorage.read() ?? HUD_SOUND_DEFAULT_VOLUME;
 const volumeStore = writable(currentVolume);
+
+volumeStorage.subscribe((volume) => {
+  currentVolume = volume ?? HUD_SOUND_DEFAULT_VOLUME;
+  volumeStore.set(currentVolume);
+});
 
 /** Reactive master volume (subscribe-only; mutate via `setHudSoundVolume`). */
 export const hudSoundVolume: Readable<number> = { subscribe: volumeStore.subscribe };
@@ -76,5 +92,5 @@ export function setHudSoundVolume(volume: number): void {
   const clamped = clampVolume(volume);
   currentVolume = clamped;
   volumeStore.set(clamped);
-  safeLocalStorage.setItem(HUD_SOUND_VOLUME_STORAGE_KEY, String(clamped));
+  volumeStorage.write(clamped);
 }

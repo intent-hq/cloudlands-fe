@@ -466,4 +466,24 @@ describe('uiLayoutPersistenceSaga', () => {
     await task.toPromise();
     expect(task.isCancelled()).toBe(true);
   });
+
+  it("follows another view's sidebar side and collapse without saving them back", async () => {
+    const { state, task } = sidebarHarness();
+    await settle();
+    storage.getJSON.mockImplementation((key: string) =>
+      key === 'layout-settings' ? { sidebarSide: 'right' } : undefined,
+    );
+    storage.getItem.mockImplementation((key: string) =>
+      key === 'workspace-left-panel-collapsed' ? 'true' : null,
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: 'layout-settings' }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'workspace-left-panel-collapsed' }));
+    await settle();
+
+    expect(state()).toMatchObject({ sidebarSide: 'right', sidebarCollapsed: true });
+    expect(storage.setJSON).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
 });

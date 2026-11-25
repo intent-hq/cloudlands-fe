@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
+import { onSharedStorageChange } from '$lib/utils/shared-preference';
 
 const logger = createLogger('workspace-storage-manager');
 
@@ -55,41 +56,38 @@ export class WorkspaceStorageManager {
   private memoryCache = new Map<string, WorkspaceStorageState>();
   /** Callbacks to notify when a workspace state changes from another window */
   private crossWindowListeners = new Map<string, Set<(state: WorkspaceStorageState) => void>>();
-  /** Bound reference to the storage event handler so we can remove it on cleanup */
-  private storageEventHandler: ((event: StorageEvent) => void) | null = null;
+  /** Stops the cross-window storage subscription on cleanup */
+  private stopCrossWindowSync: (() => void) | null = null;
 
   constructor() {
     this.setupCrossWindowSync();
   }
 
   /**
-   * Listen for localStorage changes from other windows/tabs.
-   * The 'storage' event fires only for changes made in OTHER windows on the same origin,
-   * so we don't need to filter out our own writes — they inherently don't trigger this event.
+   * Follow workspace state another window or host view saved. The shared
+   * listener reports only changes made elsewhere, never this view's own writes.
    */
   private setupCrossWindowSync(): void {
-    if (typeof window === 'undefined') return;
-
-    this.storageEventHandler = (event: StorageEvent) => {
+    this.stopCrossWindowSync = onSharedStorageChange((key, newValue) => {
       // Only care about workspace state keys
-      if (!event.key?.startsWith('workspace:state:')) return;
+      if (!key?.startsWith('workspace:state:')) return;
 
-      const workspaceId = event.key.replace('workspace:state:', '');
+      const workspaceId = key.replace('workspace:state:', '');
 
       // Invalidate memory cache so next loadState() reads fresh data
-      this.memoryCache.delete(event.key);
+      this.memoryCache.delete(key);
 
       logger.debug('Cross-window storage change detected', {
         workspaceId,
-        hasNewValue: !!event.newValue,
+        hasNewValue: !!newValue,
       });
 
       // Parse the new state and notify listeners
-      if (event.newValue) {
+      if (newValue) {
         try {
-          const newState = JSON.parse(event.newValue) as WorkspaceStorageState;
+          const newState = JSON.parse(newValue) as WorkspaceStorageState;
           // Update memory cache with the new state
-          this.setMemoryCacheEntry(event.key, newState);
+          this.setMemoryCacheEntry(key, newState);
 
           // Notify cross-window listeners for this workspace
           const listeners = this.crossWindowListeners.get(workspaceId);
@@ -106,9 +104,7 @@ export class WorkspaceStorageManager {
           logger.error('Failed to parse cross-window state update', { workspaceId, error });
         }
       }
-    };
-
-    window.addEventListener('storage', this.storageEventHandler);
+    });
   }
 
   /**
@@ -440,10 +436,8 @@ export class WorkspaceStorageManager {
     this.memoryCache.clear();
 
     // Remove storage event listener to prevent memory leaks
-    if (this.storageEventHandler && typeof window !== 'undefined') {
-      window.removeEventListener('storage', this.storageEventHandler);
-      this.storageEventHandler = null;
-    }
+    this.stopCrossWindowSync?.();
+    this.stopCrossWindowSync = null;
 
     // Clear cross-window listeners
     this.crossWindowListeners.clear();

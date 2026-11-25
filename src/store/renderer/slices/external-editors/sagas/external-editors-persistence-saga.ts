@@ -1,6 +1,9 @@
-import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import type { SagaGenerator } from 'typed-redux-saga';
 
-import { getLocalStorageItem, setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
+import {
+  sharedPreferenceSaga,
+  type SharedPreferenceSagaOptions,
+} from '../../../utils/shared-preference-saga';
 import { selectEditorOrder, selectHiddenEditorIds } from '../external-editors-selectors';
 import {
   normalizeHiddenEditorIds,
@@ -16,54 +19,67 @@ const OPEN_ACTION_STORAGE_KEY = 'open-combo-button-last-action';
 const HIDDEN_EDITORS_STORAGE_KEY = 'legacy-settings:hiddenOpenInEditors';
 export const EDITOR_ORDER_STORAGE_KEY = 'settings:openInEditorsOrder';
 
-function* hydrateHiddenEditorIdsWorker(): SagaGenerator<void> {
-  const stored = yield* call(getLocalStorageItem, HIDDEN_EDITORS_STORAGE_KEY);
-  if (!stored) return;
-
+function parseJsonText(stored: unknown): unknown {
+  if (typeof stored !== 'string') return undefined;
   try {
-    yield* put(setHiddenEditorIds(normalizeHiddenEditorIds(JSON.parse(stored))));
+    return JSON.parse(stored);
   } catch {
-    // Hidden editors default to visible when persisted JSON is invalid.
+    return undefined;
   }
 }
 
-function* hydrateEditorOrderWorker(): SagaGenerator<void> {
-  const stored = yield* call(getLocalStorageItem, EDITOR_ORDER_STORAGE_KEY);
-  if (!stored) return;
-  try {
-    const order = normalizeEditorOrder(JSON.parse(stored));
-    if (order.length) yield* put(setEditorOrder(order));
-  } catch {
-    // Invalid editor order storage is ignored.
-  }
-}
+/** Hidden editors default to visible when the saved JSON is not valid. */
+const hiddenEditorsPreference: SharedPreferenceSagaOptions<string[]> = {
+  key: HIDDEN_EDITORS_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  serialize: JSON.stringify,
+  parse: (stored) => {
+    const parsed = parseJsonText(stored);
+    return parsed === undefined ? undefined : normalizeHiddenEditorIds(parsed);
+  },
+  hydrate: (hiddenEditorIds) =>
+    hiddenEditorIds === undefined ? null : setHiddenEditorIds(hiddenEditorIds),
+  persistOn: toggleHiddenEditor,
+  *select() {
+    return yield* selectHiddenEditorIds.effect();
+  },
+};
 
-function* persistOpenActionWorker(action: ReturnType<typeof setOpenAction>): SagaGenerator<void> {
-  const [openAction] = action.payload;
-  if (typeof openAction !== 'string') return;
-  yield* call(setLocalStorageItem, OPEN_ACTION_STORAGE_KEY, openAction);
-}
+const editorOrderPreference: SharedPreferenceSagaOptions<string[]> = {
+  key: EDITOR_ORDER_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  serialize: JSON.stringify,
+  parse: (stored) => {
+    const parsed = parseJsonText(stored);
+    return parsed === undefined ? undefined : normalizeEditorOrder(parsed);
+  },
+  hydrate: (order) => (order?.length ? setEditorOrder(order) : null),
+  persistOn: [setEditorOrder, fetchEditorsSuccess],
+  *select() {
+    return yield* selectEditorOrder.effect();
+  },
+};
 
-function* persistHiddenEditorIdsWorker(): SagaGenerator<void> {
-  const hiddenEditorIds = yield* selectHiddenEditorIds.effect();
-  yield* call(setLocalStorageItem, HIDDEN_EDITORS_STORAGE_KEY, JSON.stringify(hiddenEditorIds));
-}
-
-function* persistEditorOrderWorker(): SagaGenerator<void> {
-  const editorOrder = yield* selectEditorOrder.effect();
-  yield* call(setLocalStorageItem, EDITOR_ORDER_STORAGE_KEY, JSON.stringify(editorOrder));
-}
-
-function* watchExternalEditorPersistence(): SagaGenerator<void> {
-  yield* takeEvery(setOpenAction, persistOpenActionWorker);
-  yield* takeEvery(toggleHiddenEditor, persistHiddenEditorIdsWorker);
-  yield* takeEvery(setEditorOrder, persistEditorOrderWorker);
-  yield* takeEvery(fetchEditorsSuccess, persistEditorOrderWorker);
-}
+/** Not loaded at boot; a choice is saved, and other open views follow it. */
+const openActionPreference: SharedPreferenceSagaOptions<string> = {
+  key: OPEN_ACTION_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (typeof stored === 'string' && stored ? stored : undefined),
+  hydrate: (openAction, source) =>
+    source === 'storage' && openAction !== undefined ? setOpenAction(openAction) : null,
+  persistOn: setOpenAction,
+  select: (action) => {
+    const [openAction] = (action as ReturnType<typeof setOpenAction>).payload;
+    return typeof openAction === 'string' ? openAction : undefined;
+  },
+};
 
 /** Unregistered until the S20 middleware cutover. */
 export function* externalEditorsPersistenceSaga(): SagaGenerator<void> {
-  yield* call(hydrateHiddenEditorIdsWorker);
-  yield* call(hydrateEditorOrderWorker);
-  yield* fork(watchExternalEditorPersistence);
+  yield* sharedPreferenceSaga(hiddenEditorsPreference);
+  yield* sharedPreferenceSaga(editorOrderPreference);
+  yield* sharedPreferenceSaga(openActionPreference);
 }

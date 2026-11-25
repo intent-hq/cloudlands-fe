@@ -112,6 +112,32 @@ describe('sidebarNavSaga', () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('follows pins saved by another view of the same host only', async () => {
+    storage.getJSON.mockReturnValue(undefined);
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => remoteCurrent },
+      sidebarNavSaga,
+    );
+    await settle();
+    dispatch.mockClear();
+    storage.setJSON.mockClear();
+
+    storage.getJSON.mockImplementation((key: string) => {
+      if (key === REMOTE_PINNED_KEY) return ['ws-9'];
+      if (key === PINNED_WORKSPACES_KEY) return ['ws-local'];
+      return undefined;
+    });
+    window.dispatchEvent(new StorageEvent('storage', { key: PINNED_WORKSPACES_KEY }));
+    window.dispatchEvent(new StorageEvent('storage', { key: REMOTE_PINNED_KEY }));
+    await settle();
+
+    expect(dispatch.mock.calls).toEqual([[hydrateSidebarNav({ pinnedWorkspaceIds: ['ws-9'] })]]);
+    expect(storage.setJSON.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('ignores malformed storage', async () => {
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return 'bad';

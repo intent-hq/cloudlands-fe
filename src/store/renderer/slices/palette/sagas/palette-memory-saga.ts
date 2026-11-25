@@ -1,10 +1,14 @@
-import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   namespaceBackendKey,
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
-import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import { getLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import {
+  watchSharedPreference,
+  type SharedPreferenceSagaOptions,
+} from '../../../utils/shared-preference-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { deserializePaletteMemory, serializePaletteMemory } from '../palette-normalization';
 import { selectPaletteMemorySnapshot } from '../palette-selectors';
@@ -35,19 +39,22 @@ function* loadMemory(backendId: string, mode: LoadMode): SagaGenerator<void> {
   yield* put(paletteMemoryLoaded(deserializePaletteMemory(stored, Date.now()), mode));
 }
 
-function* persistMemory(): SagaGenerator<void> {
-  try {
-    const backendId = yield* selectActiveBackendId();
-    const palette = yield* selectPaletteMemorySnapshot.effect();
-    yield* call(
-      setLocalStorageJSON,
-      namespaceBackendKey(PALETTE_MEMORY_STORAGE_KEY, backendId),
-      serializePaletteMemory(palette),
-    );
-  } catch {
-    // Storage failures are non-fatal and must not stop the watcher.
-  }
-}
+/** Saves this daemon's memory, and merges what another view of the same daemon saved. */
+const paletteMemoryPreference: SharedPreferenceSagaOptions<unknown> = {
+  *key() {
+    return namespaceBackendKey(PALETTE_MEMORY_STORAGE_KEY, yield* selectActiveBackendId());
+  },
+  scope: 'host',
+  parse: (stored) => stored,
+  hydrate: (stored, source) =>
+    source === 'storage' && stored !== undefined
+      ? paletteMemoryLoaded(deserializePaletteMemory(stored, Date.now()), 'merge')
+      : null,
+  persistOn: PERSIST_ACTIONS,
+  *select() {
+    return serializePaletteMemory(yield* selectPaletteMemorySnapshot.effect());
+  },
+};
 
 function* watchBackendSwitch(): SagaGenerator<void> {
   let lastBackendId = yield* selectActiveBackendId();
@@ -64,5 +71,5 @@ function* watchBackendSwitch(): SagaGenerator<void> {
 export function* paletteMemorySaga(): SagaGenerator<void> {
   yield* call(loadMemory, yield* selectActiveBackendId(), 'merge' as LoadMode);
   yield* fork(watchBackendSwitch);
-  yield* takeEvery(PERSIST_ACTIONS, persistMemory);
+  yield* watchSharedPreference(paletteMemoryPreference);
 }

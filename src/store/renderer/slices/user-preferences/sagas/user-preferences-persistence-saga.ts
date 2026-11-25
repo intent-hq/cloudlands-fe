@@ -1,22 +1,30 @@
 import { dockShortcutSettingsSaga } from './dock-shortcut-settings-saga';
 import { isDockShortcutId } from '$shared/dock-shortcut-settings';
+import type { Action, ActionPattern } from '@redux-saga/types';
 import { buffers, channel } from 'redux-saga';
-import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
+import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { agentRulesSaga } from './agent-rules-saga';
 
 import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
-import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
-import { isChatContentWidth } from '$shared/chat-content-width';
+import {
+  isGithubLinkDefaultAction,
+  type GithubLinkDefaultAction,
+} from '$shared/utils/link-helpers';
+import { isChatContentWidth, type ChatContentWidth } from '$shared/chat-content-width';
 import {
   namespaceBackendKey,
   selectActiveBackendId,
 } from '$store/renderer/utils/backend-storage-namespace';
+import { getLocalStorageJSON } from '$store/renderer/utils/safe-local-storage-saga';
 import {
-  getLocalStorageJSON,
-  setLocalStorageJSON,
-} from '$store/renderer/utils/safe-local-storage-saga';
+  hydrateSharedPreference,
+  isSharedPreferenceHydration,
+  persistSharedPreference,
+  watchSharedPreference,
+  type SharedPreferenceSagaOptions,
+} from '$store/renderer/utils/shared-preference-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectActivityLogPresets,
@@ -147,17 +155,6 @@ function validNoteFont(value: unknown): value is { fontStyle: NoteFontStyle } {
   return validAgentFont(value) || (hasFontStyle(value) && value.fontStyle === 'serif');
 }
 
-/**
- * `workspace-list:completedProviderSetup` is backend-scoped: the flag answers
- * "has provider setup been completed on THIS backend", so the local machine's
- * value must not leak into remote-backend sessions. The local sidecar keeps
- * the bare legacy key; remote backends get the `backend:<id>:` prefix.
- */
-function* providerSetupStorageKey() {
-  const backendId = yield* selectActiveBackendId();
-  return namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, backendId);
-}
-
 function parseSystemFontsResponse(response: unknown): string[] | null {
   if (typeof response !== 'object' || response === null) return null;
   const { success, data } = response as ListSystemFontsResponse;
@@ -181,171 +178,304 @@ export function* loadSystemFontsWorker() {
   if (fonts !== null) yield* put(setSystemFonts(fonts));
 }
 
-export function* hydrateUserPreferencesWorker() {
-  const spellcheck = yield* getLocalStorageJSON<{ enabled: boolean }>(SPELLCHECK_STORAGE_KEY);
-  if (typeof spellcheck?.enabled === 'boolean')
-    yield* put(setSpellcheckEnabled(spellcheck.enabled));
+/** One persisted preference: its boot load, and its save and cross-view watchers. */
+interface PersistedPreference {
+  hydrate: () => SagaGenerator<void>;
+  watch: () => SagaGenerator<void>;
+}
 
-  const showArchived = yield* getLocalStorageJSON<boolean>(SHOW_ARCHIVED_STORAGE_KEY);
-  if (typeof showArchived === 'boolean') yield* put(setShowArchived(showArchived));
+function persisted<T>(options: SharedPreferenceSagaOptions<T>): PersistedPreference {
+  return {
+    hydrate: () => hydrateSharedPreference(options),
+    watch: () => watchSharedPreference(options),
+  };
+}
 
-  const groupByRepo = yield* getLocalStorageJSON<boolean>(GROUP_BY_REPO_STORAGE_KEY);
-  if (typeof groupByRepo === 'boolean') yield* put(setGroupByRepo(groupByRepo));
+const parseBoolean = (stored: unknown): boolean | undefined =>
+  typeof stored === 'boolean' ? stored : undefined;
 
-  const setupBackendId = yield* selectActiveBackendId();
-  const providerSetup = yield* getLocalStorageJSON<boolean>(
-    namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, setupBackendId),
-  );
-  if (setupBackendId === (yield* selectActiveBackendId())) {
-    if (typeof providerSetup === 'boolean') yield* put(setHasCompletedProviderSetup(providerSetup));
-    yield* put(providerSetupHydrated(setupBackendId, providerSetup === true));
-  }
+/** A boolean saved as bare JSON under one key for every host view of this app. */
+function booleanPreference(
+  key: string,
+  set: (value: boolean) => Action,
+  persistOn: ActionPattern,
+  select: () => SagaGenerator<boolean | undefined>,
+): PersistedPreference {
+  return persisted<boolean>({
+    key,
+    scope: 'app',
+    parse: parseBoolean,
+    hydrate: (value) => (value === undefined ? null : set(value)),
+    persistOn,
+    select,
+  });
+}
 
-  const showReasoningBlocks = yield* getLocalStorageJSON<boolean>(
+/**
+ * `workspace-list:completedProviderSetup` is backend-scoped: the flag answers
+ * "has provider setup been completed on THIS backend", so the local machine's
+ * value must not leak into remote-backend sessions. The local sidecar keeps
+ * the bare legacy key; remote backends get the `backend:<id>:` prefix.
+ */
+const providerSetupPreference: SharedPreferenceSagaOptions<boolean> = {
+  *key() {
+    return namespaceBackendKey(
+      COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
+      yield* selectActiveBackendId(),
+    );
+  },
+  scope: 'host',
+  parse: parseBoolean,
+  *hydrate(completed, source) {
+    const backendId = yield* selectActiveBackendId();
+    const hydrated = providerSetupHydrated(backendId, completed === true);
+    if (source === 'storage') return [setHasCompletedProviderSetup(completed === true), hydrated];
+    return completed === undefined
+      ? [hydrated]
+      : [setHasCompletedProviderSetup(completed), hydrated];
+  },
+  persistOn: [setHasCompletedProviderSetup, toggleHasCompletedProviderSetup],
+  *select() {
+    return yield* selectHasCompletedProviderSetup.effect();
+  },
+};
+
+/** Saved by `watchLanguagePreferenceWrites`, which also applies the locale. */
+const languagePreference: SharedPreferenceSagaOptions<string> = {
+  key: LANGUAGE_PREFERENCE_STORAGE_KEY,
+  scope: 'app',
+  parse: (stored) => (typeof stored === 'string' && stored.trim() ? stored : undefined),
+  hydrate: (language) => (language === undefined ? null : setLanguagePreference(language)),
+  *select() {
+    return yield* selectLanguagePreference.effect();
+  },
+};
+
+// Multiplayer is always on: a saved `labs:multiplayerEnabled` is neither read nor written.
+// It is left in place so an older build sharing this storage keeps its own choice.
+// GitLab is always on too: a saved `labs:gitlabEnabled` is likewise ignored and left in place.
+
+/** In boot-load order. */
+const PREFERENCES: readonly PersistedPreference[] = [
+  persisted<{ enabled: boolean }>({
+    key: SPELLCHECK_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => {
+      const enabled = (stored as { enabled?: unknown } | null)?.enabled;
+      return typeof enabled === 'boolean' ? { enabled } : undefined;
+    },
+    hydrate: (value) => (value === undefined ? null : setSpellcheckEnabled(value.enabled)),
+    persistOn: [setSpellcheckEnabled, toggleSpellcheck],
+    *select() {
+      return { enabled: yield* selectSpellcheckEnabled.effect() };
+    },
+  }),
+  booleanPreference(
+    SHOW_ARCHIVED_STORAGE_KEY,
+    setShowArchived,
+    [setShowArchived, toggleShowArchived],
+    function* () {
+      return yield* selectShowArchived.effect();
+    },
+  ),
+  booleanPreference(
+    GROUP_BY_REPO_STORAGE_KEY,
+    setGroupByRepo,
+    [setGroupByRepo, toggleGroupByRepo],
+    function* () {
+      return yield* selectGroupByRepo.effect();
+    },
+  ),
+  persisted(providerSetupPreference),
+  booleanPreference(
     SHOW_REASONING_BLOCKS_STORAGE_KEY,
-  );
-  if (typeof showReasoningBlocks === 'boolean') {
-    yield* put(setShowReasoningBlocks(showReasoningBlocks));
-  }
-
-  const chatAuroraEnabled = yield* getLocalStorageJSON<boolean>(CHAT_AURORA_STORAGE_KEY);
-  if (typeof chatAuroraEnabled === 'boolean') {
-    yield* put(setChatAuroraEnabled(chatAuroraEnabled));
-  }
-
-  const chatContentWidth = yield* getLocalStorageJSON<unknown>(CHAT_CONTENT_WIDTH_STORAGE_KEY);
-  if (isChatContentWidth(chatContentWidth)) {
-    yield* put(setChatContentWidth(chatContentWidth));
-  }
-
-  const collapseToolRuns = yield* getLocalStorageJSON<boolean>(COLLAPSE_TOOL_RUNS_STORAGE_KEY);
-  if (typeof collapseToolRuns === 'boolean') {
-    yield* put(setCollapseToolRuns(collapseToolRuns));
-  }
-
-  const shellTransparencyEnabled = yield* getLocalStorageJSON<boolean>(
+    setShowReasoningBlocks,
+    [setShowReasoningBlocks, toggleShowReasoningBlocks],
+    function* () {
+      return yield* selectShowReasoningBlocks.effect();
+    },
+  ),
+  booleanPreference(
+    CHAT_AURORA_STORAGE_KEY,
+    setChatAuroraEnabled,
+    [setChatAuroraEnabled, toggleChatAurora],
+    function* () {
+      return yield* selectChatAuroraEnabled.effect();
+    },
+  ),
+  persisted<ChatContentWidth>({
+    key: CHAT_CONTENT_WIDTH_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => (isChatContentWidth(stored) ? stored : undefined),
+    hydrate: (width) => (width === undefined ? null : setChatContentWidth(width)),
+    persistOn: setChatContentWidth,
+    *select() {
+      return yield* selectChatContentWidth.effect();
+    },
+  }),
+  booleanPreference(
+    COLLAPSE_TOOL_RUNS_STORAGE_KEY,
+    setCollapseToolRuns,
+    [setCollapseToolRuns, toggleCollapseToolRuns],
+    function* () {
+      return yield* selectCollapseToolRuns.effect();
+    },
+  ),
+  booleanPreference(
     SHELL_TRANSPARENCY_STORAGE_KEY,
-  );
-  if (typeof shellTransparencyEnabled === 'boolean') {
-    yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
-  }
-
-  const menuBarAutoHide = yield* getLocalStorageJSON<boolean>(MENU_BAR_AUTO_HIDE_STORAGE_KEY);
-  if (typeof menuBarAutoHide === 'boolean') {
-    yield* put(setMenuBarAutoHide(menuBarAutoHide));
-  }
-
-  const reduceMotionOnBattery = yield* getLocalStorageJSON<boolean>(
+    setShellTransparencyEnabled,
+    [setShellTransparencyEnabled, toggleShellTransparency],
+    function* () {
+      return yield* selectShellTransparencyEnabled.effect();
+    },
+  ),
+  booleanPreference(
+    MENU_BAR_AUTO_HIDE_STORAGE_KEY,
+    setMenuBarAutoHide,
+    [setMenuBarAutoHide, toggleMenuBarAutoHide],
+    function* () {
+      return yield* selectMenuBarAutoHide.effect();
+    },
+  ),
+  booleanPreference(
     REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
-  );
-  if (typeof reduceMotionOnBattery === 'boolean') {
-    yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
-  }
-
-  const pauseAnimationsWhenUnfocused = yield* getLocalStorageJSON<boolean>(
+    setReduceMotionOnBattery,
+    [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
+    function* () {
+      return yield* selectReduceMotionOnBattery.effect();
+    },
+  ),
+  booleanPreference(
     PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY,
-  );
-  if (typeof pauseAnimationsWhenUnfocused === 'boolean') {
-    yield* put(setPauseAnimationsWhenUnfocused(pauseAnimationsWhenUnfocused));
-  }
-
-  const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
+    setPauseAnimationsWhenUnfocused,
+    [setPauseAnimationsWhenUnfocused, togglePauseAnimationsWhenUnfocused],
+    function* () {
+      return yield* selectPauseAnimationsWhenUnfocused.effect();
+    },
+  ),
+  booleanPreference(
     LABS_SETTINGS_VISIBLE_STORAGE_KEY,
-  );
-  if (typeof labsSettingsVisible === 'boolean') {
-    yield* put(setLabsSettingsVisible(labsSettingsVisible));
-  }
-
-  // Multiplayer is always on: a saved `labs:multiplayerEnabled` is neither read nor written.
-  // It is left in place so an older build sharing this storage keeps its own choice.
-  // GitLab is always on too: a saved `labs:gitlabEnabled` is likewise ignored and left in place.
-
-  const labsRemoteAgentsEnabled = yield* getLocalStorageJSON<boolean>(
+    setLabsSettingsVisible,
+    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
+    function* () {
+      return yield* selectLabsSettingsVisible.effect();
+    },
+  ),
+  booleanPreference(
     LABS_REMOTE_AGENTS_STORAGE_KEY,
-  );
-  if (typeof labsRemoteAgentsEnabled === 'boolean') {
-    yield* put(setLabsRemoteAgentsEnabled(labsRemoteAgentsEnabled));
-  }
-
-  const labsPlainFolderWorkspacesEnabled = yield* getLocalStorageJSON<boolean>(
+    setLabsRemoteAgentsEnabled,
+    [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
+    function* () {
+      return yield* selectLabsRemoteAgentsEnabled.effect();
+    },
+  ),
+  booleanPreference(
     LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
-  );
-  if (typeof labsPlainFolderWorkspacesEnabled === 'boolean') {
-    yield* put(setLabsPlainFolderWorkspacesEnabled(labsPlainFolderWorkspacesEnabled));
-  }
-
-  const labsTabGroupsEnabled = yield* getLocalStorageJSON<boolean>(LABS_TAB_GROUPS_STORAGE_KEY);
-  if (typeof labsTabGroupsEnabled === 'boolean') {
-    yield* put(setLabsTabGroupsEnabled(labsTabGroupsEnabled));
-  }
-
-  const labsSshMachineSetupEnabled = yield* getLocalStorageJSON<boolean>(
+    setLabsPlainFolderWorkspacesEnabled,
+    [setLabsPlainFolderWorkspacesEnabled, toggleLabsPlainFolderWorkspaces],
+    function* () {
+      return yield* selectLabsPlainFolderWorkspacesEnabled.effect();
+    },
+  ),
+  booleanPreference(
+    LABS_TAB_GROUPS_STORAGE_KEY,
+    setLabsTabGroupsEnabled,
+    [setLabsTabGroupsEnabled, toggleLabsTabGroups],
+    function* () {
+      return yield* selectLabsTabGroupsEnabled.effect();
+    },
+  ),
+  booleanPreference(
     LABS_SSH_MACHINE_SETUP_STORAGE_KEY,
-  );
-  if (typeof labsSshMachineSetupEnabled === 'boolean') {
-    yield* put(setLabsSshMachineSetupEnabled(labsSshMachineSetupEnabled));
-  }
+    setLabsSshMachineSetupEnabled,
+    [setLabsSshMachineSetupEnabled, toggleLabsSshMachineSetup],
+    function* () {
+      return yield* selectLabsSshMachineSetupEnabled.effect();
+    },
+  ),
+  persisted<{ fontStyle: FontStyle }>({
+    key: AGENT_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => (validAgentFont(stored) ? { fontStyle: stored.fontStyle } : undefined),
+    hydrate: (font) => (font === undefined ? null : setAgentFontStyle(font.fontStyle)),
+    persistOn: [setAgentFontStyle],
+    *select() {
+      return { fontStyle: yield* selectAgentFontStyle.effect() };
+    },
+  }),
+  persisted<{ fontStyle: NoteFontStyle }>({
+    key: NOTE_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => (validNoteFont(stored) ? { fontStyle: stored.fontStyle } : undefined),
+    hydrate: (font) => (font === undefined ? null : setNoteFontStyle(font.fontStyle)),
+    persistOn: [setNoteFontStyle, cycleNoteFontStyle],
+    *select() {
+      return { fontStyle: yield* selectNoteFontStyle.effect() };
+    },
+  }),
+  persisted<{ fontFamily: string }>({
+    key: CODE_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => {
+      const fontFamily = (stored as { fontFamily?: unknown } | null)?.fontFamily;
+      return typeof fontFamily === 'string' && fontFamily.trim() ? { fontFamily } : undefined;
+    },
+    hydrate: (font) => (font === undefined ? null : setCodeFontFamily(font.fontFamily)),
+    persistOn: setCodeFontFamily,
+    *select() {
+      return { fontFamily: yield* selectCodeFontFamily.effect() };
+    },
+  }),
+  persisted<ActivityLogPresetPreference[]>({
+    key: ACTIVITY_LOG_PRESETS_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) =>
+      Array.isArray(stored) &&
+      stored.every(
+        (preset) =>
+          preset &&
+          typeof preset === 'object' &&
+          typeof preset.name === 'string' &&
+          typeof preset.filters === 'object',
+      )
+        ? (stored as ActivityLogPresetPreference[])
+        : undefined,
+    hydrate: (presets) => (presets === undefined ? null : hydrateActivityLogPresets(presets)),
+    persistOn: [saveActivityLogPreset, deleteActivityLogPreset],
+    *select() {
+      return yield* selectActivityLogPresets.effect();
+    },
+  }),
+  persisted(languagePreference),
+  persisted<GithubLinkDefaultAction>({
+    key: GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => (isGithubLinkDefaultAction(stored) ? stored : undefined),
+    hydrate: (action) => (action === undefined ? null : setGithubLinkDefaultAction(action)),
+    persistOn: setGithubLinkDefaultAction,
+    *select() {
+      return yield* selectGithubLinkDefaultAction.effect();
+    },
+  }),
+  persisted<unknown>({
+    key: SHORTCUT_OVERRIDES_STORAGE_KEY,
+    scope: 'app',
+    parse: (stored) => stored,
+    hydrate: (overrides) => (overrides === undefined ? null : hydrateShortcutOverrides(overrides)),
+    persistOn: [setShortcutOverride, resetShortcutOverride, resetAllShortcutOverrides],
+    *select() {
+      return Object.fromEntries(
+        Object.entries(yield* selectShortcutOverrides.effect()).filter(
+          ([id]) => !isDockShortcutId(id),
+        ),
+      );
+    },
+  }),
+];
 
-  const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
-  if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
-
-  const noteFont = yield* getLocalStorageJSON<unknown>(NOTE_STORAGE_KEY);
-  if (validNoteFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
-
-  const codeFont = yield* getLocalStorageJSON<{ fontFamily?: unknown }>(CODE_STORAGE_KEY);
-  if (typeof codeFont?.fontFamily === 'string' && codeFont.fontFamily.trim()) {
-    yield* put(setCodeFontFamily(codeFont.fontFamily));
-  }
-
-  const presets = yield* getLocalStorageJSON<ActivityLogPresetPreference[]>(
-    ACTIVITY_LOG_PRESETS_STORAGE_KEY,
-  );
-  if (
-    Array.isArray(presets) &&
-    presets.every(
-      (preset) =>
-        preset &&
-        typeof preset === 'object' &&
-        typeof preset.name === 'string' &&
-        typeof preset.filters === 'object',
-    )
-  ) {
-    yield* put(hydrateActivityLogPresets(presets));
-  }
-
-  const language = yield* getLocalStorageJSON<string>(LANGUAGE_PREFERENCE_STORAGE_KEY);
-  if (typeof language === 'string' && language.trim()) yield* put(setLanguagePreference(language));
-
-  const githubLinkDefaultAction = yield* getLocalStorageJSON<unknown>(
-    GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
-  );
-  if (isGithubLinkDefaultAction(githubLinkDefaultAction)) {
-    yield* put(setGithubLinkDefaultAction(githubLinkDefaultAction));
-  }
-
-  const shortcutOverrides = yield* getLocalStorageJSON<unknown>(SHORTCUT_OVERRIDES_STORAGE_KEY);
-  if (shortcutOverrides !== undefined) yield* put(hydrateShortcutOverrides(shortcutOverrides));
+export function* hydrateUserPreferencesWorker() {
+  for (const preference of PREFERENCES) yield* preference.hydrate();
   yield* put(userPreferencesHydrated());
-}
-
-function* persistSpellcheckWorker() {
-  const enabled = yield* selectSpellcheckEnabled.effect();
-  yield* setLocalStorageJSON(SPELLCHECK_STORAGE_KEY, { enabled });
-}
-
-function* persistShowArchivedWorker() {
-  yield* setLocalStorageJSON(SHOW_ARCHIVED_STORAGE_KEY, yield* selectShowArchived.effect());
-}
-
-function* persistGroupByRepoWorker() {
-  yield* setLocalStorageJSON(GROUP_BY_REPO_STORAGE_KEY, yield* selectGroupByRepo.effect());
-}
-
-function* persistProviderSetupWorker() {
-  yield* setLocalStorageJSON(
-    yield* providerSetupStorageKey(),
-    yield* selectHasCompletedProviderSetup.effect(),
-  );
 }
 
 /**
@@ -371,116 +501,6 @@ function* watchBackendForProviderSetup() {
   });
 }
 
-function* persistShowReasoningBlocksWorker() {
-  yield* setLocalStorageJSON(
-    SHOW_REASONING_BLOCKS_STORAGE_KEY,
-    yield* selectShowReasoningBlocks.effect(),
-  );
-}
-
-function* persistChatAuroraWorker() {
-  yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
-}
-
-function* persistChatContentWidthWorker() {
-  yield* setLocalStorageJSON(
-    CHAT_CONTENT_WIDTH_STORAGE_KEY,
-    yield* selectChatContentWidth.effect(),
-  );
-}
-
-function* persistCollapseToolRunsWorker() {
-  yield* setLocalStorageJSON(
-    COLLAPSE_TOOL_RUNS_STORAGE_KEY,
-    yield* selectCollapseToolRuns.effect(),
-  );
-}
-
-function* persistShellTransparencyWorker() {
-  yield* setLocalStorageJSON(
-    SHELL_TRANSPARENCY_STORAGE_KEY,
-    yield* selectShellTransparencyEnabled.effect(),
-  );
-}
-
-function* persistMenuBarAutoHideWorker() {
-  yield* setLocalStorageJSON(MENU_BAR_AUTO_HIDE_STORAGE_KEY, yield* selectMenuBarAutoHide.effect());
-}
-
-function* persistReduceMotionOnBatteryWorker() {
-  yield* setLocalStorageJSON(
-    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
-    yield* selectReduceMotionOnBattery.effect(),
-  );
-}
-
-function* persistPauseAnimationsWhenUnfocusedWorker() {
-  yield* setLocalStorageJSON(
-    PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY,
-    yield* selectPauseAnimationsWhenUnfocused.effect(),
-  );
-}
-
-function* persistLabsSettingsVisibilityWorker() {
-  yield* setLocalStorageJSON(
-    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
-    yield* selectLabsSettingsVisible.effect(),
-  );
-}
-
-function* persistLabsRemoteAgentsWorker() {
-  yield* setLocalStorageJSON(
-    LABS_REMOTE_AGENTS_STORAGE_KEY,
-    yield* selectLabsRemoteAgentsEnabled.effect(),
-  );
-}
-
-function* persistLabsSshMachineSetupWorker() {
-  yield* setLocalStorageJSON(
-    LABS_SSH_MACHINE_SETUP_STORAGE_KEY,
-    yield* selectLabsSshMachineSetupEnabled.effect(),
-  );
-}
-
-function* persistLabsTabGroupsWorker() {
-  yield* setLocalStorageJSON(
-    LABS_TAB_GROUPS_STORAGE_KEY,
-    yield* selectLabsTabGroupsEnabled.effect(),
-  );
-}
-
-function* persistLabsPlainFolderWorkspacesWorker() {
-  yield* setLocalStorageJSON(
-    LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
-    yield* selectLabsPlainFolderWorkspacesEnabled.effect(),
-  );
-}
-
-function* persistAgentFontWorker() {
-  yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
-    fontStyle: yield* selectAgentFontStyle.effect(),
-  });
-}
-
-function* persistNoteFontWorker() {
-  yield* setLocalStorageJSON(NOTE_STORAGE_KEY, {
-    fontStyle: yield* selectNoteFontStyle.effect(),
-  });
-}
-
-function* persistCodeFontWorker() {
-  yield* setLocalStorageJSON(CODE_STORAGE_KEY, {
-    fontFamily: yield* selectCodeFontFamily.effect(),
-  });
-}
-
-function* persistActivityLogPresetsWorker() {
-  yield* setLocalStorageJSON(
-    ACTIVITY_LOG_PRESETS_STORAGE_KEY,
-    yield* selectActivityLogPresets.effect(),
-  );
-}
-
 async function syncLanguagePreference(preference: string): Promise<void> {
   if (!isElectron() || typeof window === 'undefined' || !window.electronAPI?.invoke) return;
   try {
@@ -493,9 +513,9 @@ async function syncLanguagePreference(preference: string): Promise<void> {
 function* persistLocalLanguagePreference(action: ReturnType<typeof setLanguagePreference>) {
   const [preference] = action.payload;
   yield* call(applyLanguagePreference, preference);
-  const storedPreference = yield* selectLanguagePreference.effect();
-  yield* setLocalStorageJSON(LANGUAGE_PREFERENCE_STORAGE_KEY, storedPreference);
-  return storedPreference;
+  // A loaded value is already in storage; saving it again can overwrite a newer one.
+  if (!isSharedPreferenceHydration(action)) yield* persistSharedPreference(languagePreference);
+  return yield* selectLanguagePreference.effect();
 }
 
 export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLanguagePreference>) {
@@ -517,82 +537,9 @@ function* watchLanguagePreferenceWrites() {
   }
 }
 
-function* persistGithubLinkDefaultActionWorker() {
-  yield* setLocalStorageJSON(
-    GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY,
-    yield* selectGithubLinkDefaultAction.effect(),
-  );
-}
-
-function* persistShortcutOverridesWorker() {
-  yield* setLocalStorageJSON(
-    SHORTCUT_OVERRIDES_STORAGE_KEY,
-    Object.fromEntries(
-      Object.entries(yield* selectShortcutOverrides.effect()).filter(
-        ([id]) => !isDockShortcutId(id),
-      ),
-    ),
-  );
-}
-
 function* watchUserPreferenceWrites() {
-  yield* takeEvery([setSpellcheckEnabled, toggleSpellcheck], persistSpellcheckWorker);
-  yield* takeEvery([setShowArchived, toggleShowArchived], persistShowArchivedWorker);
-  yield* takeEvery([setGroupByRepo, toggleGroupByRepo], persistGroupByRepoWorker);
-  yield* takeEvery(
-    [setHasCompletedProviderSetup, toggleHasCompletedProviderSetup],
-    persistProviderSetupWorker,
-  );
-  yield* takeEvery(
-    [setShowReasoningBlocks, toggleShowReasoningBlocks],
-    persistShowReasoningBlocksWorker,
-  );
-  yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
-  yield* takeEvery(setChatContentWidth, persistChatContentWidthWorker);
-  yield* takeEvery([setCollapseToolRuns, toggleCollapseToolRuns], persistCollapseToolRunsWorker);
-  yield* takeEvery(
-    [setShellTransparencyEnabled, toggleShellTransparency],
-    persistShellTransparencyWorker,
-  );
-  yield* takeEvery([setMenuBarAutoHide, toggleMenuBarAutoHide], persistMenuBarAutoHideWorker);
-  yield* takeEvery(
-    [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
-    persistReduceMotionOnBatteryWorker,
-  );
-  yield* takeEvery(
-    [setPauseAnimationsWhenUnfocused, togglePauseAnimationsWhenUnfocused],
-    persistPauseAnimationsWhenUnfocusedWorker,
-  );
-  yield* takeEvery(
-    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
-    persistLabsSettingsVisibilityWorker,
-  );
-  yield* takeEvery(
-    [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
-    persistLabsRemoteAgentsWorker,
-  );
-  yield* takeEvery(
-    [setLabsPlainFolderWorkspacesEnabled, toggleLabsPlainFolderWorkspaces],
-    persistLabsPlainFolderWorkspacesWorker,
-  );
-  yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
-  yield* takeEvery(
-    [setLabsSshMachineSetupEnabled, toggleLabsSshMachineSetup],
-    persistLabsSshMachineSetupWorker,
-  );
-  yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
-  yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
-  yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
-  yield* takeEvery(
-    [saveActivityLogPreset, deleteActivityLogPreset],
-    persistActivityLogPresetsWorker,
-  );
+  for (const preference of PREFERENCES) yield* preference.watch();
   yield* fork(watchLanguagePreferenceWrites);
-  yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
-  yield* takeEvery(
-    [setShortcutOverride, resetShortcutOverride, resetAllShortcutOverrides],
-    persistShortcutOverridesWorker,
-  );
 }
 
 /** Canonical root-owned preference persistence and rules-editor orchestration. */
