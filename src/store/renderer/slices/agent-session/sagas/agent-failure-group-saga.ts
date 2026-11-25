@@ -524,7 +524,7 @@ function* runWithDialogProgress(
     }
   });
   try {
-    return yield* call(run, (outcome) => settled.put(outcome));
+    return yield* call(run, (outcome: BulkAgentOutcome) => settled.put(outcome));
   } finally {
     settled.close();
     yield* join(relay);
@@ -591,7 +591,7 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
   try {
     const outcomes = yield* call(
       runWithDialogProgress,
-      (onAgentDone) =>
+      (onAgentDone: (outcome: BulkAgentOutcome) => void) =>
         runBulkProviderSwitch(items, {
           ...bulkDeps,
           onAgentDone,
@@ -621,7 +621,7 @@ export function* retryAllFromDialog(bulkHold: BulkHold): SagaGenerator<void> {
   try {
     const outcomes = yield* call(
       runWithDialogProgress,
-      (onAgentDone) =>
+      (onAgentDone: (outcome: BulkAgentOutcome) => void) =>
         runBulkRetry(
           live.map(({ entry }) => ({ agentId: entry.agentId, workspaceId: entry.workspaceId })),
           { retry: bulkDeps.retry, onAgentDone },
