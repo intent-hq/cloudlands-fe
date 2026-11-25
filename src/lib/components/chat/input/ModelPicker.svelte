@@ -2140,7 +2140,9 @@
       baseId,
       $providerDefaultNames$,
     );
-    return providerRefProfileName(parts, $providerProfilesLoaded$) ?? providerDisplayName(providerRef);
+    return (
+      providerRefProfileName(parts, $providerProfilesLoaded$) ?? providerDisplayName(providerRef)
+    );
   }
   const profileSelectItems = $derived(
     activeProfileRefs.map((ref) => ({ value: ref, label: profileOptionLabel(ref) })),
