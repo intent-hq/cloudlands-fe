@@ -1,15 +1,13 @@
-import { call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import {
-  createChannelFromSelector,
-  takeLatestFromSelector,
-  type SelectorChannelPayload,
-} from '@themislib/themis/saga';
+import { channel, type Channel, type Task } from 'redux-saga';
+import { call, cancel, fork, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { createChannelFromSelector } from '@themislib/themis/saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   selectWorkspaceManagementDenied,
   selectWorkspacePermissionContext,
 } from '../../workspace/workspace-selectors';
 import {
+  selectPermissionRecoveryAdmission,
   selectPermissionRecoveryAgents,
   selectPermissionRecoveryScope,
 } from '../permission-selectors';
@@ -22,9 +20,15 @@ import {
 } from '../permission-slice';
 
 /** Recover once per admitted subscription; live events own subsequent updates. */
-function* recoverPendingPermissions(): SagaGenerator<void> {
-  const context = yield* selectPermissionRecoveryScope.effect();
-  if (!context) return;
+function* recoverPendingPermissions(
+  readSettled: Channel<number>,
+  generation: number,
+): SagaGenerator<void> {
+  const context = yield* selectPermissionRecoveryAdmission.effect();
+  if (!context) {
+    yield* put(readSettled, generation);
+    return;
+  }
   const pending = new Map<string, PermissionRequest>();
   const changedDuringRead = new Set<string>();
   let reading = true;
@@ -48,7 +52,7 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
       'agent.pendingPermissions',
       {},
     );
-    if (context !== (yield* selectPermissionRecoveryScope.effect())) return;
+    if (context !== (yield* selectPermissionRecoveryAdmission.effect())) return;
     if (
       !Array.isArray(result.requests) ||
       result.requests.some(
@@ -74,13 +78,14 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
   } finally {
     reading = false;
     changedDuringRead.clear();
+    yield* put(readSettled, generation);
   }
 
   const identities = yield* createChannelFromSelector(selectPermissionRecoveryAgents);
   try {
     while (true) {
       yield* take(identities);
-      if (context !== (yield* selectPermissionRecoveryScope.effect())) return;
+      if (context !== (yield* selectPermissionRecoveryAdmission.effect())) return;
       const agents = yield* selectAgentSessionsById.effect();
       const recovered: PermissionRequest[] = [];
       for (const request of pending.values()) {
@@ -103,11 +108,67 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
   }
 }
 
+type RecoveryScope = { context: string; workspaceIds: Set<string> };
+
+function parseScope(payload: string | null): RecoveryScope | null {
+  if (!payload) return null;
+  const [context, workspaceIds] = JSON.parse(payload) as [string, string[]];
+  return { context, workspaceIds: new Set(workspaceIds) };
+}
+
+/**
+ * One snapshot per admission. A later management grant needs a fresh read, but
+ * a cancelled read is already on the wire, so grants that land while a read is
+ * in flight coalesce into a single trailing read instead of one RPC per row.
+ * Revocations need no read: confirmed denial drops cached prompts locally.
+ */
 export function* permissionRecoverySaga(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(
-    selectPermissionRecoveryScope,
-    function* ({ payload }: SelectorChannelPayload<string | null>) {
-      if (payload) yield* call(recoverPendingPermissions);
-    },
-  );
+  const scopes = yield* createChannelFromSelector(selectPermissionRecoveryScope);
+  const readSettled = channel<number>();
+  let task: Task | null = null;
+  let generation = 0;
+  let reading = false;
+  let trailing = false;
+  let covered: RecoveryScope | null = null;
+  function* start(scope: RecoveryScope): SagaGenerator<void> {
+    if (task) yield* cancel(task);
+    covered = scope;
+    reading = true;
+    trailing = false;
+    task = yield* fork(recoverPendingPermissions, readSettled, ++generation);
+  }
+  try {
+    while (true) {
+      const { scope, settled } = yield* race({
+        scope: take(scopes),
+        settled: take(readSettled),
+      });
+      if (settled !== undefined) {
+        if (settled !== generation) continue;
+        reading = false;
+        if (trailing && covered) yield* start(covered);
+        continue;
+      }
+      const next = parseScope(scope!.payload);
+      if (!next) {
+        if (task) yield* cancel(task);
+        task = null;
+        covered = null;
+        reading = trailing = false;
+        continue;
+      }
+      if (!covered || covered.context !== next.context) {
+        yield* start(next);
+        continue;
+      }
+      const gained = [...next.workspaceIds].some((id) => !covered!.workspaceIds.has(id));
+      covered = next;
+      if (!gained) continue;
+      if (reading) trailing = true;
+      else yield* start(next);
+    }
+  } finally {
+    scopes.close();
+    readSettled.close();
+  }
 }

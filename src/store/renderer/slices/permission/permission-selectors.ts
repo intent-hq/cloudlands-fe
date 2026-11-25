@@ -1,3 +1,4 @@
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import {
   selectWorkspaceAuthority,
   selectWorkspaceListLoadedForBackend,
@@ -36,17 +37,22 @@ export const selectPendingCount = store.createSelector((state, sessionId: string
   return selectRequestsForSession.select(state, sessionId).length;
 });
 
-// A current subscription and management grants own snapshots, never agent discovery.
-// Wait for capability hydration so initial list loading does not cause a second read.
-// Both recovery selectors re-run on every workspace/agent update: derive authority once.
+// A current subscription owns snapshots, never agent discovery. Wait for
+// capability hydration so initial list loading does not cause a second read.
+const recoveryListLoaded = (state: Parameters<typeof selectWorkspaceListLoadedForBackend.select>[0]) =>
+  selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId);
+
+export const selectPermissionRecoveryAdmission = store.createSelector((state) => {
+  const context = selectPrincipalActionContext.select(state);
+  return context && recoveryListLoaded(state) ? context : null;
+});
+
+// Admission plus management grants. Both recovery selectors re-run on every
+// workspace/agent update: derive authority once.
 export const selectPermissionRecoveryScope = store.createSelector((state) => {
   const authority = selectWorkspaceAuthority.select(state);
   const context = authority.actionContext;
-  if (
-    !context ||
-    !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
-  )
-    return null;
+  if (!context || !recoveryListLoaded(state)) return null;
   const workspaceIds = getItems(state.workspace.workspaces)
     .filter(
       (workspace) => workspacePermissionContext(authority, workspace.id, () => workspace) !== null,
