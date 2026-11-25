@@ -58,34 +58,36 @@
     <div class="hero-value" style:font-size="{heroFontSize(hero)}px">{hero}</div>
     {#if note}<div class="note">{note}</div>{/if}
   </div>
-  <div class="visual ring-wrap">
-    <svg class="ring" viewBox="0 0 120 120" width="132" height="132" aria-hidden="true">
-      <circle class="ring-track" cx="60" cy="60" r={RADIUS} />
-      {#if failedArc > 0}
-        <circle
-          class="ring-failed"
-          cx="60"
-          cy="60"
-          r={RADIUS}
-          stroke-dasharray="{failedArc} {CIRCUMFERENCE}"
-          stroke-dashoffset={-successArc}
-        />
-      {/if}
-      {#if successArc > 0}
-        <circle
-          class="ring-success"
-          cx="60"
-          cy="60"
-          r={RADIUS}
-          stroke-dasharray="{successArc} {CIRCUMFERENCE}"
-        />
-      {/if}
-    </svg>
-    <div class="ring-center">
-      <div class="ring-value mono">
-        {model.successRate === null ? '—' : formatShare(model.successRate)}
+  <div class="visual">
+    <div class="rate-wrap">
+      <svg class="rate-ring" viewBox="0 0 120 120" width="132" height="132" aria-hidden="true">
+        <circle class="rate-track" cx="60" cy="60" r={RADIUS} />
+        {#if failedArc > 0}
+          <circle
+            class="rate-failed"
+            cx="60"
+            cy="60"
+            r={RADIUS}
+            stroke-dasharray="{failedArc} {CIRCUMFERENCE}"
+            stroke-dashoffset={-successArc}
+          />
+        {/if}
+        {#if successArc > 0}
+          <circle
+            class="rate-success"
+            cx="60"
+            cy="60"
+            r={RADIUS}
+            stroke-dasharray="{successArc} {CIRCUMFERENCE}"
+          />
+        {/if}
+      </svg>
+      <div class="rate-center">
+        <div class="rate-value mono">
+          {model.successRate === null ? '—' : formatShare(model.successRate)}
+        </div>
+        <div class="rate-label">{m.stats_toolsCard_successRate_label()}</div>
       </div>
-      <div class="ring-label">{m.stats_toolsCard_successRate_label()}</div>
     </div>
   </div>
   <div class="grid">
@@ -109,40 +111,40 @@
 </ActivityCardFrame>
 
 <style>
-  .ring-wrap {
+  .rate-wrap {
     position: relative;
-    display: flex;
-    justify-content: center;
+    width: 132px;
+    height: 132px;
+    align-self: center;
   }
-  .ring {
+  .rate-ring {
     transform: rotate(-90deg);
   }
-  .ring circle {
+  .rate-ring circle {
     fill: none;
     stroke-width: 12;
   }
-  .ring-track {
+  .rate-track {
     stroke: hsl(var(--muted));
   }
-  .ring-success {
+  .rate-success {
     stroke: hsl(var(--success));
   }
-  .ring-failed {
+  .rate-failed {
     stroke: hsl(var(--danger));
   }
-  .ring-center {
+  .rate-center {
     position: absolute;
-    inset: 22px 0 0;
-    height: 132px;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
   }
-  .ring-value {
+  .rate-value {
     font-size: 24px;
   }
-  .ring-label {
+  .rate-label {
     font-size: 11px;
     letter-spacing: 0.14em;
     color: hsl(var(--muted-foreground));

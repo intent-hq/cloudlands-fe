@@ -125,7 +125,11 @@
     color: hsl(var(--muted-foreground));
   }
   .activity-card :global(.visual) {
-    padding: 22px 24px 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 18px 24px 0;
   }
   .activity-card :global(.legend) {
     display: flex;
@@ -163,7 +167,6 @@
     grid-template-columns: 1fr 1fr;
     gap: 17px 14px;
     padding: 22px 24px;
-    margin-top: auto;
   }
   .activity-card :global(.stat-label) {
     font-size: 11px;

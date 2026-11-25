@@ -130,7 +130,7 @@ for (const cardName of ['code', 'tools', 'team', 'streak'] as const) {
         const box = root.getBoundingClientRect();
         const issues: string[] = [];
         for (const node of root.querySelectorAll<HTMLElement>(
-          '.hero-value, .hero-sub, .note, .stat-big, .stat-small, .legend, .ring-value',
+          '.hero-value, .hero-sub, .note, .stat-big, .stat-small, .legend, .rate-value',
         )) {
           const rect = node.getBoundingClientRect();
           const text = node.textContent?.trim() ?? '';
