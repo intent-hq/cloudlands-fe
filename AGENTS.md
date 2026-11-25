@@ -4,6 +4,7 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 
 **Assistant app guide:** a user-facing change updates the affected section of
 [`packages/intentd/crates/intent-services/resources/assistant-app-guide.md`](../intentd/crates/intent-services/resources/assistant-app-guide.md)
+([on GitHub](https://github.com/intent-hq/intentd/blob/main/crates/intent-services/resources/assistant-app-guide.md))
 in the same change, coordinating the companion intentd change (also from standalone
 frontend checkouts; companion merges need not be simultaneous). Do not promote unfinished,
 Labs-only or unreleased features as normal options. Before opening a PR, record the
@@ -22,7 +23,7 @@ affected guide section or explain why there is no user-help impact. Full rule:
   target. Do not create, expand or entrench them (including new reads of an existing one);
   ephemeral component-local UI state is fine without Redux. Move toward removal with the
   [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) and
-  [`STATE_MANAGEMENT.md`](../../docs/fe/STATE_MANAGEMENT.md).
+  [`STATE_MANAGEMENT.md`](../../docs/fe/STATE_MANAGEMENT.md) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/STATE_MANAGEMENT.md)).
 - Use `pnpm`, not `npm`; create agents via `agentFactory.createAgent()`.
 
 ## UI rules
@@ -174,7 +175,7 @@ client connection is required. Use `dev:cdp` for Electron main, preload, native,
 window, or shell behavior.
 
 For remote-host lifecycle, browser, evidence, and hand-off steps, follow the monorepo
-root [`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop.
+root [`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) ([on GitHub](https://github.com/intent-hq/intent/blob/main/AGENTS.md#developing-on-a-remote-host)) loop.
 Choose `make dev-sandbox-ui` for this recipe. UI mode intentionally has no daemon bridge
 or `/__sandbox/health`; wait for its component-ready marker instead.
 
@@ -210,7 +211,7 @@ an in-process Vite server with `INTENT_UI_PREVIEW=1` and `INTENT_BUILD_TARGET=we
 `dev:ui` server, pass its root URL with `--base-url http://127.0.0.1:<DEV_PORT>`.
 Shared options (`--theme`, `--width`, `--motion`, `--scale`, `--timeout`, `--out`,
 `--allow-console-errors`), font stability and the per-harness optimizer cache are in
-[Sandbox probe and shot options](../../docs/fe/DEVELOPER_GUIDE.md#sandbox-probe-and-shot-options).
+[Sandbox probe and shot options](../../docs/fe/DEVELOPER_GUIDE.md#sandbox-probe-and-shot-options) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#sandbox-probe-and-shot-options)).
 
 `sandbox:shot` captures the complete component frame without shell chrome or scrolling.
 By default it writes
@@ -281,10 +282,10 @@ scripts/run-ct-tests.mjs --help` lists the options. The full workflow is in
 ## Dogfooding a dev FE against a daemon
 
 Start with the monorepo root
-[`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop. It owns
+[`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) ([on GitHub](https://github.com/intent-hq/intent/blob/main/AGENTS.md#developing-on-a-remote-host)) loop. It owns
 the canonical status, sandbox lifecycle, health wait, browser, evidence, and hand-off
 steps. The deeper implementation contract is in the
-[`Remote Sandbox Internals`](../../docs/fe/DEVELOPER_GUIDE.md#remote-sandbox-internals).
+[`Remote Sandbox Internals`](../../docs/fe/DEVELOPER_GUIDE.md#remote-sandbox-internals) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#remote-sandbox-internals)).
 
 ### Loop A — web build in an embedded tab (primary; renderer/UI work)
 
@@ -302,7 +303,7 @@ rather than restarting; later loads are fast.
 To land on a chosen chat or note, open `/workspace/<workspaceId>?agent=<agentId>` or
 `?note=<noteId>` (both may be combined). Do not use `/agent/<id>`: on a cold load it shows
 an empty placeholder, not the workspace chat panel. Recipe:
-[`Open a chat or note in the app sandbox`](../../docs/fe/DEVELOPER_GUIDE.md#open-a-chat-or-note-in-the-app-sandbox).
+[`Open a chat or note in the app sandbox`](../../docs/fe/DEVELOPER_GUIDE.md#open-a-chat-or-note-in-the-app-sandbox) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#open-a-chat-or-note-in-the-app-sandbox)).
 
 The bridged daemon API is unauthenticated. Keep Vite on loopback and reach it only through
 the Intent client's authenticated tunnel.
@@ -416,13 +417,13 @@ never hand-pick stages. A run stops at its first failed check; `--keep-going` st
 records every remaining check, then fails listing them all (prerequisites still stop it). Each
 check's output lands in `<record>/logs/<check id>.log`; a failure prints that path and its last
 lines, so read the log instead of rerunning the check. Receipt files and resume-credit rules:
-[Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts).
+[Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts)).
 
 It runs scoped Prettier and ESLint, related Vitest tests, colocated component tests one
 `.svelte` hop away, the changed TypeScript boundaries, knip repo-wide, `test:ui-invariants`
 for renderer changes, and `lint:architecture` for `src/`, `AGENTS.md` and
 `scripts/check-*.mjs` changes; ambiguous or high-risk files select a conservative suite.
-Lane selection in detail: [What verify:changed selects](../../docs/fe/DEVELOPER_GUIDE.md#what-verifychanged-selects).
+Lane selection in detail: [What verify:changed selects](../../docs/fe/DEVELOPER_GUIDE.md#what-verifychanged-selects) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#what-verifychanged-selects)).
 Rules that follow from it:
 
 - A suite that reads the tree from disk (directly or via the IPC source scanner) is invisible
@@ -460,8 +461,9 @@ the unit-test type baseline (`lint:test-types`) repo-wide, with no tests: the st
 The renderer is a **thin presenter** over the daemon. Correctness, business rules, and
 persistence live in `intentd`; the FE renders what the daemon sends and dispatches user
 intent back. The wire contract is the monorepo's
-[`docs/protocol/`](../../docs/protocol/README.md) (the relative link resolves in a
-monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`);
+[`docs/protocol/`](../../docs/protocol/README.md)
+([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/protocol/README.md); the relative
+link resolves only in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`);
 treat it as the single source of truth.
 
 ### Less logic on the client
@@ -692,7 +694,7 @@ evidence only; never turn their measurements into automated pass/fail baselines.
 `ct-browser` alias); install it with `node scripts/run-ct-tests.mjs --install-browsers
 chromium` and use the same `PLAYWRIGHT_BROWSERS_PATH` for install and tests. Traces use
 `retain-on-first-failure`. Pin, patch and diagnostic configs:
-[Component test browser pin](../../docs/fe/DEVELOPER_GUIDE.md#component-test-browser-pin).
+[Component test browser pin](../../docs/fe/DEVELOPER_GUIDE.md#component-test-browser-pin) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#component-test-browser-pin)).
 
 Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
 real browser can observe: functional layout/geometry, focus and keyboard handling, native
@@ -723,7 +725,7 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   Merge-queue entries touching root Playwright or Electron lifetime test/harness/config
   paths run those suites; both also run nightly. `pnpm ct:failures <run-id>` lists
   failed/flaky cases, and `nightly-browser-report.yml` files or updates `intent-hq/intent`
-  issues for nightly failures ([Nightly browser-test reporting](../../docs/fe/DEVELOPER_GUIDE.md#nightly-browser-test-reporting)).
+  issues for nightly failures: [Nightly browser-test reporting](../../docs/fe/DEVELOPER_GUIDE.md#nightly-browser-test-reporting) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#nightly-browser-test-reporting)).
 - For permitted settled-state or reduced-motion assertions, check "no animation is
   running" with the `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
   short fade caught mid-flight ejected cloudlands-fe#3651 from the merge queue.
@@ -790,7 +792,7 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   destroyed-context failure with the guard passing is a residual incident to investigate,
   never to quarantine or retry away; the _Recorder_ attaches `cdp-lifecycle.json` to the
   HTML report for it. How to read
-  both: [Component test fresh-context guard](../../docs/fe/DEVELOPER_GUIDE.md#component-test-fresh-context-guard).
+  both: [Component test fresh-context guard](../../docs/fe/DEVELOPER_GUIDE.md#component-test-fresh-context-guard) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/DEVELOPER_GUIDE.md#component-test-fresh-context-guard)).
 
 ### Testing — every feature/fix against a mock BE
 
