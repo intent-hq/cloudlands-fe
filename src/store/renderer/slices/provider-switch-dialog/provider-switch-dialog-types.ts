@@ -58,6 +58,6 @@ export interface ProviderSwitchDialogSliceState extends ProviderSwitchDialogFiel
 }
 
 /** What the dialog component renders (rows in display order). */
-export interface ProviderSwitchDialogState extends ProviderSwitchDialogFields {
+export interface ProviderSwitchDialogView extends ProviderSwitchDialogFields {
   rows: ProviderSwitchDialogRow[];
 }

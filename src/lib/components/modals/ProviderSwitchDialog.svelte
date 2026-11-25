@@ -8,14 +8,14 @@
   import type {
     ProviderSwitchDialogAgent,
     ProviderSwitchDialogRow,
-    ProviderSwitchDialogState,
+    ProviderSwitchDialogView,
   } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
   import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
-    state: ProviderSwitchDialogState;
+    state: ProviderSwitchDialogView;
     inline?: boolean;
     onSelect: (rowKey: string, target: BulkSwitchTarget) => void;
     onConfirm: () => void;

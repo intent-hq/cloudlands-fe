@@ -3,7 +3,7 @@
   import ProviderSwitchDialog from '../ProviderSwitchDialog.svelte';
   import type {
     ProviderSwitchDialogRow,
-    ProviderSwitchDialogState,
+    ProviderSwitchDialogView,
   } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
   import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
 
@@ -20,7 +20,7 @@
     onRetryAll: () => void;
   } = $props();
 
-  const closed: ProviderSwitchDialogState = {
+  const closed: ProviderSwitchDialogView = {
     open: false,
     groupKey: null,
     kind: null,
@@ -31,7 +31,7 @@
     progress: { done: 0, total: 0 },
     rows: [],
   };
-  let dialog = $state<ProviderSwitchDialogState>({ ...closed });
+  let dialog = $state<ProviderSwitchDialogView>({ ...closed });
 </script>
 
 <div class="w-88 rounded-md border bg-popover p-3" data-testid="group-toast">
