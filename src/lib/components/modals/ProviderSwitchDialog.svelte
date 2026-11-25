@@ -155,6 +155,7 @@
         <p class="text-sm text-muted-foreground">{m.agent_providerSwitch_loading_label()}</p>
       {/if}
       {#each state.rows as row (row.key)}
+        {@const summary = rowSummary(row)}
         <section
           class="grid min-w-0 gap-2"
           data-testid="provider-switch-row"
@@ -185,7 +186,6 @@
               />
             </div>
           {/if}
-          {@const summary = rowSummary(row)}
           {#if summary.length > 0}
             <p class="flex flex-wrap gap-x-1.5 text-sm" data-testid="provider-switch-summary">
               {#each summary as part, index (part.text)}
