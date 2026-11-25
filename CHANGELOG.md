@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.387.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.386.0...v2.387.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **workspace-home:** show Move home targets as one machine list ([#5048](https://github.com/intent-hq/cloudlands-fe/issues/5048)) ([2532866](https://github.com/intent-hq/cloudlands-fe/commit/25328663dd03340a83125ca0d741a03f952fa790))
+
 ## [2.386.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.385.2...v2.386.0) (2026-11-25)
 
 
