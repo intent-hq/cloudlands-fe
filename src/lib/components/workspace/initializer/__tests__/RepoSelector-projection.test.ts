@@ -156,9 +156,8 @@ function init() {
   store.dispatch(setLabsMultiplayerEnabled(true));
   admit('member');
   store.dispatch(setWorkspaceEntity(row));
-  store.dispatch(
-    setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
-  );
+  // Loaded under an earlier admission, so the picker reads its own sources.
+  store.dispatch(setWorkspaceHasLoaded(true, 'local', 'earlier-admission'));
   store.dispatch(hydrateWorkspaceInitializer({ recentRepos: [saved] }));
 }
 function hold() {
@@ -272,22 +271,17 @@ describe('RepoSelector actual store/client projection ownership', () => {
     expect(recents()).toEqual([saved]);
   });
   it.each(['owner', 'member'] as const)(
-    'unchanged %s admission publishes and merges saved history',
+    'unchanged %s admission publishes the current list without rereading it',
     async (role) => {
       admit(role);
+      if (role === 'owner') store.dispatch(setLabsMultiplayerEnabled(false));
       store.dispatch(
         setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
       );
-      if (role === 'owner') store.dispatch(setLabsMultiplayerEnabled(false));
-      const resolve = hold();
       render(RepoSelector);
-      await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
-      expect(recents()).toEqual([saved]);
-      resolve({ success: true, data: [{ ...row, title: 'fresh' }] });
-      await waitFor(() =>
-        expect(selectWorkspaceById.select(store.state, row.id)?.title).toBe('fresh'),
-      );
+      await waitFor(() => expect(recents().some((repo) => repo.path === '/stale')).toBe(true));
       expect(recents()).toContainEqual(saved);
+      expect(list).not.toHaveBeenCalled();
     },
   );
 });

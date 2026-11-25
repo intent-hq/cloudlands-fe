@@ -68,15 +68,33 @@ async function readRecentSources(stored: Workspace[] | null) {
   ] as const);
 }
 
+/**
+ * Origin URLs per repo path for one admission, shared by every picker and
+ * palette refresh. A missing origin is cached too; a new admission starts over.
+ */
+type OriginCache = { admission: string | null; urls: Map<string, Promise<string | null>> };
+
 async function readOrigins(
   client: RecentRepositoriesClient,
+  cache: OriginCache,
+  admission: string,
   paths: string[],
   gitlabInstance?: string,
 ): Promise<Map<string, RepositoryTarget | null>> {
+  if (cache.admission !== admission) {
+    cache.admission = admission;
+    cache.urls = new Map();
+  }
+  const { urls } = cache;
   return new Map(
     await Promise.all(
       paths.map(async (path) => {
-        const url = await client.git.originUrl(path);
+        let read = urls.get(path);
+        if (!read) {
+          read = client.git.originUrl(path);
+          urls.set(path, read);
+        }
+        const url = await read;
         return [
           path,
           url
@@ -108,6 +126,7 @@ function* refreshCurrent(
 
 function* refreshRecentRepositoriesWorker(
   client: RecentRepositoriesClient,
+  origins: OriginCache,
   action: ReturnType<typeof workspaceInitializerRecentReposRefreshRequested>,
 ): SagaGenerator<void> {
   const [id, requestId, admission, gitlabInstance] = action.payload;
@@ -155,9 +174,11 @@ function* refreshRecentRepositoriesWorker(
       );
     }
     if (!(yield* call(refreshCurrent, id, requestId, admission, dispatch))) return;
-    const origins = yield* call(
+    const repoOrigins = yield* call(
       readOrigins,
       client,
+      origins,
+      admission,
       recentRepositoryOriginPaths(workspaces, registryRepos),
       gitlabInstance,
     );
@@ -166,7 +187,7 @@ function* refreshRecentRepositoriesWorker(
       yield* selectWorkspaceInitializerRecentRepos.effect(),
       workspaces,
       registryRepos,
-      origins,
+      repoOrigins,
       gitlabInstance,
     );
     if (publish) yield* put(setWorkspaceInitializerRecentRepos(repos));
@@ -276,6 +297,7 @@ export function* knownReposLoadSaga() {
 }
 
 export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesClient = appClient) {
+  const origins: OriginCache = { admission: null, urls: new Map() };
   yield* all([
     call(knownReposLoadSaga),
     takeLatestInContext(
@@ -283,6 +305,7 @@ export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesCl
       (action) => action.payload[0],
       refreshRecentRepositoriesWorker,
       client,
+      origins,
     ),
     takeLatestInContext(
       workspaceInitializerDirectoryStatusRequested,
