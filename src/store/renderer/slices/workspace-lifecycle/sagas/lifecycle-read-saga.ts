@@ -203,6 +203,7 @@ import {
 import {
   bulkUpdateWorkspaceEntities,
   loadRecencyData,
+  ensureWorkspacesLoaded,
   loadWorkspacesRequested,
   refreshWorkspaceMembershipRequested,
   replaceWorkspaceList,
@@ -213,6 +214,7 @@ import {
 } from '../../workspace/workspace-slice';
 import {
   selectWorkspaceById,
+  selectWorkspaceListCurrentForAdmission,
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import {
@@ -284,10 +286,22 @@ type WorkspaceProjectionAction = ReturnType<
   | typeof workspaceDeleted
 >;
 
+/** Admission of the list read in flight; it journals events, so it satisfies ensure. */
+let workspaceListReadContext: string | null = null;
+
+function* ensureWorkspacesLoadedWorker(): SagaGenerator<void> {
+  const context = yield* selectPrincipalActionContext.effect();
+  // Principal acceptance requests the list once an admission exists.
+  if (context === null || workspaceListReadContext === context) return;
+  if (yield* selectWorkspaceListCurrentForAdmission.effect(context)) return;
+  yield* put(loadWorkspacesRequested());
+}
+
 function* refreshWorkspaces(): SagaGenerator<void> {
   const dispatch = store.dispatch;
   const backendId = yield* selectActiveBackendId();
   const context = yield* selectPrincipalActionContext.effect();
+  workspaceListReadContext = context;
   const changes = yield* actionChannel(
     [
       setWorkspaceEntity,
@@ -341,6 +355,7 @@ function* refreshWorkspaces(): SagaGenerator<void> {
       return;
     yield* put(loadRecencyData({ lastViewedAt: recentViews }));
   } finally {
+    if (workspaceListReadContext === context) workspaceListReadContext = null;
     changes.close();
   }
 }
@@ -1642,10 +1657,8 @@ function isStableWorkspaceListFailure(error: unknown): boolean {
  * Until the list has loaded for the active backend, a failed `workspace.list`
  * is retried with bounded backoff from inside the single-flight worker, so
  * the trailing-coalesce guarantee holds and reads never fan out. A
- * `backendReconnected` during the wait ends the loop early: the reconnect
- * watcher re-puts `loadWorkspacesRequested`, which either queues as this
- * worker's trailing rerun or starts a fresh one — one immediate read either
- * way. Once loaded, a later failure is logged only.
+ * `backendReconnected` during the wait skips the rest of the backoff and
+ * retries at once. Once loaded, a later failure is logged only.
  */
 function* loadWorkspacesWorker() {
   for (let attempt = 0; ; attempt++) {
@@ -1665,7 +1678,7 @@ function* loadWorkspacesWorker() {
         timeout: delay(delayMs),
         reconnected: take(backendReconnected),
       });
-      if (reconnected) return;
+      if (reconnected) continue;
     }
   }
 }
@@ -1680,7 +1693,9 @@ function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
     for (const workspaceId of yield* selectDemandedTaskWorkspaceIds.effect()) {
       yield* put(ensureWorkspaceTasksLoaded(workspaceId));
     }
-    yield* put(loadWorkspacesRequested());
+    // A new admission reloads through principal acceptance; under the same
+    // admission the subscription kept the list current.
+    yield* put(ensureWorkspacesLoaded());
     yield* call(refreshIntegrationAuthAfterReconnect);
   }
 }
@@ -1990,6 +2005,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // in flight must queue one trailing refetch — takeLeading would drop it
       // and the fetched snapshot could predate the create.
       takeSingleFlightInContext(loadWorkspacesRequested, () => 'workspaces', loadWorkspacesWorker),
+      takeEvery(ensureWorkspacesLoaded, ensureWorkspacesLoadedWorker),
       // Attention events stay subscribed while unfocused. Reconcile missed
       // events on transport recovery, not focus or console ownership changes.
       fork(backendReconnectWorkspacesWatcher),

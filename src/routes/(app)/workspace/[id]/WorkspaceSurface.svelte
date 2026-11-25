@@ -55,7 +55,7 @@
     selectPanelVisibilityFlag,
     selectSidebarSide,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
-  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { ensureWorkspacesLoaded } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     setCollapsed,
     setPanelVisibility,
@@ -300,7 +300,7 @@
     // Load workspace store if needed
     if (selectWorkspaceIsEmpty.select(appStore.state)) {
       logger.debug('Loading workspace store on mount');
-      appStore.dispatch(loadWorkspacesRequested());
+      appStore.dispatch(ensureWorkspacesLoaded());
     }
 
     // The `initial-agent-pending` sessionStorage marker is no longer stashed

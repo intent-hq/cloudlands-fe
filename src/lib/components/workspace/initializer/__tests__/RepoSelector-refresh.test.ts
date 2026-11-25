@@ -115,6 +115,14 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: mocks.selector(() => []),
+  selectWorkspaceListCurrentForAdmission: Object.assign(
+    mocks.selector(() => false),
+    {
+      *effect() {
+        return false;
+      },
+    },
+  ),
 }));
 vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', () => ({
   selectIsFeatureEnabled: mocks.selector(() => false),

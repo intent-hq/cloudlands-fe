@@ -4,6 +4,10 @@ import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects'
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import {
+  selectWorkspaceItems,
+  selectWorkspaceListCurrentForAdmission,
+} from '../../workspace/workspace-selectors';
+import {
   selectCanAdministerHost,
   selectPrincipalActionContext,
   selectWorkspaceCreationVisible,
@@ -19,6 +23,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { handleError } from '$lib/utils/error-handling';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { Workspace } from '$shared/types';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import {
@@ -53,19 +58,55 @@ async function readRegistry(): Promise<{ success: boolean; data?: KnownRepo[] } 
   }
 }
 
-async function readRecentSources() {
-  return Promise.all([workspaceClient.list({ lite: true }), readRegistry()] as const);
+/** A list already current for the admission is reused instead of read again. */
+async function readRecentSources(stored: Workspace[] | null) {
+  return Promise.all([
+    stored
+      ? { ok: true as const, data: stored, complete: true, stored: true }
+      : workspaceClient.list({ lite: true }),
+    readRegistry(),
+  ] as const);
 }
+
+/**
+ * Origin URLs per repo path, shared by picker and palette refreshes. Reads in
+ * flight are shared; a settled origin is reused only briefly, so the picker's
+ * open-then-hydrate pair reads once while a later refresh sees a changed
+ * remote. `originUrl` folds failures into `null`, so `null` is never reused.
+ */
+/** @internal Exported for the cache-expiry test. */
+export const ORIGIN_CACHE_TTL_MS = 30_000;
+
+type OriginEntry = { read: Promise<string | null>; settledAt?: number };
+type OriginCache = { admission: string | null; entries: Map<string, OriginEntry> };
 
 async function readOrigins(
   client: RecentRepositoriesClient,
+  cache: OriginCache,
+  admission: string,
   paths: string[],
   gitlabInstance?: string,
 ): Promise<Map<string, RepositoryTarget | null>> {
+  if (cache.admission !== admission) {
+    cache.admission = admission;
+    cache.entries = new Map();
+  }
+  const { entries } = cache;
   return new Map(
     await Promise.all(
       paths.map(async (path) => {
-        const url = await client.git.originUrl(path);
+        let entry = entries.get(path);
+        if (!entry || (entry.settledAt && Date.now() - entry.settledAt > ORIGIN_CACHE_TTL_MS)) {
+          const next: OriginEntry = { read: client.git.originUrl(path) };
+          entries.set(path, next);
+          entry = next;
+        }
+        const current = entry;
+        const url = await current.read;
+        if (entries.get(path) === current) {
+          if (url === null) entries.delete(path);
+          else current.settledAt ??= Date.now();
+        }
         return [
           path,
           url
@@ -97,6 +138,7 @@ function* refreshCurrent(
 
 function* refreshRecentRepositoriesWorker(
   client: RecentRepositoriesClient,
+  origins: OriginCache,
   action: ReturnType<typeof workspaceInitializerRecentReposRefreshRequested>,
 ): SagaGenerator<void> {
   const [id, requestId, admission, gitlabInstance] = action.payload;
@@ -110,7 +152,10 @@ function* refreshRecentRepositoriesWorker(
     }
     const previous = yield* selectWorkspaceInitializerRecentRepoRefresh.effect(id);
     const deletionTokens = { ...appStore.state.workspace.deletionTokens };
-    const [workspaceList, registry] = yield* call(readRecentSources);
+    const stored = (yield* selectWorkspaceListCurrentForAdmission.effect(admission))
+      ? yield* selectWorkspaceItems.effect()
+      : null;
+    const [workspaceList, registry] = yield* call(readRecentSources, stored);
     if (!(yield* call(refreshCurrent, id, requestId, admission, dispatch))) return;
     if (!workspaceList.ok && !registry?.success) {
       yield* put(
@@ -132,7 +177,7 @@ function* refreshRecentRepositoriesWorker(
     const publish =
       !(yield* selectCanAdministerHost.effect()) ||
       (yield* selectWorkspaceInitializerHydrated.effect());
-    if (workspaceList.ok && publish) {
+    if (workspaceList.ok && !('stored' in workspaceList) && publish) {
       yield* put(
         replaceWorkspaceList(workspaces, {
           complete: workspaceList.complete === true,
@@ -141,9 +186,11 @@ function* refreshRecentRepositoriesWorker(
       );
     }
     if (!(yield* call(refreshCurrent, id, requestId, admission, dispatch))) return;
-    const origins = yield* call(
+    const repoOrigins = yield* call(
       readOrigins,
       client,
+      origins,
+      admission,
       recentRepositoryOriginPaths(workspaces, registryRepos),
       gitlabInstance,
     );
@@ -152,7 +199,7 @@ function* refreshRecentRepositoriesWorker(
       yield* selectWorkspaceInitializerRecentRepos.effect(),
       workspaces,
       registryRepos,
-      origins,
+      repoOrigins,
       gitlabInstance,
     );
     if (publish) yield* put(setWorkspaceInitializerRecentRepos(repos));
@@ -262,6 +309,7 @@ export function* knownReposLoadSaga() {
 }
 
 export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesClient = appClient) {
+  const origins: OriginCache = { admission: null, entries: new Map() };
   yield* all([
     call(knownReposLoadSaga),
     takeLatestInContext(
@@ -269,6 +317,7 @@ export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesCl
       (action) => action.payload[0],
       refreshRecentRepositoriesWorker,
       client,
+      origins,
     ),
     takeLatestInContext(
       workspaceInitializerDirectoryStatusRequested,

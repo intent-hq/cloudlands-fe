@@ -47,7 +47,12 @@ import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { store } from '../../../store';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
-import { replaceWorkspaceList, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  bulkUpdateWorkspaceEntities,
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+  updateWorkspaceEntity,
+} from '../../workspace/workspace-slice';
 import { lifecycleReadSaga } from '../../workspace-lifecycle/sagas/lifecycle-read-saga';
 import {
   selectWorkspaceById,
@@ -291,6 +296,57 @@ describe('permission recovery subscription boundary', () => {
       expect(reads()).toHaveLength(2);
     },
   );
+
+  function loadUnmanagedWorkspaces(count: number): string[] {
+    const ids = Array.from({ length: count }, (_, i) => `ws-${i}`);
+    store.dispatch(replaceWorkspaceList(ids.map((id) => ({ id: WorkspaceId(id) }) as Workspace)));
+    store.dispatch(
+      setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
+    );
+    return ids;
+  }
+  function grantOneByOne(ids: string[]) {
+    for (const id of ids)
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { myRole: 'owner' })]));
+  }
+
+  it('coalesces per-row grants during the first read into one trailing read', async () => {
+    boot();
+    await settle();
+    const ids = loadUnmanagedWorkspaces(400);
+    grantOneByOne(ids);
+    await settle();
+    expect(reads()).toHaveLength(2);
+  });
+
+  it('coalesces a later burst of per-row grants into one read plus one trailing read', async () => {
+    boot();
+    await settle();
+    const ids = loadUnmanagedWorkspaces(400);
+    await settle();
+    expect(reads()).toHaveLength(1);
+    grantOneByOne(ids);
+    await settle();
+    expect(reads()).toHaveLength(3);
+  });
+
+  it('sends no read when a workspace loses management', async () => {
+    boot();
+    await settle();
+    hydrateWorkspace();
+    await settle();
+    expect(reads()).toHaveLength(1);
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity('test-workspace', { myRole: 'collaborator', canManage: false }),
+      ]),
+    );
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity('test-workspace', { myRole: undefined })]),
+    );
+    await settle();
+    expect(reads()).toHaveLength(1);
+  });
 
   async function bootGuest() {
     store.dispatch(setLabsMultiplayerEnabled(true));

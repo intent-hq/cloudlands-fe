@@ -45,7 +45,6 @@ import {
   selectWorkspaceIsCreating,
   selectWorkspaceIsEmpty,
   selectWorkspaceItems,
-  selectWorkspaceLoading,
   selectWorkspacePendingCreations,
   selectWorkspacePendingDeletions,
 } from './workspace-selectors';
@@ -1048,7 +1047,6 @@ describe('workspace selectors', () => {
       pendingCreations: { 'ws-3': makeWorkspace({ id: 'ws-3' }) },
     });
 
-    expect(selectWorkspaceLoading.select(state as any)).toBe(true);
     expect(selectWorkspaceHasLoaded.select(state as any)).toBe(true);
     expect(selectWorkspaceIsCreating.select(state as any)).toBe(true);
     expect(selectWorkspacePendingDeletions.select(state as any)).toEqual({ 'ws-1': true });

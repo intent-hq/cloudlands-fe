@@ -47,7 +47,7 @@
     hudDeactivated,
     dockPlacementCommandRequested,
   } from '$store/renderer/slices/hud/hud-slice';
-  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { ensureWorkspacesLoaded } from '$store/renderer/slices/workspace/workspace-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const disposeAppStore = startAppStoreLifecycle(appStore, import.meta.hot?.data);
@@ -129,7 +129,7 @@
     document.getElementById('dock-bootstrap-bar')?.remove();
     document.getElementById('splash')?.remove();
     document.getElementById('app-drag-region')?.remove();
-    appStore.dispatch(loadWorkspacesRequested());
+    appStore.dispatch(ensureWorkspacesLoaded());
     appStore.dispatch(dockActivated());
     const url = new URL(window.location.href);
     if (url.searchParams.has(DOCK_BACKEND_SWITCH_FAILED_QUERY)) {

@@ -32,9 +32,11 @@ import {
 import {
   selectWorkspaceHasLoaded,
   selectWorkspaceItems,
+  selectWorkspaceListCurrentForAdmission,
 } from '../../workspace/workspace-selectors';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
-  loadWorkspacesRequested,
+  ensureWorkspacesLoaded,
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '../../workspace/workspace-slice';
@@ -51,17 +53,19 @@ const WORKSPACE_REFRESH_TIMEOUT_MS = 15_000;
 const PROVIDER_CHECK_SETTLE_TIMEOUT_MS = 15_000;
 
 export function* evaluateSetupStateWorker() {
-  // Refresh the workspace list so the evaluation reads the connected
-  // backend's current state — on reconnect the cached list can predate the
-  // disconnect (e.g. workspaces removed while away). The lifecycle read saga
-  // single-flights this with any load already running, and either way its
-  // completion dispatches replaceWorkspaceList; the timeout only covers a
+  // Evaluate against a list read under the current admission: on reconnect
+  // the cached list can predate the disconnect (e.g. workspaces removed while
+  // away). A new admission reloads the list (an in-flight read is shared), and
+  // its completion dispatches replaceWorkspaceList; the timeout only covers a
   // failed read.
-  yield* put(loadWorkspacesRequested());
-  yield* race({
-    refreshed: take(replaceWorkspaceList),
-    timedOut: delay(WORKSPACE_REFRESH_TIMEOUT_MS),
-  });
+  const context = yield* selectPrincipalActionContext.effect();
+  if (!(yield* selectWorkspaceListCurrentForAdmission.effect(context))) {
+    yield* put(ensureWorkspacesLoaded());
+    yield* race({
+      refreshed: take(replaceWorkspaceList),
+      timedOut: delay(WORKSPACE_REFRESH_TIMEOUT_MS),
+    });
+  }
   while (!(yield* selectWorkspaceHasLoaded.effect())) {
     yield* take([setWorkspaceHasLoaded, replaceWorkspaceList]);
   }

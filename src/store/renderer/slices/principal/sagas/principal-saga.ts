@@ -10,7 +10,7 @@ import {
   setLabsMultiplayerEnabled,
   toggleLabsMultiplayer,
 } from '../../user-preferences/user-preferences-slice';
-import { loadWorkspacesRequested } from '../../workspace/workspace-slice';
+import { ensureWorkspacesLoaded } from '../../workspace/workspace-slice';
 import {
   hostMembershipChanged,
   principalContextChanged,
@@ -53,7 +53,7 @@ function* hydrateConnection({ payload: context }: SelectorChannelPayload<string 
         yield* put(principalReceived(read, snapshot));
         retries = 0;
         const accepted = (yield* selectPrincipalState.effect()).snapshot === snapshot;
-        if (accepted) yield* put(loadWorkspacesRequested());
+        if (accepted) yield* put(ensureWorkspacesLoaded());
       } catch (error) {
         yield* put(
           principalReadFailed(

@@ -620,7 +620,7 @@ describe('lifecycleReadSaga', () => {
       await stop(run.task);
     });
 
-    it('re-requests the workspace list on backendReconnected', async () => {
+    it('leaves a loaded list to the next admission on backendReconnected', async () => {
       const run = startWithLoopback();
       run.channel.put(loadWorkspacesRequested());
       await settle();
@@ -628,8 +628,8 @@ describe('lifecycleReadSaga', () => {
 
       run.channel.put(backendReconnected());
       await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
-      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toHaveLength(2);
+      expect(listActions(run.actions, 'workspace/ensureWorkspacesLoaded')).toHaveLength(1);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
       await stop(run.task);
     });
 
