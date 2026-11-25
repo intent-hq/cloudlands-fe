@@ -292,8 +292,8 @@ describe('moveHomeTargets', () => {
     const targets = moveHomeTargets({
       agents: [
         sandbox('a-orphan', 'sb-gone'),
-        sandbox('a-1', 'sb-1', 'e2b-team'),
         sandbox('a-2', 'sb-1', 'e2b-team'),
+        sandbox('a-1', 'sb-1', 'e2b-team'),
         sandbox('a-3', 'sb-2', 'e2b-team'),
       ],
       machineRows: [
@@ -315,9 +315,17 @@ describe('moveHomeTargets', () => {
       kind: 'agent',
       label: 'Sandbox sb-1',
       nodeId: 'sb-1',
-      agents: ['Agent a-1', 'Agent a-2'],
+      agents: ['Agent a-2', 'Agent a-1'],
       disabled: false,
     });
+  });
+
+  it('titles a sandbox without a machine name after its agent', () => {
+    const [row] = moveHomeTargets({
+      agents: [agent('a-1', { nodeId: 'sb-1' })],
+      machineRows: [],
+    });
+    expect(row).toMatchObject({ key: 'agent:a-1', label: 'Agent a-1', agents: ['Agent a-1'] });
   });
 
   it('maps every target to the documented workspace.setHome `to` shape', () => {

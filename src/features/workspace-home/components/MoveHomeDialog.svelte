@@ -64,12 +64,16 @@
   // A move started meanwhile (here or by another client): a second one is refused.
   const moving = $derived(view.state === 'moving');
 
+  // A cloud home matches both its cloud entry and its sandbox: the sandbox is the home.
+  const currentRowKey = $derived(
+    (currentNodeId !== null && options.find((option) => option.nodeId === currentNodeId)?.key) ||
+      currentKey,
+  );
+
   function description(option: MoveHomeOption): string | undefined {
     const parts = [
       homeMoveAgentsText(option.agents),
-      option.key === currentKey || (currentNodeId !== null && option.nodeId === currentNodeId)
-        ? m.workspaceHome_moveDialog_currentHome()
-        : null,
+      option.key === currentRowKey ? m.workspaceHome_moveDialog_currentHome() : null,
       option.disabled
         ? (option.reason ?? null)
         : // A cloud entry has no running machine yet: moving there starts one.

@@ -284,18 +284,22 @@ export function moveHomeTargets({
   const listed = new Set(rows.map((row) => row.id));
   const sandboxes = [...agentsByNode.entries()]
     .filter(([nodeId]) => !listed.has(nodeId))
-    .map(([nodeId, [first, ...rest]]) => ({
-      cloudMachineId: first.placement?.cloudMachineId,
-      option: {
-        key: homeMoveTargetKey({ agentId: String(first.id) }),
-        kind: 'agent',
-        label: first.nodeName?.trim() || first.name,
-        nodeId,
-        agents: [first, ...rest].map((agent) => agent.name),
-        platform: null,
-        disabled: false,
-      } satisfies MoveHomeOption,
-    }));
+    .map(([nodeId, onNode]) => {
+      // The lowest id, so the row's key survives a reordered agent list.
+      const first = onNode.reduce((a, b) => (String(b.id) < String(a.id) ? b : a));
+      return {
+        cloudMachineId: first.placement?.cloudMachineId,
+        option: {
+          key: homeMoveTargetKey({ agentId: String(first.id) }),
+          kind: 'agent',
+          label: first.nodeName?.trim() || first.name,
+          nodeId,
+          agents: onNode.map((agent) => agent.name),
+          platform: null,
+          disabled: false,
+        } satisfies MoveHomeOption,
+      };
+    });
   const sandboxesOf = (cloudMachineId: string | undefined) =>
     sandboxes
       .filter((sandbox) => sandbox.cloudMachineId === cloudMachineId)

@@ -305,6 +305,33 @@ describe('MoveHomeDialog while the home moves', () => {
       m.workspaceHome_moveDialog_currentHome(),
     );
   });
+
+  it('marks only the sandbox of a cloud home, not its cloud entry', () => {
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: [
+        {
+          key: homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'e2b-team' }),
+          kind: 'cloud',
+          label: 'E2B · Team',
+          platform: null,
+          disabled: false,
+        },
+        { ...OPTIONS[2], nodeId: 'sb-home' },
+      ],
+      currentKey: homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'e2b-team' }),
+      currentNodeId: 'sb-home',
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    const current = screen
+      .getAllByRole('radio')
+      .filter((radio) => radio.textContent?.includes(m.workspaceHome_moveDialog_currentHome()));
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toContain('Sandbox 1');
+  });
 });
 
 describe('MoveHomeDialogHost', () => {
