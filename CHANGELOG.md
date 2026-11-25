@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.389.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.388.0...v2.389.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **lint:** reject new module-level Svelte stores in renderer code ([#5064](https://github.com/intent-hq/cloudlands-fe/issues/5064)) ([a6ef738](https://github.com/intent-hq/cloudlands-fe/commit/a6ef738870dc82e6777bfaedda1ca389cfeb6729))
+
+
+### ⚡ Performance
+
+* stop redundant permission, workspace list and remote URL reads ([#5063](https://github.com/intent-hq/cloudlands-fe/issues/5063)) ([df2ef34](https://github.com/intent-hq/cloudlands-fe/commit/df2ef3423819f71061e22eb87594eacb18c0501a))
+
 ## [2.388.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.387.4...v2.388.0) (2026-11-25)
 
 
