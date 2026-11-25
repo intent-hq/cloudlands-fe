@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "Ejecutando de nuevo la configuración en {machine}",
   "settings_sidebarIcons_label": "Iconos de la barra lateral contraída",
   "workspace_multiSelectSidebar_hideTab_label": "Ocultar de la barra lateral",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "Ajustes de la barra lateral"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Ajustes de la barra lateral",
+  "browser_overflow_fullScreen_label": "Pantalla completa"
 }

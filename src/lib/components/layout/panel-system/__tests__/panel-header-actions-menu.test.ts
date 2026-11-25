@@ -440,9 +440,26 @@ describe('mounted panel header actions menu', () => {
     },
   );
 
-  it('keeps Open in browser on a remote workspace host for the browser panel', async () => {
-    mocks.workspaceHostLocal = false;
+  it("leaves Open in browser to a hosted page's own ⋮ menu", async () => {
     const browserTab = { ...tab('browser'), browserUrl: 'https://example.com/pr/1' };
+    const { container } = renderHeader('browser', {
+      tabs: [browserTab],
+      activeTabId: browserTab.id,
+    });
+
+    await fireEvent.click(panelTrigger(container));
+
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).queryByRole('menuitem', { name: /open in browser/i })).toBeNull();
+  });
+
+  it('keeps Open in browser for a page mirrored from another client (its viewer has no ⋮ menu)', async () => {
+    mocks.workspaceHostLocal = false;
+    const browserTab = {
+      ...tab('browser'),
+      browserUrl: 'https://example.com/pr/1',
+      hostClientId: 'other-client',
+    };
     const { container } = renderHeader('browser', {
       tabs: [browserTab],
       activeTabId: browserTab.id,

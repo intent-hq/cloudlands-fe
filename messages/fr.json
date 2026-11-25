@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "Nouvelle exécution de la configuration sur {machine}",
   "settings_sidebarIcons_label": "Icônes de la barre latérale réduite",
   "workspace_multiSelectSidebar_hideTab_label": "Masquer de la barre latérale",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "Réglages de la barre latérale"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "Réglages de la barre latérale",
+  "browser_overflow_fullScreen_label": "Plein écran"
 }

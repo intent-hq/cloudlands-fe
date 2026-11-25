@@ -43,6 +43,10 @@
   } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { browserPagesMode } from '$lib/components/browser/main-owned-browser-page';
+  import { tabWindowsAvailable } from '$lib/tab-window/tab-window-availability';
+  import { isTabWindowLayoutId } from '$shared/types/tab-window';
+  import { openTabInOwnWindowRequested } from '$store/renderer/slices/tab-window/tab-window-slice';
 
   let { tab, workspaceId, layoutId, isActive, isPanelFocused, onFocus }: TabTypeComponentProps =
     $props();
@@ -50,6 +54,10 @@
   // Browser URL from tab data
   const browserUrl = $derived(tab.browserUrl ?? 'about:blank');
   const panelLayoutId = $derived(layoutId ?? workspaceId);
+  // On Intent OS a tab's own window is full screen on its own workspace.
+  const canOpenOwnWindow = $derived(
+    $browserPagesMode === 'main' && tabWindowsAvailable() && !isTabWindowLayoutId(panelLayoutId),
+  );
 
   // A focus-preserving reveal (agent openTab { visible: true }, monorepo#3045)
   // activates this tab in an already-focused panel; it must not autofocus the
@@ -183,6 +191,9 @@
           appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
         }}
         {onFocus}
+        onFullScreen={canOpenOwnWindow
+          ? () => appStore.dispatch(openTabInOwnWindowRequested(panelLayoutId, workspaceId, tab.id))
+          : undefined}
       />
     </div>
   {/if}

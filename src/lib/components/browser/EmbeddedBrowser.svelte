@@ -71,6 +71,7 @@
     resolveBrowserLinkUrl,
   } from '$lib/utils/browser-url-resolution';
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
+  import { isIntentOsRenderer } from '$lib/utils/intent-os-renderer';
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
   import BrowserViewSlot from './BrowserViewSlot.svelte';
@@ -114,6 +115,8 @@
     /** Persisted viewport mode for this tab; legacy tabs default to fit. */
     viewport?: BrowserTabViewport;
     onViewportChange?: (viewport: BrowserTabViewport) => void;
+    /** Intent OS: show the page alone in a full-screen window (replaces Open in external browser). */
+    onFullScreen?: () => void;
   }
 
   let {
@@ -130,7 +133,10 @@
     ownerAgentId,
     viewport = { mode: 'fit' },
     onViewportChange,
+    onFullScreen,
   }: Props = $props();
+  // Intent OS has no external browser: its Open in external browser would only reopen the page here.
+  const intentOs = isIntentOsRenderer();
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
   // menu zoom sagas. The selector form (called at component init) returns a
@@ -1449,7 +1455,8 @@
         onGoForward={goForward}
         onToggleElementPicker={() => void toggleElementPicker()}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
-        onOpenExternal={openInExternalBrowser}
+        onOpenExternal={intentOs ? undefined : openInExternalBrowser}
+        onFullScreen={intentOs ? onFullScreen : undefined}
         onCopyUrl={copyCurrentUrl}
         onScreenshot={captureScreenshot}
         onOpenConsole={() => openDevToolsPanel('console')}

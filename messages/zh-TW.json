@@ -9475,5 +9475,6 @@
   "remoteAgent_notice_retryingSetup_title": "正在 {machine} 上重新執行設定",
   "settings_sidebarIcons_label": "收合側邊欄中的圖示",
   "workspace_multiSelectSidebar_hideTab_label": "從側邊欄隱藏",
-  "workspace_multiSelectSidebar_sidebarSettings_label": "側邊欄設定"
+  "workspace_multiSelectSidebar_sidebarSettings_label": "側邊欄設定",
+  "browser_overflow_fullScreen_label": "全螢幕"
 }
