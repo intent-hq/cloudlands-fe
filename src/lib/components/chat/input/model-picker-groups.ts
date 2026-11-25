@@ -262,7 +262,7 @@ interface BuildMachineModelGroupsParams {
 
 /**
  * The configurations a remote machine can run, one group each, listing the
- * machine's models (labels from the backend catalog, else the raw id). A
+ * machine's models (labels from the backend catalog, else the machine's own, else the raw id). A
  * provider must be installed there and not hidden (`visible: false`); then (a) its Default runs with the
  * machine's own sign-in when it has one (signed in, or unknown), and (b) a
  * remote-compatible configuration from this backend may be sent: a marked
@@ -331,7 +331,10 @@ export function buildMachineModelGroups({
       const known = labelled.get(modelId);
       return known
         ? { ...known, value: modelId }
-        : { value: modelId, label: fallbackLabel?.(modelId, ref) ?? modelId };
+        : {
+            value: modelId,
+            label: provider.modelLabels?.[modelId] ?? fallbackLabel?.(modelId, ref) ?? modelId,
+          };
     });
     if (options.length === 0) {
       // Nothing to pick: no tab, unless the machine's list isn't in yet.

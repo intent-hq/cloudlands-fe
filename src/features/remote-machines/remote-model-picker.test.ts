@@ -255,6 +255,27 @@ describe('buildMachineModelGroups', () => {
     expect(byKey['claude-code'].label).toBe('label:claude-code');
   });
 
+  it("names a reported model from the machine's own labels, catalog first", () => {
+    const m = machine();
+    m.capabilities!.providers[0].modelLabels = {
+      opus: 'Machine Opus',
+      'only-on-machine': 'Only On Machine',
+    };
+    const [claude] = buildMachineModelGroups({
+      machine: m,
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'claude-code': [{ value: 'opus', label: 'Opus 5.5' }] },
+      catalogProfiles: [],
+      fallbackLabel: () => 'fallback',
+    });
+    expect(claude.options.map((option) => option.label)).toEqual([
+      'Opus 5.5',
+      'fallback',
+      'Only On Machine',
+    ]);
+  });
+
   it('names a reported model the catalog lacks through fallbackLabel', () => {
     const [claude] = buildMachineModelGroups({
       machine: machine(),
