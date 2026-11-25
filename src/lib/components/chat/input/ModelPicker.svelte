@@ -490,7 +490,7 @@
       ),
     );
   });
-  const allowedProviderIds$ = writable(untrack(() => allowedProviderIds));
+  const allowedProviderIds$ = writable<string[] | undefined>(untrack(() => allowedProviderIds));
   $effect(() => {
     allowedProviderIds$.set(allowedProviderIds);
   });

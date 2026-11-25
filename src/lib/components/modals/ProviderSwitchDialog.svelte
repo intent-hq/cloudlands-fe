@@ -23,6 +23,12 @@
 
   let { state, inline = false, onSelect, onConfirm, onRetryAll, onClose }: Props = $props();
 
+  const busy = $derived(state.running);
+  const switchable = $derived(state.rows.some((row) => row.selection && row.targets.length > 0));
+  const noTargets = $derived(
+    !state.loading && state.rows.length > 0 && state.rows.every((row) => row.targets.length === 0),
+  );
+
   function countLabel(row: ProviderSwitchDialogRow): string {
     const count = row.agents.length;
     const agents =
