@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   data: null as UsageStatsResult | null,
   loading: false,
+  mode: 'month' as 'month' | '24h',
   exportCardPng: vi.fn<(node: HTMLElement, fileName: string) => Promise<void>>(),
   notifyError: vi.fn(),
 }));
@@ -24,8 +25,8 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       sidebarNav: { statsOverlayOpen: true },
       stats: {
-        mode: 'month',
-        periodKey: '2026-09',
+        mode: mocks.mode,
+        periodKey: mocks.mode === '24h' ? null : '2026-09',
         loading: mocks.loading,
         error: null,
         data: mocks.data,
@@ -43,6 +44,7 @@ beforeEach(() => {
   mocks.exportCardPng.mockReset().mockResolvedValue(undefined);
   mocks.notifyError.mockReset();
   mocks.loading = false;
+  mocks.mode = 'month';
   mocks.data = {
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
     runs: 0,
@@ -175,20 +177,27 @@ describe('cached tokens toggle', () => {
 });
 
 describe('card PNG export', () => {
-  it.each(['passport', 'models', 'providers', 'by-hour', 'by-month'] as const)(
-    'exports the %s card node with its period filename',
-    async (card) => {
-      render(StatsOverlay);
-      const button = screen.getByRole('button', {
-        name: m.stats_overlay_exportCard_ariaLabel({ card }),
-      });
-      await fireEvent.click(button);
-      await waitFor(() => expect(mocks.exportCardPng).toHaveBeenCalledTimes(1));
-      const [node, fileName] = mocks.exportCardPng.mock.calls[0];
-      expect(node.getAttribute('data-stats-card')).toBe(card);
-      expect(fileName).toBe(`intent-${card}-2026-09.png`);
-    },
-  );
+  it.each([
+    'passport',
+    'models',
+    'providers',
+    'by-hour',
+    'by-month',
+    'code',
+    'tools',
+    'team',
+    'streak',
+  ] as const)('exports the %s card node with its period filename', async (card) => {
+    render(StatsOverlay);
+    const button = screen.getByRole('button', {
+      name: m.stats_overlay_exportCard_ariaLabel({ card }),
+    });
+    await fireEvent.click(button);
+    await waitFor(() => expect(mocks.exportCardPng).toHaveBeenCalledTimes(1));
+    const [node, fileName] = mocks.exportCardPng.mock.calls[0];
+    expect(node.getAttribute('data-stats-card')).toBe(card);
+    expect(fileName).toBe(`intent-${card}-2026-09.png`);
+  });
 
   it('shows the error toast when the export rejects', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -205,5 +214,57 @@ describe('card PNG export', () => {
       }),
     );
     consoleError.mockRestore();
+  });
+});
+
+describe('activity cards', () => {
+  const slots = () =>
+    Array.from(document.querySelectorAll('[data-stats-card-slot]'), (n) =>
+      n.getAttribute('data-stats-card-slot'),
+    );
+
+  it('follow the existing cards and hide the streak in 24H', () => {
+    render(StatsOverlay);
+    expect(slots().slice(-4)).toEqual(['code', 'tools', 'team', 'streak']);
+    cleanup();
+    mocks.mode = '24h';
+    render(StatsOverlay);
+    expect(slots()).not.toContain('streak');
+    expect(slots()).not.toContain('by-month');
+    expect(slots().slice(-3)).toEqual(['code', 'tools', 'team']);
+  });
+
+  it('mark an older daemon but keep real line counts', () => {
+    mocks.data = { ...mocks.data!, linesAdded: 1_500, linesDeleted: 2_000 };
+    render(StatsOverlay);
+    const card = (name: string) =>
+      document.querySelector<HTMLElement>(`[data-stats-card="${name}"]`)!;
+    for (const name of ['tools', 'team', 'streak']) {
+      expect(card(name).querySelector('.note')?.textContent).toBe(
+        m.stats_activity_needsUpgrade_label(),
+      );
+    }
+    expect(card('code').querySelector('.note')).toBeNull();
+    expect(card('code').querySelector('.hero-value')?.textContent).toBe('−500');
+    expect(card('tools').textContent).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('show tracked-since on tool and team cards for partial periods', () => {
+    mocks.data = {
+      ...mocks.data!,
+      toolCalls: 3,
+      toolCallsFailed: 0,
+      totalRunMs: 0,
+      subAgentSessions: 0,
+      byDay: [],
+      activityTrackedSince: '2026-09-15',
+    };
+    render(StatsOverlay);
+    for (const name of ['tools', 'team']) {
+      const note = document.querySelector(`[data-stats-card="${name}"] .note`)?.textContent ?? '';
+      expect(note).toContain('2026');
+      expect(note).not.toBe(m.stats_activity_needsUpgrade_label());
+    }
+    expect(document.querySelector('[data-stats-card="streak"] .note')).toBeNull();
   });
 });

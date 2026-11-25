@@ -20,6 +20,10 @@
   import ProvidersCard from './ProvidersCard.svelte';
   import TokensByHourCard from './TokensByHourCard.svelte';
   import TokensByMonthCard from './TokensByMonthCard.svelte';
+  import CodeWrittenCard from './CodeWrittenCard.svelte';
+  import ToolCallsCard from './ToolCallsCard.svelte';
+  import AgentTeamCard from './AgentTeamCard.svelte';
+  import ActivityStreakCard from './ActivityStreakCard.svelte';
   import {
     STATS_MODES,
     defaultPeriodKey,
@@ -257,6 +261,43 @@
           <div class="group relative" data-stats-card-slot="by-month">
             {@render exportBtn('by-month')}
             <TokensByMonthCard data={cardData} {yearKey} loading={$loading$} />
+          </div>
+        {/if}
+        <div class="group relative" data-stats-card-slot="code">
+          {@render exportBtn('code')}
+          <CodeWrittenCard data={cardData} label={cardLabel} loading={$loading$} />
+        </div>
+        <div class="group relative" data-stats-card-slot="tools">
+          {@render exportBtn('tools')}
+          <ToolCallsCard
+            data={cardData}
+            label={cardLabel}
+            mode={$mode$}
+            periodKey={$periodKey$}
+            loading={$loading$}
+          />
+        </div>
+        <div class="group relative" data-stats-card-slot="team">
+          {@render exportBtn('team')}
+          <AgentTeamCard
+            data={cardData}
+            label={cardLabel}
+            mode={$mode$}
+            periodKey={$periodKey$}
+            loading={$loading$}
+          />
+        </div>
+        {#if $mode$ !== '24h'}
+          <!-- Activity Streak is hidden in 24H mode, like Tokens by Month. -->
+          <div class="group relative" data-stats-card-slot="streak">
+            {@render exportBtn('streak')}
+            <ActivityStreakCard
+              data={cardData}
+              label={cardLabel}
+              mode={$mode$}
+              periodKey={$periodKey$}
+              loading={$loading$}
+            />
           </div>
         {/if}
       </div>
