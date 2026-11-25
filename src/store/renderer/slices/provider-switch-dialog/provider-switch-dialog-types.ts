@@ -1,12 +1,11 @@
 /**
- * Transient view state for the "Switch all…" dialog opened from a grouped
- * failure toast. The failure toast saga owns and writes it; the dialog host
- * in the app layout renders it and calls back through `actions`. Never
- * Redux, gone on reload.
+ * View state for the "Switch all…" dialog opened from a grouped failure
+ * toast. Transient UI state: the failure toast saga fills it, the dialog host
+ * renders it, and nothing persists across reloads.
  */
-import { writable } from 'svelte/store';
-import type { BulkAgentStatus, BulkSwitchTarget } from './bulk-provider-switch';
-import type { GroupedFailureKind } from './agent-failure-groups';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { BulkAgentStatus, BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
+import type { GroupedFailureKind } from '$features/agent/agent-failure-groups';
 
 interface ProviderSwitchModelOption {
   value: string;
@@ -42,14 +41,7 @@ export interface ProviderSwitchDialogRow {
   workersSwitched?: number;
 }
 
-interface ProviderSwitchDialogActions {
-  select(rowKey: string, target: BulkSwitchTarget): void;
-  confirm(): void;
-  retryAll(): void;
-  close(): void;
-}
-
-export interface ProviderSwitchDialogState {
+interface ProviderSwitchDialogFields {
   open: boolean;
   groupKey: string | null;
   kind: GroupedFailureKind | null;
@@ -59,21 +51,13 @@ export interface ProviderSwitchDialogState {
   /** True once a switch or retry ran in this dialog session. */
   finished: boolean;
   progress: { done: number; total: number };
-  rows: ProviderSwitchDialogRow[];
-  actions: ProviderSwitchDialogActions | null;
 }
 
-export const closedProviderSwitchDialog: ProviderSwitchDialogState = {
-  open: false,
-  groupKey: null,
-  kind: null,
-  providerLabel: '',
-  loading: false,
-  running: false,
-  finished: false,
-  progress: { done: 0, total: 0 },
-  rows: [],
-  actions: null,
-};
+export interface ProviderSwitchDialogSliceState extends ProviderSwitchDialogFields {
+  rows: Collection<ProviderSwitchDialogRow, 'key'>;
+}
 
-export const providerSwitchDialog = writable<ProviderSwitchDialogState>(closedProviderSwitchDialog);
+/** What the dialog component renders (rows in display order). */
+export interface ProviderSwitchDialogState extends ProviderSwitchDialogFields {
+  rows: ProviderSwitchDialogRow[];
+}

@@ -9,7 +9,7 @@
     ProviderSwitchDialogAgent,
     ProviderSwitchDialogRow,
     ProviderSwitchDialogState,
-  } from '$features/agent/provider-switch-dialog-state';
+  } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
   import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -78,7 +78,7 @@
     if (outcome?.status === 'gone')
       return { text: m.agent_providerSwitch_gone_label(), tone: 'muted' };
     if (outcome?.status === 'failed') {
-      return { text: outcome.reason || m.agent_providerSwitch_failed_label(), tone: 'error' };
+      return { text: m.agent_providerSwitch_failed_label(), tone: 'error' };
     }
     if (row.selection && !agent.eligibleProviderIds.includes(row.selection.providerId)) {
       return { text: m.agent_providerSwitch_unavailable_label(), tone: 'muted' };
@@ -155,14 +155,20 @@
                     {agent.workspaceName ? `${agent.name} / ${agent.workspaceName}` : agent.name}
                   </span>
                 {/snippet}
+                {#snippet description()}
+                  {#if agent.outcome?.status === 'failed' && agent.outcome.reason}
+                    <span class="break-words text-danger" data-testid="provider-switch-agent-reason"
+                      >{agent.outcome.reason}</span
+                    >
+                  {/if}
+                {/snippet}
                 {#snippet trailing()}
                   {#if status}
                     <span
-                      class="max-w-1/2 truncate"
+                      class="whitespace-nowrap"
                       class:text-muted-foreground={status.tone === 'muted'}
                       class:text-success={status.tone === 'ok'}
                       class:text-danger={status.tone === 'error'}
-                      title={status.text}
                       data-testid="provider-switch-agent-status">{status.text}</span
                     >
                   {/if}

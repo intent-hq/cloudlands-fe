@@ -1,6 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import ProviderSwitchHarness from './__tests__/ProviderSwitchHarness.svelte';
-import type { ProviderSwitchDialogRow } from '$features/agent/provider-switch-dialog-state';
+import type { ProviderSwitchDialogRow } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
 
 const codex = {
   providerId: 'codex',
@@ -105,6 +105,23 @@ test('group toast opens Switch all with one row per failed pair, and confirms th
   ]);
   await expect(dialog.getByText('+2 workers switched, not restarted')).toBeVisible();
   await expect(dialog.locator('[data-agent-id="a4"]').getByText('model rejected')).toBeVisible();
+  // Statuses stay readable: not clipped by the row.
+  for (const id of ['a1', 'a3', 'a4']) {
+    const status = dialog.locator(
+      `[data-agent-id="${id}"] [data-testid="provider-switch-agent-status"]`,
+    );
+    const contained = await status.evaluate((el) => {
+      const row = el.closest('[data-slot="list-row"]')!.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      const clipper = el.parentElement!;
+      return (
+        box.left >= row.left &&
+        box.right <= row.right + 0.5 &&
+        clipper.scrollWidth <= clipper.clientWidth
+      );
+    });
+    expect(contained).toBe(true);
+  }
   await expect(dialog.locator('[data-agent-id="a1"]').getByText('Switched')).toBeVisible();
   await page.screenshot({ path: 'test-results/provider-switch/dialog-results.png' });
   await dialog.getByRole('button', { name: 'Close' }).last().click();

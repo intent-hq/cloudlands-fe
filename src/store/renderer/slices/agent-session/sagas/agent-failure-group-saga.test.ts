@@ -1,8 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { runSaga } from 'redux-saga';
-import { get } from 'svelte/store';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -53,7 +52,6 @@ import {
   recordDelegatedAgentFailure,
   removeAgentFailure,
 } from '$features/agent/agent-failure-registry';
-import { providerSwitchDialog } from '$features/agent/provider-switch-dialog-state';
 import { getRememberedProviderSwitch } from '$features/agent/provider-switch-targets';
 import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -63,6 +61,13 @@ import {
   providerCatalogReducer,
 } from '../../provider-catalog/provider-catalog-slice';
 import { chatErrorCleared } from '../../chat-state/chat-state-slice';
+import {
+  providerSwitchConfirmRequested,
+  providerSwitchDialogClosed,
+  providerSwitchDialogReducer,
+  providerSwitchTargetChosen,
+} from '../../provider-switch-dialog/provider-switch-dialog-slice';
+import { selectProviderSwitchDialog } from '../../provider-switch-dialog/provider-switch-dialog-selectors';
 import { agentFailureToastSaga } from './agent-failure-toast-saga';
 
 const settle = async () => {
@@ -161,9 +166,26 @@ function lastGroupToast() {
   return call?.[0];
 }
 
+let dialogState = providerSwitchDialogReducer(undefined, { type: '@@test/init' });
+const dialog = () =>
+  selectProviderSwitchDialog.select({ providerSwitchDialog: dialogState } as never);
+
+/** Runs the saga against a store that applies the dialog reducer and routes actions to takers. */
 function start(overrides: Record<string, unknown> = {}) {
-  const dispatch = vi.fn();
-  const task = runSaga({ dispatch, getState: () => state(overrides) }, agentFailureToastSaga);
+  const channel = stdChannel();
+  dialogState = providerSwitchDialogReducer(undefined, { type: '@@test/init' });
+  const dispatch = vi.fn((action: { type: string }) => {
+    dialogState = providerSwitchDialogReducer(dialogState, action);
+    channel.put(action);
+  });
+  const task = runSaga(
+    {
+      channel,
+      dispatch,
+      getState: () => ({ ...state(overrides), providerSwitchDialog: dialogState }),
+    },
+    agentFailureToastSaga,
+  );
   return { dispatch, task };
 }
 
@@ -320,7 +342,7 @@ describe('agent failure group toasts', () => {
   });
 
   it('Switch all moves coordinators, unhydrated agents and their workers; unavailable agents stay', async () => {
-    const { task } = start();
+    const { task, dispatch } = start();
     quota('agent-1', 'ws-1', 1);
     quota('agent-2', 'ws-2', 2, { model: 'fable' });
     // A workspace never opened this session: no session, identity from agent.get.
@@ -350,23 +372,25 @@ describe('agent failure group toasts', () => {
 
     lastGroupToast().onSwitchAll();
     await settle();
-    const dialog = get(providerSwitchDialog);
-    expect(dialog.open).toBe(true);
-    expect(dialog.loading).toBe(false);
+    const opened = dialog();
+    expect(opened.open).toBe(true);
+    expect(opened.loading).toBe(false);
     expect(
-      dialog.rows.map((row) => [row.providerRef, row.model, row.agents.length, row.workerCount]),
+      opened.rows.map((row) => [row.providerRef, row.model, row.agents.length, row.workerCount]),
     ).toEqual([
       ['claude-code', 'opus', 2, 1],
       ['claude-code', 'fable', 1, 0],
     ]);
-    expect(dialog.rows[0].agents.map((agent) => agent.name)).toEqual(['Implementor', 'Planner']);
-    expect(dialog.rows[0].selection).toEqual({ providerId: 'codex', modelId: 'sol' });
-    expect(dialog.rows[1].targets).toEqual([]);
+    expect(opened.rows[0].agents.map((agent) => agent.name)).toEqual(['Implementor', 'Planner']);
+    expect(opened.rows[0].selection).toEqual({ providerId: 'codex', modelId: 'sol' });
+    expect(opened.rows[1].targets).toEqual([]);
 
-    dialog.actions?.select(dialog.rows[0].key, { providerId: 'codex', modelId: 'luna' });
+    dispatch(
+      providerSwitchTargetChosen(opened.rows[0].key, { providerId: 'codex', modelId: 'luna' }),
+    );
     await settle();
     mocks.agentFailure.mockClear();
-    get(providerSwitchDialog).actions?.confirm();
+    dispatch(providerSwitchConfirmRequested());
     await settle();
 
     const setModelCalls = mocks.setModel.mock.calls.map((c) => c.slice(0, 4).join(':'));
@@ -403,7 +427,7 @@ describe('agent failure group toasts', () => {
       modelId: 'luna',
     });
 
-    const after = get(providerSwitchDialog);
+    const after = dialog();
     expect(after.finished).toBe(true);
     expect(after.progress).toEqual({ done: 3, total: 3 });
     expect(after.rows[0].workersSwitched).toBe(1);
@@ -416,15 +440,15 @@ describe('agent failure group toasts', () => {
       new Set(['agent-failure:agent-2']),
     );
 
-    after.actions?.close();
+    dispatch(providerSwitchDialogClosed());
     await settle();
-    expect(get(providerSwitchDialog).open).toBe(false);
+    expect(dialog().open).toBe(false);
     task.cancel();
     await task.toPromise();
   });
 
   it('marks agents whose chosen target is unavailable and keeps a failed switch grouped', async () => {
-    const { task } = start();
+    const { task, dispatch } = start();
     quota('agent-1', 'ws-1', 1);
     quota('agent-2', 'ws-2', 2);
     mocks.eligible.mockImplementation((_state, _exhausted, workspaceId) =>
@@ -437,10 +461,10 @@ describe('agent failure group toasts', () => {
     await settle();
     lastGroupToast().onSwitchAll();
     await settle();
-    get(providerSwitchDialog).actions?.confirm();
+    dispatch(providerSwitchConfirmRequested());
     await settle();
 
-    const row = get(providerSwitchDialog).rows[0];
+    const row = dialog().rows[0];
     expect(row.agents.map((agent) => [agent.agentId, agent.outcome])).toEqual([
       ['agent-1', { status: 'failed', reason: 'model rejected' }],
       ['agent-2', { status: 'unavailable' }],
@@ -457,22 +481,22 @@ describe('agent failure group toasts', () => {
       'agent-failure:provider-switch-choices',
       JSON.stringify({ 'claude-code|opus': { providerId: 'codex', modelId: 'luna', at: 1 } }),
     );
-    const { task } = start();
+    const { task, dispatch } = start();
     quota('agent-1', 'ws-1', 1);
     quota('agent-2', 'ws-2', 2);
     await settle();
     lastGroupToast().onSwitchAll();
     await settle();
-    expect(get(providerSwitchDialog).rows[0].selection).toEqual({
+    expect(dialog().rows[0].selection).toEqual({
       providerId: 'codex',
       modelId: 'luna',
     });
-    get(providerSwitchDialog).actions?.close();
+    dispatch(providerSwitchDialogClosed());
 
     mocks.eligible.mockReturnValue(['gemini']);
     lastGroupToast().onSwitchAll();
     await settle();
-    expect(get(providerSwitchDialog).rows[0].selection).toEqual({
+    expect(dialog().rows[0].selection).toEqual({
       providerId: 'gemini',
       modelId: 'sol',
     });

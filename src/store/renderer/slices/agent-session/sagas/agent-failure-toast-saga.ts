@@ -39,11 +39,18 @@
  * provider auth-status refreshes still run.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  fork,
+  put,
+  take,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { AgentFailureNotifyProps } from '$lib/components/patterns/notify';
 
 import { groupAgentFailures, type AgentFailureGroup } from '$features/agent/agent-failure-groups';
-import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
 import {
   getAgentFailureEntry,
   listAgentFailureEntries,
@@ -76,8 +83,12 @@ import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
 import {
+  providerSwitchConfirmRequested,
+  providerSwitchDialogClosed,
+  providerSwitchRetryAllRequested,
+} from '../../provider-switch-dialog/provider-switch-dialog-slice';
+import {
   closeGroupToastState,
-  closeSwitchDialog,
   confirmSwitchDialog,
   currentClassifier,
   dismissGroupToast,
@@ -86,7 +97,6 @@ import {
   renderGroup,
   retryAllFromDialog,
   retryAllFromToast,
-  chooseDialogTarget,
   type BulkHold,
   type GroupEmitter,
   type GroupToastState,
@@ -124,11 +134,7 @@ type FailureMessage =
   | { kind: 'close'; agentId: string }
   | { kind: 'switch-all'; groupKey: string }
   | { kind: 'retry-all'; groupKey: string }
-  | { kind: 'close-group'; groupKey: string }
-  | { kind: 'dialog-select'; rowKey: string; target: BulkSwitchTarget }
-  | { kind: 'dialog-confirm' }
-  | { kind: 'dialog-retry-all' }
-  | { kind: 'dialog-close' };
+  | { kind: 'close-group'; groupKey: string };
 
 type FailureEmitter = (message: FailureMessage) => void;
 
@@ -535,10 +541,6 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
     retryAll: (groupKey) => emit({ kind: 'retry-all', groupKey }),
     runLogin: (providerId) => emit({ kind: 'run-login', providerId }),
     close: (groupKey) => emit({ kind: 'close-group', groupKey }),
-    dialogSelect: (rowKey, target) => emit({ kind: 'dialog-select', rowKey, target }),
-    dialogConfirm: () => emit({ kind: 'dialog-confirm' }),
-    dialogRetryAll: () => emit({ kind: 'dialog-retry-all' }),
-    dialogClose: () => emit({ kind: 'dialog-close' }),
   };
   const rerender = () => emit({ kind: 'snapshot', entries: listAgentFailureEntries() });
   const bulkHold: BulkHold = {
@@ -557,6 +559,8 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
   };
   try {
     yield* fork(rerenderOnCatalogHydration, emit);
+    yield* takeLeading(providerSwitchConfirmRequested, confirmSwitchDialog, bulkHold);
+    yield* takeLeading(providerSwitchRetryAllRequested, retryAllFromDialog, bulkHold);
     while (true) {
       const message: FailureMessage = yield* take(channel);
       if (message.kind === 'snapshot') {
@@ -574,7 +578,7 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
         yield* call(closeAgentToast, message.agentId, states.agents);
       } else if (message.kind === 'switch-all') {
         const group = states.current.get(message.groupKey);
-        if (group) yield* fork(openSwitchDialog, group, groupEmit);
+        if (group) yield* fork(openSwitchDialog, group);
       } else if (message.kind === 'retry-all') {
         const group = states.current.get(message.groupKey);
         const state = states.groups.get(message.groupKey);
@@ -585,19 +589,11 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
           closeGroupToastState(states.current.get(message.groupKey), state);
           yield* call(dismissGroupToast, message.groupKey);
         }
-      } else if (message.kind === 'dialog-select') {
-        chooseDialogTarget(message.rowKey, message.target);
-      } else if (message.kind === 'dialog-confirm') {
-        yield* fork(confirmSwitchDialog, bulkHold);
-      } else if (message.kind === 'dialog-retry-all') {
-        yield* fork(retryAllFromDialog, bulkHold);
-      } else {
-        closeSwitchDialog();
       }
     }
   } finally {
     channel.close();
-    closeSwitchDialog();
+    yield* put(providerSwitchDialogClosed());
     if (states.agents.size > 0 || states.groups.size > 0) {
       const notify = yield* call(loadToastArtifacts);
       for (const agentId of states.agents.keys()) notify.dismiss(toastId(agentId));

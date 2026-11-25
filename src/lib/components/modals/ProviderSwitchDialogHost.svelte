@@ -1,13 +1,22 @@
 <script lang="ts">
-  /** Host for the grouped failure toast's "Switch all…" dialog (state owned by the toast saga). */
+  /** Redux host for the grouped failure toast's "Switch all…" dialog. */
   import ProviderSwitchDialog from './ProviderSwitchDialog.svelte';
-  import { providerSwitchDialog } from '$features/agent/provider-switch-dialog-state';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    providerSwitchConfirmRequested,
+    providerSwitchDialogClosed,
+    providerSwitchRetryAllRequested,
+    providerSwitchTargetChosen,
+  } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-slice';
+  import { selectProviderSwitchDialog } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-selectors';
+
+  const dialog$ = selectProviderSwitchDialog();
 </script>
 
 <ProviderSwitchDialog
-  state={$providerSwitchDialog}
-  onSelect={(rowKey, target) => $providerSwitchDialog.actions?.select(rowKey, target)}
-  onConfirm={() => $providerSwitchDialog.actions?.confirm()}
-  onRetryAll={() => $providerSwitchDialog.actions?.retryAll()}
-  onClose={() => $providerSwitchDialog.actions?.close()}
+  state={$dialog$}
+  onSelect={(rowKey, target) => appStore.dispatch(providerSwitchTargetChosen(rowKey, target))}
+  onConfirm={() => appStore.dispatch(providerSwitchConfirmRequested())}
+  onRetryAll={() => appStore.dispatch(providerSwitchRetryAllRequested())}
+  onClose={() => appStore.dispatch(providerSwitchDialogClosed())}
 />

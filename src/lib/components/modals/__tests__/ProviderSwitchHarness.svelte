@@ -1,11 +1,10 @@
 <script lang="ts">
   import AgentFailureGroupToast from '$lib/components/ui/toast/AgentFailureGroupToast.svelte';
   import ProviderSwitchDialog from '../ProviderSwitchDialog.svelte';
-  import {
-    closedProviderSwitchDialog,
-    type ProviderSwitchDialogRow,
-    type ProviderSwitchDialogState,
-  } from '$features/agent/provider-switch-dialog-state';
+  import type {
+    ProviderSwitchDialogRow,
+    ProviderSwitchDialogState,
+  } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
   import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
 
   let {
@@ -21,7 +20,18 @@
     onRetryAll: () => void;
   } = $props();
 
-  let dialog = $state<ProviderSwitchDialogState>({ ...closedProviderSwitchDialog });
+  const closed: ProviderSwitchDialogState = {
+    open: false,
+    groupKey: null,
+    kind: null,
+    providerLabel: '',
+    loading: false,
+    running: false,
+    finished: false,
+    progress: { done: 0, total: 0 },
+    rows: [],
+  };
+  let dialog = $state<ProviderSwitchDialogState>({ ...closed });
 </script>
 
 <div class="w-88 rounded-md border bg-popover p-3" data-testid="group-toast">
@@ -33,7 +43,7 @@
     retrying={false}
     onSwitchAll={() => {
       dialog = {
-        ...closedProviderSwitchDialog,
+        ...closed,
         open: true,
         groupKey: 'quota:claude-code',
         kind: 'quota',
@@ -59,5 +69,5 @@
     if (finishedRows) dialog = { ...dialog, rows: finishedRows, finished: true };
   }}
   {onRetryAll}
-  onClose={() => (dialog = { ...closedProviderSwitchDialog })}
+  onClose={() => (dialog = { ...closed })}
 />

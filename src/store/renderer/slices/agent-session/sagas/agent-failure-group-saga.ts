@@ -4,8 +4,8 @@
  * the dialog or as a short note on the group toast, never as per-agent
  * toasts.
  */
-import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
-import { get } from 'svelte/store';
+import { buffers, channel } from 'redux-saga';
+import { call, delay, fork, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   classifyAgentFailure,
@@ -28,16 +28,7 @@ import {
   type BulkAgentOutcome,
   type BulkSwitchDeps,
   type BulkSwitchItem,
-  type BulkSwitchTarget,
 } from '$features/agent/bulk-provider-switch';
-import {
-  closedProviderSwitchDialog,
-  providerSwitchDialog,
-  type ProviderSwitchDialogAgent,
-  type ProviderSwitchDialogRow,
-  type ProviderSwitchDialogState,
-  type ProviderSwitchTargetOption,
-} from '$features/agent/provider-switch-dialog-state';
 import {
   getRememberedProviderSwitch,
   rememberProviderSwitch,
@@ -76,6 +67,19 @@ import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
 import { updateSession } from '../agent-session-slice';
+import {
+  providerSwitchAgentSettled,
+  providerSwitchDialogOpened,
+  providerSwitchRowsLoaded,
+  providerSwitchRunFinished,
+  providerSwitchRunStarted,
+} from '../../provider-switch-dialog/provider-switch-dialog-slice';
+import { selectProviderSwitchDialog } from '../../provider-switch-dialog/provider-switch-dialog-selectors';
+import type {
+  ProviderSwitchDialogAgent,
+  ProviderSwitchDialogRow,
+  ProviderSwitchTargetOption,
+} from '../../provider-switch-dialog/provider-switch-dialog-types';
 
 const logger = createLogger('AgentFailureGroupSaga');
 
@@ -99,10 +103,6 @@ export interface GroupEmitter {
   retryAll(groupKey: string): void;
   runLogin(providerId: string): void;
   close(groupKey: string): void;
-  dialogSelect(rowKey: string, target: BulkSwitchTarget): void;
-  dialogConfirm(): void;
-  dialogRetryAll(): void;
-  dialogClose(): void;
 }
 
 /**
@@ -451,83 +451,46 @@ function workersFor(
   });
 }
 
-function updateDialog(update: (state: ProviderSwitchDialogState) => void) {
-  providerSwitchDialog.update((current) => {
-    const next = { ...current, rows: current.rows.map((row) => ({ ...row })) };
-    update(next);
-    return next;
+/**
+ * Run a bulk worker with per-agent progress in the dialog. The worker's
+ * callbacks are plain functions, so outcomes go through a channel that a
+ * forked loop turns into dialog actions and registry updates.
+ */
+function* runWithDialogProgress(
+  run: (onAgentDone: (outcome: BulkAgentOutcome) => void) => Promise<BulkAgentOutcome[]>,
+  snapshots: Map<string, AgentFailureEntry>,
+): SagaGenerator<BulkAgentOutcome[]> {
+  const settled = channel<BulkAgentOutcome>(buffers.expanding());
+  const relay = yield* fork(function* () {
+    while (true) {
+      const outcome = yield* take(settled);
+      settleEntry(outcome, snapshots);
+      yield* put(providerSwitchAgentSettled(outcome));
+    }
   });
+  try {
+    return yield* call(run, (outcome) => settled.put(outcome));
+  } finally {
+    settled.close();
+    yield* join(relay);
+  }
 }
 
-function recordOutcome(outcome: BulkAgentOutcome) {
-  updateDialog((state) => {
-    state.progress = { ...state.progress, done: state.progress.done + 1 };
-    state.rows = state.rows.map((row) => {
-      if (!row.agents.some((agent) => agent.agentId === outcome.agentId)) return row;
-      return {
-        ...row,
-        workersSwitched: (row.workersSwitched ?? 0) + outcome.workersSwitched,
-        agents: row.agents.map((agent) =>
-          agent.agentId === outcome.agentId
-            ? {
-                ...agent,
-                outcome: {
-                  status: outcome.status,
-                  ...(outcome.reason ? { reason: outcome.reason } : {}),
-                },
-              }
-            : agent,
-        ),
-      };
-    });
-  });
-}
-
-export function* openSwitchDialog(
-  group: AgentFailureGroup,
-  emit: GroupEmitter,
-): SagaGenerator<void> {
-  if (get(providerSwitchDialog).running) return;
+export function* openSwitchDialog(group: AgentFailureGroup): SagaGenerator<void> {
+  if ((yield* selectProviderSwitchDialog.effect()).running) return;
   const providerLabel = yield* selectProviderDisplayName.effect(group.baseProviderId);
-  providerSwitchDialog.set({
-    ...closedProviderSwitchDialog,
-    open: true,
-    groupKey: group.key,
-    kind: group.kind,
-    providerLabel,
-    loading: true,
-    actions: {
-      select: emit.dialogSelect,
-      confirm: emit.dialogConfirm,
-      retryAll: emit.dialogRetryAll,
-      close: emit.dialogClose,
-    },
-  });
+  yield* put(providerSwitchDialogOpened({ groupKey: group.key, kind: group.kind, providerLabel }));
   const classify = yield* call(currentClassifier);
   const rows = yield* call(buildRows, group, classify);
-  if (get(providerSwitchDialog).groupKey !== group.key) return;
-  updateDialog((state) => {
-    state.rows = rows;
-    state.loading = false;
-  });
+  yield* put(providerSwitchRowsLoaded(group.key, rows));
 }
 
-export function chooseDialogTarget(rowKey: string, target: BulkSwitchTarget) {
-  updateDialog((state) => {
-    state.rows = state.rows.map((row) =>
-      row.key === rowKey ? { ...row, selection: target } : row,
-    );
-  });
-}
-
-export function closeSwitchDialog() {
-  if (get(providerSwitchDialog).running) return;
-  providerSwitchDialog.set(closedProviderSwitchDialog);
-}
-
-/** Agents still failed on the entry the dialog was built from. */
-function liveDialogAgents(groupKey: string, classify: FailureClassifier) {
-  const rows = get(providerSwitchDialog).rows;
+/** Agents still failed for the group the dialog was built from. */
+function liveDialogAgents(
+  rows: ProviderSwitchDialogRow[],
+  groupKey: string,
+  classify: FailureClassifier,
+) {
   return rows.flatMap((row) =>
     row.agents.flatMap((agent) => {
       const entry = getAgentFailureEntry(agent.agentId);
@@ -546,11 +509,13 @@ function liveDialogAgents(groupKey: string, classify: FailureClassifier) {
 
 /** Confirm in the dialog: switch every live member per its row, then restart it. */
 export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
-  const dialog = get(providerSwitchDialog);
-  if (!dialog.open || dialog.running || dialog.loading || !dialog.groupKey) return;
+  const dialog = yield* selectProviderSwitchDialog.effect();
+  if (!dialog.open || dialog.running || dialog.loading || dialog.finished || !dialog.groupKey) {
+    return;
+  }
   const groupKey = dialog.groupKey;
   const classify = yield* call(currentClassifier);
-  const live = liveDialogAgents(groupKey, classify);
+  const live = liveDialogAgents(dialog.rows, groupKey, classify);
   for (const row of dialog.rows) {
     if (row.selection) rememberProviderSwitch(row.providerRef, row.model, row.selection);
   }
@@ -569,62 +534,50 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
   const snapshots = new Map(live.map(({ entry }) => [entry.agentId, entry]));
   const heldIds = [...snapshots.keys()];
   bulkHold.hold(heldIds);
-  updateDialog((state) => {
-    state.running = true;
-    state.progress = { done: 0, total: items.length };
-  });
+  yield* put(providerSwitchRunStarted(items.length));
   try {
-    const outcomes = yield* call(runBulkProviderSwitch, items, {
-      ...bulkDeps,
-      onAgentDone: (outcome: BulkAgentOutcome) => {
-        recordOutcome(outcome);
-        settleEntry(outcome, snapshots);
-      },
-      onWorkerSwitched: (workerId: string) => {
-        if (getDelegatedAgentFailureEntry(workerId)) removeAgentFailure(workerId);
-      },
-    });
+    const outcomes = yield* call(
+      runWithDialogProgress,
+      (onAgentDone) =>
+        runBulkProviderSwitch(items, {
+          ...bulkDeps,
+          onAgentDone,
+          onWorkerSwitched: (workerId: string) => {
+            if (getDelegatedAgentFailureEntry(workerId)) removeAgentFailure(workerId);
+          },
+        }),
+      snapshots,
+    );
     yield* call(convergeRestarted, outcomes);
   } finally {
-    updateDialog((state) => {
-      state.running = false;
-      state.finished = true;
-    });
+    yield* put(providerSwitchRunFinished());
     bulkHold.release(heldIds);
   }
 }
 
 /** "Retry all" in the dialog: no provider change; results per agent in the dialog. */
 export function* retryAllFromDialog(bulkHold: BulkHold): SagaGenerator<void> {
-  const dialog = get(providerSwitchDialog);
-  if (!dialog.open || dialog.running || !dialog.groupKey) return;
+  const dialog = yield* selectProviderSwitchDialog.effect();
+  if (!dialog.open || dialog.running || dialog.finished || !dialog.groupKey) return;
   const classify = yield* call(currentClassifier);
-  const live = liveDialogAgents(dialog.groupKey, classify);
+  const live = liveDialogAgents(dialog.rows, dialog.groupKey, classify);
   const snapshots = new Map(live.map(({ entry }) => [entry.agentId, entry]));
   const heldIds = [...snapshots.keys()];
   bulkHold.hold(heldIds);
-  updateDialog((state) => {
-    state.running = true;
-    state.progress = { done: 0, total: live.length };
-  });
+  yield* put(providerSwitchRunStarted(live.length));
   try {
     const outcomes = yield* call(
-      runBulkRetry,
-      live.map(({ entry }) => ({ agentId: entry.agentId, workspaceId: entry.workspaceId })),
-      {
-        retry: bulkDeps.retry,
-        onAgentDone: (outcome: BulkAgentOutcome) => {
-          recordOutcome(outcome);
-          settleEntry(outcome, snapshots);
-        },
-      },
+      runWithDialogProgress,
+      (onAgentDone) =>
+        runBulkRetry(
+          live.map(({ entry }) => ({ agentId: entry.agentId, workspaceId: entry.workspaceId })),
+          { retry: bulkDeps.retry, onAgentDone },
+        ),
+      snapshots,
     );
     yield* call(convergeRestarted, outcomes);
   } finally {
-    updateDialog((state) => {
-      state.running = false;
-      state.finished = true;
-    });
+    yield* put(providerSwitchRunFinished());
     bulkHold.release(heldIds);
   }
 }
