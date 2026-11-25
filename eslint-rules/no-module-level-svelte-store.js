@@ -28,6 +28,8 @@ import { suppressedLines } from './lib/disable-directives.js';
  * instance method, or in a function nothing in the file calls at load time. Calls are
  * found through named imports (also aliased) and namespace imports of 'svelte/store'.
  * A factory exported and called at load time from another file is not followed.
+ * `fromStore` and `readonly` are not flagged: they read or wrap an existing store and
+ * create no new shared state.
  *
  * Ratchet: the `baseline` option maps each file that already had module-level stores to
  * its count; the first `count` in source order are tolerated and every further one is

@@ -333,15 +333,16 @@ export const open = stores.writable(false);`,
       errors: [error(3)],
     },
     {
-      name: 'a module-level toStore, directly or through a namespace import',
+      name: 'a module-level toStore through named, aliased and namespace imports',
       filename,
       code: `
 import * as stores from 'svelte/store';
-import { toStore } from 'svelte/store';
+import { toStore, toStore as bind } from 'svelte/store';
 let open = false;
 export const openStore = toStore(() => open, (value) => (open = value));
-export const label = stores.toStore(() => (open ? 'Open' : 'Closed'));`,
-      errors: [error(5), error(6)],
+export const label = stores.toStore(() => (open ? 'Open' : 'Closed'));
+export const bound = bind(() => open);`,
+      errors: [error(5), error(6), error(7)],
     },
     {
       name: 'a store inside a module-level object literal',
@@ -499,11 +500,13 @@ svelteTester.run('no-module-level-svelte-store (components)', rule, {
       name: 'a store in the instance script',
       filename: componentFilename,
       code: `<script lang="ts">
-  import { derived, writable } from 'svelte/store';
+  import { derived, toStore, writable } from 'svelte/store';
+  let { count } = $props();
   const open = writable(false);
   const label = derived(open, ($open) => ($open ? 'Open' : 'Closed'));
+  const countStore = toStore(() => count);
 </script>
-<p>{$label}</p>`,
+<p>{$label} {$countStore}</p>`,
     },
   ],
   invalid: [
