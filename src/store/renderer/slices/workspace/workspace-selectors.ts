@@ -67,10 +67,6 @@ export const selectWorkspaceTitlesById = store.createSelector<[], Record<string,
   },
 );
 
-export const selectWorkspaceLoading = store.createSelector((state) => {
-  return state.workspace.loading;
-});
-
 export const selectWorkspaceHasLoaded = store.createSelector((state) => {
   return state.workspace.hasLoaded;
 });
