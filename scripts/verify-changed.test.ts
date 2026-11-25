@@ -1206,17 +1206,24 @@ describe('verification planning', () => {
       expect(plan.checks.find((check) => check.id === 'vitest-declared')).toBeUndefined();
     });
 
+    const expectFirst = (plan: ReturnType<typeof createVerificationPlan>, laneId: string) => {
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids[0]).toBe('i18n-completeness');
+      expect(completenessChecks(plan)).toHaveLength(1);
+      expect(ids).toContain(laneId);
+    };
+
     it.each([
       ['declared', catalog, 'vitest-declared'],
       ['direct', suite, 'vitest-direct'],
       ['directory', 'scripts/deleted.test.ts', 'vitest-direct'],
       ['full', 'package.json', 'vitest-full'],
-    ])('reuses runnable %s real-catalog coverage', (_, changed, checkId) => {
+      ['wrapper type check', 'scripts/type-check.ts', 'type-check-wrapper'],
+    ])('runs the fast check before %s lanes', (_, changed, checkId) => {
       const root = fixture({ [suite]: readFileSync(join(process.cwd(), suite), 'utf8') });
       const plan = planFor(root, [catalog, changed]);
-      expect(plan.checks.some((check) => check.id === checkId)).toBe(true);
-      expect(completenessChecks(plan)).toEqual([]);
-      if (checkId !== 'vitest-declared')
+      expectFirst(plan, checkId);
+      if (checkId.startsWith('vitest-') && checkId !== 'vitest-declared')
         expect(plan.checks.some((check) => check.id === 'vitest-declared')).toBe(false);
     });
 
@@ -1227,35 +1234,11 @@ describe('verification planning', () => {
       'project.inlang/settings.json',
       'scripts/i18n-equal-allowlist.json',
       checker,
-    ])('selects the existing real-catalog suite for %s', (file) => {
+    ])('runs the fast check before the real-catalog suite for %s', (file) => {
       const root = fixture({ [suite]: readFileSync(join(process.cwd(), suite), 'utf8') });
       const plan = planFor(root, [file]);
       expect(plan.checks.find((check) => check.id === 'vitest-declared')?.args).toContain(suite);
-      expect(completenessChecks(plan)).toEqual([]);
-    });
-
-    it.each([
-      "exclude: ['**/*.test.[tj]s']",
-      "include: ['**/*.spec.ts']",
-      "testNamePattern: 'passes when every catalog'",
-      'typecheck: { enabled: true, only: true }',
-      "related: ['src/placeholder.ts']",
-      "shard: '2/2'",
-      "tagsFilter: ['smoke']",
-      "cliExclude: ['**/check-i18n-completeness.test.ts']",
-      'listTags: true',
-      'changed: true',
-      'clearCache: true',
-      "mergeReports: './reports'",
-      "...{ exclude: ['**/*.test.ts'] }",
-    ])('retains the executable when config can filter real-catalog coverage: %s', (filter) => {
-      const root = fixture({
-        [suite]: readFileSync(join(process.cwd(), suite), 'utf8'),
-        'vitest.config.ts': `export default { test: { ${filter} } };`,
-      });
-      for (const changed of [catalog, suite, 'scripts/deleted.test.ts', 'package.json']) {
-        expect(completenessChecks(planFor(root, [catalog, changed]))).toHaveLength(1);
-      }
+      expectFirst(plan, 'vitest-declared');
     });
 
     it('retains the executable when config or the selected suite is missing', () => {
@@ -1266,38 +1249,29 @@ describe('verification planning', () => {
       expect(completenessChecks(planFor(root, [catalog, suite]))).toHaveLength(1);
     });
 
-    it.each([false, true])(
-      'propagates actual suite/checker failures with filtering=%s',
-      async (filtered) => {
-        const root = fixture({
-          [suite]: readFileSync(join(process.cwd(), suite), 'utf8'),
-          'messages/de.json': '{}',
-          'vitest.config.ts': `export default {
+    it('fails fast when a filtered real-catalog suite would pass', async () => {
+      const root = fixture({
+        [suite]: readFileSync(join(process.cwd(), suite), 'utf8'),
+        'messages/de.json': '{}',
+        'vitest.config.ts': `export default {
           cacheDir: '.cache/vitest',
           test: { exclude: ['**/node_modules/**'], maxWorkers: 1,
-            ${filtered ? "testNamePattern: 'passes when every catalog matches'" : ''}
-          },
+            testNamePattern: 'passes when every catalog matches' },
         };`,
-        });
-        symlinkSync(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir');
-        vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
-        const plan = planFor(root, [catalog]);
-        expect(completenessChecks(plan)).toHaveLength(filtered ? 1 : 0);
-        if (filtered) {
-          // The real suite can pass while its final real-catalog test is filtered out.
-          await runVerificationPlan(
-            {
-              ...plan,
-              checks: plan.checks.filter((check) => check.id === 'vitest-declared'),
-            },
-            root,
-          );
-        }
-        await expect(execute(root, [catalog], true)).rejects.toThrow(/failed with exit code 1/);
-        writeFileSync(join(root, 'messages/de.json'), JSON.stringify(translated));
-        await expect(execute(root, [catalog], true)).resolves.toBe(0);
-      },
-    );
+      });
+      symlinkSync(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir');
+      vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+      const plan = planFor(root, [catalog]);
+      expect(plan.checks[0]?.id).toBe('i18n-completeness');
+      // The real suite can pass while its final real-catalog test is filtered out.
+      await runVerificationPlan(
+        { ...plan, checks: plan.checks.filter((check) => check.id === 'vitest-declared') },
+        root,
+      );
+      await expect(execute(root, [catalog], true)).rejects.toThrow(/failed with exit code 1/);
+      writeFileSync(join(root, 'messages/de.json'), JSON.stringify(translated));
+      await expect(execute(root, [catalog], true)).resolves.toBe(0);
+    });
   });
 
   it('runs the architecture gates for any code change under src/', () => {

@@ -109,7 +109,7 @@ const FORMAT_EXTENSIONS = new Set([
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 // This suite executes the full required scan with the checked-in baseline.
 const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
-// Its final test executes the checker against the real repository catalogs.
+// The suite also checks the real catalogs, so its edits re-run the fast check too.
 const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
 const LOCALE_COMPLETENESS_INPUTS = new Set([
   'project.inlang/settings.json',
@@ -871,7 +871,19 @@ export function createVerificationPlan(files, options = {}) {
     }
   }
 
-  const checks = formatAndLintChecks(existing);
+  // Runs first, even when a later Vitest lane covers it: it takes seconds, and the
+  // suite lane reported a stale allowlist entry ~29 minutes in (cloudlands-fe#5048).
+  const checks = files.some(
+    (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
+  )
+    ? [
+        command('i18n-completeness', 'Locale catalog completeness', [
+          'run',
+          'lint:i18n-completeness',
+        ]),
+      ]
+    : [];
+  checks.push(...formatAndLintChecks(existing));
   // actionlint can hang on a loaded host (rhysd/actionlint#702; cloudlands-fe#4332),
   // so the architecture lane skips it and it runs only for its own inputs.
   if (architecture)
@@ -916,18 +928,6 @@ export function createVerificationPlan(files, options = {}) {
       command('i18n-strings', 'Translation strings (required inventory scan)', [
         'run',
         'lint:i18n-strings',
-      ]),
-    );
-  if (
-    files.some(
-      (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
-    ) &&
-    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
-  )
-    checks.push(
-      command('i18n-completeness', 'Locale catalog completeness', [
-        'run',
-        'lint:i18n-completeness',
       ]),
     );
   if (deadCode)
