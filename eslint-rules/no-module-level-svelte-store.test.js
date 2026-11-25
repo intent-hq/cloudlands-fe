@@ -1,12 +1,13 @@
 // @vitest-environment node
 // The ratchet lints every file in the rule's eslint.config.js scope.
-// @verify-changed-triggers: src/**/*.{js,mjs,ts}, eslint.config.js,
+// @verify-changed-triggers: src/**/*.{js,mjs,ts,svelte}, eslint.config.js,
 //   eslint-rules/baselines/no-module-level-svelte-store/**
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ESLint, RuleTester } from 'eslint';
 import tsParser from '@typescript-eslint/parser';
+import svelteParser from 'svelte-eslint-parser';
 import { describe, expect, it } from 'vitest';
 import {
   baselineCounts,
@@ -30,6 +31,16 @@ const filename = path.resolve(sourceRelative);
 const tester = new RuleTester({
   languageOptions: { ecmaVersion: 2022, sourceType: 'module', parser: tsParser },
 });
+
+const svelteTester = new RuleTester({
+  languageOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    parser: svelteParser,
+    parserOptions: { parser: tsParser },
+  },
+});
+const componentFilename = path.resolve('src/lib/components/Example.svelte');
 
 const error = (line) => ({ messageId: 'moduleLevelStore', line });
 
@@ -72,6 +83,41 @@ describe('no-module-level-svelte-store in the repo config', () => {
     }
   });
 
+  it('rejects a store in a component <script module> but not its instance script', async () => {
+    const component = `<script module>
+  import { writable } from 'svelte/store';
+  export const shared = writable(0);
+</script>
+<script lang="ts">
+  const local = writable(0);
+</script>
+`;
+    const messages = await lint('src/lib/components/FixtureDialog.svelte', component);
+    expect(messages.map((message) => message.line)).toEqual([3]);
+  });
+
+  it('accepts a disable only with a reason', async () => {
+    const disabled = (reason) =>
+      `import { writable } from 'svelte/store';\n` +
+      `// eslint-disable-next-line ${ruleId}${reason}\n` +
+      `export const dialogOpen = writable(false);\n`;
+    const [withReason] = await eslint.lintText(disabled(' -- bridge for a legacy consumer'), {
+      filePath: path.join(root, 'src/features/agent/fixture-dialog-state.ts'),
+    });
+    expect(withReason.messages).toEqual([]);
+    const reasonless = new ESLint({
+      cwd: root,
+      ruleFilter: ({ ruleId: id }) => id === ruleId || id === 'intent/require-disable-reason',
+      cache: false,
+    });
+    const [withoutReason] = await reasonless.lintText(disabled(''), {
+      filePath: path.join(root, 'src/features/agent/fixture-dialog-state.ts'),
+    });
+    expect(withoutReason.messages.map((message) => message.ruleId)).toEqual([
+      'intent/require-disable-reason',
+    ]);
+  });
+
   it('leaves tests, test helpers and main-process code alone', async () => {
     for (const file of [
       'src/features/agent/fixture-dialog-state.test.ts',
@@ -92,7 +138,7 @@ describe('no-module-level-svelte-store baseline ratchet', () => {
     }
     for (const file of Object.keys(baseline)) {
       expect(file, `${file} should be a package-relative source file`).toMatch(
-        /^src\/[^\\]*\.(js|mjs|ts)$/,
+        /^src\/[^\\]*\.(js|mjs|ts|svelte)$/,
       );
       expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
     }
@@ -190,6 +236,46 @@ export type Cell = Writable<number>;`,
       code: `export { writable } from 'svelte/store';`,
     },
     {
+      name: 'a factory, a class and an instance method that nothing runs at load time',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+export function createDialogState() {
+  return writable(false);
+}
+export class Session {
+  open = writable(false);
+}
+class Tracker {
+  reset() {
+    this.counter = writable(0);
+  }
+}
+export const tracker = new Tracker();
+export const onOpen = () => createDialogState();`,
+    },
+    {
+      name: 'a store in a callback passed at load time',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+const cells = new Map();
+export const cellFor = (id) => cells.get(id) ?? cells.set(id, writable(0)).get(id);
+document.addEventListener('ready', () => {
+  cells.set('ready', writable(true));
+});`,
+    },
+    {
+      name: 'a reasoned disable does not use up the allowance',
+      filename,
+      options: [{ baseline: { [sourceRelative]: 1 } }],
+      code: `
+import { writable } from 'svelte/store';
+// eslint-disable-next-line rule-to-test/no-module-level-svelte-store -- bridge for a legacy consumer
+export const open = writable(false);
+export const label = writable('');`,
+    },
+    {
       name: 'baselined stores up to the count',
       filename,
       options: [{ baseline: { [sourceRelative]: 2 } }],
@@ -253,6 +339,83 @@ export const state = (() => {
       errors: [error(4)],
     },
     {
+      name: 'a store inside a function invoked with .call or .apply',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+export const a = function () {
+  return writable(0);
+}.call(this);
+export const b = (function () {
+  return writable(0);
+}).apply(this, []);`,
+      errors: [error(4), error(7)],
+    },
+    {
+      name: 'a custom store factory called at load time (declaration and const arrow)',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+function createCount() {
+  const { subscribe, set } = writable(0);
+  return { subscribe, reset: () => set(0) };
+}
+const createFlag = () => writable(false);
+export const count = createCount();
+export const flag = createFlag();`,
+      errors: [error(4), error(7)],
+    },
+    {
+      name: 'a factory reached through another local function',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+function createCell() {
+  return writable(0);
+}
+function createState() {
+  return { cell: createCell() };
+}
+export const state = createState();`,
+      errors: [error(4)],
+    },
+    {
+      name: 'a singleton whose static getInstance creates the instance',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+class Tracker {
+  static instance;
+  counter = writable(0);
+  static getInstance() {
+    if (!Tracker.instance) Tracker.instance = new Tracker();
+    return Tracker.instance;
+  }
+}
+class Bus {
+  constructor() {
+    this.events = writable([]);
+  }
+  static create() {
+    return new this();
+  }
+}
+export const tracker = Tracker.getInstance();
+export const bus = Bus.create();`,
+      errors: [error(5), error(13)],
+    },
+    {
+      name: 'a class instantiated at load time',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+const Registry = class {
+  entries = writable([]);
+};
+export const registry = new Registry();`,
+      errors: [error(4)],
+    },
+    {
       name: 'a static class field or static block',
       filename,
       code: `
@@ -290,6 +453,47 @@ export const label = writable('');`,
       code: `
 import { writable } from 'svelte/store';
 export const open = writable(false);`,
+      errors: [error(3)],
+    },
+  ],
+});
+
+svelteTester.run('no-module-level-svelte-store (components)', rule, {
+  valid: [
+    {
+      name: 'a store in the instance script',
+      filename: componentFilename,
+      code: `<script lang="ts">
+  import { derived, writable } from 'svelte/store';
+  const open = writable(false);
+  const label = derived(open, ($open) => ($open ? 'Open' : 'Closed'));
+</script>
+<p>{$label}</p>`,
+    },
+  ],
+  invalid: [
+    {
+      name: 'a store at the top level of <script module>',
+      filename: componentFilename,
+      code: `<script module lang="ts">
+  import { writable } from 'svelte/store';
+  export const shared = writable(0);
+  export function make() {
+    return writable(0);
+  }
+</script>
+<script lang="ts">
+  const local = writable(0);
+</script>`,
+      errors: [error(3)],
+    },
+    {
+      name: 'a store in a <script context="module"> block',
+      filename: componentFilename,
+      code: `<script context="module">
+  import { writable } from 'svelte/store';
+  export const shared = writable(0);
+</script>`,
       errors: [error(3)],
     },
   ],

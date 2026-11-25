@@ -1098,18 +1098,19 @@ export default [
   },
   // A Svelte store created at module scope is app-wide shared state, which belongs in a
   // Redux slice (AGENTS.md: Svelte stores are deprecated; cloudlands-fe#5058 had to move
-  // one after review). Script modules only: stores in a component's <script> are local.
+  // one after review). The rule follows load-time calls within a file; a component's
+  // instance <script> is local, its <script module> is shared.
   // The baseline maps today's files to their store counts and may only shrink. A reasoned
   // single-line eslint-disable is the other escape hatch; the src/** require-disable-reason
   // entry below checks that it gives the reason.
   {
     files: [
-      'src/lib/**/*.{js,mjs,ts}',
-      'src/routes/**/*.{js,mjs,ts}',
-      'src/store/**/*.{js,mjs,ts}',
-      'src/features/**/*.{js,mjs,ts}',
-      'src/shared/**/*.{js,mjs,ts}',
-      'src/utils/**/*.{js,mjs,ts}',
+      'src/lib/**/*.{js,mjs,ts,svelte}',
+      'src/routes/**/*.{js,mjs,ts,svelte}',
+      'src/store/**/*.{js,mjs,ts,svelte}',
+      'src/features/**/*.{js,mjs,ts,svelte}',
+      'src/shared/**/*.{js,mjs,ts,svelte}',
+      'src/utils/**/*.{js,mjs,ts,svelte}',
     ],
     ignores: ['src/**/main/**', 'src/shared/git/**', '**/mocks/**', ...productionModuleIgnores],
     plugins: { intent: intentPlugin },
