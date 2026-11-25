@@ -74,6 +74,7 @@ async function readRecentSources(stored: Workspace[] | null) {
  * open-then-hydrate pair reads once while a later refresh sees a changed
  * remote. `originUrl` folds failures into `null`, so `null` is never reused.
  */
+/** @internal Exported for the cache-expiry test. */
 export const ORIGIN_CACHE_TTL_MS = 30_000;
 
 type OriginEntry = { read: Promise<string | null>; settledAt?: number };
