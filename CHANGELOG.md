@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.386.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.385.2...v2.386.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **model-picker:** choose provider profiles from a select instead of duplicate rail tabs ([#5042](https://github.com/intent-hq/cloudlands-fe/issues/5042)) ([8730d73](https://github.com/intent-hq/cloudlands-fe/commit/8730d73f89929b27297b3ea026fba427d61fc6eb))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.293 ([#5050](https://github.com/intent-hq/cloudlands-fe/issues/5050)) ([648c1e2](https://github.com/intent-hq/cloudlands-fe/commit/648c1e2ca944aaf2f477d5a9755e47b1fee20bf7))
+
 ## [2.385.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.385.1...v2.385.2) (2026-11-25)
 
 
