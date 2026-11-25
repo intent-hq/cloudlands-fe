@@ -101,11 +101,11 @@ const catalog = providerCatalogReducer(
 function state(overrides: Record<string, unknown> = {}) {
   const session = (id: string, workspaceId: string, name: string) =>
     ({
-      id,
-      backendSessionId: `backend-${id}`,
+      id: id as AgentSession['id'],
+      backendSessionId: `backend-${id}` as AgentSession['backendSessionId'],
       createdAt: '2026-11-25T00:00:00.000Z',
       updatedAt: '2026-11-25T00:00:00.000Z',
-      workspaceId,
+      workspaceId: workspaceId as AgentSession['workspaceId'],
       name,
       status: AgentStatus.Error,
       messages: [],
