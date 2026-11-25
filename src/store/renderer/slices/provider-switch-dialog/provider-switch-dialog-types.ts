@@ -18,13 +18,18 @@ export interface ProviderSwitchTargetOption {
   models: ProviderSwitchModelOption[];
 }
 
+export interface ProviderSwitchAgentOutcome {
+  status: BulkAgentStatus;
+  reason?: string;
+}
+
 export interface ProviderSwitchDialogAgent {
   agentId: string;
   name: string;
   workspaceName?: string;
   /** Targets eligible in this agent's workspace context. */
   eligibleProviderIds: string[];
-  outcome?: { status: BulkAgentStatus; reason?: string };
+  outcome?: ProviderSwitchAgentOutcome;
 }
 
 export interface ProviderSwitchDialogRow {
@@ -57,6 +62,10 @@ interface ProviderSwitchDialogFields {
 
 export interface ProviderSwitchDialogSliceState extends ProviderSwitchDialogFields {
   rows: Collection<ProviderSwitchDialogRow, 'key'>;
+  /** Run results by agent id; the selector merges them into the rows. */
+  outcomes: Record<string, ProviderSwitchAgentOutcome>;
+  /** Failed workers switched with each coordinator, by agent id. */
+  workersSwitched: Record<string, number>;
 }
 
 /** What the dialog component renders (rows in display order). */

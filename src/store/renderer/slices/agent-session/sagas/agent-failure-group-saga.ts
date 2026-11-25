@@ -18,6 +18,7 @@ import {
   getAgentFailureEntry,
   getDelegatedAgentFailureEntry,
   listDelegatedAgentFailures,
+  recordAgentFailure,
   removeAgentFailure,
   type AgentFailureEntry,
 } from '$features/agent/agent-failure-registry';
@@ -28,6 +29,7 @@ import {
   type BulkAgentOutcome,
   type BulkSwitchDeps,
   type BulkSwitchItem,
+  type BulkSwitchTarget,
 } from '$features/agent/bulk-provider-switch';
 import {
   getRememberedProviderSwitch,
@@ -263,12 +265,36 @@ const bulkDeps: Pick<BulkSwitchDeps, 'setModel' | 'retry'> = {
   },
 };
 
-/** Drop a restarted or deleted agent's entry, unless it re-failed meanwhile. */
-function settleEntry(outcome: BulkAgentOutcome, snapshots: Map<string, AgentFailureEntry>) {
+/**
+ * Drop a restarted or deleted agent's entry, unless it re-failed meanwhile.
+ * An agent that was switched but failed to restart is recorded again as a
+ * plain failure on its new provider: the switch's `agent:updated` may already
+ * have dropped its old entry, and it is still in error.
+ */
+function settleEntry(
+  outcome: BulkAgentOutcome,
+  snapshots: Map<string, AgentFailureEntry>,
+  targets?: Map<string, BulkSwitchTarget>,
+) {
+  const snapshot = snapshots.get(outcome.agentId);
+  const target = targets?.get(outcome.agentId);
+  if (outcome.status === 'failed' && outcome.restartFailed && snapshot && target) {
+    const current = getAgentFailureEntry(outcome.agentId);
+    if (!current || current === snapshot) {
+      recordAgentFailure({
+        agentId: snapshot.agentId,
+        workspaceId: snapshot.workspaceId,
+        error: outcome.reason ?? snapshot.error,
+        provider: target.providerId,
+        model: target.modelId,
+        ...(snapshot.agentName ? { agentName: snapshot.agentName } : {}),
+      });
+    }
+    return;
+  }
   if (outcome.status !== 'switched' && outcome.status !== 'retried' && outcome.status !== 'gone') {
     return;
   }
-  const snapshot = snapshots.get(outcome.agentId);
   if (snapshot && getAgentFailureEntry(outcome.agentId) === snapshot) {
     removeAgentFailure(outcome.agentId);
   }
@@ -514,12 +540,13 @@ function workersFor(
 function* runWithDialogProgress(
   run: (onAgentDone: (outcome: BulkAgentOutcome) => void) => Promise<BulkAgentOutcome[]>,
   snapshots: Map<string, AgentFailureEntry>,
+  targets?: Map<string, BulkSwitchTarget>,
 ): SagaGenerator<BulkAgentOutcome[]> {
   const settled = channel<BulkAgentOutcome>(buffers.expanding());
   const relay = yield* fork(function* () {
     while (true) {
       const outcome = yield* take(settled);
-      settleEntry(outcome, snapshots);
+      settleEntry(outcome, snapshots, targets);
       yield* put(providerSwitchAgentSettled(outcome));
     }
   });
@@ -600,6 +627,7 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
           },
         }),
       snapshots,
+      new Map(items.flatMap((item) => (item.target ? [[item.agentId, item.target]] : []))),
     );
     yield* call(convergeRestarted, outcomes);
   } finally {

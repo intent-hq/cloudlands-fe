@@ -36,6 +36,8 @@ export interface BulkAgentOutcome {
   workersSwitched: number;
   /** `false` when the daemon accepted the retry but had nothing queued. */
   redriven?: boolean;
+  /** The agent was switched to the target, but its restart failed. */
+  restartFailed?: boolean;
 }
 
 type CallResult = { ok: true } | { ok: false; error: string };
@@ -94,7 +96,13 @@ async function retryOutcome(
     };
   }
   if (result.notFound) return { agentId, status: 'gone', workersSwitched };
-  return { agentId, status: 'failed', reason: result.error, workersSwitched };
+  return {
+    agentId,
+    status: 'failed',
+    reason: result.error,
+    workersSwitched,
+    ...(success === 'switched' ? { restartFailed: true } : {}),
+  };
 }
 
 async function switchOne(item: BulkSwitchItem, deps: BulkSwitchDeps): Promise<BulkAgentOutcome> {

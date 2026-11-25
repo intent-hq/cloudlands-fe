@@ -1,10 +1,6 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import {
-  createCollection,
-  getItems,
-  updateItem,
-} from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, updateItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { BulkAgentOutcome, BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
 import type { GroupedFailureKind } from '$features/agent/agent-failure-groups';
 import type {
@@ -22,6 +18,8 @@ const initialState: ProviderSwitchDialogSliceState = {
   finished: false,
   progress: { done: 0, total: 0 },
   rows: createCollection<ProviderSwitchDialogRow, 'key'>('key'),
+  outcomes: {},
+  workersSwitched: {},
 };
 
 /** Saga: open the dialog for a failure group; rows load next. Ignored while a run is active. */
@@ -93,28 +91,19 @@ providerSwitchDialogReducer.with(providerSwitchRunStarted, (state, { payload: [t
 providerSwitchDialogReducer.with(providerSwitchAgentSettled, (state, { payload: [outcome] }) => ({
   ...state,
   progress: { ...state.progress, done: state.progress.done + 1 },
-  rows: createCollection(
-    'key',
-    getItems(state.rows).map((row) =>
-      row.agents.some((agent) => agent.agentId === outcome.agentId)
-        ? {
-            ...row,
-            workersSwitched: (row.workersSwitched ?? 0) + outcome.workersSwitched,
-            agents: row.agents.map((agent) =>
-              agent.agentId === outcome.agentId
-                ? {
-                    ...agent,
-                    outcome: {
-                      status: outcome.status,
-                      ...(outcome.reason ? { reason: outcome.reason } : {}),
-                    },
-                  }
-                : agent,
-            ),
-          }
-        : row,
-    ),
-  ),
+  outcomes: {
+    ...state.outcomes,
+    [outcome.agentId]: {
+      status: outcome.status,
+      ...(outcome.reason ? { reason: outcome.reason } : {}),
+    },
+  },
+  workersSwitched: outcome.workersSwitched
+    ? {
+        ...state.workersSwitched,
+        [outcome.agentId]: (state.workersSwitched[outcome.agentId] ?? 0) + outcome.workersSwitched,
+      }
+    : state.workersSwitched,
 }));
 providerSwitchDialogReducer.with(providerSwitchRunFinished, (state) => ({
   ...state,

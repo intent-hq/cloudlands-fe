@@ -11,6 +11,7 @@ import {
   providerSwitchRunStarted,
   providerSwitchTargetChosen,
 } from './provider-switch-dialog-slice';
+import { selectProviderSwitchDialog } from './provider-switch-dialog-selectors';
 import type { ProviderSwitchDialogRow } from './provider-switch-dialog-types';
 
 const initial = reduce(undefined, { type: '@@test/init' });
@@ -87,7 +88,9 @@ describe('providerSwitchDialog reducer', () => {
         workersSwitched: 0,
       }),
     );
-    const [opus, fable] = getItems(state.rows);
+    const [opus, fable] = selectProviderSwitchDialog.select({
+      providerSwitchDialog: state,
+    } as never).rows;
     expect(state.progress).toEqual({ done: 2, total: 3 });
     expect(opus.workersSwitched).toBe(2);
     expect(opus.agents.map((a) => a.outcome)).toEqual([undefined, { status: 'switched' }]);

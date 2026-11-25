@@ -106,6 +106,15 @@ describe('runBulkProviderSwitch', () => {
     ]);
   });
 
+  it('flags a failed restart after a successful switch', async () => {
+    const d = deps({ retry: vi.fn(async () => ({ ok: false as const, error: 'busy' })) });
+    const [outcome] = await runBulkProviderSwitch(
+      [{ agentId: 'a', workspaceId: 'ws', target, workers: [] }],
+      d,
+    );
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'busy', restartFailed: true });
+  });
+
   it('treats a thrown call as a failure and keeps going', async () => {
     const d = deps({
       setModel: vi.fn(async (agentId: string) => {

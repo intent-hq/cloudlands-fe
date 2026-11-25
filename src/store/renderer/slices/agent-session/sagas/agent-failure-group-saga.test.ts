@@ -67,6 +67,7 @@ import {
   recordAgentFailure,
   recordDelegatedAgentFailure,
   removeAgentFailure,
+  removeAgentFailureIfSwitched,
 } from '$features/agent/agent-failure-registry';
 import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -466,6 +467,39 @@ describe('agent failure group toasts', () => {
     dispatch(providerSwitchDialogClosed());
     await settle();
     expect(dialog().open).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps an agent visible when its switch lands but its restart fails', async () => {
+    const { task, dispatch } = start();
+    quota('agent-1', 'ws-1', 1);
+    quota('agent-2', 'ws-2', 2);
+    // The bridge drops the entry on the agent:updated that setModel emits.
+    mocks.setModel.mockImplementation(async (agentId: string) => {
+      removeAgentFailureIfSwitched(agentId, { provider: 'codex', model: 'sol' });
+      return { ok: true, data: { success: true } };
+    });
+    mocks.retry.mockImplementation(async (agentId: string) =>
+      agentId === 'agent-1'
+        ? { ok: false, error: 'Agent not in error status' }
+        : { ok: true, redriven: true },
+    );
+    await settle();
+    lastGroupToast().onSwitchAll();
+    await settle();
+    mocks.agentFailure.mockClear();
+    dispatch(providerSwitchConfirmRequested());
+    await settle();
+
+    expect(getAgentFailureEntry('agent-1')).toMatchObject({
+      error: 'Agent not in error status',
+      provider: 'codex',
+      model: 'sol',
+    });
+    expect(getAgentFailureEntry('agent-1')?.errorCode).toBeUndefined();
+    expect(getAgentFailureEntry('agent-2')).toBeUndefined();
+    expect(mocks.agentFailure.mock.calls.at(-1)?.[1].id).toBe('agent-failure:agent-1');
     task.cancel();
     await task.toPromise();
   });
