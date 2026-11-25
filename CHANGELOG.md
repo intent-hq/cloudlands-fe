@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.387.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.387.2...v2.387.3) (2026-11-25)
+
+
+### 🐛 Bug Fixes
+
+* **verify-changed:** run locale completeness before test lanes ([#5057](https://github.com/intent-hq/cloudlands-fe/issues/5057)) ([d607abd](https://github.com/intent-hq/cloudlands-fe/commit/d607abd72d4c3d04e873dd4eb10d8cc59dab4b5d))
+
 ## [2.387.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.387.1...v2.387.2) (2026-11-25)
 
 
