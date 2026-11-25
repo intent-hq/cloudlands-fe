@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.388.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.387.4...v2.388.0) (2026-11-25)
+
+
+### 🚀 Features
+
+* **agent:** group provider failure toasts and switch agents in bulk ([#5058](https://github.com/intent-hq/cloudlands-fe/issues/5058)) ([63ca164](https://github.com/intent-hq/cloudlands-fe/commit/63ca16481813fb769f321bdec1907f772b9125ab))
+* **stats:** add Code Written, Tool Calls, Agent Team and Activity Streak cards ([#5056](https://github.com/intent-hq/cloudlands-fe/issues/5056)) ([a3b7d64](https://github.com/intent-hq/cloudlands-fe/commit/a3b7d6405f125de97b547b68d277b82012226bd1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.297 ([#5065](https://github.com/intent-hq/cloudlands-fe/issues/5065)) ([e94baf8](https://github.com/intent-hq/cloudlands-fe/commit/e94baf844676c4a04385aa5518dfb1d052b3d8ee))
+
 ## [2.387.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.387.3...v2.387.4) (2026-11-25)
 
 
