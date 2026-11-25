@@ -50,6 +50,7 @@ import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-vie
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
 import noUnguardedFocusInWindowFocusHandlerRule from './eslint-rules/no-unguarded-focus-in-window-focus-handler.js';
 import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
+import noModuleLevelSvelteStoreRule from './eslint-rules/no-module-level-svelte-store.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -65,6 +66,8 @@ const fixedWaitTimeoutBaseline =
   baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
 const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
 const hoverThenClickInCtBaseline = baselineCounts(lintBaseline['no-hover-then-click-in-ct']) ?? {};
+const moduleLevelSvelteStoreBaseline =
+  baselineCounts(lintBaseline['no-module-level-svelte-store']) ?? {};
 // The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
 const componentTestReasonedDisableRules = [
   'intent/no-one-shot-animation-count',
@@ -103,6 +106,7 @@ const intentPlugin = {
     'no-fixed-wait-timeout-in-tests': noFixedWaitTimeoutInTestsRule,
     'no-unguarded-focus-in-window-focus-handler': noUnguardedFocusInWindowFocusHandlerRule,
     'require-disable-reason': requireDisableReasonRule,
+    'no-module-level-svelte-store': noModuleLevelSvelteStoreRule,
   },
 };
 
@@ -1089,6 +1093,30 @@ export default [
       '@typescript-eslint/no-restricted-imports': [
         'error',
         rendererBrowserSafetyRestrictedImportsOptions,
+      ],
+    },
+  },
+  // A Svelte store created at module scope is app-wide shared state, which belongs in a
+  // Redux slice (AGENTS.md: Svelte stores are deprecated; cloudlands-fe#5058 had to move
+  // one after review). The rule follows load-time calls within a file; a component's
+  // instance <script> is local, its <script module> is shared.
+  // The baseline maps today's files to their store counts and may only shrink; it is the
+  // only exception path.
+  {
+    files: [
+      'src/lib/**/*.{js,mjs,ts,svelte}',
+      'src/routes/**/*.{js,mjs,ts,svelte}',
+      'src/store/**/*.{js,mjs,ts,svelte}',
+      'src/features/**/*.{js,mjs,ts,svelte}',
+      'src/shared/**/*.{js,mjs,ts,svelte}',
+      'src/utils/**/*.{js,mjs,ts,svelte}',
+    ],
+    ignores: ['src/**/main/**', 'src/shared/git/**', '**/mocks/**', ...productionModuleIgnores],
+    plugins: { intent: intentPlugin },
+    rules: {
+      'intent/no-module-level-svelte-store': [
+        'error',
+        { baseline: moduleLevelSvelteStoreBaseline },
       ],
     },
   },
