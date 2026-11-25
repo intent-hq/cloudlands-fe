@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.385.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.385.1...v2.385.2) (2026-11-25)
+
+
+### 🐛 Bug Fixes
+
+* **desktop:** skip desktop.getState in the web renderer ([#5022](https://github.com/intent-hq/cloudlands-fe/issues/5022)) ([cd78ffb](https://github.com/intent-hq/cloudlands-fe/commit/cd78ffbad6c8c0e3e0922956c2fb1ca3d34d92fc))
+
 ## [2.385.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.385.0...v2.385.1) (2026-11-25)
 
 
