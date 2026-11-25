@@ -7,7 +7,7 @@ import { suppressedLines } from './lib/disable-directives.js';
  *   import { writable } from 'svelte/store';
  *   export const switchAllDialog = writable({ open: false });   // flagged
  *
- * A module-level `writable`, `readable` or `derived` is app-wide shared state, and
+ * A module-level `writable`, `readable`, `derived` or `toStore` is app-wide shared state, and
  * shared state belongs in a Redux slice (packages/cloudlands-fe/AGENTS.md: Svelte stores
  * are deprecated). cloudlands-fe#5058 added one for a dialog; no check caught it, and
  * moving it to Redux after the full verification had passed took another refactor and
@@ -28,6 +28,8 @@ import { suppressedLines } from './lib/disable-directives.js';
  * instance method, or in a function nothing in the file calls at load time. Calls are
  * found through named imports (also aliased) and namespace imports of 'svelte/store'.
  * A factory exported and called at load time from another file is not followed.
+ * `fromStore` and `readonly` are not flagged: they read or wrap an existing store and
+ * create no new shared state.
  *
  * Ratchet: the `baseline` option maps each file that already had module-level stores to
  * its count; the first `count` in source order are tolerated and every further one is
@@ -44,7 +46,7 @@ const MESSAGE =
 
 const RULE_NAME = 'no-module-level-svelte-store';
 const STORE_SOURCE = 'svelte/store';
-const STORE_FACTORIES = new Set(['writable', 'readable', 'derived']);
+const STORE_FACTORIES = new Set(['writable', 'readable', 'derived', 'toStore']);
 const FUNCTIONS = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 const LOAD = 'load';
 
@@ -123,7 +125,7 @@ export default {
     type: 'problem',
     docs: {
       description:
-        'Disallow creating a Svelte store (writable, readable, derived) at module scope in renderer code; use a Redux slice for shared state.',
+        'Disallow creating a Svelte store (writable, readable, derived, toStore) at module scope in renderer code; use a Redux slice for shared state.',
     },
     schema: [
       {

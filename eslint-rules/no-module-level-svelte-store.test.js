@@ -187,6 +187,18 @@ export class Controller {
 }`,
     },
     {
+      name: 'toStore inside a function, and fromStore or readonly at module scope',
+      filename,
+      code: `
+import { fromStore, readonly, toStore } from 'svelte/store';
+import { existing } from './existing';
+export function bindReview(getDemand) {
+  return toStore(() => getDemand());
+}
+export const view = fromStore(existing);
+export const exposed = readonly(existing);`,
+    },
+    {
       name: 'reading a store with get() at module scope',
       filename,
       code: `
@@ -319,6 +331,18 @@ export const open = cell(false);`,
 import * as stores from 'svelte/store';
 export const open = stores.writable(false);`,
       errors: [error(3)],
+    },
+    {
+      name: 'a module-level toStore through named, aliased and namespace imports',
+      filename,
+      code: `
+import * as stores from 'svelte/store';
+import { toStore, toStore as bind } from 'svelte/store';
+let open = false;
+export const openStore = toStore(() => open, (value) => (open = value));
+export const label = stores.toStore(() => (open ? 'Open' : 'Closed'));
+export const bound = bind(() => open);`,
+      errors: [error(5), error(6), error(7)],
     },
     {
       name: 'a store inside a module-level object literal',
@@ -476,11 +500,13 @@ svelteTester.run('no-module-level-svelte-store (components)', rule, {
       name: 'a store in the instance script',
       filename: componentFilename,
       code: `<script lang="ts">
-  import { derived, writable } from 'svelte/store';
+  import { derived, toStore, writable } from 'svelte/store';
+  let { count } = $props();
   const open = writable(false);
   const label = derived(open, ($open) => ($open ? 'Open' : 'Closed'));
+  const countStore = toStore(() => count);
 </script>
-<p>{$label}</p>`,
+<p>{$label} {$countStore}</p>`,
     },
   ],
   invalid: [
