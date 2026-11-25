@@ -172,7 +172,11 @@
             <p class="shrink-0 text-sm text-muted-foreground">{countLabel(row)}</p>
           </div>
           {#if !state.loading && row.targets.length > 0}
-            <div data-testid="provider-switch-picker">
+            <div
+              data-testid="provider-switch-picker"
+              inert={busy || state.finished}
+              class:opacity-60={busy || state.finished}
+            >
               <ModelPicker
                 workspaceId={row.pickerWorkspaceId}
                 allowedProviderIds={row.targets.map((target) => target.providerId)}
@@ -187,8 +191,6 @@
                 size="sm"
                 fullWidth
                 modalAware
-                isLocked={busy || state.finished}
-                showLockIconWhenLocked={false}
               />
             </div>
           {/if}
