@@ -64,6 +64,8 @@ export interface ProviderAvailabilityResult {
     antigravity?: ProviderStatus;
     /** Absent when connected to a daemon without Cursor support. */
     cursor?: ProviderStatus;
+    /** Absent when connected to a daemon without DeepSeek Harness support. */
+    dsh?: ProviderStatus;
   };
   /**
    * Provider IDs that are hidden because their required env var or feature
@@ -98,6 +100,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   unsloth: 'unsloth',
   antigravity: 'antigravity',
   cursor: 'cursor',
+  dsh: 'dsh',
 };
 
 const PROVIDER_AVAILABILITY_ID_TO_KEY = new Map(

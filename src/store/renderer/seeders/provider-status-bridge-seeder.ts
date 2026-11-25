@@ -33,8 +33,9 @@
  *                 CLI directly — presence requires BOTH `opencode` and
  *                 `unsloth` to resolve; local-only — no login surface, so
  *                 available ⇒ authenticated.
- *  - cursor:      daemon discovery's installed and gatedOff verdict (the
- *                 daemon resolves the `cursor-agent` CLI).
+ *  - cursor / dsh: daemon discovery's installed and gatedOff verdict (the
+ *                 daemon resolves `cursor-agent` / `dsh`), plus its refusal
+ *                 reason for a CLI it will not run.
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -183,8 +184,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
         key,
         withAuth(
-          id === 'cursor'
-            ? cursorStatusFromDiscovery(discovery)
+          id in REFUSABLE_PROVIDER_WARNINGS
+            ? refusableStatusFromDiscovery(discovery, id)
             : withVersion(providerStatusFromDiscovery(discovery, id), discovery, id),
           auth[id],
         ),
@@ -224,7 +225,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
-  const cursor = cursorStatusFromDiscovery(discovery);
+  const cursor = refusableStatusFromDiscovery(discovery, 'cursor');
+  const dsh = refusableStatusFromDiscovery(discovery, 'dsh');
   const codex = withBundledCli(
     { available: tool(PROVIDER_BINARIES.codex).available === true },
     discovery,
@@ -266,6 +268,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(grok, authVerdicts['grok']);
   withAuth(antigravity, authVerdicts['antigravity']);
   withAuth(cursor, authVerdicts['cursor']);
+  withAuth(dsh, authVerdicts['dsh']);
 
   const providers = {
     auggie,
@@ -280,6 +283,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     unsloth,
     antigravity,
     cursor,
+    dsh,
   };
   for (const [key, id] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
     const status = providers[key as keyof typeof providers];
@@ -304,7 +308,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       grok.available ||
       unsloth.available ||
       antigravity.available ||
-      cursor.available,
+      cursor.available ||
+      dsh.available,
     providers,
     hiddenProviders,
   };
@@ -388,19 +393,28 @@ function withVersion(
   return status;
 }
 
+/** Providers whose daemon can refuse a resolved CLI, with their row guidance. */
+const REFUSABLE_PROVIDER_WARNINGS: Record<string, (reason: string) => string> = {
+  cursor: (reason) => m.settings_providers_cursorUnsupported_warning({ reason }),
+  dsh: (reason) => m.settings_providers_dshUnsupported_warning({ reason }),
+};
+
 /**
- * Cursor from discovery, plus its CLI version and, for a refused binary (the Grok
- * agent host), the daemon's reason as row guidance instead of "not installed".
+ * A provider from discovery, plus its CLI version and, for a refused binary (Cursor's
+ * Grok agent host, a DeepSeek Harness whose upload Intent cannot turn off), the
+ * daemon's reason as row guidance instead of "not installed".
  */
-function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
-  const row = discovery.providers.find((provider) => provider.id === 'cursor');
-  const status = providerStatusFromDiscovery(discovery, 'cursor');
+function refusableStatusFromDiscovery(
+  discovery: ProviderDiscoverySnapshot,
+  providerId: string,
+): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === providerId);
+  const status = providerStatusFromDiscovery(discovery, providerId);
   if (row?.cliVersion) status.version = row.cliVersion;
-  if (row?.unavailableReason && !row.gatedOff) {
+  const warning = REFUSABLE_PROVIDER_WARNINGS[providerId];
+  if (row?.unavailableReason && !row.gatedOff && warning) {
     status.unavailableReason = row.unavailableReason;
-    status.warning = m.settings_providers_cursorUnsupported_warning({
-      reason: row.unavailableReason,
-    });
+    status.warning = warning(row.unavailableReason);
   }
   return status;
 }
@@ -539,7 +553,7 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
 }
 
 /** Providers whose single check already reads discovery (and its version). */
-const DISCOVERY_STATUS_PROVIDERS = new Set(['claude-code', 'antigravity', 'cursor', 'mock']);
+const DISCOVERY_STATUS_PROVIDERS = new Set(['claude-code', 'antigravity', 'cursor', 'dsh', 'mock']);
 
 async function checkSingleProviderStatus(
   providerId: string,
@@ -568,8 +582,8 @@ async function checkSingleProviderStatus(
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
-  if (providerId === 'cursor') {
-    const status = cursorStatusFromDiscovery(await fetchProviderDiscovery());
+  if (providerId in REFUSABLE_PROVIDER_WARNINGS) {
+    const status = refusableStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 

@@ -134,6 +134,17 @@ export const MOCK_CURSOR_PROVIDER: ProviderCatalogEntry = {
   visible: true,
 };
 
+/** Mocked DeepSeek Harness catalog row, as the daemon registry serves it. */
+export const MOCK_DSH_PROVIDER: ProviderCatalogEntry = {
+  id: 'dsh',
+  displayName: 'DeepSeek Harness',
+  shortName: 'DSH',
+  command: 'dsh',
+  canBeDisabled: true,
+  loginCommandHint: 'dsh web',
+  visible: true,
+};
+
 /**
  * Dispatch the mock catalog into a store (the shape used by appStore).
  * The store must already be initialized (`appStore.init()`).

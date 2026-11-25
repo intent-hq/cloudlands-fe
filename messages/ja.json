@@ -5792,6 +5792,7 @@
   "settings_providers_agyUpdatePending_warning": "agy が {minimum} より古いバージョンです。次の Antigravity エージェントの起動前に Intent が agy update を実行します。",
   "settings_providers_agyUpdateFailed_warning": "agy の自動更新に失敗しました: {reason}",
   "settings_providers_cursorUnsupported_warning": "Cursor CLI はサポートされていません: {reason}",
+  "settings_providers_dshUnsupported_warning": "DeepSeek Harness はサポートされていません: {reason}",
   "settings_providers_actionsFor_ariaLabel": "{name} のプロバイダー操作",
   "settings_providers_cannotDisable": "{name} は無効にできません",
   "settings_providers_checkError": "プロバイダーの確認に失敗しました",

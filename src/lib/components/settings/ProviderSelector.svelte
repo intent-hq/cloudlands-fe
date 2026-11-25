@@ -131,6 +131,7 @@
     },
     pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
     cursor: { docsUrl: 'https://cursor.com/docs/cli/installation', requiresAuth: true },
+    dsh: { docsUrl: 'https://github.com/deepseek-ai/deepseek-harness', requiresAuth: true },
   };
 
   // Helper to get provider availability from the shared status map
@@ -719,7 +720,7 @@
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
-    {#if providerId === 'antigravity' || providerId === 'cursor'}
+    {#if providerId === 'antigravity' || providerId === 'cursor' || providerId === 'dsh'}
       <AgentProviderIcon {providerId} size={20} class="size-5" />
     {:else if providerId === 'auggie'}
       <AuggieLogo width={22} />

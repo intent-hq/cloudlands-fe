@@ -39,12 +39,12 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_CURSOR_PROVIDER, MOCK_PROVIDER_CATALOG } =
+  const { MOCK_CURSOR_PROVIDER, MOCK_DSH_PROVIDER, MOCK_PROVIDER_CATALOG } =
     await import('../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded({
-      providers: [...MOCK_PROVIDER_CATALOG.providers, MOCK_CURSOR_PROVIDER],
+      providers: [...MOCK_PROVIDER_CATALOG.providers, MOCK_CURSOR_PROVIDER, MOCK_DSH_PROVIDER],
     }),
   );
   return createAppStoreMockModule({ state: () => ({ ...authority.state, providerCatalog }) });
@@ -273,6 +273,73 @@ describe('provider-status-bridge-seeder', () => {
     );
     expect(response.data?.hasAnyProvider).toBe(hasAny);
   });
+
+  it.each([true, false, null])(
+    'uses daemon discovery for DeepSeek Harness and preserves auth=%s',
+    async (authenticated) => {
+      routeDaemon({
+        'host.providerDiscovery': {
+          providers: [{ id: 'dsh', installed: true, cliVersion: '0.2.2-rc.5' }],
+        },
+        'host.providerAuthStatus': authOne('dsh', authenticated),
+      });
+      const response = await mockInvoke<Envelope<ProviderStatus>>(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+        providerId: 'dsh',
+        force: true,
+      });
+      expect(response.data).toEqual({
+        available: true,
+        version: '0.2.2-rc.5',
+        ...(authenticated === null ? {} : { authenticated }),
+      });
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+    },
+  );
+
+  const UPLOAD_REASON =
+    'This DeepSeek Harness version still uploads session logs with Intent’s overlay.';
+
+  it.each([PROVIDERS_CHANNELS.CHECK_SINGLE, PROVIDERS_CHANNELS.GET_AVAILABILITY])(
+    'surfaces a refused DeepSeek Harness as unsupported guidance through %s',
+    async (channel) => {
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+        'host.providerDiscovery': {
+          providers: [
+            {
+              id: 'dsh',
+              installed: false,
+              cliVersion: '0.3.0',
+              unavailableReason: UPLOAD_REASON,
+            },
+          ],
+        },
+      });
+      const response = await mockInvoke<
+        Envelope<ProviderAvailabilityResult & { available: boolean }>
+      >(
+        channel,
+        channel === PROVIDERS_CHANNELS.CHECK_SINGLE
+          ? { providerId: 'dsh', force: true }
+          : undefined,
+      );
+      const status =
+        channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+          ? response.data?.providers.dsh
+          : response.data;
+      expect(status).toEqual({
+        available: false,
+        version: '0.3.0',
+        unavailableReason: UPLOAD_REASON,
+        warning: `DeepSeek Harness unsupported: ${UPLOAD_REASON}`,
+      });
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        expect(response.data?.hasAnyProvider).toBe(false);
+      }
+    },
+  );
 
   beforeAll(async () => {
     const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');

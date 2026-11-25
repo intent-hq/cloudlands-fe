@@ -5792,6 +5792,7 @@
   "settings_providers_agyUpdatePending_warning": "agy 版本低於 {minimum}。Intent 會在下一個 Antigravity 代理程式啟動前執行 agy update。",
   "settings_providers_agyUpdateFailed_warning": "agy 自動更新失敗：{reason}",
   "settings_providers_cursorUnsupported_warning": "不支援的 Cursor CLI：{reason}",
+  "settings_providers_dshUnsupported_warning": "不支援的 DeepSeek Harness：{reason}",
   "settings_providers_actionsFor_ariaLabel": "{name} 的提供者操作",
   "settings_providers_cannotDisable": "無法停用 {name}",
   "settings_providers_checkError": "檢查提供者失敗",

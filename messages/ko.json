@@ -5792,6 +5792,7 @@
   "settings_providers_agyUpdatePending_warning": "agy가 {minimum}보다 오래된 버전입니다. 다음 Antigravity 에이전트가 시작되기 전에 Intent가 agy update를 실행합니다.",
   "settings_providers_agyUpdateFailed_warning": "agy 자동 업데이트 실패: {reason}",
   "settings_providers_cursorUnsupported_warning": "지원되지 않는 Cursor CLI: {reason}",
+  "settings_providers_dshUnsupported_warning": "지원되지 않는 DeepSeek Harness: {reason}",
   "settings_providers_actionsFor_ariaLabel": "{name} 공급자 작업",
   "settings_providers_cannotDisable": "{name}을(를) 비활성화할 수 없습니다",
   "settings_providers_checkError": "공급자를 확인하지 못했습니다",
