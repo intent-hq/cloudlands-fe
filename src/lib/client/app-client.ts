@@ -2437,7 +2437,18 @@ export interface UsageMonthStats extends UsageTokenTotals {
   month: number;
 }
 
-/** `stats.getUsage` result — aggregated usage for one period. */
+/** One `byDay` cell: a local calendar day with any recorded activity. */
+export interface UsageDayStats extends UsageTokenTotals {
+  /** Local date, "YYYY-MM-DD". */
+  date: string;
+  runs: number;
+}
+
+/**
+ * `stats.getUsage` result — aggregated usage for one period. The activity
+ * fields (`toolCalls` … `activityTrackedSince`) are optional: an older daemon
+ * omits them, which means "unknown", not zero.
+ */
 export interface UsageStatsResult {
   totals: UsageTokenTotals;
   runs: number;
@@ -2445,6 +2456,18 @@ export interface UsageStatsResult {
   longestRunMs: number;
   linesAdded: number;
   linesDeleted: number;
+  /** Tool calls that reached a terminal status. */
+  toolCalls?: number;
+  /** The subset of `toolCalls` that ended in an error. */
+  toolCallsFailed?: number;
+  /** Sum of completed-turn durations (agent time, not wall-clock time). */
+  totalRunMs?: number;
+  /** The subset of `sessions` created with a parent agent. */
+  subAgentSessions?: number;
+  /** Local days with activity, ascending; empty for 24h. */
+  byDay?: UsageDayStats[];
+  /** Local "YYYY-MM-DD" the activity counters started recording, or null. */
+  activityTrackedSince?: string | null;
   byModel: UsageModelStats[];
   byProvider: UsageProviderStats[];
   byHourOfDay: UsageHourStats[];

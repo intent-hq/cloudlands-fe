@@ -59,6 +59,7 @@ export function withoutCachedTokens(data: UsageStatsResult): UsageStatsResult {
     byProvider: data.byProvider.map(withoutCache).sort(byTotalDesc),
     byHourOfDay: data.byHourOfDay.map(withoutCache),
     byMonth: data.byMonth.map(withoutCache),
+    ...(data.byDay ? { byDay: data.byDay.map(withoutCache) } : {}),
   };
 }
 
@@ -89,6 +90,20 @@ export function formatDuration(ms: number): string {
     hours,
     minutes: String(minutes).padStart(2, '0'),
   });
+}
+
+/** Like `formatDuration`, but seconds below one minute ("42s"). */
+export function formatShortDuration(ms: number): string {
+  if (Number.isFinite(ms) && ms > 0 && ms < 59_500) {
+    return m.stats_format_durationSeconds_label({ seconds: Math.max(1, Math.round(ms / 1000)) });
+  }
+  return formatDuration(ms);
+}
+
+/** Signed thousands-separated integer: "+1,234", "−56", "0". */
+export function formatSignedInt(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return '0';
+  return `${n > 0 ? '+' : '−'}${formatInteger(Math.abs(n))}`;
 }
 
 /** Thousands-separated integer in the active locale. */

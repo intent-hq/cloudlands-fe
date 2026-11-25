@@ -17,7 +17,17 @@ function contrast(a: number[], b: number[]) {
 
 // Each card has separate scoped styles; each theme must keep its own text/chart
 // contrast after a live theme change; exports retain their PNG size contract.
-for (const cardName of ['passport', 'models', 'providers', 'by-hour', 'by-month'] as const) {
+for (const cardName of [
+  'passport',
+  'models',
+  'providers',
+  'by-hour',
+  'by-month',
+  'code',
+  'tools',
+  'team',
+  'streak',
+] as const) {
   for (const theme of ['light', 'dark'] as const) {
     test(`${cardName} stays readable in ${theme} and exports a PNG`, async ({
       mount,
@@ -104,6 +114,37 @@ for (const cardName of ['passport', 'models', 'providers', 'by-hour', 'by-month'
       const png = await readFile(exported);
       expect(png.readUInt32BE(16)).toBe(1080);
       expect(png.readUInt32BE(20)).toBe(1920);
+    });
+  }
+}
+
+// The activity cards keep every number inside the card, unclipped, with no
+// data and with huge counts (e.g. 12,345,670 tool calls).
+for (const cardName of ['code', 'tools', 'team', 'streak'] as const) {
+  for (const variant of ['zero', 'huge'] as const) {
+    test(`${cardName} fits ${variant} numbers`, async ({ mount, page }, testInfo) => {
+      const mounted = await mount(Harness, { props: { card: cardName, variant } });
+      const card = mounted.locator('[data-stats-card]');
+      await page.evaluate(() => document.fonts.ready);
+      const problems = await card.evaluate((root) => {
+        const box = root.getBoundingClientRect();
+        const issues: string[] = [];
+        for (const node of root.querySelectorAll<HTMLElement>(
+          '.hero-value, .hero-sub, .note, .stat-big, .stat-small, .legend, .rate-value',
+        )) {
+          const rect = node.getBoundingClientRect();
+          const text = node.textContent?.trim() ?? '';
+          if (/NaN|Infinity|undefined/.test(text)) issues.push(`bad value: ${text}`);
+          if (rect.right > box.right - 12 || rect.left < box.left)
+            issues.push(`outside the card: ${text}`);
+          if (node.scrollWidth > node.clientWidth + 1) issues.push(`clipped: ${text}`);
+        }
+        return issues;
+      });
+      const screenshot = testInfo.outputPath(`${cardName}-${variant}.png`);
+      await card.screenshot({ path: screenshot });
+      await testInfo.attach('card', { path: screenshot, contentType: 'image/png' });
+      expect(problems).toEqual([]);
     });
   }
 }
