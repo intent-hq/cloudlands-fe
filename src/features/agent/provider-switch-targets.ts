@@ -8,6 +8,7 @@
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import type { BulkSwitchTarget } from './bulk-provider-switch';
 
+/** @internal */
 // i18n-ignore (storage key, not user-facing)
 export const PROVIDER_SWITCH_MEMORY_STORAGE_KEY = 'agent-failure:provider-switch-choices';
 

@@ -8,7 +8,7 @@ import { writable } from 'svelte/store';
 import type { BulkAgentStatus, BulkSwitchTarget } from './bulk-provider-switch';
 import type { GroupedFailureKind } from './agent-failure-groups';
 
-export interface ProviderSwitchModelOption {
+interface ProviderSwitchModelOption {
   value: string;
   label: string;
 }
@@ -42,7 +42,7 @@ export interface ProviderSwitchDialogRow {
   workersSwitched?: number;
 }
 
-export interface ProviderSwitchDialogActions {
+interface ProviderSwitchDialogActions {
   select(rowKey: string, target: BulkSwitchTarget): void;
   confirm(): void;
   retryAll(): void;

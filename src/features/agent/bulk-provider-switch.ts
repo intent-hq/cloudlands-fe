@@ -54,7 +54,7 @@ export interface BulkSwitchDeps {
   onWorkerSwitched?(workerId: string): void;
 }
 
-export const BULK_SWITCH_CONCURRENCY = 3;
+const BULK_SWITCH_CONCURRENCY = 3;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
