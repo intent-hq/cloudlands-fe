@@ -321,6 +321,11 @@
       labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
+    /**
+     * Only these provider references are fetched and selectable (e.g. the
+     * targets a failed agent can be switched to). Absent means no limit.
+     */
+    allowedProviderIds?: string[];
     /** Provider-local settings cannot persist a selection owned by another provider. */
     allowProviderSwitch?: boolean;
     isCompact?: boolean;
@@ -410,6 +415,7 @@
     onModelChange = () => {},
     confirmModelChange,
     providerId,
+    allowedProviderIds,
     allowProviderSwitch = true,
     isCompact = false,
     isLocked = false,
@@ -484,18 +490,31 @@
       ),
     );
   });
+  const allowedProviderIds$ = writable(untrack(() => allowedProviderIds));
+  $effect(() => {
+    allowedProviderIds$.set(allowedProviderIds);
+  });
+  const keepAllowed = (ids: string[], allowed: string[] | undefined) =>
+    allowed ? ids.filter((id) => allowed.includes(id)) : ids;
   const modelFetchProviderIds$ = derived(
-    [baseModelFetchProviderIds$, providerProfiles$],
-    ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
+    [baseModelFetchProviderIds$, providerProfiles$, allowedProviderIds$],
+    ([ids, profiles, allowed]) =>
+      keepAllowed(expandProviderIdsWithProfiles(ids, profiles), allowed),
   );
   const availableEnabledProviderIds$ = derived(
-    [baseAvailableEnabledProviderIds$, providerProfiles$],
-    ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
+    [baseAvailableEnabledProviderIds$, providerProfiles$, allowedProviderIds$],
+    ([ids, profiles, allowed]) =>
+      keepAllowed(expandProviderIdsWithProfiles(ids, profiles), allowed),
   );
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
-  const listedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
+  const baseListedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
+  const listedProviderIds$ = derived(
+    [baseListedProviderIds$, allowedProviderIds$],
+    ([ids, allowed]) =>
+      allowed ? ids.filter((id) => allowed.some((ref) => providerRefBaseId(ref) === id)) : ids,
+  );
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
   const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);

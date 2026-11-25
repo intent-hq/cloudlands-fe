@@ -465,7 +465,15 @@ function* buildRows(
     const sourceModel = row.model
       ? (sourceModels.find((model) => model.value === row.model)?.label ?? row.model)
       : undefined;
+    const pickerHost = row.agentIds
+      .map((id) => group.members.find((member) => member.agentId === id))
+      .find(
+        (entry) =>
+          agents.find((agent) => agent.agentId === entry?.agentId)?.eligibleProviderIds.length,
+      );
+    const pickerWorkspaceId = pickerHost ? catalogContext(pickerHost.workspaceId) : undefined;
     rows.push({
+      ...(pickerWorkspaceId ? { pickerWorkspaceId } : {}),
       key: row.key,
       providerRef: row.providerRef,
       model: row.model,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { InputMessage } from '$lib/components/ui/input-message';
-  import { Select } from '$lib/components/ui/select';
+  import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { FormActions } from '$lib/components/patterns/form';
   import type {
@@ -22,33 +22,6 @@
   }
 
   let { state, inline = false, onSelect, onConfirm, onRetryAll, onClose }: Props = $props();
-
-  // i18n-ignore (internal option separator, not user-facing)
-  const SEPARATOR = '\u0000';
-
-  const busy = $derived(state.running);
-  const switchable = $derived(state.rows.some((row) => row.selection && row.targets.length > 0));
-  const noTargets = $derived(
-    !state.loading && state.rows.length > 0 && state.rows.every((row) => row.targets.length === 0),
-  );
-
-  function items(row: ProviderSwitchDialogRow) {
-    return row.targets.flatMap((target) =>
-      target.models.map((model) => ({
-        value: `${target.providerId}${SEPARATOR}${model.value}`,
-        label: `${target.label} · ${model.label}`,
-      })),
-    );
-  }
-
-  function selectionValue(row: ProviderSwitchDialogRow): string {
-    return row.selection ? `${row.selection.providerId}${SEPARATOR}${row.selection.modelId}` : '';
-  }
-
-  function choose(row: ProviderSwitchDialogRow, value: string) {
-    const [providerId, modelId] = value.split(SEPARATOR);
-    if (providerId && modelId) onSelect(row.key, { providerId, modelId });
-  }
 
   function countLabel(row: ProviderSwitchDialogRow): string {
     const count = row.agents.length;
@@ -192,23 +165,25 @@
             <p class="shrink-0 text-sm text-muted-foreground">{countLabel(row)}</p>
           </div>
           {#if !state.loading && row.targets.length > 0}
-            <Select.Root
-              value={selectionValue(row)}
-              items={items(row)}
-              disabled={busy || state.finished}
-              onchange={(value) => choose(row, value)}
-            >
-              <Select.Trigger
-                aria-label={m.agent_providerSwitch_target_ariaLabel({ source: row.label })}
-              >
-                <Select.Value />
-              </Select.Trigger>
-              <Select.Content>
-                {#each items(row) as item (item.value)}
-                  <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
+            <div data-testid="provider-switch-picker">
+              <ModelPicker
+                workspaceId={row.pickerWorkspaceId}
+                allowedProviderIds={row.targets.map((target) => target.providerId)}
+                selectedModel={row.selection
+                  ? `${row.selection.providerId}:${row.selection.modelId}`
+                  : undefined}
+                onModelChange={(_model, pick) => {
+                  if (pick) onSelect(row.key, pick);
+                }}
+                showDefaultOption={false}
+                variant="outline"
+                size="sm"
+                fullWidth
+                modalAware
+                isLocked={busy || state.finished}
+                showLockIconWhenLocked={false}
+              />
+            </div>
           {/if}
           {@const summary = rowSummary(row)}
           {#if summary.length > 0}

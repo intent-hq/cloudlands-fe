@@ -37,6 +37,8 @@ export interface ProviderSwitchDialogRow {
   workerCount: number;
   /** Union of the row agents' eligible targets. */
   targets: ProviderSwitchTargetOption[];
+  /** Workspace whose provider catalog the target picker reads (absent: global). */
+  pickerWorkspaceId?: string;
   selection: BulkSwitchTarget | null;
   workersSwitched?: number;
 }

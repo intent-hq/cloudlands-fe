@@ -96,8 +96,12 @@ test('group toast opens Switch all with one row per failed pair, and confirms th
   ).toBeVisible();
   await page.screenshot({ path: 'test-results/provider-switch/dialog-prefilled.png' });
 
-  await dialog.getByRole('combobox', { name: 'Target for Claude Code · Fable 5.2' }).click();
-  await page.getByRole('option', { name: 'OpenAI Codex · Luna' }).click();
+  // The composer's model picker, limited to the row's eligible targets.
+  const fablePicker = dialogRows.nth(1).getByTestId('provider-switch-picker');
+  await fablePicker.getByRole('button', { name: /Sol 6\.2/ }).click();
+  await expect(page.getByRole('option', { name: 'Opus 5.5', exact: true })).toHaveCount(0);
+  await page.getByRole('option', { name: 'Luna', exact: true }).click();
+  await expect(fablePicker.getByRole('button', { name: /Luna/ })).toBeVisible();
   await dialog.getByRole('button', { name: 'Switch and retry' }).click();
 
   expect(confirmed).toEqual([
