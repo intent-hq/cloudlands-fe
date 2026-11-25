@@ -299,9 +299,7 @@ describe('permission recovery subscription boundary', () => {
 
   function loadUnmanagedWorkspaces(count: number): string[] {
     const ids = Array.from({ length: count }, (_, i) => `ws-${i}`);
-    store.dispatch(
-      replaceWorkspaceList(ids.map((id) => ({ id: WorkspaceId(id) }) as Workspace)),
-    );
+    store.dispatch(replaceWorkspaceList(ids.map((id) => ({ id: WorkspaceId(id) }) as Workspace)));
     store.dispatch(
       setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
     );

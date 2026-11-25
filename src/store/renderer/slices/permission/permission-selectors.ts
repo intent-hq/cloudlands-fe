@@ -39,8 +39,9 @@ export const selectPendingCount = store.createSelector((state, sessionId: string
 
 // A current subscription owns snapshots, never agent discovery. Wait for
 // capability hydration so initial list loading does not cause a second read.
-const recoveryListLoaded = (state: Parameters<typeof selectWorkspaceListLoadedForBackend.select>[0]) =>
-  selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId);
+const recoveryListLoaded = (
+  state: Parameters<typeof selectWorkspaceListLoadedForBackend.select>[0],
+) => selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId);
 
 export const selectPermissionRecoveryAdmission = store.createSelector((state) => {
   const context = selectPrincipalActionContext.select(state);
