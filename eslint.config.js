@@ -50,6 +50,7 @@ import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-vie
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
 import noUnguardedFocusInWindowFocusHandlerRule from './eslint-rules/no-unguarded-focus-in-window-focus-handler.js';
 import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
+import noModuleLevelSvelteStoreRule from './eslint-rules/no-module-level-svelte-store.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -65,6 +66,8 @@ const fixedWaitTimeoutBaseline =
   baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
 const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
 const hoverThenClickInCtBaseline = baselineCounts(lintBaseline['no-hover-then-click-in-ct']) ?? {};
+const moduleLevelSvelteStoreBaseline =
+  baselineCounts(lintBaseline['no-module-level-svelte-store']) ?? {};
 // The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
 const componentTestReasonedDisableRules = [
   'intent/no-one-shot-animation-count',
@@ -103,6 +106,7 @@ const intentPlugin = {
     'no-fixed-wait-timeout-in-tests': noFixedWaitTimeoutInTestsRule,
     'no-unguarded-focus-in-window-focus-handler': noUnguardedFocusInWindowFocusHandlerRule,
     'require-disable-reason': requireDisableReasonRule,
+    'no-module-level-svelte-store': noModuleLevelSvelteStoreRule,
   },
 };
 
@@ -1092,6 +1096,30 @@ export default [
       ],
     },
   },
+  // A Svelte store created at module scope is app-wide shared state, which belongs in a
+  // Redux slice (AGENTS.md: Svelte stores are deprecated; cloudlands-fe#5058 had to move
+  // one after review). Script modules only: stores in a component's <script> are local.
+  // The baseline maps today's files to their store counts and may only shrink. A reasoned
+  // single-line eslint-disable is the other escape hatch; the src/** require-disable-reason
+  // entry below checks that it gives the reason.
+  {
+    files: [
+      'src/lib/**/*.{js,mjs,ts}',
+      'src/routes/**/*.{js,mjs,ts}',
+      'src/store/**/*.{js,mjs,ts}',
+      'src/features/**/*.{js,mjs,ts}',
+      'src/shared/**/*.{js,mjs,ts}',
+      'src/utils/**/*.{js,mjs,ts}',
+    ],
+    ignores: ['src/**/main/**', 'src/shared/git/**', '**/mocks/**', ...productionModuleIgnores],
+    plugins: { intent: intentPlugin },
+    rules: {
+      'intent/no-module-level-svelte-store': [
+        'error',
+        { baseline: moduleLevelSvelteStoreBaseline },
+      ],
+    },
+  },
   // Baselined pre-existing violators get the same rule at `warn` severity so
   // new browser-unsafe imports remain visible (instead of zero enforcement by
   // omission) while each file is migrated off the baseline list.
@@ -1213,9 +1241,11 @@ export default [
     plugins: { intent: intentPlugin },
     rules: {
       'intent/no-hand-written-typing-check': 'error',
+      // Also covers intent/no-module-level-svelte-store: flat config replaces a rule's
+      // options per file, so one src/** entry lists both.
       'intent/require-disable-reason': [
         'error',
-        { rules: ['intent/no-hand-written-typing-check'] },
+        { rules: ['intent/no-hand-written-typing-check', 'intent/no-module-level-svelte-store'] },
       ],
     },
   },

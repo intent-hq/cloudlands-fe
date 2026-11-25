@@ -21,7 +21,9 @@ affected guide section or explain why there is no user-help impact. Full rule:
 - Svelte 5 runes for UI rendering only; ALL shared/domain state MUST use Redux + sagas
 - Svelte stores (`*.store.svelte.ts`) are **DEPRECATED** — every one is a migration
   target. Do not create, expand or entrench them (including new reads of an existing one);
-  ephemeral component-local UI state is fine without Redux. Move toward removal with the
+  ephemeral component-local UI state is fine without Redux. Lint
+  (`intent/no-module-level-svelte-store`) rejects new module-level `writable` / `readable` /
+  `derived` beyond a shrink-only baseline. Move toward removal with the
   [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) and
   [`STATE_MANAGEMENT.md`](../../docs/fe/STATE_MANAGEMENT.md) ([on GitHub](https://github.com/intent-hq/intent/blob/main/docs/fe/STATE_MANAGEMENT.md)).
 - Use `pnpm`, not `npm`; create agents via `agentFactory.createAgent()`.
