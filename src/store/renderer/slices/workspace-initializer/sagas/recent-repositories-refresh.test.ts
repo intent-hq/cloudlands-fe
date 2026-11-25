@@ -13,7 +13,10 @@ import { selectPrincipalActionContext } from '../../principal/principal-selector
 import { replaceWorkspaceList, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import { workspaceInitializerRecentReposRefreshRequested } from '../workspace-initializer-slice';
 import { selectWorkspaceInitializerRecentRepoRefresh } from '../workspace-initializer-selectors';
-import { workspaceInitializerRepositorySaga } from './workspace-initializer-repository-saga';
+import {
+  ORIGIN_CACHE_TTL_MS,
+  workspaceInitializerRepositorySaga,
+} from './workspace-initializer-repository-saga';
 
 const rows = [
   { id: 'a', title: 'a', repositoryPath: '/repos/a', updatedAt: '2026-11-01T00:00:00Z' },
@@ -94,6 +97,37 @@ describe('recent repositories refresh', () => {
       '/repos/b',
       '/repos/b',
     ]);
+  });
+
+  it('a later refresh in the same admission sees a changed or removed origin', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const repos = () =>
+        JSON.stringify(
+          selectWorkspaceInitializerRecentRepoRefresh.select(store.state, 'picker')?.repos,
+        );
+      loadListForCurrentAdmission();
+      refresh();
+      await settle();
+      expect(repos()).toContain('"projectPath":"owner/a"');
+      mock.originUrl.mockImplementation(async (path: string) =>
+        path === '/repos/a' ? 'https://github.com/owner/moved.git' : null,
+      );
+      refresh();
+      await settle();
+      expect(repos()).toContain('"projectPath":"owner/a"');
+      vi.setSystemTime(Date.now() + ORIGIN_CACHE_TTL_MS + 1);
+      refresh();
+      await settle();
+      expect(repos()).toContain('"projectPath":"owner/moved"');
+      mock.originUrl.mockResolvedValue(null);
+      vi.setSystemTime(Date.now() + ORIGIN_CACHE_TTL_MS + 1);
+      refresh();
+      await settle();
+      expect(repos()).not.toContain('projectPath');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads origins again after the admission changes', async () => {

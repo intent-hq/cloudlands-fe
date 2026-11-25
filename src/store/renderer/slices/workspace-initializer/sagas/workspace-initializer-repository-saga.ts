@@ -69,11 +69,15 @@ async function readRecentSources(stored: Workspace[] | null) {
 }
 
 /**
- * Origin URLs per repo path for one admission, shared by every picker and
- * palette refresh; a new admission starts over. `originUrl` folds failures
- * into `null`, so a missing origin is read again next time.
+ * Origin URLs per repo path, shared by picker and palette refreshes. Reads in
+ * flight are shared; a settled origin is reused only briefly, so the picker's
+ * open-then-hydrate pair reads once while a later refresh sees a changed
+ * remote. `originUrl` folds failures into `null`, so `null` is never reused.
  */
-type OriginCache = { admission: string | null; urls: Map<string, Promise<string | null>> };
+export const ORIGIN_CACHE_TTL_MS = 30_000;
+
+type OriginEntry = { read: Promise<string | null>; settledAt?: number };
+type OriginCache = { admission: string | null; entries: Map<string, OriginEntry> };
 
 async function readOrigins(
   client: RecentRepositoriesClient,
@@ -84,19 +88,24 @@ async function readOrigins(
 ): Promise<Map<string, RepositoryTarget | null>> {
   if (cache.admission !== admission) {
     cache.admission = admission;
-    cache.urls = new Map();
+    cache.entries = new Map();
   }
-  const { urls } = cache;
+  const { entries } = cache;
   return new Map(
     await Promise.all(
       paths.map(async (path) => {
-        let read = urls.get(path);
-        if (!read) {
-          read = client.git.originUrl(path);
-          urls.set(path, read);
+        let entry = entries.get(path);
+        if (!entry || (entry.settledAt && Date.now() - entry.settledAt > ORIGIN_CACHE_TTL_MS)) {
+          const next: OriginEntry = { read: client.git.originUrl(path) };
+          entries.set(path, next);
+          entry = next;
         }
-        const url = await read;
-        if (url === null && urls.get(path) === read) urls.delete(path);
+        const current = entry;
+        const url = await current.read;
+        if (entries.get(path) === current) {
+          if (url === null) entries.delete(path);
+          else current.settledAt ??= Date.now();
+        }
         return [
           path,
           url
@@ -299,7 +308,7 @@ export function* knownReposLoadSaga() {
 }
 
 export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesClient = appClient) {
-  const origins: OriginCache = { admission: null, urls: new Map() };
+  const origins: OriginCache = { admission: null, entries: new Map() };
   yield* all([
     call(knownReposLoadSaga),
     takeLatestInContext(
