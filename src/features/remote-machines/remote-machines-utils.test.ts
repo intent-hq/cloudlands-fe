@@ -73,6 +73,30 @@ describe('machineNeedsUpdateForScripts', () => {
 });
 
 describe('parseRemoteMachine', () => {
+  it('keeps only string modelLabels and omits an empty or non-record map', () => {
+    const row = {
+      id: 'd-mac',
+      name: 'Mac',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'connected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+    };
+    const labels = (modelLabels: unknown) =>
+      parseRemoteMachine({
+        ...row,
+        capabilities: {
+          providers: [{ id: 'claude-code', status: 'ready', models: ['opus'], modelLabels }],
+        },
+      })?.capabilities?.providers[0].modelLabels;
+    expect(labels({ opus: 'Opus 5.5', bad: 3 })).toEqual({ opus: 'Opus 5.5' });
+    expect(labels({})).toBeUndefined();
+    expect(labels('x')).toBeUndefined();
+    expect(labels(undefined)).toBeUndefined();
+  });
+
   it("keeps the host's CPU and memory, and drops malformed values", () => {
     const row = {
       id: 'd-mac',

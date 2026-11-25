@@ -34,7 +34,7 @@ const CLAUDE_FAMILIES = new Set(['opus', 'sonnet', 'haiku']);
  * undefined for IDs it does not recognize.
  */
 export function prettyClaudeModelName(modelId: string): string | undefined {
-  const match = /^(?:claude-)?([a-z]+)((?:-\d+)*)(?:\[(\d+[km])\])?$/i.exec(modelId.trim());
+  const match = /^(?:claude-)?([a-z]+)((?:-\d{1,2}){0,2})(?:\[(\d+[km])\])?$/i.exec(modelId.trim());
   if (!match) return undefined;
   const family = match[1].toLowerCase();
   const isAlias = !modelId.toLowerCase().startsWith('claude-');
