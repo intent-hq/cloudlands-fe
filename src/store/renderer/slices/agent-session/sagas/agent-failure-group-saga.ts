@@ -4,7 +4,7 @@
  * the dialog or as a short note on the group toast, never as per-agent
  * toasts.
  */
-import { call, delay, put, race, select, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 import { get } from 'svelte/store';
 
 import {
@@ -52,12 +52,12 @@ import { forwardToastWhenHidden } from '$lib/utils/machine-toast-forward';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types';
-import type { store } from '../../../store';
 import { chatErrorCleared } from '../../chat-state/chat-state-slice';
 import { selectIsRailMachineShown } from '../../machine-rail/machine-rail-selectors';
 import { getModelsForProvider } from '../../model/model-utils';
 import { selectProviderModels } from '../../model/model-selectors';
 import {
+  selectProviderAuthErrorMatcher,
   selectProviderAuthFailureGuidance,
   selectProviderConfigurationLabel,
   selectProviderDisplayName,
@@ -78,8 +78,6 @@ import { selectAgentSession } from '../agent-session-selectors';
 import { updateSession } from '../agent-session-slice';
 
 const logger = createLogger('AgentFailureGroupSaga');
-
-type RootState = typeof store.state;
 
 /** Members listed on the toast before "+N more". */
 const TOAST_MEMBER_LINES = 3;
@@ -129,13 +127,8 @@ function truncate(text: string): string {
 
 /** Classifier over the current store: quota from the entry, sign-in from the catalog patterns. */
 export function* currentClassifier(): SagaGenerator<FailureClassifier> {
-  const state = yield* select((root: RootState) => root);
-  return (entry) =>
-    classifyAgentFailure(
-      entry,
-      (provider, model, error) =>
-        selectProviderAuthFailureGuidance.select(state, provider, model, error) !== null,
-    );
+  const isAuthError = yield* selectProviderAuthErrorMatcher.effect();
+  return (entry) => classifyAgentFailure(entry, isAuthError);
 }
 
 function* agentLabel(
@@ -337,8 +330,10 @@ function catalogContext(workspaceId: string): string | undefined {
 
 /** Ask for unopened workspaces' provider catalogs and wait briefly for them. */
 function* ensureCatalogs(workspaceIds: string[]): SagaGenerator<void> {
-  const state = yield* select((root: RootState) => root);
-  const pending = new Set(workspaceIds.filter((id) => !selectWorkspaceCatalog.select(state, id)));
+  const pending = new Set<string>();
+  for (const id of workspaceIds) {
+    if (!(yield* selectWorkspaceCatalog.effect(id))) pending.add(id);
+  }
   for (const id of pending) yield* put(ensureWorkspaceCatalogRequested(id));
   const deadline = Date.now() + CATALOG_WAIT_MS;
   while (pending.size > 0) {
@@ -363,7 +358,6 @@ function* buildRows(
     ),
   ];
   yield* call(ensureCatalogs, workspaceIds);
-  const state = yield* select((root: RootState) => root);
   const configuredModels = yield* selectProviderModels.effect();
   const modelCache = new Map<string, Promise<ProviderSwitchTargetOption['models']>>();
   const loadModels = (providerId: string, workspaceId: string | undefined) => {
@@ -389,15 +383,15 @@ function* buildRows(
       const entry = group.members.find((member) => member.agentId === agentId);
       if (!entry) continue;
       const label = yield* call(agentLabel, entry);
+      const eligibleProviderIds = yield* selectContextQuotaRetryProviderIds.effect(
+        row.providerRef,
+        catalogContext(entry.workspaceId),
+      );
       agents.push({
         agentId,
         name: label.name,
         ...(label.workspace ? { workspaceName: label.workspace } : {}),
-        eligibleProviderIds: selectContextQuotaRetryProviderIds.select(
-          state,
-          row.providerRef,
-          catalogContext(entry.workspaceId),
-        ),
+        eligibleProviderIds,
       });
       workerCount += workersFor(entry, group.key, classify).length;
     }
@@ -414,16 +408,13 @@ function* buildRows(
       const context = host ? catalogContext(host.workspaceId) : undefined;
       const models = yield* call(loadModels, providerId, context);
       if (models.length === 0) continue;
-      targets.push({
-        providerId,
-        label: selectProviderConfigurationLabel.select(state, providerId, context),
-        models,
-      });
+      const label = yield* selectProviderConfigurationLabel.effect(providerId, context);
+      targets.push({ providerId, label, models });
     }
     const sourceModels = row.model
       ? yield* call(loadModels, row.providerRef, catalogContext(group.members[0].workspaceId))
       : [];
-    const sourceProvider = selectProviderConfigurationLabel.select(state, row.providerRef);
+    const sourceProvider = yield* selectProviderConfigurationLabel.effect(row.providerRef);
     const sourceModel = row.model
       ? (sourceModels.find((model) => model.value === row.model)?.label ?? row.model)
       : undefined;
@@ -521,7 +512,7 @@ export function* openSwitchDialog(
   });
 }
 
-export function selectDialogTarget(rowKey: string, target: BulkSwitchTarget) {
+export function chooseDialogTarget(rowKey: string, target: BulkSwitchTarget) {
   updateDialog((state) => {
     state.rows = state.rows.map((row) =>
       row.key === rowKey ? { ...row, selection: target } : row,

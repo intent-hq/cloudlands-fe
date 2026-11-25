@@ -31,8 +31,18 @@ vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
 vi.mock('../../model/model-utils', () => ({ getModelsForProvider: mocks.models }));
 vi.mock('../../provider-catalog/workspace-catalog-selectors', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  selectContextQuotaRetryProviderIds: { select: mocks.eligible },
-  selectWorkspaceCatalog: { select: () => ({}) },
+  selectContextQuotaRetryProviderIds: {
+    select: mocks.eligible,
+    *effect(exhausted: string, workspaceId?: string) {
+      return mocks.eligible(undefined, exhausted, workspaceId);
+    },
+  },
+  selectWorkspaceCatalog: {
+    select: () => ({}),
+    *effect() {
+      return {};
+    },
+  },
 }));
 
 import {

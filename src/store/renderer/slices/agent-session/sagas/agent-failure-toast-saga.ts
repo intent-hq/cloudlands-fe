@@ -86,7 +86,7 @@ import {
   renderGroup,
   retryAllFromDialog,
   retryAllFromToast,
-  selectDialogTarget,
+  chooseDialogTarget,
   type BulkHold,
   type GroupEmitter,
   type GroupToastState,
@@ -349,14 +349,17 @@ function* renderSnapshot(
     if (state.visible) yield* call(dismissGroupToast, groupKey);
     states.groups.delete(groupKey);
   }
-  for (const entry of entries) {
-    if (!states.agents.has(entry.agentId)) {
-      states.agents.set(entry.agentId, { visible: false, retrying: false });
+  const agentState = (agentId: string): AgentToastState => {
+    let state = states.agents.get(agentId);
+    if (!state) {
+      state = { visible: false, retrying: false };
+      states.agents.set(agentId, state);
     }
-  }
+    return state;
+  };
   for (const group of groups) {
     for (const entry of group.members) {
-      const state = states.agents.get(entry.agentId)!;
+      const state = agentState(entry.agentId);
       if (state.visible) {
         const notify = yield* call(loadToastArtifacts);
         notify.dismiss(toastId(entry.agentId));
@@ -378,7 +381,7 @@ function* renderSnapshot(
     yield* call(renderGroup, group, groupState, groupEmit);
   }
   for (const entry of singles) {
-    const state = states.agents.get(entry.agentId)!;
+    const state = agentState(entry.agentId);
     if (states.held.has(entry.agentId)) continue;
     // Manually closed: stay hidden unless a NEWER failure landed.
     if (state.dismissedThroughAt !== undefined) {
@@ -583,7 +586,7 @@ export function* agentFailureToastSaga(): SagaGenerator<void> {
           yield* call(dismissGroupToast, message.groupKey);
         }
       } else if (message.kind === 'dialog-select') {
-        selectDialogTarget(message.rowKey, message.target);
+        chooseDialogTarget(message.rowKey, message.target);
       } else if (message.kind === 'dialog-confirm') {
         yield* fork(confirmSwitchDialog, bulkHold);
       } else if (message.kind === 'dialog-retry-all') {
