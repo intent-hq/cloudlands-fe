@@ -102,6 +102,9 @@ function state(overrides: Record<string, unknown> = {}) {
   const session = (id: string, workspaceId: string, name: string) =>
     ({
       id,
+      backendSessionId: `backend-${id}`,
+      createdAt: '2026-11-25T00:00:00.000Z',
+      updatedAt: '2026-11-25T00:00:00.000Z',
       workspaceId,
       name,
       status: AgentStatus.Error,
