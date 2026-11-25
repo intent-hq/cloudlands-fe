@@ -52,14 +52,14 @@
     <p class="toast-title min-w-0" data-toast-title>{title}</p>
     <p class="toast-description" data-toast-description>{errorSummary}</p>
 
-    <ul class="toast-members" data-testid="toast-group-members" data-toast-optional>
+    <div class="toast-members" data-testid="toast-group-members" data-toast-optional>
       {#each members as member, index (index)}
-        <li class="min-w-0 truncate" title={member}>{member}</li>
+        <p class="min-w-0 truncate" title={member}>{member}</p>
       {/each}
       {#if moreCount > 0}
-        <li>{m.agent_failureGroupToast_more_label({ count: moreCount })}</li>
+        <p>{m.agent_failureGroupToast_more_label({ count: moreCount })}</p>
       {/if}
-    </ul>
+    </div>
 
     {#if loginCommandHint}
       <div class="mt-1.5 flex min-w-0 items-center gap-1" data-testid="toast-auth-guidance">

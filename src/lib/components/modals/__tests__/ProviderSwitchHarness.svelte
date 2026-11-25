@@ -24,7 +24,7 @@
   let dialog = $state<ProviderSwitchDialogState>({ ...closedProviderSwitchDialog });
 </script>
 
-<div class="w-[22rem] rounded-md border bg-popover p-3" data-testid="group-toast">
+<div class="w-88 rounded-md border bg-popover p-3" data-testid="group-toast">
   <AgentFailureGroupToast
     title="Claude Code usage or rate limit reached — 5 agents"
     errorSummary="You have hit your weekly limit."

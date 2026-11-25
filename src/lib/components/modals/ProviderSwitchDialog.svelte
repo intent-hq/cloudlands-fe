@@ -4,6 +4,7 @@
   import { Select } from '$lib/components/ui/select';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { FormActions } from '$lib/components/patterns/form';
+  import { ListRow } from '$lib/components/patterns/collection';
   import type {
     ProviderSwitchDialogAgent,
     ProviderSwitchDialogRow,
@@ -141,30 +142,34 @@
               </Select.Content>
             </Select.Root>
           {/if}
-          <ul class="grid gap-1 text-sm">
+          <div class="grid">
             {#each row.agents as agent (agent.agentId)}
               {@const status = agentStatus(row, agent)}
-              <li
-                class="flex min-w-0 items-center justify-between gap-3"
+              <ListRow
+                class="min-h-7 gap-3 px-0 py-0.5"
                 data-testid="provider-switch-agent"
                 data-agent-id={agent.agentId}
               >
-                <span class="min-w-0 truncate text-muted-foreground">
-                  {agent.workspaceName ? `${agent.name} / ${agent.workspaceName}` : agent.name}
-                </span>
-                {#if status}
-                  <span
-                    class="min-w-0 max-w-[55%] shrink-0 truncate"
-                    class:text-muted-foreground={status.tone === 'muted'}
-                    class:text-success={status.tone === 'ok'}
-                    class:text-danger={status.tone === 'error'}
-                    title={status.text}
-                    data-testid="provider-switch-agent-status">{status.text}</span
-                  >
-                {/if}
-              </li>
+                {#snippet title()}
+                  <span class="text-muted-foreground">
+                    {agent.workspaceName ? `${agent.name} / ${agent.workspaceName}` : agent.name}
+                  </span>
+                {/snippet}
+                {#snippet trailing()}
+                  {#if status}
+                    <span
+                      class="max-w-1/2 truncate"
+                      class:text-muted-foreground={status.tone === 'muted'}
+                      class:text-success={status.tone === 'ok'}
+                      class:text-danger={status.tone === 'error'}
+                      title={status.text}
+                      data-testid="provider-switch-agent-status">{status.text}</span
+                    >
+                  {/if}
+                {/snippet}
+              </ListRow>
             {/each}
-          </ul>
+          </div>
           {#if row.workersSwitched}
             <p class="text-sm text-muted-foreground" data-testid="provider-switch-workers-switched">
               {workersSwitchedLabel(row.workersSwitched)}
