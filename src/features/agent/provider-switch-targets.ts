@@ -1,16 +1,15 @@
 /**
  * Target choice for moving failed agents to another provider: the model pick
  * rule shared with the chat banner's "Retry on {provider}" (#4455), the
- * per-device memory of the last choice per failed (provider, model) pair,
- * and the dialog prefill. Remembering only prefills; nothing switches
- * without the user confirming.
+ * remembered last choice per failed (provider, model) pair, and the dialog
+ * prefill. Remembering only prefills; nothing switches without the user
+ * confirming. The memory lives in the daemon's FE-owned
+ * `providerSwitch.state` setting; these helpers are pure over that bag.
  */
-import { safeLocalStorage } from '$lib/utils/safe-storage';
 import type { BulkSwitchTarget } from './bulk-provider-switch';
 
-/** @internal */
-// i18n-ignore (storage key, not user-facing)
-export const PROVIDER_SWITCH_MEMORY_STORAGE_KEY = 'agent-failure:provider-switch-choices';
+// i18n-ignore (daemon setting path, not user-facing)
+export const PROVIDER_SWITCH_SETTINGS_PATH = 'providerSwitch.state';
 
 /** Newest N failed pairs kept. */
 const MAX_PAIRS = 50;
@@ -40,48 +39,48 @@ export function pickModelForProvider<T extends PickableModel>(
   return models.find((model) => model.isDefault === true) ?? models[0];
 }
 
-type Memory = Record<string, BulkSwitchTarget & { at: number }>;
+type Remembered = BulkSwitchTarget & { at: number };
+
+/** `providerSwitch.state` bag: `{ choices: { "<providerRef>|<model>": { providerId, modelId, at } } }`. */
+export type ProviderSwitchBag = Record<string, unknown>;
 
 function pairKey(providerRef: string, model: string | null | undefined): string {
   return `${providerRef}|${model ?? ''}`;
 }
 
-function readMemory(): Memory {
-  const raw = safeLocalStorage.getItem(PROVIDER_SWITCH_MEMORY_STORAGE_KEY);
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Memory) : {};
-  } catch {
-    return {};
-  }
+function choicesOf(bag: ProviderSwitchBag): Record<string, Remembered> {
+  const choices = bag.choices;
+  return choices && typeof choices === 'object' && !Array.isArray(choices)
+    ? (choices as Record<string, Remembered>)
+    : {};
 }
 
 export function getRememberedProviderSwitch(
+  bag: ProviderSwitchBag,
   providerRef: string,
   model: string | null | undefined,
 ): BulkSwitchTarget | undefined {
-  const value = readMemory()[pairKey(providerRef, model)];
+  const value = choicesOf(bag)[pairKey(providerRef, model)];
   if (!value || typeof value.providerId !== 'string' || typeof value.modelId !== 'string') {
     return undefined;
   }
   return { providerId: value.providerId, modelId: value.modelId };
 }
 
-export function rememberProviderSwitch(
-  providerRef: string,
-  model: string | null | undefined,
-  target: BulkSwitchTarget,
-): void {
-  const memory = readMemory();
-  memory[pairKey(providerRef, model)] = { ...target, at: Date.now() };
-  const kept = Object.entries(memory)
+/** The bag with each pair's choice recorded, keeping the newest pairs. */
+export function withRememberedProviderSwitches(
+  bag: ProviderSwitchBag,
+  entries: Array<{ providerRef: string; model: string | null; target: BulkSwitchTarget }>,
+  at: number,
+): ProviderSwitchBag {
+  const choices = { ...choicesOf(bag) };
+  for (const { providerRef, model, target } of entries) {
+    choices[pairKey(providerRef, model)] = { ...target, at };
+  }
+  const kept = Object.entries(choices)
     .sort(([, a], [, b]) => (b.at ?? 0) - (a.at ?? 0))
     .slice(0, MAX_PAIRS);
-  safeLocalStorage.setItem(
-    PROVIDER_SWITCH_MEMORY_STORAGE_KEY,
-    JSON.stringify(Object.fromEntries(kept)),
-  );
+  return { ...bag, choices: Object.fromEntries(kept) };
 }
 
 /**

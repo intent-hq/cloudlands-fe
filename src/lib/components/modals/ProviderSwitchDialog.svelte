@@ -4,9 +4,7 @@
   import { Select } from '$lib/components/ui/select';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { FormActions } from '$lib/components/patterns/form';
-  import { ListRow } from '$lib/components/patterns/collection';
   import type {
-    ProviderSwitchDialogAgent,
     ProviderSwitchDialogRow,
     ProviderSwitchDialogView,
   } from '$store/renderer/slices/provider-switch-dialog/provider-switch-dialog-types';
@@ -66,24 +64,94 @@
     return `${agents}, ${workers}`;
   }
 
-  function agentStatus(
-    row: ProviderSwitchDialogRow,
-    agent: ProviderSwitchDialogAgent,
-  ): { text: string; tone: 'muted' | 'ok' | 'error' } | null {
-    const outcome = agent.outcome;
-    if (outcome?.status === 'switched')
-      return { text: m.agent_providerSwitch_switched_label(), tone: 'ok' };
-    if (outcome?.status === 'retried')
-      return { text: m.agent_providerSwitch_retried_label(), tone: 'ok' };
-    if (outcome?.status === 'gone')
-      return { text: m.agent_providerSwitch_gone_label(), tone: 'muted' };
-    if (outcome?.status === 'failed') {
-      return { text: m.agent_providerSwitch_failed_label(), tone: 'error' };
+  type Tone = 'muted' | 'ok' | 'error';
+  type CountMessage = (input: { count: string }) => string;
+
+  function counted(count: number, one: CountMessage, many: CountMessage): string {
+    return (count === 1 ? one : many)({ count: formatInteger(count) });
+  }
+
+  /** Before a run: agents the chosen target cannot serve. After: per-status counts. */
+  function rowSummary(row: ProviderSwitchDialogRow): { text: string; tone: Tone }[] {
+    const outcomes = row.agents.map((agent) => agent.outcome?.status);
+    if (outcomes.every((status) => status === undefined)) {
+      const unavailable = row.selection
+        ? row.agents.filter(
+            (agent) => !agent.eligibleProviderIds.includes(row.selection?.providerId ?? ''),
+          ).length
+        : 0;
+      return unavailable > 0
+        ? [
+            {
+              text: counted(
+                unavailable,
+                m.agent_providerSwitch_unavailableCount_one,
+                m.agent_providerSwitch_unavailableCount_many,
+              ),
+              tone: 'muted',
+            },
+          ]
+        : [];
     }
-    if (row.selection && !agent.eligibleProviderIds.includes(row.selection.providerId)) {
-      return { text: m.agent_providerSwitch_unavailable_label(), tone: 'muted' };
-    }
-    return null;
+    const count = (status: string) => outcomes.filter((outcome) => outcome === status).length;
+    const parts: { text: string; tone: Tone; n: number }[] = [
+      {
+        n: count('switched'),
+        tone: 'ok',
+        text: counted(
+          count('switched'),
+          m.agent_providerSwitch_switchedCount_one,
+          m.agent_providerSwitch_switchedCount_many,
+        ),
+      },
+      {
+        n: count('retried'),
+        tone: 'ok',
+        text: counted(
+          count('retried'),
+          m.agent_providerSwitch_retriedCount_one,
+          m.agent_providerSwitch_retriedCount_many,
+        ),
+      },
+      {
+        n: count('unavailable'),
+        tone: 'muted',
+        text: counted(
+          count('unavailable'),
+          m.agent_providerSwitch_notAvailableCount_one,
+          m.agent_providerSwitch_notAvailableCount_many,
+        ),
+      },
+      {
+        n: count('gone'),
+        tone: 'muted',
+        text: counted(
+          count('gone'),
+          m.agent_providerSwitch_goneCount_one,
+          m.agent_providerSwitch_goneCount_many,
+        ),
+      },
+      {
+        n: count('failed'),
+        tone: 'error',
+        text: counted(
+          count('failed'),
+          m.agent_providerSwitch_failedCount_one,
+          m.agent_providerSwitch_failedCount_many,
+        ),
+      },
+    ];
+    return parts.filter((part) => part.n > 0).map(({ text, tone }) => ({ text, tone }));
+  }
+
+  function failureReasons(row: ProviderSwitchDialogRow): string[] {
+    return [
+      ...new Set(
+        row.agents.flatMap((agent) =>
+          agent.outcome?.status === 'failed' && agent.outcome.reason ? [agent.outcome.reason] : [],
+        ),
+      ),
+    ];
   }
 
   function workersSwitchedLabel(count: number): string {
@@ -142,40 +210,24 @@
               </Select.Content>
             </Select.Root>
           {/if}
-          <div class="grid">
-            {#each row.agents as agent (agent.agentId)}
-              {@const status = agentStatus(row, agent)}
-              <ListRow
-                class="min-h-7 gap-3 px-0 py-0.5"
-                data-testid="provider-switch-agent"
-                data-agent-id={agent.agentId}
-              >
-                {#snippet title()}
-                  <span class="text-muted-foreground">
-                    {agent.workspaceName ? `${agent.name} / ${agent.workspaceName}` : agent.name}
-                  </span>
-                {/snippet}
-                {#snippet description()}
-                  {#if agent.outcome?.status === 'failed' && agent.outcome.reason}
-                    <span class="break-words text-danger" data-testid="provider-switch-agent-reason"
-                      >{agent.outcome.reason}</span
-                    >
-                  {/if}
-                {/snippet}
-                {#snippet trailing()}
-                  {#if status}
-                    <span
-                      class="whitespace-nowrap"
-                      class:text-muted-foreground={status.tone === 'muted'}
-                      class:text-success={status.tone === 'ok'}
-                      class:text-danger={status.tone === 'error'}
-                      data-testid="provider-switch-agent-status">{status.text}</span
-                    >
-                  {/if}
-                {/snippet}
-              </ListRow>
-            {/each}
-          </div>
+          {@const summary = rowSummary(row)}
+          {#if summary.length > 0}
+            <p class="flex flex-wrap gap-x-1.5 text-sm" data-testid="provider-switch-summary">
+              {#each summary as part, index (part.text)}
+                {#if index > 0}<span class="text-muted-foreground" aria-hidden="true">·</span>{/if}
+                <span
+                  class:text-muted-foreground={part.tone === 'muted'}
+                  class:text-success={part.tone === 'ok'}
+                  class:text-danger={part.tone === 'error'}>{part.text}</span
+                >
+              {/each}
+            </p>
+          {/if}
+          {#each failureReasons(row) as reason (reason)}
+            <p class="break-words text-sm text-danger" data-testid="provider-switch-reason">
+              {reason}
+            </p>
+          {/each}
           {#if row.workersSwitched}
             <p class="text-sm text-muted-foreground" data-testid="provider-switch-workers-switched">
               {workersSwitchedLabel(row.workersSwitched)}

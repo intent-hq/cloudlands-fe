@@ -31,7 +31,9 @@ import {
 } from '$features/agent/bulk-provider-switch';
 import {
   getRememberedProviderSwitch,
-  rememberProviderSwitch,
+  PROVIDER_SWITCH_SETTINGS_PATH,
+  withRememberedProviderSwitches,
+  type ProviderSwitchBag,
   resolveSwitchPrefill,
   unionTargets,
 } from '$features/agent/provider-switch-targets';
@@ -74,6 +76,7 @@ import {
   providerSwitchRunFinished,
   providerSwitchRunStarted,
 } from '../../provider-switch-dialog/provider-switch-dialog-slice';
+import { selectCanAdministerHost } from '../../principal/principal-selectors';
 import { selectProviderSwitchDialog } from '../../provider-switch-dialog/provider-switch-dialog-selectors';
 import type {
   ProviderSwitchDialogAgent,
@@ -348,6 +351,49 @@ function* ensureCatalogs(workspaceIds: string[]): SagaGenerator<void> {
   }
 }
 
+/**
+ * Read the remembered choices. An older daemon without the setting, or a
+ * failed read, gives an empty bag: the dialog falls back to default prefills.
+ */
+async function readProviderSwitchBag(): Promise<ProviderSwitchBag | null> {
+  try {
+    const setting = await appClient.settings.get(PROVIDER_SWITCH_SETTINGS_PATH);
+    const value = setting?.value;
+    if (setting === null) return null;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as ProviderSwitchBag)
+      : {};
+  } catch (error) {
+    logger.warn('Remembered provider switch choices unavailable', { error });
+    return null;
+  }
+}
+
+/** Remember each row's chosen target in the daemon (read-modify-write). Never throws. */
+function* rememberChoices(rows: ProviderSwitchDialogRow[]): SagaGenerator<void> {
+  const entries = rows.flatMap((row) =>
+    row.selection
+      ? [{ providerRef: row.providerRef, model: row.model, target: row.selection }]
+      : [],
+  );
+  if (entries.length === 0 || !(yield* selectCanAdministerHost.effect())) return;
+  const bag = yield* call(readProviderSwitchBag);
+  if (bag === null) return;
+  try {
+    yield* call(
+      [appClient.settings, appClient.settings.update],
+      [
+        {
+          path: PROVIDER_SWITCH_SETTINGS_PATH,
+          value: withRememberedProviderSwitches(bag, entries, Date.now()),
+        },
+      ],
+    );
+  } catch (error) {
+    logger.warn('Failed to remember provider switch choices', { error });
+  }
+}
+
 function* buildRows(
   group: AgentFailureGroup,
   classify: FailureClassifier,
@@ -358,6 +404,7 @@ function* buildRows(
     ),
   ];
   yield* call(ensureCatalogs, workspaceIds);
+  const remembered = (yield* call(readProviderSwitchBag)) ?? {};
   const configuredModels = yield* selectProviderModels.effect();
   const modelCache = new Map<string, Promise<ProviderSwitchTargetOption['models']>>();
   const loadModels = (providerId: string, workspaceId: string | undefined) => {
@@ -427,7 +474,7 @@ function* buildRows(
       workerCount,
       targets,
       selection: resolveSwitchPrefill({
-        remembered: getRememberedProviderSwitch(row.providerRef, row.model),
+        remembered: getRememberedProviderSwitch(remembered, row.providerRef, row.model),
         targets,
         configuredModels,
       }),
@@ -516,9 +563,7 @@ export function* confirmSwitchDialog(bulkHold: BulkHold): SagaGenerator<void> {
   const groupKey = dialog.groupKey;
   const classify = yield* call(currentClassifier);
   const live = liveDialogAgents(dialog.rows, groupKey, classify);
-  for (const row of dialog.rows) {
-    if (row.selection) rememberProviderSwitch(row.providerRef, row.model, row.selection);
-  }
+  yield* fork(rememberChoices, dialog.rows);
   const items: BulkSwitchItem[] = live.map(({ row, agent, entry }) => ({
     agentId: entry.agentId,
     workspaceId: entry.workspaceId,

@@ -1,17 +1,11 @@
-/**
- * @vitest-environment jsdom
- */
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
-  PROVIDER_SWITCH_MEMORY_STORAGE_KEY,
   getRememberedProviderSwitch,
-  rememberProviderSwitch,
   resolveSwitchPrefill,
   unionTargets,
+  withRememberedProviderSwitches,
 } from './provider-switch-targets';
-
-afterEach(() => window.localStorage.clear());
 
 const codex = {
   providerId: 'codex',
@@ -20,21 +14,49 @@ const codex = {
 const gemini = { providerId: 'gemini', models: [{ value: 'pro' }] };
 
 describe('remembered provider switch', () => {
-  it('round-trips per failed provider reference and model', () => {
-    rememberProviderSwitch('claude-code', 'opus', { providerId: 'codex', modelId: 'luna' });
-    expect(getRememberedProviderSwitch('claude-code', 'opus')).toEqual({
+  it('round-trips per failed provider reference and model, keeping other bag fields', () => {
+    const bag = withRememberedProviderSwitches(
+      { other: true },
+      [
+        {
+          providerRef: 'claude-code',
+          model: 'opus',
+          target: { providerId: 'codex', modelId: 'luna' },
+        },
+      ],
+      5,
+    );
+    expect(bag.other).toBe(true);
+    expect(getRememberedProviderSwitch(bag, 'claude-code', 'opus')).toEqual({
       providerId: 'codex',
       modelId: 'luna',
     });
-    expect(getRememberedProviderSwitch('claude-code', 'fable')).toBeUndefined();
-    expect(getRememberedProviderSwitch('claude-code@work', 'opus')).toBeUndefined();
+    expect(getRememberedProviderSwitch(bag, 'claude-code', 'fable')).toBeUndefined();
+    expect(getRememberedProviderSwitch(bag, 'claude-code@work', 'opus')).toBeUndefined();
   });
 
-  it('ignores corrupt storage', () => {
-    window.localStorage.setItem(PROVIDER_SWITCH_MEMORY_STORAGE_KEY, '{not json');
-    expect(getRememberedProviderSwitch('claude-code', 'opus')).toBeUndefined();
-    rememberProviderSwitch('claude-code', 'opus', { providerId: 'codex', modelId: 'sol' });
-    expect(getRememberedProviderSwitch('claude-code', 'opus')?.modelId).toBe('sol');
+  it('ignores malformed bags and entries', () => {
+    expect(getRememberedProviderSwitch({ choices: [] }, 'claude-code', 'opus')).toBeUndefined();
+    expect(
+      getRememberedProviderSwitch(
+        { choices: { 'claude-code|opus': { providerId: 3 } } },
+        'claude-code',
+        'opus',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps only the newest 50 pairs', () => {
+    let bag = {};
+    for (let i = 0; i < 55; i += 1) {
+      bag = withRememberedProviderSwitches(
+        bag,
+        [{ providerRef: `p${i}`, model: null, target: { providerId: 'codex', modelId: 'sol' } }],
+        i,
+      );
+    }
+    expect(getRememberedProviderSwitch(bag, 'p0', null)).toBeUndefined();
+    expect(getRememberedProviderSwitch(bag, 'p54', null)).toBeDefined();
   });
 });
 

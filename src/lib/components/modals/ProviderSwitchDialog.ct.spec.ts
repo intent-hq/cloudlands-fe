@@ -88,8 +88,11 @@ test('group toast opens Switch all with one row per failed pair, and confirms th
   await expect(dialogRows).toHaveCount(2);
   await expect(dialogRows.nth(0).getByText('3 agents, +2 workers')).toBeVisible();
   await expect(dialogRows.nth(1).getByText('1 agent')).toBeVisible();
+  // Rows show counts only: no agent or workspace names.
+  await expect(dialog.getByText('Implementor')).toHaveCount(0);
+  await expect(dialog.getByText('Fix login')).toHaveCount(0);
   await expect(
-    dialogRows.nth(0).locator('[data-agent-id="a3"]').getByText('Not available here'),
+    dialogRows.nth(0).getByText("1 agent can't use this target and stays as it is"),
   ).toBeVisible();
   await page.screenshot({ path: 'test-results/provider-switch/dialog-prefilled.png' });
 
@@ -104,25 +107,15 @@ test('group toast opens Switch all with one row per failed pair, and confirms th
     },
   ]);
   await expect(dialog.getByText('+2 workers switched, not restarted')).toBeVisible();
-  await expect(dialog.locator('[data-agent-id="a4"]').getByText('model rejected')).toBeVisible();
-  // Statuses stay readable: not clipped by the row.
-  for (const id of ['a1', 'a3', 'a4']) {
-    const status = dialog.locator(
-      `[data-agent-id="${id}"] [data-testid="provider-switch-agent-status"]`,
-    );
-    const contained = await status.evaluate((el) => {
-      const row = el.closest('[data-slot="list-row"]')!.getBoundingClientRect();
-      const box = el.getBoundingClientRect();
-      const clipper = el.parentElement!;
-      return (
-        box.left >= row.left &&
-        box.right <= row.right + 0.5 &&
-        clipper.scrollWidth <= clipper.clientWidth
-      );
-    });
-    expect(contained).toBe(true);
-  }
-  await expect(dialog.locator('[data-agent-id="a1"]').getByText('Switched')).toBeVisible();
+  const opusSummary = dialogRows.nth(0).getByTestId('provider-switch-summary');
+  await expect(opusSummary.getByText('2 switched')).toBeVisible();
+  await expect(opusSummary.getByText('1 not available')).toBeVisible();
+  await expect(
+    dialogRows.nth(1).getByTestId('provider-switch-summary').getByText('1 failed'),
+  ).toBeVisible();
+  await expect(dialogRows.nth(1).getByTestId('provider-switch-reason')).toHaveText(
+    'model rejected',
+  );
   await page.screenshot({ path: 'test-results/provider-switch/dialog-results.png' });
   await dialog.getByRole('button', { name: 'Close' }).last().click();
   await expect(page.getByRole('dialog')).toHaveCount(0);

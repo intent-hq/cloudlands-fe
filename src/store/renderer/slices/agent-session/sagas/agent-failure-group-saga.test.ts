@@ -12,9 +12,25 @@ const mocks = vi.hoisted(() => ({
   dismiss: vi.fn(),
   eligible: vi.fn(),
   models: vi.fn(),
+  settingsGet: vi.fn(),
+  settingsUpdate: vi.fn(),
 }));
 vi.mock('$lib/utils/machine-toast-forward', () => ({ forwardToastWhenHidden: vi.fn() }));
-vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } }));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    agents: { retry: mocks.retry },
+    settings: { get: mocks.settingsGet, update: mocks.settingsUpdate },
+  },
+}));
+vi.mock('../../principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  selectCanAdministerHost: {
+    select: () => true,
+    *effect() {
+      return true;
+    },
+  },
+}));
 vi.mock('$features/agent/agent.client', () => ({ agentClient: { setModel: mocks.setModel } }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: {
@@ -52,7 +68,6 @@ import {
   recordDelegatedAgentFailure,
   removeAgentFailure,
 } from '$features/agent/agent-failure-registry';
-import { getRememberedProviderSwitch } from '$features/agent/provider-switch-targets';
 import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
@@ -192,7 +207,8 @@ function start(overrides: Record<string, unknown> = {}) {
 describe('agent failure group toasts', () => {
   beforeEach(() => {
     clearAgentFailureRegistry();
-    window.localStorage.clear();
+    mocks.settingsGet.mockResolvedValue({ path: 'providerSwitch.state', value: {} });
+    mocks.settingsUpdate.mockResolvedValue([]);
     mocks.retry.mockResolvedValue({ ok: true, redriven: true });
     mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
     mocks.eligible.mockReturnValue(['codex']);
@@ -422,10 +438,17 @@ describe('agent failure group toasts', () => {
     expect(getAgentFailureEntry('agent-2')).toBeDefined();
     expect(listDelegatedAgentFailures('agent-1')).toEqual([]);
     expect(listDelegatedAgentFailures('agent-not-failed')).toHaveLength(1);
-    expect(getRememberedProviderSwitch('claude-code', 'opus')).toEqual({
-      providerId: 'codex',
-      modelId: 'luna',
-    });
+    // The chosen targets are remembered in the daemon's providerSwitch.state bag.
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      {
+        path: 'providerSwitch.state',
+        value: {
+          choices: {
+            'claude-code|opus': { providerId: 'codex', modelId: 'luna', at: expect.any(Number) },
+          },
+        },
+      },
+    ]);
 
     const after = dialog();
     expect(after.finished).toBe(true);
@@ -476,11 +499,28 @@ describe('agent failure group toasts', () => {
     await task.toPromise();
   });
 
+  it('falls back to default prefills and skips remembering on a daemon without the setting', async () => {
+    mocks.settingsGet.mockRejectedValue(new Error('unknown setting path: providerSwitch.state'));
+    const { task, dispatch } = start();
+    quota('agent-1', 'ws-1', 1);
+    quota('agent-2', 'ws-2', 2);
+    await settle();
+    lastGroupToast().onSwitchAll();
+    await settle();
+    expect(dialog().rows[0].selection).toEqual({ providerId: 'codex', modelId: 'sol' });
+    dispatch(providerSwitchConfirmRequested());
+    await settle();
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    expect(mocks.retry).toHaveBeenCalledTimes(2);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('prefills a remembered target next time, and ignores it once ineligible', async () => {
-    window.localStorage.setItem(
-      'agent-failure:provider-switch-choices',
-      JSON.stringify({ 'claude-code|opus': { providerId: 'codex', modelId: 'luna', at: 1 } }),
-    );
+    mocks.settingsGet.mockResolvedValue({
+      path: 'providerSwitch.state',
+      value: { choices: { 'claude-code|opus': { providerId: 'codex', modelId: 'luna', at: 1 } } },
+    });
     const { task, dispatch } = start();
     quota('agent-1', 'ws-1', 1);
     quota('agent-2', 'ws-2', 2);
