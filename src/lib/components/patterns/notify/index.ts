@@ -6,6 +6,7 @@ export {
 } from '$lib/components/ui/toast';
 export { notifyMetadata } from './notify.meta';
 export type {
+  AgentFailureGroupNotifyProps,
   AgentFailureNotifyProps,
   AppErrorNotifyProps,
   NotifyError,

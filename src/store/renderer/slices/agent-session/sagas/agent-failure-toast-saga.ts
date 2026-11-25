@@ -1,17 +1,27 @@
 /**
- * Agent-failure toast saga — renders one persistent bottom-left toast per
- * FAILED AGENT from the agent-failure registry, with Retry and Switch To
- * actions. There is deliberately no error grouping and no "Retry All": a
- * grouped mass-retry can accidentally restart agents a coordinator is
- * already recovering.
+ * Agent-failure toast saga — renders persistent bottom-left toasts from the
+ * agent-failure registry.
  *
- * Subscribes to `subscribeToAgentFailures()` through an eventChannel and
- * drives `toast.custom(...)` with a STABLE per-agent toast id
- * (`agent-failure:<agentId>`) so the toast updates in place when the same
- * agent re-fails, and auto-dismisses when the agent leaves error state or is
- * deleted. Manual close leaves the registry intact: the entry's `at` is
- * recorded and the toast re-shows only when a NEWER failure lands for that
- * agent.
+ * Grouping rule: failed TOP-LEVEL agents that share a failed base provider
+ * and a groupable kind — a usage or rate limit (`errorCode:
+ * "quota-exceeded"`) or a provider sign-in error — show ONE group toast once
+ * 2+ agents share it (`agent-failure-group:<kind>:<base>`), with "Switch all…"
+ * (a dialog that moves every member, and its tracked failed workers, to a
+ * chosen provider/model and restarts it), "Retry all", and for sign-in
+ * groups the login command. Delegated agents never get a toast or a row:
+ * their coordinator handles them (monorepo#1991); a bulk switch moves them
+ * with the coordinator but never retries them, so a mass action never
+ * restarts an agent a coordinator is already recovering. Every other
+ * failure — and a group's only member — keeps a per-agent toast.
+ *
+ * Per-agent toasts use a STABLE id (`agent-failure:<agentId>`) so the toast
+ * updates in place when the same agent re-fails, and auto-dismiss when the
+ * agent leaves error state or is deleted. Manual close leaves the registry
+ * intact: the entry's `at` is recorded and the toast re-shows only when a
+ * NEWER failure lands for that agent. A closed group toast re-shows only
+ * when a NEW agent joins the group. When a second agent joins, the first
+ * agent's per-agent toast is replaced by the group toast; a group that drops
+ * to one member reverts to that member's per-agent toast.
  *
  * Retry calls `appClient.agents.retry(agentId, workspaceId)` for that one
  * agent; `ok:true` removes the entry from the registry (the daemon's
@@ -24,13 +34,16 @@
  * agent's workspace with its chat drawer open (chief-of-staff failures open
  * the sidebar Assistant panel instead), regardless of the retry RPC outcome.
  * Switch To performs the SAME navigation but never calls `agent.retry`.
- * Toasts for the current workspace are suppressed; failures remain tracked
- * and provider auth-status refreshes still run.
+ * Per-agent toasts for the current workspace are suppressed; a group toast
+ * shows when at least one member is elsewhere. Failures remain tracked and
+ * provider auth-status refreshes still run.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 import type { AgentFailureNotifyProps } from '$lib/components/patterns/notify';
 
+import { groupAgentFailures, type AgentFailureGroup } from '$features/agent/agent-failure-groups';
+import type { BulkSwitchTarget } from '$features/agent/bulk-provider-switch';
 import {
   getAgentFailureEntry,
   listAgentFailureEntries,
@@ -62,6 +75,22 @@ import { selectIsRailMachineShown } from '../../machine-rail/machine-rail-select
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
+import {
+  closeGroupToastState,
+  closeSwitchDialog,
+  confirmSwitchDialog,
+  currentClassifier,
+  dismissGroupToast,
+  groupToastId,
+  openSwitchDialog,
+  renderGroup,
+  retryAllFromDialog,
+  retryAllFromToast,
+  selectDialogTarget,
+  type BulkHold,
+  type GroupEmitter,
+  type GroupToastState,
+} from './agent-failure-group-saga';
 
 const logger = createLogger('AgentFailureToastSaga');
 
@@ -92,7 +121,14 @@ type FailureMessage =
   | { kind: 'retry'; agentId: string }
   | { kind: 'switch-to'; agentId: string }
   | { kind: 'run-login'; providerId: string }
-  | { kind: 'close'; agentId: string };
+  | { kind: 'close'; agentId: string }
+  | { kind: 'switch-all'; groupKey: string }
+  | { kind: 'retry-all'; groupKey: string }
+  | { kind: 'close-group'; groupKey: string }
+  | { kind: 'dialog-select'; rowKey: string; target: BulkSwitchTarget }
+  | { kind: 'dialog-confirm' }
+  | { kind: 'dialog-retry-all' }
+  | { kind: 'dialog-close' };
 
 type FailureEmitter = (message: FailureMessage) => void;
 
@@ -235,21 +271,30 @@ function* renderEntry(
     });
     state.visible = true;
   }
-  // Auth failure: force a provider auth-status refresh so provider cards /
-  // settings flip to "Log in" without waiting for the next poll (the
-  // checkSingleProviderRequested worker probes with force: true). One
-  // refresh per failure — re-renders of the same entry don't re-probe.
-  if (state.authRefreshedAt !== entry.at && authGuidance) {
-    state.authRefreshedAt = entry.at;
-    // Burst guard: when several agents on the SAME provider fail together,
-    // the first dispatch flips the provider's loading flag synchronously,
-    // so the rest of the burst skips the put instead of stacking
-    // redundant concurrent probes — the in-flight probe's result covers
-    // them all.
-    const loadingMap = yield* selectProviderLoadingMap.effect();
-    if (!loadingMap[authGuidance.providerId]) {
-      yield* put(checkSingleProviderRequested(authGuidance.providerId));
-    }
+  yield* call(refreshAuthOnce, entry, state, authGuidance);
+}
+
+/**
+ * Auth failure: force a provider auth-status refresh so provider cards /
+ * settings flip to "Log in" without waiting for the next poll (the
+ * checkSingleProviderRequested worker probes with force: true). One refresh
+ * per failure — re-renders of the same entry don't re-probe. Runs for
+ * grouped agents too.
+ */
+function* refreshAuthOnce(
+  entry: AgentFailureEntry,
+  state: AgentToastState,
+  authGuidance: ProviderAuthFailureGuidance | null,
+): SagaGenerator<void> {
+  if (state.authRefreshedAt === entry.at || !authGuidance) return;
+  state.authRefreshedAt = entry.at;
+  // Burst guard: when several agents on the SAME provider fail together,
+  // the first dispatch flips the provider's loading flag synchronously, so
+  // the rest of the burst skips the put instead of stacking redundant
+  // concurrent probes — the in-flight probe's result covers them all.
+  const loadingMap = yield* selectProviderLoadingMap.effect();
+  if (!loadingMap[authGuidance.providerId]) {
+    yield* put(checkSingleProviderRequested(authGuidance.providerId));
   }
 }
 
@@ -267,30 +312,74 @@ function* rerenderOnCatalogHydration(emit: FailureEmitter): SagaGenerator<void> 
   }
 }
 
+interface ToastStates {
+  agents: Map<string, AgentToastState>;
+  groups: Map<string, GroupToastState>;
+  /** Latest grouping, for toast and dialog actions. */
+  current: Map<string, AgentFailureGroup>;
+  /** Members of in-flight bulk runs (see `BulkHold`). */
+  held: Map<string, number>;
+}
+
 /**
- * Render a registry snapshot: show/update one toast per visible failed
- * agent, dismiss toasts for agents that recovered or were deleted.
+ * Render a registry snapshot: one group toast per group of 2+ agents, one
+ * per-agent toast per other failure; dismiss toasts for agents that
+ * recovered or were deleted, and per-agent toasts of agents now grouped.
  */
 function* renderSnapshot(
   entries: AgentFailureEntry[],
-  states: Map<string, AgentToastState>,
+  states: ToastStates,
   emit: FailureEmitter,
+  groupEmit: GroupEmitter,
 ): SagaGenerator<void> {
   const liveAgentIds = new Set(entries.map((entry) => entry.agentId));
-  for (const [agentId, state] of states) {
+  for (const [agentId, state] of states.agents) {
     if (liveAgentIds.has(agentId)) continue;
     if (state.visible) {
       const notify = yield* call(loadToastArtifacts);
       notify.dismiss(toastId(agentId));
     }
-    states.delete(agentId);
+    states.agents.delete(agentId);
+  }
+  const classify = yield* call(currentClassifier);
+  const { groups, singles } = groupAgentFailures(entries, classify);
+  states.current = new Map(groups.map((group) => [group.key, group]));
+  for (const [groupKey, state] of states.groups) {
+    if (states.current.has(groupKey)) continue;
+    if (state.visible) yield* call(dismissGroupToast, groupKey);
+    states.groups.delete(groupKey);
   }
   for (const entry of entries) {
-    let state = states.get(entry.agentId);
-    if (!state) {
-      state = { visible: false, retrying: false };
-      states.set(entry.agentId, state);
+    if (!states.agents.has(entry.agentId)) {
+      states.agents.set(entry.agentId, { visible: false, retrying: false });
     }
+  }
+  for (const group of groups) {
+    for (const entry of group.members) {
+      const state = states.agents.get(entry.agentId)!;
+      if (state.visible) {
+        const notify = yield* call(loadToastArtifacts);
+        notify.dismiss(toastId(entry.agentId));
+        state.visible = false;
+      }
+      const session = yield* selectAgentSession.effect(entry.agentId);
+      const authGuidance = yield* selectProviderAuthFailureGuidance.effect(
+        entry.provider ?? session?.provider,
+        entry.model ?? session?.model,
+        entry.error,
+      );
+      yield* call(refreshAuthOnce, entry, state, authGuidance);
+    }
+    let groupState = states.groups.get(group.key);
+    if (!groupState) {
+      groupState = { visible: false, retrying: false, announcedMembers: new Set() };
+      states.groups.set(group.key, groupState);
+    }
+    yield* call(renderGroup, group, groupState, groupEmit);
+  }
+  for (const entry of singles) {
+    const state = states.agents.get(entry.agentId)!;
+    if (states.held.has(entry.agentId)) continue;
     // Manually closed: stay hidden unless a NEWER failure landed.
     if (state.dismissedThroughAt !== undefined) {
       if (entry.at <= state.dismissedThroughAt) continue;
@@ -431,30 +520,87 @@ function* closeAgentToast(
 }
 
 export function* agentFailureToastSaga(): SagaGenerator<void> {
-  const states = new Map<string, AgentToastState>();
+  const states: ToastStates = {
+    agents: new Map(),
+    groups: new Map(),
+    current: new Map(),
+    held: new Map(),
+  };
   const { channel, emit } = createFailureChannel();
+  const groupEmit: GroupEmitter = {
+    switchAll: (groupKey) => emit({ kind: 'switch-all', groupKey }),
+    retryAll: (groupKey) => emit({ kind: 'retry-all', groupKey }),
+    runLogin: (providerId) => emit({ kind: 'run-login', providerId }),
+    close: (groupKey) => emit({ kind: 'close-group', groupKey }),
+    dialogSelect: (rowKey, target) => emit({ kind: 'dialog-select', rowKey, target }),
+    dialogConfirm: () => emit({ kind: 'dialog-confirm' }),
+    dialogRetryAll: () => emit({ kind: 'dialog-retry-all' }),
+    dialogClose: () => emit({ kind: 'dialog-close' }),
+  };
+  const rerender = () => emit({ kind: 'snapshot', entries: listAgentFailureEntries() });
+  const bulkHold: BulkHold = {
+    hold: (agentIds) => {
+      for (const id of agentIds) states.held.set(id, (states.held.get(id) ?? 0) + 1);
+      rerender();
+    },
+    release: (agentIds) => {
+      for (const id of agentIds) {
+        const count = (states.held.get(id) ?? 1) - 1;
+        if (count > 0) states.held.set(id, count);
+        else states.held.delete(id);
+      }
+      rerender();
+    },
+  };
   try {
     yield* fork(rerenderOnCatalogHydration, emit);
     while (true) {
       const message: FailureMessage = yield* take(channel);
       if (message.kind === 'snapshot') {
-        yield* call(renderSnapshot, message.entries, states, emit);
+        // Render the live registry, not the queued snapshot: snapshots queue
+        // up while a bulk run settles agents, and a stale one would flash a
+        // per-agent toast for an agent that already left.
+        yield* call(renderSnapshot, listAgentFailureEntries(), states, emit, groupEmit);
       } else if (message.kind === 'retry') {
-        yield* fork(retryAgent, message.agentId, states, emit);
+        yield* fork(retryAgent, message.agentId, states.agents, emit);
       } else if (message.kind === 'switch-to') {
         yield* fork(switchToAgent, message.agentId);
       } else if (message.kind === 'run-login') {
         yield* put(providerLoginRequested(message.providerId));
+      } else if (message.kind === 'close') {
+        yield* call(closeAgentToast, message.agentId, states.agents);
+      } else if (message.kind === 'switch-all') {
+        const group = states.current.get(message.groupKey);
+        if (group) yield* fork(openSwitchDialog, group, groupEmit);
+      } else if (message.kind === 'retry-all') {
+        const group = states.current.get(message.groupKey);
+        const state = states.groups.get(message.groupKey);
+        if (group && state) yield* fork(retryAllFromToast, group, state, bulkHold);
+      } else if (message.kind === 'close-group') {
+        const state = states.groups.get(message.groupKey);
+        if (state) {
+          closeGroupToastState(states.current.get(message.groupKey), state);
+          yield* call(dismissGroupToast, message.groupKey);
+        }
+      } else if (message.kind === 'dialog-select') {
+        selectDialogTarget(message.rowKey, message.target);
+      } else if (message.kind === 'dialog-confirm') {
+        yield* fork(confirmSwitchDialog, bulkHold);
+      } else if (message.kind === 'dialog-retry-all') {
+        yield* fork(retryAllFromDialog, bulkHold);
       } else {
-        yield* call(closeAgentToast, message.agentId, states);
+        closeSwitchDialog();
       }
     }
   } finally {
     channel.close();
-    if (states.size > 0) {
+    closeSwitchDialog();
+    if (states.agents.size > 0 || states.groups.size > 0) {
       const notify = yield* call(loadToastArtifacts);
-      for (const agentId of states.keys()) notify.dismiss(toastId(agentId));
+      for (const agentId of states.agents.keys()) notify.dismiss(toastId(agentId));
+      for (const groupKey of states.groups.keys()) notify.dismiss(groupToastId(groupKey));
     }
-    states.clear();
+    states.agents.clear();
+    states.groups.clear();
   }
 }

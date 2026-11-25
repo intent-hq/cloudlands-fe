@@ -2,6 +2,7 @@ import { selectQueueMutationBlocked } from '../../pending-submissions/pending-su
 import { remoteAttachmentFailure } from '$features/remote-machines/agent-location';
 import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { pickModelForProvider } from '$features/agent/provider-switch-targets';
 import {
   selectSubmissionIsCurrent,
   selectSubmissionObserved,
@@ -878,38 +879,6 @@ async function showRetryProviderError(message: string): Promise<void> {
   } catch (error) {
     logger.error('Failed to surface provider-retry failure', error);
   }
-}
-
-/**
- * Pick the model to land on when moving a live session to `providerId`
- * (#4455). The banner offers a PROVIDER, but `agent.setModel` only speaks
- * models, so one has to be chosen for the user.
- *
- * The USER'S OWN CHOICE WINS. `persisted` is this provider's entry in the
- * `model.providerDefaults` setting — the model they already told Intent to
- * use for this provider, and the same value the model picker and the
- * daemon's creation-time resolution chain honour. Silently landing on the
- * provider's advertised default instead would override a preference the
- * user had explicitly expressed, which is precisely the complaint that
- * motivates configurable failover.
- *
- * It is still validated against the live catalog: a persisted id the
- * provider no longer serves (renamed, retired, plan downgrade) must not be
- * handed to `agent.setModel`, which would reject it. Falling back then, and
- * when nothing is persisted at all: the provider's advertised default, else
- * the catalog's first row (the daemon returns `models.list` in picker order,
- * so row 0 is the provider's most prominent choice — never a re-sort of our
- * own).
- */
-function pickModelForProvider(
-  models: AuggieModel[],
-  persisted: string | undefined,
-): AuggieModel | undefined {
-  if (persisted) {
-    const chosen = models.find((model) => model.value === persisted);
-    if (chosen) return chosen;
-  }
-  return models.find((model) => model.isDefault === true) ?? models[0];
 }
 
 /**

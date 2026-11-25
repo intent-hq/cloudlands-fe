@@ -328,9 +328,14 @@ import { isStructuredAgentNotFoundError } from '$features/agent/utils/agent-not-
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import {
   getAgentFailureEntry,
+  getDelegatedAgentFailureEntry,
   listAgentFailureEntries,
   recordAgentFailure,
+  recordDelegatedAgentFailure,
   removeAgentFailure,
+  removeAgentFailureIfSwitched,
+  updateAgentFailureIdentity,
+  type AgentFailureEntry,
 } from '$features/agent/agent-failure-registry';
 import {
   dismissAgentAttentionToast,
@@ -1340,19 +1345,35 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it — UNLESS the payload carries a
-  // non-empty `parentAgentId` (PROTOCOL §6.5): a delegated agent's failure is
-  // the parent's to handle and escalate, so no failure toast (monorepo#1991).
-  // Gate strictly on the payload field (no local session lookups); absent →
-  // toast shows, which keeps older daemons working. The daemon's
-  // turn-correlation id (PROTOCOL §6.6) rides along when present so the
-  // failure can be attributed to the exact turn (monorepo#1057).
+  // failure toast layer can surface it. A payload with a non-empty
+  // `parentAgentId` (PROTOCOL §6.5) goes to the registry's delegated list
+  // instead: a delegated agent's failure is the parent's to handle, so it
+  // never gets a toast (monorepo#1991), but a bulk provider switch moves it
+  // with its coordinator. Gate strictly on the payload field; absent → toast
+  // shows, which keeps older daemons working. The entry records the
+  // provider and model the agent failed on, so a later manual switch drops
+  // it (`agent:updated`). The daemon's turn-correlation id (PROTOCOL §6.6)
+  // rides along when present so the failure can be attributed to the exact
+  // turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
     const parentAgentId = data?.parentAgentId;
     const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
-    if (!hasParent) {
-      recordAgentFailure({ agentId, workspaceId, error });
-    }
+    const session = appStore.state.agentSessions?.byAgentId[agentId];
+    const failure = {
+      agentId,
+      workspaceId,
+      error,
+      ...(typeof data?.errorCode === 'string' ? { errorCode: data.errorCode } : {}),
+      ...(typeof data?.providerId === 'string' && data.providerId.length > 0
+        ? { eventProviderId: data.providerId }
+        : {}),
+      ...(session?.provider ? { provider: session.provider } : {}),
+      ...(session && session.model !== undefined ? { model: session.model } : {}),
+    };
+    const entry = hasParent
+      ? recordDelegatedAgentFailure({ ...failure, parentAgentId })
+      : recordAgentFailure(failure);
+    if (!session?.provider) void fillAgentFailureIdentity(entry);
     // Structured quota classification (`errorCode: "quota-exceeded"`): the
     // daemon tells us the turn died on a provider usage limit rather than
     // leaving the FE to regex the rendered prose the way the auth banner
@@ -1669,6 +1690,64 @@ function projectAgentMetadata(
   return Object.keys(data).every((key) => consumed.has(key));
 }
 
+/**
+ * Fill a failure entry's provider, model and name from `agent.get` when the
+ * agent has no session in the store (a workspace never opened this session),
+ * so grouping and the bulk switch work without hydration. Never throws.
+ */
+async function fillAgentFailureIdentity(entry: AgentFailureEntry): Promise<void> {
+  try {
+    const { appClient } = await import('$lib/client');
+    const agent = await appClient.agents.get(entry.agentId, entry.workspaceId);
+    if (!agent) return;
+    updateAgentFailureIdentity(entry, {
+      ...(agent.provider ? { provider: agent.provider } : {}),
+      ...(agent.model !== undefined ? { model: agent.model } : {}),
+      ...(agent.name ? { agentName: agent.name } : {}),
+    });
+  } catch (error) {
+    logger.warn('agent.get failed while resolving a failed agent', {
+      agentId: entry.agentId,
+      error,
+    });
+  }
+}
+
+/** agentId → whether another `agent:updated` landed during the read. */
+const switchChecksInFlight = new Map<string, boolean>();
+
+/**
+ * `agent:updated` is id-only, so a tracked failed agent is re-read with
+ * `agent.get`: when its provider or model moved off the one it failed on
+ * (switched manually while still in error), it leaves its failure group.
+ * An update during the read re-runs it, so the last read is never stale.
+ */
+async function dropSwitchedAgentFailure(agentId: string): Promise<void> {
+  const tracked = () => getAgentFailureEntry(agentId) ?? getDelegatedAgentFailureEntry(agentId);
+  if (!tracked()?.provider) return;
+  if (switchChecksInFlight.has(agentId)) {
+    switchChecksInFlight.set(agentId, true);
+    return;
+  }
+  switchChecksInFlight.set(agentId, false);
+  try {
+    const { appClient } = await import('$lib/client');
+    do {
+      switchChecksInFlight.set(agentId, false);
+      const entry = tracked();
+      if (!entry?.provider) return;
+      const agent = await appClient.agents.get(agentId, entry.workspaceId);
+      if (agent && tracked() === entry) {
+        removeAgentFailureIfSwitched(agentId, { provider: agent.provider, model: agent.model });
+      }
+    } while (switchChecksInFlight.get(agentId));
+  } catch (error) {
+    logger.warn('agent.get failed while checking a failed agent for a switch', { agentId, error });
+  } finally {
+    switchChecksInFlight.delete(agentId);
+  }
+}
+
 function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -1684,6 +1763,7 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
     notePendingQuestionMarkerProjection(agentId, event.workspaceId);
   }
+  void dropSwitchedAgentFailure(agentId);
   if (
     isAgentReadWorkspaceCurrent(agentId, event.workspaceId) &&
     !projectAgentMetadata(event, agentId, data)
