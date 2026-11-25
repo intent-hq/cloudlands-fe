@@ -766,6 +766,7 @@
   "chat_modelPicker_pickAnother_description": "Choisissez un autre modèle pour continuer.",
   "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Non connecté",
+  "chat_modelPicker_profileSelect_ariaLabel": "Profil {provider}",
   "chat_modelPicker_profileSignedOut_hint": "Connectez le compte de ce profil en dehors d’Intent. Ses modèles risquent de ne pas fonctionner d’ici là.",
   "chat_modelPicker_providerDefault_label": "Défaut du fournisseur",
   "chat_modelPicker_providerDisabled_description": "{provider} est désactivé dans Paramètres > Agents.",

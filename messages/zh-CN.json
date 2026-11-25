@@ -766,6 +766,7 @@
   "chat_modelPicker_pickAnother_description": "选择其他模型以继续。",
   "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未登录",
+  "chat_modelPicker_profileSelect_ariaLabel": "{provider} 配置文件",
   "chat_modelPicker_profileSignedOut_hint": "请在 Intent 之外登录此配置的账户。在此之前，其模型可能无法运行。",
   "chat_modelPicker_providerDefault_label": "提供方默认",
   "chat_modelPicker_providerDisabled_description": "{provider} 已在设置 > 代理中禁用。",
