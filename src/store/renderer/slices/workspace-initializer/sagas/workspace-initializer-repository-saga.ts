@@ -63,14 +63,15 @@ async function readRecentSources(stored: Workspace[] | null) {
   return Promise.all([
     stored
       ? { ok: true as const, data: stored, complete: true, stored: true }
-      : workspaceClient.list(),
+      : workspaceClient.list({ lite: true }),
     readRegistry(),
   ] as const);
 }
 
 /**
  * Origin URLs per repo path for one admission, shared by every picker and
- * palette refresh. A missing origin is cached too; a new admission starts over.
+ * palette refresh; a new admission starts over. `originUrl` folds failures
+ * into `null`, so a missing origin is read again next time.
  */
 type OriginCache = { admission: string | null; urls: Map<string, Promise<string | null>> };
 
@@ -95,6 +96,7 @@ async function readOrigins(
           urls.set(path, read);
         }
         const url = await read;
+        if (url === null && urls.get(path) === read) urls.delete(path);
         return [
           path,
           url

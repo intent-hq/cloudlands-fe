@@ -94,6 +94,24 @@ describe('workspace list freshness', () => {
     expect(mock.list).toHaveBeenCalledTimes(1);
   });
 
+  it('a reconnect during a retry wait reads once', async () => {
+    vi.useFakeTimers();
+    try {
+      mock.list
+        .mockResolvedValueOnce({ ok: false, error: 'transport down' })
+        .mockResolvedValue({ ok: true, data: [row], complete: true });
+      dispatch(loadWorkspacesRequested());
+      await settle();
+      expect(mock.list).toHaveBeenCalledTimes(1);
+      dispatch(backendReconnected());
+      await settle();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mock.list).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a reconnect under the same admission does not reread a current list', async () => {
     markLoadedForCurrentAdmission();
     dispatch(backendReconnected());

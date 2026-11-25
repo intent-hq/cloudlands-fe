@@ -77,10 +77,10 @@ describe('recent repositories refresh', () => {
   it('reads the list when it is not loaded for the current admission', async () => {
     refresh();
     await settle();
-    expect(mock.list).toHaveBeenCalledTimes(1);
+    expect(mock.list.mock.calls).toEqual([[{ lite: true }]]);
   });
 
-  it('reads each recent repo origin once across picker opens, including a missing origin', async () => {
+  it('reads a known origin once across picker opens, but retries a missing one', async () => {
     loadListForCurrentAdmission();
     refresh();
     await settle();
@@ -90,6 +90,8 @@ describe('recent repositories refresh', () => {
     await settle();
     expect(mock.originUrl.mock.calls.map(([path]) => path).sort()).toEqual([
       '/repos/a',
+      '/repos/b',
+      '/repos/b',
       '/repos/b',
     ]);
   });
