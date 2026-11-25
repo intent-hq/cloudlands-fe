@@ -16,20 +16,24 @@
     label,
     mode,
     periodKey,
+    activitySource = data,
     loading = false,
   }: {
     data: UsageStatsResult | null;
     label: string;
     mode: 'month' | 'year';
     periodKey: string | null;
+    /** The result before the cached-tokens filter; decides which days are active. */
+    activitySource?: UsageStatsResult | null;
     loading?: boolean;
   } = $props();
 
-  const model = $derived(streakModel(data, mode, periodKey));
-  const hero = $derived(formatInt(model.activeDays));
+  const model = $derived(streakModel(data, mode, periodKey, new Date(), activitySource));
   const outdated = $derived(data !== null && data.byDay === undefined);
+  const hero = $derived(outdated ? '—' : formatInt(model.activeDays));
 
-  function days(count: number): string {
+  function days(count: number | null): string {
+    if (count === null || outdated) return '—';
     const value = formatInt(count);
     return count === 1
       ? m.stats_streakCard_days_one({ count: value })
@@ -97,7 +101,7 @@
     </div>
     <div>
       <div class="stat-label">{m.stats_streakCard_currentStreak_label()}</div>
-      <div class="stat-big">{model.currentStreak === null ? '—' : days(model.currentStreak)}</div>
+      <div class="stat-big">{days(model.currentStreak)}</div>
     </div>
     <div class="span-2">
       <div class="stat-label">{m.stats_streakCard_busiestDay_label()}</div>

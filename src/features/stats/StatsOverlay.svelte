@@ -293,6 +293,7 @@
             {@render exportBtn('streak')}
             <ActivityStreakCard
               data={cardData}
+              activitySource={$data$}
               label={cardLabel}
               mode={$mode$}
               periodKey={$periodKey$}

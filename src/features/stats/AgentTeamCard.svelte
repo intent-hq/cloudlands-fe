@@ -45,7 +45,9 @@
   );
   const hours = $derived(model.agentMs / 3_600_000);
   const hoursText = $derived(
-    formatNumber(hours, { maximumFractionDigits: hours > 0 && hours < 10 ? 1 : 0 }),
+    upgraded
+      ? formatNumber(hours, { maximumFractionDigits: hours > 0 && hours < 10 ? 1 : 0 })
+      : '—',
   );
 </script>
 

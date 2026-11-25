@@ -201,14 +201,23 @@ describe('streakModel', () => {
     });
   });
 
-  it('drops cache tokens from the shading when cached tokens are hidden', () => {
-    const data = usage({
-      byDay: [{ ...day('2026-11-02', 0), cacheReadTokens: 900, runs: 0 }],
+  it('keeps active days and streaks when cached tokens are hidden', () => {
+    const raw = usage({
+      byDay: [
+        day('2026-11-18', 40),
+        { ...day('2026-11-19', 0), cacheReadTokens: 900 },
+        day('2026-11-20', 10),
+      ],
     });
-    expect(streakModel(data, 'month', '2026-11', at('2026-11-20')).activeDays).toBe(1);
-    expect(
-      streakModel(withoutCachedTokens(data), 'month', '2026-11', at('2026-11-20')).activeDays,
-    ).toBe(0);
+    const shown = withoutCachedTokens(raw);
+    const now = at('2026-11-20');
+    const withCache = streakModel(raw, 'month', '2026-11', now);
+    const withoutCache = streakModel(shown, 'month', '2026-11', now, raw);
+    expect(withoutCache).toMatchObject({ activeDays: 3, longestStreak: 3, currentStreak: 3 });
+    expect(withoutCache.activeDays).toBe(withCache.activeDays);
+    // Shading still follows the shown (uncached) tokens.
+    const cacheDay = withoutCache.rows.flat().find((c) => c.date === '2026-11-19');
+    expect(cacheDay).toMatchObject({ active: true, tokens: 0, level: 1 });
   });
 });
 

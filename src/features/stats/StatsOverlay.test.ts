@@ -246,7 +246,40 @@ describe('activity cards', () => {
     }
     expect(card('code').querySelector('.note')).toBeNull();
     expect(card('code').querySelector('.hero-value')?.textContent).toBe('−500');
-    expect(card('tools').textContent).not.toMatch(/NaN|Infinity/);
+    // Metrics the older daemon never sent read as unavailable, not zero.
+    for (const name of ['tools', 'streak']) {
+      expect(card(name).querySelector('.hero-value')?.textContent).toBe('—');
+    }
+    for (const name of ['tools', 'team', 'streak']) {
+      const values = Array.from(card(name).querySelectorAll('.stat-big'), (n) =>
+        n.textContent?.trim(),
+      );
+      expect(values).toContain('—');
+    }
+    const toolValues = Array.from(card('tools').querySelectorAll('.stat-big, .stat-small'), (n) =>
+      n.textContent?.trim(),
+    );
+    expect(toolValues.every((v) => v === '—')).toBe(true);
+    // Sessions are a real older-daemon field and stay a number.
+    expect(card('team').querySelector('.hero-value')?.textContent).toBe('0');
+  });
+
+  it('show real zeros for an empty period on a current daemon', () => {
+    mocks.data = {
+      ...mocks.data!,
+      toolCalls: 0,
+      toolCallsFailed: 0,
+      totalRunMs: 0,
+      subAgentSessions: 0,
+      byDay: [],
+      activityTrackedSince: '2026-01-01',
+    };
+    render(StatsOverlay);
+    for (const name of ['tools', 'team', 'streak']) {
+      const card = document.querySelector(`[data-stats-card="${name}"]`)!;
+      expect(card.querySelector('.hero-value')?.textContent).toBe('0');
+      expect(card.querySelector('.note')).toBeNull();
+    }
   });
 
   it('show tracked-since on tool and team cards for partial periods', () => {

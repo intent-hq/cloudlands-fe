@@ -37,12 +37,14 @@
   const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
   const model = $derived(toolsModel(data));
-  const hero = $derived(formatInt(model.total));
-  const succeededText = $derived(formatInt(model.succeeded));
-  const failedText = $derived(formatInt(model.failed));
+  const upgraded = $derived(hasActivityCounters(data));
+  const count = (n: number) => (upgraded ? formatInt(n) : '—');
+  const hero = $derived(count(model.total));
+  const succeededText = $derived(count(model.succeeded));
+  const failedText = $derived(count(model.failed));
   const since = $derived(trackedSinceNote(data, mode, periodKey));
   const note = $derived(
-    !hasActivityCounters(data)
+    !upgraded
       ? m.stats_activity_needsUpgrade_label()
       : since
         ? m.stats_activity_trackedSince_label({ date: formatDatePattern(since, 'MMM d, yyyy') })

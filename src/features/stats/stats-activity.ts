@@ -186,6 +186,7 @@ export function streakModel(
   mode: 'month' | 'year',
   periodKey: string | null,
   now: Date = new Date(),
+  activitySource: UsageStatsResult | null = data,
 ): StreakModel {
   const year = Number((periodKey ?? '').slice(0, 4)) || now.getFullYear();
   const month = mode === 'month' ? Number((periodKey ?? '').slice(5, 7)) || 1 : 1;
@@ -195,13 +196,18 @@ export function streakModel(
 
   const days = new Map<string, UsageDayStats>();
   for (const day of data?.byDay ?? []) days.set(day.date, day);
-  const max = Math.max(0, ...[...days.values()].map((d) => (isActiveDay(d) ? totalTokens(d) : 0)));
+  // Activity comes from the unfiltered result, so hiding cached tokens only
+  // changes the shading, never which days count.
+  const activeDates = new Set(
+    (activitySource?.byDay ?? []).filter(isActiveDay).map((day) => day.date),
+  );
+  const max = Math.max(0, ...[...days.values()].map((d) => totalTokens(d)));
 
   const cellFor = (date: Date): HeatCell => {
     const key = dateKey(date);
     const day = days.get(key);
     const tokens = day ? totalTokens(day) : 0;
-    const active = day ? isActiveDay(day) : false;
+    const active = activeDates.has(key);
     return { date: key, tokens, active, level: level(tokens, active, max), future: key > today };
   };
 
