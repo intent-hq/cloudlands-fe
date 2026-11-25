@@ -1206,16 +1206,25 @@ describe('verification planning', () => {
       expect(plan.checks.find((check) => check.id === 'vitest-declared')).toBeUndefined();
     });
 
+    const expectBefore = (plan: ReturnType<typeof createVerificationPlan>, laneId: string) => {
+      const ids = plan.checks.map((check) => check.id);
+      expect(completenessChecks(plan)).toHaveLength(1);
+      expect(ids).toContain(laneId);
+      expect(ids.indexOf('i18n-completeness')).toBeLessThan(ids.indexOf(laneId));
+      expect(ids.indexOf('i18n-completeness')).toBeLessThan(
+        ids.findIndex((id) => id.startsWith('vitest-')),
+      );
+    };
+
     it.each([
       ['declared', catalog, 'vitest-declared'],
       ['direct', suite, 'vitest-direct'],
       ['directory', 'scripts/deleted.test.ts', 'vitest-direct'],
       ['full', 'package.json', 'vitest-full'],
-    ])('reuses runnable %s real-catalog coverage', (_, changed, checkId) => {
+    ])('keeps the fast check ahead of %s real-catalog coverage', (_, changed, checkId) => {
       const root = fixture({ [suite]: readFileSync(join(process.cwd(), suite), 'utf8') });
       const plan = planFor(root, [catalog, changed]);
-      expect(plan.checks.some((check) => check.id === checkId)).toBe(true);
-      expect(completenessChecks(plan)).toEqual([]);
+      expectBefore(plan, checkId);
       if (checkId !== 'vitest-declared')
         expect(plan.checks.some((check) => check.id === 'vitest-declared')).toBe(false);
     });
@@ -1227,35 +1236,11 @@ describe('verification planning', () => {
       'project.inlang/settings.json',
       'scripts/i18n-equal-allowlist.json',
       checker,
-    ])('selects the existing real-catalog suite for %s', (file) => {
+    ])('runs the fast check before the real-catalog suite for %s', (file) => {
       const root = fixture({ [suite]: readFileSync(join(process.cwd(), suite), 'utf8') });
       const plan = planFor(root, [file]);
       expect(plan.checks.find((check) => check.id === 'vitest-declared')?.args).toContain(suite);
-      expect(completenessChecks(plan)).toEqual([]);
-    });
-
-    it.each([
-      "exclude: ['**/*.test.[tj]s']",
-      "include: ['**/*.spec.ts']",
-      "testNamePattern: 'passes when every catalog'",
-      'typecheck: { enabled: true, only: true }',
-      "related: ['src/placeholder.ts']",
-      "shard: '2/2'",
-      "tagsFilter: ['smoke']",
-      "cliExclude: ['**/check-i18n-completeness.test.ts']",
-      'listTags: true',
-      'changed: true',
-      'clearCache: true',
-      "mergeReports: './reports'",
-      "...{ exclude: ['**/*.test.ts'] }",
-    ])('retains the executable when config can filter real-catalog coverage: %s', (filter) => {
-      const root = fixture({
-        [suite]: readFileSync(join(process.cwd(), suite), 'utf8'),
-        'vitest.config.ts': `export default { test: { ${filter} } };`,
-      });
-      for (const changed of [catalog, suite, 'scripts/deleted.test.ts', 'package.json']) {
-        expect(completenessChecks(planFor(root, [catalog, changed]))).toHaveLength(1);
-      }
+      expectBefore(plan, 'vitest-declared');
     });
 
     it('retains the executable when config or the selected suite is missing', () => {
@@ -1282,7 +1267,7 @@ describe('verification planning', () => {
         symlinkSync(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir');
         vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
         const plan = planFor(root, [catalog]);
-        expect(completenessChecks(plan)).toHaveLength(filtered ? 1 : 0);
+        expect(completenessChecks(plan)).toHaveLength(1);
         if (filtered) {
           // The real suite can pass while its final real-catalog test is filtered out.
           await runVerificationPlan(

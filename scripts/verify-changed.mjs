@@ -109,7 +109,6 @@ const FORMAT_EXTENSIONS = new Set([
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 // This suite executes the full required scan with the checked-in baseline.
 const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
-// Its final test executes the checker against the real repository catalogs.
 const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
 const LOCALE_COMPLETENESS_INPUTS = new Set([
   'project.inlang/settings.json',
@@ -918,11 +917,12 @@ export function createVerificationPlan(files, options = {}) {
         'lint:i18n-strings',
       ]),
     );
+  // Runs even when a later Vitest lane covers it: this check takes seconds, and the
+  // suite lane reported a stale allowlist entry ~29 minutes in (cloudlands-fe#5048).
   if (
     files.some(
       (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
-    ) &&
-    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
+    )
   )
     checks.push(
       command('i18n-completeness', 'Locale catalog completeness', [
