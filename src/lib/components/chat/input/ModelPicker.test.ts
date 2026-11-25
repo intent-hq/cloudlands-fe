@@ -957,7 +957,7 @@ describe('ModelPicker guest / collaborator lock', () => {
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
       await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
-      const opus = await screen.findByRole('option', { name: /opus/ });
+      const opus = await screen.findByRole('option', { name: /opus/i });
       expect(opus.hasAttribute('data-disabled')).toBe(false);
       expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
     });
