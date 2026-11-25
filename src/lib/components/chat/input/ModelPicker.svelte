@@ -114,7 +114,11 @@
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
+  import {
+    modelIdForDisplay,
+    prettyClaudeModelName,
+    resolveModelDisplayName,
+  } from '$shared/utils/model-display-name';
   import {
     selectHidesAgentCreationActions,
     selectHidesProviderProfileNames,
@@ -1239,7 +1243,8 @@
       resolveModelDisplayName(modelId, lookup) ??
       (bareId !== modelId ? resolveModelDisplayName(bareId, lookup) : undefined) ??
       learned(modelId) ??
-      resolveModelDisplayName(bareId, learned)
+      resolveModelDisplayName(bareId, learned) ??
+      (provider === 'claude-code' ? prettyClaudeModelName(bareId) : undefined)
     );
   }
 
