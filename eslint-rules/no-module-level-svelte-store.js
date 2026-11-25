@@ -7,7 +7,7 @@ import { suppressedLines } from './lib/disable-directives.js';
  *   import { writable } from 'svelte/store';
  *   export const switchAllDialog = writable({ open: false });   // flagged
  *
- * A module-level `writable`, `readable` or `derived` is app-wide shared state, and
+ * A module-level `writable`, `readable`, `derived` or `toStore` is app-wide shared state, and
  * shared state belongs in a Redux slice (packages/cloudlands-fe/AGENTS.md: Svelte stores
  * are deprecated). cloudlands-fe#5058 added one for a dialog; no check caught it, and
  * moving it to Redux after the full verification had passed took another refactor and
@@ -44,7 +44,7 @@ const MESSAGE =
 
 const RULE_NAME = 'no-module-level-svelte-store';
 const STORE_SOURCE = 'svelte/store';
-const STORE_FACTORIES = new Set(['writable', 'readable', 'derived']);
+const STORE_FACTORIES = new Set(['writable', 'readable', 'derived', 'toStore']);
 const FUNCTIONS = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 const LOAD = 'load';
 
@@ -123,7 +123,7 @@ export default {
     type: 'problem',
     docs: {
       description:
-        'Disallow creating a Svelte store (writable, readable, derived) at module scope in renderer code; use a Redux slice for shared state.',
+        'Disallow creating a Svelte store (writable, readable, derived, toStore) at module scope in renderer code; use a Redux slice for shared state.',
     },
     schema: [
       {

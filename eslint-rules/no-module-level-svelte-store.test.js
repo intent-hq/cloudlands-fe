@@ -187,6 +187,18 @@ export class Controller {
 }`,
     },
     {
+      name: 'toStore inside a function, and fromStore or readonly at module scope',
+      filename,
+      code: `
+import { fromStore, readonly, toStore } from 'svelte/store';
+import { existing } from './existing';
+export function bindReview(getDemand) {
+  return toStore(() => getDemand());
+}
+export const view = fromStore(existing);
+export const exposed = readonly(existing);`,
+    },
+    {
       name: 'reading a store with get() at module scope',
       filename,
       code: `
@@ -319,6 +331,17 @@ export const open = cell(false);`,
 import * as stores from 'svelte/store';
 export const open = stores.writable(false);`,
       errors: [error(3)],
+    },
+    {
+      name: 'a module-level toStore, directly or through a namespace import',
+      filename,
+      code: `
+import * as stores from 'svelte/store';
+import { toStore } from 'svelte/store';
+let open = false;
+export const openStore = toStore(() => open, (value) => (open = value));
+export const label = stores.toStore(() => (open ? 'Open' : 'Closed'));`,
+      errors: [error(5), error(6)],
     },
     {
       name: 'a store inside a module-level object literal',
