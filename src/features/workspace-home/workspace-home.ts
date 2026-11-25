@@ -241,29 +241,31 @@ export function parseMoveHomeTargetKey(key: string): MoveHomeTarget | null {
 
 export interface MoveHomeOption {
   key: string;
+  /** `agent`: a sandbox outside the machine list, where the named agents run. */
   kind: 'agent' | 'machine' | 'cloud';
   label: string;
-  /** Agents: the machine or sandbox the agent runs on. */
-  machineName?: string;
-  /** Agents: that machine's id, to mark the current home's machine. */
+  /** The machine's id, to mark the current home's machine. */
   nodeId?: string;
+  /** The workspace's live agents that run on this machine. */
+  agents?: readonly string[];
   platform: string | null;
   disabled: boolean;
   reason?: string;
 }
 
 /** The agent runs on a machine or sandbox the backend can reach now. */
-function hasLiveMachine(agent: AgentSession): boolean {
+function hasLiveMachine(agent: AgentSession): agent is AgentSession & { nodeId: string } {
   if (!agent.nodeId || agent.placementError) return false;
   if (agent.status === AgentStatus.Deleted || agent.retiredAt) return false;
   return agent.nodeState === undefined || agent.nodeState === 'ready';
 }
 
 /**
- * The Move home choices: the workspace's agents on a live machine first
- * (`{ agentId }` moves the home to that agent's machine or sandbox), then
- * every row of the ordered machine list. The backend validates the target;
- * rows it can't use keep their reason.
+ * The Move home choices, one row per machine: the ordered machine list
+ * (Settings → Machines), each row naming the workspace's live agents on it.
+ * A sandbox an agent runs on is not in that list: it gets its own row
+ * (`{ agentId }` moves the home there) after its cloud entry. The backend
+ * validates the target; rows it can't use keep their reason.
  */
 export function moveHomeTargets({
   agents,
@@ -272,31 +274,71 @@ export function moveHomeTargets({
   agents: readonly AgentSession[];
   machineRows: readonly StartOnOption[];
 }): MoveHomeOption[] {
-  const agentOptions = agents.filter(hasLiveMachine).map((agent): MoveHomeOption => ({
-    key: homeMoveTargetKey({ agentId: String(agent.id) }),
-    kind: 'agent',
-    label: agent.name,
-    machineName: agent.nodeName?.trim() || undefined,
-    nodeId: agent.nodeId,
-    platform: null,
-    disabled: false,
-  }));
-  const machineOptions = machineRows
-    .filter((row) => row.id !== START_ON_HOST)
-    .map((row): MoveHomeOption => {
-      const cloudMachineId = startOnCloudMachineId(row.id);
+  const agentsByNode = new Map<string, (AgentSession & { nodeId: string })[]>();
+  for (const agent of agents.filter(hasLiveMachine)) {
+    agentsByNode.set(agent.nodeId, [...(agentsByNode.get(agent.nodeId) ?? []), agent]);
+  }
+  const names = (nodeId: string) => (agentsByNode.get(nodeId) ?? []).map((agent) => agent.name);
+
+  const rows = machineRows.filter((row) => row.id !== START_ON_HOST);
+  const listed = new Set(rows.map((row) => row.id));
+  const sandboxes = [...agentsByNode.entries()]
+    .filter(([nodeId]) => !listed.has(nodeId))
+    .map(([nodeId, onNode]) => {
+      // The lowest id, so the row's key survives a reordered agent list.
+      const first = onNode.reduce((a, b) => (String(b.id) < String(a.id) ? b : a));
       return {
-        key: homeMoveTargetKey(
-          cloudMachineId ? { kind: 'cloud', cloudMachineId } : { kind: 'machine', nodeId: row.id },
-        ),
-        kind: cloudMachineId ? 'cloud' : 'machine',
+        cloudMachineId: first.placement?.cloudMachineId,
+        option: {
+          key: homeMoveTargetKey({ agentId: String(first.id) }),
+          kind: 'agent',
+          label: first.nodeName?.trim() || first.name,
+          nodeId,
+          agents: onNode.map((agent) => agent.name),
+          platform: null,
+          disabled: false,
+        } satisfies MoveHomeOption,
+      };
+    });
+  const sandboxesOf = (cloudMachineId: string | undefined) =>
+    sandboxes
+      .filter((sandbox) => sandbox.cloudMachineId === cloudMachineId)
+      .map((sandbox) => sandbox.option);
+
+  const options = rows.flatMap((row): MoveHomeOption[] => {
+    const cloudMachineId = startOnCloudMachineId(row.id);
+    if (cloudMachineId) {
+      return [
+        {
+          key: homeMoveTargetKey({ kind: 'cloud', cloudMachineId }),
+          kind: 'cloud',
+          label: row.label,
+          agents: [],
+          platform: row.platform,
+          disabled: row.disabled,
+          ...(row.reason ? { reason: row.reason } : {}),
+        },
+        ...sandboxesOf(cloudMachineId),
+      ];
+    }
+    return [
+      {
+        key: homeMoveTargetKey({ kind: 'machine', nodeId: row.id }),
+        kind: 'machine',
         label: row.label,
+        nodeId: row.id,
+        agents: names(row.id),
         platform: row.platform,
         disabled: row.disabled,
         ...(row.reason ? { reason: row.reason } : {}),
-      };
-    });
-  return [...agentOptions, ...machineOptions];
+      },
+    ];
+  });
+  const placed = new Set(options.map((option) => option.key));
+  return [
+    ...options,
+    ...sandboxes.map((sandbox) => sandbox.option).filter((option) => !placed.has(option.key)),
+  ];
 }
 
 /** The documented `workspace.setHome` refusals the dialog explains. */

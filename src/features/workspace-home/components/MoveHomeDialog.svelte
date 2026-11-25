@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * Move home (PROTOCOL `methods/nodes.md` → "Moving the home"): pick where
-   * the workspace's home goes, an agent's machine or a row of the machine
-   * list, and confirm. A move from a detached home first warns that changes
+   * the workspace's home goes from one list of machines, each naming the
+   * agents that run there, and confirm. A move from a detached home first warns that changes
    * after the last backup stay behind.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
@@ -17,7 +17,7 @@
     type MoveHomeOption,
     type WorkspaceHomeView,
   } from '../workspace-home';
-  import { homeMoveWarningText } from '../workspace-home-copy';
+  import { homeMoveAgentsText, homeMoveWarningText } from '../workspace-home-copy';
 
   let {
     open = false,
@@ -56,8 +56,6 @@
     if (!open) selected = initialKey;
   });
 
-  const agentOptions = $derived(options.filter((option) => option.kind === 'agent'));
-  const machineOptions = $derived(options.filter((option) => option.kind !== 'agent'));
   const target = $derived.by(() => {
     const option = options.find((candidate) => candidate.key === selected);
     return option && !option.disabled ? parseMoveHomeTargetKey(option.key) : null;
@@ -66,14 +64,16 @@
   // A move started meanwhile (here or by another client): a second one is refused.
   const moving = $derived(view.state === 'moving');
 
+  // A cloud home matches both its cloud entry and its sandbox: the sandbox is the home.
+  const currentRowKey = $derived(
+    (currentNodeId !== null && options.find((option) => option.nodeId === currentNodeId)?.key) ||
+      currentKey,
+  );
+
   function description(option: MoveHomeOption): string | undefined {
     const parts = [
-      option.kind === 'agent'
-        ? m.workspaceHome_moveDialog_agentDescription({ agent: option.label })
-        : null,
-      option.key === currentKey || (currentNodeId !== null && option.nodeId === currentNodeId)
-        ? m.workspaceHome_moveDialog_currentHome()
-        : null,
+      homeMoveAgentsText(option.agents),
+      option.key === currentRowKey ? m.workspaceHome_moveDialog_currentHome() : null,
       option.disabled
         ? (option.reason ?? null)
         : // A cloud entry has no running machine yet: moving there starts one.
@@ -88,23 +88,6 @@
     if (target && !moving) onSubmit(target);
   }
 </script>
-
-{#snippet group(heading: string, rows: readonly MoveHomeOption[])}
-  {#if rows.length}
-    <div class="grid gap-2">
-      <p class="type-caption font-medium text-muted-foreground">{heading}</p>
-      {#each rows as option (option.key)}
-        <RadioGroup.Item
-          value={option.key}
-          title={option.kind === 'agent' ? (option.machineName ?? option.label) : option.label}
-          description={description(option)}
-          disabled={option.disabled}
-          data-move-home-option={option.key}
-        />
-      {/each}
-    </div>
-  {/if}
-{/snippet}
 
 <FormDialog
   {open}
@@ -131,10 +114,17 @@
       <RadioGroup.Root
         bind:value={selected}
         aria-label={m.workspaceHome_moveDialog_ariaLabel()}
-        class="grid gap-4"
+        class="grid gap-2"
       >
-        {@render group(m.workspaceHome_moveDialog_agentsHeading(), agentOptions)}
-        {@render group(m.workspaceHome_moveDialog_machinesHeading(), machineOptions)}
+        {#each options as option (option.key)}
+          <RadioGroup.Item
+            value={option.key}
+            title={option.label}
+            description={description(option)}
+            disabled={option.disabled}
+            data-move-home-option={option.key}
+          />
+        {/each}
       </RadioGroup.Root>
     {:else}
       <p class="type-body text-muted-foreground">{m.workspaceHome_moveDialog_empty()}</p>
