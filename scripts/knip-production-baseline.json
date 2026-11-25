@@ -2096,8 +2096,7 @@
       "initialState"
     ],
     "src/store/renderer/slices/model/model-utils.ts": [
-      "fetchModelsForProvider",
-      "getModelsForProvider"
+      "fetchModelsForProvider"
     ],
     "src/store/renderer/slices/model/sagas/model-boot-saga.ts": [
       "loadModelsOnBootWorker"

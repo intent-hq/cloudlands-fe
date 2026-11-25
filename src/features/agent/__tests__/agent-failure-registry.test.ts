@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearAgentFailureRegistry,
+  getAgentFailureEntry,
   listAgentFailureEntries,
+  listDelegatedAgentFailures,
   recordAgentFailure,
+  recordDelegatedAgentFailure,
   removeAgentFailure,
+  removeAgentFailureIfSwitched,
   subscribeToAgentFailures,
+  updateAgentFailureIdentity,
 } from '../agent-failure-registry';
 
 afterEach(() => {
@@ -145,5 +150,85 @@ describe('agent-failure-registry subscription', () => {
     });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(throwing).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('agent-failure-registry delegated list and identity', () => {
+  it('tracks delegated failures without notifying the toast layer', () => {
+    const listener = vi.fn();
+    subscribeToAgentFailures(listener);
+    recordDelegatedAgentFailure({
+      agentId: 'w1',
+      parentAgentId: 'c1',
+      workspaceId: 'ws',
+      error: 'quota',
+      errorCode: 'quota-exceeded',
+      provider: 'claude-code',
+    });
+    recordDelegatedAgentFailure({
+      agentId: 'w2',
+      parentAgentId: 'c2',
+      workspaceId: 'ws',
+      error: 'x',
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(listDelegatedAgentFailures('c1').map((e) => e.agentId)).toEqual(['w1']);
+    expect(getAgentFailureEntry('w1')).toBeUndefined();
+
+    expect(removeAgentFailure('w1')).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+    expect(listDelegatedAgentFailures('c1')).toEqual([]);
+  });
+
+  it('fills identity only on the exact entry it was read for', () => {
+    const first = recordAgentFailure({ agentId: 'a', workspaceId: 'ws', error: 'e', at: 1 });
+    expect(
+      updateAgentFailureIdentity(first, { provider: 'codex', model: 'm', agentName: 'A' }),
+    ).toBe(true);
+    expect(getAgentFailureEntry('a')).toMatchObject({
+      provider: 'codex',
+      model: 'm',
+      agentName: 'A',
+      at: 1,
+    });
+
+    const stale = getAgentFailureEntry('a')!;
+    recordAgentFailure({ agentId: 'a', workspaceId: 'ws', error: 'e2', at: 2 });
+    expect(updateAgentFailureIdentity(stale, { provider: 'other' })).toBe(false);
+    expect(getAgentFailureEntry('a')?.provider).toBeUndefined();
+  });
+
+  it('drops an entry whose provider or model changed while it stays failed', () => {
+    recordAgentFailure({
+      agentId: 'a',
+      workspaceId: 'ws',
+      error: 'e',
+      provider: 'claude-code',
+      model: 'opus',
+    });
+    expect(removeAgentFailureIfSwitched('a', { provider: 'claude-code', model: 'opus' })).toBe(
+      false,
+    );
+    expect(removeAgentFailureIfSwitched('a', { provider: 'codex', model: 'opus' })).toBe(true);
+    expect(getAgentFailureEntry('a')).toBeUndefined();
+
+    recordDelegatedAgentFailure({
+      agentId: 'w',
+      parentAgentId: 'a',
+      workspaceId: 'ws',
+      error: 'e',
+      provider: 'claude-code',
+      model: 'opus',
+    });
+    expect(removeAgentFailureIfSwitched('w', { provider: 'claude-code', model: 'fable' })).toBe(
+      true,
+    );
+    expect(listDelegatedAgentFailures('a')).toEqual([]);
+  });
+
+  it('keeps an entry with no recorded identity on any update', () => {
+    recordAgentFailure({ agentId: 'a', workspaceId: 'ws', error: 'e' });
+    expect(removeAgentFailureIfSwitched('a', { provider: 'codex', model: 'x' })).toBe(false);
+    expect(getAgentFailureEntry('a')).toBeDefined();
   });
 });

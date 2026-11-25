@@ -325,6 +325,16 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
  * only an agent there on a plain provider (a named profile signs in with its
  * own settings) whose catalog names a login command.
  */
+/**
+ * Sync matcher over the current state for "is this a provider sign-in
+ * error", for grouping failures without one selector call per entry.
+ */
+export const selectProviderAuthErrorMatcher = store.createSelector(
+  (state) =>
+    (provider: string, model: string | null | undefined, error: string): boolean =>
+      selectProviderAuthFailureGuidance.select(state, provider, model, error) !== null,
+);
+
 export const selectTerminalLoginProviderId = store.createSelector(
   (
     state,

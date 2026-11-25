@@ -53,6 +53,7 @@
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import BulkTransferModalHost from '$lib/components/modals/BulkTransferModalHost.svelte';
+  import ProviderSwitchDialogHost from '$lib/components/modals/ProviderSwitchDialogHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
   import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
@@ -1125,6 +1126,8 @@
   <ShareWorkspaceDialogHost />
 
   <SetupPromptDialog />
+
+  <ProviderSwitchDialogHost />
 
   <!-- Keep notes queued while recovery or invitation dialogs use the modal slot. -->
   {#if !showInterruptedAgentsModal && !invitationDialogOpen}

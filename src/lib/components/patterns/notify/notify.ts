@@ -2,10 +2,12 @@ import type { Component, ComponentProps } from 'svelte';
 import { forwardToastWhenHidden } from '$lib/utils/machine-toast-forward';
 import { toast, type ExternalToast } from 'svelte-sonner';
 import {
+  loadAgentFailureGroupToast,
   loadAgentFailureToast,
   loadErrorToast,
   loadUpdateToast,
   withToastCountdown,
+  type AgentFailureGroupToastComponent,
   type AgentFailureToastComponent,
   type ErrorToastComponent,
   type UpdateToastComponent,
@@ -26,6 +28,7 @@ export type NotifyOptions<T extends AnyComponent = AnyComponent> = ExternalToast
   stayOnMachine?: boolean;
 };
 export type AgentFailureNotifyProps = ComponentProps<AgentFailureToastComponent>;
+export type AgentFailureGroupNotifyProps = ComponentProps<AgentFailureGroupToastComponent>;
 export type AppErrorNotifyProps = ComponentProps<ErrorToastComponent>;
 export type UpdateNotifyProps = ComponentProps<UpdateToastComponent>;
 
@@ -209,6 +212,10 @@ export const notify = {
     props: AgentFailureNotifyProps,
     options?: NotifyOptions<AgentFailureToastComponent>,
   ) => lazyCustom(loadAgentFailureToast, props, options),
+  agentFailureGroup: (
+    props: AgentFailureGroupNotifyProps,
+    options?: NotifyOptions<AgentFailureGroupToastComponent>,
+  ) => lazyCustom(loadAgentFailureGroupToast, props, options),
   appError: (props: AppErrorNotifyProps, options?: NotifyOptions<ErrorToastComponent>) => {
     forwardToastWhenHidden(props.error.type, props.error.title || props.error.message);
     return lazyCustom(loadErrorToast, props, options);

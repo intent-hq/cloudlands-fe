@@ -242,7 +242,9 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   clearAgentFailureRegistry,
+  getAgentFailureEntry,
   listAgentFailureEntries,
+  listDelegatedAgentFailures,
   recordAgentFailure,
 } from '$features/agent/agent-failure-registry';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
@@ -13327,6 +13329,109 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       expect(entries[0]!.workspaceId).toBe(WS);
       expect(entries[0]!.error).toBe(errorMsg);
       expect(appStore.state.chatState.byAgentId[agentId]?.error).toBe(errorMsg);
+      clearAgentFailureRegistry();
+    });
+
+    it('tracks a delegated failure with its coordinator and failed provider, without a toast entry', async () => {
+      const agentId = 'agent-failed-worker';
+      clearAgentFailureRegistry();
+      seedSession({ id: agentId as never, name: 'Worker', provider: 'claude-code', model: 'opus' });
+      await primeBridge();
+      capturedHandlers[0]!(
+        notification('agent:failed', {
+          agentId,
+          error: 'weekly limit',
+          errorCode: 'quota-exceeded',
+          providerId: 'claude-code',
+          parentAgentId: 'agent-coordinator',
+        }),
+      );
+
+      expect(listAgentFailureEntries()).toHaveLength(0);
+      expect(listDelegatedAgentFailures('agent-coordinator')).toEqual([
+        expect.objectContaining({
+          agentId,
+          errorCode: 'quota-exceeded',
+          eventProviderId: 'claude-code',
+          provider: 'claude-code',
+          model: 'opus',
+        }),
+      ]);
+      clearAgentFailureRegistry();
+    });
+
+    it('resolves provider, model and name with agent.get for an agent with no session', async () => {
+      const agentId = 'agent-failed-unhydrated';
+      clearAgentFailureRegistry();
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'agent.get'
+          ? Promise.resolve({
+              agent: {
+                id: agentId,
+                workspaceId: WS,
+                name: 'Planner',
+                provider: 'claude-code',
+                model: 'fable',
+              },
+            })
+          : Promise.resolve({ subscriptionId: 'sub-1' }),
+      );
+      await primeBridge();
+      capturedHandlers[0]!(
+        notification('agent:failed', {
+          agentId,
+          error: 'weekly limit',
+          errorCode: 'quota-exceeded',
+        }),
+      );
+      await flush();
+      await flush();
+
+      expect(getAgentFailureEntry(agentId)).toEqual(
+        expect.objectContaining({ provider: 'claude-code', model: 'fable', agentName: 'Planner' }),
+      );
+      backendRequestSpy.mockReset();
+      clearAgentFailureRegistry();
+    });
+
+    it('drops a failed agent whose provider or model was switched manually, on agent:updated', async () => {
+      clearAgentFailureRegistry();
+      recordAgentFailure({
+        agentId: 'agent-switched',
+        workspaceId: WS,
+        error: 'weekly limit',
+        errorCode: 'quota-exceeded',
+        provider: 'claude-code',
+        model: 'opus',
+      });
+      recordAgentFailure({
+        agentId: 'agent-unchanged',
+        workspaceId: WS,
+        error: 'weekly limit',
+        errorCode: 'quota-exceeded',
+        provider: 'claude-code',
+        model: 'opus',
+      });
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'agent.get') return Promise.resolve({ subscriptionId: 'sub-1' });
+        const { agentId } = params as { agentId: string };
+        return Promise.resolve({
+          agent: {
+            id: agentId,
+            workspaceId: WS,
+            provider: agentId === 'agent-switched' ? 'codex' : 'claude-code',
+            model: agentId === 'agent-switched' ? 'sol' : 'opus',
+          },
+        });
+      });
+      await primeBridge();
+      capturedHandlers[0]!(notification('agent:updated', { agentId: 'agent-switched' }));
+      capturedHandlers[0]!(notification('agent:updated', { agentId: 'agent-unchanged' }));
+      await flush();
+      await flush();
+
+      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-unchanged']);
+      backendRequestSpy.mockReset();
       clearAgentFailureRegistry();
     });
 

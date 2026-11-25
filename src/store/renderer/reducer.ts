@@ -140,6 +140,7 @@ import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceBulkTransferReducer } from './slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
+import { providerSwitchDialogReducer } from './slices/provider-switch-dialog/provider-switch-dialog-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
@@ -280,6 +281,7 @@ export const reducers = {
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
   workspaceBulkTransfer: workspaceBulkTransferReducer,
+  providerSwitchDialog: providerSwitchDialogReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
   invitationAccountSearch: invitationAccountSearchReducer,
