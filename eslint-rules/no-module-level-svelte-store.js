@@ -67,14 +67,6 @@ function memberName(node) {
   return null;
 }
 
-function className(classNode) {
-  if (classNode.id) return classNode.id.name;
-  const parent = classNode.parent;
-  return parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier'
-    ? parent.id.name
-    : null;
-}
-
 function isModuleScript(element) {
   return element.startTag.attributes.some(
     (attribute) =>
@@ -84,52 +76,47 @@ function isModuleScript(element) {
   );
 }
 
-// The code unit `node` runs in: LOAD when the module loads, `fn:<name>` for a function
-// declared in the file, `class:<name>` for a class's constructor and instance fields,
-// `static:<class>.<method>` for a static method, or null when it runs only later (a
-// callback, an instance method, a component instance script).
+function classOf(member) {
+  return member.parent.parent;
+}
+
+// The code unit `node` runs in, identified by its AST node: LOAD when the module loads, a
+// function node for a declared or const-bound function or a static method, a class node
+// for its constructor and instance fields, or null when it runs only later (a callback,
+// an instance method, a component instance script).
 function unitOf(node) {
   for (let child = node, parent = node.parent; parent; child = parent, parent = parent.parent) {
     if (parent.type === 'SvelteScriptElement') return isModuleScript(parent) ? LOAD : null;
     if (parent.type === 'PropertyDefinition' || parent.type === 'AccessorProperty') {
       if (parent.value !== child || parent.static) continue;
-      const name = className(parent.parent.parent);
-      return name ? `class:${name}` : null;
+      return classOf(parent);
     }
     if (!FUNCTIONS.has(parent.type) || isImmediatelyInvoked(parent)) continue;
-    if (parent.type === 'FunctionDeclaration') return parent.id ? `fn:${parent.id.name}` : null;
+    if (parent.type === 'FunctionDeclaration') return parent;
     const holder = parent.parent;
-    if (holder?.type === 'VariableDeclarator' && holder.init === parent) {
-      return holder.id.type === 'Identifier' ? `fn:${holder.id.name}` : null;
-    }
+    if (holder?.type === 'VariableDeclarator' && holder.init === parent) return parent;
     if (holder?.type === 'MethodDefinition' && holder.value === parent) {
-      const name = className(holder.parent.parent);
-      if (!name) return null;
-      if (holder.kind === 'constructor') return `class:${name}`;
-      const method = holder.static && !holder.computed ? holder.key.name : null;
-      return method ? `static:${name}.${method}` : null;
+      if (holder.kind === 'constructor') return classOf(holder);
+      return holder.static ? parent : null;
     }
     return null;
   }
   return LOAD;
 }
 
-// The unit a call or `new` expression runs, when it names one declared in the file.
-function calleeUnit(node, caller) {
-  const callee = node.callee;
-  const ownClass = caller?.startsWith('static:') ? caller.slice(7).split('.')[0] : null;
-  if (node.type === 'NewExpression') {
-    if (callee.type === 'Identifier') return `class:${callee.name}`;
-    return callee.type === 'ThisExpression' && ownClass ? `class:${ownClass}` : null;
-  }
-  if (callee.type === 'Identifier') return `fn:${callee.name}`;
-  const method = memberName(callee);
-  if (!method) return null;
-  if (callee.object.type === 'Identifier') return `static:${callee.object.name}.${method}`;
-  return callee.object.type === 'ThisExpression' && ownClass
-    ? `static:${ownClass}.${method}`
-    : null;
+function staticMethod(classNode, name) {
+  const method = classNode.body.body.find(
+    (member) =>
+      member.type === 'MethodDefinition' &&
+      member.static &&
+      member.kind === 'method' &&
+      !member.computed &&
+      member.key.name === name,
+  );
+  return method?.value ?? null;
 }
+
+const CLASSES = new Set(['ClassDeclaration', 'ClassExpression']);
 
 export default {
   meta: {
@@ -160,19 +147,77 @@ export default {
     const { sourceCode } = context;
     const allowed = context.options[0]?.baseline?.[relativeFilename(context)] ?? 0;
     const suppressed = suppressedLines(sourceCode, RULE_NAME);
-    const factories = new Set();
-    const namespaces = new Set();
     const calls = new Map();
     const stores = [];
 
+    // The variable `identifier` names, found lexically, or null for a global.
+    const variableOf = (identifier) => {
+      for (let scope = sourceCode.getScope(identifier); scope; scope = scope.upper) {
+        const variable = scope.set.get(identifier.name);
+        if (variable) return variable;
+      }
+      return null;
+    };
+
+    // The 'svelte/store' import specifier `identifier` is bound to, if any. Bindings are
+    // resolved through scope analysis, so an import placed after its calls still counts
+    // and a local binding that shadows it does not.
+    const storeImport = (identifier) => {
+      const definition = variableOf(identifier)?.defs[0];
+      if (definition?.type !== 'ImportBinding') return null;
+      const declaration = definition.parent;
+      if (declaration.source.value !== STORE_SOURCE || declaration.importKind === 'type') {
+        return null;
+      }
+      return definition.node.importKind === 'type' ? null : definition.node;
+    };
+
     const isFactory = (callee) => {
-      if (callee.type === 'Identifier') return factories.has(callee.name);
-      const name = memberName(callee);
+      if (callee.type === 'Identifier') {
+        const specifier = storeImport(callee);
+        return (
+          specifier?.type === 'ImportSpecifier' &&
+          STORE_FACTORIES.has(specifier.imported.name ?? specifier.imported.value)
+        );
+      }
       return (
-        STORE_FACTORIES.has(name) &&
+        STORE_FACTORIES.has(memberName(callee)) &&
         callee.object.type === 'Identifier' &&
-        namespaces.has(callee.object.name)
+        storeImport(callee.object)?.type === 'ImportNamespaceSpecifier'
       );
+    };
+
+    // The function or class node `identifier` is bound to in this file.
+    const declarationOf = (identifier) => {
+      const definition = variableOf(identifier)?.defs[0];
+      if (!definition) return null;
+      if (definition.type === 'FunctionName' || definition.type === 'ClassName') {
+        return definition.node;
+      }
+      const init = definition.type === 'Variable' ? definition.node.init : null;
+      return init && (FUNCTIONS.has(init.type) || CLASSES.has(init.type)) ? init : null;
+    };
+
+    // The unit a call or `new` expression runs, when it is one declared in this file.
+    const calleeUnit = (node, caller) => {
+      const callee = node.callee;
+      const isStaticMethod =
+        caller !== LOAD && caller?.parent?.type === 'MethodDefinition' && caller.parent.static;
+      const ownClass = isStaticMethod ? classOf(caller.parent) : null;
+      const classFor = (object) => {
+        if (object.type === 'ThisExpression') return ownClass;
+        if (object.type !== 'Identifier') return null;
+        const declaration = declarationOf(object);
+        return declaration && CLASSES.has(declaration.type) ? declaration : null;
+      };
+      if (node.type === 'NewExpression') return classFor(callee);
+      if (callee.type === 'Identifier') {
+        const declaration = declarationOf(callee);
+        return declaration && FUNCTIONS.has(declaration.type) ? declaration : null;
+      }
+      const method = memberName(callee);
+      const target = method ? classFor(callee.object) : null;
+      return target ? staticMethod(target, method) : null;
     };
 
     const recordCall = (node) => {
@@ -185,20 +230,6 @@ export default {
     };
 
     return {
-      ImportDeclaration(node) {
-        if (node.source.value !== STORE_SOURCE || node.importKind === 'type') return;
-        for (const specifier of node.specifiers) {
-          if (specifier.type === 'ImportNamespaceSpecifier') {
-            namespaces.add(specifier.local.name);
-          } else if (
-            specifier.type === 'ImportSpecifier' &&
-            specifier.importKind !== 'type' &&
-            STORE_FACTORIES.has(specifier.imported.name ?? specifier.imported.value)
-          ) {
-            factories.add(specifier.local.name);
-          }
-        }
-      },
       NewExpression: recordCall,
       CallExpression(node) {
         if (isFactory(node.callee)) {

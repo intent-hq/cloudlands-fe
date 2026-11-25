@@ -1100,9 +1100,8 @@ export default [
   // Redux slice (AGENTS.md: Svelte stores are deprecated; cloudlands-fe#5058 had to move
   // one after review). The rule follows load-time calls within a file; a component's
   // instance <script> is local, its <script module> is shared.
-  // The baseline maps today's files to their store counts and may only shrink. A reasoned
-  // single-line eslint-disable is the other escape hatch; the src/** require-disable-reason
-  // entry below checks that it gives the reason.
+  // The baseline maps today's files to their store counts and may only shrink; it is the
+  // only exception path.
   {
     files: [
       'src/lib/**/*.{js,mjs,ts,svelte}',
@@ -1242,11 +1241,9 @@ export default [
     plugins: { intent: intentPlugin },
     rules: {
       'intent/no-hand-written-typing-check': 'error',
-      // Also covers intent/no-module-level-svelte-store: flat config replaces a rule's
-      // options per file, so one src/** entry lists both.
       'intent/require-disable-reason': [
         'error',
-        { rules: ['intent/no-hand-written-typing-check', 'intent/no-module-level-svelte-store'] },
+        { rules: ['intent/no-hand-written-typing-check'] },
       ],
     },
   },

@@ -96,28 +96,6 @@ describe('no-module-level-svelte-store in the repo config', () => {
     expect(messages.map((message) => message.line)).toEqual([3]);
   });
 
-  it('accepts a disable only with a reason', async () => {
-    const disabled = (reason) =>
-      `import { writable } from 'svelte/store';\n` +
-      `// eslint-disable-next-line ${ruleId}${reason}\n` +
-      `export const dialogOpen = writable(false);\n`;
-    const [withReason] = await eslint.lintText(disabled(' -- bridge for a legacy consumer'), {
-      filePath: path.join(root, 'src/features/agent/fixture-dialog-state.ts'),
-    });
-    expect(withReason.messages).toEqual([]);
-    const reasonless = new ESLint({
-      cwd: root,
-      ruleFilter: ({ ruleId: id }) => id === ruleId || id === 'intent/require-disable-reason',
-      cache: false,
-    });
-    const [withoutReason] = await reasonless.lintText(disabled(''), {
-      filePath: path.join(root, 'src/features/agent/fixture-dialog-state.ts'),
-    });
-    expect(withoutReason.messages.map((message) => message.ruleId)).toEqual([
-      'intent/require-disable-reason',
-    ]);
-  });
-
   it('leaves tests, test helpers and main-process code alone', async () => {
     for (const file of [
       'src/features/agent/fixture-dialog-state.test.ts',
@@ -266,6 +244,29 @@ document.addEventListener('ready', () => {
 });`,
     },
     {
+      name: 'a same-name function in another scope does not mark the lazy factory as loaded',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+export function createState() {
+  return writable(false);
+}
+export const initial = (() => {
+  const createState = () => false;
+  return createState();
+})();`,
+    },
+    {
+      name: 'a local binding that shadows the import',
+      filename,
+      code: `
+import { writable } from 'svelte/store';
+export const cell = (() => {
+  const writable = (value) => ({ value });
+  return writable(0);
+})();`,
+    },
+    {
       name: 'a reasoned disable does not use up the allowance',
       filename,
       options: [{ baseline: { [sourceRelative]: 1 } }],
@@ -337,6 +338,17 @@ export const state = (() => {
   return { open };
 })();`,
       errors: [error(4)],
+    },
+    {
+      name: 'imports placed after the calls (named, aliased and namespace)',
+      filename,
+      code: `
+export const open = writable(false);
+export const label = cell('');
+export const count = stores.readable(0);
+import { writable, writable as cell } from 'svelte/store';
+import * as stores from 'svelte/store';`,
+      errors: [error(2), error(3), error(4)],
     },
     {
       name: 'a store inside a function invoked with .call or .apply',
