@@ -101,7 +101,7 @@ export const selectMoveHomeFailure = store.createSelector(
 const NO_OPTIONS: MoveHomeOption[] = [];
 const lastOptionsByWorkspace = new Map<string, { key: string; options: MoveHomeOption[] }>();
 
-/** Where the home can move: the workspace's agents on a live machine, then the machine list. */
+/** Where the home can move: the machine list, naming the workspace's agents on each machine. */
 export const selectMoveHomeOptions = store.createSelector(
   (state, workspaceId: string): MoveHomeOption[] => {
     if (!workspaceId) return NO_OPTIONS;

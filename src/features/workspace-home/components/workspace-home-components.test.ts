@@ -160,15 +160,32 @@ const GARAGE = homeMoveTargetKey({ kind: 'machine', nodeId: 'd-garage' });
 const OLD = homeMoveTargetKey({ kind: 'machine', nodeId: 'd-old' });
 const OPTIONS: MoveHomeOption[] = [
   {
+    key: GARAGE,
+    kind: 'machine',
+    label: 'Garage node',
+    nodeId: 'd-garage',
+    agents: ['Builder'],
+    platform: 'Linux x64',
+    disabled: false,
+  },
+  {
+    key: OLD,
+    kind: 'machine',
+    label: 'Old laptop',
+    nodeId: 'd-old',
+    agents: [],
+    platform: null,
+    disabled: true,
+  },
+  {
     key: homeMoveTargetKey({ agentId: 'agent-1' }),
     kind: 'agent',
-    label: 'Reviewer',
-    machineName: 'Garage node',
+    label: 'Sandbox 1',
+    nodeId: 'sb-1',
+    agents: ['Reviewer', 'Tester'],
     platform: null,
     disabled: false,
   },
-  { key: GARAGE, kind: 'machine', label: 'Garage node', platform: null, disabled: false },
-  { key: OLD, kind: 'machine', label: 'Old laptop', platform: null, disabled: true },
 ];
 
 function submitButton(): HTMLButtonElement {
@@ -190,9 +207,38 @@ describe('MoveHomeDialog', () => {
     });
     expect(submitButton().disabled).toBe(true);
 
-    await fireEvent.click(screen.getByRole('radio', { name: /Reviewer/ }));
+    await fireEvent.click(screen.getByRole('radio', { name: /Sandbox 1/ }));
     await fireEvent.click(submitButton());
     expect(onSubmit).toHaveBeenLastCalledWith({ agentId: 'agent-1' });
+  });
+
+  it('shows each machine once, with the agents that run there', () => {
+    render(MoveHomeDialog, {
+      open: true,
+      static: true,
+      view: view({}),
+      options: OPTIONS,
+      currentKey: GARAGE,
+      currentNodeId: 'd-garage',
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    const radios = screen.getAllByRole('radio');
+    expect(radios).toHaveLength(3);
+    const garage = screen.getByRole('radio', { name: /Garage node/ });
+    expect(garage.textContent).toContain(
+      m.workspaceHome_moveDialog_agentDescription({ agent: 'Builder' }),
+    );
+    expect(garage.textContent).toContain(m.workspaceHome_moveDialog_currentHome());
+    expect(garage.textContent).toContain('Linux x64');
+    expect(screen.getByRole('radio', { name: /Sandbox 1/ }).textContent).toContain(
+      m.workspaceHome_moveDialog_agentsDescription({ agents: 'Reviewer and Tester' }),
+    );
+    expect(
+      radios.filter((radio) =>
+        radio.textContent?.includes(m.workspaceHome_moveDialog_currentHome()),
+      ),
+    ).toHaveLength(1);
   });
 
   it('cannot submit a machine that cannot be a home', async () => {
@@ -243,13 +289,13 @@ describe('MoveHomeDialog while the home moves', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('marks an agent on the current home machine as the current home', () => {
+  it('marks a sandbox row on the current home machine as the current home', () => {
     render(MoveHomeDialog, {
       open: true,
       static: true,
       view: view({}),
       options: [
-        { ...OPTIONS[0], key: homeMoveTargetKey({ agentId: 'agent-2' }), nodeId: 'd-mac-studio' },
+        { ...OPTIONS[2], key: homeMoveTargetKey({ agentId: 'agent-2' }), nodeId: 'd-mac-studio' },
       ],
       currentNodeId: 'd-mac-studio',
       onSubmit: vi.fn(),
@@ -394,7 +440,7 @@ describe('MoveHomeDialog cloud entries', () => {
   const CLOUD = homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'e2b-4x8' });
   const CLOUD_OPTIONS: MoveHomeOption[] = [
     ...OPTIONS,
-    { key: CLOUD, kind: 'cloud', label: 'E2B 4x8', platform: null, disabled: false },
+    { key: CLOUD, kind: 'cloud', label: 'E2B 4x8', agents: [], platform: null, disabled: false },
     {
       key: homeMoveTargetKey({ kind: 'cloud', cloudMachineId: 'northflank' }),
       kind: 'cloud',

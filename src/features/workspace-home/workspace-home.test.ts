@@ -247,10 +247,11 @@ const MACHINE_ROWS: StartOnOption[] = [
 ];
 
 describe('moveHomeTargets', () => {
-  it('lists agents on a live machine, then machine rows, without the backend row', () => {
+  it('lists the machine list once, naming the live agents on each machine', () => {
     const targets = moveHomeTargets({
       agents: [
         agent('a-remote', { nodeId: 'd-garage', nodeName: 'Garage node', nodeState: 'ready' }),
+        agent('a-second', { nodeId: 'd-garage', nodeState: 'ready' }),
         agent('a-offline', { nodeId: 'd-garage', nodeState: 'offline' }),
         agent('a-local', {}),
         agent('a-failed', {
@@ -264,20 +265,58 @@ describe('moveHomeTargets', () => {
     });
 
     expect(targets.map((target) => target.key)).toEqual([
-      'agent:a-remote',
       'machine:d-garage',
       'machine:d-old',
       'cloud:e2b-team',
     ]);
-    expect(targets.find((target) => target.key === 'agent:a-remote')).toMatchObject({
-      kind: 'agent',
-      machineName: 'Garage node',
+    expect(targets[0]).toMatchObject({
+      kind: 'machine',
+      label: 'Garage node',
       nodeId: 'd-garage',
+      agents: ['Agent a-remote', 'Agent a-second'],
+      platform: 'Linux x64',
       disabled: false,
     });
-    expect(targets.find((target) => target.key === 'machine:d-old')).toMatchObject({
-      disabled: true,
-      reason: 'Needs an update',
+    expect(targets[1]).toMatchObject({ agents: [], disabled: true, reason: 'Needs an update' });
+  });
+
+  it('adds one row per sandbox an agent runs on, after its cloud entry', () => {
+    const sandbox = (id: string, nodeId: string, cloudMachineId?: string) =>
+      agent(id, {
+        nodeId,
+        nodeName: `Sandbox ${nodeId}`,
+        ...(cloudMachineId
+          ? { placement: { target: 'e2b', checkout: 'isolated', cloudMachineId } }
+          : {}),
+      });
+    const targets = moveHomeTargets({
+      agents: [
+        sandbox('a-orphan', 'sb-gone'),
+        sandbox('a-1', 'sb-1', 'e2b-team'),
+        sandbox('a-2', 'sb-1', 'e2b-team'),
+        sandbox('a-3', 'sb-2', 'e2b-team'),
+      ],
+      machineRows: [
+        ...MACHINE_ROWS,
+        { id: 'cloud:other', label: 'Other', platform: null, disabled: false, kind: 'cloud' },
+      ],
+    });
+
+    expect(targets.map((target) => target.key)).toEqual([
+      'machine:d-garage',
+      'machine:d-old',
+      'cloud:e2b-team',
+      'agent:a-1',
+      'agent:a-3',
+      'cloud:other',
+      'agent:a-orphan',
+    ]);
+    expect(targets[3]).toMatchObject({
+      kind: 'agent',
+      label: 'Sandbox sb-1',
+      nodeId: 'sb-1',
+      agents: ['Agent a-1', 'Agent a-2'],
+      disabled: false,
     });
   });
 

@@ -5,6 +5,7 @@
  * panels all show it.
  */
 import { formatDateTime } from '$lib/i18n/format';
+import { getActiveLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
 import type { MoveHomeFailure } from './workspace-home-slice';
 import type { WorkspaceHomeView } from './workspace-home';
@@ -110,6 +111,14 @@ export function homeMoveWarningText(view: WorkspaceHomeView): string | null {
   return time
     ? m.workspaceHome_moveDialog_warning({ name: view.name, time })
     : m.workspaceHome_moveDialog_warningNoBackup({ name: view.name });
+}
+
+/** "Where Reviewer and Builder run" for a Move home row; null without agents. */
+export function homeMoveAgentsText(agents: readonly string[] = []): string | null {
+  if (agents.length === 0) return null;
+  if (agents.length === 1) return m.workspaceHome_moveDialog_agentDescription({ agent: agents[0] });
+  const list = new Intl.ListFormat(getActiveLocale(), { style: 'long', type: 'conjunction' });
+  return m.workspaceHome_moveDialog_agentsDescription({ agents: list.format(agents) });
 }
 
 /** Why `workspace.setHome` refused. */
