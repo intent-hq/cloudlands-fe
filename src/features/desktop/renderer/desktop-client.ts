@@ -4,6 +4,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { backendRequest, electronAPI } from '$lib/client/live/backend-transport';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import type { DesktopOsChecklist } from '$shared/types/desktop';
 import type {
   DesktopDecision,
@@ -160,6 +161,14 @@ export const desktopClient = {
     );
   },
   async getState(workspaceId: string, agentId: string): Promise<DesktopSnapshot> {
+    // Only the primary's own Electron connection may read desktop state; a
+    // web renderer (including the dev browser mock's fake bridge) is
+    // incapable, the daemon's desktop-unsupported.
+    if (!isElectronPlatform())
+      throw new BackendError({
+        code: 'desktop-unsupported',
+        message: m.desktop_consent_failed(),
+      });
     const hello = await backendRequest<{
       server?: { capabilities?: { desktopControl?: unknown } };
     }>('client.hello', {});
