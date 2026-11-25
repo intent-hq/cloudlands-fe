@@ -41,9 +41,7 @@ const hiddenEditorsPreference: SharedPreferenceSagaOptions<string[]> = {
   hydrate: (hiddenEditorIds) =>
     hiddenEditorIds === undefined ? null : setHiddenEditorIds(hiddenEditorIds),
   persistOn: toggleHiddenEditor,
-  *select() {
-    return yield* selectHiddenEditorIds.effect();
-  },
+  select: selectHiddenEditorIds.effect,
 };
 
 const editorOrderPreference: SharedPreferenceSagaOptions<string[]> = {
@@ -57,9 +55,7 @@ const editorOrderPreference: SharedPreferenceSagaOptions<string[]> = {
   },
   hydrate: (order) => (order?.length ? setEditorOrder(order) : null),
   persistOn: [setEditorOrder, fetchEditorsSuccess],
-  *select() {
-    return yield* selectEditorOrder.effect();
-  },
+  select: selectEditorOrder.effect,
 };
 
 /** Not loaded at boot; a choice is saved, and other open views follow it. */
@@ -71,7 +67,7 @@ const openActionPreference: SharedPreferenceSagaOptions<string> = {
   hydrate: (openAction, source) =>
     source === 'storage' && openAction !== undefined ? setOpenAction(openAction) : null,
   persistOn: setOpenAction,
-  select: (action) => {
+  fromAction: (action) => {
     const [openAction] = (action as ReturnType<typeof setOpenAction>).payload;
     return typeof openAction === 'string' ? openAction : undefined;
   },

@@ -105,9 +105,7 @@ const hiddenSidebarTabsPreference: SharedPreferenceSagaOptions<string[]> = {
       ? hydrateSidebarNav({ hiddenSidebarTabIds: hidden ?? [] })
       : null,
   persistOn: setSidebarTabHidden,
-  *select() {
-    return yield* selectHiddenSidebarTabIds.effect();
-  },
+  select: selectHiddenSidebarTabIds.effect,
 };
 
 /** Pins belong to one host; that host's other views follow a change. */
@@ -119,9 +117,7 @@ const pinnedWorkspacesPreference: SharedPreferenceSagaOptions<string[]> = {
   parse: stringArray,
   hydrate: (pinned, source) =>
     source === 'storage' ? hydrateSidebarNav({ pinnedWorkspaceIds: pinned ?? [] }) : null,
-  *select() {
-    return yield* selectLocalPinnedWorkspaceIds.effect();
-  },
+  select: selectLocalPinnedWorkspaceIds.effect,
 };
 
 function* hydrateSidebarNavState(): SagaGenerator<void> {

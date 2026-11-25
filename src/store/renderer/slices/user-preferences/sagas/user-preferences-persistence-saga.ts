@@ -199,7 +199,7 @@ function booleanPreference(
   key: string,
   set: (value: boolean) => Action,
   persistOn: ActionPattern,
-  select: () => SagaGenerator<boolean | undefined>,
+  select: () => SagaGenerator<boolean>,
 ): PersistedPreference {
   return persisted<boolean>({
     key,
@@ -235,9 +235,7 @@ const providerSetupPreference: SharedPreferenceSagaOptions<boolean> = {
       : [setHasCompletedProviderSetup(completed), hydrated];
   },
   persistOn: [setHasCompletedProviderSetup, toggleHasCompletedProviderSetup],
-  *select() {
-    return yield* selectHasCompletedProviderSetup.effect();
-  },
+  select: selectHasCompletedProviderSetup.effect,
 };
 
 /** Saved by `watchLanguagePreferenceWrites`, which also applies the locale. */
@@ -246,9 +244,7 @@ const languagePreference: SharedPreferenceSagaOptions<string> = {
   scope: 'app',
   parse: (stored) => (typeof stored === 'string' && stored.trim() ? stored : undefined),
   hydrate: (language) => (language === undefined ? null : setLanguagePreference(language)),
-  *select() {
-    return yield* selectLanguagePreference.effect();
-  },
+  select: selectLanguagePreference.effect,
 };
 
 // Multiplayer is always on: a saved `labs:multiplayerEnabled` is neither read nor written.
@@ -274,34 +270,26 @@ const PREFERENCES: readonly PersistedPreference[] = [
     SHOW_ARCHIVED_STORAGE_KEY,
     setShowArchived,
     [setShowArchived, toggleShowArchived],
-    function* () {
-      return yield* selectShowArchived.effect();
-    },
+    selectShowArchived.effect,
   ),
   booleanPreference(
     GROUP_BY_REPO_STORAGE_KEY,
     setGroupByRepo,
     [setGroupByRepo, toggleGroupByRepo],
-    function* () {
-      return yield* selectGroupByRepo.effect();
-    },
+    selectGroupByRepo.effect,
   ),
   persisted(providerSetupPreference),
   booleanPreference(
     SHOW_REASONING_BLOCKS_STORAGE_KEY,
     setShowReasoningBlocks,
     [setShowReasoningBlocks, toggleShowReasoningBlocks],
-    function* () {
-      return yield* selectShowReasoningBlocks.effect();
-    },
+    selectShowReasoningBlocks.effect,
   ),
   booleanPreference(
     CHAT_AURORA_STORAGE_KEY,
     setChatAuroraEnabled,
     [setChatAuroraEnabled, toggleChatAurora],
-    function* () {
-      return yield* selectChatAuroraEnabled.effect();
-    },
+    selectChatAuroraEnabled.effect,
   ),
   persisted<ChatContentWidth>({
     key: CHAT_CONTENT_WIDTH_STORAGE_KEY,
@@ -309,89 +297,67 @@ const PREFERENCES: readonly PersistedPreference[] = [
     parse: (stored) => (isChatContentWidth(stored) ? stored : undefined),
     hydrate: (width) => (width === undefined ? null : setChatContentWidth(width)),
     persistOn: setChatContentWidth,
-    *select() {
-      return yield* selectChatContentWidth.effect();
-    },
+    select: selectChatContentWidth.effect,
   }),
   booleanPreference(
     COLLAPSE_TOOL_RUNS_STORAGE_KEY,
     setCollapseToolRuns,
     [setCollapseToolRuns, toggleCollapseToolRuns],
-    function* () {
-      return yield* selectCollapseToolRuns.effect();
-    },
+    selectCollapseToolRuns.effect,
   ),
   booleanPreference(
     SHELL_TRANSPARENCY_STORAGE_KEY,
     setShellTransparencyEnabled,
     [setShellTransparencyEnabled, toggleShellTransparency],
-    function* () {
-      return yield* selectShellTransparencyEnabled.effect();
-    },
+    selectShellTransparencyEnabled.effect,
   ),
   booleanPreference(
     MENU_BAR_AUTO_HIDE_STORAGE_KEY,
     setMenuBarAutoHide,
     [setMenuBarAutoHide, toggleMenuBarAutoHide],
-    function* () {
-      return yield* selectMenuBarAutoHide.effect();
-    },
+    selectMenuBarAutoHide.effect,
   ),
   booleanPreference(
     REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
     setReduceMotionOnBattery,
     [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
-    function* () {
-      return yield* selectReduceMotionOnBattery.effect();
-    },
+    selectReduceMotionOnBattery.effect,
   ),
   booleanPreference(
     PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY,
     setPauseAnimationsWhenUnfocused,
     [setPauseAnimationsWhenUnfocused, togglePauseAnimationsWhenUnfocused],
-    function* () {
-      return yield* selectPauseAnimationsWhenUnfocused.effect();
-    },
+    selectPauseAnimationsWhenUnfocused.effect,
   ),
   booleanPreference(
     LABS_SETTINGS_VISIBLE_STORAGE_KEY,
     setLabsSettingsVisible,
     [setLabsSettingsVisible, toggleLabsSettingsVisibility],
-    function* () {
-      return yield* selectLabsSettingsVisible.effect();
-    },
+    selectLabsSettingsVisible.effect,
   ),
   booleanPreference(
     LABS_REMOTE_AGENTS_STORAGE_KEY,
     setLabsRemoteAgentsEnabled,
     [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
-    function* () {
-      return yield* selectLabsRemoteAgentsEnabled.effect();
-    },
+    selectLabsRemoteAgentsEnabled.effect,
   ),
   booleanPreference(
     LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
     setLabsPlainFolderWorkspacesEnabled,
     [setLabsPlainFolderWorkspacesEnabled, toggleLabsPlainFolderWorkspaces],
-    function* () {
-      return yield* selectLabsPlainFolderWorkspacesEnabled.effect();
-    },
+    selectLabsPlainFolderWorkspacesEnabled.effect,
   ),
   booleanPreference(
     LABS_TAB_GROUPS_STORAGE_KEY,
     setLabsTabGroupsEnabled,
     [setLabsTabGroupsEnabled, toggleLabsTabGroups],
-    function* () {
-      return yield* selectLabsTabGroupsEnabled.effect();
-    },
+    selectLabsTabGroupsEnabled.effect,
   ),
   booleanPreference(
     LABS_SSH_MACHINE_SETUP_STORAGE_KEY,
     setLabsSshMachineSetupEnabled,
     [setLabsSshMachineSetupEnabled, toggleLabsSshMachineSetup],
-    function* () {
-      return yield* selectLabsSshMachineSetupEnabled.effect();
-    },
+    selectLabsSshMachineSetupEnabled.effect,
   ),
   persisted<{ fontStyle: FontStyle }>({
     key: AGENT_STORAGE_KEY,
@@ -442,9 +408,7 @@ const PREFERENCES: readonly PersistedPreference[] = [
         : undefined,
     hydrate: (presets) => (presets === undefined ? null : hydrateActivityLogPresets(presets)),
     persistOn: [saveActivityLogPreset, deleteActivityLogPreset],
-    *select() {
-      return yield* selectActivityLogPresets.effect();
-    },
+    select: selectActivityLogPresets.effect,
   }),
   persisted(languagePreference),
   persisted<GithubLinkDefaultAction>({
@@ -453,9 +417,7 @@ const PREFERENCES: readonly PersistedPreference[] = [
     parse: (stored) => (isGithubLinkDefaultAction(stored) ? stored : undefined),
     hydrate: (action) => (action === undefined ? null : setGithubLinkDefaultAction(action)),
     persistOn: setGithubLinkDefaultAction,
-    *select() {
-      return yield* selectGithubLinkDefaultAction.effect();
-    },
+    select: selectGithubLinkDefaultAction.effect,
   }),
   persisted<unknown>({
     key: SHORTCUT_OVERRIDES_STORAGE_KEY,

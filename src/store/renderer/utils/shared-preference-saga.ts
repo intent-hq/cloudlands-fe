@@ -41,13 +41,12 @@ export interface SharedPreferenceSagaOptions<T> {
     value: T | undefined,
     source: SharedPreferenceSource,
   ) => Hydration | SagaGenerator<Hydration>;
-  /** The actions after which the value is saved. Needs `select`. */
+  /** The actions after which the value is saved. Needs `select` or `fromAction`. */
   persistOn?: ActionPattern;
-  /**
-   * The value to save, read from the store (or from the action that asked for
-   * the save); `undefined` skips the save.
-   */
-  select?: (action?: Action) => T | undefined | SagaGenerator<T | undefined>;
+  /** The value to save, read from the store; `undefined` skips the save. */
+  select?: () => T | undefined | SagaGenerator<T | undefined>;
+  /** The value to save, read from the action that asked for the save. Used instead of `select`. */
+  fromAction?: (action: Action) => T | undefined;
 }
 
 const hydrationActions = new WeakSet<object>();
@@ -104,12 +103,18 @@ export function* persistSharedPreference<T>(
   options: SharedPreferenceSagaOptions<T>,
   action?: Action,
 ): SagaGenerator<void> {
-  if (!options.select) return;
+  const { select: selectValue, fromAction } = options;
+  if (!selectValue && !(fromAction && action)) return;
   try {
     const key = yield* resolveKey(options);
     if (key === null) return;
-    const selected = options.select(action);
-    const value = isSaga(selected) ? yield* selected : selected;
+    let value: T | undefined;
+    if (fromAction && action) {
+      value = fromAction(action);
+    } else if (selectValue) {
+      const selected = selectValue();
+      value = isSaga(selected) ? yield* selected : selected;
+    }
     if (value === undefined) return;
     if (options.format === 'text') {
       yield* call(setLocalStorageItem, key, options.serialize?.(value) ?? String(value));
@@ -168,7 +173,7 @@ export function* followSharedPreference<T>(
 export function* watchSharedPreference<T>(
   options: SharedPreferenceSagaOptions<T>,
 ): SagaGenerator<void> {
-  if (options.persistOn && options.select) {
+  if (options.persistOn && (options.select || options.fromAction)) {
     yield* takeEvery(options.persistOn, function* (action: Action) {
       // A loaded value is already in storage; saving it again can overwrite a newer one.
       if (!isSharedPreferenceHydration(action)) yield* persistSharedPreference(options, action);
