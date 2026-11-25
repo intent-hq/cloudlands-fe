@@ -565,7 +565,9 @@ async function checkSingleProviderStatus(
   if (selectHostRole.select(appStore.state) === 'member') {
     const discovery = await fetchProviderDiscovery();
     const status = withVersion(
-      providerStatusFromDiscovery(discovery, providerId),
+      providerId in REFUSABLE_PROVIDER_WARNINGS
+        ? refusableStatusFromDiscovery(discovery, providerId)
+        : providerStatusFromDiscovery(discovery, providerId),
       discovery,
       providerId,
     );

@@ -341,6 +341,36 @@ describe('provider-status-bridge-seeder', () => {
     },
   );
 
+  it.each(['cursor', 'dsh'])(
+    'keeps a refused %s CLI as unsupported guidance on a member host single check',
+    async (providerId) => {
+      const { withHostPrincipal } = await import('../../../test/fixtures/principal-state');
+      const ownerState = authority.state;
+      authority.state = withHostPrincipal({}, 'member');
+      try {
+        routeDaemon({
+          'host.providerDiscovery': {
+            providers: [
+              { id: providerId, installed: false, cliVersion: '9.9.9', unavailableReason: 'nope' },
+            ],
+          },
+        });
+        const response = await mockInvoke<Envelope<ProviderStatus>>(
+          PROVIDERS_CHANNELS.CHECK_SINGLE,
+          { providerId, force: true },
+        );
+        expect(response.data).toMatchObject({
+          available: false,
+          version: '9.9.9',
+          unavailableReason: 'nope',
+        });
+        expect(response.data?.warning).toContain('nope');
+      } finally {
+        authority.state = ownerState;
+      }
+    },
+  );
+
   beforeAll(async () => {
     const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');
     authority.state = withLegacyPrincipal({});
