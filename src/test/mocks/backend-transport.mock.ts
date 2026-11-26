@@ -223,6 +223,9 @@ export const mockBackendTransportModule = {
     state.requestHandlers.has('client.hello')
       ? mockBackendRequest('client.hello', {})
       : Promise.resolve({ server: { capabilities: {} } }),
+  // Answered by the scripted `client.hello` handler and recorded under that
+  // method, so tests can still count capability reads of the acknowledged hello.
+  readBackendHello: () => mockBackendRequest('client.hello', {}),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,

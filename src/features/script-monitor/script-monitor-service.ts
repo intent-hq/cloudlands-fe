@@ -4,6 +4,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
   onBackendReconnected,
+  readBackendHello,
 } from '$lib/client/live/backend-transport';
 import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
 import type { ScriptWithState } from '$features/scripts/types';
@@ -205,9 +206,9 @@ export function subscribeScriptMonitors(
       return;
     }
     try {
-      const hello = await backendRequest<{
+      const hello = await readBackendHello<{
         server?: { capabilities?: { scriptMonitors?: number } };
-      }>('client.hello', {});
+      }>();
       if (disposed || version !== epoch) return;
       // Capability-gated only: the protocol major moves for unrelated changes.
       if (connection.isRejected() || hello.server?.capabilities?.scriptMonitors !== 2) {

@@ -212,7 +212,12 @@ describe('daemon request budgets', () => {
       expect
         .soft(counter.count(method), `Home leases read ${method} at startup`)
         .toBeGreaterThan(0);
-    expectWithinBudget('startup', { ...ONE_FULL_LIST, 'agent.pendingPermissions': 1 });
+    expectWithinBudget('startup', {
+      ...ONE_FULL_LIST,
+      'agent.pendingPermissions': 1,
+      'client.hello': 1,
+      'prMonitor.list': 2,
+    });
 
     // Home -> Settings -> Home: no list or permission reads on page changes.
     counter.reset();
@@ -273,7 +278,15 @@ describe('daemon request budgets', () => {
     });
     await settle();
     expect.soft(counter.count('principal.me'), 'the reconnect re-admits the caller').toBe(1);
-    expectWithinBudget('reconnect', { ...ONE_FULL_LIST, 'agent.pendingPermissions': 1 });
+    // Only the connect handshake says hello: capability reads use the acknowledged
+    // hello, so they never retire the PR monitor session it re-registers once
+    // (one prMonitor.list each for the monitors and their subscription epoch).
+    expectWithinBudget('reconnect', {
+      ...ONE_FULL_LIST,
+      'agent.pendingPermissions': 1,
+      'client.hello': 1,
+      'prMonitor.list': 2,
+    });
 
     // Management granted on every workspace, one row at a time, while a
     // pending-permission read is in flight (the read is slow on a large host):

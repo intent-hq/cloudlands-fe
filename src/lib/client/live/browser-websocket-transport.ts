@@ -356,6 +356,23 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return { hello, principal };
   }
 
+  /**
+   * The current connection's acknowledged `client.hello` result. Never sends a
+   * hello: an outgoing one starts a new generation and retires PR monitor sessions.
+   */
+  async readHello(): Promise<unknown> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    // No handshake exists until the daemon finishes starting.
+    if (this.startupState?.state === 'starting')
+      throw new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState)));
+    const socket = await this.ensureConnected();
+    if (this.disposed || !this.connected || this.socket !== socket)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    if (this.acknowledgedHello === null) throw this.helloError;
+    return structuredClone(this.acknowledgedHello);
+  }
+
   async observeNodeCapabilities(): Promise<unknown> {
     if (this.disposed)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });

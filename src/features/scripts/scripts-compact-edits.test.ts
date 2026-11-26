@@ -19,7 +19,16 @@ import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
   return { appClient: { scripts: new LiveScriptsClient() } };

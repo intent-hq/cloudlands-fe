@@ -10,12 +10,19 @@ import { subscribeAgentWorkers, type AgentWorkersChannel } from './agent-workers
 import type { AgentWorkersState, WorkerSnapshot } from './types';
 import { workerFixture, workerSnapshotFixture } from './agent-workers.fixture';
 
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-  backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
-  onBackendNotification: vi.fn(),
-  onBackendReconnected: vi.fn(),
-}));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+    backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
+    onBackendNotification: vi.fn(),
+    onBackendReconnected: vi.fn(),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 
 const ws = workerSnapshotFixture.workspaceId;
 const agent = workerSnapshotFixture.agentId;

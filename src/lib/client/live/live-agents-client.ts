@@ -44,7 +44,7 @@ import type {
   UserMessageIndexResult,
 } from '../app-client';
 import { collectListPages } from '$shared/paged-list';
-import { backendRequest } from './backend-transport';
+import { backendRequest, readBackendHello } from './backend-transport';
 import {
   classifyGoalRequestError,
   parseGoalCommandResult,
@@ -252,9 +252,9 @@ export class LiveAgentsClient implements AgentsClient {
 
   supportsRetirement(connectionGeneration = 0): Promise<boolean> {
     if (this.retirementCapabilityRequest?.generation !== connectionGeneration) {
-      const promise = backendRequest<{
+      const promise = readBackendHello<{
         server?: { capabilities?: { agentRetire?: number } };
-      }>('client.hello', {})
+      }>()
         .then((result) => result?.server?.capabilities?.agentRetire === 1)
         .catch(() => false)
         .finally(() => {
@@ -774,10 +774,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageIds: string[];
   }): Promise<MutationResult> {
     try {
-      const hello = await backendRequest<{ server?: { protocolVersion?: unknown } }>(
-        'client.hello',
-        {},
-      );
+      const hello = await readBackendHello<{ server?: { protocolVersion?: unknown } }>();
       const version = hello?.server?.protocolVersion;
       const match = typeof version === 'string' ? /^(\d+)\.(\d+)(?:\.\d+)?$/.exec(version) : null;
       // protocol-version-ok: 13.1 adds atomic selected-queue batch delivery.

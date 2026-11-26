@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
-vi.mock('./backend-transport', () => ({ backendRequest: vi.fn() }));
+vi.mock('./backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 import { backendRequest } from './backend-transport';
 import { LiveScriptsClient } from './live-scripts-client';
 import { makeScriptsFixture } from '../../../test/fixtures/scripts';

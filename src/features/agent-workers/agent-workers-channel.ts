@@ -5,6 +5,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
   onBackendReconnected,
+  readBackendHello,
 } from '$lib/client/live/backend-transport';
 import type {
   AgentWorkersState,
@@ -134,10 +135,9 @@ export function subscribeAgentWorkers(
     registering = true;
     const stale = () => disposed || version !== epoch;
     try {
-      const hello = await backendRequest<{ server?: { capabilities?: { agentWorkers?: number } } }>(
-        'client.hello',
-        {},
-      );
+      const hello = await readBackendHello<{
+        server?: { capabilities?: { agentWorkers?: number } };
+      }>();
       if (stale()) return;
       if (hello?.server?.capabilities?.agentWorkers !== 1) {
         registering = false;

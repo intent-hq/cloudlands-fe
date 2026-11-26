@@ -27,7 +27,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
-import { backendRequest } from './backend-transport';
+import { backendRequest, readBackendHello } from './backend-transport';
 import { runMutation } from './live-support';
 
 /** Rows per full-view `script.list` page (the host also caps page bytes). */
@@ -40,17 +40,17 @@ function runParams(run?: ScriptRunTarget): { remoteAgentId?: string } {
 
 export class LiveScriptsClient implements ScriptsClient {
   async supportsLifecycle(): Promise<boolean> {
-    const result = await backendRequest<{
+    const result = await readBackendHello<{
       server?: { capabilities?: { scriptLifecycle?: number } };
-    }>('client.hello', {});
+    }>();
     return result?.server?.capabilities?.scriptLifecycle === 1;
   }
 
   /** Resolves whether the host pages lists by default (`boundedReads: 1`, §5.8). */
   private async requireActiveLists(): Promise<{ fullPages: boolean }> {
-    const hello = await backendRequest<{
+    const hello = await readBackendHello<{
       server?: { capabilities?: { scriptActiveLists?: number; boundedReads?: number } };
-    }>('client.hello', {});
+    }>();
     // Gate on the advertised capability, not the protocol major: majors move
     // for unrelated changes (protocol 15 still serves active lists).
     if (hello.server?.capabilities?.scriptActiveLists !== 1)

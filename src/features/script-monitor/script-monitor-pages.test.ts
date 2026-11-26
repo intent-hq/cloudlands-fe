@@ -13,13 +13,20 @@ import {
 } from './script-monitor.fixture';
 import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(),
-  backendUnsubscribe: vi.fn(),
-  onBackendNotification: vi.fn(),
-  onBackendReconnected: vi.fn(),
-}));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+    backendSubscribe: vi.fn(),
+    backendUnsubscribe: vi.fn(),
+    onBackendNotification: vi.fn(),
+    onBackendReconnected: vi.fn(),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 let emit: Parameters<typeof onBackendNotification>[0];
 let snapshot: ScriptMonitorSnapshot;
 let service: ReturnType<typeof subscribeScriptMonitors>;

@@ -2,10 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 const backendRequest = vi.hoisted(() => vi.fn());
 const localPermissions = vi.hoisted(() => vi.fn());
 const electron = vi.hoisted(() => ({ present: true }));
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest,
-  electronAPI: () => ({ invoke: localPermissions }),
-}));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest,
+    electronAPI: () => ({ invoke: localPermissions }),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: () => electron.present,
 }));
