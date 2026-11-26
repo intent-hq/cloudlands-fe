@@ -34,6 +34,8 @@ interface RemoteMachineProvider {
   visible?: false;
   status: string;
   models: string[];
+  /** Display names by model id, when the machine named them; absent from older machines. */
+  modelLabels?: Record<string, string>;
   /**
    * Present only when true: the list is not the machine's real one yet (its
    * cheap first report, before model listing lands) or a cached one it could
@@ -181,6 +183,14 @@ const optionalText = (value: unknown): string | undefined =>
 const count = (value: unknown): number =>
   Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : 0;
 
+function parseModelLabels(value: unknown): { modelLabels?: Record<string, string> } {
+  if (!record(value)) return {};
+  const entries = Object.entries(value).filter((entry): entry is [string, string] =>
+    text(entry[1]),
+  );
+  return entries.length > 0 ? { modelLabels: Object.fromEntries(entries) } : {};
+}
+
 function parseCapabilities(value: unknown): RemoteMachineCapabilities | undefined {
   if (!record(value)) return undefined;
   const providers = Array.isArray(value.providers)
@@ -194,6 +204,7 @@ function parseCapabilities(value: unknown): RemoteMachineCapabilities | undefine
                 models: Array.isArray(provider.models)
                   ? provider.models.filter((model): model is string => text(model))
                   : [],
+                ...parseModelLabels(provider.modelLabels),
                 ...(provider.modelsStale === true ? { modelsStale: true as const } : {}),
               },
             ]

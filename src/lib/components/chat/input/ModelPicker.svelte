@@ -115,7 +115,11 @@
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
+  import {
+    modelIdForDisplay,
+    prettyClaudeModelName,
+    resolveModelDisplayName,
+  } from '$shared/utils/model-display-name';
   import {
     selectHidesAgentCreationActions,
     selectHidesProviderProfileNames,
@@ -176,6 +180,7 @@
     remoteAutoPickProfile,
     machineReportFreshness,
     orchestratorCatalogModels,
+    machineReportedModelLabel,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
   import {
@@ -1251,11 +1256,16 @@
     void $learnedModelNames$;
     const learned = (id: string) =>
       selectLearnedModelDisplayName.select(appStore.state, provider, id);
+    const machineLabel = (id: string) =>
+      remoteScoped ? machineReportedModelLabel($remoteMachine$, provider, id) : undefined;
     return (
       resolveModelDisplayName(modelId, lookup) ??
       (bareId !== modelId ? resolveModelDisplayName(bareId, lookup) : undefined) ??
+      machineLabel(modelId) ??
+      machineLabel(bareId) ??
       learned(modelId) ??
-      resolveModelDisplayName(bareId, learned)
+      resolveModelDisplayName(bareId, learned) ??
+      (providerRefBaseId(provider) === 'claude-code' ? prettyClaudeModelName(bareId) : undefined)
     );
   }
 

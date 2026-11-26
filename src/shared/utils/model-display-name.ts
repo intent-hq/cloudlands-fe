@@ -25,3 +25,22 @@ export function resolveModelDisplayName(
   const effort = match[1].toLowerCase();
   return label ? `${label} (${effort.charAt(0).toUpperCase()}${effort.slice(1)})` : undefined;
 }
+
+const CLAUDE_FAMILIES = new Set(['opus', 'sonnet', 'haiku']);
+
+/**
+ * Last-resort label for Claude Code model IDs when no catalog names them
+ * (e.g. a remote machine reports `opus`, `claude-fable-5-1[1m]`). Returns
+ * undefined for IDs it does not recognize.
+ */
+export function prettyClaudeModelName(modelId: string): string | undefined {
+  const match = /^(?:claude-)?([a-z]+)((?:-\d{1,2}){0,2})(?:\[(\d+[km])\])?$/i.exec(modelId.trim());
+  if (!match) return undefined;
+  const family = match[1].toLowerCase();
+  const isAlias = !modelId.toLowerCase().startsWith('claude-');
+  if (isAlias && !CLAUDE_FAMILIES.has(family)) return undefined;
+  const version = match[2].slice(1).replace(/-/g, '.');
+  const name = family.charAt(0).toUpperCase() + family.slice(1);
+  const ctx = match[3] ? ` (${match[3].toUpperCase()} context)` : '';
+  return `${name}${version ? ` ${version}` : ''}${ctx}`;
+}
