@@ -66,9 +66,10 @@ export const backgroundHooksSubscribeRequested = createAction<[workspaceId: stri
 );
 
 /** Trigger: release one subscriber; the last release disposes and clears. */
-export const backgroundHooksUnsubscribeRequested = createAction<[workspaceId: string]>(
-  'backgroundHooks/unsubscribeRequested',
-);
+/** `holdMs` keeps the lease that long first, so a quick re-subscribe reuses it. */
+export const backgroundHooksUnsubscribeRequested = createAction<
+  [workspaceId: string, holdMs?: number]
+>('backgroundHooks/unsubscribeRequested');
 
 /**
  * Trigger: on-demand `hook.list` refetch for the workspace's live

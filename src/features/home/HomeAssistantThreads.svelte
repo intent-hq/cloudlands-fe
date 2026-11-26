@@ -68,6 +68,7 @@
   } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import HomeAssistantThreadActivity from './HomeAssistantThreadActivity.svelte';
 
+  const LEASE_HOLD_MS = 30_000;
   const threads$ = selectChiefThreads();
   const retiredThreads$ = selectRetiredChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
@@ -102,10 +103,12 @@
     appStore.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
     appStore.dispatch(scriptMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
     void appStore.dispatch(agentRetirementSupportRequested());
+    // Held through a short trip away from Home, so coming back does not
+    // unsubscribe, resubscribe and re-read every list.
     return () => {
-      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID));
-      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
-      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID, LEASE_HOLD_MS));
+      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID, LEASE_HOLD_MS));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID, LEASE_HOLD_MS));
     };
   });
 

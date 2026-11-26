@@ -234,6 +234,7 @@ function start(
     ...identity,
     agentSessions: { ...agentSessionInitialState, byAgentId: sessions },
     agentMutationUi: agentMutationUiReducer.initialState,
+    workspaceAgents: workspaceAgentsInitialState,
   };
   const dispatch = (action: any) => {
     if (live) {
@@ -427,6 +428,29 @@ describe('agentMutationSaga', () => {
     expect(dispatched.find((a) => a.type === agentRetirementSupportReceived.type)?.payload).toEqual(
       [1, true],
     );
+    await stop(task);
+  });
+
+  it('reuses retirement support known for this connection without probing again', async () => {
+    const { channel, getState, task } = start();
+    getState().workspaceAgents = {
+      ...workspaceAgentsInitialState,
+      retirementSupport: {
+        connectionGeneration: getState().daemonHealth.connectionGeneration,
+        supported: true,
+      },
+    };
+    const action = agentRetirementSupportRequested();
+    channel.put(action);
+    await expect(action.promise).resolves.toBe(true);
+    expect(mocks.supportsRetirement).not.toHaveBeenCalled();
+
+    getState().daemonHealth.connectionGeneration++;
+    mocks.supportsRetirement.mockResolvedValueOnce(false);
+    const next = agentRetirementSupportRequested();
+    channel.put(next);
+    await expect(next.promise).resolves.toBe(false);
+    expect(mocks.supportsRetirement).toHaveBeenCalledOnce();
     await stop(task);
   });
 

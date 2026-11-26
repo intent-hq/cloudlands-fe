@@ -123,8 +123,12 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
     yield* takeEvery(scriptMonitorsSubscribeRequested, function* ({ payload: [workspaceId] }) {
       yield* acquire(workspaceId);
     });
-    yield* takeEvery(scriptMonitorsUnsubscribeRequested, ({ payload: [workspaceId] }) =>
-      release(workspaceId),
+    yield* takeEvery(
+      scriptMonitorsUnsubscribeRequested,
+      function* ({ payload: [workspaceId, holdMs] }): SagaGenerator<void> {
+        if (holdMs) yield* delay(holdMs);
+        release(workspaceId);
+      },
     );
     yield* takeEvery(
       scriptMonitorsActiveWorkspaceChanged,
