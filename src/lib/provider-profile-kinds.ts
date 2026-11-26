@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the add/edit provider-profile dialog's kinds (Different
  * login, API key, Token, Advanced) for every provider with profile kinds:
- * Claude Code, Codex, Grok, Factory Droid, Auggie and Cursor. Each provider
+ * Claude Code, Codex, Grok, Factory Droid, Auggie, Cursor and DeepSeek Harness. Each provider
  * offers only the kinds in its row of the table below.
  *
  * A profile's kind is never stored: it is read from the profile's saved env
@@ -18,7 +18,7 @@ import type {
 } from '$shared/provider-profiles';
 
 /** The providers with profile kinds, named as in the folder path. */
-export type ProfileProvider = 'claude' | 'codex' | 'grok' | 'droid' | 'auggie' | 'cursor';
+export type ProfileProvider = 'claude' | 'codex' | 'grok' | 'droid' | 'auggie' | 'cursor' | 'dsh';
 
 export type ProfileKind = 'differentLogin' | 'apiKey' | 'token' | 'advanced';
 
@@ -35,6 +35,7 @@ const BASE_PROVIDER_IDS: Record<ProfileProvider, string> = {
   droid: 'droid',
   auggie: 'auggie',
   cursor: 'cursor',
+  dsh: 'dsh',
 };
 
 /** Account folders of the providers with a Different login kind. */
@@ -59,8 +60,8 @@ interface KindKeys {
  * Codex in with it at launch (Codex ignores a key that is only in the env).
  */
 /*
- * Grok, Droid, Auggie and Cursor (PROTOCOL §5.54 "Profile-capable bases"):
- * one credential each. Grok and Cursor prefer a saved login over the key,
+ * Grok, Droid, Auggie, Cursor and DSH (PROTOCOL §5.54 "Profile-capable bases"):
+ * one credential each. Grok, Cursor and DSH prefer a saved login or key over the env key,
  * so the daemon runs their key profiles in a home of their own; Auggie's
  * token is the JSON `auggie token print` prints (AUGMENT_SESSION_AUTH).
  */
@@ -114,6 +115,9 @@ const PROFILE_KIND_TABLE: Record<
   cursor: {
     apiKey: { set: ['CURSOR_API_KEY'], optionalSet: [], unset: ['CURSOR_AUTH_TOKEN'] },
   },
+  dsh: {
+    apiKey: { set: ['DEEPSEEK_API_KEY'], optionalSet: [], unset: [] },
+  },
 };
 
 const DETECTION_ORDER: readonly SpecializedProfileKind[] = ['differentLogin', 'apiKey', 'token'];
@@ -157,7 +161,7 @@ export function profileProviderFromBaseId(baseProviderId: string): ProfileProvid
 
 /**
  * A catalog row with profile kinds (key and token screens): Claude Code,
- * Codex, Grok, Droid, Auggie and Cursor, when the daemon offers profiles
+ * Codex, Grok, Droid, Auggie, Cursor and DSH, when the daemon offers profiles
  * for them (`supportsProfiles`; an older daemon offers them for Claude Code
  * and Codex only).
  */
@@ -511,6 +515,7 @@ const SECRET_SHAPES: Record<ProfileProvider, Partial<Record<'apiKey' | 'token', 
   auggie: { token: isAuggieSessionJson },
   // Cursor documents no prefix: one word of at least 32 characters.
   cursor: { apiKey: /^\S{32,}$/ },
+  dsh: { apiKey: /^sk-[A-Za-z0-9]{20,}$/ },
 };
 
 /**
