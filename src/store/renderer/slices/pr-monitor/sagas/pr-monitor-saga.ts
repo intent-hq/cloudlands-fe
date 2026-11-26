@@ -129,7 +129,8 @@ function* releaseSubscription(
   active: Map<string, SubscriptionEntry>,
   action: ReturnType<typeof prMonitorsUnsubscribeRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
+  const [workspaceId, holdMs] = action.payload;
+  if (holdMs) yield* delay(holdMs);
   const entry = active.get(workspaceId);
   if (!entry || --entry.count > 0) return;
   active.delete(workspaceId);

@@ -98,6 +98,7 @@ daemon.handle('host.executionContext', () => ({
     setting: 'sourceControl.github.exposeGitCredentialToChildren',
   },
 }));
+daemon.handle('scriptMonitor.list', () => ({ view: 'summary', monitors: [] }));
 daemon.handle('git.getRemoteUrl', (params) => ({
   url: `https://github.com/owner/${String(params?.path ?? params?.repoPath ?? 'repo')
     .split('/')
@@ -207,6 +208,10 @@ describe('daemon request budgets', () => {
     // Startup: one full workspace list and one pending-permissions read.
     await settle();
     expect.soft(counter.count('principal.me'), 'startup admits the caller once').toBe(1);
+    for (const method of ['hook.list', 'prMonitor.list', 'scriptMonitor.list'])
+      expect
+        .soft(counter.count(method), `Home leases read ${method} at startup`)
+        .toBeGreaterThan(0);
     expectWithinBudget('startup', { ...ONE_FULL_LIST, 'agent.pendingPermissions': 1 });
 
     // Home -> Settings -> Home: no list or permission reads on page changes.
@@ -226,6 +231,7 @@ describe('daemon request budgets', () => {
       'events.unsubscribe': 0,
       'hook.list': 0,
       'prMonitor.list': 0,
+      'scriptMonitor.list': 0,
       'host.executionContext': 0,
       'settings.get': 1,
     });

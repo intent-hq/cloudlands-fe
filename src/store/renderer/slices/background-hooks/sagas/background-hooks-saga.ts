@@ -251,7 +251,8 @@ function* handleUnsubscribe(
   refetchEvents: Channel<RefetchMessage>,
   action: ReturnType<typeof backgroundHooksUnsubscribeRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
+  const [workspaceId, holdMs] = action.payload;
+  if (holdMs) yield* delay(holdMs);
   const entry = active.get(workspaceId);
   if (entry && --entry.count <= 0) {
     yield* closeWorkspace(active, transport, refetchEvents, workspaceId);

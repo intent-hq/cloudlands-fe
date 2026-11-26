@@ -96,6 +96,28 @@ describe('scriptMonitorSaga lease reopen', () => {
     }
   });
 
+  it('holds a released lease for holdMs and reuses it on a quick return', async () => {
+    const h = createHarness();
+    try {
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws', 1_000));
+      await vi.advanceTimersByTimeAsync(500);
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(subscribedWorkspaces()).toEqual(['ws']);
+      expect(disposeOf(0)).not.toHaveBeenCalled();
+
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws', 1_000));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(disposeOf(0)).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(disposeOf(0)).toHaveBeenCalledOnce();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
   it('keeps passing retained rows when a reopen closes before its fresh read lands', async () => {
     const h = createHarness();
     try {

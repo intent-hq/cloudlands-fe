@@ -28,9 +28,10 @@ export const scriptMonitorDetailsRequested =
   createAction<[workspaceId: string, monitorId: string]>('scriptMonitor/details');
 export const scriptMonitorsSubscribeRequested =
   createAction<[workspaceId: string]>('scriptMonitor/subscribe');
-export const scriptMonitorsUnsubscribeRequested = createAction<[workspaceId: string]>(
-  'scriptMonitor/unsubscribe',
-);
+/** `holdMs` keeps the lease that long first, so a quick re-subscribe reuses it. */
+export const scriptMonitorsUnsubscribeRequested = createAction<
+  [workspaceId: string, holdMs?: number]
+>('scriptMonitor/unsubscribe');
 /** Selected workspace tab changed: swap the preload lease (shared with card leases). */
 export const scriptMonitorsActiveWorkspaceChanged = createAction<[workspaceId: string | null]>(
   'scriptMonitor/activeWorkspaceChanged',

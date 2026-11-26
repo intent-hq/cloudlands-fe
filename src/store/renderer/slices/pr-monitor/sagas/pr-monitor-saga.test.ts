@@ -163,6 +163,53 @@ describe('prMonitorSaga', () => {
     expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).toHaveBeenCalledOnce();
   });
 
+  it('holds a released lease for holdMs and reuses it on a quick return', async () => {
+    const harness = createHarness();
+    try {
+      harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      await settle();
+      const dispose = mocks.subscribePrMonitors.mock.results[0].value.dispose;
+      harness.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID, 1_000));
+      await vi.advanceTimersByTimeAsync(500);
+      harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mocks.subscribePrMonitors).toHaveBeenCalledOnce();
+      expect(dispose).not.toHaveBeenCalled();
+
+      harness.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID, 1_000));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(dispose).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      harness.task.cancel();
+      await harness.task.toPromise();
+    }
+  });
+
+  it('ends a held release with its saga, so a new saga subscribes again', async () => {
+    const first = createHarness();
+    first.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    await settle();
+    const firstDispose = mocks.subscribePrMonitors.mock.results[0].value.dispose;
+    first.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID, 1_000));
+    first.task.cancel();
+    await first.task.toPromise();
+    expect(firstDispose).toHaveBeenCalledOnce();
+
+    const second = createHarness();
+    try {
+      second.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      await settle();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(2);
+      expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+    } finally {
+      second.task.cancel();
+      await second.task.toPromise();
+    }
+  });
+
   it('reports startup failure and retains failed-owner accounting during a later retry', async () => {
     mocks.subscribePrMonitors.mockImplementationOnce(() => {
       throw new Error('transport unavailable');

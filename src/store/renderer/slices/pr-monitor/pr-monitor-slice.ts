@@ -60,7 +60,8 @@ const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
 export const prMonitorsSubscribeRequested = createAction<[workspaceId: string]>(
   'prMonitor/subscribeRequested',
 );
-export const prMonitorsUnsubscribeRequested = createAction<[workspaceId: string]>(
+/** `holdMs` keeps the lease that long first, so a quick re-subscribe reuses it. */
+export const prMonitorsUnsubscribeRequested = createAction<[workspaceId: string, holdMs?: number]>(
   'prMonitor/unsubscribeRequested',
 );
 export const prMonitorsActiveWorkspaceChanged = createAction<[workspaceId: string | null]>(
