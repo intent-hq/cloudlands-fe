@@ -1,5 +1,6 @@
 import { BrowserMonitorAttachment } from './browser-monitor-attachment';
 import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/pr-monitor';
+import { recordDaemonRequest } from './daemon-request-counter';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -646,6 +647,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
         });
         try {
           socket.send(payload);
+          recordDaemonRequest(method);
         } catch (error) {
           clearTimeout(timeout);
           this.pending.delete(id);
