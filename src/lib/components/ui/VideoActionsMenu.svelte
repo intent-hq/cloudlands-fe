@@ -6,6 +6,7 @@
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import * as Menu from '$lib/components/ui/menu';
+  import { Button } from '$lib/components/ui/button';
   import { formatBytesBinary, formatCompactDuration, formatInteger } from '$lib/i18n/format';
   import { cn } from '$lib/utils.js';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -137,10 +138,20 @@
       'hover:bg-black/75',
       triggerClass,
     )}
-    aria-label={m.ui_videoActionsMenu_trigger_ariaLabel()}
     onclick={(event: MouseEvent) => event.stopPropagation()}
   >
-    <KebabIcon class="size-3.5" />
+    {#snippet child({ props })}
+      <Button
+        {...props}
+        variant="plain"
+        size="icon-sm"
+        wrapContent={false}
+        active={open}
+        aria-label={m.ui_videoActionsMenu_trigger_ariaLabel()}
+      >
+        <KebabIcon class="size-3.5" />
+      </Button>
+    {/snippet}
   </Menu.Trigger>
   <Menu.Content class={contentClass} align="end">
     <Menu.Item onSelect={() => void download()}>
