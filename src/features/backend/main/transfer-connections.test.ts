@@ -100,7 +100,7 @@ afterEach(() => {
 });
 
 describe('isTransferMethod', () => {
-  it('matches exactly the attachment placement, chunked upload/download and export calls', () => {
+  it('matches exactly the attachment placement, chunked upload/download, export and app bundle calls', () => {
     for (const method of [
       'file.placeAttachment',
       'file.attachmentUpload.begin',
@@ -111,6 +111,7 @@ describe('isTransferMethod', () => {
       'git.showFileChunk',
       'note.readAssetChunk',
       'workspace.export.read',
+      'app.readBundle',
     ]) {
       expect(isTransferMethod(method)).toBe(true);
     }

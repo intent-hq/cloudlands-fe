@@ -31,6 +31,7 @@ import { createValidatedHandler } from '../../../main/ipc-validation-middleware'
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { getRendererWebContents } from '../../../main/window-backend';
 import { createBackendSocket } from '../../backend/main/backend-connection';
+import { requestRouted, TRANSFER_REQUEST_TIMEOUT_MS } from '../../backend/main/transfer-connections';
 import {
   getLocalBackendClient,
   onBackendNotification,
@@ -78,8 +79,18 @@ const ApproveSchema = z.object({
 
 function admin(): AppHostAdmin {
   return {
+    // `app.readBundle` is a bulk transfer: on a remote transport it rides its own connection.
     request: (method, params, timeoutMs) =>
-      getLocalBackendClient().request(method, params, timeoutMs ? { timeoutMs } : undefined),
+      requestRouted(
+        getLocalBackendClient(),
+        method,
+        params,
+        timeoutMs
+          ? { timeoutMs }
+          : method === 'app.readBundle'
+            ? { timeoutMs: TRANSFER_REQUEST_TIMEOUT_MS }
+            : undefined,
+      ),
     ready: async () => {
       await getLocalBackendClient().readHelloSnapshot();
     },
