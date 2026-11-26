@@ -85,19 +85,6 @@ daemon.handle('agent.pendingPermissions', async () => {
   await permissionsHeld;
   return { requests: [] };
 });
-// A null reply fails the schema and retries every 5 s, which would leak into every flow.
-daemon.handle('host.executionContext', () => ({
-  defaultProviderId: null,
-  defaultModelId: null,
-  repositoryConnections: [],
-  gitCredentialPolicy: {
-    provider: 'github',
-    protocol: 'https',
-    host: 'github.com',
-    managedHelperEnabled: false,
-    setting: 'sourceControl.github.exposeGitCredentialToChildren',
-  },
-}));
 daemon.handle('scriptMonitor.list', () => ({ view: 'summary', monitors: [] }));
 daemon.handle('git.getRemoteUrl', (params) => ({
   url: `https://github.com/owner/${String(params?.path ?? params?.repoPath ?? 'repo')

@@ -11,6 +11,7 @@
  * open socket the way a daemon restart does, so the transport reconnects.
  */
 import { mockDaemonMethodReply } from '$lib/browser-mock';
+import helloCapabilities from '../../tests/fixtures/hello-capabilities.json';
 import { CURRENT_PROTOCOL_VERSION } from './current-protocol-version';
 
 type FakeDaemonFrame = { id: number; method: string; params?: Record<string, unknown> };
@@ -33,14 +34,28 @@ export interface FakeDaemon {
   connections(): number;
 }
 
+/**
+ * The hello `server` block a default desktop daemon announces: the `regular`
+ * profile of the monorepo's capability golden, copied and locked under
+ * tests/fixtures/ (intentd generates the golden from its hello builder).
+ */
+export function regularDaemonServer() {
+  const profile = helloCapabilities.profiles.find((entry) => entry.id === 'regular');
+  if (!profile) throw new Error('hello-capabilities.json has no regular profile');
+  return {
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
+    daemonMode: profile.daemonMode,
+    capabilities: { ...profile.capabilities },
+  };
+}
+
 /** Answers every startup read with a minimal valid owner session. */
-function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
+export function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
   return {
     'client.hello': () => ({
       clientId: 'request-budget-client',
-      server: {
-        capabilities: { hostMembership: 1, boundedReads: 1, agentRetire: 1, scriptMonitors: 2 },
-      },
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      server: regularDaemonServer(),
     }),
     'principal.me': () => ({
       id: 'caller',
@@ -58,6 +73,19 @@ function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
       port: null,
       protocolVersion: CURRENT_PROTOCOL_VERSION,
       host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+    }),
+    // A null reply fails the renderer's schema and retries every 5 s.
+    'host.executionContext': () => ({
+      defaultProviderId: null,
+      defaultModelId: null,
+      repositoryConnections: [],
+      gitCredentialPolicy: {
+        provider: 'github',
+        protocol: 'https',
+        host: 'github.com',
+        managedHelperEnabled: false,
+        setting: 'sourceControl.github.exposeGitCredentialToChildren',
+      },
     }),
     'events.subscribe': () => ({ subscriptionId: `subscription-${Math.random()}` }),
     'events.unsubscribe': () => ({}),
