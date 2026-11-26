@@ -209,6 +209,9 @@ describe('AgentCard direct retirement', () => {
         seed({ retiredAt });
       }
       if (state === 'unsupported') {
+        // Support is cached per connection: a daemon without it is a new connection.
+        store.dispatch(connectionStatusChanged('disconnected'));
+        store.dispatch(connectionStatusChanged('connected'));
         backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
         await store.dispatch(agentRetirementSupportRequested());
       }
