@@ -5,7 +5,33 @@ import Foundation
 import ImageIO
 import ScreenCaptureKit
 
+// Private CGS call (as used by app switchers): while the window picker is up, the system
+// Cmd-Tab switcher is off so Cmd-Tab reaches the picker. Every exit path turns it back on.
+@_silgen_name("CGSSetSymbolicHotKeyEnabled")
+func CGSSetSymbolicHotKeyEnabled(_ hotKey: Int32, _ enabled: Bool) -> CGError
+let commandTabHotKeys: [Int32] = [1, 2]
+var commandTabSuppressed = false
+func setSystemCommandTab(enabled: Bool) {
+  guard commandTabSuppressed == enabled else { return }
+  for key in commandTabHotKeys { _ = CGSSetSymbolicHotKeyEnabled(key, enabled) }
+  commandTabSuppressed = !enabled
+}
+var signalSources: [DispatchSourceSignal] = []
+/// SIGTERM (timeout, abort) and a vanished parent must not leave Cmd-Tab disabled.
+func restoreCommandTabOnExit() {
+  for code in [SIGTERM, SIGINT, SIGHUP] {
+    signal(code, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: code, queue: .main)
+    source.setEventHandler { emit(["ok": false, "error": "cancelled"]) }
+    source.resume(); signalSources.append(source)
+  }
+  Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+    if getppid() == 1 { emit(["ok": false, "error": "cancelled"]) }
+  }
+}
+
 func emit(_ value: [String: Any]) -> Never {
+  setSystemCommandTab(enabled: true)
   if let data = try? JSONSerialization.data(withJSONObject: value) {
     FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10]))
   }
@@ -64,7 +90,10 @@ final class Selector {
       panels.append(panel); panel.makeKeyAndOrderFront(nil)
     }
     NSApp.activate(ignoringOtherApps: true)
-    if mode == "window" { update(quartz(NSEvent.mouseLocation)) }
+    if mode == "window" {
+      restoreCommandTabOnExit(); setSystemCommandTab(enabled: false)
+      update(quartz(NSEvent.mouseLocation))
+    }
   }
   func redraw() { for panel in panels { panel.contentView?.needsDisplay = true } }
   func update(_ point: CGPoint) {
@@ -115,6 +144,7 @@ final class Selector {
     guard mode == "window", !finished, let window = selection, let display = display(for: window) else { return }
     finished = true
     for panel in panels { panel.orderOut(nil) }
+    setSystemCommandTab(enabled: true)
     Task { await capture(window.frame, display: display, window: window) }
   }
   func down(_ point: CGPoint) {
@@ -183,6 +213,11 @@ final class SelectionView: NSView {
   override func mouseDragged(with event: NSEvent) { selector?.update(quartz(NSEvent.mouseLocation)) }
   override func mouseMoved(with event: NSEvent) { selector?.update(quartz(NSEvent.mouseLocation)) }
   override func mouseUp(with event: NSEvent) { selector?.up(quartz(NSEvent.mouseLocation)) }
+  /// Cmd-Tab arrives as a key equivalent, not a plain key down.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard event.keyCode == 48, event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+    selector?.step(event.modifierFlags.contains(.shift) ? -1 : 1); return true
+  }
   override func keyDown(with event: NSEvent) {
     let back = event.modifierFlags.contains(.shift)
     switch event.keyCode {
