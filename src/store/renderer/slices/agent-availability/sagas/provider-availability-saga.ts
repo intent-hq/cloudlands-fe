@@ -38,6 +38,7 @@ import {
   selectProviderDiscoveryRevision,
   selectProviderModelsRefreshPending,
   selectProviderModelsRefreshRevision,
+  selectProviderAuthUnconfirmed,
 } from '../agent-availability-selectors';
 import {
   checkAllProvidersComplete,
@@ -78,7 +79,15 @@ interface SingleProviderResult extends IpcResult<ProviderStatus> {
   providerId?: string;
 }
 
-export function* checkSingleProviderWorker(providerId: string) {
+/**
+ * `force` omitted is an explicit recheck (forced); sweeps pass it. `forceAuth`
+ * forces only the auth probe of a passive check.
+ */
+export function* checkSingleProviderWorker(
+  providerId: string,
+  force?: boolean,
+  forceAuth?: boolean,
+) {
   // Snapshot the provider's check generation before the probe: the reducer
   // discards the terminal action when a newer check started meanwhile, so a
   // slow stale probe (e.g. a focus-triggered sweep that started before an
@@ -89,7 +98,9 @@ export function* checkSingleProviderWorker(providerId: string) {
     const result: SingleProviderResult = yield* call(
       invoke<SingleProviderResult>,
       IPC_CHANNELS.PROVIDERS.CHECK_SINGLE,
-      providerId,
+      force === undefined
+        ? providerId
+        : { providerId, force, ...(forceAuth ? { forceAuth: true } : {}) },
     );
     if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     if (result?.success && result.data) {
@@ -150,7 +161,8 @@ function* discoverProviders(silent: boolean) {
   }
 }
 
-export function* checkAllProvidersWorker(silent = false) {
+/** Only an explicit refresh forces fresh auth probes; passive sweeps use the daemon's cache. */
+export function* checkAllProvidersWorker(silent = false, force = false) {
   yield* put(prepareOnboardingAdaptersRequested());
   const refreshModels = yield* selectProviderModelsRefreshPending.effect();
   const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
@@ -158,10 +170,22 @@ export function* checkAllProvidersWorker(silent = false) {
   const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
   yield* put(setAllProvidersLoading(Object.fromEntries(providerIds.map((id) => [id, true]))));
 
+  // A passive sweep rides the daemon's auth cache, except for installed
+  // providers not known to be signed in: a sign-in from an outside terminal is
+  // what a return to the app should pick up.
+  const forceAuth: Record<string, boolean> = {};
+  if (!force)
+    for (const providerId of providerIds)
+      forceAuth[providerId] = yield* selectProviderAuthUnconfirmed.effect(providerId);
+
   try {
     const [discovered] = yield* all([
       call(discoverProviders, silent),
-      all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId))),
+      all(
+        providerIds.map((providerId) =>
+          call(checkSingleProviderWorker, providerId, force, forceAuth[providerId]),
+        ),
+      ),
     ]);
     if (
       discovered &&
@@ -181,7 +205,7 @@ export function* checkAllProvidersWorker(silent = false) {
 
 function* handleCheckAllProvidersRequest(action: ReturnType<typeof checkAllProvidersRequested>) {
   yield* race({
-    checked: call(checkAllProvidersWorker, action.payload[1] === true),
+    checked: call(checkAllProvidersWorker, action.payload[1] === true, action.payload[0] === true),
     changed: take(hostExecutionConnectionChanged),
   });
 }
