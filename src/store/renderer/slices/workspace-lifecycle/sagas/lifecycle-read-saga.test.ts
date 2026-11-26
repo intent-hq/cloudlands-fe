@@ -368,7 +368,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(loadWorkspacesRequested());
     await settle();
 
-    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[]]);
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
       {
@@ -406,7 +406,7 @@ describe('lifecycleReadSaga', () => {
     const run = start();
     run.channel.put(loadWorkspacesRequested());
     await settle();
-    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[]]);
 
     // A burst of triggers while the first fetch is in flight (e.g. remote
     // workspace:created events) must collapse into exactly one trailing
@@ -579,7 +579,7 @@ describe('lifecycleReadSaga', () => {
       expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1);
       await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[], []]);
       expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
         {
           type: 'workspace/replaceWorkspaceList',
@@ -702,7 +702,7 @@ describe('lifecycleReadSaga', () => {
       const run = startWithLoopback();
       run.channel.put(loadWorkspacesRequested());
       await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[]]);
       mocks.workspaceServiceList.mockClear();
 
       for (let i = 0; i < 3; i++) {

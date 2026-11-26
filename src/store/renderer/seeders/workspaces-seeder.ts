@@ -97,8 +97,8 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
 // `workspace:list` — the RepoSelector recent-repo scan and every
 // `workspaceClient.list()` read. The legacy handler returned the paginated
 // `{ workspaces }` wrapper or a bare array; the bare array is returned here and
-// `WorkspaceClient.list()` already handles both. The legacy `lite` flag is
-// ignored: the daemon's `workspace.list` result is the only shape it serves.
+// `WorkspaceClient.list()` already handles both. The handler takes no options:
+// the daemon's `workspace.list` result is the only shape it serves.
 registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
   const workspaces = await appClient.workspaces.list({ includeArchived: true });
   return { success: true, data: workspaces };
@@ -273,7 +273,7 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
   // keep the UI functional with an empty list. Let unexpected in-process bugs
   // (reducer errors, bad data shapes) throw so they fail fast in tests/dev.
   try {
-    const result = await workspaceClient.list({ lite: true });
+    const result = await workspaceClient.list();
     if (!result.ok) throw new Error(result.error);
     workspaces = result.data;
   } catch (error) {

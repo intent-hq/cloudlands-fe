@@ -81,12 +81,7 @@ export class ProtocolAdapter {
   // cut-over.
 
   async listWorkspaces(): Promise<Result<any[], string>> {
-    // Default to lite mode for bulk workspace listings to avoid expensive eager enrichment.
-    // Callers that truly need synchronous summaries should use listAllWorkspaces({ lite: false }).
-    const result = await this.workspaceService.listWorkspaces({
-      includeArchived: true,
-      lite: true,
-    });
+    const result = await this.workspaceService.listWorkspaces({ includeArchived: true });
     if (result.ok) {
       // Convert new format to old format for backward compatibility
       return { ok: true, data: result.data.workspaces };
@@ -94,14 +89,10 @@ export class ProtocolAdapter {
     return result as Result<any[], string>;
   }
 
-  async listAllWorkspaces(options?: {
-    includeArchived?: boolean;
-    lite?: boolean;
-  }): Promise<Result<any[], string>> {
+  async listAllWorkspaces(options?: { includeArchived?: boolean }): Promise<Result<any[], string>> {
     // Include archived workspaces by default - frontend handles filtering via "Show archived" toggle
     const result = await this.workspaceService.listWorkspaces({
       includeArchived: options?.includeArchived ?? true,
-      lite: options?.lite,
     });
     if (result.ok) {
       // Convert new format to old format for backward compatibility

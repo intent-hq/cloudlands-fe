@@ -167,7 +167,6 @@ describe('workspaces-seeder legacy IPC bridges', () => {
 
       const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
         WORKSPACE_CHANNELS.LIST,
-        { lite: true },
       );
 
       expect(mockedAppClient.workspaces.list).toHaveBeenCalled();

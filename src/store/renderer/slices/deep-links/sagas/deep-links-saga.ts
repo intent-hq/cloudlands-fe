@@ -67,7 +67,7 @@ function errorDetail(error: unknown): string | undefined {
 }
 
 function* listWorkspaces(): SagaGenerator<Workspace[]> {
-  const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
+  const result = yield* call([workspaceClient, workspaceClient.list]);
   if (!result.ok) throw new Error(result.error);
   return result.data;
 }

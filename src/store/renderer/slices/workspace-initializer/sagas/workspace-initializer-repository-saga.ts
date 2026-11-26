@@ -63,7 +63,7 @@ async function readRecentSources(stored: Workspace[] | null) {
   return Promise.all([
     stored
       ? { ok: true as const, data: stored, complete: true, stored: true }
-      : workspaceClient.list({ lite: true }),
+      : workspaceClient.list(),
     readRegistry(),
   ] as const);
 }
