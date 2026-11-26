@@ -20,6 +20,14 @@ export const selectProviderRunsViaNpx = store.createSelector(
     state.agentAvailability.providerStatusMap[providerId]?.viaNpx === true,
 );
 
+/** Installed, but not confirmed signed in: a passive sweep re-probes its auth. */
+export const selectProviderAuthUnconfirmed = store.createSelector(
+  (state, providerId: string): boolean => {
+    const status = state.agentAvailability.providerStatusMap[providerId];
+    return status?.available === true && status.authenticated !== true;
+  },
+);
+
 /**
  * Per-provider status. On an orchestrator the backend runs no provider CLI
  * and checks none (`host.providerDiscovery` → no providers), yet every

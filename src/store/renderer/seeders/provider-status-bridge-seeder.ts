@@ -564,15 +564,22 @@ async function checkMockProvider(): Promise<ProviderStatus> {
  * above, defaulting to `force: true` so a login that just completed bypasses
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
  * the daemon's cache instead. */
-async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
+async function checkSingleProvider(
+  providerId: string,
+  force = true,
+  forceAuth = false,
+): Promise<ProviderStatus> {
   if (
     selectHostRole.select(appStore.state) === 'member' ||
     DISCOVERY_STATUS_PROVIDERS.has(providerId)
   ) {
-    return signedOutUnlessConfirmed(await checkSingleProviderStatus(providerId, force), providerId);
+    return signedOutUnlessConfirmed(
+      await checkSingleProviderStatus(providerId, force, forceAuth),
+      providerId,
+    );
   }
   const [status, discovery] = await Promise.all([
-    checkSingleProviderStatus(providerId, force),
+    checkSingleProviderStatus(providerId, force, forceAuth),
     discoveryForVersions(),
   ]);
   return withVersion(signedOutUnlessConfirmed(status, providerId), discovery, providerId);
@@ -584,16 +591,19 @@ const DISCOVERY_STATUS_PROVIDERS = new Set(['claude-code', 'antigravity', 'curso
 async function checkSingleProviderStatus(
   providerId: string,
   force: boolean,
+  forceAuth: boolean,
 ): Promise<ProviderStatus> {
   // A passive check reads what the rest of its sweep reads (one discovery, one
   // tool lookup, the all-provider auth sweep); a forced recheck reads fresh.
+  // Both resolve binaries through `host.toolAvailability`, which also checks
+  // grok's native install directory.
   const readDiscovery = force ? fetchProviderDiscovery : discoveryRead.shared;
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
-    (await getAuthVerdicts(force ? { providerId, force } : {}))[providerId];
-  const findBinary = async (name: string): Promise<HostCheckResult> =>
-    force
-      ? backendRequest<HostCheckResult>('host.findBinary', { name })
-      : ((await toolsRead.shared())?.tools?.[name] ?? { available: false });
+    (await getAuthVerdicts(force || forceAuth ? { providerId, force: true } : {}))[providerId];
+  let tools: Promise<HostToolAvailabilityResult> | undefined;
+  // A tool missing from the reply is unknown, not a confirmed absence.
+  const findBinary = async (name: string): Promise<HostCheckResult | undefined> =>
+    (await (tools ??= force ? toolsRead.fresh() : toolsRead.shared()))?.tools?.[name];
 
   if (selectHostRole.select(appStore.state) === 'member') {
     const discovery = await readDiscovery();
@@ -623,7 +633,7 @@ async function checkSingleProviderStatus(
   }
 
   if (providerId === 'auggie') {
-    const check = await (force ? checkAuggie() : auggieRead.shared());
+    const check = await (force ? auggieRead.fresh() : auggieRead.shared());
     const status: ProviderStatus = { available: check.available === true };
     if (!status.available) withNpxFallback(status, await readDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
@@ -760,11 +770,12 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
 });
 
 registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
-  const request = arg as { providerId?: unknown; force?: unknown } | undefined;
+  const request = arg as { providerId?: unknown; force?: unknown; forceAuth?: unknown } | undefined;
   const providerId = typeof arg === 'string' ? arg : (request?.providerId as string) || '';
   // Default force: true (explicit rechecks); passive bulk loads send
   // `force: false` so the daemon's auth cache is used.
   const force = typeof arg === 'string' ? true : request?.force !== false;
+  const forceAuth = typeof arg !== 'string' && request?.forceAuth === true;
   if (!providerId || !getItem(appStore.state.providerCatalog.providers, providerId)) {
     return {
       success: false,
@@ -776,7 +787,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     return {
       success: true,
       providerId,
-      data: await readProviderStatus(() => checkSingleProvider(providerId, force)),
+      data: await readProviderStatus(() => checkSingleProvider(providerId, force, forceAuth)),
     };
   } catch (error) {
     return {

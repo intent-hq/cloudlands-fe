@@ -144,6 +144,52 @@ describe('providerAvailabilitySaga', () => {
     },
   );
 
+  it('a passive sweep forces only the auth probe of installed providers not known signed in', async () => {
+    mocks.invoke.mockImplementation((method) =>
+      Promise.resolve({
+        success: true,
+        data:
+          method === 'providers:get-availability'
+            ? { hiddenProviders: [], providers: {}, hasAnyProvider: true }
+            : { available: true },
+      }),
+    );
+    let state: typeof initialState = {
+      ...initialState,
+      providerStatusMap: {
+        codex: { available: true, authenticated: false },
+        opencode: { available: true },
+        pi: { available: true, authenticated: true },
+        grok: { available: false },
+      },
+    };
+    const channel = stdChannel();
+    const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
+      state = agentAvailabilityReducer(state, action);
+      channel.put(action);
+    };
+    const task = runSaga(
+      { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
+      providerAvailabilitySaga,
+    );
+    try {
+      send(checkAllProvidersRequested(false, true));
+      await vi.waitFor(() => expect(state.discoveryStatus).toBe('success'));
+      const requests = Object.fromEntries(
+        mocks.invoke.mock.calls
+          .filter(([method]) => method === 'providers:check-single')
+          .map(([, request]) => [(request as { providerId: string }).providerId, request]),
+      );
+      expect(requests.codex).toEqual({ providerId: 'codex', force: false, forceAuth: true });
+      expect(requests.opencode).toEqual({ providerId: 'opencode', force: false, forceAuth: true });
+      expect(requests.pi).toEqual({ providerId: 'pi', force: false });
+      expect(requests.grok).toEqual({ providerId: 'grok', force: false });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   it('handles login before catalog hydration finishes and selects the returned drawer terminal', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));
     mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'claude-login-terminal' });

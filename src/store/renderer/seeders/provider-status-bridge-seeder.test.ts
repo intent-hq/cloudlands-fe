@@ -77,6 +77,22 @@ function deferred<T>() {
 type MethodResponses = Record<string, unknown | ((params: unknown) => unknown)>;
 function routeDaemon(responses: MethodResponses): void {
   responses = { 'host.providerDiscovery': { providers: [] }, ...responses };
+  const findBinary = responses['host.findBinary'];
+  // Single checks resolve binaries through one tool lookup; derive it from a
+  // test's per-binary answers.
+  if (findBinary !== undefined && !('host.toolAvailability' in responses))
+    responses['host.toolAvailability'] = async (params: unknown) => ({
+      tools: Object.fromEntries(
+        await Promise.all(
+          (params as { tools: string[] }).tools.map(async (name) => [
+            name,
+            typeof findBinary === 'function'
+              ? await (findBinary as (p: unknown) => unknown)({ name })
+              : findBinary,
+          ]),
+        ),
+      ),
+    });
   mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
     if (!(method in responses)) throw new Error(`unexpected daemon method: ${method}`);
     const entry = responses[method];
@@ -132,6 +148,12 @@ function authOne(id: string, authenticated: boolean | null) {
 }
 
 type Envelope<T> = { success: boolean; data?: T; error?: string };
+
+/** Binaries the seeder asked the daemon to resolve. */
+const toolLookups = () =>
+  mockedRequest.mock.calls
+    .filter(([method]) => method === 'host.toolAvailability')
+    .flatMap(([, params]) => (params as { tools: string[] }).tools);
 
 describe('provider-status-bridge-seeder', () => {
   it.each([true, false, null])(
@@ -464,6 +486,109 @@ describe('provider-status-bridge-seeder', () => {
       expect(byId.auggie).toMatchObject({ available: true });
       expect(byId['claude-code']).toMatchObject({ available: true });
       expect(byId.pi).toMatchObject({ available: false });
+    });
+
+    it('forces only the auth probe when a passive check asks for it', async () => {
+      routeDaemon(sweepResponses);
+      const response = await mockInvoke<Envelope<ProviderStatus>>(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+        providerId: 'codex',
+        force: false,
+        forceAuth: true,
+      });
+      expect(response.data).toMatchObject({ available: true });
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'codex',
+        force: true,
+      });
+      expect(counts()['host.findBinary']).toBeUndefined();
+      expect(counts()['host.toolAvailability']).toBe(1);
+    });
+
+    it('reads grok through the same tool lookup on passive and forced checks', async () => {
+      routeDaemon({
+        ...sweepResponses,
+        'host.toolAvailability': { tools: { ...NO_TOOLS.tools, grok: { available: true } } },
+        'host.findBinary': { available: false },
+        'host.providerAuthStatus': authSweep({ grok: true }),
+      });
+      for (const force of [false, true]) {
+        const response = await mockInvoke<Envelope<ProviderStatus>>(
+          PROVIDERS_CHANNELS.CHECK_SINGLE,
+          { providerId: 'grok', force },
+        );
+        expect(response.data, `force=${force}`).toMatchObject({ available: true });
+      }
+      expect(counts()['host.findBinary']).toBeUndefined();
+    });
+
+    it('picks up a sign-in between passive sweeps within the auth cache window', async () => {
+      let signedIn = false;
+      routeDaemon({
+        ...sweepResponses,
+        'host.providerAuthStatus': (params: unknown) =>
+          (params as { providerId?: string }).providerId
+            ? authOne('codex', signedIn)
+            : authSweep({ codex: signedIn }),
+      });
+      const check = (forceAuth?: boolean) =>
+        mockInvoke<Envelope<ProviderStatus>>(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+          providerId: 'codex',
+          force: false,
+          ...(forceAuth ? { forceAuth } : {}),
+        });
+      expect((await check()).data).toMatchObject({ available: true, authenticated: false });
+      signedIn = true;
+      // The sweep marks an installed provider not known signed in as forceAuth.
+      expect((await check(true)).data).toMatchObject({ available: true, authenticated: true });
+    });
+
+    describe.each([
+      {
+        provider: 'grok',
+        method: 'host.toolAvailability',
+        reply: (installed: boolean) => ({
+          tools: { ...NO_TOOLS.tools, grok: { available: installed } },
+        }),
+      },
+      {
+        provider: 'auggie',
+        method: 'host.checkAuggie',
+        reply: (installed: boolean) => ({ available: installed }),
+      },
+    ])('$provider: passive, then forced, then passive', ({ provider, method, reply }) => {
+      const check = (force: boolean) =>
+        mockInvoke<Envelope<ProviderStatus>>(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+          providerId: provider,
+          force,
+        });
+      const route = (answer: () => unknown) =>
+        routeDaemon({
+          ...sweepResponses,
+          'host.providerAuthStatus': authSweep(),
+          [method]: answer,
+        });
+
+      it('serves the forced result after the first read settled', async () => {
+        let installed = false;
+        route(() => reply(installed));
+        expect((await check(false)).data?.available).toBe(false);
+        installed = true;
+        expect((await check(true)).data?.available).toBe(true);
+        expect((await check(false)).data?.available).toBe(true);
+      });
+
+      it('serves the forced result while the first read is still in flight', async () => {
+        const first = deferred<unknown>();
+        let calls = 0;
+        route(() => (++calls === 1 ? first.promise : reply(true)));
+        const stale = check(false);
+        await vi.waitFor(() => expect(calls).toBe(1));
+        expect((await check(true)).data?.available).toBe(true);
+        expect((await check(false)).data?.available).toBe(true);
+        first.resolve(reply(false));
+        await stale;
+        expect((await check(false)).data?.available).toBe(true);
+      });
     });
 
     it('lets a forced recheck read fresh while a passive read is in flight', async () => {
@@ -1493,9 +1618,9 @@ describe('provider-status-bridge-seeder', () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex-acp' });
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'npx' });
+      expect(toolLookups()).toContain('codex');
+      expect(toolLookups()).toContain('codex-acp');
+      expect(toolLookups()).toContain('npx');
       // Auth comes from the daemon's forced single-provider verdict.
       expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
         providerId: 'codex',
@@ -1554,12 +1679,10 @@ describe('provider-status-bridge-seeder', () => {
       });
     });
 
-    it('does not warn on codex when the adapter probes fail (unknown, not confirmed absence)', async () => {
+    it('does not warn on codex when the adapter lookups are unknown (not confirmed absence)', async () => {
       routeDaemon({
-        'host.findBinary': (params) => {
-          const { name } = params as { name: string };
-          if (name === 'codex') return { available: true, path: '/usr/local/bin/codex' };
-          throw new Error('transport down');
+        'host.toolAvailability': {
+          tools: { codex: { available: true, path: '/usr/local/bin/codex' } },
         },
         'host.providerAuthStatus': authOne('codex', true),
       });
@@ -1585,7 +1708,7 @@ describe('provider-status-bridge-seeder', () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'codex');
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
+      expect(toolLookups()).toContain('codex');
       expect(response).toEqual({
         success: true,
         providerId: 'codex',
@@ -1603,7 +1726,7 @@ describe('provider-status-bridge-seeder', () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'pi');
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'pi' });
+      expect(toolLookups()).toContain('pi');
       expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
         providerId: 'pi',
         force: true,
@@ -1646,8 +1769,8 @@ describe('provider-status-bridge-seeder', () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'unsloth');
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'opencode' });
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'unsloth' });
+      expect(toolLookups()).toContain('opencode');
+      expect(toolLookups()).toContain('unsloth');
       expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
       expect(response).toEqual({
         success: true,
@@ -1712,7 +1835,7 @@ describe('provider-status-bridge-seeder', () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'cortex');
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'cortex' });
+      expect(toolLookups()).toContain('cortex');
       expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
       expect(response).toEqual({
         success: true,
