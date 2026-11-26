@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.392.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.392.1...v2.392.2) (2026-11-26)
+
+
+### 🐛 Bug Fixes
+
+* show readable Claude model names for remote machines ([#5047](https://github.com/intent-hq/cloudlands-fe/issues/5047)) ([caffdbc](https://github.com/intent-hq/cloudlands-fe/commit/caffdbc5b549b8f805c3a358abfcb1a90ac5b261))
+
 ## [2.392.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.392.0...v2.392.1) (2026-11-26)
 
 
