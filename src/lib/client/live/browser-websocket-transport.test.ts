@@ -1234,14 +1234,41 @@ describe('acknowledged hello read', () => {
     h.transport.dispose();
   });
 
-  it('refuses when the connect handshake was not acknowledged or the transport is gone', async () => {
+  it('says hello once more when the connect hello failed, then reads the new acknowledgment', async () => {
+    const h = createHarness();
+    const first = h.transport.readHello();
+    const socket = h.socket();
+    socket.open();
+    await flush();
+    const connectHello = socket.lastFrame();
+    socket.receive({ id: connectHello.id, error: { code: -32603, message: 'slow' } });
+    // Concurrent readers share one retry hello on the same socket.
+    const second = h.transport.readHello();
+    await flush();
+    await flush();
+    const retries = socket.sent.map((frame) => JSON.parse(frame)).slice(1);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ method: 'client.hello', params: {} });
+    socket.receive({ id: retries[0].id, result: helloResult('browser-retry') });
+    await expect(first).resolves.toMatchObject({ clientId: 'browser-retry' });
+    await expect(second).resolves.toMatchObject({ clientId: 'browser-retry' });
+    await expect(h.transport.readHello()).resolves.toMatchObject({ clientId: 'browser-retry' });
+    expect(socket.sent).toHaveLength(2);
+    h.transport.dispose();
+  });
+
+  it('rejects when the retry hello fails too, and after disposal', async () => {
     const h = createHarness();
     const reading = h.transport.readHello();
-    h.socket().open();
+    const socket = h.socket();
+    socket.open();
     await flush();
-    h.socket().receive({ id: h.socket().lastFrame().id, error: { code: -32601, message: 'nope' } });
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'nope' } });
+    await flush();
+    await flush();
+    expect(socket.sent).toHaveLength(2);
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'still no' } });
     await expect(reading).rejects.toBeInstanceOf(BackendError);
-    expect(h.socket().sent).toHaveLength(1);
     h.transport.dispose();
     await expect(h.transport.readHello()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
   });

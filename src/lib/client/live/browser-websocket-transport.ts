@@ -269,6 +269,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private clientId: string | undefined;
   private helloConfirmed = false;
   private acknowledgedHello: unknown = null;
+  /** The one retry hello `readHello` sends after the connect hello failed on a socket. */
+  private helloRetry: { socket: BrowserWebSocketLike; promise: Promise<unknown> } | null = null;
   private nodeCapabilities: NodeCapabilitySnapshot | null = null;
   private capabilityHelloGeneration = 0;
   private reviewMonitoring: unknown;
@@ -367,9 +369,28 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.startupState?.state === 'starting')
       throw new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState)));
     const socket = await this.ensureConnected();
-    if (this.disposed || !this.connected || this.socket !== socket)
-      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
-    if (this.acknowledgedHello === null) throw this.helloError;
+    const changed = () =>
+      new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    if (this.disposed || !this.connected || this.socket !== socket) throw changed();
+    if (this.acknowledgedHello === null) {
+      // The connect hello failed or timed out. Say hello once more on this socket,
+      // shared by concurrent readers, so one slow handshake does not fail every
+      // capability read until the socket drops.
+      if (this.helloRetry?.socket !== socket) {
+        const promise: Promise<unknown> = this.requestOnSocket(
+          'client.hello',
+          {},
+          { timeoutMs: Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS) },
+          socket,
+        ).finally(() => {
+          if (this.helloRetry?.promise === promise) this.helloRetry = null;
+        });
+        this.helloRetry = { socket, promise };
+      }
+      await this.helloRetry.promise;
+      if (this.disposed || !this.connected || this.socket !== socket) throw changed();
+      if (this.acknowledgedHello === null) throw this.helloError;
+    }
     return structuredClone(this.acknowledgedHello);
   }
 
