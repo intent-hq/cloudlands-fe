@@ -1257,7 +1257,7 @@ describe('acknowledged hello read', () => {
     h.transport.dispose();
   });
 
-  it('rejects when the retry hello fails too, and after disposal', async () => {
+  it('retries once per connection: a failed retry rejects later reads without more hellos', async () => {
     const h = createHarness();
     const reading = h.transport.readHello();
     const socket = h.socket();
@@ -1269,6 +1269,9 @@ describe('acknowledged hello read', () => {
     expect(socket.sent).toHaveLength(2);
     socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'still no' } });
     await expect(reading).rejects.toBeInstanceOf(BackendError);
+    await expect(h.transport.readHello()).rejects.toBeInstanceOf(BackendError);
+    await expect(h.transport.readHello()).rejects.toBeInstanceOf(BackendError);
+    expect(socket.sent).toHaveLength(2);
     h.transport.dispose();
     await expect(h.transport.readHello()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
   });

@@ -374,18 +374,19 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed || !this.connected || this.socket !== socket) throw changed();
     if (this.acknowledgedHello === null) {
       // The connect hello failed or timed out. Say hello once more on this socket,
-      // shared by concurrent readers, so one slow handshake does not fail every
-      // capability read until the socket drops.
+      // shared by every reader, so one slow handshake does not fail capability
+      // reads until the socket drops. One retry per socket: if it fails too,
+      // reads reject until the next connection instead of sending more hellos.
       if (this.helloRetry?.socket !== socket) {
-        const promise: Promise<unknown> = this.requestOnSocket(
-          'client.hello',
-          {},
-          { timeoutMs: Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS) },
+        this.helloRetry = {
           socket,
-        ).finally(() => {
-          if (this.helloRetry?.promise === promise) this.helloRetry = null;
-        });
-        this.helloRetry = { socket, promise };
+          promise: this.requestOnSocket(
+            'client.hello',
+            {},
+            { timeoutMs: Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS) },
+            socket,
+          ),
+        };
       }
       await this.helloRetry.promise;
       if (this.disposed || !this.connected || this.socket !== socket) throw changed();
@@ -1032,6 +1033,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.clearMonitorRecovery();
     for (const retire of [...this.monitorRetirements]) retire();
     this.acknowledgedHello = null;
+    this.helloRetry = null;
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = null;
