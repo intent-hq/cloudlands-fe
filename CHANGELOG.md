@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.392.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.392.0...v2.392.1) (2026-11-26)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.304 ([#5088](https://github.com/intent-hq/cloudlands-fe/issues/5088)) ([af4caf2](https://github.com/intent-hq/cloudlands-fe/commit/af4caf29002a20956faf94d6c398496d782aa5ba))
+
+
+### ⚡ Performance
+
+* **providers:** share provider status reads when Settings opens ([#5085](https://github.com/intent-hq/cloudlands-fe/issues/5085)) ([9bb5547](https://github.com/intent-hq/cloudlands-fe/commit/9bb5547baa94b77e30f08ff87b16731088f2fec7))
+
 ## [2.392.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.391.1...v2.392.0) (2026-11-26)
 
 
