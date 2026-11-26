@@ -269,6 +269,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private clientId: string | undefined;
   private helloConfirmed = false;
   private acknowledgedHello: unknown = null;
+  /** The one retry hello `readHello` sends after the connect hello failed on a socket. */
+  private helloRetry: { socket: BrowserWebSocketLike; promise: Promise<unknown> } | null = null;
   private nodeCapabilities: NodeCapabilitySnapshot | null = null;
   private capabilityHelloGeneration = 0;
   private reviewMonitoring: unknown;
@@ -354,6 +356,43 @@ export class BrowserWebSocketTransport implements BackendTransport {
         message: 'Principal discovery connection changed',
       });
     return { hello, principal };
+  }
+
+  /**
+   * The current connection's acknowledged `client.hello` result. Never sends a
+   * hello: an outgoing one starts a new generation and retires PR monitor sessions.
+   */
+  async readHello(): Promise<unknown> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    // No handshake exists until the daemon finishes starting.
+    if (this.startupState?.state === 'starting')
+      throw new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState)));
+    const socket = await this.ensureConnected();
+    const changed = () =>
+      new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    if (this.disposed || !this.connected || this.socket !== socket) throw changed();
+    if (this.acknowledgedHello === null) {
+      // The connect hello failed or timed out. Say hello once more on this socket,
+      // shared by every reader, so one slow handshake does not fail capability
+      // reads until the socket drops. One retry per socket: if it fails too,
+      // reads reject until the next connection instead of sending more hellos.
+      if (this.helloRetry?.socket !== socket) {
+        this.helloRetry = {
+          socket,
+          promise: this.requestOnSocket(
+            'client.hello',
+            {},
+            { timeoutMs: Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS) },
+            socket,
+          ),
+        };
+      }
+      await this.helloRetry.promise;
+      if (this.disposed || !this.connected || this.socket !== socket) throw changed();
+      if (this.acknowledgedHello === null) throw this.helloError;
+    }
+    return structuredClone(this.acknowledgedHello);
   }
 
   async observeNodeCapabilities(): Promise<unknown> {
@@ -994,6 +1033,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.clearMonitorRecovery();
     for (const retire of [...this.monitorRetirements]) retire();
     this.acknowledgedHello = null;
+    this.helloRetry = null;
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = null;

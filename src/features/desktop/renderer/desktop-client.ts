@@ -3,7 +3,7 @@ import { isoDateTime } from '$shared/zod-compat';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import { backendRequest, electronAPI } from '$lib/client/live/backend-transport';
+import { backendRequest, electronAPI, readBackendHello } from '$lib/client/live/backend-transport';
 import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import type { DesktopOsChecklist } from '$shared/types/desktop';
 import type {
@@ -169,9 +169,9 @@ export const desktopClient = {
         code: 'desktop-unsupported',
         message: m.desktop_consent_failed(),
       });
-    const hello = await backendRequest<{
+    const hello = await readBackendHello<{
       server?: { capabilities?: { desktopControl?: unknown } };
-    }>('client.hello', {});
+    }>();
     if (hello.server?.capabilities?.desktopControl !== 1)
       throw new Error(m.desktop_consent_failed());
     // getState also checks the resolved primary's executor capability and authority.

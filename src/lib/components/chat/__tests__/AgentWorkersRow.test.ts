@@ -27,13 +27,20 @@ import AgentWorkersRow from '../AgentWorkersRow.svelte';
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 import { setEventSubscriptionsExpanded } from '../agent-subscriptions-view-state';
 
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-  backendSubscribe: vi.fn().mockResolvedValue({ subscriptionId: 'events' }),
-  backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
-  onBackendNotification: vi.fn(),
-  onBackendReconnected: vi.fn(),
-}));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+    backendSubscribe: vi.fn().mockResolvedValue({ subscriptionId: 'events' }),
+    backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
+    onBackendNotification: vi.fn(),
+    onBackendReconnected: vi.fn(),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/MockAgentEventSection.svelte')).default,

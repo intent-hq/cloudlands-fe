@@ -5,7 +5,7 @@ import type {
   ScriptCreateResult,
   ScriptRunTarget,
 } from '$lib/client';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { backendRequest, readBackendHello } from '$lib/client/live/backend-transport';
 import { runMutation } from '$lib/client/live/live-support';
 import type { ScriptArchiveFilter } from './types';
 import type { ScriptRuntimeState, ScriptWithState, WorkspaceScript } from './types';
@@ -85,9 +85,9 @@ export const scriptDefinitionTransport = {
 
   /** Whether an autoStart-only upsert keeps a live run (`scriptAutoStartInPlace: 1`). */
   async keepsRunOnAutoStartUpsert(): Promise<boolean> {
-    const hello = await backendRequest<{
+    const hello = await readBackendHello<{
       server?: { capabilities?: { scriptAutoStartInPlace?: number } };
-    }>('client.hello', {});
+    }>();
     return hello?.server?.capabilities?.scriptAutoStartInPlace === 1;
   },
 

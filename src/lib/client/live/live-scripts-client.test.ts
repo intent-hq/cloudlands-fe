@@ -12,12 +12,19 @@ import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
-vi.mock('./backend-transport', () => ({
-  backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
-  backendUnsubscribe: vi.fn(() => Promise.resolve()),
-  onBackendNotification: vi.fn(() => () => {}),
-}));
+vi.mock('./backend-transport', () => {
+  const fake = {
+    backendRequest: vi.fn(),
+    backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
+    backendUnsubscribe: vi.fn(() => Promise.resolve()),
+    onBackendNotification: vi.fn(() => () => {}),
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 
 import { backendRequest } from './backend-transport';
 import { LiveScriptsClient, SCRIPT_GET_MAX_PARTS } from './live-scripts-client';

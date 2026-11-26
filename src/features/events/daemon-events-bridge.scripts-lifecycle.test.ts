@@ -7,7 +7,16 @@ import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 const notifyError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: transport.request }));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: transport.request,
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
   return { appClient: { scripts: new LiveScriptsClient() } };

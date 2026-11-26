@@ -1021,6 +1021,31 @@ describe('native document history recipient', () => {
   });
 });
 
+describe('acknowledged hello read IPC', () => {
+  it('asks main for its handshake snapshot with empty hello params', async () => {
+    const api = installFakeApi();
+    const hello = { clientId: 'desk-1', server: { capabilities: { agentRetire: 1 } } };
+    api.invoke.mockResolvedValue({ ok: true, result: hello } as never);
+    await expect(createElectronIpcBackendTransport().readHello!()).resolves.toEqual(hello);
+    // backend.ipc answers exactly this shape from the acknowledged hello, off the wire.
+    expect(api.invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      method: 'client.hello',
+      params: {},
+    });
+  });
+
+  it('surfaces a missing handshake as a backend error', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValue({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'Current backend handshake is unavailable' },
+    } as never);
+    await expect(createElectronIpcBackendTransport().readHello!()).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
+    });
+  });
+});
+
 describe('passive principal discovery IPC', () => {
   it('uses the dedicated read channel and preserves raw discovery fields', async () => {
     const api = installFakeApi();

@@ -139,6 +139,12 @@ export interface BackendTransport {
   readPrincipal?(): Promise<PrincipalDiscovery>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
   observeNodeCapabilities?(): Promise<unknown>;
+  /**
+   * The current connection's acknowledged `client.hello` result (clientId,
+   * server capabilities, protocol version). Never sends a hello, so it does not
+   * retire monitor sessions or other state bound to the acknowledged handshake.
+   */
+  readHello?(): Promise<unknown>;
   captureRepositoryCheckout?(
     query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
   ): Promise<

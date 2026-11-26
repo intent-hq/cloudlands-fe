@@ -1188,6 +1188,95 @@ describe('monitor session socket ownership', () => {
   });
 });
 
+describe('acknowledged hello read', () => {
+  it('answers from the connect handshake without a frame or monitor retirement', async () => {
+    const h = createHarness();
+    const reading = h.transport.readHello();
+    const capture = h.transport.capturePrMonitorSession('ws');
+    await connect(h.socket());
+    await expect(reading).resolves.toEqual(helloResult());
+    const session = await capture;
+    const retired = vi.fn();
+    session.onRetired(retired);
+    const sent = h.socket().sent.length;
+    const ready = vi.fn();
+    const off = h.transport.onMonitorReconnected(ready);
+    const read = (await h.transport.readHello()) as ReturnType<typeof helloResult>;
+    expect(read).toEqual(helloResult());
+    // The caller gets a copy: mutating it cannot change the next read.
+    read.server.capabilities.liveState = false;
+    await expect(h.transport.readHello()).resolves.toEqual(helloResult());
+    expect(h.socket().sent).toHaveLength(sent);
+    expect(retired).not.toHaveBeenCalled();
+    expect(ready).not.toHaveBeenCalled();
+    const list = session.request('prMonitor.list', { workspaceId: 'ws' });
+    h.socket().receive({ id: h.socket().lastFrame().id, result: { monitors: [] } });
+    await expect(list).resolves.toEqual({ monitors: [] });
+    off();
+    await session.release();
+    h.transport.dispose();
+  });
+
+  it('reads the replacement connection after a reconnect', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reconnectDelayMs: 10 });
+    const first = h.transport.readHello();
+    await connect(h.socket());
+    await expect(first).resolves.toMatchObject({ clientId: 'browser-1' });
+    h.socket().drop();
+    const reading = h.transport.readHello();
+    await vi.advanceTimersByTimeAsync(10);
+    const replacement = h.socket();
+    replacement.open();
+    await flush();
+    replacement.receive({ id: replacement.lastFrame().id, result: helloResult('browser-2') });
+    await expect(reading).resolves.toMatchObject({ clientId: 'browser-2' });
+    h.transport.dispose();
+  });
+
+  it('says hello once more when the connect hello failed, then reads the new acknowledgment', async () => {
+    const h = createHarness();
+    const first = h.transport.readHello();
+    const socket = h.socket();
+    socket.open();
+    await flush();
+    const connectHello = socket.lastFrame();
+    socket.receive({ id: connectHello.id, error: { code: -32603, message: 'slow' } });
+    // Concurrent readers share one retry hello on the same socket.
+    const second = h.transport.readHello();
+    await flush();
+    await flush();
+    const retries = socket.sent.map((frame) => JSON.parse(frame)).slice(1);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ method: 'client.hello', params: {} });
+    socket.receive({ id: retries[0].id, result: helloResult('browser-retry') });
+    await expect(first).resolves.toMatchObject({ clientId: 'browser-retry' });
+    await expect(second).resolves.toMatchObject({ clientId: 'browser-retry' });
+    await expect(h.transport.readHello()).resolves.toMatchObject({ clientId: 'browser-retry' });
+    expect(socket.sent).toHaveLength(2);
+    h.transport.dispose();
+  });
+
+  it('retries once per connection: a failed retry rejects later reads without more hellos', async () => {
+    const h = createHarness();
+    const reading = h.transport.readHello();
+    const socket = h.socket();
+    socket.open();
+    await flush();
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'nope' } });
+    await flush();
+    await flush();
+    expect(socket.sent).toHaveLength(2);
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'still no' } });
+    await expect(reading).rejects.toBeInstanceOf(BackendError);
+    await expect(h.transport.readHello()).rejects.toBeInstanceOf(BackendError);
+    await expect(h.transport.readHello()).rejects.toBeInstanceOf(BackendError);
+    expect(socket.sent).toHaveLength(2);
+    h.transport.dispose();
+    await expect(h.transport.readHello()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+  });
+});
+
 describe('monitor replacement hello admission', () => {
   it.each(['pending', 'failed', 'timed-out', 'missing-id', 'empty-id', 'non-string-id', 'null'])(
     'refuses new monitor controls after a %s replacement hello',

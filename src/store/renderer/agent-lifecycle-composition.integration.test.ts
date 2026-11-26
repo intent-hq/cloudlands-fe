@@ -41,18 +41,25 @@ import {
 // Exercise the actual root registration, configured Store, reducers, workers and
 // live AgentsClient. Unrelated startup reads remain pending at their transport
 // boundaries; no live daemon, destructive operation or external auth is used.
-vi.mock('$lib/client/live/backend-transport', async () => ({
-  BackendError: (await import('../../test/mocks/backend-transport.mock')).BackendError,
-  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
-  readBackendPrincipal: vi.fn(() => new Promise(() => {})),
-  backendRequest: vi.fn(() => new Promise(() => {})),
-  backendSubscribe: vi.fn(() => new Promise(() => {})),
-  backendUnsubscribe: vi.fn(async () => {}),
-  onBackendNotification: vi.fn(() => () => {}),
-  onBackendReconnected: vi.fn(() => () => {}),
-  detectLiveStateCapability: vi.fn(async () => false),
-  isBackendAvailable: () => true,
-}));
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const backendRequest = vi.fn<(method: string, params?: unknown) => Promise<unknown>>(
+    () => new Promise(() => {}),
+  );
+  return {
+    BackendError: (await import('../../test/mocks/backend-transport.mock')).BackendError,
+    observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
+    readBackendPrincipal: vi.fn(() => new Promise(() => {})),
+    backendRequest,
+    // Capability reads answer from each test's scripted client.hello reply.
+    readBackendHello: () => backendRequest('client.hello', {}),
+    backendSubscribe: vi.fn(() => new Promise(() => {})),
+    backendUnsubscribe: vi.fn(async () => {}),
+    onBackendNotification: vi.fn(() => () => {}),
+    onBackendReconnected: vi.fn(() => () => {}),
+    detectLiveStateCapability: vi.fn(async () => false),
+    isBackendAvailable: () => true,
+  };
+});
 vi.mock('$lib/electron-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
   invoke: vi.fn(() => new Promise(() => {})),

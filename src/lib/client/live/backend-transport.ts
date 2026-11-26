@@ -144,6 +144,22 @@ export async function readBackendPrincipal() {
   return result;
 }
 
+/**
+ * The current connection's acknowledged `client.hello` result. Use it for
+ * capability, protocol-version and own-clientId reads: an outgoing hello starts a
+ * new handshake generation, which retires PR monitor sessions on the browser
+ * transport. Send `client.hello` only to re-present identity or capabilities.
+ */
+export async function readBackendHello<T = unknown>(): Promise<T> {
+  const transport = resolveBackendTransport();
+  if (!transport.readHello)
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Handshake read unavailable' });
+  const result = await transport.readHello();
+  if (transport !== resolveBackendTransport())
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport changed' });
+  return result as T;
+}
+
 /** Observe node capabilities on one current transport without issuing client.hello. */
 export async function observeBackendNodeCapabilities(): Promise<unknown> {
   const transport = resolveBackendTransport();
@@ -195,17 +211,13 @@ let liveStateCapabilityPromise: Promise<boolean> | null = null;
  * callers fall back to runtime first-push detection (the safety net is never
  * regressed when the flag is absent or hello fails).
  *
- * Identity note (§5.17): the empty params here are safe — the main-process
- * JsonRpcClient merges the persisted stable `clientId` into EVERY
- * `client.hello` it forwards, so this probe re-presents the same identity
- * rather than minting a fresh one (which would orphan `drafts.*` state,
- * §5.16).
+ * Reads the acknowledged handshake, so it never renegotiates the connection.
  */
 export function detectLiveStateCapability(): Promise<boolean> {
   if (!liveStateCapabilityPromise) {
-    liveStateCapabilityPromise = backendRequest<{
+    liveStateCapabilityPromise = readBackendHello<{
       server?: { capabilities?: ServerCapabilities };
-    }>('client.hello', {})
+    }>()
       .then((result) => result?.server?.capabilities?.liveState === true)
       .catch(() => false);
   }

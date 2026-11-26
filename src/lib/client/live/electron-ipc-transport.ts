@@ -231,6 +231,16 @@ export function createElectronIpcBackendTransport(
         throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
       return unwrap(response);
     },
+    async readHello() {
+      const api = electronAPI();
+      if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
+      // Main answers an empty-params hello from its acknowledged handshake snapshot
+      // without renegotiating the pooled connection, so nothing goes on the wire.
+      const response = await api.invoke(BACKEND.REQUEST, { method: 'client.hello', params: {} });
+      if (electronAPI() !== api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
+      return unwrap(response as BackendResult<unknown>);
+    },
     prepareNativeReview,
     captureRepositoryResource: createRepositoryResourceTransport(electronAPI),
     captureRepositoryCheckout: createRepositoryCheckoutTransport(electronAPI),

@@ -16,35 +16,42 @@ const wire = vi.hoisted(() => ({
   reconnect: new Set<() => void>(),
   notifications: new Set<(event: BackendNotification) => void>(),
 }));
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: async (method: string, ...args: unknown[]) => {
-    if (method !== 'client.hello') return wire.request(method, ...args);
-    const generation = ++wire.helloGeneration;
-    wire.hello = null;
-    const result = await wire.request(method, ...args);
-    if (generation === wire.helloGeneration) wire.hello = result;
-    return result;
-  },
-  readBackendPrincipal: async () => {
-    const hello = structuredClone(wire.hello);
-    const generation = wire.helloGeneration;
-    if (!hello) throw new Error('Acknowledged hello unavailable');
-    const principal = await wire.request('principal.me', {});
-    if (generation !== wire.helloGeneration || !wire.hello)
-      throw new Error('Acknowledged hello changed');
-    return { hello, principal };
-  },
-  onBackendReconnected: (handler: () => void) => {
-    wire.reconnect.add(handler);
-    return () => wire.reconnect.delete(handler);
-  },
-  onBackendNotification: (handler: (event: BackendNotification) => void) => {
-    wire.notifications.add(handler);
-    return () => wire.notifications.delete(handler);
-  },
-  backendSubscribe: wire.subscribe,
-  backendUnsubscribe: async () => {},
-}));
+vi.mock('$lib/client/live/backend-transport', () => {
+  const fake = {
+    backendRequest: async (method: string, ...args: unknown[]) => {
+      if (method !== 'client.hello') return wire.request(method, ...args);
+      const generation = ++wire.helloGeneration;
+      wire.hello = null;
+      const result = await wire.request(method, ...args);
+      if (generation === wire.helloGeneration) wire.hello = result;
+      return result;
+    },
+    readBackendPrincipal: async () => {
+      const hello = structuredClone(wire.hello);
+      const generation = wire.helloGeneration;
+      if (!hello) throw new Error('Acknowledged hello unavailable');
+      const principal = await wire.request('principal.me', {});
+      if (generation !== wire.helloGeneration || !wire.hello)
+        throw new Error('Acknowledged hello changed');
+      return { hello, principal };
+    },
+    onBackendReconnected: (handler: () => void) => {
+      wire.reconnect.add(handler);
+      return () => wire.reconnect.delete(handler);
+    },
+    onBackendNotification: (handler: (event: BackendNotification) => void) => {
+      wire.notifications.add(handler);
+      return () => wire.notifications.delete(handler);
+    },
+    backendSubscribe: wire.subscribe,
+    backendUnsubscribe: async () => {},
+  };
+  // Capability reads answer from each test's scripted client.hello reply.
+  return {
+    ...fake,
+    readBackendHello: () => fake.backendRequest('client.hello', {}),
+  };
+});
 vi.mock('$lib/components/workspace/TaskStatusIndicator.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
