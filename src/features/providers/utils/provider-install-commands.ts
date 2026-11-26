@@ -13,6 +13,7 @@ const PROVIDER_INSTALL_COMMANDS: Readonly<Record<string, string>> = {
   droid: 'curl -fsSL https://app.factory.ai/cli | sh',
   grok: 'npm i -g @xai-official/grok',
   cursor: 'curl https://cursor.com/install -fsS | bash',
+  dsh: 'npm i -g @deepseek-ai/dsh',
   cortex: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
 };
 

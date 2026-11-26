@@ -32,7 +32,10 @@ import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider
 import ProviderSelector from './ProviderSelector.svelte';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
-import { MOCK_CURSOR_PROVIDER } from '../../../test/fixtures/provider-catalog.fixture';
+import {
+  MOCK_CURSOR_PROVIDER,
+  MOCK_DSH_PROVIDER,
+} from '../../../test/fixtures/provider-catalog.fixture';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 export const previewProviders = [
@@ -231,6 +234,51 @@ export function setupCursorProviderPreview(
   };
 }
 
+const DSH_UPLOAD_REASON =
+  "Intent can't turn off session-log upload in this DeepSeek Harness version, so it does not start DSH agents.";
+
+/** Mocked DeepSeek Harness status, shaped like the provider status seeder's discovery mapping. */
+function dshPreviewStatus(
+  status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
+): ProviderStatus {
+  switch (status) {
+    case 'not-installed':
+      return { available: false };
+    case 'unsupported':
+      return {
+        available: false,
+        version: '0.3.0',
+        unavailableReason: DSH_UPLOAD_REASON,
+        warning: m.settings_providers_dshUnsupported_warning({ reason: DSH_UPLOAD_REASON }),
+      };
+    default:
+      return { available: true, authenticated: status === 'signed-in', version: '0.2.2-rc.5' };
+  }
+}
+
+/** Mocked DeepSeek Harness catalog row; off unless `enabled`, like other opt-in providers. */
+function setupDshProviderPreview(
+  status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
+  { enabled = false }: { enabled?: boolean } = {},
+) {
+  const restoreProviders = setupProviderSelector();
+  const previousStatus = selectProviderStatusMap.select(appStore.state).dsh;
+  appStore.dispatch(providerCatalogLoaded({ providers: [...previewProviders, MOCK_DSH_PROVIDER] }));
+  appStore.dispatch(
+    loadEnabledProvidersFromStorage({
+      codex: true,
+      'claude-code': true,
+      opencode: false,
+      dsh: enabled,
+    }),
+  );
+  appStore.dispatch(checkSingleProviderSuccess('dsh', dshPreviewStatus(status)));
+  return () => {
+    appStore.dispatch(checkSingleProviderSuccess('dsh', previousStatus ?? { available: false }));
+    restoreProviders();
+  };
+}
+
 export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   id: 'provider-selector',
   title: 'Provider selector',
@@ -254,6 +302,15 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
     'cursor-enabled': {
       props: {},
       setup: () => setupCursorProviderPreview('signed-in', { enabled: true }),
+    },
+    'dsh-signed-in': { props: {}, setup: () => setupDshProviderPreview('signed-in') },
+    'dsh-signed-out': { props: {}, setup: () => setupDshProviderPreview('signed-out') },
+    'dsh-not-installed': { props: {}, setup: () => setupDshProviderPreview('not-installed') },
+    // A DSH whose upload Intent cannot turn off: the daemon's reason replaces Install.
+    'dsh-unsupported': { props: {}, setup: () => setupDshProviderPreview('unsupported') },
+    'dsh-enabled': {
+      props: {},
+      setup: () => setupDshProviderPreview('signed-in', { enabled: true }),
     },
     // An orchestrator runs no CLI: only enable/disable and profiles, no status.
     orchestrator: {

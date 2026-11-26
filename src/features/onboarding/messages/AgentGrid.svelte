@@ -105,6 +105,7 @@
     unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
     cursor: { color1: '#14120B', color2: '#26251E' },
+    dsh: { color1: '#4D6BFE', color2: '#3B55D9' },
   };
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
@@ -120,6 +121,7 @@
     grok: 'https://docs.x.ai/build/overview',
     unsloth: 'https://docs.unsloth.ai',
     cursor: 'https://cursor.com/docs/cli/installation',
+    dsh: 'https://github.com/deepseek-ai/deepseek-harness',
     cortex: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
   };
 

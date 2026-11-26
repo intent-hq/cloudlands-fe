@@ -5792,6 +5792,7 @@
   "settings_providers_agyUpdatePending_warning": "agy es anterior a {minimum}. Intent ejecuta agy update antes de que se inicie el próximo agente de Antigravity.",
   "settings_providers_agyUpdateFailed_warning": "La actualización automática de agy falló: {reason}",
   "settings_providers_cursorUnsupported_warning": "CLI de Cursor no compatible: {reason}",
+  "settings_providers_dshUnsupported_warning": "DeepSeek Harness no compatible: {reason}",
   "settings_providers_actionsFor_ariaLabel": "Acciones del proveedor para {name}",
   "settings_providers_cannotDisable": "No se puede deshabilitar {name}",
   "settings_providers_checkError": "No se pudieron comprobar los proveedores",

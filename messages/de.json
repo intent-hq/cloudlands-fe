@@ -5792,6 +5792,7 @@
   "settings_providers_agyUpdatePending_warning": "agy ist älter als {minimum}. Intent führt agy update aus, bevor der nächste Antigravity-Agent startet.",
   "settings_providers_agyUpdateFailed_warning": "Automatisches agy-Update fehlgeschlagen: {reason}",
   "settings_providers_cursorUnsupported_warning": "Cursor-CLI nicht unterstützt: {reason}",
+  "settings_providers_dshUnsupported_warning": "DeepSeek Harness nicht unterstützt: {reason}",
   "settings_providers_actionsFor_ariaLabel": "Anbieteraktionen für {name}",
   "settings_providers_cannotDisable": "{name} kann nicht deaktiviert werden",
   "settings_providers_checkError": "Anbieter konnten nicht geprüft werden",
