@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.392.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.391.1...v2.392.0) (2026-11-26)
+
+
+### 🚀 Features
+
+* **providers:** DeepSeek API key profiles for DeepSeek Harness ([#5080](https://github.com/intent-hq/cloudlands-fe/issues/5080)) ([119d32b](https://github.com/intent-hq/cloudlands-fe/commit/119d32be303504f3a6094b68c0a49f7bde636891))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.303 ([#5086](https://github.com/intent-hq/cloudlands-fe/issues/5086)) ([abe9783](https://github.com/intent-hq/cloudlands-fe/commit/abe97836683967e74ee34a8ff7ab8f5e35d9ed75))
+* **home:** keep Assistant subscriptions through page changes ([#5081](https://github.com/intent-hq/cloudlands-fe/issues/5081)) ([e703920](https://github.com/intent-hq/cloudlands-fe/commit/e70392037a8f3834185b7718e0af3cda4abc8756))
+
 ## [2.391.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.391.0...v2.391.1) (2026-11-26)
 
 
