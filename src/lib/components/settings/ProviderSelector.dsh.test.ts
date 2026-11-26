@@ -113,7 +113,7 @@ describe('ProviderSelector DeepSeek Harness row', () => {
     cleanup();
   });
 
-  it('offers Add API key instead of Log in while DSH is signed out', async () => {
+  it('offers one Add API key item instead of Log in and Add profile', async () => {
     mocks.state.current = await buildState();
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
@@ -126,5 +126,8 @@ describe('ProviderSelector DeepSeek Harness row', () => {
       within(menu).getByRole('menuitem', { name: m.settings_providers_addApiKey_label() }),
     ).toBeTruthy();
     expect(within(menu).queryByRole('menuitem', { name: m.settings_providers_logIn() })).toBeNull();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
   });
 });

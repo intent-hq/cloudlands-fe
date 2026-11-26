@@ -590,9 +590,14 @@
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
-                                <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
+                                <Fa
+                                  icon={signsInWithKey ? faKey : faPlus}
+                                  class="size-3.5 text-muted-foreground"
+                                />
                               </span>
-                              {m.settings_providerProfiles_add_label()}
+                              {signsInWithKey
+                                ? m.settings_providers_addApiKey_label()
+                                : m.settings_providerProfiles_add_label()}
                             </Menu.Item>
                             <Menu.Item
                               class="cursor-pointer text-foreground"
@@ -625,17 +630,7 @@
 
                           {#if needsLogin}
                             <Menu.Separator />
-                            {#if signsInWithKey}
-                              <Menu.Item
-                                class="cursor-pointer text-foreground"
-                                onSelect={() => openAddProfile(provider.id, provider.name)}
-                              >
-                                <span class="flex size-4 shrink-0 items-center justify-center">
-                                  <Fa icon={faKey} class="size-3.5 text-muted-foreground" />
-                                </span>
-                                {m.settings_providers_addApiKey_label()}
-                              </Menu.Item>
-                            {:else if canLogIn}
+                            {#if canLogIn}
                               <Menu.Item
                                 class="cursor-pointer text-foreground"
                                 onSelect={() => logIn(provider.id, provider.loginDocsUrl)}
