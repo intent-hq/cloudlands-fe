@@ -99,6 +99,7 @@ const hashToTab: Record<string, SettingsTab> = {
   hardware: 'input',
   'hardware-encoder': 'input',
   connection: 'advanced',
+  'intent-apps': 'advanced',
   reset: 'advanced',
   general: 'advanced',
   developer: 'advanced',

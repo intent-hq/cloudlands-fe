@@ -65,6 +65,8 @@
   import { isDockLabAvailable } from '$lib/utils/dock-lab-availability';
   import SidebarIconsSettings from '$lib/components/settings/SidebarIconsSettings.svelte';
   import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
+  import IntentAppsSettings from '$features/intent-apps/IntentAppsSettings.svelte';
+  import { selectIntentAppsLibraryShown } from '$store/renderer/slices/intent-apps/intent-apps-selectors';
   import TunnelRelaySettings from '$lib/components/settings/TunnelRelaySettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
@@ -91,6 +93,7 @@
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const intentAppsShown$ = selectIntentAppsLibraryShown();
   const pluginsSupported$ = selectAgentPluginsSupported();
   // intent-web serves this page and owns the machines list: there is no
   // keychain sync and no mobile pairing on that host.
@@ -397,6 +400,8 @@
         return isElectronPlatform();
       case 'dock-lab':
         return isDockLabAvailable();
+      case 'intent-apps':
+        return isElectronPlatform() && $intentAppsShown$;
       case 'plugins':
         return $pluginsSupported$;
       case 'tunnel-relay':
@@ -652,6 +657,10 @@
     </div>
   {:else if id === 'labs'}
     <LabsSettings />
+  {:else if id === 'intent-apps'}
+    <div id="intent-apps" class="scroll-mt-20">
+      <IntentAppsSettings />
+    </div>
   {:else if id === 'tunnel-relay'}
     <!-- Shown where Mobile is; a host that manages connections owns the relay too. -->
     <TunnelRelaySettings />

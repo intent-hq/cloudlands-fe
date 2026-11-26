@@ -468,5 +468,7 @@
   "layout_daemonStatus_devices_header": ["de", "es"],
   "dock_machines_label": ["de", "es"],
   "nodes_section_title": ["fr", "es"],
-  "workspace_initialAgentPicker_startOn_label": ["de", "es", "fr"]
+  "workspace_initialAgentPicker_startOn_label": ["de", "es", "fr"],
+  "settings_section_intentApps": ["de", "es"],
+  "settings_intentApps_row_description": ["de", "fr"]
 }

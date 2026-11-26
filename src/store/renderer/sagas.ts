@@ -108,6 +108,7 @@ import { machineRailSaga } from './slices/machine-rail/sagas/machine-rail-saga';
 import { browserViewsLabSaga } from './slices/browser-views-lab/sagas/browser-views-lab-saga';
 import { tabWindowSaga } from './slices/tab-window/sagas/tab-window-saga';
 import { recentAgentsSaga } from './slices/recent-agents/sagas/recent-agents-saga';
+import { intentAppsSaga } from './slices/intent-apps/sagas/intent-apps-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { remoteWorkspaceCardsSaga } from './slices/remote-workspace-cards/sagas/remote-workspace-cards-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
@@ -259,6 +260,7 @@ export const sagas = [
   browserViewsLabSaga,
   tabWindowSaga,
   recentAgentsSaga,
+  intentAppsSaga,
   autoUpdateSaga,
   specialistsSaga,
   workspaceCatalogSaga,

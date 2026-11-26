@@ -20,6 +20,8 @@ import {
   BROWSER_PANEL_GUEST_IPC_CHANNELS,
   createAuthorizedIpcHandler,
   createBrowserPanelGuestIpcHandler,
+  createIntentAppWindowIpcHandler,
+  INTENT_APP_WINDOW_IPC_CHANNELS,
   createTrustedBrowserBridgeIpcContext,
   IpcAuthorizationError,
   isTrustedRendererUrl,
@@ -31,6 +33,7 @@ import {
   onMainOwnedBrowserPageMoved,
   setMainOwnedBrowserPageOwners,
 } from '../browser-panel-pages';
+import { markIntentAppWindow, unmarkIntentAppWindow } from '../intent-app-windows';
 
 /** What an authorized handler receives: an IPC event or the branded bridge context. */
 type PrivilegedIpcContext =
@@ -388,5 +391,73 @@ describe('browser-panel page owners', () => {
     stopSecond();
     expect(first).toHaveBeenCalledExactlyOnceWith(7);
     expect(second).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Intent app window IPC authorization', () => {
+  const appSession = {};
+  function intentAppEvent(url = 'intent-app://pomodoro-timer/index.html') {
+    const mainFrame = { url };
+    const sender = {
+      id: 9001,
+      isDestroyed: () => false,
+      getType: () => 'window',
+      mainFrame,
+      session: appSession,
+    };
+    return { sender, senderFrame: mainFrame } as any;
+  }
+
+  it('admits only the bridge invoke channel', () => {
+    expect([...INTENT_APP_WINDOW_IPC_CHANNELS]).toEqual(['intent-app:invoke']);
+  });
+
+  it("allows the top frame of a marked app window on its own app's page", async () => {
+    markIntentAppWindow({ id: 1, webContents: { id: 9001 } });
+    try {
+      const handler = vi.fn(async () => 'ok');
+      const authorized = createIntentAppWindowIpcHandler('intent-app:invoke', handler);
+      await expect(authorized(intentAppEvent())).resolves.toBe('ok');
+    } finally {
+      unmarkIntentAppWindow(1, 9001);
+    }
+  });
+
+  it('rejects an Intent renderer, an unmarked window, a subframe and another URL', async () => {
+    const authorized = createIntentAppWindowIpcHandler('intent-app:invoke', vi.fn());
+    await expect(authorized(appEvent())).rejects.toEqual(
+      expect.objectContaining({ reason: 'sender is not an Intent app window' }),
+    );
+    await expect(authorized(intentAppEvent())).rejects.toEqual(
+      expect.objectContaining({ reason: 'sender is not an Intent app window' }),
+    );
+    markIntentAppWindow({ id: 1, webContents: { id: 9001 } });
+    try {
+      const event = intentAppEvent();
+      await expect(
+        authorized({ ...event, senderFrame: { url: event.senderFrame.url } }),
+      ).rejects.toEqual(expect.objectContaining({ reason: 'subframe invocation' }));
+      await expect(authorized(intentAppEvent('https://example.com/'))).rejects.toEqual(
+        expect.objectContaining({ reason: 'unexpected app URL' }),
+      );
+      await expect(authorized(createTrustedBrowserBridgeIpcContext())).rejects.toBeInstanceOf(
+        IpcAuthorizationError,
+      );
+    } finally {
+      unmarkIntentAppWindow(1, 9001);
+    }
+  });
+
+  it('keeps Intent channels closed to app windows', async () => {
+    markIntentAppWindow({ id: 1, webContents: { id: 9001 } });
+    try {
+      electronMocks.fromWebContents.mockReturnValue(null);
+      const authorized = createAuthorizedIpcHandler('intent-apps:approve', vi.fn());
+      await expect(authorized(intentAppEvent())).rejects.toEqual(
+        expect.objectContaining({ reason: 'unexpected session' }),
+      );
+    } finally {
+      unmarkIntentAppWindow(1, 9001);
+    }
   });
 });

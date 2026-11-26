@@ -521,6 +521,13 @@ export const SETTINGS_SEARCH_TERMS: Readonly<Record<string, () => string[]>> = {
     m.settings_labs_tabGroups_description(),
     m.settings_labs_browserPagesInMain_label(),
     m.settings_labs_browserPagesInMain_description(),
+    m.settings_labs_intentApps_label(),
+    m.settings_labs_intentApps_description(),
+  ],
+  'intent-apps': () => [
+    m.settings_section_intentApps(),
+    m.settings_intentApps_description(),
+    m.settings_intentApps_install_label(),
   ],
   'tunnel-relay': () => [
     m.settings_tunnel_enable_description(),

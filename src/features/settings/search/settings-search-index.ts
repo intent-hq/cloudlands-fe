@@ -198,6 +198,11 @@ export const SETTINGS_SEARCH_SECTIONS: readonly SettingsSearchSection[] = [
     title: () => m.settings_section_labs(),
   },
   {
+    id: 'intent-apps',
+    tab: 'advanced',
+    title: () => m.settings_section_intentApps(),
+  },
+  {
     id: 'tunnel-relay',
     tab: 'advanced',
     title: () => m.settings_tunnel_relay_label(),

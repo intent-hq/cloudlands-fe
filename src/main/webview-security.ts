@@ -35,6 +35,7 @@ import {
   registerHudWindow,
 } from './hud-window';
 import { getBackendIdForWebContents, stampWindowWithBackend } from './window-backend';
+import { isIntentAppContents } from './intent-app-windows';
 import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
 import { describeUrlForLog } from '../shared/utils/sanitize-credentials';
@@ -400,6 +401,9 @@ export function setupWebviewSecurity(): void {
       if (!isMainFrame) {
         return;
       }
+      // An Intent app window: the app host owns its navigation rules
+      // (src/features/intent-apps/main/app-host.ts).
+      if (isIntentAppContents(contents)) return;
 
       if (isBlockedProtocol(url)) {
         logger.warn('Blocked dangerous protocol navigation', { url: url.substring(0, 100) });
