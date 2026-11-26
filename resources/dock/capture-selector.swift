@@ -21,8 +21,8 @@ func setSystemCommandTab(enabled: Bool) {
 }
 /// With the switcher off, macOS does not reliably deliver Cmd-Tab to the picker, so a
 /// session tap takes it first. The tap needs Accessibility (Intent's grant); without it the
-/// picker's own key handling is the fallback.
-func tapCommandTab(_ step: @escaping (Int) -> Void) {
+/// system switcher stays on and Tab and the arrow keys still cycle.
+func tapCommandTab(_ step: @escaping (Int) -> Void) -> Bool {
   commandTabStep = step
   let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
   commandTabTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -36,9 +36,10 @@ func tapCommandTab(_ step: @escaping (Int) -> Void) {
       if type == .keyDown { commandTabStep?(event.flags.contains(.maskShift) ? -1 : 1) }
       return nil
     }, userInfo: nil)
-  guard let tap = commandTabTap else { return }
+  guard let tap = commandTabTap else { return false }
   CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
   CGEvent.tapEnable(tap: tap, enable: true)
+  return true
 }
 var signalSources: [DispatchSourceSignal] = []
 /// SIGTERM (timeout, abort) and a vanished parent must not leave Cmd-Tab disabled.
@@ -115,8 +116,8 @@ final class Selector {
     }
     NSApp.activate(ignoringOtherApps: true)
     if mode == "window" {
-      restoreCommandTabOnExit(); setSystemCommandTab(enabled: false)
-      tapCommandTab { [weak self] delta in self?.step(delta) }
+      restoreCommandTabOnExit()
+      if tapCommandTab({ [weak self] delta in self?.step(delta) }) { setSystemCommandTab(enabled: false) }
       update(quartz(NSEvent.mouseLocation))
     }
   }
@@ -238,11 +239,6 @@ final class SelectionView: NSView {
   override func mouseDragged(with event: NSEvent) { selector?.update(quartz(NSEvent.mouseLocation)) }
   override func mouseMoved(with event: NSEvent) { selector?.update(quartz(NSEvent.mouseLocation)) }
   override func mouseUp(with event: NSEvent) { selector?.up(quartz(NSEvent.mouseLocation)) }
-  /// Cmd-Tab arrives as a key equivalent, not a plain key down.
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    guard event.keyCode == 48, event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
-    selector?.step(event.modifierFlags.contains(.shift) ? -1 : 1); return true
-  }
   override func keyDown(with event: NSEvent) {
     let back = event.modifierFlags.contains(.shift)
     switch event.keyCode {
