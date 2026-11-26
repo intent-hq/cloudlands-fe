@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "Globale Tastenkürzel verwenden",
   "settings_intentApps_feature_alwaysOnTop": "Über anderen Fenstern bleiben",
   "settings_intentApps_uninstallConfirm_title": "{name} deinstallieren?",
-  "settings_intentApps_uninstallConfirm_description": "Dadurch werden die App und ihre gespeicherten Daten gelöscht."
+  "settings_intentApps_uninstallConfirm_description": "Dadurch werden die App und ihre gespeicherten Daten gelöscht.",
+  "settings_intentApps_approveDialog_publisher": "Laut der App stammt sie von {name}. Intent hat das nicht geprüft.",
+  "settings_intentApps_approveDialog_signature": "Die App hat eine Signatur. Intent prüft Signaturen noch nicht."
 }

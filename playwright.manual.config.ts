@@ -7,6 +7,7 @@ export default defineConfig({
     '**/catalog-manual-review.capture.spec.ts',
     '**/current-main-baseline.spec.ts',
     '**/electron-browser-lifetime.spec.ts',
+    '**/electron-intent-apps.spec.ts',
     '**/electron-passkeys.spec.ts',
   ],
   testIgnore: [],

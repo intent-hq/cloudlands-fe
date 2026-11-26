@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "전역 키보드 단축키 사용",
   "settings_intentApps_feature_alwaysOnTop": "다른 창 위에 표시",
   "settings_intentApps_uninstallConfirm_title": "{name}을(를) 제거할까요?",
-  "settings_intentApps_uninstallConfirm_description": "앱과 앱이 저장한 데이터가 삭제됩니다."
+  "settings_intentApps_uninstallConfirm_description": "앱과 앱이 저장한 데이터가 삭제됩니다.",
+  "settings_intentApps_approveDialog_publisher": "이 앱은 {name}에서 만들었다고 표시합니다. Intent는 이를 확인하지 않았습니다.",
+  "settings_intentApps_approveDialog_signature": "이 앱에는 서명이 있습니다. Intent는 아직 서명을 확인하지 않습니다."
 }

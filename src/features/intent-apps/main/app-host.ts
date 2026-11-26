@@ -105,7 +105,7 @@ function errorCode(error: unknown): string | null {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function preloadPath(): string {
+function defaultPreloadPath(): string {
   return path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '../../../preload-build/preload/intent-app.js',
@@ -124,6 +124,8 @@ export class IntentAppHost {
     private readonly admin: AppHostAdmin,
     /** Called when the set of open apps changes. */
     private readonly onOpenChanged: () => void,
+    /** The compiled `src/preload/intent-app.ts` (an Electron test passes its own bundle). */
+    private readonly preloadPath: string = defaultPreloadPath(),
   ) {}
 
   openAppIds(): string[] {
@@ -195,7 +197,7 @@ export class IntentAppHost {
         () => this.admin.createSocket(),
         token,
       );
-      return { session: { ...session, token: undefined }, connection };
+      return { session, connection };
     } catch (error) {
       await this.admin
         .request('app.session.close', { sessionId: opened.sessionId })
@@ -276,7 +278,7 @@ export class IntentAppHost {
       ...(icon ? { icon } : {}),
       webPreferences: {
         partition,
-        preload: preloadPath(),
+        preload: this.preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
         nodeIntegrationInSubFrames: false,

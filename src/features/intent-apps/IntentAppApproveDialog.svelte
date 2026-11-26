@@ -120,6 +120,17 @@
     {:else}
       <p class="type-body text-muted-foreground">{m.settings_intentApps_approveDialog_level3()}</p>
     {/if}
+    {#if app.publisher}
+      <!-- M1 never verifies publisher data: it is only what the manifest says. -->
+      <p class="type-caption text-muted-foreground" data-intent-app-publisher>
+        {m.settings_intentApps_approveDialog_publisher({ name: app.publisher.name })}
+      </p>
+    {/if}
+    {#if app.signature}
+      <p class="type-caption text-muted-foreground" data-intent-app-signature>
+        {m.settings_intentApps_approveDialog_signature()}
+      </p>
+    {/if}
     <p class="type-caption text-muted-foreground" data-intent-app-bundle>
       {m.settings_intentApps_approveDialog_bundle({ hash: shortHash })}
     </p>

@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "Use global keyboard shortcuts",
   "settings_intentApps_feature_alwaysOnTop": "Stay on top of other windows",
   "settings_intentApps_uninstallConfirm_title": "Uninstall {name}?",
-  "settings_intentApps_uninstallConfirm_description": "This deletes the app and the data it saved."
+  "settings_intentApps_uninstallConfirm_description": "This deletes the app and the data it saved.",
+  "settings_intentApps_approveDialog_publisher": "The app says it is from {name}. Intent has not checked this.",
+  "settings_intentApps_approveDialog_signature": "The app has a signature. Intent does not check signatures yet."
 }

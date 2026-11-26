@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "使用全域鍵盤快速鍵",
   "settings_intentApps_feature_alwaysOnTop": "保持在其他視窗之上",
   "settings_intentApps_uninstallConfirm_title": "解除安裝 {name}？",
-  "settings_intentApps_uninstallConfirm_description": "這會刪除該應用程式及其儲存的資料。"
+  "settings_intentApps_uninstallConfirm_description": "這會刪除該應用程式及其儲存的資料。",
+  "settings_intentApps_approveDialog_publisher": "此應用程式聲稱來自 {name}。Intent 尚未核實。",
+  "settings_intentApps_approveDialog_signature": "此應用程式帶有簽章。Intent 目前還不檢查簽章。"
 }

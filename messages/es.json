@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "Usar atajos de teclado globales",
   "settings_intentApps_feature_alwaysOnTop": "Mantenerse sobre otras ventanas",
   "settings_intentApps_uninstallConfirm_title": "¿Desinstalar {name}?",
-  "settings_intentApps_uninstallConfirm_description": "Esto elimina la app y los datos que guardó."
+  "settings_intentApps_uninstallConfirm_description": "Esto elimina la app y los datos que guardó.",
+  "settings_intentApps_approveDialog_publisher": "La app dice que es de {name}. Intent no lo ha comprobado.",
+  "settings_intentApps_approveDialog_signature": "La app tiene una firma. Intent aún no comprueba las firmas."
 }

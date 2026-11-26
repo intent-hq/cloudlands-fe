@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "Utiliser des raccourcis clavier globaux",
   "settings_intentApps_feature_alwaysOnTop": "Rester au-dessus des autres fenêtres",
   "settings_intentApps_uninstallConfirm_title": "Désinstaller {name} ?",
-  "settings_intentApps_uninstallConfirm_description": "Cela supprime l’app et les données qu’elle a enregistrées."
+  "settings_intentApps_uninstallConfirm_description": "Cela supprime l’app et les données qu’elle a enregistrées.",
+  "settings_intentApps_approveDialog_publisher": "L’app indique provenir de {name}. Intent ne l’a pas vérifié.",
+  "settings_intentApps_approveDialog_signature": "L’app possède une signature. Intent ne vérifie pas encore les signatures."
 }

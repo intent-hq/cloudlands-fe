@@ -42,6 +42,28 @@ export interface IntentAppApproval {
   approvedAt: string | null;
 }
 
+/**
+ * Publisher data from the manifest. Reserved in M1: the daemon checks only its
+ * shape and never verifies it, so the UI must never show it as confirmed.
+ */
+export interface IntentAppPublisher {
+  name: string;
+  url: string | null;
+  keyId: string | null;
+  verified: boolean;
+}
+
+/** The bundle's `intent-app.sig`, stored but not verified in M1 (`status: "unverified"`). */
+export interface IntentAppSignature {
+  sigVersion: number;
+  algorithm: string;
+  keyId: string;
+  bundleHash: string;
+  signature: string;
+  status: 'unverified' | 'valid' | 'invalid' | 'untrusted-key';
+  verified: boolean;
+}
+
 /** `App` from app.list / app.get / app.install. Every key is always present. */
 export interface IntentApp {
   id: string;
@@ -57,6 +79,9 @@ export interface IntentApp {
   window: IntentAppWindowSpec;
   approval: IntentAppApproval;
   source: { workspaceId: string; path: string } | null;
+  publisher: IntentAppPublisher | null;
+  updateUrl: string | null;
+  signature: IntentAppSignature | null;
   installedAt: string;
   updatedAt: string;
   open: boolean;

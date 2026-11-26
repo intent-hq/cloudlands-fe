@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "グローバルキーボードショートカットを使用",
   "settings_intentApps_feature_alwaysOnTop": "他のウィンドウより手前に表示",
   "settings_intentApps_uninstallConfirm_title": "{name} をアンインストールしますか？",
-  "settings_intentApps_uninstallConfirm_description": "アプリと、アプリが保存したデータを削除します。"
+  "settings_intentApps_uninstallConfirm_description": "アプリと、アプリが保存したデータを削除します。",
+  "settings_intentApps_approveDialog_publisher": "このアプリは {name} によるものとしています。Intent はこれを確認していません。",
+  "settings_intentApps_approveDialog_signature": "このアプリには署名があります。Intent はまだ署名を確認しません。"
 }

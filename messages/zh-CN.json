@@ -9595,5 +9595,7 @@
   "settings_intentApps_feature_globalShortcuts": "使用全局键盘快捷键",
   "settings_intentApps_feature_alwaysOnTop": "保持在其他窗口之上",
   "settings_intentApps_uninstallConfirm_title": "卸载 {name}？",
-  "settings_intentApps_uninstallConfirm_description": "这会删除该应用及其保存的数据。"
+  "settings_intentApps_uninstallConfirm_description": "这会删除该应用及其保存的数据。",
+  "settings_intentApps_approveDialog_publisher": "此应用声称来自 {name}。Intent 尚未核实。",
+  "settings_intentApps_approveDialog_signature": "此应用带有签名。Intent 目前还不检查签名。"
 }
