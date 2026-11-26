@@ -12,6 +12,7 @@ import {
 } from './browser-websocket-transport';
 import { createElectronIpcBackendTransport } from './electron-ipc-transport';
 import { registerWebDaemonStatusSource } from './web-daemon-status';
+import { enableDaemonRequestCounterIfOptedIn } from './daemon-request-counter';
 
 let cachedTransport: BackendTransport | null = null;
 
@@ -48,6 +49,10 @@ function pickTransport(): BackendTransport {
 
 /** Resolve the transport for this environment (cached after first use). */
 export function resolveBackendTransport(): BackendTransport {
-  if (!cachedTransport) cachedTransport = pickTransport();
+  if (!cachedTransport) {
+    // Dev-only opt-in: count requests from the first one the renderer sends.
+    enableDaemonRequestCounterIfOptedIn();
+    cachedTransport = pickTransport();
+  }
   return cachedTransport;
 }

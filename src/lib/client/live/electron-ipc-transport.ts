@@ -1,5 +1,6 @@
 import { supportsReviewMonitoring, REVIEW_MONITOR_HISTORY_METHODS } from '$shared/types/pr-monitor';
 import { createPrMonitorTransport } from './pr-monitor-transport';
+import { recordDaemonRequest } from './daemon-request-counter';
 import type { PrincipalDiscovery } from '$shared/types/principal';
 import {
   NativeReviewInputSchema,
@@ -327,6 +328,7 @@ export function createElectronIpcBackendTransport(
             (options && 'localMachine' in options)
           )
             throw unavailable();
+          recordDaemonRequest(method);
           const result = unwrap<BoundRepositoryResult<T>>(
             await api.invoke(BACKEND.REPOSITORY.REQUEST, {
               id,
@@ -379,6 +381,7 @@ export function createElectronIpcBackendTransport(
           recipient.reviewMonitoring!,
           api.reviewMonitoring!,
         );
+      recordDaemonRequest(method);
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
       return unwrap(response);
     },
@@ -387,6 +390,7 @@ export function createElectronIpcBackendTransport(
       const api = electronAPI();
       if (!api)
         throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
+      recordDaemonRequest('events.subscribe');
       const response = (await api.invoke(
         BACKEND.SUBSCRIBE,
         toPlainJson(params),
@@ -397,6 +401,7 @@ export function createElectronIpcBackendTransport(
     async unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void> {
       const api = electronAPI();
       if (!api) return;
+      recordDaemonRequest('events.unsubscribe');
       try {
         await api.invoke(BACKEND.UNSUBSCRIBE, {
           subscriptionId,

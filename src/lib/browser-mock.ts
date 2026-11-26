@@ -335,6 +335,24 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   return undefined;
 }
 
+/**
+ * @internal The mock's daemon reply for one JSON-RPC method, as a wire frame
+ * body: `{ result }`, `{ error }` for a structured refusal, or `undefined` when
+ * the mock does not implement the method. Exported for the scripted test
+ * daemon (`src/test/fake-daemon-socket.ts`).
+ */
+export function mockDaemonMethodReply(
+  method: string,
+  params?: Record<string, unknown>,
+): { result: unknown } | { error: { code: number; message: string; data: unknown } } | undefined {
+  const result = mockBackendMethodResult(method, params);
+  if (isMockError(result)) {
+    const { rpcCode, message, data } = result[MOCK_ERROR];
+    return { error: { code: rpcCode, message, data } };
+  }
+  return result === undefined ? undefined : { result };
+}
+
 /** Handle the `backend:*` transport channels; `undefined` when not one of them. */
 function mockBackendInvoke(channel: string, data?: any): any {
   if (channel === 'backend:request') {
