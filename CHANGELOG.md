@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.393.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.392.4...v2.393.0) (2026-11-26)
+
+
+### 🚀 Features
+
+* **capture:** cycle through windows in the window screenshot picker ([#5096](https://github.com/intent-hq/cloudlands-fe/issues/5096)) ([135f473](https://github.com/intent-hq/cloudlands-fe/commit/135f47342dae64a3d855256004e59257daae647a))
+
 ## [2.392.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.392.3...v2.392.4) (2026-11-26)
 
 
