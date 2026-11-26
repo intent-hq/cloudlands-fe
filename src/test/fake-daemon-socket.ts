@@ -38,7 +38,7 @@ function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
   return {
     'client.hello': () => ({
       clientId: 'request-budget-client',
-      server: { capabilities: { hostMembership: 1, boundedReads: 1 } },
+      server: { capabilities: { hostMembership: 1, boundedReads: 1, agentRetire: 1 } },
     }),
     'principal.me': () => ({
       id: 'caller',

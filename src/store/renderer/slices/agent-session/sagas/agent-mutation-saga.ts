@@ -84,6 +84,7 @@ import { selectAgentBackgroundPending, selectAgentSession } from '../agent-sessi
 import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
+import { selectAgentRetirementSupported } from '../../workspace-agents/workspace-agents-selectors';
 import {
   agentMutationUiFinished,
   agentMutationUiRequested,
@@ -218,6 +219,11 @@ function* loadRetirementSupport(
   const generation = yield* selectDaemonConnectionGeneration.effect();
   let supported = false;
   try {
+    // Support is fixed for a connection; a reconnect bumps the generation.
+    if (yield* selectAgentRetirementSupported.effect()) {
+      supported = true;
+      return;
+    }
     supported = yield* call([appClient.agents, appClient.agents.supportsRetirement], generation);
     if (generation === (yield* selectDaemonConnectionGeneration.effect())) {
       yield* put(agentRetirementSupportReceived(generation, supported));

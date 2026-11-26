@@ -85,6 +85,19 @@ daemon.handle('agent.pendingPermissions', async () => {
   await permissionsHeld;
   return { requests: [] };
 });
+// A null reply fails the schema and retries every 5 s, which would leak into every flow.
+daemon.handle('host.executionContext', () => ({
+  defaultProviderId: null,
+  defaultModelId: null,
+  repositoryConnections: [],
+  gitCredentialPolicy: {
+    provider: 'github',
+    protocol: 'https',
+    host: 'github.com',
+    managedHelperEnabled: false,
+    setting: 'sourceControl.github.exposeGitCredentialToChildren',
+  },
+}));
 daemon.handle('git.getRemoteUrl', (params) => ({
   url: `https://github.com/owner/${String(params?.path ?? params?.repoPath ?? 'repo')
     .split('/')
@@ -202,7 +215,20 @@ describe('daemon request budgets', () => {
     await settle();
     await navigate('/', home);
     await settle();
-    expectWithinBudget('page changes', { 'workspace.list': 0, 'agent.pendingPermissions': 0 });
+    // Home keeps the Assistant's hook, PR monitor and script monitor leases
+    // through a short page change, and the capability probe is not repeated on
+    // the same connection. Settings reads provider paths once when it opens.
+    expectWithinBudget('page changes', {
+      'workspace.list': 0,
+      'agent.pendingPermissions': 0,
+      'client.hello': 0,
+      'events.subscribe': 0,
+      'events.unsubscribe': 0,
+      'hook.list': 0,
+      'prMonitor.list': 0,
+      'host.executionContext': 0,
+      'settings.get': 1,
+    });
 
     // New workspace opened twice: the second open within 30 s reuses every origin.
     const { setShowCreateModal } =

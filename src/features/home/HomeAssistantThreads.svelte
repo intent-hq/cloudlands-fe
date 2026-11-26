@@ -1,3 +1,37 @@
+<script lang="ts" module>
+  import { createHeldLease } from '$lib/utils/held-lease';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    backgroundHooksSubscribeRequested,
+    backgroundHooksUnsubscribeRequested,
+  } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import {
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import {
+    scriptMonitorsSubscribeRequested,
+    scriptMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
+
+  // Kept through a short trip away from Home so coming back does not
+  // unsubscribe, resubscribe and re-read every list.
+  const chiefSubscriptions = createHeldLease({
+    holdMs: 30_000,
+    acquire: () => {
+      appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(scriptMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    },
+    release: () => {
+      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+    },
+  });
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -25,10 +59,8 @@
     createChiefThreadStarter,
   } from '$lib/components/layout/sidebar-nav/cards/chief-thread-starter.svelte';
   import { formatInteger } from '$lib/i18n/format';
-  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { m } from '$shared/paraglide/messages.js';
-  import { store as appStore } from '$store/renderer/store';
   import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
@@ -54,18 +86,6 @@
     selectRetiredAgentsLoaded,
     selectRetiredCount,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import {
-    backgroundHooksSubscribeRequested,
-    backgroundHooksUnsubscribeRequested,
-  } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-  import {
-    prMonitorsSubscribeRequested,
-    prMonitorsUnsubscribeRequested,
-  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
-  import {
-    scriptMonitorsSubscribeRequested,
-    scriptMonitorsUnsubscribeRequested,
-  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import HomeAssistantThreadActivity from './HomeAssistantThreadActivity.svelte';
 
   const threads$ = selectChiefThreads();
@@ -98,15 +118,9 @@
   );
 
   onMount(() => {
-    appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
-    appStore.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
-    appStore.dispatch(scriptMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    const drop = chiefSubscriptions.hold();
     void appStore.dispatch(agentRetirementSupportRequested());
-    return () => {
-      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID));
-      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
-      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
-    };
+    return drop;
   });
 
   function chooseThread(agentId: string) {
