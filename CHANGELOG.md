@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.391.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.390.1...v2.391.0) (2026-11-26)
+
+
+### 🚀 Features
+
+* **providers:** add DeepSeek Harness (DSH) provider metadata ([#5072](https://github.com/intent-hq/cloudlands-fe/issues/5072)) ([7958a98](https://github.com/intent-hq/cloudlands-fe/commit/7958a98fbd13831ce561861ee88f269b3e535364))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.301 ([#5077](https://github.com/intent-hq/cloudlands-fe/issues/5077)) ([1eed9ed](https://github.com/intent-hq/cloudlands-fe/commit/1eed9edde1f46f604ea3ece2193ce226289832e9))
+
 ## [2.390.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.390.0...v2.390.1) (2026-11-26)
 
 
