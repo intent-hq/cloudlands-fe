@@ -11,10 +11,34 @@ import ScreenCaptureKit
 func CGSSetSymbolicHotKeyEnabled(_ hotKey: Int32, _ enabled: Bool) -> CGError
 let commandTabHotKeys: [Int32] = [1, 2]
 var commandTabSuppressed = false
+var commandTabTap: CFMachPort?
+var commandTabStep: ((Int) -> Void)?
 func setSystemCommandTab(enabled: Bool) {
   guard commandTabSuppressed == enabled else { return }
   for key in commandTabHotKeys { _ = CGSSetSymbolicHotKeyEnabled(key, enabled) }
   commandTabSuppressed = !enabled
+  if enabled, let tap = commandTabTap { CGEvent.tapEnable(tap: tap, enable: false) }
+}
+/// With the switcher off, macOS does not reliably deliver Cmd-Tab to the picker, so a
+/// session tap takes it first. The tap needs Accessibility (Intent's grant); without it the
+/// picker's own key handling is the fallback.
+func tapCommandTab(_ step: @escaping (Int) -> Void) {
+  commandTabStep = step
+  let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
+  commandTabTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+    eventsOfInterest: mask, callback: { _, type, event, _ in
+      if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if commandTabSuppressed, let tap = commandTabTap { CGEvent.tapEnable(tap: tap, enable: true) }
+        return Unmanaged.passUnretained(event)
+      }
+      guard commandTabSuppressed, event.getIntegerValueField(.keyboardEventKeycode) == 48,
+        event.flags.contains(.maskCommand) else { return Unmanaged.passUnretained(event) }
+      if type == .keyDown { commandTabStep?(event.flags.contains(.maskShift) ? -1 : 1) }
+      return nil
+    }, userInfo: nil)
+  guard let tap = commandTabTap else { return }
+  CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
+  CGEvent.tapEnable(tap: tap, enable: true)
 }
 var signalSources: [DispatchSourceSignal] = []
 /// SIGTERM (timeout, abort) and a vanished parent must not leave Cmd-Tab disabled.
@@ -92,6 +116,7 @@ final class Selector {
     NSApp.activate(ignoringOtherApps: true)
     if mode == "window" {
       restoreCommandTabOnExit(); setSystemCommandTab(enabled: false)
+      tapCommandTab { [weak self] delta in self?.step(delta) }
       update(quartz(NSEvent.mouseLocation))
     }
   }
