@@ -353,6 +353,7 @@ describe('buildCreatePayload', () => {
       ['droid', 'apiKey'],
       ['auggie', 'token'],
       ['cursor', 'apiKey'],
+      ['dsh', 'apiKey'],
     ];
     for (const [provider, kind] of cases) {
       const env = buildCreatePayload(kind, provider, {
@@ -528,6 +529,7 @@ describe('providers with profile kinds', () => {
       ['droid', 'droid', ['apiKey']],
       ['auggie', 'auggie', ['token']],
       ['cursor', 'cursor', ['apiKey']],
+      ['dsh', 'dsh', ['apiKey']],
     ];
     for (const [baseId, provider, kinds] of rows) {
       expect(profileProviderFromBaseId(baseId)).toBe(provider);
@@ -549,6 +551,7 @@ describe('providers with profile kinds', () => {
       { key: 'CURSOR_API_KEY', kind: 'set', value: 'k' },
       { key: 'CURSOR_AUTH_TOKEN', kind: 'unset' },
     ]);
+    expect(env('dsh', 'apiKey')).toEqual([{ key: 'DEEPSEEK_API_KEY', kind: 'set', value: 'k' }]);
     expect(env('auggie', 'token')).toEqual([
       { key: 'AUGMENT_SESSION_AUTH', kind: 'set', value: 'k' },
     ]);
@@ -561,6 +564,7 @@ describe('providers with profile kinds', () => {
     expect(singleProfileKind('grok')).toBe('apiKey');
     expect(singleProfileKind('droid')).toBe('apiKey');
     expect(singleProfileKind('cursor')).toBe('apiKey');
+    expect(singleProfileKind('dsh')).toBe('apiKey');
     expect(singleProfileKind('auggie')).toBe('token');
     expect(singleProfileKind('claude')).toBeUndefined();
     expect(singleProfileKind('codex')).toBeUndefined();
@@ -634,6 +638,9 @@ describe('isSecretWellFormed for Grok, Droid and Cursor', () => {
     ['cursor key, 32 characters', 'cursor', 'a'.repeat(32), true],
     ['cursor key with a space', 'cursor', `${pad} ${pad}`, false],
     ['empty', 'cursor', '   ', false],
+    ['deepseek key', 'dsh', 'sk-0123456789abcdef0123456789abcdef', true],
+    ['deepseek key, too short', 'dsh', 'sk-abc', false],
+    ['xai key as deepseek key', 'dsh', `xai-${pad}`, false],
   ] as [string, ProfileProvider, string, boolean][])('%s', (_label, provider, value, expected) => {
     expect(isSecretWellFormed(provider, 'apiKey', value)).toBe(expected);
   });

@@ -26,6 +26,7 @@ const URLS = {
   xaiConsole: 'https://console.x.ai', // i18n-ignore (URL)
   factoryKeys: 'https://app.factory.ai/settings/api-keys', // i18n-ignore (URL)
   cursorDashboard: 'https://cursor.com/dashboard?tab=integrations', // i18n-ignore (URL)
+  deepseekKeys: 'https://platform.deepseek.com/api_keys', // i18n-ignore (URL)
   auggieAuth: 'https://docs.augmentcode.com/cli/setup-auggie/authentication', // i18n-ignore (URL)
 };
 const SETUP_TOKEN_COMMAND = 'claude setup-token'; // i18n-ignore (CLI command)
@@ -52,6 +53,8 @@ export function kindCardDescription(
       return m.settings_providerProfileKinds_apiKeyDroid_description();
     case 'cursor':
       return m.settings_providerProfileKinds_apiKeyCursor_description();
+    case 'dsh':
+      return m.settings_providerProfileKinds_apiKeyDsh_description();
     default:
       return m.settings_providerProfileKinds_apiKeyClaude_description();
   }
@@ -158,6 +161,17 @@ export function secretGuide(provider: ProfileProvider, kind: SecretKind): Secret
           label: m.settings_providerProfileKinds_cursorDashboard_link(),
         },
       };
+    case 'dsh':
+      return {
+        steps: [
+          m.settings_providerProfileKinds_apiKeyDshStep1_label(),
+          m.settings_providerProfileKinds_apiKeyDshStep2_label(),
+        ],
+        link: {
+          href: URLS.deepseekKeys,
+          label: m.settings_providerProfileKinds_deepseekApiKeys_link(),
+        },
+      };
     default:
       return {
         steps: [
@@ -196,6 +210,8 @@ export function secretShapeError(provider: ProfileProvider, kind: SecretKind): s
       return m.settings_providerProfileKinds_keyShapeDroid_error();
     case 'cursor':
       return m.settings_providerProfileKinds_keyShapeCursor_error();
+    case 'dsh':
+      return m.settings_providerProfileKinds_keyShapeDsh_error();
     default:
       return m.settings_providerProfileKinds_keyShapeClaude_error();
   }

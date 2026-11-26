@@ -19,6 +19,7 @@ const PROVIDERS = {
     kind: 'apiKey',
     secret: 'key_fakefakefakefakefakefakefakefake',
   },
+  dsh: { providerName: 'DeepSeek Harness', kind: 'apiKey', secret: 'sk-fakefakefakefakefakefake' },
 } as const;
 
 const states: Record<string, { props: Props }> = {};

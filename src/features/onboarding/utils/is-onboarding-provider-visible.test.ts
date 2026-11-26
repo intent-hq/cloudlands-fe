@@ -162,4 +162,17 @@ describe('isOnboardingProviderVisible', () => {
       }),
     ).toBe(false);
   });
+  it('never offers DeepSeek Harness, which signs in only with a key profile', () => {
+    for (const orchestrator of [false, true]) {
+      expect(
+        isOnboardingProviderVisible({
+          provider: { id: 'dsh', supportsProfiles: true },
+          isFeatureEnabled: () => true,
+          status: { available: true },
+          enabled: true,
+          orchestrator,
+        }),
+      ).toBe(false);
+    }
+  });
 });

@@ -16,6 +16,8 @@
  *      (e.g. Mock (E2E) in E2E builds with `MOCK_AGENT_SCRIPT_PATH`).
  *
  * Auggie additionally requires an installed CLI or an enabled preference.
+ * DeepSeek Harness never shows: it signs in only with an API key profile,
+ * which onboarding does not offer.
  * Inputs are plain values / callbacks so this stays a dependency-light pure
  * function suitable for unit testing.
  */
@@ -43,9 +45,13 @@ export interface IsOnboardingProviderVisibleInput {
   orchestrator?: boolean;
 }
 
+/** Providers whose only sign-in is a key profile, which onboarding does not offer. */
+const KEY_PROFILE_ONLY_PROVIDERS = new Set(['dsh']);
+
 export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleInput): boolean {
   const { provider, isFeatureEnabled, status } = input;
   if (provider.id !== undefined && isProviderProfileRef(provider.id)) return false;
+  if (provider.id !== undefined && KEY_PROFILE_ONLY_PROVIDERS.has(provider.id)) return false;
   if (input.orchestrator && !hasProfileKinds(provider)) return false;
   if (provider.requiresFeatureCode && !isFeatureEnabled(provider.requiresFeatureCode)) {
     return false;

@@ -62,6 +62,7 @@
       token: '{"accessToken":"fake","tenantURL":"https://fake.invalid/","scopes":["email"]}',
     },
     cursor: { apiKey: 'key_fakefakefakefakefakefakefakefakefake' },
+    dsh: { apiKey: 'sk-fakefakefakefakefakefakefake' },
   };
   const SETUP_ID = 'preview-connect-setup';
 

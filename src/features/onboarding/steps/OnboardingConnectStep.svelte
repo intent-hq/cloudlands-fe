@@ -204,6 +204,8 @@
         return m.onboarding_connect_droidApiKeyProfile_name();
       case 'cursor':
         return m.onboarding_connect_cursorApiKeyProfile_name();
+      case 'dsh':
+        return m.onboarding_connect_dshApiKeyProfile_name();
       case 'auggie':
         return m.onboarding_connect_auggieTokenProfile_name();
     }

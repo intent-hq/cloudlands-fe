@@ -58,7 +58,7 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { faRightToBracket } from '$lib/icons/phosphor-icons';
+  import { faKey, faRightToBracket } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
     Button,
@@ -221,6 +221,9 @@
 
   // Add profile is offered only on installed rows whose catalog entry
   // advertises named profiles (§5.54); other providers never show it.
+  /** Providers signed in with an API key profile instead of a CLI login. */
+  const KEY_SIGN_IN_PROVIDERS = new Set(['dsh']);
+
   function supportsProfiles(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
   }
@@ -355,7 +358,12 @@
             {@const canDisable = canManageEnablement && isEnabled}
             {@const canEnable = canManageEnablement && !isEnabled && isReady}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = needsLogin && !!(provider.loginCommandHint || provider.loginDocsUrl)}
+            {@const signsInWithKey =
+              KEY_SIGN_IN_PROVIDERS.has(provider.id) && supportsProfiles(provider.id)}
+            {@const canLogIn =
+              needsLogin &&
+              !signsInWithKey &&
+              !!(provider.loginCommandHint || provider.loginDocsUrl)}
             {@const canInstall = !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
@@ -582,9 +590,14 @@
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
-                                <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
+                                <Fa
+                                  icon={signsInWithKey ? faKey : faPlus}
+                                  class="size-3.5 text-muted-foreground"
+                                />
                               </span>
-                              {m.settings_providerProfiles_add_label()}
+                              {signsInWithKey
+                                ? m.settings_providers_addApiKey_label()
+                                : m.settings_providerProfiles_add_label()}
                             </Menu.Item>
                             <Menu.Item
                               class="cursor-pointer text-foreground"
