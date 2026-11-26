@@ -80,7 +80,7 @@ describe('recent repositories refresh', () => {
   it('reads the list when it is not loaded for the current admission', async () => {
     refresh();
     await settle();
-    expect(mock.list.mock.calls).toEqual([[{ lite: true }]]);
+    expect(mock.list.mock.calls).toEqual([[]]);
   });
 
   it('reads a known origin once across picker opens, but retries a missing one', async () => {

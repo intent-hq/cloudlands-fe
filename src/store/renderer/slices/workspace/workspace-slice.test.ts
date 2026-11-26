@@ -212,7 +212,7 @@ describe('workspaceReducer', () => {
       expect(state.pendingCreations).toEqual({});
     });
 
-    it('preserves runtime PR fields when a lite list payload omits them', () => {
+    it('preserves runtime PR fields when a metadata-only list payload omits them', () => {
       const pr = makePullRequest();
       const existing = makeWorkspace({
         id: 'ws-1',
@@ -601,7 +601,7 @@ describe('workspaceReducer', () => {
       expect(next).toBe(state);
     });
 
-    it('preserves runtime PR fields when re-hydrated with a lite payload that omits them', () => {
+    it('preserves runtime PR fields when re-hydrated with a metadata-only list payload that omits them', () => {
       const pr = makePullRequest();
       const existing = makeWorkspace({
         id: 'ws-1',

@@ -113,7 +113,7 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
 
     requestMock.mockClear();
 
-    const listed = await service.listWorkspaces({ lite: true });
+    const listed = await service.listWorkspaces();
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
 
@@ -127,35 +127,6 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
     const withoutAgents = listed.data.workspaces.find((w) => w.id === 'wire-test-ws-empty');
     expect(withoutAgents).toBeDefined();
     expect(withoutAgents?.agentSummary).toBeUndefined();
-  });
-
-  it('listWorkspaces (non-lite) also issues no agent.list', async () => {
-    const now = new Date().toISOString();
-    daemonWorkspaces.push({
-      id: 'wire-test-ws',
-      title: 'Wire Test',
-      branch: 'wire-test-ws',
-      status: 'Active',
-      repositoryPath: '/path/to/repo',
-      createdAt: now,
-      updatedAt: now,
-      agentSummary: {
-        count: 1,
-        agents: [
-          { id: 'agent-a', name: 'A', status: 'idle', isStreaming: false, isResponding: false },
-        ],
-        agentIds: ['agent-a'],
-      },
-    });
-
-    requestMock.mockClear();
-
-    const listed = await service.listWorkspaces({ lite: false });
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) return;
-
-    expect(requestMock.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(0);
-    expect(listed.data.workspaces[0]?.agentSummary).toEqual({ agentIds: ['agent-a'] });
   });
 
   it('listWorkspaces carries taskStats from the workspace.list row through the metadata payload (monorepo#1934)', async () => {
@@ -186,7 +157,7 @@ describe('workspace.service ↔ daemon agentSummary card aggregate (PROTOCOL.md 
 
     requestMock.mockClear();
 
-    const listed = await service.listWorkspaces({ lite: true });
+    const listed = await service.listWorkspaces();
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
 

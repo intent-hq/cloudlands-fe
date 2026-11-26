@@ -310,15 +310,12 @@ export class WorkspaceClient {
   }
 
   /**
-   * List all workspaces
-   * @param options.lite When true, skip heavy computations (diffSummary, agentSummary, taskStats, gitSummary)
-   *                     to avoid blocking other IPC operations like workspace:create
+   * List all workspaces. Rows are always the daemon's metadata-only
+   * `workspace.list` shape (PROTOCOL §5.1); there are no list options.
    */
-  async list(options?: {
-    lite?: boolean;
-  }): Promise<Result<Workspace[], string> & { complete?: boolean }> {
+  async list(): Promise<Result<Workspace[], string> & { complete?: boolean }> {
     // For backward compatibility, handle both old and new response formats
-    const result = await this.invoke<any>(WORKSPACE_CHANNELS.LIST, { lite: options?.lite });
+    const result = await this.invoke<any>(WORKSPACE_CHANNELS.LIST);
 
     if (result.ok) {
       // Check if it's the new paginated format

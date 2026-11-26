@@ -67,10 +67,10 @@ describe('workspace.service never lists retired workspaces (strict includeRetire
     >('../../../protocol/main/protocol-adapter');
     const adapter = new ProtocolAdapter(service, {} as never);
 
-    const lite = await adapter.listWorkspaces();
+    const listed = await adapter.listWorkspaces();
     const all = await adapter.listAllWorkspaces();
 
-    for (const result of [lite, all]) {
+    for (const result of [listed, all]) {
       expect(result.ok).toBe(true);
       if (!result.ok) continue;
       expect(result.data.map((w: { id: string }) => w.id)).not.toContain('retired-ws');

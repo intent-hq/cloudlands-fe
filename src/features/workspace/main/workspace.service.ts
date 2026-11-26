@@ -344,7 +344,6 @@ export class WorkspaceService {
     limit?: number;
     offset?: number;
     includeArchived?: boolean;
-    lite?: boolean; // Accepted for caller compatibility; list rows are always metadata-only
   }): Promise<
     Result<{ workspaces: WorkspaceMetadata[]; total: number; hasMore: boolean }, string>
   > {
@@ -411,12 +410,9 @@ export class WorkspaceService {
    * List all workspaces (backward compatibility)
    * Note: Returns ALL workspaces including archived ones.
    * The frontend is responsible for filtering based on the "Show archived" toggle.
-   * @param options.lite When true, skip heavy computations to avoid blocking other IPC operations
    */
-  async listAllWorkspaces(options?: {
-    lite?: boolean;
-  }): Promise<Result<WorkspaceMetadata[], string>> {
-    const result = await this.listWorkspaces({ includeArchived: true, lite: options?.lite });
+  async listAllWorkspaces(): Promise<Result<WorkspaceMetadata[], string>> {
+    const result = await this.listWorkspaces({ includeArchived: true });
     if (result.ok) {
       return { ok: true, data: result.data.workspaces };
     }

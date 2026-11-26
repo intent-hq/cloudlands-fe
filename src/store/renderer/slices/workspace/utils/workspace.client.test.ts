@@ -72,10 +72,10 @@ describe('WorkspaceClient.list cache ownership', () => {
     registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, handler);
     const client = new WorkspaceClient();
 
-    await client.list({ lite: true });
-    await client.list({ lite: true });
+    await client.list();
+    await client.list();
 
-    expect(handler.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 });
 

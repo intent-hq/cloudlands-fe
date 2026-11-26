@@ -250,7 +250,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     run.channel.put(backendReconnected());
     await settle();
     await settle();
-    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[]]);
 
     const state = makeCycleState(run.workspaces(), agents);
     const context = makeContext(state, 'ws-1');
@@ -316,7 +316,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     run.channel.put(backendReconnected());
     await settle();
     await settle();
-    expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+    expect(mocks.workspaceServiceList.mock.calls).toEqual([[]]);
 
     const state = makeCycleState(run.workspaces(), {
       ...agents,

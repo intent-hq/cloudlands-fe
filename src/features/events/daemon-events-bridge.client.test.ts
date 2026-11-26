@@ -8049,7 +8049,7 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // (live client → mocked backendRequest); let the async refetch settle.
     await flush();
 
-    expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
+    expect(workspaceServiceListSpy).toHaveBeenCalledWith();
     const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
     expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
   });

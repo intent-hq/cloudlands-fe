@@ -874,10 +874,9 @@ const bootFlow = app.whenReady().then(async () => {
     const inWorkspace = isFocusedWindowInWorkspace();
     const recentWorkspacesSubmenu: Electron.MenuItemConstructorOptions[] = [];
 
-    // Load recent workspaces (lite mode — only need titles for the menu,
-    // not git diffs/summaries which spawn 4 git subprocesses per workspace)
+    // Load recent workspaces (list rows are metadata-only; the menu needs titles)
     try {
-      const result = await protocolAdapter.listAllWorkspaces({ lite: true });
+      const result = await protocolAdapter.listAllWorkspaces();
       if (result.ok && result.data) {
         // Sort by shared display activity semantics and take top 5
         type WorkspaceItem = {

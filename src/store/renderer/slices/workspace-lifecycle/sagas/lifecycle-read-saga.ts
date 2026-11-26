@@ -314,7 +314,7 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   );
   try {
     const deletionTokens = store.state.workspace.deletionTokens;
-    const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
+    const result = yield* call([workspaceClient, workspaceClient.list]);
     if (
       store.dispatch !== dispatch ||
       backendId !== (yield* selectActiveBackendId()) ||

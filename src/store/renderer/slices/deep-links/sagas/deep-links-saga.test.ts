@@ -139,7 +139,7 @@ describe('intent://open?path (the intent CLI)', () => {
 
   it('opens New Space on a folder with no workspace, with no worktree chosen, and never creates', async () => {
     const dispatched = await run({ type: 'open', params: { path: '/Users/me/' } });
-    expect(mocks.list).toHaveBeenCalledWith({ lite: true });
+    expect(mocks.list).toHaveBeenCalledWith();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(dispatched).toEqual([setShowCreateModal(true)]);
     expect(JSON.parse(sessionStorage.getItem('workspace-prefill') ?? 'null')).toEqual({
