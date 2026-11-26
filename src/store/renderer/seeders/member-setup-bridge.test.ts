@@ -45,15 +45,18 @@ function admit(role: 'owner' | 'member' | 'guest') {
   });
 }
 
+let __resetProviderStatusReadsForTests: () => void;
+
 describe('admitted member setup bridge', () => {
   beforeAll(async () => {
-    await import('./provider-status-bridge-seeder');
+    ({ __resetProviderStatusReadsForTests } = await import('./provider-status-bridge-seeder'));
     await import('./host-bridge-seeder');
   });
   beforeEach(() => {
     mocks.request.mockReset();
     admit('member');
     __resetProviderAuthStatusForTests();
+    __resetProviderStatusReadsForTests();
     mocks.request.mockImplementation(async (method: string) => {
       if (method === 'host.providerDiscovery')
         return {

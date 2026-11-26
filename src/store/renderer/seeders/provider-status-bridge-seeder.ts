@@ -179,7 +179,7 @@ function withAuth(
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   if (selectHostRole.select(appStore.state) === 'member') {
-    const [discovery, auth] = await Promise.all([fetchProviderDiscovery(), getAuthVerdicts()]);
+    const [discovery, auth] = await Promise.all([discoveryRead.shared(), getAuthVerdicts()]);
     const statuses = Object.fromEntries(
       Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
         key,
@@ -198,18 +198,13 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     };
   }
   const [auggieCheck, toolsResult, authVerdicts, discovery, mock] = await Promise.all([
-    checkAuggie(),
-    backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
-      // `codex-acp` (the adapter) rides along for the codex warning —
-      // availability itself keys off the real `codex` CLI. `npx` rides
-      // along as the codex adapter's pinned fallback runner.
-      tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, 'npx'],
-    }),
+    auggieRead.shared(),
+    toolsRead.shared(),
     getAuthVerdicts(),
     // Serves Antigravity and Claude availability. A
     // successful discovery can omit a provider; a failed discovery is unknown
     // and must reach the existing failure envelope.
-    fetchProviderDiscovery(),
+    discoveryRead.shared(),
     // Main-side env gating via the preload bridge (packaged app only).
     checkMockProvider(),
   ]);
@@ -451,31 +446,66 @@ async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
   return result;
 }
 
-let inFlightDiscovery:
-  { connection: unknown; request: Promise<ProviderDiscoverySnapshot> } | undefined;
-
-function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
-  const request = backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
-  const entry = { connection: selectPrincipalConnectionContext.select(appStore.state), request };
-  inFlightDiscovery = entry;
-  const settle = () => {
-    if (inFlightDiscovery === entry) inFlightDiscovery = undefined;
-  };
-  request.then(settle, settle);
-  return request;
-}
+/** How long a settled passive read still serves the rest of its sweep. */
+const SHARED_READ_REUSE_MS = 2_000;
+const sharedReads: Array<() => void> = [];
 
 /**
- * Discovery for display versions only: joins an in-flight request on the
- * same connection so a full sweep's per-provider checks share one probe.
- * Failures yield none.
+ * One read per connection for a passive sweep. `shared()` joins the read in
+ * flight, or reuses one that settled in the last moment, so a sweep's
+ * aggregate and per-provider checks (some read only after an earlier step)
+ * send it once. `fresh()` always starts a new read, for explicit rechecks
+ * after an install or login; its result then serves later passive reads.
  */
+function sharedRead<T>(read: () => Promise<T>): { fresh(): Promise<T>; shared(): Promise<T> } {
+  let latest: { connection: unknown; request: Promise<T>; settledAt?: number } | undefined;
+  sharedReads.push(() => (latest = undefined));
+  const connection = () => selectPrincipalConnectionContext.select(appStore.state);
+  const fresh = () => {
+    const request = read();
+    const entry: NonNullable<typeof latest> = { connection: connection(), request };
+    latest = entry;
+    request.then(
+      () => (entry.settledAt = Date.now()),
+      () => {
+        if (latest === entry) latest = undefined;
+      },
+    );
+    return request;
+  };
+  const shared = () =>
+    latest?.connection === connection() &&
+    (latest.settledAt === undefined || Date.now() - latest.settledAt < SHARED_READ_REUSE_MS)
+      ? latest.request
+      : fresh();
+  return { fresh, shared };
+}
+
+/** @internal Test isolation: forget every shared read. */
+export function __resetProviderStatusReadsForTests(): void {
+  for (const reset of sharedReads) reset();
+}
+
+const discoveryRead = sharedRead(() =>
+  backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {}),
+);
+const toolsRead = sharedRead(() =>
+  backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
+    // `codex-acp` (the adapter) rides along for the codex warning —
+    // availability itself keys off the real `codex` CLI. `npx` rides
+    // along as the codex adapter's pinned fallback runner.
+    tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, 'npx'],
+  }),
+);
+const auggieRead = sharedRead(checkAuggie);
+
+function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
+  return discoveryRead.fresh();
+}
+
+/** Discovery for display versions only. Failures yield none. */
 function discoveryForVersions(): Promise<ProviderDiscoverySnapshot | undefined> {
-  const joinable =
-    inFlightDiscovery?.connection === selectPrincipalConnectionContext.select(appStore.state)
-      ? inFlightDiscovery.request
-      : undefined;
-  return (joinable ?? fetchProviderDiscovery()).catch(() => undefined);
+  return discoveryRead.shared().catch(() => undefined);
 }
 
 /**
@@ -496,10 +526,6 @@ function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): Provide
       : m.settings_providers_agyUpdatePending_warning({ minimum });
   }
   return status;
-}
-
-async function checkAntigravityAvailability(): Promise<ProviderStatus> {
-  return antigravityFromDiscovery(await fetchProviderDiscovery());
 }
 
 /** Main's `providers:check-single` envelope (provider-availability.service.ts). */
@@ -559,11 +585,18 @@ async function checkSingleProviderStatus(
   providerId: string,
   force: boolean,
 ): Promise<ProviderStatus> {
+  // A passive check reads what the rest of its sweep reads (one discovery, one
+  // tool lookup, the all-provider auth sweep); a forced recheck reads fresh.
+  const readDiscovery = force ? fetchProviderDiscovery : discoveryRead.shared;
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
-    (await getAuthVerdicts({ providerId, force }))[providerId];
+    (await getAuthVerdicts(force ? { providerId, force } : {}))[providerId];
+  const findBinary = async (name: string): Promise<HostCheckResult> =>
+    force
+      ? backendRequest<HostCheckResult>('host.findBinary', { name })
+      : ((await toolsRead.shared())?.tools?.[name] ?? { available: false });
 
   if (selectHostRole.select(appStore.state) === 'member') {
-    const discovery = await fetchProviderDiscovery();
+    const discovery = await readDiscovery();
     const status = withVersion(
       providerId in REFUSABLE_PROVIDER_WARNINGS
         ? refusableStatusFromDiscovery(discovery, providerId)
@@ -575,24 +608,24 @@ async function checkSingleProviderStatus(
   }
 
   if (providerId === 'claude-code') {
-    const status = claudeCodeStatusFromDiscovery(await fetchProviderDiscovery());
+    const status = claudeCodeStatusFromDiscovery(await readDiscovery());
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
   if (providerId === 'antigravity') {
-    const status = await checkAntigravityAvailability();
+    const status = antigravityFromDiscovery(await readDiscovery());
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
   if (providerId in REFUSABLE_PROVIDER_WARNINGS) {
-    const status = refusableStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
+    const status = refusableStatusFromDiscovery(await readDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
   if (providerId === 'auggie') {
-    const check = await checkAuggie();
+    const check = await (force ? checkAuggie() : auggieRead.shared());
     const status: ProviderStatus = { available: check.available === true };
-    if (!status.available) withNpxFallback(status, await fetchProviderDiscovery(), providerId);
+    if (!status.available) withNpxFallback(status, await readDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
   if (providerId === 'mock') {
@@ -602,8 +635,8 @@ async function checkSingleProviderStatus(
     // Rides the opencode binary AND requires the unsloth CLI itself;
     // local-only so available ⇒ authenticated.
     const [opencodeFound, unslothFound] = await Promise.all([
-      backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.opencode }),
-      backendRequest<HostCheckResult>('host.findBinary', { name: PROVIDER_BINARIES.unsloth }),
+      findBinary(PROVIDER_BINARIES.opencode),
+      findBinary(PROVIDER_BINARIES.unsloth),
     ]);
     const status: ProviderStatus = {
       available: opencodeFound?.available === true && unslothFound?.available === true,
@@ -613,7 +646,7 @@ async function checkSingleProviderStatus(
   }
 
   const binary = PROVIDER_BINARIES[providerId];
-  const found = await backendRequest<HostCheckResult>('host.findBinary', { name: binary });
+  const found = await findBinary(binary);
   const status: ProviderStatus = { available: found?.available === true };
   if (providerId === 'codex') {
     // Static registry fact (intent-providers' `fallback_npx_package` is set
@@ -622,13 +655,13 @@ async function checkSingleProviderStatus(
     // (the UI gates that guidance on `hasNpxFallback && !available`).
     status.hasNpxFallback = true;
     if (!status.available) {
-      withBundledCli(status, await fetchProviderDiscovery(), providerId);
+      withBundledCli(status, await readDiscovery(), providerId);
       if (status.available) return withAuth(status, await checkAuth());
     }
   }
   if (!status.available) {
     // Not installed: runnable from its npm package through npx (OpenCode, Grok, Droid).
-    withNpxFallback(status, await fetchProviderDiscovery(), providerId);
+    withNpxFallback(status, await readDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
@@ -643,10 +676,8 @@ async function checkSingleProviderStatus(
     // warning. Failed probes are unknowns, not confirmed absences — no
     // warning then.
     const [acp, npx] = await Promise.all([
-      backendRequest<HostCheckResult>('host.findBinary', { name: CODEX_ACP_BINARY }).catch(
-        () => undefined,
-      ),
-      backendRequest<HostCheckResult>('host.findBinary', { name: 'npx' }).catch(() => undefined),
+      findBinary(CODEX_ACP_BINARY).catch(() => undefined),
+      findBinary('npx').catch(() => undefined),
     ]);
     if (acp && acp.available !== true && npx && npx.available !== true) {
       status.warning = CODEX_ADAPTER_MISSING_WARNING;
@@ -705,10 +736,7 @@ interface ProviderDiscoveryEntry {
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
   try {
-    const discovery = await backendRequest<{
-      providers?: ProviderDiscoveryEntry[];
-      npx?: NpxStatus;
-    }>('host.providerDiscovery', {}).catch(() => undefined);
+    const discovery = await discoveryRead.shared().catch(() => undefined);
     const paths: Record<string, string | null> = {};
     const secondaryPaths: Record<string, string | null> = {};
     const npxPackages: Record<string, string> = {};

@@ -78,7 +78,8 @@ interface SingleProviderResult extends IpcResult<ProviderStatus> {
   providerId?: string;
 }
 
-export function* checkSingleProviderWorker(providerId: string) {
+/** `force` omitted is an explicit recheck (forced); sweeps pass it. */
+export function* checkSingleProviderWorker(providerId: string, force?: boolean) {
   // Snapshot the provider's check generation before the probe: the reducer
   // discards the terminal action when a newer check started meanwhile, so a
   // slow stale probe (e.g. a focus-triggered sweep that started before an
@@ -89,7 +90,7 @@ export function* checkSingleProviderWorker(providerId: string) {
     const result: SingleProviderResult = yield* call(
       invoke<SingleProviderResult>,
       IPC_CHANNELS.PROVIDERS.CHECK_SINGLE,
-      providerId,
+      force === undefined ? providerId : { providerId, force },
     );
     if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     if (result?.success && result.data) {
@@ -150,7 +151,8 @@ function* discoverProviders(silent: boolean) {
   }
 }
 
-export function* checkAllProvidersWorker(silent = false) {
+/** Only an explicit refresh forces fresh auth probes; passive sweeps use the daemon's cache. */
+export function* checkAllProvidersWorker(silent = false, force = false) {
   yield* put(prepareOnboardingAdaptersRequested());
   const refreshModels = yield* selectProviderModelsRefreshPending.effect();
   const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
@@ -161,7 +163,7 @@ export function* checkAllProvidersWorker(silent = false) {
   try {
     const [discovered] = yield* all([
       call(discoverProviders, silent),
-      all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId))),
+      all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId, force))),
     ]);
     if (
       discovered &&
@@ -181,7 +183,7 @@ export function* checkAllProvidersWorker(silent = false) {
 
 function* handleCheckAllProvidersRequest(action: ReturnType<typeof checkAllProvidersRequested>) {
   yield* race({
-    checked: call(checkAllProvidersWorker, action.payload[1] === true),
+    checked: call(checkAllProvidersWorker, action.payload[1] === true, action.payload[0] === true),
     changed: take(hostExecutionConnectionChanged),
   });
 }

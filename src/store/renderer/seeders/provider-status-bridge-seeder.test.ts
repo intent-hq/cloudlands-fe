@@ -59,9 +59,10 @@ import { mockInvoke } from '$shared/ipc-mock-router';
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
-import type {
-  ProviderAvailabilityResult,
-  ProviderStatus,
+import {
+  PROVIDER_AVAILABILITY_KEY_TO_ID,
+  type ProviderAvailabilityResult,
+  type ProviderStatus,
 } from '$shared/types/provider-availability';
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -378,10 +379,112 @@ describe('provider-status-bridge-seeder', () => {
     await import('./provider-status-bridge-seeder');
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     __resetProviderAuthStatusForTests();
+    (await import('./provider-status-bridge-seeder')).__resetProviderStatusReadsForTests();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  describe('passive sweep', () => {
+    /** Replies wait until released, the way network replies trail the requests that started them. */
+    function routeHeld(responses: MethodResponses) {
+      const gate = deferred<void>();
+      routeDaemon(
+        Object.fromEntries(
+          Object.entries(responses).map(([method, entry]) => [
+            method,
+            (params: unknown) =>
+              gate.promise.then(() =>
+                typeof entry === 'function' ? (entry as (p: unknown) => unknown)(params) : entry,
+              ),
+          ]),
+        ),
+      );
+      return gate;
+    }
+    const counts = () =>
+      mockedRequest.mock.calls.reduce<Record<string, number>>((all, [method]) => {
+        all[method] = (all[method] ?? 0) + 1;
+        return all;
+      }, {});
+    const INSTALLED = {
+      tools: {
+        ...NO_TOOLS.tools,
+        codex: { available: true },
+        opencode: { available: true },
+        'codex-acp': { available: true },
+      },
+    };
+    const sweepResponses: MethodResponses = {
+      'host.providerDiscovery': {
+        providers: [{ id: 'claude-code', installed: true, resolvedPath: '/bin/claude' }],
+      },
+      'host.toolAvailability': INSTALLED,
+      'host.checkAuggie': { available: true },
+      'host.providerAuthStatus': authSweep({ codex: true, opencode: false }),
+      'host.findBinary': (params: unknown) => ({
+        available: Object.hasOwn(INSTALLED.tools, (params as { name: string }).name)
+          ? INSTALLED.tools[(params as { name: keyof typeof INSTALLED.tools }).name].available
+          : false,
+      }),
+    };
+
+    it('shares one discovery, tool, Auggie and auth read across the whole sweep', async () => {
+      const gate = routeHeld(sweepResponses);
+      const singles = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).map((providerId) =>
+        mockInvoke<Envelope<ProviderStatus>>(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+          providerId,
+          force: false,
+        }),
+      );
+      const sweep = Promise.all([
+        mockInvoke(PROVIDERS_CHANNELS.GET_AVAILABILITY),
+        mockInvoke(PROVIDERS_CHANNELS.GET_PATHS),
+        ...singles,
+      ]);
+      await vi.waitFor(() => expect(counts()['host.providerDiscovery']).toBe(1));
+      gate.resolve();
+      await sweep;
+
+      expect(counts()).toEqual({
+        'host.providerDiscovery': 1,
+        'host.toolAvailability': 1,
+        'host.checkAuggie': 1,
+        'host.providerAuthStatus': 1,
+      });
+      const byId = Object.fromEntries(
+        (await Promise.all(singles)).map((reply, index) => [
+          Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID)[index],
+          reply.data,
+        ]),
+      );
+      expect(byId.codex).toMatchObject({ available: true, authenticated: true });
+      expect(byId.opencode).toMatchObject({ available: true, authenticated: false });
+      expect(byId.auggie).toMatchObject({ available: true });
+      expect(byId['claude-code']).toMatchObject({ available: true });
+      expect(byId.pi).toMatchObject({ available: false });
+    });
+
+    it('lets a forced recheck read fresh while a passive read is in flight', async () => {
+      const gate = routeHeld(sweepResponses);
+      const passive = mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+        providerId: 'claude-code',
+        force: false,
+      });
+      await vi.waitFor(() => expect(counts()['host.providerDiscovery']).toBe(1));
+      const forced = mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, {
+        providerId: 'claude-code',
+        force: true,
+      });
+      await vi.waitFor(() => expect(counts()['host.providerDiscovery']).toBe(2));
+      gate.resolve();
+      await Promise.all([passive, forced]);
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+        providerId: 'claude-code',
+        force: true,
+      });
+    });
   });
 
   it('single-flights auth reads and refetches after auth events and reconnects', async () => {
@@ -664,12 +767,8 @@ describe('provider-status-bridge-seeder', () => {
         expect(status).toEqual(
           authenticated === false ? { available: true, authenticated: false } : { available: true },
         );
-        expect(mockedRequest).toHaveBeenCalledWith(
-          'host.providerAuthStatus',
-          channel === PROVIDERS_CHANNELS.CHECK_SINGLE
-            ? { providerId: 'claude-code', force: false }
-            : {},
-        );
+        // A passive check reads the all-provider sweep its aggregate also reads.
+        expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
       }
     },
   );
@@ -1334,12 +1433,9 @@ describe('provider-status-bridge-seeder', () => {
         force: false,
       });
 
-      // Passive bulk loads (onboarding first mount) read the daemon's cached
-      // verdict instead of re-probing every CLI.
-      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
-        providerId: 'auggie',
-        force: false,
-      });
+      // Passive bulk loads read the daemon's cached all-provider sweep (shared
+      // with the aggregate read) instead of re-probing every CLI.
+      expect(mockedRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
       expect(response).toEqual({
         success: true,
         providerId: 'auggie',

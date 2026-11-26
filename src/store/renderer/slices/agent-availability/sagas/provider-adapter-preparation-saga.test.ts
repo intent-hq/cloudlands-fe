@@ -72,7 +72,10 @@ describe('first-time onboarding preparation lifecycle', () => {
       store.dispatch(checkAllProvidersRequested());
       await settle();
       expect(mocks.prepare).toHaveBeenCalledTimes(1);
-      expect(mocks.invoke).toHaveBeenCalledWith('providers:check-single', 'claude-code');
+      expect(mocks.invoke).toHaveBeenCalledWith('providers:check-single', {
+        providerId: 'claude-code',
+        force: false,
+      });
       expect(store.state.agentAvailability.providerLoadingMap['claude-code']).toBe(true);
       store.dispatch(checkSingleProviderRequested('pi'));
       await settle();

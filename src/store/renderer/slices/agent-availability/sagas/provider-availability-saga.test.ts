@@ -103,6 +103,47 @@ describe('providerAvailabilitySaga', () => {
     },
   );
 
+  it.each([
+    { refresh: false, force: false },
+    { refresh: true, force: true },
+  ])(
+    'a sweep with refresh=$refresh checks each provider with force=$force',
+    async ({ refresh, force }) => {
+      mocks.invoke.mockImplementation((method) =>
+        Promise.resolve({
+          success: true,
+          data:
+            method === 'providers:get-availability'
+              ? { hiddenProviders: [], providers: {}, hasAnyProvider: true }
+              : { available: true },
+        }),
+      );
+      let state = initialState;
+      const channel = stdChannel();
+      const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
+        state = agentAvailabilityReducer(state, action);
+        channel.put(action);
+      };
+      const task = runSaga(
+        { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
+        providerAvailabilitySaga,
+      );
+      try {
+        send(checkAllProvidersRequested(refresh));
+        await vi.waitFor(() => expect(state.discoveryStatus).toBe('success'));
+        const singles = mocks.invoke.mock.calls.filter(
+          ([method]) => method === 'providers:check-single',
+        );
+        expect(singles.length).toBeGreaterThan(1);
+        for (const [, request] of singles)
+          expect(request).toEqual({ providerId: expect.any(String), force });
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
   it('handles login before catalog hydration finishes and selects the returned drawer terminal', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));
     mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'claude-login-terminal' });
@@ -236,8 +277,9 @@ describe('providerAvailabilitySaga', () => {
   it('refreshes models only after the latest requested availability sweep fully settles', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));
     const releases: Array<(value: unknown) => void> = [];
-    mocks.invoke.mockImplementation((method, providerId) =>
-      method === 'providers:check-single' && providerId === 'codex'
+    mocks.invoke.mockImplementation((method, request) =>
+      method === 'providers:check-single' &&
+      (request as { providerId?: string })?.providerId === 'codex'
         ? new Promise((resolve) => releases.push(resolve))
         : Promise.resolve({
             success: true,
@@ -412,12 +454,12 @@ describe('providerAvailabilitySaga', () => {
     const ids = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
     const resolvers = new Map<string, (value: unknown) => void>();
     const npx = { resolvedPath: '/usr/bin/npx', version: '10.0.0', versionOk: true };
-    mocks.invoke.mockImplementation((channel: string, providerId?: string) => {
+    mocks.invoke.mockImplementation((channel: string, request?: { providerId: string }) => {
       if (channel === 'providers:get-availability') {
         return Promise.resolve({ success: true, data: { npx } });
       }
       return new Promise((resolve) => {
-        resolvers.set(providerId!, resolve);
+        resolvers.set(request!.providerId, resolve);
       });
     });
     let sliceState = initialState;
@@ -463,7 +505,7 @@ describe('providerAvailabilitySaga', () => {
     expect(mocks.invoke.mock.calls).toEqual(
       expect.arrayContaining([
         ['providers:get-availability'],
-        ...ids.map((id) => ['providers:check-single', id]),
+        ...ids.map((id) => ['providers:check-single', { providerId: id, force: false }]),
       ]),
     );
     expect(mocks.invoke).toHaveBeenCalledTimes(ids.length + 1);
