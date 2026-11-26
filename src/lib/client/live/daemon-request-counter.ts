@@ -1,8 +1,10 @@
 /**
  * Dev-only, opt-in count of daemon requests by JSON-RPC method.
  *
- * The renderer transports call `recordDaemonRequest` once per request they put
- * on the wire. Nothing is recorded unless the counter was enabled, and a
+ * The renderer transports call `recordDaemonRequest` once per request: the
+ * browser WebSocket transport when it sends the frame, the Electron IPC
+ * transport when it forwards the request to the main process (which may refuse
+ * it or answer without a daemon call). Nothing is recorded unless the counter was enabled, and a
  * production build never enables it: `import.meta.env.DEV` is statically false
  * there, so `recordDaemonRequest` folds to an early return.
  *

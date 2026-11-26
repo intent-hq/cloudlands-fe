@@ -46,9 +46,11 @@ import {
   type DaemonRequestBudgets,
   type DaemonRequestCounter,
 } from '$lib/client/live/daemon-request-counter';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { createFakeDaemon } from '../../test/fake-daemon-socket';
 import { setPage } from '../../test/fake-sveltekit-page';
 import { warmImport } from '../../test/warm-import';
+import { isCiEnv } from '../../../scripts/vitest-timeouts.mjs';
 
 /** Pages in one full `workspace.list` read; one admission reads the list once. */
 const LIST_PAGES = 5;
@@ -95,20 +97,29 @@ let stopRoot: () => void = () => {};
 let unmountPage: () => void = () => {};
 const report: Record<string, Record<string, number>> = {};
 
-/** Resolves once no request has gone out for `quietMs` (periodic polls excluded). */
-async function settle(quietMs = 1_000, timeoutMs = 20_000) {
+/**
+ * Resolves once every request is answered and none has gone out for a quiet
+ * period (longer on CI, where a slow async step can pause before its next
+ * request and leak it into the next flow). Periodic polls are ignored. Throws,
+ * naming the methods still being sent, when the flow never goes quiet.
+ */
+async function settle(timeoutMs = 30_000) {
+  const quietMs = isCiEnv() ? 3_000 : 1_500;
   const polls = new Set(['system.status']);
   const busy = () => daemon.frames.filter((f) => !polls.has(f.method)).length;
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
+  const start = daemon.frames.length;
   let seen = busy();
-  let quietSince = Date.now();
-  while (Date.now() < deadline) {
+  let quietSince = performance.now();
+  while (performance.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
-    if (busy() !== seen) {
+    if (busy() !== seen || daemon.pending() > 0) {
       seen = busy();
-      quietSince = Date.now();
-    } else if (Date.now() - quietSince >= quietMs) return;
+      quietSince = performance.now();
+    } else if (performance.now() - quietSince >= quietMs) return;
   }
+  const late = [...new Set(daemon.frames.slice(start).map((f) => f.method))];
+  throw new Error(`requests never settled; still sending: ${late.join(', ')}`);
 }
 
 function expectWithinBudget(flow: string, budgets: DaemonRequestBudgets) {
@@ -168,6 +179,8 @@ afterAll(() => {
   unmountPage();
   cleanup();
   stopRoot();
+  // Close the cached transport's socket and polls before the WebSocket stub goes.
+  (resolveBackendTransport() as { dispose?: () => void }).dispose?.();
   disableDaemonRequestCounter();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -180,7 +193,7 @@ describe('daemon request budgets', () => {
   it('startup, page changes, New workspace and reconnect stay within budget', async () => {
     // Startup: one full workspace list and one pending-permissions read.
     await settle();
-    expect(counter.count('principal.me')).toBe(1);
+    expect.soft(counter.count('principal.me'), 'startup admits the caller once').toBe(1);
     expectWithinBudget('startup', { ...ONE_FULL_LIST, 'agent.pendingPermissions': 1 });
 
     // Home -> Settings -> Home: no list or permission reads on page changes.
@@ -194,6 +207,9 @@ describe('daemon request budgets', () => {
     // New workspace opened twice: the second open within 30 s reuses every origin.
     const { setShowCreateModal } =
       await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+    // The origin cache lasts 30 s; a slower run would turn the second open
+    // into a legitimate miss, so report that instead of a budget failure.
+    const firstOpenAt = performance.now();
     counter.reset();
     store.dispatch(setShowCreateModal(true));
     await settle();
@@ -207,6 +223,9 @@ describe('daemon request budgets', () => {
     await settle();
     store.dispatch(setShowCreateModal(false));
     await settle();
+    expect
+      .soft(performance.now() - firstOpenAt, 'both opens fit in the 30 s origin cache window')
+      .toBeLessThan(30_000);
     expectWithinBudget('second New workspace open', {
       'git.getRemoteUrl': 0,
       'workspace.list': 0,

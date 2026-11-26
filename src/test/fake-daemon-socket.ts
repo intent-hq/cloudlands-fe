@@ -27,6 +27,8 @@ export interface FakeDaemon {
   notify(method: string, params: unknown): void;
   /** Close every open socket (transport sees an unexpected close and reconnects). */
   dropConnections(): void;
+  /** Requests received but not yet answered (held replies). */
+  pending(): number;
   /** Number of sockets opened so far. */
   connections(): number;
 }
@@ -66,6 +68,7 @@ export function createFakeDaemon(
   const frames: FakeDaemonFrame[] = [];
   const open = new Set<FakeDaemonSocket>();
   let opened = 0;
+  let unanswered = 0;
 
   class FakeDaemonSocket {
     onopen: (() => void) | null = null;
@@ -114,9 +117,12 @@ export function createFakeDaemon(
           return;
         }
         const result = handler(frame.params);
-        if (result instanceof Promise)
-          result.then((value) => answer({ result: value ?? null }), fail);
-        else answer({ result: result ?? null });
+        if (result instanceof Promise) {
+          unanswered += 1;
+          result
+            .then((value) => answer({ result: value ?? null }), fail)
+            .finally(() => (unanswered -= 1));
+        } else answer({ result: result ?? null });
       } catch (error) {
         fail(error);
       }
@@ -140,6 +146,7 @@ export function createFakeDaemon(
     dropConnections() {
       for (const socket of [...open]) socket.shut();
     },
+    pending: () => unanswered,
     connections: () => opened,
   };
 }
