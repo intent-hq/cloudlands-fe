@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.395.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.394.0...v2.395.0) (2026-11-27)
+
+
+### 🚀 Features
+
+* **scripts:** show retained and live script output in one terminal ([#5103](https://github.com/intent-hq/cloudlands-fe/issues/5103)) ([95ff921](https://github.com/intent-hq/cloudlands-fe/commit/95ff921011f1571c372bd0fd4b2728e25741bbd4))
+
 ## [2.394.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.393.3...v2.394.0) (2026-11-27)
 
 
