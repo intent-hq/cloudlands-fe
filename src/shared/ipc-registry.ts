@@ -51,6 +51,18 @@ const machineRailOff = (): MachineRailState => ({
   pendingId: '',
   degradedIds: [],
 });
+// No desktop app holds an app library or app windows.
+const intentAppsOff = () => ({
+  labEnabled: false,
+  supported: false,
+  apps: [],
+  openAppIds: [],
+  error: null,
+});
+const intentAppsUnavailable = () => ({
+  ok: false,
+  error: { code: 'not-supported', message: 'Intent apps need the desktop app' },
+});
 const ok = () => ({ ok: true });
 const notOk = () => ({ ok: false });
 const emptyList = () => [];
@@ -1320,6 +1332,29 @@ export const IPC_CHANNELS = {
     // chord (not only the default) from browser-panel pages.
     SET_PAGE_CHORD: forwarded('recent-agents:set-page-chord', emptyList),
   },
+  // Intent apps (Labs, `docs/protocol/methods/apps.md`): main owns the app library
+  // of this computer's daemon, the Labs switch and the app windows. CHANGED is a
+  // main→renderer push of the whole state (also in EVENT_CHANNELS). Types:
+  // `shared/intent-apps/intent-apps-types.ts`. Without a desktop app the library is off.
+  INTENT_APPS: {
+    GET_STATE: forwarded('intent-apps:get-state', intentAppsOff),
+    SET_LAB: forwarded('intent-apps:set-lab', intentAppsOff),
+    REFRESH: forwarded('intent-apps:refresh', intentAppsOff),
+    INSTALL: forwarded('intent-apps:install', intentAppsUnavailable),
+    APPROVE: forwarded('intent-apps:approve', intentAppsUnavailable),
+    REVOKE: forwarded('intent-apps:revoke', intentAppsUnavailable),
+    UNINSTALL: forwarded('intent-apps:uninstall', intentAppsUnavailable),
+    OPEN: forwarded('intent-apps:open', intentAppsUnavailable),
+    ICON: forwarded('intent-apps:icon', () => null),
+    CHANGED: 'intent-apps:changed',
+  },
+  // An app window's own channels (`src/preload/intent-app.ts` names them literally).
+  // Main answers them only for the app window's webContents and its
+  // `intent-app://<appId>/` main frame; EVENT is main→app window.
+  INTENT_APP: {
+    INVOKE: 'intent-app:invoke',
+    EVENT: 'intent-app:event',
+  },
   MACHINE_RAIL: {
     GET_STATE: forwarded('machine-rail:get-state', machineRailOff),
     SELECT: forwarded('machine-rail:select', machineRailOff),
@@ -1465,6 +1500,7 @@ export const EVENT_CHANNELS = [
   'window:dock-lab-changed',
   'machine-rail:changed',
   'recent-agents:changed',
+  'intent-apps:changed',
   'recent-agents:page-key',
   'machine-rail:toast',
   'machine-rail:backdrop-changed',

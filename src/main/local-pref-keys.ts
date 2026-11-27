@@ -48,6 +48,8 @@ export const LOCAL_PREF_KEYS = [
   'browserViewsInMainEnabled',
   // Workspace browser
   'browserWebsiteDarkMode',
+  // Intent apps (Labs)
+  'intentAppsLabEnabled',
   // Window chrome, release notes, feature codes
   'menuBarAutoHide',
   'lastSeenReleaseNotesVersion',

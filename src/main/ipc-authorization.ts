@@ -3,6 +3,7 @@ import { BROWSER_PANEL_PARTITION } from '../shared/constants';
 import { browserPanelPageOwner } from './browser-panel-pages';
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 import { isMachineViewOf } from './window-backend';
+import { isIntentAppContents } from './intent-app-windows';
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron';
 
 const trustedBrowserBridgeBrand = Symbol('trusted-browser-bridge-ipc-context');
@@ -141,6 +142,58 @@ function assertBrowserPanelGuestIpcContext(context: unknown, channel: string): v
   }
 }
 
+/**
+ * Channels that Intent app windows (Labs) may invoke, through their own preload
+ * (`src/preload/intent-app.ts`). Closed list: an app window can invoke no other
+ * channel, and no Intent renderer or web page can invoke these. The handler
+ * still checks that the frame is the window's own `intent-app://<appId>/` page.
+ * @internal Exported for the authorization tests.
+ */
+export const INTENT_APP_WINDOW_IPC_CHANNELS: ReadonlySet<string> = new Set([
+  IPC_CHANNELS.INTENT_APP.INVOKE,
+]);
+
+function assertIntentAppWindowIpcContext(context: unknown, channel: string): void {
+  if (isTrustedBrowserBridgeIpcContext(context)) {
+    throw new IpcAuthorizationError(channel, 'browser bridge cannot act as an app window');
+  }
+  const event = context as IpcMainInvokeEvent;
+  const sender = event?.sender;
+  const senderFrame = event?.senderFrame;
+  if (!sender || sender.isDestroyed() || sender.getType() !== 'window') {
+    throw new IpcAuthorizationError(channel, 'unexpected sender');
+  }
+  if (!isIntentAppContents(sender) || sender.session === session.defaultSession) {
+    throw new IpcAuthorizationError(channel, 'sender is not an Intent app window');
+  }
+  if (!senderFrame || senderFrame !== sender.mainFrame) {
+    throw new IpcAuthorizationError(channel, 'subframe invocation');
+  }
+  let protocol = '';
+  try {
+    protocol = new URL(senderFrame.url).protocol;
+  } catch {
+    // An unparsable URL is refused below.
+  }
+  if (protocol !== 'intent-app:') {
+    throw new IpcAuthorizationError(channel, 'unexpected app URL');
+  }
+}
+
+/**
+ * A handler for an {@link INTENT_APP_WINDOW_IPC_CHANNELS} channel: Intent app windows only.
+ * @internal Exported for the authorization tests.
+ */
+export function createIntentAppWindowIpcHandler<T extends (...args: any[]) => any>(
+  channel: string,
+  handler: T,
+): T {
+  return (async (context: IpcMainInvokeEvent, ...args: unknown[]) => {
+    assertIntentAppWindowIpcContext(context, channel);
+    return handler(context, ...args);
+  }) as T;
+}
+
 export function createAuthorizedIpcHandler<T extends (...args: any[]) => any>(
   channel: string,
   handler: T,
@@ -168,9 +221,10 @@ export function createBrowserPanelGuestIpcHandler<T extends (...args: any[]) => 
 
 /**
  * Makes every `ipcMain.handle` registration authorized: browser-panel guest
- * channels get the guest guard, all others the app-renderer guard.
- * `onRegister` receives handlers the HTTP IPC bridge may call (guest channels
- * are excluded: a web-page request has no meaning there).
+ * channels get the guest guard, Intent app window channels the app-window
+ * guard, all others the app-renderer guard. `onRegister` receives handlers the
+ * HTTP IPC bridge may call (guest and app-window channels are excluded: a web
+ * page or app request has no meaning there).
  */
 export function installIpcHandleAuthorization(
   ipcMain: IpcMain,
@@ -180,10 +234,13 @@ export function installIpcHandleAuthorization(
   Object.defineProperty(ipcMain, 'handle', {
     value(channel: string, handler: (...args: any[]) => any) {
       const guest = BROWSER_PANEL_GUEST_IPC_CHANNELS.has(channel);
+      const appWindow = INTENT_APP_WINDOW_IPC_CHANNELS.has(channel);
       const authorized = guest
         ? createBrowserPanelGuestIpcHandler(channel, handler)
-        : createAuthorizedIpcHandler(channel, handler);
-      onRegister(channel, guest ? null : authorized);
+        : appWindow
+          ? createIntentAppWindowIpcHandler(channel, handler)
+          : createAuthorizedIpcHandler(channel, handler);
+      onRegister(channel, guest || appWindow ? null : authorized);
       return originalHandle(channel, authorized);
     },
     writable: false,

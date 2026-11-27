@@ -34,6 +34,7 @@ import { powerReducer } from './slices/power/power-slice';
 import { devicePasskeysReducer } from './slices/device-passkeys/device-passkeys-slice';
 import { machineRailReducer } from './slices/machine-rail/machine-rail-slice';
 import { recentAgentsReducer } from './slices/recent-agents/recent-agents-slice';
+import { intentAppsReducer } from './slices/intent-apps/intent-apps-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
@@ -177,6 +178,7 @@ export const reducers = {
   devicePasskeys: devicePasskeysReducer,
   machineRail: machineRailReducer,
   recentAgents: recentAgentsReducer,
+  intentApps: intentAppsReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,

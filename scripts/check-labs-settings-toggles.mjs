@@ -42,6 +42,8 @@ export const SHOWN_SWITCH_GATES = Object.freeze(['desktop']);
 export const UNLISTED_LABS_SWITCHES = Object.freeze({
   'labs-browser-pages-in-main':
     'saved by the Electron main process and applied after a restart, so settings proposals cannot read or change it (cloudlands-fe#4828)',
+  'labs-intent-apps':
+    'saved by the Electron main process, which hosts the app windows and the open entry, so settings proposals cannot read or change it',
 });
 
 const sliceModuleOf = (action) =>

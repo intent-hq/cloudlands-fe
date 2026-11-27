@@ -12,6 +12,7 @@
 import { BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
+import { isIntentAppWindow } from './intent-app-windows';
 
 type BackendBoundWindow = BrowserWindowType & { backendId?: string };
 
@@ -177,6 +178,8 @@ function liveMachineViews(window: BrowserWindowType): Electron.WebContents[] {
  */
 export function getRendererWebContents(window: BrowserWindowType): Electron.WebContents[] {
   if (window.isDestroyed()) return [];
+  // An Intent app window hosts an app, not an Intent renderer: no Intent push reaches it.
+  if (isIntentAppWindow(window)) return [];
   if (frameWindows.has(window)) return liveMachineViews(window);
   return [window.webContents, ...liveMachineViews(window)];
 }

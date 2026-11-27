@@ -233,7 +233,7 @@ export async function withTransferConnection<T>(
  * backends: attachment placement/upload, the chunked downloads
  * (`file.readChunk`, `git.showFileChunk`, `note.readAssetChunk`, up to a
  * ~21 MiB base64 frame per chunk) and the workspace export chunks
- * (`workspace.export.read`). Everything else stays on the main channel; the
+ * (`workspace.export.read`) and Intent app bundle files (`app.readBundle`). Everything else stays on the main channel; the
  * whole-object reads (`file.read`, `git.showFile`, `note.readAsset`) are
  * capped under the read budget there (PROTOCOL §5.9 "Bounded object reads").
  * The monorepo `check-transfer-methods` consumer check keeps this set in
@@ -249,6 +249,8 @@ const TRANSFER_METHODS = new Set([
   'git.showFileChunk',
   'note.readAssetChunk',
   'workspace.export.read',
+  // Intent apps: one whole bundle file (up to 16 MiB before base64) per call.
+  'app.readBundle',
 ]);
 
 /** Whether `method` is a bulk-transfer call that should route here. */

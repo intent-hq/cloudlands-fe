@@ -23,6 +23,7 @@ export const ROOT_IGNORED_SPEC_NAMES = [
   'catalog-manual-review.capture.spec.ts',
   'current-main-baseline.spec.ts',
   'electron-browser-lifetime.spec.ts',
+  'electron-intent-apps.spec.ts',
   'electron-passkeys.spec.ts',
 ];
 export const ROOT_TEST_IGNORE = ROOT_IGNORED_SPEC_NAMES.map((name) => `**/${name}`);

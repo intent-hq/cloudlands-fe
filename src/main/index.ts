@@ -313,6 +313,17 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  // Intent apps (Labs): each app's own partition serves only its files
+  // (src/features/intent-apps/main/app-scheme.ts).
+  {
+    scheme: 'intent-app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      codeCache: true,
+    },
+  },
 ]);
 
 // Complete the IPC interceptor setup (for unhandled rejection tracking)
@@ -376,6 +387,13 @@ import {
   setupRecentAgentPageKeys,
   setupRecentAgentsIPC,
 } from '../features/recent-agents/main/recent-agents.ipc';
+import { requestOpenApp, setupIntentAppsIPC } from '../features/intent-apps/main/intent-apps.ipc';
+import { isIntentAppWindow } from './intent-app-windows';
+import {
+  findOpenAppRequest,
+  isOpenAppLink,
+  parseOpenAppLink,
+} from '../shared/intent-apps/open-app-request';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
@@ -1169,7 +1187,8 @@ const bootFlow = app.whenReady().then(async () => {
         !isWebviewPopupWindow(w) &&
         !isDockWindow(w) &&
         !isDockAnnotationWindow(w) &&
-        !isDockCaptureEditorWindow(w),
+        !isDockCaptureEditorWindow(w) &&
+        !isIntentAppWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1718,6 +1737,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
   setupRecentAgentsIPC(); // Needed for the recent-agent switcher in every window
+  setupIntentAppsIPC(); // Intent apps (Labs): app library, app windows, open entry
 
   // The daemon owns PATH discovery. Seed only after starting/adopting it (at
   // the top of this phase), and retry briefly while a newly spawned sidecar
@@ -1901,8 +1921,15 @@ const bootFlow = app.whenReady().then(async () => {
   if (!isSecondInstance) {
     startupMetrics.start('createWindow');
 
+    // Intent apps: `--open-app <id>` or `intent://app/<id>` opens the app once
+    // the host is ready; an app link is never a renderer deep link.
+    const openAppArg = findOpenAppRequest(process.argv);
+    if (openAppArg) requestOpenApp(openAppArg.appId);
+
     // Check for intent:// deep link in process.argv (cold start)
-    const intentUrlArg = findIntentUrl(process.argv);
+    const rawIntentUrlArg = findIntentUrl(process.argv);
+    const intentUrlArg =
+      rawIntentUrlArg !== undefined && isOpenAppLink(rawIntentUrlArg) ? undefined : rawIntentUrlArg;
     const isPairLinkArg =
       intentUrlArg !== undefined && (isMainOnlyLinkUri(intentUrlArg) || isInviteUri(intentUrlArg));
 
@@ -2201,6 +2228,13 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   event.preventDefault();
   logger.info('Received open-url event:', { url: scrubToken(url) });
 
+  // Intent apps: `intent://app/<id>` opens (or focuses) the app window.
+  if (isOpenAppLink(url)) {
+    const appId = parseOpenAppLink(url);
+    if (appId) requestOpenApp(appId);
+    return;
+  }
+
   // Pair links bypass the renderer/window pipeline entirely: handled in the
   // main process whenever the app is ready — the flow needs no existing
   // window (the confirm dialog can show parentless and openBackendWindow
@@ -2254,6 +2288,15 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', async (_event: Electron.Event, commandLine: string[]) => {
     logger.info('Received second-instance event:', { commandLine: commandLine.map(scrubToken) });
+
+    // Intent apps: `intent --open-app <id>` or `intent://app/<id>` (the Intent OS
+    // top bar and apps helper) open or focus the app window only.
+    const openApp = findOpenAppRequest(commandLine);
+    if (openApp) {
+      requestOpenApp(openApp.appId);
+      return;
+    }
+    if (commandLine.some(isOpenAppLink)) return;
 
     // A web page sent from the OS (Intent OS routes xdg-open here).
     const webUrl = findOpenUrlArg(commandLine);
@@ -2328,7 +2371,8 @@ function activateIntent(fromDock: boolean) {
         (window: BrowserWindowType) =>
           !isDockWindow(window) &&
           !isDockAnnotationWindow(window) &&
-          !isDockCaptureEditorWindow(window),
+          !isDockCaptureEditorWindow(window) &&
+          !isIntentAppWindow(window),
       ),
     getMainWindow,
     getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
