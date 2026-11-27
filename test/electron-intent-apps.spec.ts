@@ -41,6 +41,9 @@ let remoteDaemon: ChildProcess | undefined;
 let remoteSocketPath: string;
 let remoteLogPath: string;
 let remoteConfig: { host: string; port: number; token: string; fingerprint: string };
+/** Packages built from the sample app: a zip with the manifest at its root, and a zip without one. */
+let packageZip: string;
+let brokenZip: string;
 let mainBundle: string;
 let preloadBundle: string;
 let repo: string;
@@ -145,6 +148,18 @@ test.beforeAll(async () => {
   ]) {
     const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
     if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr}`);
+  }
+
+  const packages = join(root, 'packages');
+  await mkdir(packages, { recursive: true });
+  packageZip = join(packages, 'quick-call.zip');
+  brokenZip = join(packages, 'no-manifest.zip');
+  for (const [cwd, args] of [
+    [join(repo, 'apps', 'quick-call'), ['-qr', packageZip, '.']],
+    [join(repo, 'apps', 'quick-call'), ['-q', brokenZip, 'index.html']],
+  ] as const) {
+    const result = spawnSync('zip', [...args], { cwd, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(`zip failed: ${result.stderr}`);
   }
 
   const dataDir = join(root, 'intentd');
@@ -578,3 +593,182 @@ test('a remote machine: install, approve, open there, and the model call goes to
     await closeElectronApp(app);
   }
 });
+
+/** Call a package step of the fixture on one machine; failures come back as `{ ok: false }`. */
+function packageStep<T = any>(
+  app: ElectronApplication,
+  machine: 'local' | 'remote',
+  step: 'uploadPackage' | 'installPackage' | 'discardPackage',
+  ...args: unknown[]
+): Promise<{ ok: true; result: T } | { ok: false; error: { message: string; data: any } }> {
+  return app.evaluate(
+    async (_electron, [which, name, rest]) => {
+      const e2e = (globalThis as any).__intentAppsE2e;
+      const target = which === 'remote' ? e2e.remote : e2e;
+      try {
+        return { ok: true, result: await target[name](...rest) };
+      } catch (error: any) {
+        return { ok: false, error: { message: String(error?.message), data: error?.data } };
+      }
+    },
+    [machine, step, args] as const,
+  ) as never;
+}
+
+for (const machine of ['local', 'remote'] as const) {
+  test(`${machine} machine: install from a package and a folder, refuse a bad package, cancel`, async () => {
+    test.setTimeout(420_000);
+    const { app, log } = await launch();
+    const call = (method: string, params?: unknown) => rpc(app, method, params, undefined, machine);
+    try {
+      await expect
+        .poll(
+          async () =>
+            (await app
+              .evaluate((_e, which) => {
+                const e2e = (globalThis as any).__intentAppsE2e;
+                return (which === 'remote' ? e2e.remote : e2e).hello();
+              }, machine)
+              .catch(() => null)) !== null,
+          { timeout: 90_000 },
+        )
+        .toBe(true);
+      const hello: any = await app.evaluate((_e, which) => {
+        const e2e = (globalThis as any).__intentAppsE2e;
+        return (which === 'remote' ? e2e.remote : e2e).hello();
+      }, machine);
+      expect(hello?.server?.capabilities?.intentAppPackages).toBe(1);
+      await call('app.uninstall', { appId: 'quick-call' });
+
+      // A zip without intent-app.json: a clear refusal, and nothing is installed.
+      const broken = await packageStep<string>(app, machine, 'uploadPackage', brokenZip);
+      expect(broken.ok, JSON.stringify(broken)).toBe(true);
+      const brokenId = (broken as { result: string }).result;
+      const refused = await packageStep(app, machine, 'installPackage', brokenId, { dryRun: true });
+      expect(refused).toMatchObject({ ok: false, error: { data: { code: 'invalid-package' } } });
+      log.push(`[e2e] ${machine} refused: ${JSON.stringify(refused)}\n`);
+      await packageStep(app, machine, 'discardPackage', brokenId);
+      expect(await packageStep(app, machine, 'installPackage', brokenId, {})).toMatchObject({
+        ok: false,
+        error: { data: { code: 'upload-invalid' } },
+      });
+      expect((await call('app.list', {})).result.apps).toEqual([]);
+
+      // Cancel after the check: the upload is gone and nothing is installed.
+      const cancelled = await packageStep<string>(app, machine, 'uploadPackage', packageZip);
+      const cancelledId = (cancelled as { result: string }).result;
+      expect(
+        await packageStep(app, machine, 'installPackage', cancelledId, { dryRun: true }),
+      ).toMatchObject({ ok: true, result: { dryRun: true, app: { id: 'quick-call' } } });
+      await packageStep(app, machine, 'discardPackage', cancelledId);
+      expect(await packageStep(app, machine, 'installPackage', cancelledId, {})).toMatchObject({
+        ok: false,
+        error: { data: { code: 'upload-invalid' } },
+      });
+      expect((await call('app.list', {})).result.apps).toEqual([]);
+
+      // The .zip package: check, install the same upload, approve, open, model call.
+      const zipped = await packageStep<string>(app, machine, 'uploadPackage', packageZip);
+      const zipId = (zipped as { result: string }).result;
+      const checked = await packageStep<any>(app, machine, 'installPackage', zipId, {
+        dryRun: true,
+      });
+      expect(checked).toMatchObject({ ok: true, result: { dryRun: true } });
+      const installed = await packageStep<any>(app, machine, 'installPackage', zipId, {});
+      expect(installed).toMatchObject({
+        ok: true,
+        result: { dryRun: false, app: { id: 'quick-call', source: null } },
+      });
+      const bundleHash = (installed as any).result.app.bundleHash;
+      expect(bundleHash).toBe((checked as any).result.app.bundleHash);
+      expect(
+        await call('app.approve', {
+          appId: 'quick-call',
+          bundleHash,
+          level: 2,
+          features: ['models'],
+        }),
+      ).toMatchObject({ ok: true });
+      const windowPromise = app.waitForEvent('window');
+      await app.evaluate((_e, which) => {
+        const e2e = (globalThis as any).__intentAppsE2e;
+        return (which === 'remote' ? e2e.remote : e2e).open('quick-call');
+      }, machine);
+      const page = await windowPromise;
+      await page.waitForLoadState('domcontentloaded');
+      await expect
+        .poll(() => page.locator('#provider option:not([disabled])').count(), { timeout: 60_000 })
+        .toBeGreaterThan(0);
+      const models = await page.evaluate(() => (window as any).intent.models.list());
+      const wanted = process.env.INTENT_APPS_E2E_PROVIDER ?? 'claude-code';
+      if (models.providers.some((p: any) => p.providerId === wanted && p.available)) {
+        await page.selectOption('#provider', wanted);
+      }
+      await page.fill('#prompt', PROMPT);
+      await page.click('#ask');
+      await expect(page.locator('#answer')).not.toBeEmpty({ timeout: 240_000 });
+      const answer = (await page.locator('#answer').textContent())?.trim() ?? '';
+      log.push(`[e2e] ${machine} package answer=${JSON.stringify(answer)}\n`);
+      expect(answer.toLowerCase()).toContain('pineapple');
+      const closed = page.waitForEvent('close', { timeout: 60_000 });
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+      await closed;
+
+      // The folder: main zips it; same files, so the same bundle hash. It replaces the zip install.
+      const folder = await packageStep<string>(
+        app,
+        machine,
+        'uploadPackage',
+        join(repo, 'apps', 'quick-call'),
+      );
+      const folderId = (folder as { result: string }).result;
+      expect(
+        await packageStep(app, machine, 'installPackage', folderId, { dryRun: true }),
+      ).toMatchObject({ ok: false, error: { data: { code: 'app-exists' } } });
+      const replaced = await packageStep<any>(app, machine, 'installPackage', folderId, {
+        replace: true,
+      });
+      expect(replaced).toMatchObject({ ok: true, result: { replaced: true } });
+      expect((replaced as any).result.app.bundleHash).toBe(bundleHash);
+
+      // The agent path: the workspace form of app.install, then one approval and open.
+      await call('app.uninstall', { appId: 'quick-call' });
+      const created = await call('workspace.create', {
+        title: `Intent apps ${machine} agent path`,
+        repositoryPath: repo,
+        skipIsolation: true,
+      });
+      const workspaceId: string = created.result.workspace?.id ?? created.result.id;
+      const agentInstall = await call('app.install', { workspaceId, path: 'apps/quick-call' });
+      expect(agentInstall).toMatchObject({
+        ok: true,
+        result: { app: { id: 'quick-call', approval: { status: 'pending' } } },
+      });
+      expect(agentInstall.result.app.bundleHash).toBe(bundleHash);
+      expect(
+        await call('app.approve', {
+          appId: 'quick-call',
+          bundleHash,
+          level: 2,
+          features: [...agentInstall.result.app.permissions.features],
+        }),
+      ).toMatchObject({ ok: true });
+      const agentWindow = app.waitForEvent('window');
+      await app.evaluate((_e, which) => {
+        const e2e = (globalThis as any).__intentAppsE2e;
+        return (which === 'remote' ? e2e.remote : e2e).open('quick-call');
+      }, machine);
+      await (await agentWindow).waitForLoadState('domcontentloaded');
+      expect(
+        await app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows().map((w) => w.getTitle()),
+        ),
+      ).toEqual([
+        machine === 'remote' ? 'Intent App: Quick Call (E2E remote)' : 'Intent App: Quick Call',
+      ]);
+    } finally {
+      await writeFile(join(artifacts, `electron-main-package-${machine}.log`), log.join(''));
+      await closeElectronApp(app);
+    }
+  });
+}

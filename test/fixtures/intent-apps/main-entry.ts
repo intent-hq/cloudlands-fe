@@ -17,6 +17,14 @@ import {
   type AppHostMachine,
 } from '../../../src/features/intent-apps/main/app-host';
 import type { BackendConnectionConfig } from '../../../src/features/backend/main/backend-connection';
+import { requestRouted } from '../../../src/features/backend/main/transfer-connections';
+import { readAppPackage } from '../../../src/features/intent-apps/main/app-package';
+import {
+  discardAppPackage,
+  installUploadedPackage,
+  uploadAppPackage,
+  type PackageRequest,
+} from '../../../src/features/intent-apps/main/app-package-install';
 import { installIpcHandleAuthorization } from '../../../src/main/ipc-authorization';
 
 protocol.registerSchemesAsPrivileged([
@@ -44,7 +52,11 @@ void app
   .whenReady()
   .then(() => {
     installIpcHandleAuthorization(ipcMain);
-    const machine = (config: BackendConnectionConfig, identity?: AppHostMachine) => {
+    const machine = (
+      config: BackendConnectionConfig,
+      identity?: AppHostMachine,
+      backendId = 'local',
+    ) => {
       const client = new JsonRpcClient({
         config,
         helloParams: () => ({ clientName: 'intent-apps-e2e', clientVersion: '0.0.0' }),
@@ -64,7 +76,16 @@ void app
         identity,
       );
       host.registerIpc();
+      // The package path of main (intent-apps.ipc.ts): chunks of a remote
+      // machine ride a transfer connection, the rest the administrator connection.
+      const packageRequest: PackageRequest = <T>(method: string, params: Record<string, unknown>) =>
+        requestRouted<T>(client, method, params, { timeoutMs: 120_000 }, backendId);
       return {
+        uploadPackage: async (path: string) =>
+          uploadAppPackage(packageRequest, await readAppPackage(path)),
+        installPackage: (uploadId: string, options: { replace?: boolean; dryRun?: boolean }) =>
+          installUploadedPackage(packageRequest, uploadId, options),
+        discardPackage: (uploadId: string) => discardAppPackage(packageRequest, uploadId),
         request: (method: string, params?: unknown, timeoutMs?: number) =>
           client.request(method, params, timeoutMs ? { timeoutMs } : undefined),
         hello: () => client.readHelloSnapshot(),
@@ -78,6 +99,7 @@ void app
       ? machine(
           { transport: 'wss', tls: true, ...JSON.parse(remoteSpec) },
           { key: 'e2e-remote', label: () => 'E2E remote' },
+          'e2e-remote',
         )
       : null;
     (globalThis as Record<string, unknown>).__intentAppsE2e = { ...local, remote };
