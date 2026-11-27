@@ -34,33 +34,33 @@ app.on('window-all-closed', () => {
 void app
   .whenReady()
   .then(() => {
-  installIpcHandleAuthorization(ipcMain);
-  const config = { transport: 'uds' as const, socketPath };
-  const client = new JsonRpcClient({
-    config,
-    helloParams: () => ({ clientName: 'intent-apps-e2e', clientVersion: '0.0.0' }),
-  });
-  client.start();
-  const host = new IntentAppHost(
-    {
-      request: (method, params, timeoutMs) =>
-        client.request(method, params, timeoutMs ? { timeoutMs } : undefined),
-      ready: async () => {
-        await client.readHelloSnapshot();
+    installIpcHandleAuthorization(ipcMain);
+    const config = { transport: 'uds' as const, socketPath };
+    const client = new JsonRpcClient({
+      config,
+      helloParams: () => ({ clientName: 'intent-apps-e2e', clientVersion: '0.0.0' }),
+    });
+    client.start();
+    const host = new IntentAppHost(
+      {
+        request: (method, params, timeoutMs) =>
+          client.request(method, params, timeoutMs ? { timeoutMs } : undefined),
+        ready: async () => {
+          await client.readHelloSnapshot();
+        },
+        createSocket: () => createBackendSocket(config),
       },
-      createSocket: () => createBackendSocket(config),
-    },
-    () => {},
-    preloadPath,
-  );
-  host.registerIpc();
-  (globalThis as Record<string, unknown>).__intentAppsE2e = {
-    request: (method: string, params?: unknown, timeoutMs?: number) =>
-      client.request(method, params, timeoutMs ? { timeoutMs } : undefined),
-    hello: () => client.readHelloSnapshot(),
-    open: (appId: string) => host.openApp(appId),
-    openAppIds: () => host.openAppIds(),
-  };
+      () => {},
+      preloadPath,
+    );
+    host.registerIpc();
+    (globalThis as Record<string, unknown>).__intentAppsE2e = {
+      request: (method: string, params?: unknown, timeoutMs?: number) =>
+        client.request(method, params, timeoutMs ? { timeoutMs } : undefined),
+      hello: () => client.readHelloSnapshot(),
+      open: (appId: string) => host.openApp(appId),
+      openAppIds: () => host.openAppIds(),
+    };
     console.log('intent-apps-e2e: main ready');
   })
   .catch((error: unknown) => {

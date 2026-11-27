@@ -160,7 +160,10 @@ describe('Intent apps library in main', () => {
       ['intent-apps:uninstall', { appId: 'a-b' }],
       ['intent-apps:open', { appId: 'a-b' }],
     ] as const) {
-      expect(await invoke(channel, payload)).toMatchObject({ ok: false, error: { code: 'lab-off' } });
+      expect(await invoke(channel, payload)).toMatchObject({
+        ok: false,
+        error: { code: 'lab-off' },
+      });
     }
     await settle();
     expect(mocks.requests).toEqual([]);
