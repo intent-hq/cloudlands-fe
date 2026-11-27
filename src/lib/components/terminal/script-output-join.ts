@@ -44,9 +44,7 @@ export function joinLiveChunk(
     const bytes = new TextEncoder().encode(chunk.text);
     return { text: decodeFrom(bytes, join.next - start), join: moved, gap: false };
   }
-  const continues = sameStream
-    ? start === join.next
-    : bootId === join.bootId && start === 0;
+  const continues = sameStream ? start === join.next : bootId === join.bootId && start === 0;
   return { text: chunk.text, join: moved, gap: !continues };
 }
 
