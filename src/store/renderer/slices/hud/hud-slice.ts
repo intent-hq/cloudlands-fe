@@ -215,7 +215,10 @@ export interface HudState {
 
 /** Feed rows the HUD shows. */
 export const HUD_FEED_LIMIT = 50;
-/** Rows kept so hidden set-aside workspaces cannot push visible events out of the feed. */
+/**
+ * Rows kept so hidden set-aside workspaces cannot push visible events out of the feed.
+ * @internal
+ */
 export const HUD_FEED_BUFFER_LIMIT = 200;
 
 export const initialState: HudState = {
