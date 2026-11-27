@@ -415,7 +415,7 @@ describe('Intent app window IPC authorization', () => {
   it("allows the top frame of a marked app window on its own app's page", async () => {
     markIntentAppWindow({ id: 1, webContents: { id: 9001 } });
     try {
-      const handler = vi.fn(async () => 'ok');
+      const handler = vi.fn(async (_context: unknown) => 'ok');
       const authorized = createIntentAppWindowIpcHandler('intent-app:invoke', handler);
       await expect(authorized(intentAppEvent())).resolves.toBe('ok');
     } finally {
