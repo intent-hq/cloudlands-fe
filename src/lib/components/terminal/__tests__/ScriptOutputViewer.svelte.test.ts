@@ -578,10 +578,12 @@ describe('retained output viewer lifecycle', () => {
 
   describe('positioned joins (scriptOutputCursor: 1)', () => {
     const utf8 = (text: string) => new TextEncoder().encode(text);
-    const b64 = (text: string) => btoa(String.fromCharCode(...utf8(text)));
+    const bytesB64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+    const b64 = (text: string) => bytesB64(utf8(text));
     const live = (text: string, start: number, runId = 'run-1', bootId = 'boot-1') => ({
       text,
       timestamp: text,
+      data: b64(text),
       position: { runId, bootId, start, end: start + utf8(text).length },
     });
     const notice = (text: string) => ({ text, timestamp: text });
@@ -589,7 +591,7 @@ describe('retained output viewer lifecycle', () => {
       body: string,
       end: number,
       liveOffset: number,
-      { start = 0, runId = 'run-1', bootId = 'boot-1' } = {},
+      { start = 0, runId = 'run-1', bootId = 'boot-1', bytes = utf8(body) } = {},
     ) => ({
       scriptId: 's-1',
       status: 'available',
@@ -597,7 +599,7 @@ describe('retained output viewer lifecycle', () => {
       liveOffset,
       streamEpoch: 0,
       cursor: { runId, bootId, start, end, logStart: 0 },
-      data: b64(body),
+      data: bytesB64(bytes),
     });
     const requests = async () => {
       const { store } = await import('$store/renderer/store');
@@ -706,6 +708,52 @@ describe('retained output viewer lifecycle', () => {
       await tick();
       expect(await requests()).toBe(before + 1);
       expect(textSinceLastReset(terminal)).toBe('b1\nb2\n');
+    });
+
+    it('leaves out an older run still buffered when a new run is snapshotted', async () => {
+      const terminal = await mount([live('old\n', 0, 'run-1'), live('new\n', 0, 'run-2')]);
+      retainedReadableRef.value.set(snapshot('new\n', 4, 2, { runId: 'run-2' }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('new\n');
+    });
+
+    it('keeps buffered output older than a capped first snapshot', async () => {
+      const lines = [live('line 1\n', 0), live('line 2\n', 7), live('line 3\n', 14)];
+      const terminal = await mount(lines);
+      retainedReadableRef.value.set(snapshot('line 2\nline 3\n', 21, 3, { start: 7 }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\n');
+    });
+
+    it('completes a character split across a snapshot and its refresh', async () => {
+      const head = Uint8Array.of(0x41, 0xe2);
+      const whole = Uint8Array.of(0x41, 0xe2, 0x82, 0xac, 0x42);
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('A', 2, 0, { bytes: head }));
+      await tick();
+      retainedReadableRef.value.set(snapshot('A€B', 5, 0, { bytes: whole }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('A€B');
+    });
+
+    it('completes a character split across a snapshot and the next live chunk', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('A', 2, 0, { bytes: Uint8Array.of(0x41, 0xe2) }));
+      await tick();
+      const tail = Uint8Array.of(0x82, 0xac, 0x42);
+      outputReadableRef.value.set({
+        chunks: [
+          {
+            text: '\ufffdB',
+            timestamp: 't',
+            data: bytesB64(tail),
+            position: { runId: 'run-1', bootId: 'boot-1', start: 2, end: 5 },
+          },
+        ],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('A€B');
     });
 
     it('writes daemon notices that arrive after the read but not those before it', async () => {

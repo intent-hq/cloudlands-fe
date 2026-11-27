@@ -31,6 +31,8 @@ export type ScriptOutputChunk = {
   timestamp: string;
   /** Where the chunk's bytes sit in its run's log; absent for daemon notices and older daemons. */
   position?: ScriptOutputPosition;
+  /** The positioned chunk's raw bytes (base64), so a join can decode across its edges. */
+  data?: string;
 };
 
 /**

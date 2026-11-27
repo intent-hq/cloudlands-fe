@@ -25,7 +25,13 @@
     snapshotRemainderAfterLive,
   } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
-  import { joinLiveChunk, joinSnapshot, streamKey, type StreamJoin } from './script-output-join';
+  import {
+    bufferedPrefix,
+    joinLiveChunk,
+    joinSnapshot,
+    streamKey,
+    type StreamJoin,
+  } from './script-output-join';
 
   import {
     selectScriptById,
@@ -328,7 +334,9 @@
     unconfirmedStream = null;
     const shown = shownSnapshot?.cursor;
     const continues = shown !== undefined && streamKey(shown.bootId, shown.runId) === key;
-    const applied = joinSnapshot(continues ? streamJoin : null, snapshot);
+    const applied = continues
+      ? joinSnapshot(streamJoin, snapshot)
+      : joinSnapshot(null, snapshot, bufferedPrefix(buffer.chunks, snapshot.cursor));
     if (applied.reset) xterm.reset();
     if (applied.text) xterm.write(applied.text);
     streamJoin = applied.join;
@@ -372,7 +380,6 @@
       if (index < readFrom || heldFrom !== null) return;
       if (step.kind === 'write') {
         text += step.text;
-        streamJoin = step.join;
         return;
       }
       if (step.kind === 'foreign') {
@@ -467,7 +474,7 @@
       // Keep the live bytes on screen, and join later output by position.
       if (snapshot.cursor) {
         const { runId, bootId, end } = snapshot.cursor;
-        streamJoin = { runId, bootId, next: end };
+        streamJoin = { runId, bootId, next: end, decoder: new TextDecoder() };
       }
       return;
     }

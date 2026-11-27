@@ -3639,7 +3639,7 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
     appendScriptOutput(workspaceId, scriptId, {
       text: decoded.text,
       timestamp: new Date().toISOString(),
-      ...(position ? { position } : {}),
+      ...(position ? { position, data: chunk } : {}),
     }),
   );
 }
