@@ -141,6 +141,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     stop: async () => OK,
     restart: async () => OK,
     output: async () => '',
+    outputCursor: async () => null,
     status: async () => null,
     run: async () => null,
     subscribe: (handler) => emitOnce(handler, fx.mockScripts),
