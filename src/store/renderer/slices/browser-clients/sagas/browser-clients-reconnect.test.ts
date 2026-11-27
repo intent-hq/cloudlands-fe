@@ -11,20 +11,15 @@ const transport = vi.hoisted(() => ({
 
 // Keep the live facade, saga, reducers and selectors together. Only daemon I/O
 // is replaced: these are protocol-shaped replies from one window's backend.
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: transport.request,
     onBackendReconnected: (handler: () => void) => {
       transport.reconnect.add(handler);
       return () => transport.reconnect.delete(handler);
     },
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 vi.mock('$lib/client', async () => {
   const { LiveClientsClient } = await import('$lib/client/live/live-clients-client');
   const { LiveWorkspacesClient } = await import('$lib/client/live/live-workspaces-client');

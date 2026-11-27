@@ -115,9 +115,23 @@ These are the single site the envelope shapes are hard-coded. Live-client and
 component tests that hand-roll envelopes migrate to these builders as they are
 touched.
 
-## Consumers
+## Fakes for a few exports
 
-Nothing in this task migrates existing consumers. Follow-on tasks layer new
-`*.wss.test.ts` suites on top of `installMockBackend()`; the existing
-`vi.mock("./backend-transport")` recipes stay untouched until a coordinator
-schedules their migration.
+A test that needs only `backendRequest` (or a few other exports) builds a complete
+module with `createBackendTransportFake` from `backend-transport-fake.ts`:
+
+```ts
+const backendRequest = vi.hoisted(() => vi.fn());
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
+    backendRequest,
+  }),
+);
+```
+
+Every export you do not pass gets a default, and `readBackendHello` answers from your
+`backendRequest('client.hello', {})`. When the transport gains an export, add its
+default there; `backend-transport-fake.test.ts` fails until you do.
+`intent/no-hand-rolled-backend-transport-mock` rejects new hand-written factories;
+files that still have one are baselined under
+`eslint-rules/baselines/no-hand-rolled-backend-transport-mock/` and may only shrink.

@@ -1,16 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: `client.list` / `client.hello` never reach a daemon.
-vi.mock('./backend-transport', () => {
-  const fake = {
+vi.mock('./backend-transport', async () =>
+  (await import('../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: vi.fn(),
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 
 import { backendRequest } from './backend-transport';
 import { __resetOwnClientIdForTesting, LiveClientsClient } from './live-clients-client';

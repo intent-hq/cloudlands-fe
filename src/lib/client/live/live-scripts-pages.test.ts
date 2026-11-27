@@ -3,16 +3,11 @@ import { backendRequest } from './backend-transport';
 import { LiveScriptsClient } from './live-scripts-client';
 import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
-vi.mock('./backend-transport', () => {
-  const fake = {
+vi.mock('./backend-transport', async () =>
+  (await import('../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: vi.fn(),
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 const hello = {
   server: { protocolVersion: CURRENT_PROTOCOL_VERSION, capabilities: { scriptActiveLists: 1 } },
 };
