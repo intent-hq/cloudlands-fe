@@ -130,7 +130,7 @@ export class IntentAppHost {
   private ipcRegistered = false;
   /** Bumped by closeAll: an open that started earlier is cancelled at its next step. */
   private generation = 0;
-  /** The app quits: windows close normally (a cancelled close would cancel the quit). */
+  /** A quit that nothing cancelled is under way: windows close normally (a cancelled close would cancel the quit). */
   private quitting = false;
 
   constructor(
@@ -154,8 +154,11 @@ export class IntentAppHost {
     if (this.ipcRegistered) return;
     this.ipcRegistered = true;
     ipcMain.handle(CHANNELS.INVOKE, (event, message) => this.handleInvoke(event, message));
-    electronApp.on('before-quit', () => {
-      this.quitting = true;
+    // Main's own before-quit handler (registered first) cancels the event while it
+    // asks about running agents and shuts down, then quits again. Only a quit that
+    // nothing cancelled closes app windows directly; a cancelled one changes nothing.
+    electronApp.on('before-quit', (event) => {
+      this.quitting = !event.defaultPrevented;
     });
   }
 

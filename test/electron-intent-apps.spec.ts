@@ -350,7 +350,8 @@ test('install, approve, open and call a model through window.intent', async () =
     await closed;
     expect(log.join('')).toContain('[app console] session-ended {"reason":"revoked"}');
 
-    // A close by the app (or the user) is reason "closed": the app hears it before the window goes.
+    // A user close is reason "closed": the app hears it before the window goes, also after
+    // a quit that was cancelled (main cancels the first quit while it asks about agents).
     expect(
       await rpc(app, 'app.approve', {
         appId: 'quick-call',
@@ -370,8 +371,20 @@ test('install, approve, open and call a model through window.intent', async () =
         console.log(`session-ended ${JSON.stringify(data)}`);
       });
     });
+    await app.evaluate(({ app: electronApp }) => {
+      const cancelled = {
+        defaultPrevented: false,
+        preventDefault() {
+          this.defaultPrevented = true;
+        },
+      };
+      // Main's handler runs first and cancels; mirror that order for the host's listener.
+      cancelled.preventDefault();
+      electronApp.emit('before-quit', cancelled);
+    });
     const secondClosed = second.waitForEvent('close', { timeout: 30_000 });
-    await second.evaluate(() => (window as any).intent.window.close());
+    // As the window's close button does.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
     await secondClosed;
     expect(log.join('')).toContain('[app console] session-ended {"reason":"closed"}');
     expect(await app.evaluate(() => (globalThis as any).__intentAppsE2e.openAppIds())).toEqual([]);
