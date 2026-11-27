@@ -1,3 +1,4 @@
+// @verify-changed-triggers: tests/fixtures/hello-capabilities.json
 /**
  * Daemon request budgets for everyday flows (intent-hq/cloudlands-fe#5063).
  *
