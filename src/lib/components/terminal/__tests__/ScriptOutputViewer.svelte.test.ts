@@ -34,6 +34,7 @@ const {
   scriptSelectorArgs,
   lifecycleGate,
   outputReadableRef,
+  runtimeReadableRef,
   authorityReadableRef,
   retainedReadableRef,
   workflowOutcomeRef,
@@ -45,6 +46,7 @@ const {
   scriptSelectorArgs: [] as unknown[][],
   lifecycleGate: { hidesAgentLifecycleActions: false },
   outputReadableRef: { value: null as any },
+  runtimeReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
   retainedReadableRef: { value: null as any },
   workflowOutcomeRef: { value: null as any },
@@ -142,6 +144,8 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
       (workspaceArg: any, scriptArg: any) => {
         scriptSelectorArgs.push([workspaceArg, scriptArg]);
         if (getter.name === 'getOutput' && outputReadableRef.value) return outputReadableRef.value;
+        if (getter.name === 'getRuntime' && runtimeReadableRef.value)
+          return runtimeReadableRef.value;
         return {
           subscribe: (fn: (v: T) => void) => {
             let workspaceId: string | undefined;
@@ -181,15 +185,16 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
   }
   return {
     selectScriptById: makeSel(getScript),
-    selectScriptRuntime: makeSel(
-      (workspaceId, scriptId) =>
+    selectScriptRuntime: makeSel(function getRuntime(workspaceId: string, scriptId: string) {
+      return (
         getScript(workspaceId, scriptId)?.runtime ?? {
           status: 'idle',
           pid: null,
           exitCode: null,
           restartCount: 0,
-        },
-    ),
+        }
+      );
+    }),
     selectScriptOutput: makeSel(getOutput),
     selectScriptRetainedOutput: () => retainedReadableRef.value,
     selectScriptWorkflowOutcome: () => workflowOutcomeRef.value,
@@ -287,6 +292,7 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     scriptSelectorArgs.length = 0;
     lifecycleGate.hidesAgentLifecycleActions = false;
     outputReadableRef.value = null;
+    runtimeReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
     workflowOutcomeRef.value = createControllableReadable(undefined);
     mockGetDefinition
@@ -470,6 +476,7 @@ describe('retained output viewer lifecycle', () => {
     xtermMock.constructorOptions.length = 0;
     scriptSelectorArgs.length = 0;
     outputReadableRef.value = null;
+    runtimeReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
     workflowOutcomeRef.value = createControllableReadable(undefined);
     mockGetDefinition
@@ -569,7 +576,7 @@ describe('retained output viewer lifecycle', () => {
     expect(terminal.dispose).not.toHaveBeenCalled();
   });
 
-  it('keeps every live chunk when the snapshot read failed', async () => {
+  it('keeps live bytes the daemon no longer has when its first answer has no output', async () => {
     outputReadableRef.value = createControllableReadable({
       chunks: [{ text: 'live bytes', timestamp: 'now' }],
       dropped: 0,
@@ -577,10 +584,135 @@ describe('retained output viewer lifecycle', () => {
     render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
     await waitForXTermInit();
     const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable', liveOffset: 1 });
+    await tick();
     retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
     await tick();
     expect(textSinceLastReset(terminal)).toBe('live bytes');
-    expect(terminal.reset).not.toHaveBeenCalled();
+  });
+
+  it('clears a shown run when the next run has no output yet', async () => {
+    const old = { text: 'old live\n', timestamp: 'a' };
+    outputReadableRef.value = createControllableReadable({ chunks: [old], dropped: 0 });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[1 lines]\nold run\n',
+      liveOffset: 1,
+    });
+    await tick();
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable', liveOffset: 1 });
+    await tick();
+    outputReadableRef.value.set({
+      chunks: [old, { text: 'new run\n', timestamp: 'b' }],
+      dropped: 0,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toBe('new run\n');
+  });
+
+  it('keeps richer same-run history when a capped refresh arrives', async () => {
+    const chunk = (text: string) => ({ text, timestamp: text });
+    runtimeReadableRef.value = createControllableReadable<any>({
+      status: 'running',
+      startedAt: 't1',
+      restartCount: 0,
+    });
+    outputReadableRef.value = createControllableReadable({
+      chunks: [chunk('line 1\n'), chunk('line 2\n')],
+      dropped: 0,
+    });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[2 lines]\nline 1\nline 2\n',
+      liveOffset: 2,
+    });
+    await tick();
+    outputReadableRef.value.set({
+      chunks: [chunk('line 1\n'), chunk('line 2\n'), chunk('line 3\n')],
+      dropped: 0,
+    });
+    await tick();
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[showing last 1 of 3 lines; older output omitted to fit the reply size limit]\nline 3\n',
+      liveOffset: 3,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\n');
+
+    runtimeReadableRef.value.set({ status: 'running', startedAt: 't2', restartCount: 0 });
+    await tick();
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[showing last 1 of 9 lines]\nnext run\n',
+      liveOffset: 3,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toBe(
+      '\x1b[2m[showing last 1 of 9 lines]\x1b[22m\nnext run\n',
+    );
+  });
+
+  it('requests a new snapshot only when a new run starts', async () => {
+    const { store } = await import('$store/renderer/store');
+    runtimeReadableRef.value = createControllableReadable<any>({
+      status: 'running',
+      startedAt: 't1',
+      restartCount: 0,
+    });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await tick();
+    const requests = () =>
+      (vi.mocked(store.dispatch).mock.calls as any[]).filter(
+        ([a]) => a.type === 'scripts/outputRequested',
+      ).length;
+    expect(requests()).toBe(1);
+    for (const runtime of [
+      { status: 'running', startedAt: 't1', detectedUrl: 'http://localhost:5173' },
+      { status: 'running', startedAt: 't1', readiness: 'ready' },
+      { status: 'exited', startedAt: 't1', exitCode: 0 },
+    ]) {
+      runtimeReadableRef.value.set({ restartCount: 0, ...runtime });
+      await tick();
+    }
+    expect(requests()).toBe(1);
+    runtimeReadableRef.value.set({ status: 'starting', restartCount: 0 });
+    await tick();
+    runtimeReadableRef.value.set({ status: 'running', startedAt: 't2', restartCount: 0 });
+    await tick();
+    expect(requests()).toBe(3);
+  });
+
+  it('keeps a shown snapshot on screen while a re-request loads', async () => {
+    scriptState.byWorkspaceId['ws-failed']['s-1'].runtime = { status: 'idle' };
+    const snapshot = {
+      scriptId: 's-1',
+      status: 'available',
+      text: '[1 lines]\nprevious run\n',
+      liveOffset: 0,
+    };
+    retainedReadableRef.value.set(snapshot);
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'loading' });
+    await tick();
+    retainedReadableRef.value.set({ ...snapshot });
+    await tick();
+    await waitForXTermInit();
+    expect(xtermMock.instances).toHaveLength(1);
+    expect(terminal.dispose).not.toHaveBeenCalled();
+    expect(textSinceLastReset(terminal)).toBe('previous run\n');
   });
 
   it('shows retained output of an idle script instead of the run prompt', async () => {

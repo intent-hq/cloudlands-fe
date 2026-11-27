@@ -19,7 +19,7 @@
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
-  import { retainedOutputTerminalText } from './retained-output-text';
+  import { retainedOutputIsComplete, retainedOutputTerminalText } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
@@ -28,6 +28,7 @@
     selectScriptOutput,
     selectScriptRetainedOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
+  import type { ScriptRetainedOutput } from '$store/renderer/slices/scripts/scripts-types';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectWorkspaceScriptReadContext,
@@ -105,16 +106,17 @@
       if (wsId) appStore.dispatch(scriptWorkflowReleased(wsId, fixAgentConsumerId));
     };
   });
-  // The request follows admitted connection, runtime and viewer lifetimes. It
+  // `script.start` clears `startedAt`, so it changes at each new run and not on
+  // URL, readiness or exit updates, which the live stream already shows.
+  const runStartedAt = $derived($runtime$.startedAt ?? null);
+  // The request follows admitted connection, run and viewer lifetimes. It
   // never starts/restores the script, and cleanup fences late snapshots.
   $effect(() => {
     const wsId = workspaceId;
     const id = scriptId;
     const authority = $outputAuthority;
-    const runtime = $runtime$;
+    void runStartedAt;
     if (!authority || !wsId || !id) return;
-    void runtime.status;
-    void runtime.startedAt;
     const viewerId = crypto.randomUUID();
     viewerIdStore.set(viewerId);
     appStore.dispatch(scriptOutputRequested(wsId, id, viewerId));
@@ -124,12 +126,19 @@
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
   // The snapshot the terminal content starts with.
-  let shownSnapshot: object | null = null;
+  let shownSnapshot: ScriptRetainedOutput | null = null;
+  let shownRun: string | null = null;
+  let showsSnapshotText = $state(false);
   let scrolledUp = $state(false);
 
   const retainedAvailable = $derived($retainedOutput$?.status === 'available');
   const hasLiveOutput = $derived($runtime$.status !== 'idle' || $output$.chunks.length > 0);
-  const showTerminal = $derived(hasLiveOutput || retainedAvailable);
+  // A re-request keeps the shown snapshot until its answer replaces it.
+  const showTerminal = $derived(
+    hasLiveOutput ||
+      retainedAvailable ||
+      (showsSnapshotText && $retainedOutput$?.status === 'loading'),
+  );
   // An idle script waits for its snapshot before offering Run, so it does not flash.
   const showRunPrompt = $derived(!showTerminal && $retainedOutput$?.status !== 'loading');
 
@@ -234,23 +243,25 @@
     xterm.onScroll(updateScrolledUp);
     xterm.onWriteParsed(updateScrolledUp);
 
-    writeOutput(false);
+    const snapshot = untrack(() => $retainedOutput$);
+    writeOutput(false, snapshot?.status === 'available' ? snapshot : undefined);
   }
 
   /**
    * Write the retained snapshot, then the raw live stream verbatim from the
-   * position the snapshot covers. Without an answered snapshot, the whole
-   * buffered stream is written.
+   * position the snapshot covers. Without a snapshot, the whole buffered
+   * stream is written.
    */
-  function writeOutput(replace: boolean): void {
+  function writeOutput(replace: boolean, snapshot: ScriptRetainedOutput | undefined): void {
     if (!xterm) return;
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    const snapshot = untrack(() => $retainedOutput$);
     const covered = snapshot?.liveOffset;
     if (replace) xterm.reset();
-    if (covered !== undefined) {
-      shownSnapshot = snapshot ?? null;
-      if (snapshot?.text) xterm.write(retainedOutputTerminalText(snapshot.text));
+    if (snapshot) {
+      shownSnapshot = snapshot;
+      shownRun = untrack(() => runStartedAt);
+      showsSnapshotText = !!snapshot.text;
+      if (snapshot.text) xterm.write(retainedOutputTerminalText(snapshot.text));
     }
     const live = buffer.chunks
       .slice(Math.max((covered ?? 0) - buffer.dropped, 0))
@@ -282,6 +293,8 @@
     fitAddon = null;
     writtenChunkCount = 0;
     shownSnapshot = null;
+    shownRun = null;
+    showsSnapshotText = false;
     scrolledUp = false;
     if (terminalToDispose) {
       disposeXtermAfterViewportSync(terminalToDispose);
@@ -308,11 +321,20 @@
     writtenChunkCount = total;
   });
 
-  // A newly answered snapshot replaces the terminal content.
+  // A newly answered snapshot replaces the terminal content. An empty answer
+  // replaces only an earlier snapshot (a new run): before any snapshot, the live
+  // bytes may be output the daemon no longer has.
   $effect(() => {
     const snapshot = $retainedOutput$;
     if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
-    writeOutput(true);
+    if (snapshot.status !== 'available' && !shownSnapshot) return;
+    // A capped refresh of the shown run is a shorter tail than the terminal already has.
+    const sameRun = shownSnapshot !== null && untrack(() => runStartedAt) === shownRun;
+    if (sameRun && snapshot.text && !retainedOutputIsComplete(snapshot.text)) {
+      shownSnapshot = snapshot;
+      return;
+    }
+    writeOutput(true, snapshot);
   });
 
   // Update font on the mounted xterm when the preference changes. Setting

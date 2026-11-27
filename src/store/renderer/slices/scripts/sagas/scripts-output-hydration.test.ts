@@ -273,7 +273,19 @@ describe('retained script output hydration', () => {
     run.dispatch(request());
     await settle();
     expect(run.text()).toBe('local bytes');
-    expect(run.retained()).toEqual({ scriptId: ID, status: 'unavailable' });
+    expect(run.retained()).toEqual({ scriptId: ID, status: 'unavailable', liveOffset: 1 });
+  });
+  it('joins a snapshot at the stream position from before its read, so in-flight chunks repeat instead of vanishing', async () => {
+    const pending = deferred<string>();
+    transport.request.mockReturnValue(pending.promise);
+    const run = start();
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'logged\n', timestamp: '1' }));
+    run.dispatch(request());
+    await settle();
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'in flight\n', timestamp: '2' }));
+    pending.resolve('[1 lines]\nlogged\n');
+    await settle();
+    expect(run.retained()).toMatchObject({ status: 'available', liveOffset: 1 });
   });
   it('keeps delayed fanout separate from a snapshot containing those bytes', async () => {
     transport.request.mockResolvedValue('[2 lines]\nlast-chunk\n');

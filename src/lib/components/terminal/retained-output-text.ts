@@ -11,3 +11,11 @@ export function retainedOutputTerminalText(text: string): string {
   const body = text.slice(match[0].length);
   return match[1].startsWith('showing') ? `\x1b[2m[${match[1]}]\x1b[22m\n${body}` : body;
 }
+
+/**
+ * Whether a snapshot holds its whole run log: only the plain `[N lines]` header
+ * says so. A capped reply, or one cut to the renderer's size limit, is a tail.
+ */
+export function retainedOutputIsComplete(text: string): boolean {
+  return /^\[\d+ lines\]/.test(text);
+}

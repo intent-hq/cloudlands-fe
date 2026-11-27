@@ -67,12 +67,20 @@
   let answered = false;
   $effect(() => {
     if (!$viewerWorkspaces.includes(workspaceId) || untrack(() => answered)) return;
-    const retained = store.state.scripts.byWorkspaceId[workspaceId]?.retainedOutputs ?? {};
-    for (const [viewerId, output] of Object.entries(retained)) {
+    const scripts = store.state.scripts.byWorkspaceId[workspaceId];
+    for (const [viewerId, output] of Object.entries(scripts?.retainedOutputs ?? {})) {
       if (output.status !== 'loading') continue;
       answered = true;
+      const buffer = scripts?.outputBuffers[output.scriptId];
+      const liveOffset = (buffer?.dropped ?? 0) + (buffer?.chunks.length ?? 0);
       store.dispatch(
-        scriptOutputSnapshotReceived(workspaceId, output.scriptId, viewerId, snapshotText()),
+        scriptOutputSnapshotReceived(
+          workspaceId,
+          output.scriptId,
+          viewerId,
+          snapshotText(),
+          liveOffset,
+        ),
       );
       if (target === 'service') {
         store.dispatch(

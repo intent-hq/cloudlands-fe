@@ -18,6 +18,7 @@ import {
 import {
   selectCanReadScriptDefinition,
   selectScriptById,
+  selectScriptOutput,
   selectScriptOutputStreamReady,
   selectScriptRetainedOutput,
 } from '../scripts-selectors';
@@ -97,6 +98,10 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     );
   }
   function* readSnapshot(): SagaGenerator<void> {
+    // The daemon logs a chunk before it streams it, so every chunk buffered now
+    // is in the reply: the viewer joins the live stream here and never loses output.
+    const buffer = yield* selectScriptOutput.effect(workspaceId, scriptId);
+    const liveOffset = buffer.dropped + buffer.chunks.length;
     // Known IDs remain readable after archive retirement and partial-page refresh.
     const output = yield* call(
       [appClient.scripts, appClient.scripts.output],
@@ -106,7 +111,7 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       ...(remoteAgentId ? [{ remoteAgentId }] : []),
     );
     if (!(yield* isCurrent())) return;
-    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output));
+    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output, liveOffset));
     // Our own publication replaces the viewer entry; a later re-request or
     // release replaces it again and retires this read.
     viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);

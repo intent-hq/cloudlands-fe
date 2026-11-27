@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { retainedOutputTerminalText } from './retained-output-text';
+import { retainedOutputIsComplete, retainedOutputTerminalText } from './retained-output-text';
 
 describe('retainedOutputTerminalText', () => {
   it('drops the whole-log line count header', () => {
@@ -30,5 +30,19 @@ describe('retainedOutputTerminalText', () => {
 
   it('returns nothing for a header-only log', () => {
     expect(retainedOutputTerminalText('[0 lines]\n')).toBe('');
+  });
+});
+
+describe('retainedOutputIsComplete', () => {
+  it('accepts only a snapshot that holds the whole run log', () => {
+    expect(retainedOutputIsComplete('[2 lines]\na\nb')).toBe(true);
+    expect(retainedOutputIsComplete('[showing last 2 of 5 lines]\na\nb')).toBe(false);
+    expect(
+      retainedOutputIsComplete(
+        '[showing last 1 of 9 lines; older output omitted to fit the reply size limit]\nz',
+      ),
+    ).toBe(false);
+    // The renderer keeps only the tail of an oversized reply, which cuts the header off.
+    expect(retainedOutputIsComplete('tail of a cut reply\n')).toBe(false);
   });
 });

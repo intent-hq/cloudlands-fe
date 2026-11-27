@@ -311,35 +311,33 @@ describe('scriptsReducer', () => {
     expect(scriptsReducer(state, scriptOutputStreamInterrupted('missing'))).toBe(state);
   });
 
-  it('records the live stream position only a snapshot with output covers', () => {
+  it('keeps the stream position of every answered read, never of a failed one', () => {
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
-    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(1, 'a')));
-    state = scriptsReducer(state, scriptOutputStreamInterrupted(WS));
-    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(2, 'b')));
-    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-1'));
-    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-2'));
-    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-3'));
-    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(3, 'c')));
+    for (const viewer of ['viewer-1', 'viewer-2', 'viewer-3'])
+      state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', viewer));
 
     state = scriptsReducer(
       state,
-      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[3 lines]\na\nb\nc'),
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[2 lines]\na\nb', 7),
     );
     state = scriptsReducer(
       state,
-      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.'),
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.', 7),
     );
-    state = scriptsReducer(state, scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', ''));
+    state = scriptsReducer(state, scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', '', 7));
 
     const retained = state.byWorkspaceId[WS].retainedOutputs;
     expect(retained?.['viewer-1']).toEqual({
       scriptId: 'script-1',
       status: 'available',
-      text: '[3 lines]\na\nb\nc',
-      liveOffset: 3,
+      text: '[2 lines]\na\nb',
+      liveOffset: 7,
     });
-    // Expired or failed reads cover nothing, so the viewer keeps every live chunk.
-    expect(retained?.['viewer-2']).toEqual({ scriptId: 'script-1', status: 'unavailable' });
+    expect(retained?.['viewer-2']).toEqual({
+      scriptId: 'script-1',
+      status: 'unavailable',
+      liveOffset: 7,
+    });
     expect(retained?.['viewer-3']).toEqual({ scriptId: 'script-1', status: 'unavailable' });
   });
 

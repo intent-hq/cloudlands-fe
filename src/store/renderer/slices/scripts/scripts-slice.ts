@@ -287,7 +287,7 @@ export const scriptOutputRequested =
 export const scriptOutputReleased =
   createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
 export const scriptOutputSnapshotReceived = createAction<
-  [wsId: string, scriptId: string, viewerId: string, text: string]
+  [wsId: string, scriptId: string, viewerId: string, text: string, liveOffset?: number]
 >('scripts/outputSnapshotReceived');
 
 /** Append one raw output chunk for a script */
@@ -665,13 +665,10 @@ scriptsReducer.with(scriptOutputReleased, (state, { payload: [wsId, scriptId, vi
 });
 scriptsReducer.with(
   scriptOutputSnapshotReceived,
-  (state, { payload: [wsId, scriptId, viewerId, text] }) => {
+  (state, { payload: [wsId, scriptId, viewerId, text, liveOffset] }) => {
     const ws = state.byWorkspaceId[wsId];
     if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
-    // The read has no stream cursor, so the viewer joins it to the live stream at
-    // the chunks buffered when the reply arrived (the read starts after the lease).
     const available = !!text && text !== 'No output yet.'; // daemon wire sentinel
-    const buffer = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
     return setWorkspaceState(state, wsId, {
       ...ws,
       retainedOutputs: {
@@ -679,12 +676,8 @@ scriptsReducer.with(
         [viewerId]: {
           scriptId,
           status: available ? 'available' : 'unavailable',
-          ...(available
-            ? {
-                text: text.slice(-MAX_OUTPUT_CHARS),
-                liveOffset: buffer.dropped + buffer.chunks.length,
-              }
-            : {}),
+          ...(available ? { text: text.slice(-MAX_OUTPUT_CHARS) } : {}),
+          ...(text && liveOffset !== undefined ? { liveOffset } : {}),
         },
       },
     });

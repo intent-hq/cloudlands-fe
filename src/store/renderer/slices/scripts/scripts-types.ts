@@ -42,14 +42,15 @@ export type ScriptOutputBuffer = {
 };
 
 /** A viewer-owned formatted poll result, never part of the raw PTY stream. */
-type ScriptRetainedOutput = {
+export type ScriptRetainedOutput = {
   scriptId: string;
   status: 'loading' | 'available' | 'unavailable';
   text?: string;
   /**
-   * Live stream position (`dropped` + chunk index) when the snapshot arrived:
-   * chunks before it are in the snapshot. Set only with `text`, so an expired or
-   * failed read never hides live bytes.
+   * Live stream position (`dropped` + chunk index) just before the read. The
+   * daemon logs each chunk before it streams it, so every chunk before this
+   * position is in the reply; later chunks may repeat its tail. Absent after a
+   * failed read.
    */
   liveOffset?: number;
 };
