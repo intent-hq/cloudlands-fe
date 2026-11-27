@@ -161,6 +161,8 @@ export interface HudGridFilter {
   repo: string | null;
   /** Selected card state keys; empty = all statuses. */
   states: HudCardStateKey[];
+  /** Include workspaces set aside on Home; off by default. */
+  showSetAside: boolean;
 }
 
-export const EMPTY_HUD_GRID_FILTER: HudGridFilter = { repo: null, states: [] };
+export const EMPTY_HUD_GRID_FILTER: HudGridFilter = { repo: null, states: [], showSetAside: false };

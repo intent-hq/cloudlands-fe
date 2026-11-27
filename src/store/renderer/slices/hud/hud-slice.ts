@@ -333,6 +333,8 @@ export const hudGridFilterStateToggled = createAction<[stateKey: HudCardStateKey
 );
 /** Header status-menu "All statuses" reset. */
 export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesCleared');
+/** Header status-menu toggle for workspaces set aside on Home. */
+export const hudGridFilterSetAsideToggled = createAction('hud/gridFilterSetAsideToggled');
 /**
  * Persisted per-backend grid filter restored on activation (already sanitized
  * by the root-owned HUD saga).
@@ -537,6 +539,10 @@ hudReducer.with(hudGridFilterStatesCleared, (state) =>
     ? state
     : { ...state, gridFilter: { ...state.gridFilter, states: [] } },
 );
+hudReducer.with(hudGridFilterSetAsideToggled, (state) => ({
+  ...state,
+  gridFilter: { ...state.gridFilter, showSetAside: !state.gridFilter.showSetAside },
+}));
 hudReducer.with(hudGridFilterHydrated, (state, { payload: [filter] }) => {
   if (!state.active) return state;
   return { ...state, gridFilter: filter };

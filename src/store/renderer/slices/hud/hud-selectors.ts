@@ -67,6 +67,7 @@ import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-cons
 import { ownedDockRecording } from '$features/hud/utils/dock-recording-indicator';
 import { getPrincipalActionContext } from '../principal/principal-context';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
+import { selectHomeSetAsideRecords } from '$features/home/home-workspaces-selectors';
 
 /** A live native recording owned by this dock's selected draft and principal. */
 export const selectDockRecordingIndicator = store.createSelector((state) => {
@@ -218,6 +219,31 @@ const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
     });
 });
 
+const NO_HIDDEN_WORKSPACES: ReadonlySet<string> = new Set();
+
+/** Workspaces set aside on Home that the HUD hides unless its filter shows them. */
+const selectHudHiddenSetAsideIds = store.createSelector((state): ReadonlySet<string> => {
+  if (state.hud.gridFilter.showSetAside) return NO_HIDDEN_WORKSPACES;
+  const records = selectHomeSetAsideRecords.select(state);
+  return Object.keys(records).length === 0 ? NO_HIDDEN_WORKSPACES : new Set(Object.keys(records));
+});
+
+/** HUD workspaces after the set-aside filter: the grid, counters and attention panel. */
+const selectHudVisibleWorkspaces = store.createSelector((state): Workspace[] => {
+  const hidden = selectHudHiddenSetAsideIds.select(state);
+  const workspaces = selectHudWorkspaces.select(state);
+  return hidden.size === 0
+    ? workspaces
+    : workspaces.filter((workspace) => !hidden.has(String(workspace.id)));
+});
+
+/** HUD workspaces currently set aside on Home, whether or not the filter shows them. */
+export const selectHudSetAsideCount = store.createSelector((state): number => {
+  const records = selectHomeSetAsideRecords.select(state);
+  return selectHudWorkspaces.select(state).filter((workspace) => records[String(workspace.id)])
+    .length;
+});
+
 /**
  * The `agentSummary` aggregate is typed as the slim `WorkspaceAgentIdSummary`
  * on the FE `Workspace`, but the daemon emits the richer
@@ -253,7 +279,7 @@ export const selectHudAgentStateCounts = store.createSelector(
     const counts = Object.fromEntries(
       HUD_AGENT_STATE_BUCKETS.map((bucket) => [bucket, 0]),
     ) as Record<HudAgentStateBucket, number>;
-    for (const workspace of selectHudWorkspaces.select(state)) {
+    for (const workspace of selectHudVisibleWorkspaces.select(state)) {
       for (const agent of agentInfosOf(workspace)) {
         counts[agentBucketOf(state, agent).bucket] += 1;
       }
@@ -428,7 +454,7 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
   const flags = state.hud.attentionByWorkspaceId;
   const questions = state.hud.questionsByAgentId;
   const items: HudAttentionItem[] = [];
-  for (const workspace of selectHudWorkspaces.select(state)) {
+  for (const workspace of selectHudVisibleWorkspaces.select(state)) {
     const workspaceId = String(workspace.id);
     let covered = false;
     for (const agent of cardAgentsOf(workspace, state)) {
@@ -504,7 +530,12 @@ export interface HudFeedItem extends HudFeedEntry {
 /** FEED panel rows (newest first) with workspace titles and agent names resolved. */
 export const selectHudFeedItems = store.createSelector((state): HudFeedItem[] => {
   const names = selectHudAgentNamesById.select(state);
-  return state.hud.feed.map((entry) => ({
+  const hidden = selectHudHiddenSetAsideIds.select(state);
+  const feed =
+    hidden.size === 0
+      ? state.hud.feed
+      : state.hud.feed.filter((entry) => !hidden.has(entry.source));
+  return feed.map((entry) => ({
     ...entry,
     workspaceTitle: getItem(state.workspace.workspaces, entry.source as WorkspaceId)?.title ?? null,
     resolvedAgentName: entry.agentName ?? (entry.agentId ? (names[entry.agentId] ?? null) : null),
@@ -597,7 +628,7 @@ export interface HudCardAgent {
  * the failing agent's §5.5 `stopReason` (empty text when none is tracked —
  * the component renders a generic failed line, never the status message).
  */
-export interface HudCardAttentionSnippet {
+interface HudCardAttentionSnippet {
   kind: 'question' | 'blocker' | 'discussion' | 'pending' | 'failed';
   /**
    * Question/reason/error text (agent content; i18n-exempt); empty for
@@ -1139,7 +1170,7 @@ function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
  * renders its unread overlay without waiting for a live event. `isUnread`
  * derives from the same resolved value (`=== 'unread'`).
  */
-export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
+const selectAllHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
   const flags = state.hud.attentionByWorkspaceId;
   // Resolved hardware-console key assignment, served verbatim from its
   // owning slice (same resolution the sidebar badge uses — no re-derivation).
@@ -1181,6 +1212,13 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       agents: keepLiveWithAncestors(agents),
     };
   });
+});
+
+/** Center-grid cards without the workspaces the set-aside filter hides. */
+export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
+  const hidden = selectHudHiddenSetAsideIds.select(state);
+  const cards = selectAllHudWorkspaceCards.select(state);
+  return hidden.size === 0 ? cards : cards.filter((card) => !hidden.has(card.workspaceId));
 });
 
 const WORKSPACE_TAB_STATUS_VISIBLE_LIMIT = 4;
@@ -1300,7 +1338,7 @@ export const selectWorkspaceTabStatuses = store.createSelector(
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;
   let count = 0;
-  for (const workspace of selectHudWorkspaces.select(state)) {
+  for (const workspace of selectHudVisibleWorkspaces.select(state)) {
     let agentCounted = false;
     for (const agent of cardAgentsOf(workspace, state)) {
       if (
@@ -1412,7 +1450,7 @@ function completeTaskReport(
  */
 export const selectHudTakeoverView = store.createSelector(
   (state, workspaceId: string): HudTakeoverView | null => {
-    const card = selectHudWorkspaceCards
+    const card = selectAllHudWorkspaceCards
       .select(state)
       .find((entry) => entry.workspaceId === workspaceId);
     if (!card) return null;
@@ -1503,10 +1541,14 @@ function dockBadgeKind(status: WorkspaceTabStatus | undefined): DockWorkspaceBad
 
 const DOCK_MINIMUM_VISIBLE_WORKSPACES = 3;
 
-/** Keep recent human conversations and at least the three newest confirmed entries. */
+/**
+ * Keep recent human conversations and at least the three newest confirmed entries.
+ * Workspaces set aside on Home never appear; the HUD's set-aside filter does not apply here.
+ */
 export const selectDockWorkspaces = store.createSelector(
   (state, age: 'recent' | 'older' = 'recent'): DockWorkspaceView[] => {
-    const cards = selectHudWorkspaceCards.select(state);
+    const cards = selectAllHudWorkspaceCards.select(state);
+    const setAside = selectHomeSetAsideRecords.select(state);
     const statuses = selectWorkspaceTabStatuses.select(state);
     const workspacesById = new Map(
       selectHudWorkspaces.select(state).map((workspace) => [String(workspace.id), workspace]),
@@ -1519,7 +1561,7 @@ export const selectDockWorkspaces = store.createSelector(
 
     for (const card of cards) {
       const workspace = workspacesById.get(card.workspaceId);
-      if (!workspace || workspace.id === CHIEF_WORKSPACE_ID) continue;
+      if (!workspace || workspace.id === CHIEF_WORKSPACE_ID || setAside[card.workspaceId]) continue;
       const timestamp = state.hud.dockConversationAtByWorkspaceId[card.workspaceId];
       if (
         !isRecentDockConversation(timestamp, state.hud.dockRecencyNow) &&

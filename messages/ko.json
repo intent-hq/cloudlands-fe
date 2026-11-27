@@ -3073,6 +3073,7 @@
   "hud_filter_allWorkspaces_label": "모든 작업 공간",
   "hud_filter_noRepositories_label": "사용 가능한 저장소가 없습니다.",
   "hud_filter_repoMenu_ariaLabel": "저장소별 필터",
+  "hud_filter_showSetAside_label": "보류 항목 표시",
   "hud_filter_statusMenu_ariaLabel": "상태별 필터",
   "hud_grid_empty_label": "작업 공간 없음",
   "hud_header_fleetOps_label": "FLEET OPS",

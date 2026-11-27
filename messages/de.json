@@ -3073,6 +3073,7 @@
   "hud_filter_allWorkspaces_label": "Alle Arbeitsbereiche",
   "hud_filter_noRepositories_label": "Keine Repositorys verfügbar.",
   "hud_filter_repoMenu_ariaLabel": "Nach Repository filtern",
+  "hud_filter_showSetAside_label": "Zurückgestellte anzeigen",
   "hud_filter_statusMenu_ariaLabel": "Nach Status filtern",
   "hud_grid_empty_label": "KEINE ARBEITSBEREICHE",
   "hud_header_fleetOps_label": "FLEET OPS",

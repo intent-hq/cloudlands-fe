@@ -514,7 +514,11 @@ describe('hud-slice grid filter (header FLEET OPS menus)', () => {
   });
 
   it('hudGridFilterHydrated replaces the filter while active — and is a no-op inactive', () => {
-    const restored = { repo: 'intent-hq/intentd', states: ['failed' as const] };
+    const restored = {
+      repo: 'intent-hq/intentd',
+      states: ['failed' as const],
+      showSetAside: true,
+    };
     const state = hudReducer(activeState(), hudGridFilterHydrated(restored));
     expect(state.gridFilter).toEqual(restored);
 

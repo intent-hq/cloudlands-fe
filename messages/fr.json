@@ -3073,6 +3073,7 @@
   "hud_filter_allWorkspaces_label": "Tous les espaces",
   "hud_filter_noRepositories_label": "Aucun dépôt disponible.",
   "hud_filter_repoMenu_ariaLabel": "Filtrer par dépôt",
+  "hud_filter_showSetAside_label": "Afficher les éléments mis de côté",
   "hud_filter_statusMenu_ariaLabel": "Filtrer par statut",
   "hud_grid_empty_label": "AUCUN ESPACE",
   "hud_header_fleetOps_label": "FLEET OPS",

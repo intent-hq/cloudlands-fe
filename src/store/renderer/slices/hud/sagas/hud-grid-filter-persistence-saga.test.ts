@@ -21,6 +21,7 @@ import {
   hudActivated,
   hudDeactivated,
   hudGridFilterRepoPicked,
+  hudGridFilterSetAsideToggled,
   hudGridFilterStateToggled,
 } from '$store/renderer/slices/hud/hud-slice';
 import { EMPTY_HUD_GRID_FILTER } from '$store/renderer/slices/hud/hud-types';
@@ -98,7 +99,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     // List arrives → the persisted filter for the active backend is restored.
     receiveConnections('remote-1');
     await flush();
-    expect(gridFilter()).toEqual({ repo: 'intent-hq/intentd', states: [] });
+    expect(gridFilter()).toEqual({ repo: 'intent-hq/intentd', states: [], showSetAside: false });
   });
 
   it('persists filter changes under the active backend id', async () => {
@@ -108,11 +109,13 @@ describe('hud-grid-filter-persistence (real store)', () => {
 
     appStore.dispatch(hudGridFilterRepoPicked('intent-hq/monorepo'));
     appStore.dispatch(hudGridFilterStateToggled('failed'));
+    appStore.dispatch(hudGridFilterSetAsideToggled());
     await flush();
 
     expect(JSON.parse(window.localStorage.getItem(remoteKey('remote-1'))!)).toEqual({
       repo: 'intent-hq/monorepo',
       states: ['failed'],
+      showSetAside: true,
     });
   });
 
@@ -134,6 +137,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     expect(JSON.parse(window.localStorage.getItem(remoteKey('remote-2'))!)).toEqual({
       repo: null,
       states: ['blocked'],
+      showSetAside: false,
     });
     expect(window.localStorage.getItem(remoteKey('remote-1'))).toBe(
       JSON.stringify({ repo: 'r1/repo', states: ['wait'] }),
@@ -151,7 +155,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     receiveConnections('remote-1');
     stop = startHudGridFilterPersistence();
     await flush();
-    expect(gridFilter()).toEqual({ repo: 'r1/repo', states: [] });
+    expect(gridFilter()).toEqual({ repo: 'r1/repo', states: [], showSetAside: false });
 
     // Active id flips to remote-2 without a restart of the persistence loop.
     receiveConnections('remote-2');
@@ -174,12 +178,13 @@ describe('hud-grid-filter-persistence (real store)', () => {
     stop = startHudGridFilterPersistence();
     await flush();
 
-    expect(gridFilter()).toEqual({ repo: 'local/repo', states: [] });
+    expect(gridFilter()).toEqual({ repo: 'local/repo', states: [], showSetAside: false });
     appStore.dispatch(hudGridFilterStateToggled('complete'));
     await flush();
     expect(JSON.parse(window.localStorage.getItem(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
       repo: 'local/repo',
       states: ['complete'],
+      showSetAside: false,
     });
   });
 
@@ -199,7 +204,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     receiveConnections(LOCAL_CONNECTION_ID);
     stop = startHudGridFilterPersistence();
     await flush();
-    expect(gridFilter()).toEqual({ repo: 'a/b', states: ['failed', 'wait'] });
+    expect(gridFilter()).toEqual({ repo: 'a/b', states: ['failed', 'wait'], showSetAside: false });
   });
 
   it('stopping before hudDeactivated leaves the last persisted value intact', async () => {
@@ -215,6 +220,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     expect(JSON.parse(window.localStorage.getItem(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
       repo: 'kept/repo',
       states: [],
+      showSetAside: false,
     });
   });
 });
@@ -233,6 +239,16 @@ describe('sanitizePersistedHudGridFilter', () => {
   it('keeps known keys, drops unknown ones, collapses duplicates, empties blank repo', () => {
     expect(
       sanitizePersistedHudGridFilter({ repo: '', states: ['wait', 'nope', 'wait', 'failed'] }),
-    ).toEqual({ repo: null, states: ['wait', 'failed'] });
+    ).toEqual({ repo: null, states: ['wait', 'failed'], showSetAside: false });
+  });
+
+  it('restores the set-aside toggle and keeps it off for older or malformed documents', () => {
+    expect(
+      sanitizePersistedHudGridFilter({ repo: null, states: [], showSetAside: true }).showSetAside,
+    ).toBe(true);
+    expect(sanitizePersistedHudGridFilter({ repo: null, states: [] }).showSetAside).toBe(false);
+    expect(
+      sanitizePersistedHudGridFilter({ repo: null, states: [], showSetAside: 'yes' }).showSetAside,
+    ).toBe(false);
   });
 });

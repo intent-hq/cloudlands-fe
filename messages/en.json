@@ -3073,6 +3073,7 @@
   "hud_filter_allWorkspaces_label": "All workspaces",
   "hud_filter_noRepositories_label": "No repositories available.",
   "hud_filter_repoMenu_ariaLabel": "Filter by repository",
+  "hud_filter_showSetAside_label": "Show set aside",
   "hud_filter_statusMenu_ariaLabel": "Filter by status",
   "hud_grid_empty_label": "No workspaces",
   "hud_header_fleetOps_label": "Fleet ops",
