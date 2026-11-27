@@ -107,18 +107,16 @@ const raw: RawIntentBridge = {
 
 /**
  * Runs in the page's main world (serialized by executeInMainWorld), so it must
- * not reference anything outside its own body. Errors are built here: an Error
- * thrown or rejected across contextBridge keeps only its message, and the app
- * needs `code` and `data` (`IntentError { code, message, data? }`).
+ * not reference anything outside its own body. Refusals are built here as plain
+ * `{ code, message, data? }` objects (contract: the raw bridge rejects and throws
+ * plain objects; the SDK makes `IntentError` from them). An object thrown or
+ * rejected across contextBridge would turn into an Error with only a message.
  */
 export function installIntentBridge(bridge: RawIntentBridge): void {
-  const intentError = (shape: { code: string; message: string; data?: unknown }) => {
-    const error = new Error(shape.message) as Error & { code: string; data?: unknown };
-    error.name = 'IntentError';
-    error.code = shape.code;
-    if (shape.data !== undefined) error.data = shape.data;
-    return error;
-  };
+  const intentError = (shape: { code: string; message: string; data?: unknown }) =>
+    shape.data === undefined
+      ? { code: shape.code, message: shape.message }
+      : { code: shape.code, message: shape.message, data: shape.data };
   const call =
     (name: string) =>
     async (...args: unknown[]) => {

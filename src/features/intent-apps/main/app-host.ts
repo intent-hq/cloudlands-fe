@@ -485,7 +485,10 @@ export class IntentAppHost {
     };
     setTimeout(close, SESSION_ENDED_CLOSE_DELAY_MS);
     if (reopen) {
+      // A closeAll (Labs off) during the grace period cancels the reopen.
+      const generation = this.generation;
       entry.window.once('closed', () => {
+        if (generation !== this.generation) return;
         void this.openApp(entry.appId).catch((error: Error) =>
           logger.warn('Could not reopen an app with its new grant', {
             appId: entry.appId,

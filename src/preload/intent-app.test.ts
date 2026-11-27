@@ -46,15 +46,14 @@ describe('Intent app window preload (window.intent)', () => {
     });
   });
 
-  it('rejects with an IntentError that keeps code and data', async () => {
+  it('rejects with a plain { code, message, data } object (the SDK builds IntentError)', async () => {
     electron.invoke.mockResolvedValueOnce({
       ok: false,
       error: { code: 'rate-limited', message: 'slow down', data: { retryAfterMs: 1000 } },
     });
     const error = await intent.notifications.show({ title: 'x' }).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect(error).toMatchObject({
-      name: 'IntentError',
+    expect(error).not.toBeInstanceOf(Error);
+    expect(error).toEqual({
       code: 'rate-limited',
       message: 'slow down',
       data: { retryAfterMs: 1000 },
@@ -74,7 +73,7 @@ describe('Intent app window preload (window.intent)', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses synchronously: unknown types not-supported, shortcut without the grant forbidden', () => {
+  it('refuses synchronously with plain objects: unknown types not-supported, shortcut without the grant forbidden', () => {
     const thrown = (type: string) => {
       try {
         intent.on(type, () => {});
@@ -83,8 +82,9 @@ describe('Intent app window preload (window.intent)', () => {
         return error as { code?: string };
       }
     };
-    expect(thrown('message')).toMatchObject({ name: 'IntentError', code: 'not-supported' });
-    expect(thrown('shortcut')).toMatchObject({ name: 'IntentError', code: 'forbidden' });
+    expect(thrown('message')).toMatchObject({ code: 'not-supported' });
+    expect(thrown('message')).not.toBeInstanceOf(Error);
+    expect(thrown('shortcut')).toMatchObject({ code: 'forbidden' });
     expect(thrown('session-ended')).toBeNull();
   });
 });
