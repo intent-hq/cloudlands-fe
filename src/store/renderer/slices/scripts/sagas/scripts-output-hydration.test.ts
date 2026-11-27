@@ -207,6 +207,21 @@ describe('retained script output hydration', () => {
       expect(transport.request).toHaveBeenCalledTimes(1);
     },
   );
+  it('keeps a pending read through state updates of the same run', async () => {
+    const pending = deferred<string>();
+    transport.request.mockReturnValue(pending.promise);
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    run.dispatch(updateRuntimeState(WS, ID, { detectedUrl: 'http://localhost:5173' }));
+    run.dispatch(updateRuntimeState(WS, ID, { status: 'exited', exitCode: 0 }));
+    pending.resolve('[1 lines]\nbefore attach\n');
+    await settle();
+    expect(run.retained()).toMatchObject({
+      status: 'available',
+      text: '[1 lines]\nbefore attach\n',
+    });
+  });
   it('a released old viewer cannot cancel or overwrite a replacement viewer', async () => {
     const old = deferred<string>(),
       fresh = deferred<string>();
@@ -393,6 +408,8 @@ describe('retained script output hydration', () => {
         await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
         expect(outputReads()).toHaveLength(1);
         expect(run.retained()?.text).toBe('before timeout');
+        // Read before the stream was routable: it joins no unbroken stream.
+        expect(run.retained()?.streamEpoch).toBeUndefined();
         // The open-ended wait must not keep journaling script changes.
         expect(run.state.scripts.byWorkspaceId[WS]?.pendingReads).toEqual({});
 
@@ -407,11 +424,18 @@ describe('retained script output hydration', () => {
         await vi.advanceTimersByTimeAsync(0);
         expect(outputReads()).toHaveLength(2);
         expect(run.retained()?.text).toBe('before timeout\nduring the gap');
+        const recovered = run.retained()?.streamEpoch;
+        expect(recovered).toEqual(expect.any(Number));
 
         run.dispatch(scriptOutputStreamInterrupted(WS));
         run.dispatch(scriptOutputStreamReady(WS));
         await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
         expect(outputReads()).toHaveLength(2);
+        transport.request.mockResolvedValueOnce('after reconnect');
+        run.dispatch(request('viewer-2'));
+        await vi.advanceTimersByTimeAsync(0);
+        // A stream gap separates reads before and after it.
+        expect(run.retained('viewer-2')?.streamEpoch).not.toBe(recovered);
       } finally {
         vi.useRealTimers();
       }

@@ -144,6 +144,14 @@ export const selectScriptOutputStreamReady = store.createSelector(
   (state, wsId: string): boolean => !!state.scripts?.byWorkspaceId[wsId]?.outputStreamReady,
 );
 
+/** The workspace's current unbroken live stream, or undefined while it is not routable. */
+export const selectScriptOutputStreamEpoch = store.createSelector(
+  (state, wsId: string): number | undefined => {
+    const ws = state.scripts?.byWorkspaceId[wsId];
+    return ws?.outputStreamReady ? (ws.outputStreamEpoch ?? 0) : undefined;
+  },
+);
+
 /** Scripts data for a specific workspace (parameterized). */
 export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,

@@ -633,6 +633,7 @@ describe('retained output viewer lifecycle', () => {
       status: 'available',
       text: '[2 lines]\nline 1\nline 2\n',
       liveOffset: 2,
+      streamEpoch: 0,
     });
     await tick();
     outputReadableRef.value.set({
@@ -645,6 +646,7 @@ describe('retained output viewer lifecycle', () => {
       status: 'available',
       text: '[showing last 1 of 3 lines; older output omitted to fit the reply size limit]\nline 3\n',
       liveOffset: 3,
+      streamEpoch: 0,
     });
     await tick();
     expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\n');
@@ -661,6 +663,47 @@ describe('retained output viewer lifecycle', () => {
     expect(textSinceLastReset(terminal)).toBe(
       '\x1b[2m[showing last 1 of 9 lines]\x1b[22m\nnext run\n',
     );
+  });
+
+  it('takes a capped same-run snapshot that may hold output the stream missed', async () => {
+    runtimeReadableRef.value = createControllableReadable<any>({
+      status: 'running',
+      startedAt: 't1',
+      restartCount: 0,
+    });
+    outputReadableRef.value = createControllableReadable({ chunks: [], dropped: 0 });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    const capped = (body: string) =>
+      `[showing last 1 of 9 lines; older output omitted to fit the reply size limit]\n${body}`;
+    // A fallback read from before the stream was routable, then its recovery read.
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: capped('fallback\n'),
+      liveOffset: 0,
+    });
+    await tick();
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: capped('recovered gap\n'),
+      liveOffset: 0,
+      streamEpoch: 0,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toContain('recovered gap\n');
+    // A read after a stream interruption may hold output that was never streamed.
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: capped('after reconnect\n'),
+      liveOffset: 0,
+      streamEpoch: 1,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toContain('after reconnect\n');
   });
 
   it('requests a new snapshot only when a new run starts', async () => {

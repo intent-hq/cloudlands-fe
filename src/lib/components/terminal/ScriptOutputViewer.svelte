@@ -328,9 +328,14 @@
     const snapshot = $retainedOutput$;
     if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
     if (snapshot.status !== 'available' && !shownSnapshot) return;
-    // A capped refresh of the shown run is a shorter tail than the terminal already has.
-    const sameRun = shownSnapshot !== null && untrack(() => runStartedAt) === shownRun;
-    if (sameRun && snapshot.text && !retainedOutputIsComplete(snapshot.text)) {
+    // A capped refresh of the shown run, joined to the same unbroken stream, is
+    // a shorter tail than the terminal already has. After a stream gap it may
+    // hold output that was never streamed, so it replaces the terminal.
+    const sameStream =
+      shownSnapshot?.streamEpoch !== undefined &&
+      snapshot.streamEpoch === shownSnapshot.streamEpoch &&
+      untrack(() => runStartedAt) === shownRun;
+    if (sameStream && snapshot.text && !retainedOutputIsComplete(snapshot.text)) {
       shownSnapshot = snapshot;
       return;
     }

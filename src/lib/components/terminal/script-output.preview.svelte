@@ -74,13 +74,10 @@
       const buffer = scripts?.outputBuffers[output.scriptId];
       const liveOffset = (buffer?.dropped ?? 0) + (buffer?.chunks.length ?? 0);
       store.dispatch(
-        scriptOutputSnapshotReceived(
-          workspaceId,
-          output.scriptId,
-          viewerId,
-          snapshotText(),
+        scriptOutputSnapshotReceived(workspaceId, output.scriptId, viewerId, snapshotText(), {
           liveOffset,
-        ),
+          streamEpoch: 0,
+        }),
       );
       if (target === 'service') {
         store.dispatch(

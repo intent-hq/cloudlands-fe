@@ -53,6 +53,11 @@ export type ScriptRetainedOutput = {
    * failed read.
    */
   liveOffset?: number;
+  /**
+   * `outputStreamEpoch` of the unbroken live stream the read was joined to.
+   * Absent when the read started before the stream was routable.
+   */
+  streamEpoch?: number;
 };
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';
@@ -152,6 +157,8 @@ export type ScriptsWorkspaceState = {
    * snapshot and the live stream.
    */
   outputStreamReady?: boolean;
+  /** Counts live stream interruptions: output between epochs was never streamed. */
+  outputStreamEpoch?: number;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
   /** Detection owns every definition, including rows not yet loaded into the cache. */

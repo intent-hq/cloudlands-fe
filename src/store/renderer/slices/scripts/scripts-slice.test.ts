@@ -300,6 +300,7 @@ describe('scriptsReducer', () => {
 
     const ws = state.byWorkspaceId[WS];
     expect(ws.outputBuffers['script-1']).toEqual({ chunks: [], dropped: 2 });
+    expect(ws.outputStreamEpoch).toBe(1);
     expect(ws.retainedOutputs?.['viewer-1']).toEqual({ scriptId: 'script-1', status: 'loading' });
     expect(state.byWorkspaceId['other-ws'].outputBuffers.s.chunks).toHaveLength(1);
     // A viewer that already wrote 2 chunks resumes at the next chunk.
@@ -318,13 +319,19 @@ describe('scriptsReducer', () => {
 
     state = scriptsReducer(
       state,
-      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[2 lines]\na\nb', 7),
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[2 lines]\na\nb', {
+        liveOffset: 7,
+        streamEpoch: 2,
+      }),
     );
     state = scriptsReducer(
       state,
-      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.', 7),
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.', { liveOffset: 7 }),
     );
-    state = scriptsReducer(state, scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', '', 7));
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', '', { liveOffset: 7 }),
+    );
 
     const retained = state.byWorkspaceId[WS].retainedOutputs;
     expect(retained?.['viewer-1']).toEqual({
@@ -332,6 +339,7 @@ describe('scriptsReducer', () => {
       status: 'available',
       text: '[2 lines]\na\nb',
       liveOffset: 7,
+      streamEpoch: 2,
     });
     expect(retained?.['viewer-2']).toEqual({
       scriptId: 'script-1',
