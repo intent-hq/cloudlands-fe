@@ -32,10 +32,31 @@ describe('client.hello probe guard', () => {
     ['saga tuple', "yield call([transport, transport.request], 'client.hello', {});"],
     ['saga context call', "yield call({ context: t, fn: t.request }, 'client.hello');"],
     ['Function.prototype.call', "await backendRequest.call(undefined, 'client.hello', {});"],
+    ['saga fork', "yield fork(backendRequest, 'client.hello', {});"],
+    ['saga spawn', "yield spawn(backendRequest, 'client.hello');"],
+    ['namespaced saga call', "yield effects.call(backendRequest, 'client.hello');"],
+    ['saga apply', "yield apply(transport, transport.request, ['client.hello', {}]);"],
+    ['Function.prototype.apply', "await backendRequest.apply(null, ['client.hello']);"],
+    ['an exported method constant', "export const HELLO_METHOD = 'client.hello';"],
   ])('flags a probe: %s', (_name, ...lines) => {
     const hits = findHelloProbes(lines.join('\n'));
     const expectedLine = lines.findIndex((line) => line.includes('client.hello')) + 1;
     expect(hits).toEqual([{ line: expectedLine, text: lines[expectedLine - 1]?.trim() }]);
+  });
+
+  it('follows a method name held in a same-file constant', () => {
+    const lines = [
+      "const HELLO = 'client.hello';",
+      "const METHODS = { hello: 'client.hello' } as const;",
+      'await backendRequest(HELLO, {});',
+      'await transport.request(METHODS.hello);',
+      'yield* call(backendRequest, HELLO);',
+      'await backendRequest(HELLO, { clientId });',
+      'if (method === HELLO) return snapshot;',
+    ];
+    expect(findHelloProbes(lines.join('\n'))).toEqual(
+      [3, 4, 5].map((line) => ({ line, text: lines[line - 1] })),
+    );
   });
 
   it.each([
@@ -57,6 +78,9 @@ describe('client.hello probe guard', () => {
     ],
     ['a non-request call', "log('client.hello', {});"],
     ['a saga call of another function', "yield call(track, 'client.hello', {});"],
+    ['a saga fork of another function', "yield fork(track, 'client.hello');"],
+    ['an apply of another function', "yield apply(log, log.info, ['client.hello', {}]);"],
+    ['a local method constant', "const HELLO = 'client.hello';"],
     ['a string comparison', "if (method === 'client.hello') return snapshot;"],
     ['a line comment', "// backendRequest('client.hello', {}) renegotiates the connection"],
     ['a block comment', "/* transport.request('client.hello') */"],
@@ -87,6 +111,10 @@ describe('client.hello probe guard', () => {
     ['src/features/backend/backend-saga.ts', true],
     ['src/lib/client/live/live-clients-client.ts', true],
     ['src/routes/+layout.svelte', true],
+    ['src/preload/index.ts', true],
+    ['src/lib/browser-mock.ts', true],
+    ['src/store/renderer/mock-bootstrap.ts', true],
+    ['src/lib/component-catalog/chat-polish/chat-polish-fixture-adapter.ts', true],
     ['src/main/index.ts', false],
     ['src/features/backend/main/backend.ipc.ts', false],
     ['src/shared/main/paths.ts', false],
@@ -96,8 +124,8 @@ describe('client.hello probe guard', () => {
     ['src/test/fake-daemon-socket.ts', false],
     ['src/__mocks__/electron.ts', false],
     ['src/lib/client/mocks/browser-mock.ts', false],
-    ['src/lib/browser-mock.ts', false],
-    ['src/shared/ipc-mock-router.ts', false],
+    ['src/lib/client/mock/mock-app-client.ts', false],
+    ['scripts/test-fixtures/hello.ts', false],
     ['src/features/home/home-integrations-fixtures.ts', false],
     ['src/features/script-monitor/script-monitor.fixture.ts', false],
     ['src/lib/components/workspace/list-labels.preview-fixtures.ts', false],
@@ -112,7 +140,7 @@ describe('client.hello probe guard', () => {
       file('src/features/remote-machines/remote-machines-saga.ts', probe),
       file('src/features/backend/main/transfer-connections.ts', probe),
       file('src/features/remote-machines/remote-machines-saga.test.ts', probe),
-      file('src/lib/browser-mock.ts', probe),
+      file('src/lib/client/mocks/browser-mock.ts', probe),
     ];
     expect(checkHelloProbes(files, {})).toEqual({
       hits: [

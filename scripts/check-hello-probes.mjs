@@ -42,11 +42,14 @@ export const REMEDIATION_HINT = [
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const TEST_PATH_PATTERN =
   /(?:^|\/)(?:__tests__|test)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:ct|visual)\.spec\./;
-const MOCK_PATH_PATTERN = /(?:^|[/._-])(?:mocks?|fixtures?)(?:[/._-]|$)/;
+const MOCK_PATH_PATTERN =
+  /(?:^|\/)(?:__mocks__|mocks?|__fixtures__|(?:test-)?fixtures)\/|[.-]fixtures?\.[cm]?[jt]s$/;
 const MAIN_PROCESS_PATTERN = /^src\/(?:[^/]+\/)*main\//;
 const HELLO_METHOD = 'client.hello';
 const REQUEST_FUNCTIONS = new Set(['backendRequest', 'request']);
-// Cheap text filter: a file that cannot contain a probe is not parsed.
+const CALL_EFFECTS = new Set(['call', 'fork', 'spawn']);
+// Cheap text filter: a file that cannot contain a probe is not parsed (a constant
+// imported from elsewhere is reported where it is exported).
 const CANDIDATE_PATTERN = /client\.hello/;
 // Svelte markup is not parsed, so a hello literal there fails closed.
 const MARKUP_PROBE_PATTERN = /(['"`])client\.hello\1/g;
@@ -82,34 +85,105 @@ function isRequestFunction(node) {
   return false;
 }
 
-// The params argument slot of a request whose method argument is `node`, or null when
-// `node` is not one: `fn('client.hello', params)`, or `call(fn, 'client.hello', params)`
-// for a saga `call` / `Function.prototype.call`. `undefined` stands for absent params.
-function requestParams(node) {
-  let argument = node;
+// The expression `node` sits in, looking through parentheses, `as`, `satisfies` and `!`.
+function outermost(node) {
+  let current = node;
   while (
-    ts.isParenthesizedExpression(argument.parent) ||
-    ts.isAsExpression(argument.parent) ||
-    ts.isSatisfiesExpression(argument.parent)
+    ts.isParenthesizedExpression(current.parent) ||
+    ts.isAsExpression(current.parent) ||
+    ts.isSatisfiesExpression(current.parent) ||
+    ts.isNonNullExpression(current.parent)
   ) {
-    argument = argument.parent;
+    current = current.parent;
   }
+  return current;
+}
+
+const calleeName = (callee) => {
+  if (ts.isIdentifier(callee)) return callee.text;
+  return ts.isPropertyAccessExpression(callee) ? callee.name.text : null;
+};
+
+// The params of an `apply` whose argument array starts with `node`: a saga
+// `apply(context, fn, [method, params])` or `fn.apply(thisArg, [method, params])`.
+function applyParams(node, array) {
+  if (array.elements.indexOf(node) !== 0) return null;
+  const argument = outermost(array);
   const call = argument.parent;
   if (!ts.isCallExpression(call)) return null;
-  const index = call.arguments.indexOf(argument);
   const callee = unwrapExpression(call.expression);
-  const direct = index === 0 && isRequestFunction(callee);
-  const viaSagaCall =
-    index === 1 && ts.isIdentifier(callee) && callee.text === 'call'
-      ? isRequestFunction(call.arguments[0])
-      : false;
-  const viaFunctionCall =
-    index === 1 &&
+  if (calleeName(callee) !== 'apply') return null;
+  const index = call.arguments.indexOf(argument);
+  const viaFunction =
+    index === 1 && ts.isPropertyAccessExpression(callee) && isRequestFunction(callee.expression);
+  const viaSaga = index === 2 && isRequestFunction(call.arguments[1]);
+  return viaFunction || viaSaga ? { params: array.elements[1] } : null;
+}
+
+// The params argument slot of a request whose method argument is `node`, or null when
+// `node` is not one: `fn(method, params)`; a saga `call` / `fork` / `spawn(fn, method,
+// params)`, bare or namespaced (`effects.call`); `fn.call(thisArg, method, params)`; or
+// either `apply` form. `undefined` stands for absent params.
+function requestParams(node) {
+  const argument = outermost(node);
+  const parent = argument.parent;
+  if (ts.isArrayLiteralExpression(parent)) return applyParams(argument, parent);
+  if (!ts.isCallExpression(parent)) return null;
+  const index = parent.arguments.indexOf(argument);
+  const callee = unwrapExpression(parent.expression);
+  if (index === 0 && isRequestFunction(callee)) return { params: parent.arguments[1] };
+  if (index !== 1 || !CALL_EFFECTS.has(calleeName(callee))) return null;
+  const viaFunction =
     ts.isPropertyAccessExpression(callee) &&
     callee.name.text === 'call' &&
     isRequestFunction(callee.expression);
-  if (!direct && !viaSagaCall && !viaFunctionCall) return null;
-  return { params: call.arguments[index + 1] };
+  return viaFunction || isRequestFunction(parent.arguments[0])
+    ? { params: parent.arguments[2] }
+    : null;
+}
+
+// Same-file `const` names that hold the hello method: `HELLO` for `const HELLO =
+// 'client.hello'`, `METHODS.hello` for `const METHODS = { hello: 'client.hello' }`, and
+// the exported ones. An importing file need not spell the method, so an exported
+// constant is reported where it is declared.
+function helloConstants(source) {
+  const names = new Set();
+  const members = new Set();
+  const exported = [];
+  walk(source, (node) => {
+    if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || !node.initializer) {
+      return;
+    }
+    if (!(node.parent.flags & ts.NodeFlags.Const)) return;
+    const value = unwrapExpression(node.initializer);
+    if (stringValue(value) === HELLO_METHOD) {
+      names.add(node.name.text);
+      if (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Export) exported.push(node);
+    } else if (ts.isObjectLiteralExpression(value)) {
+      for (const property of value.properties) {
+        if (
+          ts.isPropertyAssignment(property) &&
+          stringValue(property.initializer) === HELLO_METHOD
+        ) {
+          members.add(`${node.name.text}.${propertyName(property)}`);
+        }
+      }
+    }
+  });
+  return { names, members, exported };
+}
+
+// Whether `node` spells the hello method: the literal, or a reference to a constant.
+function isHelloMethod(node, constants) {
+  if (ts.isStringLiteralLike(node)) return node.text === HELLO_METHOD;
+  if (ts.isIdentifier(node)) {
+    return constants.names.has(node.text) && !ts.isVariableDeclaration(node.parent);
+  }
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    constants.members.has(`${node.expression.text}.${node.name.text}`)
+  );
 }
 
 // Whether params carry nothing: absent, `undefined`, `void …`, `null` or `{}`.
@@ -131,8 +205,10 @@ function scanFile(content, filePath) {
   const hit = (line) => ({ line, text: lines[line - 1].trim() });
   const probes = [];
   const source = parseSource(content, filePath);
+  const constants = helloConstants(source);
+  for (const declaration of constants.exported) probes.push(hit(lineOf(declaration)));
   walk(source, (node) => {
-    if (!ts.isStringLiteralLike(node) || stringValue(node) !== HELLO_METHOD) return;
+    if (!isHelloMethod(node, constants)) return;
     const request = requestParams(node);
     if (request && isEmptyParams(request.params)) probes.push(hit(lineOf(node)));
   });
