@@ -3092,6 +3092,7 @@
   "hud_system_title": "系统",
   "hud_system_uptime_label": "运行时间",
   "hud_system_workspaces_label": "工作区",
+  "hud_system_workspacesLoading_label": "正在加载工作区",
   "hud_takeover_activeAgents_title": "活跃代理",
   "hud_takeover_dismiss_label": "关闭",
   "hud_takeover_footerMap_label": "地图 · 语义",

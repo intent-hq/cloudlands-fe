@@ -3092,6 +3092,7 @@
   "hud_system_title": "SYSTÈME",
   "hud_system_uptime_label": "DISPONIBILITÉ",
   "hud_system_workspaces_label": "ESPACES",
+  "hud_system_workspacesLoading_label": "Chargement des espaces",
   "hud_takeover_activeAgents_title": "AGENTS ACTIFS",
   "hud_takeover_dismiss_label": "FERMER",
   "hud_takeover_footerMap_label": "CARTE · SÉMANTIQUE",

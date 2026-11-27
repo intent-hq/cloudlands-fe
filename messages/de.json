@@ -3092,6 +3092,7 @@
   "hud_system_title": "SYSTEM",
   "hud_system_uptime_label": "LAUFZEIT",
   "hud_system_workspaces_label": "ARBEITSBEREICHE",
+  "hud_system_workspacesLoading_label": "Arbeitsbereiche werden geladen",
   "hud_takeover_activeAgents_title": "AKTIVE AGENTEN",
   "hud_takeover_dismiss_label": "SCHLIESSEN",
   "hud_takeover_footerMap_label": "KARTE · SEMANTISCH",

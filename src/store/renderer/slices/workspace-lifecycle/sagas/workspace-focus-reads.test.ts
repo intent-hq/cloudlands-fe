@@ -21,6 +21,7 @@ import { daemonEventsSaga } from '../../workspace-events/sagas/daemon-events-sag
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { workspaceReconnectSaga } from './workspace-reconnect-saga';
+import { WORKSPACE_LIST_PAGE_TIMEOUT_MS } from '$lib/client/live/live-workspaces-client';
 
 const WS = 'focus-workspace';
 const settle = () => vi.advanceTimersByTimeAsync(0);
@@ -86,7 +87,13 @@ describe('workspace reads across window and transport lifecycle', () => {
 
   it('keeps live attention projections current while blurred without focus or ownership reads', async () => {
     await settle();
-    expect(lists()).toEqual([{ method: 'workspace.list', params: { includeArchived: true } }]);
+    expect(lists()).toEqual([
+      {
+        method: 'workspace.list',
+        params: { includeArchived: true },
+        options: { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS },
+      },
+    ]);
     expect(workspace()?.attention).toBe('none');
     const initialRequests = backend.requests.length;
     window.dispatchEvent(new Event('blur'));
@@ -129,7 +136,11 @@ describe('workspace reads across window and transport lifecycle', () => {
     expect(recovery.length).toBeGreaterThan(0);
     expect(recovery.length).toBeLessThanOrEqual(2);
     for (const request of recovery) {
-      expect(request).toEqual({ method: 'workspace.list', params: { includeArchived: true } });
+      expect(request).toEqual({
+        method: 'workspace.list',
+        params: { includeArchived: true },
+        options: { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS },
+      });
     }
     push('workspace:attention-changed', { attention: 'none' });
     await settle();

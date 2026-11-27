@@ -3092,6 +3092,7 @@
   "hud_system_title": "시스템",
   "hud_system_uptime_label": "가동 시간",
   "hud_system_workspaces_label": "작업 공간",
+  "hud_system_workspacesLoading_label": "작업 공간 불러오는 중",
   "hud_takeover_activeAgents_title": "활성 에이전트",
   "hud_takeover_dismiss_label": "닫기",
   "hud_takeover_footerMap_label": "맵 · 시맨틱",

@@ -95,6 +95,16 @@ const DELETE_TIMEOUT_MS = 120_000;
  */
 const CREATE_TIMEOUT_MS = 300_000;
 
+/**
+ * Per-page transport timeout for `workspace.list`. A busy daemon has served
+ * single pages in 36–40s; under the flat 30s default each timeout restarted
+ * the whole paged read, so a new window (the HUD) showed only event-seeded
+ * rows for over a minute.
+ *
+ * @internal Exported for tests.
+ */
+export const WORKSPACE_LIST_PAGE_TIMEOUT_MS = 120_000;
+
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
   switch (String(value).toLowerCase()) {
@@ -283,7 +293,10 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     };
     // Follows `nextToken` on a paging daemon (§5.1 Paged workspace lists).
     const request = collectListPages<{ workspaces?: unknown[] }>(
-      (pageParams) => backendRequest<{ workspaces?: unknown[] }>('workspace.list', pageParams),
+      (pageParams) =>
+        backendRequest<{ workspaces?: unknown[] }>('workspace.list', pageParams, {
+          timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS,
+        }),
       params,
       'workspaces',
     ).then((result) => {
