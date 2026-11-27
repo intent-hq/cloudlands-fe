@@ -25,7 +25,7 @@
     snapshotRemainderAfterLive,
   } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
-  import { joinLiveChunk, joinSnapshot, type StreamJoin } from './script-output-join';
+  import { joinLiveChunk, joinSnapshot, streamKey, type StreamJoin } from './script-output-join';
 
   import {
     selectScriptById,
@@ -144,8 +144,13 @@
   // With a positioned snapshot (`scriptOutputCursor: 1`), how far the
   // terminal has written the run's stream; `null` joins by heuristic.
   let streamJoin: StreamJoin | null = null;
-  // Live output showed a gap; the next snapshot replaces the terminal.
-  let streamGap = false;
+  // Live output showed a gap or another run: positioned chunks from this
+  // stream index wait for the fresh snapshot that settles them.
+  let heldFrom: number | null = null;
+  // Another run or boot seen in live output, awaiting its confirming snapshot.
+  let unconfirmedStream: string | null = null;
+  // Runs or boots a snapshot showed to be older than the joined stream.
+  let staleStreams = new Set<string>();
 
   const retainedAvailable = $derived($retainedOutput$?.status === 'available');
   const hasLiveOutput = $derived($runtime$.status !== 'idle' || $output$.chunks.length > 0);
@@ -316,46 +321,69 @@
    * hold follow.
    */
   function writeJoined(buffer: ScriptOutputBuffer, snapshot: ScriptRetainedOutput): void {
-    if (!xterm) return;
+    if (!xterm || !snapshot.cursor) return;
+    const key = streamKey(snapshot.cursor.bootId, snapshot.cursor.runId);
+    if (unconfirmedStream !== null && unconfirmedStream !== key)
+      staleStreams.add(unconfirmedStream);
+    unconfirmedStream = null;
     const shown = shownSnapshot?.cursor;
-    const continues =
-      !streamGap &&
-      shown?.runId === snapshot.cursor?.runId &&
-      shown?.bootId === snapshot.cursor?.bootId;
+    const continues = shown !== undefined && streamKey(shown.bootId, shown.runId) === key;
     const applied = joinSnapshot(continues ? streamJoin : null, snapshot);
     if (applied.reset) xterm.reset();
     if (applied.text) xterm.write(applied.text);
     streamJoin = applied.join;
-    streamGap = false;
     shownSnapshot = snapshot;
     shownRun = untrack(() => runStartedAt);
     showsSnapshotText = snapshot.status === 'available';
-    const from = applied.reset ? buffer.dropped : Math.max(writtenChunkCount, buffer.dropped);
-    writeJoinedChunks(buffer, from, applied.reset ? (snapshot.liveOffset ?? 0) : 0);
+    const resumeFrom = heldFrom;
+    heldFrom = null;
+    if (applied.reset) {
+      const readFrom = snapshot.liveOffset ?? 0;
+      writeJoinedChunks(buffer, buffer.dropped, readFrom, readFrom);
+    } else {
+      const from = Math.max(resumeFrom ?? writtenChunkCount, buffer.dropped);
+      writeJoinedChunks(buffer, from, 0, writtenChunkCount);
+    }
   }
 
   /**
    * Write buffered chunks from stream index `from` through the join. Chunks
-   * before `readFrom` arrived before the snapshot read began: they never
-   * reveal a gap, and notices among them predate the snapshot.
+   * before `readFrom` arrived before the snapshot read began, so they cannot
+   * be newer than it. Notices before `noticesFrom` are already on screen or
+   * predate the snapshot.
    */
-  function writeJoinedChunks(buffer: ScriptOutputBuffer, from: number, readFrom: number): void {
+  function writeJoinedChunks(
+    buffer: ScriptOutputBuffer,
+    from: number,
+    readFrom: number,
+    noticesFrom: number,
+  ): void {
     if (!xterm || !streamJoin) return;
     let text = '';
     buffer.chunks.forEach((chunk, i) => {
       const index = buffer.dropped + i;
       if (index < from || !streamJoin) return;
-      const applied = joinLiveChunk(streamJoin, chunk);
-      if (index < readFrom && (applied.gap || !chunk.position)) return;
-      text += applied.text;
-      streamJoin = applied.join;
-      if (applied.gap && !streamGap) {
-        streamGap = true;
-        refreshGeneration += 1;
+      const step = joinLiveChunk(streamJoin, chunk);
+      if (step.kind === 'skip') return;
+      if (step.kind === 'write' && !chunk.position) {
+        if (index >= noticesFrom) text += step.text;
+        return;
       }
+      if (index < readFrom || heldFrom !== null) return;
+      if (step.kind === 'write') {
+        text += step.text;
+        streamJoin = step.join;
+        return;
+      }
+      if (step.kind === 'foreign') {
+        if (staleStreams.has(step.key)) return;
+        unconfirmedStream = step.key;
+      }
+      heldFrom = index;
+      refreshGeneration += 1;
     });
     if (text) xterm.write(text);
-    writtenChunkCount = buffer.dropped + buffer.chunks.length;
+    writtenChunkCount = Math.max(writtenChunkCount, buffer.dropped + buffer.chunks.length);
   }
 
   function scrollToEnd(): void {
@@ -380,7 +408,9 @@
     fitAddon = null;
     writtenChunkCount = 0;
     streamJoin = null;
-    streamGap = false;
+    heldFrom = null;
+    unconfirmedStream = null;
+    staleStreams = new Set();
     shownSnapshot = null;
     shownRun = null;
     showsSnapshotText = false;
@@ -399,7 +429,7 @@
     if (!xterm) return;
     if (total <= written) return;
     if (streamJoin) {
-      writeJoinedChunks(buffer, written, 0);
+      writeJoinedChunks(buffer, written, 0, written);
       return;
     }
 
@@ -419,6 +449,19 @@
   // bytes may be output the daemon no longer has.
   $effect(() => {
     const snapshot = $retainedOutput$;
+    // A refresh that came back without positions cannot settle held output:
+    // fall back to the text join rather than hold it forever.
+    if (
+      xterm &&
+      heldFrom !== null &&
+      snapshot &&
+      snapshot.status !== 'loading' &&
+      !snapshot.cursor
+    ) {
+      heldFrom = null;
+      writeOutput(true, snapshot.status === 'available' ? snapshot : undefined);
+      return;
+    }
     if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
     if (snapshot.status !== 'available' && !shownSnapshot) {
       // Keep the live bytes on screen, and join later output by position.

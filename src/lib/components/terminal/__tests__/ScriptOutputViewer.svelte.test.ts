@@ -624,18 +624,25 @@ describe('retained output viewer lifecycle', () => {
       expect(textSinceLastReset(terminal)).toBe('one\ntwo\ntwo\n');
     });
 
-    it('detects a stream gap by position and replaces the view with a fresh snapshot', async () => {
+    it('holds output past a gap until a fresh snapshot fills it', async () => {
       const terminal = await mount([]);
       retainedReadableRef.value.set(snapshot('one\n', 4, 0));
       await tick();
+      const resets = terminal.reset.mock.calls.length;
       const before = await requests();
-      outputReadableRef.value.set({ chunks: [live('three\n', 8)], dropped: 0 });
+      const three = live('three\n', 8);
+      outputReadableRef.value.set({ chunks: [three], dropped: 0 });
       await tick();
       expect(await requests()).toBe(before + 1);
-      expect(textSinceLastReset(terminal)).toBe('one\nthree\n');
+      expect(textSinceLastReset(terminal)).toBe('one\n');
+      // Output after the snapshot was read follows it.
+      const four = live('four\n', 14);
+      outputReadableRef.value.set({ chunks: [three, four], dropped: 0 });
+      await tick();
       retainedReadableRef.value.set(snapshot('one\ntwo\nthree\n', 14, 1));
       await tick();
-      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\n');
+      expect(terminal.reset.mock.calls.length).toBe(resets);
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\nfour\n');
     });
 
     it('refreshes when a chunk comes from another daemon boot', async () => {
@@ -665,7 +672,7 @@ describe('retained output viewer lifecycle', () => {
       expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\n');
     });
 
-    it('continues into a new run at position 0 and shows only it once its snapshot arrives', async () => {
+    it('confirms a new run with a snapshot and then shows only that run', async () => {
       const terminal = await mount([]);
       retainedReadableRef.value.set(snapshot('old\n', 4, 0));
       await tick();
@@ -673,11 +680,32 @@ describe('retained output viewer lifecycle', () => {
       const first = live('new\n', 0, 'run-2');
       outputReadableRef.value.set({ chunks: [first], dropped: 0 });
       await tick();
-      expect(await requests()).toBe(before);
-      expect(textSinceLastReset(terminal)).toBe('old\nnew\n');
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('old\n');
       retainedReadableRef.value.set(snapshot('new\nmore\n', 9, 1, { runId: 'run-2' }));
       await tick();
       expect(textSinceLastReset(terminal)).toBe('new\nmore\n');
+    });
+
+    it('ignores an older run once a snapshot shows it is stale', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('b1\n', 3, 0, { runId: 'run-b' }));
+      await tick();
+      const before = await requests();
+      const stale = live('a1\n', 0, 'run-a');
+      outputReadableRef.value.set({ chunks: [stale], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      // The fresh snapshot still names run B: run A was older.
+      retainedReadableRef.value.set(snapshot('b1\n', 3, 1, { runId: 'run-b' }));
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [stale, live('a2\n', 3, 'run-a'), live('b2\n', 3, 'run-b')],
+        dropped: 0,
+      });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('b1\nb2\n');
     });
 
     it('writes daemon notices that arrive after the read but not those before it', async () => {
