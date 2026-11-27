@@ -2,11 +2,12 @@ import type { NativeReviewInput, NativeReviewSession } from '$shared/types/nativ
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 import type { BoundRepositoryRoute } from '$lib/client/live/backend-transport-types';
+import { createBackendTransportFake } from './backend-transport-fake';
 /**
  * MockBackendTransport — scripted-daemon fixture for the renderer WSS seam.
  *
- * Drop-in replacement for `$lib/client/live/backend-transport` (all 5 exported
- * functions). Consumers `vi.mock` that module to point at
+ * Drop-in replacement for `$lib/client/live/backend-transport` (every export).
+ * Consumers `vi.mock` that module to point at
  * `mockBackendTransportModule` and drive scripted `backendRequest` responses
  * plus `events.event` / `subscription.push` notifications via the handle
  * returned by `installMockBackend()`. State is module-level so the hoisted
@@ -183,8 +184,10 @@ function mockIsBackendAvailable(): boolean {
  * The mock module — shape-compatible with `$lib/client/live/backend-transport`.
  * Consumers point `vi.mock(...)` at this object; the returned functions read /
  * write the module-level `state` so `installMockBackend()` can drive them.
+ * Exports this fixture does not script get `createBackendTransportFake` defaults,
+ * so a new transport export needs no edit here or in its consumers.
  */
-export const mockBackendTransportModule = {
+export const mockBackendTransportModule = createBackendTransportFake({
   async prepareBackendNativeReview(input: NativeReviewInput): Promise<NativeReviewSession> {
     if (!state.nativePrepare)
       throw new BackendError({
@@ -234,7 +237,7 @@ export const mockBackendTransportModule = {
   detectLiveStateCapability: mockDetectLiveStateCapability,
   isBackendAvailable: mockIsBackendAvailable,
   BackendError,
-};
+});
 
 /** Parameters for `pushSubscriptionPush()` — matches PROTOCOL §6 frame shape. */
 interface SubscriptionPushFrame {

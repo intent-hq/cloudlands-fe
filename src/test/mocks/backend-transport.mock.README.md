@@ -130,7 +130,8 @@ vi.mock('$lib/client/live/backend-transport', async () =>
 ```
 
 Every export you do not pass gets a default, and `readBackendHello` answers from your
-`backendRequest('client.hello', {})`. When the transport gains an export, add its
+`backendRequest('client.hello', {})`. `mockBackendTransportModule` is built the same way,
+so its consumers also get every export. When the transport gains an export, add its
 default there; `backend-transport-fake.test.ts` fails until you do.
 `intent/no-hand-rolled-backend-transport-mock` rejects new hand-written factories;
 files that still have one are baselined under

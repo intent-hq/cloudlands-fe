@@ -2,20 +2,32 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { createBackendTransportFake } from '../backend-transport-fake';
+import { installMockBackend, mockBackendTransportModule } from '../backend-transport.mock';
 
 describe('createBackendTransportFake', () => {
   // A new transport export must be filled here, not in every hand-written fake
   // (cloudlands-fe#5090 broke 19 files by adding readBackendHello).
-  it('fills every runtime export of the real transport module', async () => {
+  it.each([
+    ['createBackendTransportFake()', () => createBackendTransportFake()],
+    ['the scripted mockBackendTransportModule', () => mockBackendTransportModule],
+  ])('%s fills every runtime export of the real transport module', async (_, build) => {
     const real = await vi.importActual<Record<string, unknown>>(
       '$lib/client/live/backend-transport',
     );
-    const fake = createBackendTransportFake();
+    const fake: Record<string, unknown> = build();
     const missing = Object.keys(real).filter((name) => !(name in fake));
     expect(missing, 'add a default for these exports to backend-transport-fake.ts').toEqual([]);
     for (const name of Object.keys(real)) {
-      expect(typeof fake[name as keyof typeof fake], name).toBe(typeof real[name]);
+      expect(typeof fake[name], name).toBe(typeof real[name]);
     }
+  });
+
+  it('lets the scripted mock route monitor reconnects through its reconnect replay', () => {
+    const backend = installMockBackend();
+    const handler = vi.fn();
+    mockBackendTransportModule.onMonitorReconnected(handler);
+    backend.triggerReconnect();
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it('returns the overrides themselves so tests can drive their mocks', () => {
