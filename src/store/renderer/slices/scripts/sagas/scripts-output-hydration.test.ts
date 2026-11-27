@@ -174,6 +174,33 @@ describe('script output cursor reads (scriptOutputCursor: 1)', () => {
     });
   });
 
+  it('keeps whitespace-only output, which has positions to join', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: b64('\n'),
+      startOffset: '0',
+      endOffset: '1',
+      logStartOffset: '0',
+      totalLines: 2,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ status: 'available', text: '[2 lines]\n\n' });
+  });
+
+  it('reports a failed positioned read as failed, not as empty output', async () => {
+    cursorDaemon();
+    transport.request.mockRejectedValue(new Error('connection lost'));
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ status: 'unavailable' });
+    expect(run.retained()?.liveOffset).toBeUndefined();
+  });
+
   it('keeps the text read on a daemon without the capability', async () => {
     transport.request.mockResolvedValue('[1 lines]\nlegacy');
     const run = start();

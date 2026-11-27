@@ -345,20 +345,22 @@
     showsSnapshotText = snapshot.status === 'available';
     const resumeFrom = heldFrom;
     heldFrom = null;
+    const readFrom = snapshot.liveOffset ?? 0;
     if (applied.reset) {
-      const readFrom = snapshot.liveOffset ?? 0;
       writeJoinedChunks(buffer, buffer.dropped, readFrom, readFrom);
     } else {
       const from = Math.max(resumeFrom ?? writtenChunkCount, buffer.dropped);
-      writeJoinedChunks(buffer, from, 0, writtenChunkCount);
+      writeJoinedChunks(buffer, from, readFrom, writtenChunkCount);
     }
   }
 
   /**
    * Write buffered chunks from stream index `from` through the join. Chunks
-   * before `readFrom` arrived before the snapshot read began, so they cannot
-   * be newer than it. Notices before `noticesFrom` are already on screen or
-   * predate the snapshot.
+   * before `readFrom` arrived before the last snapshot read began: one of
+   * another run is older than it, and a gap it could not fill is lost output,
+   * so the join skips ahead. Notices before `noticesFrom` are already on
+   * screen or predate the snapshot. While output is held, positioned chunks
+   * wait untouched for the snapshot that settles them.
    */
   function writeJoinedChunks(
     buffer: ScriptOutputBuffer,
@@ -371,17 +373,23 @@
     buffer.chunks.forEach((chunk, i) => {
       const index = buffer.dropped + i;
       if (index < from || !streamJoin) return;
-      const step = joinLiveChunk(streamJoin, chunk);
-      if (step.kind === 'skip') return;
-      if (step.kind === 'write' && !chunk.position) {
-        if (index >= noticesFrom) text += step.text;
+      if (!chunk.position) {
+        if (index >= noticesFrom) text += chunk.text;
         return;
       }
-      if (index < readFrom || heldFrom !== null) return;
+      if (heldFrom !== null) return;
+      let step = joinLiveChunk(streamJoin, chunk);
+      if (step.kind === 'gap' && index < readFrom) {
+        streamJoin.next = chunk.position.start;
+        streamJoin.decoder = new TextDecoder();
+        step = joinLiveChunk(streamJoin, chunk);
+      }
+      if (step.kind === 'skip') return;
       if (step.kind === 'write') {
         text += step.text;
         return;
       }
+      if (index < readFrom) return;
       if (step.kind === 'foreign') {
         if (staleStreams.has(step.key)) return;
         unconfirmedStream = step.key;
@@ -456,8 +464,6 @@
   // bytes may be output the daemon no longer has.
   $effect(() => {
     const snapshot = $retainedOutput$;
-    // A refresh that came back without positions cannot settle held output:
-    // fall back to the text join rather than hold it forever.
     if (
       xterm &&
       heldFrom !== null &&
@@ -465,21 +471,33 @@
       snapshot.status !== 'loading' &&
       !snapshot.cursor
     ) {
+      const resumeFrom = heldFrom;
       heldFrom = null;
+      if (snapshot.liveOffset === undefined) {
+        // The refresh failed: keep the screen and let the held output through.
+        const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
+        const from = Math.max(resumeFrom, buffer.dropped);
+        writeJoinedChunks(buffer, from, Number.POSITIVE_INFINITY, writtenChunkCount);
+        return;
+      }
+      // A text reply cannot settle held output: fall back to the text join.
       writeOutput(true, snapshot.status === 'available' ? snapshot : undefined);
       return;
     }
     if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
+    if (
+      snapshot.cursor &&
+      (snapshot.status === 'available' || shownSnapshot || heldFrom !== null)
+    ) {
+      writeOutput(true, snapshot);
+      return;
+    }
     if (snapshot.status !== 'available' && !shownSnapshot) {
       // Keep the live bytes on screen, and join later output by position.
       if (snapshot.cursor) {
         const { runId, bootId, end } = snapshot.cursor;
         streamJoin = { runId, bootId, next: end, decoder: new TextDecoder() };
       }
-      return;
-    }
-    if (snapshot.cursor) {
-      writeOutput(true, snapshot);
       return;
     }
     // A capped refresh of the shown run, joined to the same unbroken stream, is

@@ -2188,7 +2188,8 @@ export interface ScriptsClient {
   /**
    * `script.output` with `cursor: true` (`scriptOutputCursor: 1`): the latest
    * run's newest log bytes with their stream positions. `null` when the daemon
-   * does not offer it (read `output` instead); a string when it answered with text.
+   * does not offer it (read `output` instead); a string when it answered with
+   * text. Rejects when the read fails.
    */
   outputCursor(
     workspaceId: string,

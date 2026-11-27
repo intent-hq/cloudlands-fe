@@ -223,17 +223,14 @@ export class LiveScriptsClient implements ScriptsClient {
       server?: { capabilities?: { scriptOutputCursor?: number } };
     }>().catch(() => null);
     if (hello?.server?.capabilities?.scriptOutputCursor !== 1) return null;
-    try {
-      const result = await backendRequest<unknown>('script.output', {
-        workspaceId,
-        scriptId,
-        ...(maxLines !== undefined ? { maxLines } : {}),
-        cursor: true,
-      });
-      return typeof result === 'string' ? result : parseOutputCursor(result);
-    } catch {
-      return '';
-    }
+    // A failed read throws, so the viewer can tell it from empty output.
+    const result = await backendRequest<unknown>('script.output', {
+      workspaceId,
+      scriptId,
+      ...(maxLines !== undefined ? { maxLines } : {}),
+      cursor: true,
+    });
+    return typeof result === 'string' ? result : parseOutputCursor(result);
   }
 
   async status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null> {

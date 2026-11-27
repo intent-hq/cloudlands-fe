@@ -64,8 +64,8 @@ function* takeOutputStreamReady(workspaceId: string): SagaGenerator<true> {
 
 /**
  * Snapshot text with the bare-string reply's line-count header, so text
- * consumers read both forms alike. A run with no output keeps the
- * `"No output yet."` sentinel of the text form.
+ * consumers read both forms alike. Only an empty log is `"No output yet."`:
+ * whitespace output still has positions to join.
  */
 function positionedSnapshot(read: ScriptOutputCursorRead): {
   text: string;
@@ -76,7 +76,7 @@ function positionedSnapshot(read: ScriptOutputCursorRead): {
   const bytes = Uint8Array.from(atob(read.data), (c) => c.charCodeAt(0));
   // `stream: true` leaves a character cut at the end to the live chunk that completes it.
   const body = new TextDecoder().decode(bytes, { stream: true });
-  if (!body.trim()) return { text: 'No output yet.', cursor };
+  if (bytes.length === 0) return { text: 'No output yet.', cursor };
   const header =
     start > logStart
       ? `[showing last ${body.split('\n').length} of ${totalLines} lines]`
