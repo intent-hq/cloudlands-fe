@@ -109,7 +109,9 @@ export async function imageFilesToContextItems(
       oversizedFiles.push(file.name);
       continue;
     }
-    if (totalBytes + file.size > maxBytes) {
+    // Unsupported formats go out as file attachments, not image references.
+    const counted = isSupportedImageMimeType(file.type);
+    if (counted && totalBytes + file.size > maxBytes) {
       overTotalFiles.push(file.name);
       continue;
     }
@@ -137,7 +139,7 @@ export async function imageFilesToContextItems(
         imageMimeType: mimeType,
         ...(!isSupportedImageMimeType(mimeType) ? { placementFileName: fileName } : {}),
       });
-      totalBytes += file.size;
+      if (counted) totalBytes += file.size;
     } catch (error) {
       if (signal?.aborted) return [];
       logger.error('Failed to add image to context', { fileName: file.name, error });

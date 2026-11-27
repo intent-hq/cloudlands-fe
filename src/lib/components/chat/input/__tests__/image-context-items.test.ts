@@ -85,6 +85,19 @@ describe('imageFilesToContextItems', () => {
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('b.png');
   });
 
+  it('does not count unsupported formats toward the total in a batch', async () => {
+    const items = await imageFilesToContextItems(
+      [makeImageFile('scan.tiff', 8, 'image/tiff'), makeImageFile('shot.png', 8)],
+      {
+        maxBytes: 10,
+        readFile: async (file) => `data:${file.type};base64,${PNG_B64}`,
+      },
+    );
+
+    expect(items.map((i) => i.label)).toEqual(['scan.tiff', 'shot.png']);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
   it('counts only images sent as image attachments toward the total', async () => {
     const [png] = await imageFilesToContextItems([makeImageFile('a.png', 6)], {
       maxBytes: 100,
