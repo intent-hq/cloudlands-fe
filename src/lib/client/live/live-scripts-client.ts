@@ -21,12 +21,14 @@ import type {
   MutationResult,
   ScriptCreateInput,
   ScriptCreateResult,
+  ScriptOutputCursorRead,
   ScriptRunResult,
   ScriptRunTarget,
   ScriptsClient,
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
+import { parseStreamPosition } from '$features/scripts/utils/script-output-position';
 import { backendRequest, readBackendHello } from './backend-transport';
 import { runMutation } from './live-support';
 
@@ -212,6 +214,28 @@ export class LiveScriptsClient implements ScriptsClient {
     }
   }
 
+  async outputCursor(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+  ): Promise<ScriptOutputCursorRead | string | null> {
+    const hello = await readBackendHello<{
+      server?: { capabilities?: { scriptOutputCursor?: number } };
+    }>().catch(() => null);
+    if (hello?.server?.capabilities?.scriptOutputCursor !== 1) return null;
+    try {
+      const result = await backendRequest<unknown>('script.output', {
+        workspaceId,
+        scriptId,
+        ...(maxLines !== undefined ? { maxLines } : {}),
+        cursor: true,
+      });
+      return typeof result === 'string' ? result : parseOutputCursor(result);
+    } catch {
+      return '';
+    }
+  }
+
   async status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null> {
     try {
       const result = await backendRequest<ScriptRuntimeState>('script.status', {
@@ -324,4 +348,32 @@ async function readWholeScript(workspaceId: string, scriptId: string): Promise<S
     return { ...rest, command };
   }
   throw new Error(m.scripts_list_load_error());
+}
+
+/** The positioned reply, or `null` when it is malformed (read the text form instead). */
+function parseOutputCursor(value: unknown): ScriptOutputCursorRead | null {
+  if (!value || typeof value !== 'object') return null;
+  const reply = value as Record<string, unknown>;
+  const start = parseStreamPosition(reply.startOffset);
+  const end = parseStreamPosition(reply.endOffset);
+  const logStart = parseStreamPosition(reply.logStartOffset);
+  const { runId, daemonBootId, data, totalLines } = reply;
+  if (
+    start === undefined ||
+    end === undefined ||
+    logStart === undefined ||
+    (runId !== null && typeof runId !== 'string') ||
+    typeof daemonBootId !== 'string' ||
+    typeof data !== 'string' ||
+    typeof totalLines !== 'number'
+  )
+    return null;
+  let length: number;
+  try {
+    length = atob(data).length;
+  } catch {
+    return null;
+  }
+  if (end - start !== length || logStart > start) return null;
+  return { runId, bootId: daemonBootId, data, start, end, logStart, totalLines };
 }

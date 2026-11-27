@@ -60,6 +60,7 @@ import {
   announceSubmissionDelivery,
 } from '$features/agent/submission-evidence';
 import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
+import { parseScriptOutputPosition } from '$features/scripts/utils/script-output-position';
 import { desktopEventReceived } from '$store/renderer/slices/desktop-control/desktop-control-slice';
 import { parseDesktopEvent } from '$features/desktop/renderer/desktop-client';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
@@ -3593,7 +3594,10 @@ const savedScriptPurpose = { purpose: 'saved' } as const;
  * so `atob` is available; the two-step conversion via `Uint8Array` preserves
  * multibyte characters that a naive `atob(...).split('')` would corrupt.
  */
-function decodeBase64Chunk(decoderKey: string, chunk: string): string | null {
+function decodeBase64Chunk(
+  decoderKey: string,
+  chunk: string,
+): { text: string; byteLength: number } | null {
   try {
     const binary = atob(chunk);
     const bytes = new Uint8Array(binary.length);
@@ -3605,7 +3609,7 @@ function decodeBase64Chunk(decoderKey: string, chunk: string): string | null {
       decoder = new TextDecoder('utf-8');
       scriptOutputDecoders.set(decoderKey, decoder);
     }
-    return decoder.decode(bytes, { stream: true });
+    return { text: decoder.decode(bytes, { stream: true }), byteLength: bytes.length };
   } catch {
     return null;
   }
@@ -3625,10 +3629,18 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
   const scriptId = data.scriptId;
   const chunk = data.chunk;
   if (typeof scriptId !== 'string' || typeof chunk !== 'string') return;
-  const text = decodeBase64Chunk(`${workspaceId}:${scriptId}`, chunk);
-  if (text === null || text === '') return;
+  const decoded = decodeBase64Chunk(`${workspaceId}:${scriptId}`, chunk);
+  if (decoded === null || decoded.byteLength === 0) return;
+  const position = parseScriptOutputPosition(data, decoded.byteLength);
+  // A positioned chunk whose bytes only start a character still moves the
+  // stream position, so it is kept even with no text.
+  if (decoded.text === '' && !position) return;
   appStore.dispatch(
-    appendScriptOutput(workspaceId, scriptId, { text, timestamp: new Date().toISOString() }),
+    appendScriptOutput(workspaceId, scriptId, {
+      text: decoded.text,
+      timestamp: new Date().toISOString(),
+      ...(position ? { position } : {}),
+    }),
   );
 }
 

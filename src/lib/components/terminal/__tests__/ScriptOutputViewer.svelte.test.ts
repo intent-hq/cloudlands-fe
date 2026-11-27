@@ -576,6 +576,124 @@ describe('retained output viewer lifecycle', () => {
     expect(terminal.dispose).not.toHaveBeenCalled();
   });
 
+  describe('positioned joins (scriptOutputCursor: 1)', () => {
+    const utf8 = (text: string) => new TextEncoder().encode(text);
+    const b64 = (text: string) => btoa(String.fromCharCode(...utf8(text)));
+    const live = (text: string, start: number, runId = 'run-1', bootId = 'boot-1') => ({
+      text,
+      timestamp: text,
+      position: { runId, bootId, start, end: start + utf8(text).length },
+    });
+    const notice = (text: string) => ({ text, timestamp: text });
+    const snapshot = (
+      body: string,
+      end: number,
+      liveOffset: number,
+      { start = 0, runId = 'run-1', bootId = 'boot-1' } = {},
+    ) => ({
+      scriptId: 's-1',
+      status: 'available',
+      text: `[${body.split('\n').length} lines]\n${body}`,
+      liveOffset,
+      streamEpoch: 0,
+      cursor: { runId, bootId, start, end, logStart: 0 },
+      data: b64(body),
+    });
+    const requests = async () => {
+      const { store } = await import('$store/renderer/store');
+      return (vi.mocked(store.dispatch).mock.calls as any[]).filter(
+        ([a]) => a.type === 'scripts/outputRequested',
+      ).length;
+    };
+    async function mount(chunks: unknown[]) {
+      outputReadableRef.value = createControllableReadable({ chunks, dropped: 0 });
+      render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+      await waitForXTermInit();
+      return xtermMock.instances[0];
+    }
+
+    it('never repeats in-flight chunks the snapshot already holds, and keeps repeated lines', async () => {
+      const one = live('one\n', 0);
+      const two = live('two\n', 4);
+      const terminal = await mount([one, two]);
+      // The read began after `one`; `two` was in flight but already logged.
+      retainedReadableRef.value.set(snapshot('one\ntwo\n', 8, 1));
+      await tick();
+      outputReadableRef.value.set({ chunks: [one, two, live('two\n', 8)], dropped: 0 });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\ntwo\n');
+    });
+
+    it('detects a stream gap by position and replaces the view with a fresh snapshot', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const before = await requests();
+      outputReadableRef.value.set({ chunks: [live('three\n', 8)], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('one\nthree\n');
+      retainedReadableRef.value.set(snapshot('one\ntwo\nthree\n', 14, 1));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\n');
+    });
+
+    it('refreshes when a chunk comes from another daemon boot', async () => {
+      await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const before = await requests();
+      outputReadableRef.value.set({ chunks: [live('two\n', 4, 'run-1', 'boot-2')], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+    });
+
+    it('adds only the output missed during a reconnect, without a reset', async () => {
+      const two = live('two\n', 4);
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      outputReadableRef.value.set({ chunks: [two], dropped: 0 });
+      await tick();
+      const resets = terminal.reset.mock.calls.length;
+      // The stream was interrupted: buffered chunks are dropped.
+      outputReadableRef.value.set({ chunks: [], dropped: 1 });
+      await tick();
+      retainedReadableRef.value.set(snapshot('one\ntwo\nthree\n', 14, 1));
+      await tick();
+      expect(terminal.reset.mock.calls.length).toBe(resets);
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\n');
+    });
+
+    it('continues into a new run at position 0 and shows only it once its snapshot arrives', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('old\n', 4, 0));
+      await tick();
+      const before = await requests();
+      const first = live('new\n', 0, 'run-2');
+      outputReadableRef.value.set({ chunks: [first], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before);
+      expect(textSinceLastReset(terminal)).toBe('old\nnew\n');
+      retainedReadableRef.value.set(snapshot('new\nmore\n', 9, 1, { runId: 'run-2' }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('new\nmore\n');
+    });
+
+    it('writes daemon notices that arrive after the read but not those before it', async () => {
+      const early = notice('--- Restarting ---\r\n');
+      const terminal = await mount([early]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 1));
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [early, notice('--- Exited too quickly ---\r\n')],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\n--- Exited too quickly ---\r\n');
+    });
+  });
+
   it('keeps live bytes the daemon no longer has when its first answer has no output', async () => {
     outputReadableRef.value = createControllableReadable({
       chunks: [{ text: 'live bytes', timestamp: 'now' }],
