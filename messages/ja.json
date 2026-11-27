@@ -6303,6 +6303,7 @@
   "terminal_scriptOutput_buildFailed_label": "ビルドが終了コード {exitCode} で失敗しました",
   "terminal_scriptOutput_fixAgentName_label": "修正: {name}",
   "terminal_scriptOutput_noWorkspace_error": "ワークスペースが選択されていません",
+  "terminal_scriptOutput_outputMissing_label": "ここで出力の一部が欠けています",
   "terminal_scriptOutput_run_label": "実行",
   "terminal_scriptOutput_script_fallback": "スクリプト",
   "terminal_searchBar_find_placeholder": "ターミナル内を検索...",

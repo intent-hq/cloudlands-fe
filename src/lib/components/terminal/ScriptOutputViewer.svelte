@@ -25,6 +25,13 @@
     snapshotRemainderAfterLive,
   } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
+  import {
+    bufferedPrefix,
+    joinLiveChunk,
+    joinSnapshot,
+    streamKey,
+    type StreamJoin,
+  } from './script-output-join';
 
   import {
     selectScriptById,
@@ -32,7 +39,10 @@
     selectScriptOutput,
     selectScriptRetainedOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import type { ScriptRetainedOutput } from '$store/renderer/slices/scripts/scripts-types';
+  import type {
+    ScriptOutputBuffer,
+    ScriptRetainedOutput,
+  } from '$store/renderer/slices/scripts/scripts-types';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectWorkspaceScriptReadContext,
@@ -113,6 +123,8 @@
   // `script.start` clears `startedAt`, so it changes at each new run and not on
   // URL, readiness or exit updates, which the live stream already shows.
   const runStartedAt = $derived($runtime$.startedAt ?? null);
+  // Bumped when live output reveals a gap, to read a fresh snapshot.
+  let refreshGeneration = $state(0);
   // The request follows admitted connection, run and viewer lifetimes. It
   // never starts/restores the script, and cleanup fences late snapshots.
   $effect(() => {
@@ -120,6 +132,7 @@
     const id = scriptId;
     const authority = $outputAuthority;
     void runStartedAt;
+    void refreshGeneration;
     if (!authority || !wsId || !id) return;
     const viewerId = crypto.randomUUID();
     viewerIdStore.set(viewerId);
@@ -134,6 +147,16 @@
   let shownRun: string | null = null;
   let showsSnapshotText = $state(false);
   let scrolledUp = $state(false);
+  // With a positioned snapshot (`scriptOutputCursor: 1`), how far the
+  // terminal has written the run's stream; `null` joins by heuristic.
+  let streamJoin: StreamJoin | null = null;
+  // Live output showed a gap or another run: positioned chunks from this
+  // stream index wait for the fresh snapshot that settles them.
+  let heldFrom: number | null = null;
+  // Another run or boot seen in live output, awaiting its confirming snapshot.
+  let unconfirmedStream: string | null = null;
+  // Runs or boots a snapshot showed to be older than the joined stream.
+  let staleStreams = new Set<string>();
 
   const retainedAvailable = $derived($retainedOutput$?.status === 'available');
   const hasLiveOutput = $derived($runtime$.status !== 'idle' || $output$.chunks.length > 0);
@@ -259,6 +282,11 @@
   function writeOutput(replace: boolean, snapshot: ScriptRetainedOutput | undefined): void {
     if (!xterm) return;
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
+    if (snapshot?.cursor) {
+      writeJoined(buffer, snapshot);
+      return;
+    }
+    streamJoin = null;
     if (replace) xterm.reset();
     if (snapshot) {
       shownSnapshot = snapshot;
@@ -292,6 +320,89 @@
     writtenChunkCount = buffer.dropped + buffer.chunks.length;
   }
 
+  /**
+   * Join a positioned snapshot by stream position (PROTOCOL §5.8 output
+   * cursors): it either continues the shown run (only its unseen bytes are
+   * added) or replaces the terminal, and then the buffered chunks it does not
+   * hold follow.
+   */
+  function writeJoined(buffer: ScriptOutputBuffer, snapshot: ScriptRetainedOutput): void {
+    if (!xterm || !snapshot.cursor) return;
+    const key = streamKey(snapshot.cursor.bootId, snapshot.cursor.runId);
+    if (unconfirmedStream !== null && unconfirmedStream !== key)
+      staleStreams.add(unconfirmedStream);
+    unconfirmedStream = null;
+    const shown = shownSnapshot?.cursor;
+    const continues = shown !== undefined && streamKey(shown.bootId, shown.runId) === key;
+    const applied = continues
+      ? joinSnapshot(streamJoin, snapshot)
+      : joinSnapshot(null, snapshot, bufferedPrefix(buffer.chunks, snapshot.cursor));
+    if (applied.reset) xterm.reset();
+    if (applied.text) xterm.write(applied.text);
+    streamJoin = applied.join;
+    shownSnapshot = snapshot;
+    shownRun = untrack(() => runStartedAt);
+    showsSnapshotText = snapshot.status === 'available';
+    const resumeFrom = heldFrom;
+    heldFrom = null;
+    const readFrom = snapshot.liveOffset ?? 0;
+    if (applied.reset) {
+      writeJoinedChunks(buffer, buffer.dropped, readFrom, readFrom);
+    } else {
+      const from = Math.max(resumeFrom ?? writtenChunkCount, buffer.dropped);
+      writeJoinedChunks(buffer, from, readFrom, writtenChunkCount);
+    }
+  }
+
+  /**
+   * Write buffered chunks from stream index `from` through the join. Chunks
+   * before `readFrom` arrived before the last snapshot read began: one of
+   * another run is older than it, and a gap it could not fill is lost output,
+   * so the join skips ahead. Notices before `noticesFrom` are already on
+   * screen or predate the snapshot. While output is held, positioned chunks
+   * wait untouched for the snapshot that settles them.
+   */
+  function writeJoinedChunks(
+    buffer: ScriptOutputBuffer,
+    from: number,
+    readFrom: number,
+    noticesFrom: number,
+  ): void {
+    if (!xterm || !streamJoin) return;
+    let text = '';
+    buffer.chunks.forEach((chunk, i) => {
+      const index = buffer.dropped + i;
+      if (index < from || !streamJoin) return;
+      if (!chunk.position) {
+        if (index >= noticesFrom) text += chunk.text;
+        return;
+      }
+      if (heldFrom !== null) return;
+      let step = joinLiveChunk(streamJoin, chunk);
+      if (step.kind === 'gap' && index < readFrom) {
+        // No snapshot can fill it: mark the missing output, then continue.
+        text += `\r\n\x1b[2m[${m.terminal_scriptOutput_outputMissing_label()}]\x1b[22m\r\n`;
+        streamJoin.next = chunk.position.start;
+        streamJoin.decoder = new TextDecoder();
+        step = joinLiveChunk(streamJoin, chunk);
+      }
+      if (step.kind === 'skip') return;
+      if (step.kind === 'write') {
+        text += step.text;
+        return;
+      }
+      if (index < readFrom) return;
+      if (step.kind === 'foreign') {
+        if (staleStreams.has(step.key)) return;
+        unconfirmedStream = step.key;
+      }
+      heldFrom = index;
+      refreshGeneration += 1;
+    });
+    if (text) xterm.write(text);
+    writtenChunkCount = Math.max(writtenChunkCount, buffer.dropped + buffer.chunks.length);
+  }
+
   function scrollToEnd(): void {
     xterm?.scrollToBottom();
   }
@@ -313,6 +424,10 @@
     xterm = null;
     fitAddon = null;
     writtenChunkCount = 0;
+    streamJoin = null;
+    heldFrom = null;
+    unconfirmedStream = null;
+    staleStreams = new Set();
     shownSnapshot = null;
     shownRun = null;
     showsSnapshotText = false;
@@ -330,6 +445,10 @@
     const total = buffer.dropped + buffer.chunks.length;
     if (!xterm) return;
     if (total <= written) return;
+    if (streamJoin) {
+      writeJoinedChunks(buffer, written, 0, written);
+      return;
+    }
 
     // Write only chunks not yet rendered, verbatim — no injected newlines.
     const startIndex = Math.max(written - buffer.dropped, 0);
@@ -347,8 +466,52 @@
   // bytes may be output the daemon no longer has.
   $effect(() => {
     const snapshot = $retainedOutput$;
+    if (
+      xterm &&
+      heldFrom !== null &&
+      snapshot &&
+      snapshot.status !== 'loading' &&
+      !snapshot.cursor
+    ) {
+      const resumeFrom = heldFrom;
+      heldFrom = null;
+      if (snapshot.liveOffset === undefined) {
+        // The refresh failed: keep the screen and let the held output through.
+        const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
+        const from = Math.max(resumeFrom, buffer.dropped);
+        writeJoinedChunks(buffer, from, Number.POSITIVE_INFINITY, writtenChunkCount);
+        return;
+      }
+      // A text reply cannot settle held output: fall back to the text join.
+      writeOutput(true, snapshot.status === 'available' ? snapshot : undefined);
+      return;
+    }
     if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
-    if (snapshot.status !== 'available' && !shownSnapshot) return;
+    if (
+      snapshot.cursor &&
+      (snapshot.status === 'available' || shownSnapshot || heldFrom !== null)
+    ) {
+      writeOutput(true, snapshot);
+      return;
+    }
+    if (snapshot.status !== 'available' && !shownSnapshot) {
+      // Keep the live bytes on screen, and join later output by position.
+      if (snapshot.cursor) {
+        const { runId, bootId, end } = snapshot.cursor;
+        const decoder = new TextDecoder();
+        // Carry a character the snapshot ends inside into the next chunk.
+        if (snapshot.data) {
+          decoder.decode(
+            Uint8Array.from(atob(snapshot.data), (c) => c.charCodeAt(0)),
+            {
+              stream: true,
+            },
+          );
+        }
+        streamJoin = { runId, bootId, next: end, decoder };
+      }
+      return;
+    }
     // A capped refresh of the shown run, joined to the same unbroken stream, is
     // a shorter tail than the terminal already has. After a stream gap it may
     // hold output that was never streamed, so it replaces the terminal.

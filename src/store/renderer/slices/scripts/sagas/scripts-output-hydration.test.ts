@@ -2,8 +2,11 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-const transport = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: transport.request }));
+const transport = vi.hoisted(() => ({ request: vi.fn(), hello: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: transport.request,
+  readBackendHello: transport.hello,
+}));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
   return { appClient: { scripts: new LiveScriptsClient() } };
@@ -90,6 +93,7 @@ beforeEach(() => {
   store.dispose();
   store.init();
   transport.request.mockReset();
+  transport.hello.mockReset().mockResolvedValue({ server: { capabilities: {} } });
 });
 afterEach(async () => {
   for (const task of tasks.splice(0)) {
@@ -98,6 +102,167 @@ afterEach(async () => {
   }
   store.dispose();
 });
+const b64 = (raw: string) => Buffer.from(raw, 'utf-8').toString('base64');
+const cursorDaemon = () =>
+  transport.hello.mockResolvedValue({ server: { capabilities: { scriptOutputCursor: 1 } } });
+
+describe('script output cursor reads (scriptOutputCursor: 1)', () => {
+  it('reads the positioned form and keeps its stream cursor', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: b64('first\nsecond\n'),
+      startOffset: '0',
+      endOffset: '13',
+      logStartOffset: '0',
+      totalLines: 3,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+      cursor: true,
+    });
+    expect(run.retained()).toMatchObject({
+      status: 'available',
+      text: '[3 lines]\nfirst\nsecond\n',
+      liveOffset: 0,
+      cursor: { runId: 'run-1', bootId: 'boot-1', start: 0, end: 13, logStart: 0 },
+      data: b64('first\nsecond\n'),
+    });
+  });
+
+  it('says when older saved output was left out', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: b64('tail\n'),
+      startOffset: '120',
+      endOffset: '125',
+      logStartOffset: '40',
+      totalLines: 9,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()?.text).toBe('[showing last 2 of 9 lines]\ntail\n');
+    expect(run.retained()?.cursor).toMatchObject({ start: 120, end: 125, logStart: 40 });
+  });
+
+  it('keeps the cursor of a run with no output yet so live output joins at 0', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue({
+      runId: null,
+      daemonBootId: 'boot-1',
+      data: '',
+      startOffset: '0',
+      endOffset: '0',
+      logStartOffset: '0',
+      totalLines: 0,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({
+      status: 'unavailable',
+      cursor: { runId: null, bootId: 'boot-1', start: 0, end: 0, logStart: 0 },
+    });
+  });
+
+  it('keeps whitespace-only output, which has positions to join', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: b64('\n'),
+      startOffset: '0',
+      endOffset: '1',
+      logStartOffset: '0',
+      totalLines: 2,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ status: 'available', text: '[2 lines]\n\n' });
+  });
+
+  it('keeps the raw bytes of a snapshot that ends inside its first character', async () => {
+    cursorDaemon();
+    const cut = btoa(String.fromCharCode(0xe2));
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: cut,
+      startOffset: '0',
+      endOffset: '1',
+      logStartOffset: '0',
+      totalLines: 1,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ data: cut, cursor: { end: 1 } });
+  });
+
+  it('reports a failed positioned read as failed, not as empty output', async () => {
+    cursorDaemon();
+    transport.request.mockRejectedValue(new Error('connection lost'));
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ status: 'unavailable' });
+    expect(run.retained()?.liveOffset).toBeUndefined();
+  });
+
+  it('keeps the text read on a daemon without the capability', async () => {
+    transport.request.mockResolvedValue('[1 lines]\nlegacy');
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+    });
+    expect(run.retained()?.text).toBe('[1 lines]\nlegacy');
+    expect(run.retained()?.cursor).toBeUndefined();
+  });
+
+  it('falls back to the text read when a cursor reply is not positioned', async () => {
+    cursorDaemon();
+    transport.request
+      .mockResolvedValueOnce('[1 lines]\nolder daemon')
+      .mockResolvedValueOnce('[1 lines]\nolder daemon');
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()?.text).toBe('[1 lines]\nolder daemon');
+    expect(run.retained()?.cursor).toBeUndefined();
+  });
+
+  it('never asks a machine run for a cursor', async () => {
+    cursorDaemon();
+    transport.request.mockResolvedValue('machine output');
+    const run = start();
+    run.dispatch({
+      type: 'scripts/outputRequested',
+      payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+    });
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+      remoteAgentId: 'agent-remote',
+    });
+  });
+});
+
 describe('retained script output hydration', () => {
   it("reads a remote agent's machine run with remoteAgentId (remoteScripts: 1)", async () => {
     transport.request.mockResolvedValue('machine output');

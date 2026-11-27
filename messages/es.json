@@ -6303,6 +6303,7 @@
   "terminal_scriptOutput_buildFailed_label": "La compilación falló con el código de salida {exitCode}",
   "terminal_scriptOutput_fixAgentName_label": "Corregir: {name}",
   "terminal_scriptOutput_noWorkspace_error": "No hay espacio de trabajo seleccionado",
+  "terminal_scriptOutput_outputMissing_label": "Aquí falta parte de la salida",
   "terminal_scriptOutput_run_label": "Ejecutar",
   "terminal_scriptOutput_script_fallback": "script",
   "terminal_searchBar_find_placeholder": "Buscar en la terminal...",

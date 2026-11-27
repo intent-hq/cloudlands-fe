@@ -9,6 +9,8 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
+import type { ScriptOutputCursorRead } from '$lib/client/app-client';
+import type { ScriptOutputCursor } from '../scripts-types';
 import { scriptMachineRuns } from '$features/scripts/utils/script-location';
 import { beginScriptRead, isScriptReadCurrent } from '../utils/script-read-context';
 import {
@@ -60,6 +62,28 @@ function* takeOutputStreamReady(workspaceId: string): SagaGenerator<true> {
   }
 }
 
+/**
+ * Snapshot text with the bare-string reply's line-count header, so text
+ * consumers read both forms alike. Only an empty log is `"No output yet."`:
+ * whitespace output still has positions to join.
+ */
+function positionedSnapshot(read: ScriptOutputCursorRead): {
+  text: string;
+  cursor: ScriptOutputCursor;
+} {
+  const { runId, bootId, start, end, logStart, totalLines } = read;
+  const cursor = { runId, bootId, start, end, logStart };
+  const bytes = Uint8Array.from(atob(read.data), (c) => c.charCodeAt(0));
+  // `stream: true` leaves a character cut at the end to the live chunk that completes it.
+  const body = new TextDecoder().decode(bytes, { stream: true });
+  if (bytes.length === 0) return { text: 'No output yet.', cursor };
+  const header =
+    start > logStart
+      ? `[showing last ${body.split('\n').length} of ${totalLines} lines]`
+      : `[${totalLines} lines]`;
+  return { text: `${header}\n${body}`, cursor };
+}
+
 function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
   const [workspaceId, scriptId, viewerId, remoteAgentId] = action.payload;
   let context = yield* beginScriptRead(workspaceId);
@@ -106,16 +130,41 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       liveOffset: buffer.dropped + buffer.chunks.length,
       streamEpoch: yield* selectScriptOutputStreamEpoch.effect(workspaceId),
     };
-    // Known IDs remain readable after archive retirement and partial-page refresh.
-    const output = yield* call(
-      [appClient.scripts, appClient.scripts.output],
-      workspaceId,
-      scriptId,
-      10_000,
-      ...(remoteAgentId ? [{ remoteAgentId }] : []),
-    );
-    if (!(yield* isCurrent())) return;
-    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output, join));
+    // A daemon with `scriptOutputCursor: 1` positions the snapshot in the run's
+    // stream, so the viewer joins live chunks exactly. Machine runs never stream.
+    const positioned = remoteAgentId
+      ? null
+      : yield* call(
+          [appClient.scripts, appClient.scripts.outputCursor],
+          workspaceId,
+          scriptId,
+          10_000,
+        );
+    if (positioned !== null && typeof positioned === 'object') {
+      if (!(yield* isCurrent())) return;
+      const { text, cursor } = positionedSnapshot(positioned);
+      yield* put(
+        scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, text, {
+          ...join,
+          cursor,
+          data: positioned.data,
+        }),
+      );
+    } else {
+      // Known IDs remain readable after archive retirement and partial-page refresh.
+      const output =
+        typeof positioned === 'string'
+          ? positioned
+          : yield* call(
+              [appClient.scripts, appClient.scripts.output],
+              workspaceId,
+              scriptId,
+              10_000,
+              ...(remoteAgentId ? [{ remoteAgentId }] : []),
+            );
+      if (!(yield* isCurrent())) return;
+      yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output, join));
+    }
     // Our own publication replaces the viewer entry; a later re-request or
     // release replaces it again and retires this read.
     viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);

@@ -29,6 +29,33 @@ export type {
 export type ScriptOutputChunk = {
   text: string;
   timestamp: string;
+  /** Where the chunk's bytes sit in its run's log; absent for daemon notices and older daemons. */
+  position?: ScriptOutputPosition;
+  /** The positioned chunk's raw bytes (base64), so a join can decode across its edges. */
+  data?: string;
+};
+
+/**
+ * A half-open raw-byte range `[start, end)` in one run's output stream
+ * (PROTOCOL §5.8 output cursors). Positions of different `(bootId, runId)`
+ * streams are never compared.
+ */
+export type ScriptOutputPosition = {
+  runId: string;
+  bootId: string;
+  start: number;
+  end: number;
+};
+
+/** Where a positioned `script.output` snapshot sits in its run's stream. */
+export type ScriptOutputCursor = {
+  /** `null` when the script has no run yet. */
+  runId: string | null;
+  bootId: string;
+  start: number;
+  end: number;
+  /** Position of the oldest byte the run's log keeps. */
+  logStart: number;
 };
 
 /**
@@ -58,6 +85,10 @@ export type ScriptRetainedOutput = {
    * Absent when the read started before the stream was routable.
    */
   streamEpoch?: number;
+  /** Present when the daemon answered with stream positions (`scriptOutputCursor: 1`). */
+  cursor?: ScriptOutputCursor;
+  /** The snapshot's raw log bytes (base64), for joining it by position. */
+  data?: string;
 };
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';

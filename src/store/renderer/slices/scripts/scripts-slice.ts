@@ -32,6 +32,7 @@ import type {
   ScriptsWorkspaceState,
   ScriptOutputBuffer,
   ScriptOutputChunk,
+  ScriptOutputCursor,
   ScriptQuickAction,
   ScriptDefinitionInput,
   ScriptDefinitionUpdate,
@@ -292,7 +293,13 @@ export const scriptOutputSnapshotReceived = createAction<
     scriptId: string,
     viewerId: string,
     text: string,
-    join?: { liveOffset: number; streamEpoch?: number },
+    join?: {
+      liveOffset: number;
+      streamEpoch?: number;
+      cursor?: ScriptOutputCursor;
+      /** Base64 raw bytes of a positioned snapshot. */
+      data?: string;
+    },
   ]
 >('scripts/outputSnapshotReceived');
 
@@ -687,6 +694,8 @@ scriptsReducer.with(
           ...(available && join?.streamEpoch !== undefined
             ? { streamEpoch: join.streamEpoch }
             : {}),
+          ...(join?.cursor ? { cursor: join.cursor } : {}),
+          ...(join?.cursor && join.data !== undefined ? { data: join.data } : {}),
         },
       },
     });

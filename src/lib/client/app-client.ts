@@ -2134,6 +2134,19 @@ export interface ScriptRunTarget {
   remoteAgentId: string;
 }
 
+/** A positioned `script.output` reply (PROTOCOL §5.8 output cursors). */
+export type ScriptOutputCursorRead = {
+  /** `null` when the script has no run yet. */
+  runId: string | null;
+  bootId: string;
+  /** Base64 raw log bytes at `[start, end)`. */
+  data: string;
+  start: number;
+  end: number;
+  logStart: number;
+  totalLines: number;
+};
+
 export interface ScriptsClient {
   supportsLifecycle?(): Promise<boolean>;
   /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
@@ -2172,6 +2185,17 @@ export interface ScriptsClient {
     maxLines?: number,
     run?: ScriptRunTarget,
   ): Promise<string>;
+  /**
+   * `script.output` with `cursor: true` (`scriptOutputCursor: 1`): the latest
+   * run's newest log bytes with their stream positions. `null` when the daemon
+   * does not offer it (read `output` instead); a string when it answered with
+   * text. Rejects when the read fails.
+   */
+  outputCursor(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+  ): Promise<ScriptOutputCursorRead | string | null>;
   /** `script.status` — the script's runtime state, or null when unavailable. */
   status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null>;
   /** `script.run` — run a command-mode script to completion. */

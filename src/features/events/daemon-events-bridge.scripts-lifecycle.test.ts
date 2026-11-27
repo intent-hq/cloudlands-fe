@@ -555,6 +555,17 @@ describe('script lifecycle event to transport', () => {
   );
 });
 
+/** Answer `script.output` calls in order; other methods keep the default replies. */
+function scriptOutputReplies(...replies: Promise<string>[]): void {
+  const fallback = transport.request.getMockImplementation()!;
+  let next = 0;
+  transport.request.mockImplementation((method: string, params: unknown) =>
+    method === 'script.output' && next < replies.length
+      ? replies[next++]
+      : fallback(method, params),
+  );
+}
+
 describe('script list and retained output read fences', () => {
   it('refreshes only active summaries and reads selected output without archive enumeration', async () => {
     const run = start();
@@ -677,7 +688,7 @@ describe('script list and retained output read fences', () => {
 
   it('drops pre-reconnect output replies even when the backend ID is unchanged', async () => {
     const pending = deferred<string>();
-    transport.request.mockReturnValue(pending.promise);
+    scriptOutputReplies(pending.promise);
     const run = start();
     run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));
     await settle();
@@ -692,7 +703,7 @@ describe('script list and retained output read fences', () => {
   it('keeps the newer request when an output viewer is requested again before the old reply', async () => {
     const old = deferred<string>();
     const fresh = deferred<string>();
-    transport.request.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    scriptOutputReplies(old.promise, fresh.promise);
     const run = start();
     run.dispatch(setScriptsData(WS, [row()]));
     run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));

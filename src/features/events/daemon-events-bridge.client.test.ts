@@ -5370,6 +5370,45 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     expect(buffer.dropped).toBe(0);
   });
 
+  it('keeps script:output stream positions and leaves daemon notices unpositioned', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const b64 = (raw: string) => Buffer.from(raw, 'utf-8').toString('base64');
+    handler(
+      notification('script:output', {
+        scriptId: SCRIPT_ID,
+        chunk: b64('log line\n'),
+        runId: 'run-1',
+        daemonBootId: 'boot-1',
+        startOffset: '40',
+        endOffset: '49',
+      }),
+    );
+    handler(
+      notification('script:output', {
+        scriptId: SCRIPT_ID,
+        chunk: b64('\r\n--- Restarting ---\r\n'),
+      }),
+    );
+    // A range that does not match the chunk is not a usable position.
+    handler(
+      notification('script:output', {
+        scriptId: SCRIPT_ID,
+        chunk: b64('odd\n'),
+        runId: 'run-1',
+        daemonBootId: 'boot-1',
+        startOffset: '49',
+        endOffset: 'x',
+      }),
+    );
+    const chunks = readScriptsState().outputBuffers[SCRIPT_ID].chunks;
+    expect(chunks.map((c) => c.position)).toEqual([
+      { runId: 'run-1', bootId: 'boot-1', start: 40, end: 49 },
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('reconstructs a multi-chunk stream (chunk ending mid-line) with no injected newlines', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

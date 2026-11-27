@@ -576,6 +576,293 @@ describe('retained output viewer lifecycle', () => {
     expect(terminal.dispose).not.toHaveBeenCalled();
   });
 
+  describe('positioned joins (scriptOutputCursor: 1)', () => {
+    const utf8 = (text: string) => new TextEncoder().encode(text);
+    const bytesB64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+    const b64 = (text: string) => bytesB64(utf8(text));
+    const live = (text: string, start: number, runId = 'run-1', bootId = 'boot-1') => ({
+      text,
+      timestamp: text,
+      data: b64(text),
+      position: { runId, bootId, start, end: start + utf8(text).length },
+    });
+    const notice = (text: string) => ({ text, timestamp: text });
+    const snapshot = (
+      body: string,
+      end: number,
+      liveOffset: number,
+      { start = 0, runId = 'run-1', bootId = 'boot-1', bytes = utf8(body) } = {},
+    ) => ({
+      scriptId: 's-1',
+      status: 'available',
+      text: `[${body.split('\n').length} lines]\n${body}`,
+      liveOffset,
+      streamEpoch: 0,
+      cursor: { runId, bootId, start, end, logStart: 0 },
+      data: bytesB64(bytes),
+    });
+    const requests = async () => {
+      const { store } = await import('$store/renderer/store');
+      return (vi.mocked(store.dispatch).mock.calls as any[]).filter(
+        ([a]) => a.type === 'scripts/outputRequested',
+      ).length;
+    };
+    async function mount(chunks: unknown[]) {
+      outputReadableRef.value = createControllableReadable({ chunks, dropped: 0 });
+      render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+      await waitForXTermInit();
+      return xtermMock.instances[0];
+    }
+
+    it('never repeats in-flight chunks the snapshot already holds, and keeps repeated lines', async () => {
+      const one = live('one\n', 0);
+      const two = live('two\n', 4);
+      const terminal = await mount([one, two]);
+      // The read began after `one`; `two` was in flight but already logged.
+      retainedReadableRef.value.set(snapshot('one\ntwo\n', 8, 1));
+      await tick();
+      outputReadableRef.value.set({ chunks: [one, two, live('two\n', 8)], dropped: 0 });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\ntwo\n');
+    });
+
+    it('holds output past a gap until a fresh snapshot fills it', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const resets = terminal.reset.mock.calls.length;
+      const before = await requests();
+      const three = live('three\n', 8);
+      outputReadableRef.value.set({ chunks: [three], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('one\n');
+      // Output after the snapshot was read follows it.
+      const four = live('four\n', 14);
+      outputReadableRef.value.set({ chunks: [three, four], dropped: 0 });
+      await tick();
+      retainedReadableRef.value.set(snapshot('one\ntwo\nthree\n', 14, 1));
+      await tick();
+      expect(terminal.reset.mock.calls.length).toBe(resets);
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\nfour\n');
+    });
+
+    it('refreshes when a chunk comes from another daemon boot', async () => {
+      await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const before = await requests();
+      outputReadableRef.value.set({ chunks: [live('two\n', 4, 'run-1', 'boot-2')], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+    });
+
+    it('adds only the output missed during a reconnect, without a reset', async () => {
+      const two = live('two\n', 4);
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      outputReadableRef.value.set({ chunks: [two], dropped: 0 });
+      await tick();
+      const resets = terminal.reset.mock.calls.length;
+      // The stream was interrupted: buffered chunks are dropped.
+      outputReadableRef.value.set({ chunks: [], dropped: 1 });
+      await tick();
+      retainedReadableRef.value.set(snapshot('one\ntwo\nthree\n', 14, 1));
+      await tick();
+      expect(terminal.reset.mock.calls.length).toBe(resets);
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\nthree\n');
+    });
+
+    it('confirms a new run with a snapshot and then shows only that run', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('old\n', 4, 0));
+      await tick();
+      const before = await requests();
+      const first = live('new\n', 0, 'run-2');
+      outputReadableRef.value.set({ chunks: [first], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('old\n');
+      retainedReadableRef.value.set(snapshot('new\nmore\n', 9, 1, { runId: 'run-2' }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('new\nmore\n');
+    });
+
+    it('ignores an older run once a snapshot shows it is stale', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('b1\n', 3, 0, { runId: 'run-b' }));
+      await tick();
+      const before = await requests();
+      const stale = live('a1\n', 0, 'run-a');
+      outputReadableRef.value.set({ chunks: [stale], dropped: 0 });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      // The fresh snapshot still names run B: run A was older.
+      retainedReadableRef.value.set(snapshot('b1\n', 3, 1, { runId: 'run-b' }));
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [stale, live('a2\n', 3, 'run-a'), live('b2\n', 3, 'run-b')],
+        dropped: 0,
+      });
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      expect(textSinceLastReset(terminal)).toBe('b1\nb2\n');
+    });
+
+    it('leaves out an older run still buffered when a new run is snapshotted', async () => {
+      const terminal = await mount([live('old\n', 0, 'run-1'), live('new\n', 0, 'run-2')]);
+      retainedReadableRef.value.set(snapshot('new\n', 4, 2, { runId: 'run-2' }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('new\n');
+    });
+
+    it('keeps buffered output older than a capped first snapshot', async () => {
+      const lines = [live('line 1\n', 0), live('line 2\n', 7), live('line 3\n', 14)];
+      const terminal = await mount(lines);
+      retainedReadableRef.value.set(snapshot('line 2\nline 3\n', 21, 3, { start: 7 }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\n');
+    });
+
+    it('completes a character split across a snapshot and its refresh', async () => {
+      const head = Uint8Array.of(0x41, 0xe2);
+      const whole = Uint8Array.of(0x41, 0xe2, 0x82, 0xac, 0x42);
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('A', 2, 0, { bytes: head }));
+      await tick();
+      retainedReadableRef.value.set(snapshot('A€B', 5, 0, { bytes: whole }));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('A€B');
+    });
+
+    it('completes a character split across a snapshot and the next live chunk', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('A', 2, 0, { bytes: Uint8Array.of(0x41, 0xe2) }));
+      await tick();
+      const tail = Uint8Array.of(0x82, 0xac, 0x42);
+      outputReadableRef.value.set({
+        chunks: [
+          {
+            text: '\ufffdB',
+            timestamp: 't',
+            data: bytesB64(tail),
+            position: { runId: 'run-1', bootId: 'boot-1', start: 2, end: 5 },
+          },
+        ],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('A€B');
+    });
+
+    it('keeps streaming when the refresh for a first run comes back empty', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set({
+        scriptId: 's-1',
+        status: 'unavailable',
+        liveOffset: 0,
+        cursor: { runId: null, bootId: 'boot-1', start: 0, end: 0, logStart: 0 },
+      });
+      await tick();
+      const blank = live('\n', 0, 'run-2');
+      outputReadableRef.value.set({ chunks: [blank], dropped: 0 });
+      await tick();
+      // The refresh was read before the run logged anything.
+      retainedReadableRef.value.set({
+        scriptId: 's-1',
+        status: 'unavailable',
+        liveOffset: 1,
+        cursor: { runId: 'run-2', bootId: 'boot-1', start: 0, end: 0, logStart: 0 },
+      });
+      await tick();
+      outputReadableRef.value.set({ chunks: [blank, live('next\n', 1, 'run-2')], dropped: 0 });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('\nnext\n');
+    });
+
+    it('accepts a gap a fresh snapshot cannot fill instead of refreshing again', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const before = await requests();
+      const late = live('later\n', 10);
+      outputReadableRef.value.set({ chunks: [late], dropped: 0 });
+      await tick();
+      retainedReadableRef.value.set(snapshot('one\n', 4, 1));
+      await tick();
+      expect(await requests()).toBe(before + 1);
+      const text = textSinceLastReset(terminal);
+      expect(text.startsWith('one\n') && text.endsWith('later\n')).toBe(true);
+      expect(text, 'the missing output is marked').not.toBe('one\nlater\n');
+    });
+
+    it('shows output of the joined run that arrives while another run is unconfirmed', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const other = live('elsewhere\n', 0, 'run-1', 'boot-2');
+      outputReadableRef.value.set({ chunks: [other, live('two\n', 4)], dropped: 0 });
+      await tick();
+      retainedReadableRef.value.set(snapshot('one\n', 4, 1));
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\ntwo\n');
+    });
+
+    it('keeps the screen and lets held output through when a refresh fails', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 0));
+      await tick();
+      const resets = terminal.reset.mock.calls.length;
+      outputReadableRef.value.set({ chunks: [live('three\n', 8)], dropped: 0 });
+      await tick();
+      retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
+      await tick();
+      expect(terminal.reset.mock.calls.length).toBe(resets);
+      const text = textSinceLastReset(terminal);
+      expect(text.startsWith('one\n') && text.endsWith('three\n')).toBe(true);
+      expect(text, 'the missing output is marked').not.toBe('one\nthree\n');
+    });
+
+    it('completes a character when the first snapshot holds only its first byte', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set({
+        scriptId: 's-1',
+        status: 'unavailable',
+        liveOffset: 0,
+        cursor: { runId: 'run-1', bootId: 'boot-1', start: 0, end: 1, logStart: 0 },
+        data: bytesB64(Uint8Array.of(0xe2)),
+      });
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [
+          {
+            text: '\ufffd',
+            timestamp: 't',
+            data: bytesB64(Uint8Array.of(0x82, 0xac)),
+            position: { runId: 'run-1', bootId: 'boot-1', start: 1, end: 3 },
+          },
+        ],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('€');
+    });
+
+    it('writes daemon notices that arrive after the read but not those before it', async () => {
+      const early = notice('--- Restarting ---\r\n');
+      const terminal = await mount([early]);
+      retainedReadableRef.value.set(snapshot('one\n', 4, 1));
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [early, notice('--- Exited too quickly ---\r\n')],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('one\n--- Exited too quickly ---\r\n');
+    });
+  });
+
   it('keeps live bytes the daemon no longer has when its first answer has no output', async () => {
     outputReadableRef.value = createControllableReadable({
       chunks: [{ text: 'live bytes', timestamp: 'now' }],
