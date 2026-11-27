@@ -35,12 +35,13 @@ import {
 } from './backend-transport';
 import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
-import { LiveWorkspacesClient } from './live-workspaces-client';
+import { LiveWorkspacesClient, WORKSPACE_LIST_PAGE_TIMEOUT_MS } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
 import { appClient } from '$lib/client';
 import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 
 const mockedRequest = vi.mocked(backendRequest);
+const LIST_OPTIONS = { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS };
 
 describe('LiveWorkspacesClient mutations (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
@@ -811,6 +812,35 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([[], []]);
   });
 
+  it('gives every page the long list timeout so one slow page does not restart the read', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({
+        workspaces: [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' }],
+        nextToken: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        workspaces: [{ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2' }],
+        nextToken: null,
+      });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list({ includeArchived: true });
+
+    expect(workspaces.map((workspace) => workspace.id)).toEqual([
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+    ]);
+    expect(WORKSPACE_LIST_PAGE_TIMEOUT_MS).toBeGreaterThan(30_000);
+    expect(mockedRequest.mock.calls).toEqual([
+      ['workspace.list', { includeArchived: true }, { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS }],
+      [
+        'workspace.list',
+        { includeArchived: true, nextToken: 'page-2' },
+        { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS },
+      ],
+    ]);
+  });
+
   it('clears a failed single-flight read so a later call can retry', async () => {
     mockedRequest
       .mockRejectedValueOnce(new Error('workspace.list timed out'))
@@ -844,7 +874,11 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list({ includeArchived: true });
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'workspace.list',
+      { includeArchived: true },
+      LIST_OPTIONS,
+    );
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0]).toMatchObject({
       id: '11111111-1111-4111-8111-111111111111',
@@ -860,13 +894,18 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     const client = new LiveWorkspacesClient();
 
     await client.list({ includeArchived: true });
-    expect(mockedRequest).toHaveBeenLastCalledWith('workspace.list', { includeArchived: true });
+    expect(mockedRequest).toHaveBeenLastCalledWith(
+      'workspace.list',
+      { includeArchived: true },
+      LIST_OPTIONS,
+    );
 
     await client.list({ includeArchived: true, includeRetired: true });
-    expect(mockedRequest).toHaveBeenLastCalledWith('workspace.list', {
-      includeArchived: true,
-      includeRetired: true,
-    });
+    expect(mockedRequest).toHaveBeenLastCalledWith(
+      'workspace.list',
+      { includeArchived: true, includeRetired: true },
+      LIST_OPTIONS,
+    );
   });
 
   it('never shares an in-flight retired read between callers', async () => {
@@ -936,7 +975,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined, LIST_OPTIONS);
     expect(workspaces[0]?.displayStatus).toBe('idle');
   });
 
@@ -962,7 +1001,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined, LIST_OPTIONS);
     expect(workspaces[0]).toMatchObject({
       id: '44444444-4444-4444-8444-444444444444',
       displayStatus: 'needs_attention',
@@ -984,7 +1023,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined, LIST_OPTIONS);
     expect(workspaces[0]?.displayStatus).toBeUndefined();
   });
 
@@ -1051,7 +1090,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined, LIST_OPTIONS);
     expect(workspaces[0]).toMatchObject({
       id: '55555555-5555-4555-8555-555555555555',
       attention: 'unread',
@@ -1097,7 +1136,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined, LIST_OPTIONS);
     expect(workspaces[0]).toMatchObject({
       id: '77777777-7777-4777-8777-777777777777',
       waiting: true,
