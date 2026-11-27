@@ -529,7 +529,7 @@ test('a remote machine: install, approve, open there, and the model call goes to
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].webContents.session.getStoragePath(),
       ),
-    ).toContain('intent-app-quick-call-on-e2e-remote');
+    ).toContain('intent-app_e2e-remote_quick-call');
     expect(
       await page.evaluate(async () => {
         await (window as any).intent.storage.set('e2e', { machine: 'remote' });

@@ -168,14 +168,14 @@ export function intentAppWindowTitle(name: string, machineLabel?: string | null)
 
 /**
  * Session partition of an app (browser storage, IndexedDB). Uninstall clears
- * it. The local machine keeps the contract name `persist:intent-app-<appId>`;
- * an app of another machine adds that machine's key, so each machine's copy
- * keeps its own storage.
+ * it. The local machine keeps the contract name `persist:intent-app-<appId>`.
+ * An app of another machine gets `persist:intent-app_<machineKey>_<appId>`:
+ * `_` is outside the app id alphabet (`[a-z0-9-]`), so no local app id can
+ * name a remote partition, and uninstalling a local app never clears the
+ * storage of another machine's app.
  */
 export function intentAppPartition(appId: string, machineKey?: string | null): string {
-  return machineKey
-    ? `persist:intent-app-${appId}-on-${machineKey}`
-    : `persist:intent-app-${appId}`;
+  return machineKey ? `persist:intent-app_${machineKey}_${appId}` : `persist:intent-app-${appId}`;
 }
 
 /** Whether an app can be opened: approved for the installed hash. */
