@@ -28,8 +28,11 @@
     onClose,
   }: {
     app: IntentApp;
-    /** Install a checked package first; `replace`: it replaces the installed app. */
-    install?: { replace: boolean } | null;
+    /**
+     * Install a checked package first; `replace`: it replaces the installed app;
+     * `installed`: the install is done and only the approval is left.
+     */
+    install?: { replace: boolean; installed: boolean } | null;
     open?: boolean;
     onClose: () => void;
   } = $props();
@@ -106,7 +109,7 @@
     ? m.settings_intentApps_installDialog_title({ name: app.name })
     : m.settings_intentApps_approveDialog_title({ name: app.name })}
   description={m.settings_intentApps_approveDialog_description({ version: app.version })}
-  submitLabel={install
+  submitLabel={install && !install.installed
     ? m.settings_intentApps_installDialog_install_label()
     : m.settings_intentApps_approveDialog_approve_label()}
   canSubmit={(install !== null || level !== 3) && !busy}

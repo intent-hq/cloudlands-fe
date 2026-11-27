@@ -119,6 +119,7 @@
     appStore.dispatch(
       intentAppPackageChecked({
         uploadId: 'upload-preview',
+        installed: false,
         replace: true,
         preview: {
           app: { ...base, version: '1.3.0', open: false },

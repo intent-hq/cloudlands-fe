@@ -134,13 +134,15 @@
   function onDrop(event: DragEvent) {
     event.preventDefault();
     dragging = false;
+    if (installBusy) return;
     const file = event.dataTransfer?.files?.[0];
     const path = file ? droppedPath(file) : '';
     if (path) appStore.dispatch(intentAppPackageChosen(path));
   }
 
   function onDragOver(event: DragEvent) {
-    if (!event.dataTransfer?.types.includes('Files')) return;
+    // One package at a time: no drop while a check or an install runs.
+    if (installBusy || !event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
     dragging = true;
@@ -259,9 +261,12 @@
 {#if packageInstall}
   <IntentAppApproveDialog
     app={packageInstall.preview.app}
-    install={{ replace: packageInstall.replace }}
+    install={{ replace: packageInstall.replace, installed: packageInstall.installed }}
     open={true}
-    onClose={() => appStore.dispatch(intentAppPackageDismissed(packageInstall.uploadId))}
+    onClose={() =>
+      appStore.dispatch(
+        intentAppPackageDismissed(packageInstall.installed ? null : packageInstall.uploadId),
+      )}
   />
 {/if}
 {#if reviewApp}

@@ -47,6 +47,14 @@ const APP = {
   open: false,
 } satisfies IntentApp;
 
+/** An `app.install` result for the APP package. */
+const checkResult = (dryRun = true) => ({
+  app: APP,
+  replaced: false,
+  approvalReset: false,
+  dryRun,
+});
+
 const libraryState = (overrides: Partial<IntentAppsState> = {}): IntentAppsState => ({
   labEnabled: true,
   supported: true,
@@ -299,6 +307,99 @@ describe('intentAppsSaga', () => {
     expect(main.invoke).toHaveBeenCalledWith('intent-apps:discard-package', {
       uploadId: 'upload-3',
     });
+    task.cancel();
+  });
+
+  it('checks one package at a time: a second drop during a check starts no upload', async () => {
+    let release: (value: unknown) => void = () => {};
+    const main = installMain({
+      'intent-apps:get-state': () => libraryState(),
+      'intent-apps:install': () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    });
+    const { dispatch, task, getState } = createHarness();
+    await settle();
+    dispatch(intentAppPackageChosen('/tmp/a.intentapp'));
+    await settle();
+    dispatch(intentAppPackageChosen('/tmp/b.intentapp'));
+    await settle();
+    release({ ok: true, result: { ...checkResult(), uploadId: 'upload-a' } });
+    await settle();
+    const installs = main.invoke.mock.calls.filter(
+      ([channel]) => channel === 'intent-apps:install',
+    );
+    expect(installs).toEqual([['intent-apps:install', { path: '/tmp/a.intentapp', dryRun: true }]]);
+    expect(getState().intentApps.packageInstall?.uploadId).toBe('upload-a');
+    task.cancel();
+  });
+
+  it('retries only the approval after the install succeeded and the approval failed', async () => {
+    let approveAnswers = 0;
+    const main = installMain({
+      'intent-apps:get-state': () => libraryState({ apps: [] }),
+      'intent-apps:install': (payload: { dryRun?: boolean }) => ({
+        ok: true,
+        result: { ...checkResult(payload.dryRun === true), uploadId: 'upload-1' },
+      }),
+      'intent-apps:approve': () =>
+        approveAnswers++ === 0
+          ? { ok: false, error: { code: 'internal', message: 'disconnected' } }
+          : { ok: true, result: { app: APP } },
+    });
+    const { dispatch, task, getState } = createHarness();
+    await settle();
+    dispatch(intentAppPackageChosen('/tmp/pomodoro'));
+    await settle();
+    dispatch(intentAppPackageInstallRequested(['models']));
+    await settle();
+    expect(getState().intentApps.packageInstall).toMatchObject({ installed: true });
+    expect(getState().intentApps.failure?.kind).toBe('approve');
+
+    dispatch(intentAppPackageInstallRequested(['models']));
+    await settle();
+    const installs = main.invoke.mock.calls.filter(
+      ([channel, payload]) =>
+        channel === 'intent-apps:install' && !(payload as { dryRun?: boolean }).dryRun,
+    );
+    expect(installs).toHaveLength(1);
+    expect(
+      main.invoke.mock.calls.filter(([channel]) => channel === 'intent-apps:approve'),
+    ).toHaveLength(2);
+    expect(getState().intentApps.packageInstall).toBeNull();
+    task.cancel();
+  });
+
+  it('does not approve or close a newer review when a dismissed install answers late', async () => {
+    let releaseInstall: (value: unknown) => void = () => {};
+    let checks = 0;
+    const main = installMain({
+      'intent-apps:get-state': () => libraryState({ apps: [] }),
+      'intent-apps:install': (payload: { dryRun?: boolean }) =>
+        payload.dryRun
+          ? { ok: true, result: { ...checkResult(), uploadId: `upload-${++checks}` } }
+          : new Promise((resolve) => {
+              releaseInstall = resolve;
+            }),
+      'intent-apps:approve': () => ({ ok: true, result: { app: APP } }),
+      'intent-apps:discard-package': () => ({ ok: true }),
+    });
+    const { dispatch, task, getState } = createHarness();
+    await settle();
+    dispatch(intentAppPackageChosen('/tmp/a.intentapp'));
+    await settle();
+    dispatch(intentAppPackageInstallRequested(['models']));
+    await settle();
+    dispatch(intentAppPackageDismissed('upload-1'));
+    dispatch(intentAppPackageChosen('/tmp/b.intentapp'));
+    await settle();
+    expect(getState().intentApps.packageInstall?.uploadId).toBe('upload-2');
+
+    releaseInstall({ ok: true, result: { ...checkResult(false), uploadId: 'upload-1' } });
+    await settle();
+    expect(main.invoke).not.toHaveBeenCalledWith('intent-apps:approve', expect.anything());
+    expect(getState().intentApps.packageInstall?.uploadId).toBe('upload-2');
     task.cancel();
   });
 

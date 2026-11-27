@@ -15,7 +15,7 @@ import {
   put,
   take,
   takeEvery,
-  takeLatest,
+  takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -34,6 +34,7 @@ import {
   intentAppPackageChecked,
   intentAppPackageChosen,
   intentAppPackageDismissed,
+  intentAppPackageInstalled,
   intentAppPackageInstallRequested,
   intentAppPackagePickRequested,
   intentAppRevokeRequested,
@@ -205,10 +206,14 @@ function* handlePick() {
 /**
  * Upload a chosen package to the window's machine and check it with a dry run;
  * an installed app of the same id makes it a replace check of the same upload.
+ * One check at a time (`takeLeading`, and the library takes no pick or drop
+ * meanwhile), so every upload that main begins ends in the review or is
+ * discarded here.
  */
 function* handleChosen({ payload: [path] }: ReturnType<typeof intentAppPackageChosen>) {
   const previous = yield* selectIntentAppPackageInstall.effect();
-  if (previous) yield* put(intentAppPackageDismissed(previous.uploadId));
+  if (previous)
+    yield* put(intentAppPackageDismissed(previous.installed ? null : previous.uploadId));
   yield* put(intentAppsActionStarted('install', null));
   try {
     let replace = false;
@@ -229,7 +234,7 @@ function* handleChosen({ payload: [path] }: ReturnType<typeof intentAppPackageCh
     }
     yield* put(intentAppsActionFinished());
     const { uploadId, ...preview } = result.result;
-    yield* put(intentAppPackageChecked({ uploadId, replace, preview }));
+    yield* put(intentAppPackageChecked({ uploadId, replace, preview, installed: false }));
   } catch (error) {
     yield* put(
       intentAppsActionFailed('install', null, {
@@ -240,9 +245,18 @@ function* handleChosen({ payload: [path] }: ReturnType<typeof intentAppPackageCh
   }
 }
 
+/** Whether the review of `uploadId` is still the one on screen (not dismissed or replaced). */
+function* isCurrentReview(uploadId: string): SagaGenerator<boolean> {
+  const current = yield* selectIntentAppPackageInstall.effect();
+  return current?.uploadId === uploadId;
+}
+
 /**
  * Install the checked upload, then approve it with the features the user
- * kept. The approval binds to the hash the user saw in the check.
+ * kept. The approval binds to the hash the user saw in the check. The install
+ * ends the upload, so once it succeeds the review only retries the approval.
+ * A review that was dismissed or replaced while its install ran is left alone:
+ * the app is installed and waits for approval in the library.
  */
 function* handlePackageInstall({
   payload: [features],
@@ -250,18 +264,21 @@ function* handlePackageInstall({
   const pending = yield* selectIntentAppPackageInstall.effect();
   if (!pending) return;
   const checked = pending.preview.app;
-  const installed = yield* runAction<IntentAppPackageInstallResult>('install', null, () =>
-    intentAppsRequests.install({ uploadId: pending.uploadId, replace: pending.replace }),
-  );
-  if (!installed) return;
-  if (installed.app.bundleHash !== checked.bundleHash) {
-    yield* put(
-      intentAppsActionFailed('install', null, {
-        code: 'hash-mismatch',
-        message: 'The installed app is not the one that was checked',
-      }),
+  if (!pending.installed) {
+    const installed = yield* runAction<IntentAppPackageInstallResult>('install', null, () =>
+      intentAppsRequests.install({ uploadId: pending.uploadId, replace: pending.replace }),
     );
-    return;
+    if (!installed || !(yield* call(isCurrentReview, pending.uploadId))) return;
+    yield* put(intentAppPackageInstalled(pending.uploadId));
+    if (installed.app.bundleHash !== checked.bundleHash) {
+      yield* put(
+        intentAppsActionFailed('install', null, {
+          code: 'hash-mismatch',
+          message: 'The installed app is not the one that was checked',
+        }),
+      );
+      return;
+    }
   }
   if (checked.permissions.level !== 3) {
     const approved = yield* runAction<unknown>('approve', checked.id, () =>
@@ -274,7 +291,7 @@ function* handlePackageInstall({
     );
     if (approved === undefined) return;
   }
-  yield* put(intentAppPackageDismissed(null));
+  if (yield* call(isCurrentReview, pending.uploadId)) yield* put(intentAppPackageDismissed(null));
 }
 
 function* handleDismissed({ payload: [uploadId] }: ReturnType<typeof intentAppPackageDismissed>) {
@@ -308,7 +325,7 @@ export function* intentAppsSaga(): SagaGenerator<void> {
     takeEvery(intentAppsLabRequested, handleLab),
     takeEvery(intentAppsRefreshRequested, handleRefresh),
     takeEvery(intentAppPackagePickRequested, handlePick),
-    takeLatest(intentAppPackageChosen, handleChosen),
+    takeLeading(intentAppPackageChosen, handleChosen),
     takeEvery(intentAppPackageInstallRequested, handlePackageInstall),
     takeEvery(intentAppPackageDismissed, handleDismissed),
     takeEvery(intentAppApproveRequested, handleApprove),

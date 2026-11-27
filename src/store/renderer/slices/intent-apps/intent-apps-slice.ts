@@ -28,6 +28,8 @@ export interface IntentAppsPackageInstall {
   uploadId: string;
   replace: boolean;
   preview: IntentAppInstallResult;
+  /** The install succeeded and ended the upload; only the approval is left. */
+  installed: boolean;
 }
 
 export interface IntentAppsApproveRequest {
@@ -76,6 +78,10 @@ export const intentAppPackageChosen = createAction<[path: string]>('intentApps/p
 /** Install the checked package and approve it with these features. */
 export const intentAppPackageInstallRequested = createAction<[features: string[]]>(
   'intentApps/packageInstallRequested',
+);
+/** The checked package is installed (its upload is used up); the review keeps the approval. */
+export const intentAppPackageInstalled = createAction<[uploadId: string]>(
+  'intentApps/packageInstalled',
 );
 /** Close the install review; a package that was not installed is discarded. */
 export const intentAppPackageDismissed = createAction<[uploadId: string | null]>(
@@ -126,6 +132,11 @@ intentAppsReducer.with(intentAppPackageChecked, (state, { payload: [packageInsta
   ...state,
   packageInstall,
 }));
+intentAppsReducer.with(intentAppPackageInstalled, (state, { payload: [uploadId] }) =>
+  state.packageInstall?.uploadId === uploadId
+    ? { ...state, packageInstall: { ...state.packageInstall, installed: true } }
+    : state,
+);
 intentAppsReducer.with(intentAppPackageDismissed, (state) => ({
   ...state,
   packageInstall: null,
