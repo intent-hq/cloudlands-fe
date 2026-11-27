@@ -19,7 +19,14 @@ function app(id: string, name: string, approved: boolean, icon: string | null = 
     fileCount: 1,
     sizeBytes: 10,
     permissions: { level: 1, features: [] },
-    window: { width: 960, height: 640, minWidth: null, minHeight: null, resizable: true, alwaysOnTop: false },
+    window: {
+      width: 960,
+      height: 640,
+      minWidth: null,
+      minHeight: null,
+      resizable: true,
+      alwaysOnTop: false,
+    },
     approval: {
       status: approved ? 'approved' : 'pending',
       level: approved ? 1 : null,
@@ -54,7 +61,7 @@ describe('Intent OS apps state file', () => {
     );
   });
 
-  it('lists approved apps only, in app.list order, with the window title (spec 3.5)', () => {
+  it('lists approved apps only, in app.list order, with the window title', () => {
     const doc = buildAppsStateFile(
       [app('notes', 'Notes', true), app('draft', 'Draft', false), app('timer', 'Timer', true)],
       (entry) => (entry.id === 'timer' ? '/s/app-icons/timer.png' : null),

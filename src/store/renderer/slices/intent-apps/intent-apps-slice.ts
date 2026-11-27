@@ -40,7 +40,11 @@ export interface IntentAppsSliceState {
   /** The request in flight, with its app (null for install and the Labs switch). */
   busy: { kind: IntentAppsActionKind; appId: string | null } | null;
   /** The last failed request (cleared by the next request of the same kind). */
-  failure: { kind: IntentAppsActionKind; appId: string | null; error: IntentAppsActionError } | null;
+  failure: {
+    kind: IntentAppsActionKind;
+    appId: string | null;
+    error: IntentAppsActionError;
+  } | null;
   /** The last dry-run install result, for the install dialog's preview. */
   installPreview: IntentAppInstallResult | null;
   /** The last completed install, so the dialog can close and offer approval. */
@@ -82,53 +86,51 @@ export const intentAppsActionStarted = createAction<
   [kind: IntentAppsActionKind, appId: string | null]
 >('intentApps/actionStarted');
 export const intentAppsActionFinished = createAction('intentApps/actionFinished');
-export const intentAppsActionFailed = createAction<
-  [kind: IntentAppsActionKind, appId: string | null, error: IntentAppsActionError]
->('intentApps/actionFailed');
+export const intentAppsActionFailed =
+  createAction<[kind: IntentAppsActionKind, appId: string | null, error: IntentAppsActionError]>(
+    'intentApps/actionFailed',
+  );
 export const intentAppInstallPreviewReceived = createAction<[result: IntentAppInstallResult]>(
   'intentApps/installPreviewReceived',
 );
-export const intentAppInstalled = createAction<[result: IntentAppInstallResult]>(
-  'intentApps/installed',
-);
-export const intentAppIconReceived = createAction<[key: string, url: string | null]>(
-  'intentApps/iconReceived',
-);
+export const intentAppInstalled =
+  createAction<[result: IntentAppInstallResult]>('intentApps/installed');
+export const intentAppIconReceived =
+  createAction<[key: string, url: string | null]>('intentApps/iconReceived');
 
 export const intentAppsReducer = createReducer<IntentAppsSliceState>(initialState);
-intentAppsReducer
-  .with(intentAppsStateReceived, (state, { payload: [library] }) => ({
-    ...state,
-    library,
-    loaded: true,
-  }))
-  .with(intentAppsActionStarted, (state, { payload: [kind, appId] }) => ({
-    ...state,
-    busy: { kind, appId },
-    failure: state.failure?.kind === kind ? null : state.failure,
-  }))
-  .with(intentAppsActionFinished, (state) => ({ ...state, busy: null }))
-  .with(intentAppsActionFailed, (state, { payload: [kind, appId, error] }) => ({
-    ...state,
-    busy: null,
-    failure: { kind, appId, error },
-  }))
-  .with(intentAppInstallPreviewReceived, (state, { payload: [result] }) => ({
-    ...state,
-    installPreview: result,
-  }))
-  .with(intentAppInstalled, (state, { payload: [result] }) => ({
-    ...state,
-    installPreview: null,
-    installed: result,
-  }))
-  .with(intentAppInstallDialogReset, (state) => ({
-    ...state,
-    installPreview: null,
-    installed: null,
-    failure: state.failure?.kind === 'install' ? null : state.failure,
-  }))
-  .with(intentAppIconReceived, (state, { payload: [key, url] }) => ({
-    ...state,
-    icons: { ...state.icons, [key]: url },
-  }));
+intentAppsReducer.with(intentAppsStateReceived, (state, { payload: [library] }) => ({
+  ...state,
+  library,
+  loaded: true,
+}));
+intentAppsReducer.with(intentAppsActionStarted, (state, { payload: [kind, appId] }) => ({
+  ...state,
+  busy: { kind, appId },
+  failure: state.failure?.kind === kind ? null : state.failure,
+}));
+intentAppsReducer.with(intentAppsActionFinished, (state) => ({ ...state, busy: null }));
+intentAppsReducer.with(intentAppsActionFailed, (state, { payload: [kind, appId, error] }) => ({
+  ...state,
+  busy: null,
+  failure: { kind, appId, error },
+}));
+intentAppsReducer.with(intentAppInstallPreviewReceived, (state, { payload: [result] }) => ({
+  ...state,
+  installPreview: result,
+}));
+intentAppsReducer.with(intentAppInstalled, (state, { payload: [result] }) => ({
+  ...state,
+  installPreview: null,
+  installed: result,
+}));
+intentAppsReducer.with(intentAppInstallDialogReset, (state) => ({
+  ...state,
+  installPreview: null,
+  installed: null,
+  failure: state.failure?.kind === 'install' ? null : state.failure,
+}));
+intentAppsReducer.with(intentAppIconReceived, (state, { payload: [key, url] }) => ({
+  ...state,
+  icons: { ...state.icons, [key]: url },
+}));

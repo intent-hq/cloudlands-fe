@@ -17,10 +17,7 @@
   import { confirm } from '$lib/components/patterns/confirm';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    isIntentAppOpenable,
-    type IntentApp,
-  } from '$shared/intent-apps/intent-apps-types';
+  import { isIntentAppOpenable, type IntentApp } from '$shared/intent-apps/intent-apps-types';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectIntentApps,

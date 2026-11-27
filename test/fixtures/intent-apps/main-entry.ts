@@ -19,11 +19,13 @@ protocol.registerSchemesAsPrivileged([
 
 // Headless hosts (xvfb) have no GPU.
 app.disableHardwareAcceleration();
-if (process.env.INTENT_APPS_E2E_PROFILE) app.setPath('userData', process.env.INTENT_APPS_E2E_PROFILE);
+if (process.env.INTENT_APPS_E2E_PROFILE)
+  app.setPath('userData', process.env.INTENT_APPS_E2E_PROFILE);
 
 const socketPath = process.env.INTENTD_SOCKET;
 const preloadPath = process.env.INTENT_APP_PRELOAD;
-if (!socketPath || !preloadPath) throw new Error('INTENTD_SOCKET and INTENT_APP_PRELOAD are required');
+if (!socketPath || !preloadPath)
+  throw new Error('INTENTD_SOCKET and INTENT_APP_PRELOAD are required');
 
 app.on('window-all-closed', () => {
   // The spec closes the app itself.

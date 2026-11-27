@@ -31,7 +31,10 @@ import { createValidatedHandler } from '../../../main/ipc-validation-middleware'
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { getRendererWebContents } from '../../../main/window-backend';
 import { createBackendSocket } from '../../backend/main/backend-connection';
-import { requestRouted, TRANSFER_REQUEST_TIMEOUT_MS } from '../../backend/main/transfer-connections';
+import {
+  requestRouted,
+  TRANSFER_REQUEST_TIMEOUT_MS,
+} from '../../backend/main/transfer-connections';
 import {
   getLocalBackendClient,
   onBackendNotification,
@@ -46,7 +49,7 @@ const CHANNELS = IPC_CHANNELS.INTENT_APPS;
 const APP_EVENTS = ['app:installed', 'app:removed', 'app:approval-changed'] as const;
 
 /** The Intent OS helper (intent-hq/intent-os): focuses an open app's window, else opens it. */
-export const INTENT_OS_APPS_HELPER = '/usr/lib/intent-os/apps';
+const INTENT_OS_APPS_HELPER = '/usr/lib/intent-os/apps';
 
 let labEnabled = false;
 let labLoaded: Promise<void> | null = null;
@@ -134,9 +137,11 @@ function setState(next: IntentAppsState): void {
   state = next;
   broadcast();
   if (stateFile) {
-    stateFile.write(labEnabled && next.supported ? next.apps : []).catch((error: Error) =>
-      logger.warn('Could not write the Intent OS apps state file', { error: error.message }),
-    );
+    stateFile
+      .write(labEnabled && next.supported ? next.apps : [])
+      .catch((error: Error) =>
+        logger.warn('Could not write the Intent OS apps state file', { error: error.message }),
+      );
   }
 }
 
@@ -223,7 +228,8 @@ async function loadLab(): Promise<void> {
 }
 
 function requireLab(): void {
-  if (!labEnabled) throw Object.assign(new Error('Intent apps are off in Labs'), { data: { code: 'lab-off' } });
+  if (!labEnabled)
+    throw Object.assign(new Error('Intent apps are off in Labs'), { data: { code: 'lab-off' } });
 }
 
 /**
@@ -267,7 +273,8 @@ async function openFromRenderer(appId: string): Promise<void> {
     child.unref();
     return;
   }
-  await host!.openApp(appId);
+  if (!host) throw new Error('The app host is not ready');
+  await host.openApp(appId);
 }
 
 async function readIcon(appId: string): Promise<string | null> {
@@ -298,8 +305,8 @@ export function setupIntentAppsIPC(): void {
   host.registerIpc();
   if (isIntentOs()) {
     stateFile = new AppsStateFileWriter(intentStateDir(), async (app) => {
-      if (!app.icon) return null;
-      const file = await host!.readBundle(app.id, app.icon, app.bundleHash);
+      if (!app.icon || !host) return null;
+      const file = await host.readBundle(app.id, app.icon, app.bundleHash);
       return Buffer.from(file.contentBase64, 'base64');
     });
   }
@@ -445,9 +452,4 @@ export function setupIntentAppsIPC(): void {
     await refresh();
     for (const appId of pendingOpens.splice(0)) requestOpenApp(appId);
   });
-}
-
-/** Quit: close app windows so their sessions close. */
-export function shutdownIntentApps(): void {
-  host?.closeAll('closed');
 }

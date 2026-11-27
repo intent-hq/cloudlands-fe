@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "侧边栏设置",
   "browser_overflow_fullScreen_label": "全屏",
   "settings_labs_intentApps_label": "Intent 应用",
-  "settings_labs_intentApps_description": "安装智能体在工作区中构建的小型 Web 应用，并在各自的窗口中打开。在此页面的“应用”中管理它们。仅限桌面应用。",
+  "settings_labs_intentApps_description": "安装智能体构建的 Web 应用，并在各自的窗口中打开（仅限桌面应用）。",
   "settings_section_intentApps": "应用",
-  "settings_intentApps_description": "智能体在工作区中构建并安装在这台电脑上的应用。每个应用在自己的窗口中打开，只能使用你批准的内容。",
+  "settings_intentApps_description": "智能体在工作区中构建的应用会在各自的窗口中打开，并且只使用你批准的内容。",
   "settings_intentApps_unsupported": "这台电脑上的 Intent 后端不支持应用。请更新 Intent 以使用应用。",
   "settings_intentApps_empty": "还没有应用。请让智能体在工作区中构建一个应用，然后在这里安装。",
   "settings_intentApps_loadFailed_error": "无法加载应用：{message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "工作区",
   "settings_intentApps_installDialog_workspace_placeholder": "选择工作区",
   "settings_intentApps_installDialog_path_label": "文件夹",
-  "settings_intentApps_installDialog_path_description": "工作区中的路径。使用 . 表示工作区文件夹本身。",
+  "settings_intentApps_installDialog_path_description": "工作区中的路径，或用 . 表示工作区文件夹本身。",
   "settings_intentApps_installDialog_check_label": "检查",
   "settings_intentApps_installDialog_install_label": "安装",
   "settings_intentApps_installDialog_replace_label": "用此版本替换已安装的应用",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "卸载 {name}？",
   "settings_intentApps_uninstallConfirm_description": "这会删除该应用及其保存的数据。",
   "settings_intentApps_approveDialog_publisher": "此应用声称来自 {name}。Intent 尚未核实。",
-  "settings_intentApps_approveDialog_signature": "此应用带有签名。Intent 目前还不检查签名。"
+  "settings_intentApps_approveDialog_signature": "此应用带有签名。Intent 目前还不检查签名。",
+  "settings_labs_intentApps_info": "在此页面的“应用”中管理已安装的应用。"
 }

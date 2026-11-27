@@ -85,7 +85,8 @@ const bridge = {
     if (type !== 'shortcut' && type !== 'session-ended') {
       throw new TypeError(`intent.on: unknown event type ${String(type)}`);
     }
-    if (typeof listener !== 'function') throw new TypeError('intent.on: listener must be a function');
+    if (typeof listener !== 'function')
+      throw new TypeError('intent.on: listener must be a function');
     let set = listeners.get(type);
     if (!set) {
       set = new Set();

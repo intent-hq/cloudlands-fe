@@ -78,14 +78,20 @@ describe('app bridge — daemon calls on the app connection', () => {
       result: undefined,
     });
     expect(request).toHaveBeenLastCalledWith('app.storage.set', { key: 'k', value: [1, 2] });
-    expect(await handleBridgeCall(ctx, 'storage.delete', ['k'])).toEqual({ ok: true, result: true });
+    expect(await handleBridgeCall(ctx, 'storage.delete', ['k'])).toEqual({
+      ok: true,
+      result: true,
+    });
     expect(request).toHaveBeenLastCalledWith('app.storage.delete', { key: 'k' });
     await handleBridgeCall(ctx, 'storage.list', [{ prefix: 'a', limit: 5, extra: 1 }]);
     expect(request).toHaveBeenLastCalledWith('app.storage.list', { prefix: 'a', limit: 5 });
   });
 
   it('resolves storage.get to undefined when the key is not found', async () => {
-    const ctx = context({}, vi.fn(async () => ({ found: false, value: null })));
+    const ctx = context(
+      {},
+      vi.fn(async () => ({ found: false, value: null })),
+    );
     expect(await handleBridgeCall(ctx, 'storage.get', ['k'])).toEqual({
       ok: true,
       result: undefined,
@@ -98,9 +104,17 @@ describe('app bridge — daemon calls on the app connection', () => {
     const response = await handleBridgeCall(ctx, 'notifications.show', [
       { title: 'Break', body: 'Stand up', tag: 't' },
     ]);
-    expect(request).toHaveBeenCalledWith('app.notify', { title: 'Break', body: 'Stand up', tag: 't' });
+    expect(request).toHaveBeenCalledWith('app.notify', {
+      title: 'Break',
+      body: 'Stand up',
+      tag: 't',
+    });
     expect(response).toEqual({ ok: true, result: { notificationId: 'n1' } });
-    expect(ctx.showNotification).toHaveBeenCalledWith({ title: 'Break', body: 'Stand up', tag: 't' });
+    expect(ctx.showNotification).toHaveBeenCalledWith({
+      title: 'Break',
+      body: 'Stand up',
+      tag: 't',
+    });
 
     const refused = context(
       {},
@@ -138,7 +152,10 @@ describe('app bridge — daemon calls on the app connection', () => {
   });
 
   it('rejects { available: false } with unavailable and the reason as message', async () => {
-    const ctx = context({}, vi.fn(async () => ({ available: false, reason: 'No provider' })));
+    const ctx = context(
+      {},
+      vi.fn(async () => ({ available: false, reason: 'No provider' })),
+    );
     expect(await handleBridgeCall(ctx, 'models.complete', [{ prompt: 'x' }])).toEqual({
       ok: false,
       error: { code: 'unavailable', message: 'No provider' },
@@ -147,7 +164,10 @@ describe('app bridge — daemon calls on the app connection', () => {
 
   it('does not pre-filter daemon calls: the daemon refuses them', async () => {
     const request = vi.fn(async () => {
-      throw new AppRpcError(-32003, 'Forbidden', { code: 'forbidden', detail: 'feature models not approved' });
+      throw new AppRpcError(-32003, 'Forbidden', {
+        code: 'forbidden',
+        detail: 'feature models not approved',
+      });
     });
     const ctx = context({ level: 1, features: [] }, request);
     expect(await handleBridgeCall(ctx, 'models.list', [])).toEqual({
@@ -222,7 +242,10 @@ describe('app bridge — host-local calls', () => {
 
   it('closes the window on window.close at any level', async () => {
     const ctx = context({ level: 1, features: [] });
-    expect(await handleBridgeCall(ctx, 'window.close', [])).toEqual({ ok: true, result: undefined });
+    expect(await handleBridgeCall(ctx, 'window.close', [])).toEqual({
+      ok: true,
+      result: undefined,
+    });
     expect(ctx.close).toHaveBeenCalled();
   });
 });

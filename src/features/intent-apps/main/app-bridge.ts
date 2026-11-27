@@ -19,7 +19,7 @@ import type {
 export const BRIDGE_VERSION = 1;
 
 /** `{ code, message, data? }`: what the app's promise rejects with (`IntentError`). */
-export interface BridgeError {
+interface BridgeError {
   code: string;
   message: string;
   data?: unknown;
@@ -48,7 +48,7 @@ export class AppDisconnectedError extends Error {
 }
 
 /** A refusal the host makes itself, with a bridge error code. */
-export class BridgeCallError extends Error {
+class BridgeCallError extends Error {
   constructor(
     readonly code: string,
     message: string,
@@ -87,6 +87,7 @@ export interface BridgeContext {
 }
 
 /** At most this many global shortcuts per app (contract). */
+/** @internal Exported for tests. */
 export const MAX_SHORTCUTS_PER_APP = 10;
 
 const DEFAULT_COMPLETE_TIMEOUT_MS = 120_000;
@@ -123,6 +124,7 @@ function requireString(value: unknown, name: string): string {
 }
 
 /** Map any failure to the error the app sees (contract table "Errors seen by the app"). */
+/** @internal Exported for tests. */
 export function toBridgeError(error: unknown): BridgeError {
   if (error instanceof BridgeCallError) {
     return error.data === undefined
@@ -204,7 +206,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       'app.complete',
       params,
       Math.min(Math.max(daemonTimeout, 1_000), 300_000) + COMPLETE_TIMEOUT_SLACK_MS,
-    )) as { available?: unknown; reason?: unknown; text?: unknown; provider?: unknown; model?: unknown };
+    )) as {
+      available?: unknown;
+      reason?: unknown;
+      text?: unknown;
+      provider?: unknown;
+      model?: unknown;
+    };
     if (result?.available === false) {
       throw new BridgeCallError(
         'unavailable',
@@ -216,7 +224,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   'window.setAlwaysOnTop': async (ctx, [on]) => {
     requireFeature(ctx.session, 'alwaysOnTop');
-    if (typeof on !== 'boolean') throw new BridgeCallError('invalid-params', 'on must be a boolean');
+    if (typeof on !== 'boolean')
+      throw new BridgeCallError('invalid-params', 'on must be a boolean');
     ctx.setAlwaysOnTop(on);
     return undefined;
   },
@@ -260,6 +269,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 };
 
 /** The bridge names the host maps (without `intent.`). */
+/** @internal Exported for tests. */
 export const BRIDGE_CALLS: readonly string[] = Object.freeze(Object.keys(HANDLERS));
 
 /** Answer one `intent-app:invoke` message. Never throws. */

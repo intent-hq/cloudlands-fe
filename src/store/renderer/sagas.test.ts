@@ -104,6 +104,7 @@ describe('renderer app saga registry', () => {
       'browserViewsLabSaga',
       'tabWindowSaga',
       'recentAgentsSaga',
+      'intentAppsSaga',
       'autoUpdateSaga',
       'specialistsSaga',
       'workspaceCatalogSaga',

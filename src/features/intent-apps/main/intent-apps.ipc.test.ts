@@ -78,7 +78,14 @@ const APP = {
   fileCount: 4,
   sizeBytes: 18234,
   permissions: { level: 2, features: ['models', 'notifications'] },
-  window: { width: 960, height: 640, minWidth: null, minHeight: null, resizable: true, alwaysOnTop: false },
+  window: {
+    width: 960,
+    height: 640,
+    minWidth: null,
+    minHeight: null,
+    resizable: true,
+    alwaysOnTop: false,
+  },
   approval: { status: 'pending', level: null, features: [], bundleHash: null, approvedAt: null },
   source: { workspaceId: 'ws-1', path: 'apps/pomodoro' },
   publisher: null,
@@ -152,7 +159,10 @@ describe('Intent apps library in main', () => {
     mocks.prefs.set('intentAppsLabEnabled', true);
     await setup();
     await settle();
-    expect(await invoke('intent-apps:refresh')).toMatchObject({ labEnabled: true, supported: false });
+    expect(await invoke('intent-apps:refresh')).toMatchObject({
+      labEnabled: true,
+      supported: false,
+    });
     expect(mocks.requests.map((request) => request.method)).not.toContain('app.list');
   });
 
@@ -166,13 +176,19 @@ describe('Intent apps library in main', () => {
       approvalReset: false,
       dryRun: (params as { dryRun?: boolean }).dryRun === true,
     }));
-    mocks.responses.set('app.approve', () => ({ app: { ...APP, approval: { ...APP.approval, status: 'approved' } } }));
+    mocks.responses.set('app.approve', () => ({
+      app: { ...APP, approval: { ...APP.approval, status: 'approved' } },
+    }));
     mocks.responses.set('app.revoke', () => ({ app: APP, revoked: true }));
     mocks.responses.set('app.uninstall', () => ({ removed: true }));
     mocks.requests.length = 0;
 
     expect(
-      await invoke('intent-apps:install', { workspaceId: 'ws-1', path: 'apps/pomodoro', dryRun: true }),
+      await invoke('intent-apps:install', {
+        workspaceId: 'ws-1',
+        path: 'apps/pomodoro',
+        dryRun: true,
+      }),
     ).toMatchObject({ ok: true, result: { dryRun: true, app: { id: 'pomodoro-timer' } } });
     expect(mocks.requests[0]).toEqual({
       method: 'app.install',
@@ -187,11 +203,18 @@ describe('Intent apps library in main', () => {
     });
     expect(mocks.requests.find((request) => request.method === 'app.approve')).toEqual({
       method: 'app.approve',
-      params: { appId: 'pomodoro-timer', bundleHash: 'sha256:9f2c', level: 2, features: ['models'] },
+      params: {
+        appId: 'pomodoro-timer',
+        bundleHash: 'sha256:9f2c',
+        level: 2,
+        features: ['models'],
+      },
     });
     await invoke('intent-apps:revoke', { appId: 'pomodoro-timer' });
     await invoke('intent-apps:uninstall', { appId: 'pomodoro-timer' });
-    expect(mocks.requests.filter((r) => r.method === 'app.revoke' || r.method === 'app.uninstall')).toEqual([
+    expect(
+      mocks.requests.filter((r) => r.method === 'app.revoke' || r.method === 'app.uninstall'),
+    ).toEqual([
       { method: 'app.revoke', params: { appId: 'pomodoro-timer' } },
       { method: 'app.uninstall', params: { appId: 'pomodoro-timer' } },
     ]);
@@ -202,7 +225,10 @@ describe('Intent apps library in main', () => {
     await setup();
     await settle();
     mocks.responses.set('app.install', () => {
-      throw Object.assign(new Error('App exists'), { rpcCode: -32602, data: { code: 'app-exists' } });
+      throw Object.assign(new Error('App exists'), {
+        rpcCode: -32602,
+        data: { code: 'app-exists' },
+      });
     });
     expect(await invoke('intent-apps:install', { workspaceId: 'ws-1', path: '.' })).toEqual({
       ok: false,

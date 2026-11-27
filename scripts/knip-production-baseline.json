@@ -151,7 +151,6 @@
     "src/features/backend/main/transfer-connections.ts": [
       "MAX_TRANSFER_CONNECTIONS",
       "SESSION_LEASE_IDLE_TTL_MS",
-      "TRANSFER_REQUEST_TIMEOUT_MS",
       "acquireTransferConnection",
       "disposeAllTransferConnections",
       "isTransferMethod"

@@ -99,6 +99,7 @@
               size: 'sm',
               label: m.settings_labs_intentApps_label(),
               description: m.settings_labs_intentApps_description(),
+              info: m.settings_labs_intentApps_info(),
               when: () => desktop,
               get: () => $intentAppsLab$,
               set: (enabled) => {

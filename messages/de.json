@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "Seitenleisten-Einstellungen",
   "browser_overflow_fullScreen_label": "Vollbild",
   "settings_labs_intentApps_label": "Intent-Apps",
-  "settings_labs_intentApps_description": "Kleine Web-Apps installieren, die Agenten in deinen Arbeitsbereichen bauen, und jede in einem eigenen Fenster öffnen. Verwalte sie unter Apps auf dieser Seite. Nur in der Desktop-App.",
+  "settings_labs_intentApps_description": "Web-Apps installieren, die Agenten bauen, und jede in einem eigenen Fenster öffnen, nur in der Desktop-App.",
   "settings_section_intentApps": "Apps",
-  "settings_intentApps_description": "Apps, die Agenten in deinen Arbeitsbereichen gebaut haben, auf diesem Computer installiert. Jede App öffnet sich in einem eigenen Fenster und kann nur nutzen, was du genehmigst.",
+  "settings_intentApps_description": "Apps, die Agenten in deinen Arbeitsbereichen gebaut haben, öffnen sich in einem eigenen Fenster und nutzen nur, was du genehmigst.",
   "settings_intentApps_unsupported": "Das Intent-Backend auf diesem Computer unterstützt keine Apps. Aktualisiere Intent, um sie zu nutzen.",
   "settings_intentApps_empty": "Noch keine Apps. Bitte einen Agenten, in einem Arbeitsbereich eine App zu bauen, und installiere sie dann hier.",
   "settings_intentApps_loadFailed_error": "Die Apps konnten nicht geladen werden: {message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "Arbeitsbereich",
   "settings_intentApps_installDialog_workspace_placeholder": "Arbeitsbereich wählen",
   "settings_intentApps_installDialog_path_label": "Ordner",
-  "settings_intentApps_installDialog_path_description": "Ein Pfad im Arbeitsbereich. Nutze . für den Ordner des Arbeitsbereichs selbst.",
+  "settings_intentApps_installDialog_path_description": "Ein Pfad im Arbeitsbereich oder . für den Ordner des Arbeitsbereichs selbst.",
   "settings_intentApps_installDialog_check_label": "Prüfen",
   "settings_intentApps_installDialog_install_label": "Installieren",
   "settings_intentApps_installDialog_replace_label": "Die installierte App durch diese Version ersetzen",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "{name} deinstallieren?",
   "settings_intentApps_uninstallConfirm_description": "Dadurch werden die App und ihre gespeicherten Daten gelöscht.",
   "settings_intentApps_approveDialog_publisher": "Laut der App stammt sie von {name}. Intent hat das nicht geprüft.",
-  "settings_intentApps_approveDialog_signature": "Die App hat eine Signatur. Intent prüft Signaturen noch nicht."
+  "settings_intentApps_approveDialog_signature": "Die App hat eine Signatur. Intent prüft Signaturen noch nicht.",
+  "settings_labs_intentApps_info": "Installierte Apps verwaltest du unter Apps auf dieser Seite."
 }

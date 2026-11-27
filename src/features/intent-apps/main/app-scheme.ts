@@ -11,6 +11,7 @@
 export const INTENT_APP_SCHEME = 'intent-app';
 
 /** The Content-Security-Policy of every scheme response (contract, verbatim). */
+/** @internal Exported for tests. */
 export const INTENT_APP_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'";
 
@@ -40,6 +41,7 @@ export function intentAppEntryUrl(appId: string, entry: string): string {
  * The bundle path a request names, or null when it is not a file of this app:
  * another host, `..`, `\`, NUL, or an empty path (the root serves the entry).
  */
+/** @internal Exported for tests. */
 export function bundlePathForUrl(url: string, target: AppSchemeTarget): string | null {
   let parsed: URL;
   try {
@@ -68,6 +70,7 @@ export function bundlePathForUrl(url: string, target: AppSchemeTarget): string |
 }
 
 /** `text/*` types get `; charset=utf-8` (the daemon sends them without a charset). */
+/** @internal Exported for tests. */
 export function contentTypeFor(mimeType: string): string {
   return mimeType.startsWith('text/') && !mimeType.includes(';')
     ? `${mimeType}; charset=utf-8`

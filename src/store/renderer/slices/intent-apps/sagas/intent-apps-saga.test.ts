@@ -26,7 +26,14 @@ const APP = {
   fileCount: 4,
   sizeBytes: 18234,
   permissions: { level: 2, features: ['models'] },
-  window: { width: 960, height: 640, minWidth: null, minHeight: null, resizable: true, alwaysOnTop: false },
+  window: {
+    width: 960,
+    height: 640,
+    minWidth: null,
+    minHeight: null,
+    resizable: true,
+    alwaysOnTop: false,
+  },
   approval: { status: 'pending', level: null, features: [], bundleHash: null, approvedAt: null },
   source: { workspaceId: 'ws-1', path: 'apps/pomodoro' },
   publisher: null,
@@ -58,7 +65,10 @@ function installMain(answers: Record<string, (payload: any) => unknown>) {
     }),
     offById: vi.fn(),
   };
-  return { invoke, push: (state: IntentAppsState) => listeners.get('intent-apps:changed')?.(state) };
+  return {
+    invoke,
+    push: (state: IntentAppsState) => listeners.get('intent-apps:changed')?.(state),
+  };
 }
 
 function createHarness() {
@@ -112,7 +122,9 @@ describe('intentAppsSaga', () => {
     const { dispatch, task, getState } = createHarness();
     await settle();
 
-    dispatch(intentAppInstallRequested({ workspaceId: 'ws-1', path: 'apps/pomodoro', dryRun: true }));
+    dispatch(
+      intentAppInstallRequested({ workspaceId: 'ws-1', path: 'apps/pomodoro', dryRun: true }),
+    );
     await settle();
     expect(main.invoke).toHaveBeenCalledWith('intent-apps:install', {
       workspaceId: 'ws-1',

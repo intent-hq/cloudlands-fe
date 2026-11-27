@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "Ajustes de la barra lateral",
   "browser_overflow_fullScreen_label": "Pantalla completa",
   "settings_labs_intentApps_label": "Apps de Intent",
-  "settings_labs_intentApps_description": "Instala pequeñas apps web que los agentes crean en tus espacios de trabajo y abre cada una en su propia ventana. Gestiónalas en Apps, en esta página. Solo en la app de escritorio.",
+  "settings_labs_intentApps_description": "Instala apps web que crean los agentes y abre cada una en su propia ventana, solo en la app de escritorio.",
   "settings_section_intentApps": "Apps",
-  "settings_intentApps_description": "Apps que los agentes crearon en tus espacios de trabajo, instaladas en este ordenador. Cada app se abre en su propia ventana y solo puede usar lo que apruebes.",
+  "settings_intentApps_description": "Las apps que los agentes crearon en tus espacios de trabajo se abren en su propia ventana y solo usan lo que apruebes.",
   "settings_intentApps_unsupported": "El backend de Intent de este ordenador no admite apps. Actualiza Intent para usarlas.",
   "settings_intentApps_empty": "Aún no hay apps. Pide a un agente que cree una app en un espacio de trabajo y luego instálala aquí.",
   "settings_intentApps_loadFailed_error": "No se pudieron cargar las apps: {message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "Espacio de trabajo",
   "settings_intentApps_installDialog_workspace_placeholder": "Elige un espacio de trabajo",
   "settings_intentApps_installDialog_path_label": "Carpeta",
-  "settings_intentApps_installDialog_path_description": "Una ruta del espacio de trabajo. Usa . para la carpeta del propio espacio de trabajo.",
+  "settings_intentApps_installDialog_path_description": "Una ruta del espacio de trabajo, o . para la carpeta del propio espacio de trabajo.",
   "settings_intentApps_installDialog_check_label": "Comprobar",
   "settings_intentApps_installDialog_install_label": "Instalar",
   "settings_intentApps_installDialog_replace_label": "Reemplazar la app instalada por esta versión",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "¿Desinstalar {name}?",
   "settings_intentApps_uninstallConfirm_description": "Esto elimina la app y los datos que guardó.",
   "settings_intentApps_approveDialog_publisher": "La app dice que es de {name}. Intent no lo ha comprobado.",
-  "settings_intentApps_approveDialog_signature": "La app tiene una firma. Intent aún no comprueba las firmas."
+  "settings_intentApps_approveDialog_signature": "La app tiene una firma. Intent aún no comprueba las firmas.",
+  "settings_labs_intentApps_info": "Gestiona las apps instaladas en Apps, en esta página."
 }

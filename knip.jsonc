@@ -29,6 +29,8 @@
     "src/preload/frame.ts!",
     // Browser-panel passkey frame preload (session.registerPreloadScript in passkeys.ipc.ts).
     "src/preload/passkey-page.ts!",
+    // Intent app window preload (window.intent only; BrowserWindow preload in app-host.ts).
+    "src/preload/intent-app.ts!",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts!",
     // @intent-hq/web CLI entry, bundled by scripts/build-intent-web-package.mjs
@@ -58,6 +60,8 @@
     "test/fixtures/passkeys/Harness.svelte",
     // Bundled for the Electron main process by test/electron-passkeys.spec.ts
     "test/fixtures/passkeys/main-entry.ts",
+    // Bundled for the Electron main process by test/electron-intent-apps.spec.ts
+    "test/fixtures/intent-apps/main-entry.ts",
     // Loaded by the module script in test/fixtures/dock-shortcut-settings/index.html;
     // the isolated Electron shortcut-settings fixture serves this HTML entry.
     "test/fixtures/dock-shortcut-settings/Harness.svelte",

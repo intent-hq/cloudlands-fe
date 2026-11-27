@@ -1,5 +1,5 @@
 /**
- * The open entry of Intent apps (spec 3.4, `docs/protocol/methods/apps.md` →
+ * The open entry of Intent apps (`docs/protocol/methods/apps.md` →
  * "Window identity and open entry"): `intent --open-app <appId>` and
  * `intent://app/<appId>`, both handled by the first instance.
  *

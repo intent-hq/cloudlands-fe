@@ -93,11 +93,7 @@
   <div class="space-y-4" data-intent-app-install>
     <label class="block space-y-1 type-caption">
       <span>{m.settings_intentApps_installDialog_workspace_label()}</span>
-      <Select.Root
-        bind:value={workspaceId}
-        items={workspaceItems}
-        onchange={inputsChanged}
-      >
+      <Select.Root bind:value={workspaceId} items={workspaceItems} onchange={inputsChanged}>
         <Select.Trigger aria-label={m.settings_intentApps_installDialog_workspace_label()}>
           <Select.Value placeholder={m.settings_intentApps_installDialog_workspace_placeholder()} />
         </Select.Trigger>
@@ -137,7 +133,7 @@
       </p>
     {/if}
     {#if failure}
-      <p class="type-caption text-destructive" role="alert" data-intent-app-install-error>
+      <p class="type-caption text-danger" role="alert" data-intent-app-install-error>
         {exists
           ? m.settings_intentApps_installDialog_exists()
           : m.settings_intentApps_actionFailed_error({ message: failure.message })}

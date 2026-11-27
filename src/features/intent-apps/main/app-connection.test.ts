@@ -32,7 +32,14 @@ const session = {
   level: 2,
   features: ['models'],
   entry: 'index.html',
-  window: { width: 960, height: 640, minWidth: null, minHeight: null, resizable: true, alwaysOnTop: false },
+  window: {
+    width: 960,
+    height: 640,
+    minWidth: null,
+    minHeight: null,
+    resizable: true,
+    alwaysOnTop: false,
+  },
 };
 
 function socketThatAttaches(): FakeDaemonSocket {
@@ -48,7 +55,10 @@ function socketThatAttaches(): FakeDaemonSocket {
 describe('AppConnection', () => {
   it('sends app.session.attach { token } as the first request, before client.hello', async () => {
     const socket = socketThatAttaches();
-    const { connection, session: attached } = await AppConnection.attach(() => socket, 'f'.repeat(64));
+    const { connection, session: attached } = await AppConnection.attach(
+      () => socket,
+      'f'.repeat(64),
+    );
     expect(socket.frames[0]).toEqual({
       jsonrpc: '2.0',
       id: 1,

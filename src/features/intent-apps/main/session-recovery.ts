@@ -41,8 +41,12 @@ export function decideAfterSessionLoss(
   if (!app) return { kind: 'end', reason: 'uninstalled', reopen: false };
   if (app.approval.status === 'revoked') return { kind: 'end', reason: 'revoked', reopen: false };
   if (!isIntentAppOpenable(app)) return { kind: 'end', reason: 'updated', reopen: false };
-  if (app.bundleHash !== previous.bundleHash) return { kind: 'end', reason: 'updated', reopen: false };
-  if (app.approval.level !== previous.level || !sameFeatures(app.approval.features, previous.features)) {
+  if (app.bundleHash !== previous.bundleHash)
+    return { kind: 'end', reason: 'updated', reopen: false };
+  if (
+    app.approval.level !== previous.level ||
+    !sameFeatures(app.approval.features, previous.features)
+  ) {
     return { kind: 'end', reason: 'updated', reopen: true };
   }
   return { kind: 'reopen' };

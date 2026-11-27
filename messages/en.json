@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "Sidebar settings",
   "browser_overflow_fullScreen_label": "Full screen",
   "settings_labs_intentApps_label": "Intent apps",
-  "settings_labs_intentApps_description": "Install small web apps that agents build in your workspaces, and open each one in its own window. Manage them under Apps on this page. Desktop app only.",
+  "settings_labs_intentApps_description": "Install web apps that agents build and open each one in its own window, in the desktop app only.",
   "settings_section_intentApps": "Apps",
-  "settings_intentApps_description": "Apps that agents built in your workspaces, installed on this computer. Each app opens in its own window and can use only what you approve.",
+  "settings_intentApps_description": "Apps that agents built in your workspaces open in their own window and use only what you approve.",
   "settings_intentApps_unsupported": "The Intent backend on this computer does not support apps. Update Intent to use them.",
   "settings_intentApps_empty": "No apps yet. Ask an agent to build an app in a workspace, then install it here.",
   "settings_intentApps_loadFailed_error": "Could not load the apps: {message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "Workspace",
   "settings_intentApps_installDialog_workspace_placeholder": "Choose a workspace",
   "settings_intentApps_installDialog_path_label": "Folder",
-  "settings_intentApps_installDialog_path_description": "A path in the workspace. Use . for the workspace folder itself.",
+  "settings_intentApps_installDialog_path_description": "A path in the workspace, or . for the workspace folder itself.",
   "settings_intentApps_installDialog_check_label": "Check",
   "settings_intentApps_installDialog_install_label": "Install",
   "settings_intentApps_installDialog_replace_label": "Replace the installed app with this version",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "Uninstall {name}?",
   "settings_intentApps_uninstallConfirm_description": "This deletes the app and the data it saved.",
   "settings_intentApps_approveDialog_publisher": "The app says it is from {name}. Intent has not checked this.",
-  "settings_intentApps_approveDialog_signature": "The app has a signature. Intent does not check signatures yet."
+  "settings_intentApps_approveDialog_signature": "The app has a signature. Intent does not check signatures yet.",
+  "settings_labs_intentApps_info": "Manage installed apps under Apps on this page."
 }

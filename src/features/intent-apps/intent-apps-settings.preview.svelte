@@ -28,8 +28,7 @@
   import IntentAppApproveDialog from './IntentAppApproveDialog.svelte';
   import IntentAppInstallDialog from './IntentAppInstallDialog.svelte';
 
-  let { scene }: { scene: 'library' | 'empty' | 'unsupported' | 'approve' | 'install' } =
-    $props();
+  let { scene }: { scene: 'library' | 'empty' | 'unsupported' | 'approve' | 'install' } = $props();
 
   // A 1×1 PNG tile, so the icon slot shows a real image next to a letter tile.
   const ICON =

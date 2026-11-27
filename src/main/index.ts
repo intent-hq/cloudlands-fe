@@ -389,7 +389,11 @@ import {
 } from '../features/recent-agents/main/recent-agents.ipc';
 import { requestOpenApp, setupIntentAppsIPC } from '../features/intent-apps/main/intent-apps.ipc';
 import { isIntentAppWindow } from './intent-app-windows';
-import { findOpenAppRequest, isOpenAppLink, parseOpenAppLink } from '../shared/intent-apps/open-app-request';
+import {
+  findOpenAppRequest,
+  isOpenAppLink,
+  parseOpenAppLink,
+} from '../shared/intent-apps/open-app-request';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,

@@ -1,5 +1,5 @@
 /**
- * The Intent OS state file (spec 3.5, `docs/protocol/methods/apps.md` → "Window
+ * The Intent OS state file (`docs/protocol/methods/apps.md` → "Window
  * identity and open entry"): `$XDG_STATE_HOME/intent/apps.json`, which the top
  * bar reads so it needs no daemon credentials. Written atomically (temp file,
  * then rename) after each library change, listing approved apps sorted like
@@ -20,14 +20,14 @@ import {
   type IntentApp,
 } from '../../../shared/intent-apps/intent-apps-types';
 
-export interface AppsStateFileEntry {
+interface AppsStateFileEntry {
   id: string;
   name: string;
   icon: string | null;
   windowTitle: string;
 }
 
-export interface AppsStateFile {
+interface AppsStateFile {
   version: 1;
   apps: AppsStateFileEntry[];
 }
@@ -37,10 +37,14 @@ type Env = Readonly<Record<string, string | undefined>>;
 /** `$XDG_STATE_HOME/intent`, with the XDG default `~/.local/state/intent`. */
 export function intentStateDir(env: Env = process.env, home = os.homedir()): string {
   const base = env.XDG_STATE_HOME?.trim();
-  return path.join(base && path.isAbsolute(base) ? base : path.join(home, '.local', 'state'), 'intent');
+  return path.join(
+    base && path.isAbsolute(base) ? base : path.join(home, '.local', 'state'),
+    'intent',
+  );
 }
 
 /** The file's document for `apps` (already sorted like `app.list`). */
+/** @internal Exported for tests. */
 export function buildAppsStateFile(
   apps: readonly IntentApp[],
   iconPathFor: (app: IntentApp) => string | null,

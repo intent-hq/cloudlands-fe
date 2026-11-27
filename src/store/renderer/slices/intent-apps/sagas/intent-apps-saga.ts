@@ -8,7 +8,7 @@
  */
 
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, fork, put, select, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -17,7 +17,7 @@ import type {
   IntentAppsActionResult,
   IntentAppsState,
 } from '$shared/intent-apps/intent-apps-types';
-import type { StoreState } from '../../../types';
+import { selectIntentAppIcons } from '../intent-apps-selectors';
 import {
   intentAppApproveRequested,
   intentAppIconReceived,
@@ -46,7 +46,7 @@ function getApi(): Window['electronAPI'] | undefined {
 }
 
 /** One function per request, each naming its channel, so the wire surface stays auditable. */
-export const intentAppsRequests = {
+const intentAppsRequests = {
   getState: async (): Promise<IntentAppsState | null> => {
     const api = getApi();
     if (!api) return null;
@@ -60,7 +60,10 @@ export const intentAppsRequests = {
   install: async (
     request: IntentAppsInstallRequest,
   ): Promise<IntentAppsActionResult<IntentAppInstallResult>> =>
-    (await getApi()?.invoke(INTENT_APPS.INSTALL, request)) as IntentAppsActionResult<IntentAppInstallResult>,
+    (await getApi()?.invoke(
+      INTENT_APPS.INSTALL,
+      request,
+    )) as IntentAppsActionResult<IntentAppInstallResult>,
   approve: async (request: IntentAppsApproveRequest): Promise<IntentAppsActionResult<unknown>> =>
     (await getApi()?.invoke(INTENT_APPS.APPROVE, request)) as IntentAppsActionResult<unknown>,
   revoke: async (appId: string): Promise<IntentAppsActionResult<unknown>> =>
@@ -84,7 +87,7 @@ function createChangedChannel(): EventChannel<IntentAppsState> {
 
 /** Load icons of listed apps that the slice does not hold yet. */
 function* loadIcons(state: IntentAppsState): SagaGenerator<void> {
-  const icons = yield* select((store: StoreState) => store.intentApps.icons);
+  const icons = yield* selectIntentAppIcons.effect();
   for (const app of state.apps) {
     const key = `${app.id}@${app.bundleHash}`;
     if (!app.icon || key in icons) continue;

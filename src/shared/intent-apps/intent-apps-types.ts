@@ -8,7 +8,7 @@
  */
 
 /** `^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$` (3–64 chars), from the manifest rules. */
-export const INTENT_APP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
+const INTENT_APP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
 
 export function isIntentAppId(value: unknown): value is string {
   return typeof value === 'string' && INTENT_APP_ID_PATTERN.test(value);
@@ -23,7 +23,7 @@ export const INTENT_APP_FEATURES: readonly IntentAppFeature[] = [
   'alwaysOnTop',
 ];
 
-export interface IntentAppWindowSpec {
+interface IntentAppWindowSpec {
   width: number;
   height: number;
   minWidth: number | null;
@@ -32,9 +32,9 @@ export interface IntentAppWindowSpec {
   alwaysOnTop: boolean;
 }
 
-export type IntentAppApprovalStatus = 'pending' | 'approved' | 'revoked';
+type IntentAppApprovalStatus = 'pending' | 'approved' | 'revoked';
 
-export interface IntentAppApproval {
+interface IntentAppApproval {
   status: IntentAppApprovalStatus;
   level: 1 | 2 | null;
   features: string[];
@@ -46,7 +46,7 @@ export interface IntentAppApproval {
  * Publisher data from the manifest. Reserved in M1: the daemon checks only its
  * shape and never verifies it, so the UI must never show it as confirmed.
  */
-export interface IntentAppPublisher {
+interface IntentAppPublisher {
   name: string;
   url: string | null;
   keyId: string | null;
@@ -54,7 +54,7 @@ export interface IntentAppPublisher {
 }
 
 /** The bundle's `intent-app.sig`, stored but not verified in M1 (`status: "unverified"`). */
-export interface IntentAppSignature {
+interface IntentAppSignature {
   sigVersion: number;
   algorithm: string;
   keyId: string;
@@ -106,9 +106,6 @@ export interface IntentAppInstallResult {
   dryRun: boolean;
 }
 
-/** Why the library is not shown. `null` when it is. */
-export type IntentAppsUnavailableReason = 'lab-off' | 'unsupported' | 'disconnected';
-
 /** Main → renderer: the whole library state (`intent-apps:changed`, `intent-apps:get-state`). */
 export interface IntentAppsState {
   /** The Labs switch (main owns it). */
@@ -147,11 +144,6 @@ export type IntentAppPlatform = 'mac' | 'windows' | 'linux' | 'intent-os';
 /** Window title of an app window (spec 3.4; Intent OS finds the window by it). */
 export function intentAppWindowTitle(name: string): string {
   return `Intent App: ${name}`;
-}
-
-/** Wayland app_id / X11 class of an app window, where the platform allows it. */
-export function intentAppWindowClass(appId: string): string {
-  return `intent-app-${appId}`;
 }
 
 /** Session partition of an app (browser storage, IndexedDB). Uninstall clears it. */

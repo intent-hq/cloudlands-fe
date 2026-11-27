@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { IntentApp } from '../../../shared/intent-apps/intent-apps-types';
 import { decideAfterSessionLoss, isSameGrant } from './session-recovery';
 
-const session = { bundleHash: 'sha256:a', level: 2 as const, features: ['models', 'notifications'] };
+const session = {
+  bundleHash: 'sha256:a',
+  level: 2 as const,
+  features: ['models', 'notifications'],
+};
 
 function app(overrides: Partial<IntentApp['approval']> & { bundleHash?: string } = {}): IntentApp {
   const { bundleHash = 'sha256:a', ...approval } = overrides;

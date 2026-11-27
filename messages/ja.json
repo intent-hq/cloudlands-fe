@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "サイドバーの設定",
   "browser_overflow_fullScreen_label": "フルスクリーン",
   "settings_labs_intentApps_label": "Intent アプリ",
-  "settings_labs_intentApps_description": "エージェントがワークスペースで作成した小さな Web アプリをインストールし、それぞれを専用のウィンドウで開きます。このページの「アプリ」で管理します。デスクトップアプリのみ。",
+  "settings_labs_intentApps_description": "エージェントが作成した Web アプリをインストールし、それぞれを専用のウィンドウで開きます（デスクトップアプリのみ）。",
   "settings_section_intentApps": "アプリ",
-  "settings_intentApps_description": "エージェントがワークスペースで作成し、このコンピューターにインストールしたアプリです。各アプリは専用のウィンドウで開き、承認したものだけを使用できます。",
+  "settings_intentApps_description": "エージェントがワークスペースで作成したアプリは専用のウィンドウで開き、承認したものだけを使用します。",
   "settings_intentApps_unsupported": "このコンピューターの Intent バックエンドはアプリに対応していません。使用するには Intent を更新してください。",
   "settings_intentApps_empty": "アプリはまだありません。ワークスペースでアプリを作成するようエージェントに依頼してから、ここでインストールしてください。",
   "settings_intentApps_loadFailed_error": "アプリを読み込めませんでした: {message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "ワークスペース",
   "settings_intentApps_installDialog_workspace_placeholder": "ワークスペースを選択",
   "settings_intentApps_installDialog_path_label": "フォルダー",
-  "settings_intentApps_installDialog_path_description": "ワークスペース内のパスです。ワークスペースのフォルダー自体には . を使います。",
+  "settings_intentApps_installDialog_path_description": "ワークスペース内のパス、またはワークスペースのフォルダー自体を示す . です。",
   "settings_intentApps_installDialog_check_label": "チェック",
   "settings_intentApps_installDialog_install_label": "インストール",
   "settings_intentApps_installDialog_replace_label": "インストール済みのアプリをこのバージョンに置き換える",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "{name} をアンインストールしますか？",
   "settings_intentApps_uninstallConfirm_description": "アプリと、アプリが保存したデータを削除します。",
   "settings_intentApps_approveDialog_publisher": "このアプリは {name} によるものとしています。Intent はこれを確認していません。",
-  "settings_intentApps_approveDialog_signature": "このアプリには署名があります。Intent はまだ署名を確認しません。"
+  "settings_intentApps_approveDialog_signature": "このアプリには署名があります。Intent はまだ署名を確認しません。",
+  "settings_labs_intentApps_info": "インストールしたアプリは、このページの「アプリ」で管理します。"
 }

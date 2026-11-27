@@ -213,8 +213,11 @@ export class IntentAppHost {
     if (this.open.has(appId)) {
       // Another open won the race; keep its window.
       connection.close();
-      await this.admin.request('app.session.close', { sessionId: session.sessionId }).catch(() => {});
-      this.focus(this.open.get(appId)!.window);
+      await this.admin
+        .request('app.session.close', { sessionId: session.sessionId })
+        .catch(() => {});
+      const winner = this.open.get(appId);
+      if (winner) this.focus(winner.window);
       return;
     }
     const icon = await this.loadIcon(app, session.bundleHash);
@@ -243,7 +246,10 @@ export class IntentAppHost {
     });
   }
 
-  private async loadIcon(app: IntentApp, bundleHash: string): Promise<Electron.NativeImage | undefined> {
+  private async loadIcon(
+    app: IntentApp,
+    bundleHash: string,
+  ): Promise<Electron.NativeImage | undefined> {
     if (!app.icon || process.platform === 'darwin') return undefined;
     try {
       const file = await this.readBundle(app.id, app.icon, bundleHash);
@@ -373,7 +379,8 @@ export class IntentAppHost {
         let app: IntentApp | null;
         try {
           await this.admin.ready();
-          app = (await this.admin.request<{ app: IntentApp }>('app.get', { appId: entry.appId })).app;
+          app = (await this.admin.request<{ app: IntentApp }>('app.get', { appId: entry.appId }))
+            .app;
         } catch (error) {
           if (errorCode(error) === 'app-not-found') {
             app = null;
@@ -393,12 +400,16 @@ export class IntentAppHost {
           const { session, connection } = await this.openSession(entry.appId);
           if (entry.ending || entry.window.isDestroyed()) {
             connection.close();
-            await this.admin.request('app.session.close', { sessionId: session.sessionId }).catch(() => {});
+            await this.admin
+              .request('app.session.close', { sessionId: session.sessionId })
+              .catch(() => {});
             return;
           }
           if (!isSameGrant(previous, session)) {
             connection.close();
-            await this.admin.request('app.session.close', { sessionId: session.sessionId }).catch(() => {});
+            await this.admin
+              .request('app.session.close', { sessionId: session.sessionId })
+              .catch(() => {});
             this.endWindow(entry, 'updated', true);
             return;
           }

@@ -9553,9 +9553,9 @@
   "workspace_multiSelectSidebar_sidebarSettings_label": "側邊欄設定",
   "browser_overflow_fullScreen_label": "全螢幕",
   "settings_labs_intentApps_label": "Intent 應用程式",
-  "settings_labs_intentApps_description": "安裝代理程式在工作區中建置的小型 Web 應用程式，並在各自的視窗中開啟。在此頁面的「應用程式」中管理。僅限桌面應用程式。",
+  "settings_labs_intentApps_description": "安裝代理程式建置的 Web 應用程式，並在各自的視窗中開啟（僅限桌面應用程式）。",
   "settings_section_intentApps": "應用程式",
-  "settings_intentApps_description": "代理程式在工作區中建置並安裝在這台電腦上的應用程式。每個應用程式在自己的視窗中開啟，只能使用你核准的內容。",
+  "settings_intentApps_description": "代理程式在工作區中建置的應用程式會在各自的視窗中開啟，並且只使用你核准的內容。",
   "settings_intentApps_unsupported": "這台電腦上的 Intent 後端不支援應用程式。請更新 Intent 以使用應用程式。",
   "settings_intentApps_empty": "還沒有應用程式。請讓代理程式在工作區中建置一個應用程式，然後在這裡安裝。",
   "settings_intentApps_loadFailed_error": "無法載入應用程式：{message}",
@@ -9577,7 +9577,7 @@
   "settings_intentApps_installDialog_workspace_label": "工作區",
   "settings_intentApps_installDialog_workspace_placeholder": "選擇工作區",
   "settings_intentApps_installDialog_path_label": "資料夾",
-  "settings_intentApps_installDialog_path_description": "工作區中的路徑。使用 . 表示工作區資料夾本身。",
+  "settings_intentApps_installDialog_path_description": "工作區中的路徑，或用 . 表示工作區資料夾本身。",
   "settings_intentApps_installDialog_check_label": "檢查",
   "settings_intentApps_installDialog_install_label": "安裝",
   "settings_intentApps_installDialog_replace_label": "用此版本取代已安裝的應用程式",
@@ -9597,5 +9597,6 @@
   "settings_intentApps_uninstallConfirm_title": "解除安裝 {name}？",
   "settings_intentApps_uninstallConfirm_description": "這會刪除該應用程式及其儲存的資料。",
   "settings_intentApps_approveDialog_publisher": "此應用程式聲稱來自 {name}。Intent 尚未核實。",
-  "settings_intentApps_approveDialog_signature": "此應用程式帶有簽章。Intent 目前還不檢查簽章。"
+  "settings_intentApps_approveDialog_signature": "此應用程式帶有簽章。Intent 目前還不檢查簽章。",
+  "settings_labs_intentApps_info": "在此頁面的「應用程式」中管理已安裝的應用程式。"
 }

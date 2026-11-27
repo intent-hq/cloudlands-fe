@@ -135,7 +135,7 @@
       {m.settings_intentApps_approveDialog_bundle({ hash: shortHash })}
     </p>
     {#if failure}
-      <p class="type-caption text-destructive" role="alert">
+      <p class="type-caption text-danger" role="alert">
         {m.settings_intentApps_actionFailed_error({ message: failure.message })}
       </p>
     {/if}

@@ -1,4 +1,3 @@
-import type { IntentApp } from '$shared/intent-apps/intent-apps-types';
 import { store } from '../../store';
 
 export const selectIntentApps = store.createSelector((state) => state.intentApps);
@@ -18,6 +17,5 @@ export const selectIntentAppsCanInstallHere = store.createSelector(
   (state) => state.connections.windowBackendId === 'local',
 );
 
-export const selectIntentAppIconUrl = store.createSelector<[app: IntentApp], string | null>(
-  (state, app) => state.intentApps.icons[`${app.id}@${app.bundleHash}`] ?? null,
-);
+/** Loaded icon data URLs by `<appId>@<bundleHash>`. */
+export const selectIntentAppIcons = store.createSelector((state) => state.intentApps.icons);
