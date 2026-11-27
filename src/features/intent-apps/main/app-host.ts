@@ -107,7 +107,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** `--intent-app-level=<n>` and `--intent-app-features=<a,b>` for the app preload. */
 function grantArguments(session: Pick<IntentAppSession, 'level' | 'features'>): string[] {
-  return [`--intent-app-level=${session.level}`, `--intent-app-features=${session.features.join(',')}`];
+  return [
+    `--intent-app-level=${session.level}`,
+    `--intent-app-features=${session.features.join(',')}`,
+  ];
 }
 
 function defaultPreloadPath(): string {
