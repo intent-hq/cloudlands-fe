@@ -6303,6 +6303,7 @@
   "terminal_scriptOutput_buildFailed_label": "Échec du build avec le code de sortie {exitCode}",
   "terminal_scriptOutput_fixAgentName_label": "Corriger : {name}",
   "terminal_scriptOutput_noWorkspace_error": "Aucun espace de travail sélectionné",
+  "terminal_scriptOutput_outputMissing_label": "Une partie de la sortie manque ici",
   "terminal_scriptOutput_run_label": "Exécuter",
   "terminal_scriptOutput_script_fallback": "script",
   "terminal_searchBar_find_placeholder": "Rechercher dans le terminal...",

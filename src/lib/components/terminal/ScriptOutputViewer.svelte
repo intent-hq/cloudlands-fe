@@ -380,6 +380,8 @@
       if (heldFrom !== null) return;
       let step = joinLiveChunk(streamJoin, chunk);
       if (step.kind === 'gap' && index < readFrom) {
+        // No snapshot can fill it: mark the missing output, then continue.
+        text += `\r\n\x1b[2m[${m.terminal_scriptOutput_outputMissing_label()}]\x1b[22m\r\n`;
         streamJoin.next = chunk.position.start;
         streamJoin.decoder = new TextDecoder();
         step = joinLiveChunk(streamJoin, chunk);

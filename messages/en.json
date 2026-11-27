@@ -6303,6 +6303,7 @@
   "terminal_scriptOutput_buildFailed_label": "Build failed with exit code {exitCode}",
   "terminal_scriptOutput_fixAgentName_label": "Fix: {name}",
   "terminal_scriptOutput_noWorkspace_error": "No workspace selected",
+  "terminal_scriptOutput_outputMissing_label": "Some output is missing here",
   "terminal_scriptOutput_run_label": "Run",
   "terminal_scriptOutput_script_fallback": "script",
   "terminal_searchBar_find_placeholder": "Find in terminal...",

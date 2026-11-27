@@ -792,7 +792,9 @@ describe('retained output viewer lifecycle', () => {
       retainedReadableRef.value.set(snapshot('one\n', 4, 1));
       await tick();
       expect(await requests()).toBe(before + 1);
-      expect(textSinceLastReset(terminal)).toBe('one\nlater\n');
+      const text = textSinceLastReset(terminal);
+      expect(text.startsWith('one\n') && text.endsWith('later\n')).toBe(true);
+      expect(text, 'the missing output is marked').not.toBe('one\nlater\n');
     });
 
     it('shows output of the joined run that arrives while another run is unconfirmed', async () => {
@@ -817,7 +819,9 @@ describe('retained output viewer lifecycle', () => {
       retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
       await tick();
       expect(terminal.reset.mock.calls.length).toBe(resets);
-      expect(textSinceLastReset(terminal)).toBe('one\nthree\n');
+      const text = textSinceLastReset(terminal);
+      expect(text.startsWith('one\n') && text.endsWith('three\n')).toBe(true);
+      expect(text, 'the missing output is marked').not.toBe('one\nthree\n');
     });
 
     it('completes a character when the first snapshot holds only its first byte', async () => {

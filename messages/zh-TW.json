@@ -6303,6 +6303,7 @@
   "terminal_scriptOutput_buildFailed_label": "建置失敗，退出碼 {exitCode}",
   "terminal_scriptOutput_fixAgentName_label": "修復：{name}",
   "terminal_scriptOutput_noWorkspace_error": "未選擇工作區",
+  "terminal_scriptOutput_outputMissing_label": "此處缺少部分輸出",
   "terminal_scriptOutput_run_label": "執行",
   "terminal_scriptOutput_script_fallback": "指令碼",
   "terminal_searchBar_find_placeholder": "在終端中查詢…",
