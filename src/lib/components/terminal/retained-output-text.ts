@@ -19,3 +19,25 @@ export function retainedOutputTerminalText(text: string): string {
 export function retainedOutputIsComplete(text: string): boolean {
   return /^\[\d+ lines\]/.test(text);
 }
+
+const COVER_PROBE_CHARS = 1024;
+const COVER_MAX_CANDIDATES = 256;
+
+/**
+ * Whether live output already holds everything a capped snapshot shows up to
+ * the live position. The log and the stream carry the same PTY bytes, so the
+ * live tail must match the start of the snapshot body exactly.
+ */
+export function liveOutputCoversSnapshot(live: string, snapshotText: string): boolean {
+  const body = snapshotText.replace(HEADER, '');
+  if (!live || !body) return false;
+  const lineEnd = body.indexOf('\n');
+  const probe = body.slice(0, Math.min(lineEnd < 0 ? body.length : lineEnd + 1, COVER_PROBE_CHARS));
+  let at = live.lastIndexOf(probe);
+  for (let tries = 0; at >= 0 && tries < COVER_MAX_CANDIDATES; tries++) {
+    const tail = live.slice(at);
+    if (tail.startsWith(body) || body.startsWith(tail)) return true;
+    at = at > 0 ? live.lastIndexOf(probe, at - 1) : -1;
+  }
+  return false;
+}

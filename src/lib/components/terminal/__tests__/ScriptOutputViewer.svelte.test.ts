@@ -706,6 +706,26 @@ describe('retained output viewer lifecycle', () => {
     expect(textSinceLastReset(terminal)).toContain('after reconnect\n');
   });
 
+  it('keeps a fuller live buffer when the first snapshot is capped', async () => {
+    const chunk = (text: string) => ({ text, timestamp: text });
+    const buffered = [chunk('line 1\n'), chunk('line 2\n'), chunk('line 3\n')];
+    outputReadableRef.value = createControllableReadable({ chunks: buffered, dropped: 0 });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[showing last 2 of 3 lines; older output omitted to fit the reply size limit]\nline 2\nline 3\n',
+      liveOffset: 3,
+      streamEpoch: 0,
+    });
+    await tick();
+    outputReadableRef.value.set({ chunks: [...buffered, chunk('line 4\n')], dropped: 0 });
+    await tick();
+    expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\nline 4\n');
+  });
+
   it('requests a new snapshot only when a new run starts', async () => {
     const { store } = await import('$store/renderer/store');
     runtimeReadableRef.value = createControllableReadable<any>({

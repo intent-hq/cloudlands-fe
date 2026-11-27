@@ -19,7 +19,11 @@
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
-  import { retainedOutputIsComplete, retainedOutputTerminalText } from './retained-output-text';
+  import {
+    liveOutputCoversSnapshot,
+    retainedOutputIsComplete,
+    retainedOutputTerminalText,
+  } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
@@ -255,16 +259,32 @@
   function writeOutput(replace: boolean, snapshot: ScriptRetainedOutput | undefined): void {
     if (!xterm) return;
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    const covered = snapshot?.liveOffset;
     if (replace) xterm.reset();
     if (snapshot) {
       shownSnapshot = snapshot;
       shownRun = untrack(() => runStartedAt);
-      showsSnapshotText = !!snapshot.text;
-      if (snapshot.text) xterm.write(retainedOutputTerminalText(snapshot.text));
     }
+    // A capped snapshot is only the newest tail: live output that already holds
+    // it is the fuller history, as when another view kept the stream open.
+    const text = snapshot?.text;
+    const before = (snapshot?.liveOffset ?? 0) - buffer.dropped;
+    const useSnapshot =
+      !!snapshot &&
+      !(
+        text &&
+        !retainedOutputIsComplete(text) &&
+        liveOutputCoversSnapshot(
+          buffer.chunks
+            .slice(0, Math.max(before, 0))
+            .map((c) => c.text)
+            .join(''),
+          text,
+        )
+      );
+    showsSnapshotText = useSnapshot && !!text;
+    if (useSnapshot && text) xterm.write(retainedOutputTerminalText(text));
     const live = buffer.chunks
-      .slice(Math.max((covered ?? 0) - buffer.dropped, 0))
+      .slice(useSnapshot ? Math.max(before, 0) : 0)
       .map((c) => c.text)
       .join('');
     if (live) xterm.write(live);
