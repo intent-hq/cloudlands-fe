@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.395.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.395.0...v2.395.1) (2026-11-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.311 ([#5111](https://github.com/intent-hq/cloudlands-fe/issues/5111)) ([8ca1b5f](https://github.com/intent-hq/cloudlands-fe/commit/8ca1b5fc504ce531c2d564d881630656900277c9))
+
 ## [2.395.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.394.0...v2.395.0) (2026-11-27)
 
 
