@@ -1,6 +1,6 @@
 // @vitest-environment node
 // The ratchet lints every file in the rule's eslint.config.js scope.
-// @verify-changed-triggers: src/**/*.{js,ts}, eslint.config.js,
+// @verify-changed-triggers: src/**/*.{js,ts}, tests/**/*.{js,ts}, eslint.config.js,
 //   eslint-rules/baselines/no-hand-rolled-backend-transport-mock/**
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -62,6 +62,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }
       'src/lib/components/chat/__tests__/fixture-transport.test.ts',
       'src/features/agent/__tests__/fixture-transport.fixture.ts',
       'src/test/fixture-transport-helper.ts',
+      'tests/unit/fixture-transport.test.ts',
+      'tests/integration/fixture-transport.test.ts',
     ]) {
       expect(await lint(file), file).toHaveLength(1);
     }
@@ -79,7 +81,7 @@ describe('no-hand-rolled-backend-transport-mock baseline ratchet', () => {
     }
     for (const file of Object.keys(baseline)) {
       expect(file, `${file} should be a package-relative source file`).toMatch(
-        /^src\/[^\\]*\.(js|ts)$/,
+        /^(src|tests)\/[^\\]*\.(js|ts)$/,
       );
       expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
     }
@@ -260,6 +262,30 @@ vi.mock('$lib/client/live/backend-transport', async () => {
   return { backendRequest: vi.fn() };
 });`,
       errors: [error(2)],
+    },
+    {
+      name: 'a block body that can end without returning a module',
+      filename,
+      code: `
+vi.mock('$lib/client/live/backend-transport', async () => {
+  if (process.env.REAL) {
+    return (await import('../../../test/mocks/backend-transport-fake')).createBackendTransportFake();
+  }
+});`,
+      errors: [error(2)],
+    },
+    {
+      name: 'the helper function itself instead of the module it builds',
+      filename,
+      code: `
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../test/mocks/backend-transport-fake')).createBackendTransportFake,
+);
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { createBackendTransportFake } = await import('../../../test/mocks/backend-transport-fake');
+  return createBackendTransportFake;
+});`,
+      errors: [error(2), error(5)],
     },
     {
       name: 'factories beyond the baselined count, in source order',

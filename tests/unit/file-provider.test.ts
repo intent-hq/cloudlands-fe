@@ -10,9 +10,11 @@ import { FileProvider } from '../../src/lib/services/mentions/providers/file-pro
 import type { SearchContext } from '../../src/lib/services/mentions/types';
 
 // Mock the daemon transport
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-}));
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../src/test/mocks/backend-transport-fake')).createBackendTransportFake({
+    backendRequest: vi.fn(),
+  }),
+);
 
 describe('FileProvider', () => {
   let provider: FileProvider;

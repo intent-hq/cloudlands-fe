@@ -22,7 +22,8 @@ import { suppressedLines } from './lib/disable-directives.js';
  *
  * Automock (`vi.mock(path)`) and `vi.mock(path, { spy: true })` are allowed too. Values
  * are followed through `await`, TypeScript wrappers and never-reassigned `const` aliases
- * only; a factory the rule cannot read is reported.
+ * only; a factory the rule cannot read is reported, and so is a block-bodied factory
+ * whose last statement is not a `return`.
  *
  * Ratchet: the `baseline` option maps each file that already had hand-written factories
  * to its count; the first `count` in source order are tolerated and every further one is
@@ -38,7 +39,8 @@ const MESSAGE =
 
 const RULE_NAME = 'no-hand-rolled-backend-transport-mock';
 const TRANSPORT = 'src/lib/client/live/backend-transport';
-const COMPLETE_MODULES = new Set(['createBackendTransportFake', 'mockBackendTransportModule']);
+const FAKE_FACTORY = 'createBackendTransportFake';
+const SCRIPTED_MODULE = 'mockBackendTransportModule';
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
 const WRAPPERS = new Set([
   'TSAsExpression',
@@ -162,20 +164,17 @@ export default {
         case 'AwaitExpression':
           return isComplete(node.argument, factory, seen);
         case 'MemberExpression':
-          return COMPLETE_MODULES.has(propertyName(node));
+          return propertyName(node) === SCRIPTED_MODULE;
         case 'Identifier': {
-          if (COMPLETE_MODULES.has(node.name)) return true;
+          if (node.name === SCRIPTED_MODULE) return true;
           const definition = definitionOf(node);
           return definition !== null && isComplete(definition, factory, seen);
         }
         case 'CallExpression': {
+          // The helper is complete only when called; the bare function is not a module.
           const callee = unwrap(node.callee);
-          if (callee.type === 'Identifier' && callee.name === 'createBackendTransportFake') {
-            return true;
-          }
-          if (callee.type === 'MemberExpression' && COMPLETE_MODULES.has(propertyName(callee))) {
-            return true;
-          }
+          const name = callee.type === 'Identifier' ? callee.name : propertyName(callee);
+          if (name === FAKE_FACTORY) return true;
           if (isImportOriginal(callee, factory)) return true;
           return isViCall(node, ['importActual']) && modulePath(node.arguments[0]) === TRANSPORT;
         }
@@ -192,6 +191,13 @@ export default {
     function returnsCompleteModule(factory) {
       if (factory?.type === 'Identifier') factory = definitionOf(factory);
       if (!FUNCTIONS.has(factory?.type)) return false;
+      // A block body that can run off its end returns undefined, not a module.
+      if (
+        factory.body.type === 'BlockStatement' &&
+        factory.body.body.at(-1)?.type !== 'ReturnStatement'
+      ) {
+        return false;
+      }
       const values =
         factory.body.type !== 'BlockStatement'
           ? [factory.body]

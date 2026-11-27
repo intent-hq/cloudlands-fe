@@ -19,10 +19,11 @@ import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/note
 import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
 
 // Mock the daemon transport (FolderProvider → search.fileNames)
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-  onBackendReconnected: vi.fn(() => () => {}),
-}));
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../src/test/mocks/backend-transport-fake')).createBackendTransportFake({
+    backendRequest: vi.fn(),
+  }),
+);
 
 // Mock the appClient (NoteProvider → note.list / workspace list)
 vi.mock('$lib/client', () => ({

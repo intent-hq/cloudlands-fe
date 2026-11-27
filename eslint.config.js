@@ -868,6 +868,7 @@ export default [
       'src/**/*.{test,spec}.{js,ts}',
       'src/**/__tests__/**/*.{js,ts}',
       'src/test/**/*.{js,ts}',
+      'tests/**/*.{test,spec}.{js,ts}',
     ],
     plugins: {
       intent: intentPlugin,
