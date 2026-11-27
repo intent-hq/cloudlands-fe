@@ -79,7 +79,9 @@ test.beforeAll(async () => {
   test.setTimeout(240_000);
   await mkdir(artifacts, { recursive: true });
   root = await mkdtemp(join(tmpdir(), 'intent-apps-e2e-'));
-  const code = join(root, 'code');
+  // Inside the package, so the bundle's runtime requires (ws) resolve from node_modules.
+  const code = resolve('.dev/intent-apps-e2e/code');
+  await rm(code, { recursive: true, force: true });
   await bundle(resolve('test/fixtures/intent-apps/main-entry.ts'), code, 'main.cjs');
   await bundle(resolve('src/preload/intent-app.ts'), code, 'intent-app.js');
   mainBundle = join(code, 'main.cjs');
@@ -143,9 +145,17 @@ async function launch(): Promise<{ app: ElectronApplication; log: string[] }> {
   const log: string[] = [];
   app.process().stdout?.on('data', (chunk) => log.push(String(chunk)));
   app.process().stderr?.on('data', (chunk) => log.push(String(chunk)));
-  await expect
-    .poll(() => app.evaluate(() => typeof (globalThis as any).__intentAppsE2e), { timeout: 30_000 })
-    .toBe('object');
+  try {
+    await expect
+      .poll(() => app.evaluate(() => typeof (globalThis as any).__intentAppsE2e), {
+        timeout: 30_000,
+      })
+      .toBe('object');
+  } catch (error) {
+    await writeFile(join(artifacts, 'electron-main.log'), log.join(''));
+    await closeElectronApp(app);
+    throw error;
+  }
   return { app, log };
 }
 
@@ -171,7 +181,19 @@ test('install, approve, open and call a model through window.intent', async () =
   test.setTimeout(420_000);
   const { app, log } = await launch();
   try {
-    const hello = await app.evaluate(() => (globalThis as any).__intentAppsE2e.hello());
+    // The socket exists before the daemon finishes starting: wait for the handshake.
+    let hello: any = null;
+    await expect
+      .poll(
+        async () => {
+          hello = await app
+            .evaluate(() => (globalThis as any).__intentAppsE2e.hello())
+            .catch(() => null);
+          return hello !== null;
+        },
+        { timeout: 90_000 },
+      )
+      .toBe(true);
     expect(hello?.server?.capabilities?.intentApps).toBe(1);
 
     const created = await rpc(app, 'workspace.create', {
@@ -269,9 +291,22 @@ test('install, approve, open and call a model through window.intent', async () =
     await expect
       .poll(() => page.locator('#provider option:not([disabled])').count(), { timeout: 60_000 })
       .toBeGreaterThan(0);
+    const models = await page.evaluate(() => (window as any).intent.models.list());
+    log.push(`[e2e] models.list=${JSON.stringify(models)}\n`);
+    // Prefer a provider this host is signed in to (INTENT_APPS_E2E_PROVIDER, else claude-code).
+    const wanted = process.env.INTENT_APPS_E2E_PROVIDER ?? 'claude-code';
+    if (models.providers.some((p: any) => p.providerId === wanted && p.available)) {
+      await page.selectOption('#provider', wanted);
+    }
     await page.fill('#prompt', PROMPT);
     await page.click('#ask');
-    await expect(page.locator('#answer')).not.toBeEmpty({ timeout: 300_000 });
+    try {
+      await expect(page.locator('#answer')).not.toBeEmpty({ timeout: 240_000 });
+    } catch (error) {
+      log.push(`[e2e] status=${JSON.stringify(await page.locator('#status').textContent())}\n`);
+      await page.screenshot({ path: join(artifacts, 'quick-call-no-answer.png') });
+      throw error;
+    }
     const answer = (await page.locator('#answer').textContent())?.trim() ?? '';
     const meta = (await page.locator('#answer-meta').textContent())?.trim() ?? '';
     await page.screenshot({ path: join(artifacts, 'quick-call-answer.png') });

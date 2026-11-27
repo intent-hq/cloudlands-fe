@@ -31,7 +31,9 @@ app.on('window-all-closed', () => {
   // The spec closes the app itself.
 });
 
-void app.whenReady().then(() => {
+void app
+  .whenReady()
+  .then(() => {
   installIpcHandleAuthorization(ipcMain);
   const config = { transport: 'uds' as const, socketPath };
   const client = new JsonRpcClient({
@@ -59,4 +61,8 @@ void app.whenReady().then(() => {
     open: (appId: string) => host.openApp(appId),
     openAppIds: () => host.openAppIds(),
   };
-});
+    console.log('intent-apps-e2e: main ready');
+  })
+  .catch((error: unknown) => {
+    console.error('intent-apps-e2e: main setup failed', error);
+  });
