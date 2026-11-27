@@ -18,7 +18,7 @@ import { store } from '../../store';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
-import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
+import { HUD_FEED_LIMIT, sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
   WorkspaceStatus,
   isWorkspaceDisplayStatus,
@@ -531,10 +531,9 @@ export interface HudFeedItem extends HudFeedEntry {
 export const selectHudFeedItems = store.createSelector((state): HudFeedItem[] => {
   const names = selectHudAgentNamesById.select(state);
   const hidden = selectHudHiddenSetAsideIds.select(state);
-  const feed =
-    hidden.size === 0
-      ? state.hud.feed
-      : state.hud.feed.filter((entry) => !hidden.has(entry.source));
+  const feed = (
+    hidden.size === 0 ? state.hud.feed : state.hud.feed.filter((entry) => !hidden.has(entry.source))
+  ).slice(0, HUD_FEED_LIMIT);
   return feed.map((entry) => ({
     ...entry,
     workspaceTitle: getItem(state.workspace.workspaces, entry.source as WorkspaceId)?.title ?? null,

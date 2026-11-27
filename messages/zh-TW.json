@@ -3076,6 +3076,7 @@
   "hud_filter_showSetAside_label": "顯示已暫放的工作區",
   "hud_filter_statusMenu_ariaLabel": "按狀態篩選",
   "hud_grid_empty_label": "無工作區",
+  "hud_grid_showSetAside_action": "顯示 {count} 個已暫放的工作區",
   "hud_header_fleetOps_label": "FLEET OPS",
   "hud_header_soundControls_ariaLabel": "HUD 音效控制",
   "hud_header_soundOff_label": "聲音 · 關",

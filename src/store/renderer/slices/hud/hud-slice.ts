@@ -167,7 +167,7 @@ export interface HudCapturedQuestion {
 export interface HudState {
   /** Whether the HUD subscription is running (feed only accumulates then). */
   active: boolean;
-  /** Live feed ring buffer, newest first, capped at HUD_FEED_LIMIT. */
+  /** Live feed ring buffer, newest first, capped at HUD_FEED_BUFFER_LIMIT. */
   feed: HudFeedEntry[];
   /** Live attention flags from `workspace:attention-changed`; "none" clears. */
   attentionByWorkspaceId: Record<string, HudAttentionFlag>;
@@ -213,7 +213,10 @@ export interface HudState {
   dockMachineSwitchError: boolean;
 }
 
+/** Feed rows the HUD shows. */
 export const HUD_FEED_LIMIT = 50;
+/** Rows kept so hidden set-aside workspaces cannot push visible events out of the feed. */
+export const HUD_FEED_BUFFER_LIMIT = 200;
 
 export const initialState: HudState = {
   active: false,
@@ -423,7 +426,7 @@ hudReducer.with(dockConversationsLoaded, (state, { payload: [latestByWorkspaceId
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;
-  return { ...state, feed: [entry, ...state.feed].slice(0, HUD_FEED_LIMIT) };
+  return { ...state, feed: [entry, ...state.feed].slice(0, HUD_FEED_BUFFER_LIMIT) };
 });
 hudReducer.with(hudAttentionChanged, (state, { payload: [workspaceId, attention, raisedAtTs] }) => {
   // The wire field is single-valued, so any untracked value ("none" —

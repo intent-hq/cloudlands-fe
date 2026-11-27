@@ -15,6 +15,7 @@ import {
   hudAttentionChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
+  HUD_FEED_LIMIT,
   hudGridFilterSetAsideToggled,
   hudReducer,
   initialState,
@@ -4221,6 +4222,7 @@ describe('set-aside workspaces stay off the HUD by default', () => {
     expect(selectHudWorkspaceStateBars.select(state)).toMatchObject({ prOpen: 0, total: 1 });
     expect(selectHudAgentStateCounts.select(state).running).toBe(0);
     expect(selectHudAttentionItems.select(state)).toEqual([]);
+    expect(selectHudAttnCount.select(state)).toBe(0);
     expect(selectHudFeedItems.select(state).map((item) => item.id)).toEqual(['evt-active']);
     expect(selectHudSetAsideCount.select(state)).toBe(1);
   });
@@ -4235,8 +4237,25 @@ describe('set-aside workspaces stay off the HUD by default', () => {
     expect(selectHudAttentionItems.select(state).map((item) => item.workspaceId)).toEqual([
       'ws-aside',
     ]);
+    expect(selectHudAttnCount.select(state)).toBe(1);
     expect(selectHudFeedItems.select(state)).toHaveLength(2);
     expect(selectHudSetAsideCount.select(state)).toBe(1);
+  });
+
+  it('keeps visible events in the feed when a busy set-aside workspace floods it', () => {
+    const busy = Array.from({ length: HUD_FEED_LIMIT + 10 }, (_, i) =>
+      makeEntry(`evt-aside-${i}`, 'ws-aside'),
+    );
+    // mockState prepends each entry, so the active events end up oldest.
+    const base = mockState(
+      [makeWorkspace('ws-active'), makeWorkspace('ws-aside')],
+      [],
+      [makeEntry('evt-active', 'ws-active'), ...busy],
+    );
+    const hidden = withSetAside(base, ['ws-aside']);
+    expect(selectHudFeedItems.select(hidden).map((item) => item.id)).toEqual(['evt-active']);
+    const shown = { ...hidden, hud: hudReducer(hidden.hud, hudGridFilterSetAsideToggled()) };
+    expect(selectHudFeedItems.select(shown)).toHaveLength(HUD_FEED_LIMIT);
   });
 
   it('keeps tab statuses for set-aside workspaces', () => {

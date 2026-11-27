@@ -17,9 +17,12 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     selectHudGridFilter,
+    selectHudSetAsideCount,
     selectHudWorkspaceCards,
   } from '$store/renderer/slices/hud/hud-selectors';
+  import { hudGridFilterSetAsideToggled } from '$store/renderer/slices/hud/hud-slice';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
+  import { Button } from '$lib/components/ui/button';
   import HudWorkspaceCard from './HudWorkspaceCard.svelte';
   import { applyHudGridFilter } from './hud-grid-filter';
   import { createCardVisibilityGate } from './hud-card-visibility';
@@ -32,6 +35,7 @@
 
   const cards$ = selectHudWorkspaceCards();
   const filter$ = selectHudGridFilter();
+  const setAsideCount$ = selectHudSetAsideCount();
 
   const reducedMotion = watchReducedMotion();
 
@@ -81,7 +85,18 @@
 <div class="hud-ws-grid-root" data-testid="hud-ws-grid">
   <div class="hud-ws-grid-viewport">
     {#if visibleCards.length === 0}
-      <div class="hud-ws-grid-empty">{m.hud_grid_empty_label()}</div>
+      <div class="hud-ws-grid-empty">
+        <span>{m.hud_grid_empty_label()}</span>
+        {#if $setAsideCount$ > 0 && !$filter$.showSetAside}
+          <Button
+            variant="plain"
+            class="hud-ws-grid-empty-action"
+            onclick={() => appStore.dispatch(hudGridFilterSetAsideToggled())}
+          >
+            {m.hud_grid_showSetAside_action({ count: $setAsideCount$ })}
+          </Button>
+        {/if}
+      </div>
     {:else}
       <div class="hud-ws-grid" bind:this={gridEl}>
         {#each visibleCards as card (card.workspaceId)}
@@ -146,8 +161,24 @@
       600 10px Inter,
       system-ui,
       sans-serif;
+    flex-direction: column;
+    gap: 10px;
     letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground) / 0.65);
+  }
+  :global(.hud-ws-grid-empty-action) {
+    cursor: pointer;
+    border: 1px solid hsl(var(--border));
+    background: transparent;
+    height: auto;
+    padding: 7px 14px !important;
+    border-radius: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: hsl(var(--foreground));
+  }
+  :global(.hud-ws-grid-empty-action:hover) {
+    background: hsl(var(--muted) / 0.5);
   }
   .hud-ws-grid-fade {
     position: absolute;

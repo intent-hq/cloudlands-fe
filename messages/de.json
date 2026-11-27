@@ -3076,6 +3076,7 @@
   "hud_filter_showSetAside_label": "Zurückgestellte anzeigen",
   "hud_filter_statusMenu_ariaLabel": "Nach Status filtern",
   "hud_grid_empty_label": "KEINE ARBEITSBEREICHE",
+  "hud_grid_showSetAside_action": "{count} zurückgestellte anzeigen",
   "hud_header_fleetOps_label": "FLEET OPS",
   "hud_header_soundControls_ariaLabel": "HUD-Soundsteuerung",
   "hud_header_soundOff_label": "TON · AUS",
