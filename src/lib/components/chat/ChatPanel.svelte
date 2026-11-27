@@ -3656,12 +3656,24 @@
           container.scrollTop;
         if (previousScrollTop > spacerTopDoc) compensation += restated.below - previousBelow;
       }
+      // Past the spacer, hold the visible row instead of writing an absolute
+      // scrollTop: rows prepended in the same flush move it too, and native
+      // anchoring may or may not have absorbed them. The absolute write
+      // painted one frame shifted by their height (the scroll-up flicker).
+      const anchor =
+        compensation !== 0 && previousScrollTop >= previousAbove
+          ? captureScrollAnchor(container)
+          : null;
       virtualSpacerHeight = restated.above;
       virtualSpacerBelowHeight = restated.below;
       if (compensation === 0) return;
       tick().then(() => {
-        if (!isActive || isComponentDestroyed || !scrollContainer) return;
-        scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
+        if (!isActive || isComponentDestroyed || scrollContainer !== container) return;
+        if (anchor && canRestoreScrollAnchor(container, anchor)) {
+          restoreScrollAnchor(container, anchor);
+          return;
+        }
+        container.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
   });
@@ -3982,6 +3994,9 @@
         if (shouldFollowBottom && !showSearch) followToBottom(container);
         return;
       }
+      // Restore before paint: a prepend that lands while a frame is already
+      // rendering would otherwise paint shifted until the next frame.
+      if (anchor) restoreScrollAnchor(container, anchor);
       requestAnimationFrame(() => {
         if (!isCurrent() || !anchor) return;
         restoreScrollAnchor(container, anchor);
