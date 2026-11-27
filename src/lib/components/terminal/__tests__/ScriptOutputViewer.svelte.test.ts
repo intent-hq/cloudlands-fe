@@ -745,6 +745,27 @@ describe('retained output viewer lifecycle', () => {
     expect(textSinceLastReset(terminal)).toContain('diagnostic\n');
   });
 
+  it('keeps buffered history before a long run of repeated lines', async () => {
+    const chunks = [
+      { text: 'diagnostic\n', timestamp: 'a' },
+      { text: 'heartbeat\n'.repeat(3000), timestamp: 'b' },
+      { text: 'done\n', timestamp: 'c' },
+    ];
+    outputReadableRef.value = createControllableReadable({ chunks, dropped: 0 });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: `[showing last 2501 of 3002 lines]\n${'heartbeat\n'.repeat(2500)}done\n`,
+      liveOffset: 3,
+      streamEpoch: 0,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal).startsWith('diagnostic\n')).toBe(true);
+  });
+
   it('requests a new snapshot only when a new run starts', async () => {
     const { store } = await import('$store/renderer/store');
     runtimeReadableRef.value = createControllableReadable<any>({

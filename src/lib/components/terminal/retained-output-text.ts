@@ -20,32 +20,31 @@ export function retainedOutputIsComplete(text: string): boolean {
   return /^\[\d+ lines\]/.test(text);
 }
 
-const OVERLAP_PROBE_CHARS = 1024;
-const OVERLAP_MAX_CANDIDATES = 256;
-
 /**
  * Joins a capped snapshot to live output that may already hold its start. The
- * log and the stream carry the same PTY bytes, so a live tail that matches the
- * snapshot head exactly is the same output. Returns the snapshot part to write
- * after the live output (empty when live output holds all of it), or undefined
- * when no live tail matches. Of the nearest candidates the longest overlap
- * wins; a wrong match on a repeated line can repeat output but never hide it.
+ * log and the stream carry the same PTY bytes, so live text that matches the
+ * snapshot exactly is the same output. Returns the snapshot part to write after
+ * the live output: empty when live output holds the whole snapshot, the rest of
+ * the snapshot when the live output ends with at least its first line, and
+ * undefined when the two do not join. One KMP pass finds the longest overlap,
+ * so repeated lines can repeat output but never hide it.
  */
 export function snapshotRemainderAfterLive(live: string, snapshotText: string): string | undefined {
   const body = snapshotText.replace(HEADER, '');
   if (!live || !body) return undefined;
-  const lineEnd = body.indexOf('\n');
-  const probe = body.slice(
-    0,
-    Math.min(lineEnd < 0 ? body.length : lineEnd + 1, OVERLAP_PROBE_CHARS),
-  );
-  let remainder: string | undefined;
-  let at = live.lastIndexOf(probe);
-  for (let tries = 0; at >= 0 && tries < OVERLAP_MAX_CANDIDATES; tries++) {
-    const tail = live.slice(at);
-    if (tail.startsWith(body)) return '';
-    if (body.startsWith(tail)) remainder = body.slice(tail.length);
-    at = at > 0 ? live.lastIndexOf(probe, at - 1) : -1;
+  const failure = new Int32Array(body.length);
+  for (let i = 1, k = 0; i < body.length; i++) {
+    while (k > 0 && body.charCodeAt(i) !== body.charCodeAt(k)) k = failure[k - 1];
+    if (body.charCodeAt(i) === body.charCodeAt(k)) k++;
+    failure[i] = k;
   }
-  return remainder;
+  let matched = 0;
+  for (let i = 0; i < live.length; i++) {
+    const c = live.charCodeAt(i);
+    while (matched > 0 && c !== body.charCodeAt(matched)) matched = failure[matched - 1];
+    if (c === body.charCodeAt(matched)) matched++;
+    if (matched === body.length) return '';
+  }
+  const firstLine = body.indexOf('\n') + 1;
+  return firstLine > 0 && matched >= firstLine ? body.slice(matched) : undefined;
 }

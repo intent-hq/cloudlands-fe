@@ -59,6 +59,13 @@ describe('snapshotRemainderAfterLive', () => {
     expect(snapshotRemainderAfterLive(live, capped('\x1b[32mline 2\x1b[0m\nline 3\n'))).toBe('');
   });
 
+  it('finds the whole snapshot in a long run of repeated lines', () => {
+    const live = `diagnostic\n${'heartbeat\n'.repeat(3000)}done\n`;
+    expect(snapshotRemainderAfterLive(live, capped(`${'heartbeat\n'.repeat(2500)}done\n`))).toBe(
+      '',
+    );
+  });
+
   it('returns the snapshot part that live output does not hold', () => {
     expect(snapshotRemainderAfterLive('line 2\nline 3\n', capped('line 3\nline 4\n'))).toBe(
       'line 4\n',
