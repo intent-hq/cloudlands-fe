@@ -39,7 +39,7 @@ export interface FakeDaemon {
  * profile of the monorepo's capability golden, copied and locked under
  * tests/fixtures/ (intentd generates the golden from its hello builder).
  */
-export function regularDaemonServer() {
+function regularDaemonServer() {
   const profile = helloCapabilities.profiles.find((entry) => entry.id === 'regular');
   if (!profile) throw new Error('hello-capabilities.json has no regular profile');
   return {
@@ -50,7 +50,7 @@ export function regularDaemonServer() {
 }
 
 /** Answers every startup read with a minimal valid owner session. */
-export function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
+function defaultDaemonHandlers(): Record<string, FakeDaemonHandler> {
   return {
     'client.hello': () => ({
       clientId: 'request-budget-client',
