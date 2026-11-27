@@ -206,7 +206,7 @@
   import { splitDroppedItems } from '$lib/utils/drop-split';
   import {
     imageFilesToContextItems,
-    imageItemsBytes,
+    admitImageItems,
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -3212,10 +3212,10 @@
     // 30 MiB reference-image limit — not the old 10 MB inline budget.
     const added = await imageFilesToContextItems(imageFiles, {
       maxBytes: REFERENCE_IMAGE_MAX_BYTES,
-      existingBytes: imageItemsBytes(contextItems),
     });
-    if (added.length > 0) {
-      contextItems = [...contextItems, ...added];
+    const admitted = admitImageItems(contextItems, added, REFERENCE_IMAGE_MAX_BYTES);
+    if (admitted.length > 0) {
+      contextItems = [...contextItems, ...admitted];
     }
 
     if (insertedFileCount.value > 0) {

@@ -49,14 +49,52 @@ export function maxMegabytes(bytes: number): number {
   return Math.floor(bytes / (1024 * 1024));
 }
 
-/** Bytes of the images in `items` that go out as image attachments. */
-export function imageItemsBytes(items: readonly ContextItem[]): number {
-  let total = 0;
-  for (const item of items) {
-    if (!item.imageData || item.placementFileName) continue;
-    total += item.file?.size ?? base64ByteSize(item.imageData);
+function imageItemBytes(item: ContextItem): number {
+  if (!item.imageData) return 0;
+  return item.file?.size ?? base64ByteSize(item.imageData);
+}
+
+/**
+ * Bytes of the images in `items`. Every item with `imageData`, of any format,
+ * is sent as an image reference, which the daemon counts toward its 30 MiB
+ * aggregate cap.
+ */
+function imageItemsBytes(items: readonly ContextItem[]): number {
+  return items.reduce((total, item) => total + imageItemBytes(item), 0);
+}
+
+/**
+ * Keep the `added` images that fit under `maxBytes` together with `existing`,
+ * and report the others in one toast. Call it synchronously right before the
+ * items are appended: with no await between the check and the append, a
+ * second drop that finished reading later sees the first drop's images.
+ */
+export function admitImageItems(
+  existing: readonly ContextItem[],
+  added: readonly ContextItem[],
+  maxBytes: number,
+): ContextItem[] {
+  let total = imageItemsBytes(existing);
+  const admitted: ContextItem[] = [];
+  const rejected: string[] = [];
+  for (const item of added) {
+    const bytes = imageItemBytes(item);
+    if (total + bytes > maxBytes) {
+      rejected.push(item.label);
+      continue;
+    }
+    total += bytes;
+    admitted.push(item);
   }
-  return total;
+  if (rejected.length > 0) {
+    notify.error(
+      m.chat_richInput_imagesTotalTooLarge_error({
+        max: maxMegabytes(maxBytes),
+        names: rejected.join(', '),
+      }),
+    );
+  }
+  return admitted;
 }
 
 /** Convert a File to a base64 data URL. */
@@ -73,13 +111,10 @@ export interface ImageContextItemsOptions {
   /** Optional composer lifetime; canceled reads must not publish items or notifications. */
   signal?: AbortSignal;
   /**
-   * Size cap in bytes, per file and for all images of one message together
-   * (the daemon refuses image references over 30 MiB in total). Files that
-   * break either cap are rejected with a toast, before send.
+   * Per-file size cap in bytes; oversized files are rejected with a toast.
+   * The message total is checked by `admitImageItems` when items are added.
    */
   maxBytes: number;
-  /** Bytes of the images already in the message, counted against `maxBytes`. */
-  existingBytes?: number;
   /** Test seam: file → data-URL reader (defaults to FileReader). */
   readFile?: (file: File) => Promise<string>;
   /** Retained for existing callers; staged thumbnails announce success, failures still notify. */
@@ -99,20 +134,12 @@ export async function imageFilesToContextItems(
   const { maxBytes, readFile = fileToDataUrl, signal } = options;
   const items: ContextItem[] = [];
   const oversizedFiles: string[] = [];
-  const overTotalFiles: string[] = [];
-  let totalBytes = options.existingBytes ?? 0;
 
   for (const file of files) {
     if (signal?.aborted) return [];
     if (file.size > maxBytes) {
       // Over the cap — rejected up front instead of failing at send time.
       oversizedFiles.push(file.name);
-      continue;
-    }
-    // Unsupported formats go out as file attachments, not image references.
-    const counted = isSupportedImageMimeType(file.type);
-    if (counted && totalBytes + file.size > maxBytes) {
-      overTotalFiles.push(file.name);
       continue;
     }
 
@@ -139,7 +166,6 @@ export async function imageFilesToContextItems(
         imageMimeType: mimeType,
         ...(!isSupportedImageMimeType(mimeType) ? { placementFileName: fileName } : {}),
       });
-      if (counted) totalBytes += file.size;
     } catch (error) {
       if (signal?.aborted) return [];
       logger.error('Failed to add image to context', { fileName: file.name, error });
@@ -157,14 +183,6 @@ export async function imageFilesToContextItems(
       m.chat_richInput_filesTooLarge_error({
         max: maxMegabytes(maxBytes),
         names: oversizedFiles.join(', '),
-      }),
-    );
-  }
-  if (overTotalFiles.length > 0) {
-    notify.error(
-      m.chat_richInput_imagesTotalTooLarge_error({
-        max: maxMegabytes(maxBytes),
-        names: overTotalFiles.join(', '),
       }),
     );
   }
