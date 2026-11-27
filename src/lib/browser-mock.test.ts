@@ -137,6 +137,7 @@ describe('browser-mock DEV gate', () => {
     expect(invokeSpy).toHaveBeenNthCalledWith(1, 'backend:request', {
       method: 'workspace.list',
       params: { includeArchived: true },
+      timeoutMs: 120_000,
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(2, 'backend:request', {
       method: 'agent.list',

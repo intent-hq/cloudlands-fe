@@ -100,6 +100,8 @@ const CREATE_TIMEOUT_MS = 300_000;
  * single pages in 36–40s; under the flat 30s default each timeout restarted
  * the whole paged read, so a new window (the HUD) showed only event-seeded
  * rows for over a minute.
+ *
+ * @internal Exported for tests.
  */
 export const WORKSPACE_LIST_PAGE_TIMEOUT_MS = 120_000;
 

@@ -7,7 +7,7 @@
  * (intentd#521) — the sole data path (intent-hq/monorepo#1697).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LiveWorkspacesClient } from '../live-workspaces-client';
+import { LiveWorkspacesClient, WORKSPACE_LIST_PAGE_TIMEOUT_MS } from '../live-workspaces-client';
 import * as backendTransport from '../backend-transport';
 import { createTestWorkspaceId } from '../../../../test/factories/workspace.factory';
 
@@ -35,9 +35,11 @@ describe('LiveWorkspacesClient', () => {
 
       await client.list({ includeArchived: true });
 
-      expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', {
-        includeArchived: true,
-      });
+      expect(backendRequestSpy).toHaveBeenCalledWith(
+        'workspace.list',
+        { includeArchived: true },
+        { timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS },
+      );
     });
 
     it('omits params when includeArchived is false', async () => {
@@ -45,7 +47,9 @@ describe('LiveWorkspacesClient', () => {
 
       await client.list({ includeArchived: false });
 
-      expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', undefined);
+      expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', undefined, {
+        timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS,
+      });
     });
 
     it('omits params when no options provided (default archived-free)', async () => {
@@ -53,7 +57,9 @@ describe('LiveWorkspacesClient', () => {
 
       await client.list();
 
-      expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', undefined);
+      expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', undefined, {
+        timeoutMs: WORKSPACE_LIST_PAGE_TIMEOUT_MS,
+      });
     });
 
     it('normalizes returned workspaces', async () => {
