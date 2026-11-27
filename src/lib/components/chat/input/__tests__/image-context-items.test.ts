@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { notify } from '$lib/components/patterns/notify';
-import { imageFilesToContextItems } from '../image-context-items';
+import { imageFilesToContextItems, imageItemsBytes } from '../image-context-items';
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn() },
@@ -70,6 +70,30 @@ describe('imageFilesToContextItems', () => {
     expect(notify.success).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('big.png');
+  });
+
+  it('rejects images that would push the message total over maxBytes', async () => {
+    const readFile = vi.fn(readAsPngDataUrl);
+    const items = await imageFilesToContextItems(
+      [makeImageFile('a.png', 4), makeImageFile('b.png', 4), makeImageFile('c.png', 2)],
+      { maxBytes: 10, existingBytes: 3, readFile },
+    );
+
+    expect(items.map((i) => i.label)).toEqual(['a.png', 'c.png']);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('b.png');
+  });
+
+  it('counts only images sent as image attachments toward the total', async () => {
+    const [png] = await imageFilesToContextItems([makeImageFile('a.png', 6)], {
+      maxBytes: 100,
+      readFile: readAsPngDataUrl,
+    });
+    const pasted = { id: 'p', type: 'file' as const, label: 'p', imageData: PNG_B64 };
+    const asFile = { ...pasted, id: 'f', placementFileName: 'scan.heic' };
+
+    expect(imageItemsBytes([png, pasted, asFile])).toBe(6 + 16);
   });
 
   it('falls back to a generated file name derived from the mime type', async () => {

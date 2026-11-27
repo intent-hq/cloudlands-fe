@@ -39,6 +39,7 @@
   import { formatFileSize } from '$lib/utils/file-utils';
   import {
     imageFilesToContextItems,
+    imageItemsBytes,
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
   import { splitDroppedItems } from '$lib/utils/drop-split';
@@ -366,6 +367,7 @@
 
     const newItems = await imageFilesToContextItems(imageFiles, {
       maxBytes: REFERENCE_IMAGE_MAX_BYTES,
+      existingBytes: imageItemsBytes(imageContextItems),
     });
     if (newItems.length > 0) {
       imageContextItems = [...imageContextItems, ...newItems];
