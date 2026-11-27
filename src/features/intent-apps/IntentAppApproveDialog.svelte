@@ -5,6 +5,9 @@
    * `app.approve { appId, bundleHash, level, features }` with the installed
    * hash, so the user approves what they saw (a changed bundle is
    * `hash-mismatch`). Level 3 cannot be approved yet.
+   *
+   * With `install`, the app is a checked package that is not installed yet:
+   * the same review installs it and then approves it with the kept features.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
@@ -13,14 +16,20 @@
   import type { IntentApp } from '$shared/intent-apps/intent-apps-types';
   import { store as appStore } from '$store/renderer/store';
   import { selectIntentApps } from '$store/renderer/slices/intent-apps/intent-apps-selectors';
-  import { intentAppApproveRequested } from '$store/renderer/slices/intent-apps/intent-apps-slice';
+  import {
+    intentAppApproveRequested,
+    intentAppPackageInstallRequested,
+  } from '$store/renderer/slices/intent-apps/intent-apps-slice';
 
   let {
     app,
+    install = null,
     open = $bindable(false),
     onClose,
   }: {
     app: IntentApp;
+    /** Install a checked package first; `replace`: it replaces the installed app. */
+    install?: { replace: boolean } | null;
     open?: boolean;
     onClose: () => void;
   } = $props();
@@ -51,24 +60,33 @@
 
   const level = $derived(app.permissions.level);
   const busy = $derived(
-    $intentApps$.busy?.kind === 'approve' && $intentApps$.busy.appId === app.id,
+    ($intentApps$.busy?.kind === 'approve' && $intentApps$.busy.appId === app.id) ||
+      (install !== null && $intentApps$.busy?.kind === 'install'),
   );
   const failure = $derived(
-    $intentApps$.failure?.kind === 'approve' && $intentApps$.failure.appId === app.id
+    ($intentApps$.failure?.kind === 'approve' && $intentApps$.failure.appId === app.id) ||
+      (install !== null && $intentApps$.failure?.kind === 'install')
       ? $intentApps$.failure.error
       : null,
   );
   const shortHash = $derived(app.bundleHash.replace(/^sha256:/, '').slice(0, 12));
 
-  // The approval landed: the request finished without a failure.
+  // The approval landed: the request finished without a failure. (An install
+  // closes when the parent drops the checked package.)
   $effect(() => {
-    if (submitted && !busy && !failure) {
+    if (install === null && submitted && !busy && !failure) {
       submitted = false;
       onClose();
     }
   });
 
+  const features = () => app.permissions.features.filter((feature) => granted[feature]);
+
   function submit() {
+    if (install) {
+      appStore.dispatch(intentAppPackageInstallRequested(features()));
+      return;
+    }
     if (level === 3) return;
     submitted = true;
     appStore.dispatch(
@@ -76,7 +94,7 @@
         appId: app.id,
         bundleHash: app.bundleHash,
         level,
-        features: app.permissions.features.filter((feature) => granted[feature]),
+        features: features(),
       }),
     );
   }
@@ -84,10 +102,14 @@
 
 <FormDialog
   bind:open
-  title={m.settings_intentApps_approveDialog_title({ name: app.name })}
+  title={install
+    ? m.settings_intentApps_installDialog_title({ name: app.name })
+    : m.settings_intentApps_approveDialog_title({ name: app.name })}
   description={m.settings_intentApps_approveDialog_description({ version: app.version })}
-  submitLabel={m.settings_intentApps_approveDialog_approve_label()}
-  canSubmit={level !== 3 && !busy}
+  submitLabel={install
+    ? m.settings_intentApps_installDialog_install_label()
+    : m.settings_intentApps_approveDialog_approve_label()}
+  canSubmit={(install !== null || level !== 3) && !busy}
   submitBusy={busy}
   onSubmit={submit}
   onCancel={onClose}
@@ -119,6 +141,11 @@
       </div>
     {:else}
       <p class="type-body text-muted-foreground">{m.settings_intentApps_approveDialog_level3()}</p>
+    {/if}
+    {#if install?.replace}
+      <p class="type-body text-foreground" data-intent-app-replaces>
+        {m.settings_intentApps_installDialog_exists()}
+      </p>
     {/if}
     {#if app.publisher}
       <!-- M1 never verifies publisher data: it is only what the manifest says. -->

@@ -20,8 +20,9 @@
  */
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { existsSync } from 'fs';
+import path from 'path';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { isIntentOs } from '../../../shared/intent-os';
@@ -30,7 +31,7 @@ import {
   INTENT_APPS_OFF_STATE,
   isIntentAppId,
   type IntentApp,
-  type IntentAppInstallResult,
+  type IntentAppsActionError,
   type IntentAppsActionResult,
   type IntentAppsState,
 } from '../../../shared/intent-apps/intent-apps-types';
@@ -39,6 +40,7 @@ import { Logger } from '../../../shared/logger';
 import { getAppWindows } from '../../../main/offscreen-window';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
+import { showOpenDialog } from '../../../main/file-dialogs';
 import { getBackendIdForWebContents, getRendererWebContents } from '../../../main/window-backend';
 import { getFocusedWindowBackendId } from '../../../main/window';
 import { createBackendSocket } from '../../backend/main/backend-connection';
@@ -56,6 +58,13 @@ import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { IntentAppHost, LOCAL_APP_HOST_MACHINE, type AppHostAdmin } from './app-host';
 import { AppsStateFileWriter, intentStateDir } from './apps-state-file';
 import { pickOpenAppTarget } from './open-app-target';
+import { readAppPackage } from './app-package';
+import {
+  discardAppPackage,
+  installUploadedPackage,
+  uploadAppPackage,
+  type PackageRequest,
+} from './app-package-install';
 
 const logger = new Logger('IntentApps');
 const CHANNELS = IPC_CHANNELS.INTENT_APPS;
@@ -77,6 +86,8 @@ interface Machine {
   /** The saved connection's name, for app window titles (remote machines). */
   label: string | null;
   iconCache: Map<string, string | null>;
+  /** Package uploads this desktop app began on the machine and has not ended. */
+  uploads: Set<string>;
 }
 
 let labEnabled = false;
@@ -90,12 +101,20 @@ let started = false;
 const AppIdSchema = z.object({ appId: z.string().refine(isIntentAppId) });
 const SetLabSchema = z.object({ enabled: z.boolean() });
 const EmptySchema = z.object({}).optional();
-const InstallSchema = z.object({
-  workspaceId: z.string().min(1),
-  path: z.string(),
-  replace: z.boolean().optional(),
-  dryRun: z.boolean().optional(),
-});
+/**
+ * A package install (spec 12): `path` (a `.intentapp` / `.zip` file or a
+ * folder on this computer) uploads it to the sender's machine and checks or
+ * installs it; `uploadId` checks again or installs a package uploaded before.
+ */
+const InstallSchema = z
+  .object({
+    path: z.string().min(1).optional(),
+    uploadId: z.string().min(1).optional(),
+    replace: z.boolean().optional(),
+    dryRun: z.boolean().optional(),
+  })
+  .refine((params) => (params.path === undefined) !== (params.uploadId === undefined));
+const UploadSchema = z.object({ uploadId: z.string().min(1) });
 const ApproveSchema = z.object({
   appId: z.string().refine(isIntentAppId),
   bundleHash: z.string().min(1),
@@ -145,6 +164,7 @@ function machineFor(backendId: string): Machine {
     refreshAgain: false,
     label: null,
     iconCache: new Map(),
+    uploads: new Set(),
   };
   machine.host = new IntentAppHost(
     admin(backendId),
@@ -164,7 +184,7 @@ function senderMachine(event: IpcMainInvokeEvent): Machine {
   return machineFor(getBackendIdForWebContents(event.sender));
 }
 
-function toActionError(error: unknown): { code: string; message: string } {
+function toActionError(error: unknown): IntentAppsActionError {
   const data = (error as { data?: { code?: unknown } } | null)?.data;
   const rpcCode = (error as { rpcCode?: unknown } | null)?.rpcCode;
   const code =
@@ -175,7 +195,12 @@ function toActionError(error: unknown): { code: string; message: string } {
         : rpcCode === -32601
           ? 'not-supported'
           : 'internal';
-  return { code, message: error instanceof Error ? error.message : String(error) };
+  const uploadId = (error as { uploadId?: unknown } | null)?.uploadId;
+  return {
+    code,
+    message: error instanceof Error ? error.message : String(error),
+    ...(typeof uploadId === 'string' ? { uploadId } : {}),
+  };
 }
 
 async function action<T>(run: () => Promise<T>): Promise<IntentAppsActionResult<T>> {
@@ -212,10 +237,13 @@ function setState(machine: Machine, next: IntentAppsState): void {
   );
 }
 
+function capabilities(hello: unknown): Record<string, unknown> | undefined {
+  return (hello as { server?: { capabilities?: Record<string, unknown> } } | null)?.server
+    ?.capabilities;
+}
+
 function isSupported(hello: unknown): boolean {
-  const capabilities = (hello as { server?: { capabilities?: Record<string, unknown> } } | null)
-    ?.server?.capabilities;
-  return capabilities?.intentApps === 1;
+  return capabilities(hello)?.intentApps === 1;
 }
 
 async function readLabel(machine: Machine): Promise<void> {
@@ -252,7 +280,14 @@ async function refreshNow(machine: Machine): Promise<void> {
     }
     const { apps } = await client.request<{ apps: IntentApp[] }>('app.list', {});
     machine.loaded = true;
-    setState(machine, { labEnabled: true, supported: true, apps, openAppIds, error: null });
+    setState(machine, {
+      labEnabled: true,
+      supported: true,
+      packages: capabilities(hello)?.intentAppPackages === 1,
+      apps,
+      openAppIds,
+      error: null,
+    });
   } catch (error) {
     if ((error as { rpcCode?: unknown } | null)?.rpcCode === -32003) {
       // A guest or host member connection: the library is owner-only, so there is none here.
@@ -408,21 +443,47 @@ async function readIcon(machine: Machine, appId: string): Promise<string | null>
   }
 }
 
+/**
+ * The native picker for a package: a `.intentapp` or `.zip` file, or a folder.
+ * Only the macOS picker can choose files and folders at once, so elsewhere
+ * the user picks the folder's `intent-app.json`, which stands for its folder.
+ */
+async function pickPackage(owner: BrowserWindow | null): Promise<{ path: string } | null> {
+  const mac = process.platform === 'darwin';
+  const result = await showOpenDialog(owner, {
+    properties: mac ? ['openFile', 'openDirectory'] : ['openFile'],
+    filters: [{ name: 'Intent app', extensions: ['intentapp', 'zip', 'json'] }], // i18n-ignore (file type name in the native picker)
+  });
+  const picked = result.canceled ? null : result.filePaths[0];
+  if (!picked) return null;
+  return { path: /(^|[\\/])intent-app\.json$/i.test(picked) ? path.dirname(picked) : picked };
+}
+
+/** Package upload requests: chunks of a remote machine ride its transfer connection. */
+function packageRequest(machine: Machine): PackageRequest {
+  return <T>(method: string, params: Record<string, unknown>) =>
+    requestRouted<T>(
+      getBackendClientForId(machine.backendId),
+      method,
+      params,
+      method === 'app.install'
+        ? { timeoutMs: 120_000 }
+        : { timeoutMs: TRANSFER_REQUEST_TIMEOUT_MS },
+      machine.backendId,
+    );
+}
+
 /** A library request of the sender's machine; refreshes that library after a change. */
 function libraryRequest<T>(
   event: IpcMainInvokeEvent,
   method: string,
   params: Record<string, unknown>,
-  options?: { timeoutMs?: number; refresh?: boolean },
 ): Promise<IntentAppsActionResult<T>> {
   return action(async () => {
     requireLab();
     const machine = senderMachine(event);
-    const client = getBackendClientForId(machine.backendId);
-    const result = options?.timeoutMs
-      ? await client.request<T>(method, params, { timeoutMs: options.timeoutMs })
-      : await client.request<T>(method, params);
-    if (options?.refresh !== false) void refresh(machine);
+    const result = await getBackendClientForId(machine.backendId).request<T>(method, params);
+    void refresh(machine);
     return result;
   });
 }
@@ -485,15 +546,64 @@ export function setupIntentAppsIPC(): void {
     ),
   );
   ipcMain.handle(
+    CHANNELS.PICK_PACKAGE,
+    createValidatedHandler(
+      EmptySchema,
+      async (event) => pickPackage(BrowserWindow.fromWebContents(event.sender)),
+      CHANNELS.PICK_PACKAGE,
+    ),
+  );
+  ipcMain.handle(
     CHANNELS.INSTALL,
     createValidatedHandler(
       InstallSchema,
       async (event, params) =>
-        libraryRequest<IntentAppInstallResult>(event, 'app.install', params, {
-          timeoutMs: 120_000,
-          refresh: !params.dryRun,
+        action(async () => {
+          requireLab();
+          const machine = senderMachine(event);
+          if (!machine.state.packages) {
+            throw Object.assign(new Error('This machine cannot install app packages'), {
+              data: { code: 'not-supported' },
+            });
+          }
+          const request = packageRequest(machine);
+          let uploadId = params.uploadId;
+          if (uploadId === undefined && params.path !== undefined) {
+            uploadId = await uploadAppPackage(request, await readAppPackage(params.path));
+            machine.uploads.add(uploadId);
+          } else if (uploadId === undefined || !machine.uploads.has(uploadId)) {
+            throw Object.assign(new Error('Unknown package upload'), {
+              data: { code: 'upload-invalid' },
+            });
+          }
+          try {
+            const result = await installUploadedPackage(request, uploadId, params);
+            if (!params.dryRun) {
+              machine.uploads.delete(uploadId);
+              void refresh(machine);
+            }
+            return { ...result, uploadId };
+          } catch (error) {
+            // A failed check keeps the upload: the renderer checks again or discards it.
+            throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+              uploadId,
+            });
+          }
         }),
       CHANNELS.INSTALL,
+    ),
+  );
+  ipcMain.handle(
+    CHANNELS.DISCARD_PACKAGE,
+    createValidatedHandler(
+      UploadSchema,
+      async (event, { uploadId }) => {
+        const machine = senderMachine(event);
+        if (!machine.uploads.delete(uploadId)) return { ok: true };
+        await discardAppPackage(packageRequest(machine), uploadId);
+        return { ok: true };
+      },
+      CHANNELS.DISCARD_PACKAGE,
     ),
   );
   ipcMain.handle(

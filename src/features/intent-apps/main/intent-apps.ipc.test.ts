@@ -4,6 +4,7 @@
  * gate (`server.capabilities.intentApps: 1`), the event re-read and the push
  * to renderers.
  */
+import { createHash } from 'crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -114,6 +115,22 @@ vi.mock('../../backend/main/backend.ipc', () => {
     },
   };
 });
+vi.mock('../../backend/main/transfer-connections', () => ({
+  TRANSFER_REQUEST_TIMEOUT_MS: 300_000,
+  // The real one sends transfer methods of a remote machine on a transfer
+  // connection to the same machine; here every call reaches that machine's daemon.
+  requestRouted: (
+    client: { request(m: string, p: unknown): Promise<unknown> },
+    m: string,
+    p: unknown,
+  ) => client.request(m, p),
+}));
+vi.mock('./app-package', () => ({
+  readAppPackage: async (path: string) => ({
+    fileName: `${path.split('/').pop()}.intentapp`,
+    bytes: Buffer.from('PK-package-bytes'),
+  }),
+}));
 vi.mock('./app-host', async () => {
   const { vi: vitest } = await import('vitest');
   return {
@@ -198,10 +215,25 @@ describe('Intent apps library in main', () => {
     mocks.focusedBackendId = 'local';
     mocks.remoteConnected = true;
     for (const daemon of [mocks.local, mocks.remote]) {
-      daemon.hello = { server: { capabilities: { intentApps: 1 } } };
+      daemon.hello = { server: { capabilities: { intentApps: 1, intentAppPackages: 1 } } };
       daemon.responses.clear();
       daemon.responses.set('events.subscribe', () => ({ subscriptionId: 'sub-1' }));
       daemon.responses.set('app.list', () => ({ apps: [APP] }));
+      daemon.responses.set('file.attachmentUpload.begin', () => ({
+        uploadId: `upload-${daemon.backendId}`,
+        maxChunkBytes: 8,
+      }));
+      daemon.responses.set('file.attachmentUpload.chunk', (params) => params);
+      daemon.responses.set('file.attachmentUpload.abort', (params) => ({
+        ...(params as object),
+        aborted: true,
+      }));
+      daemon.responses.set('app.install', (params) => ({
+        app: APP,
+        replaced: false,
+        approvalReset: false,
+        dryRun: (params as { dryRun?: boolean }).dryRun === true,
+      }));
     }
   });
 
@@ -214,7 +246,7 @@ describe('Intent apps library in main', () => {
       apps: [],
     });
     expect(localRequests()).toEqual([]);
-    expect(await invoke('intent-apps:install', { workspaceId: 'ws-1', path: '.' })).toMatchObject({
+    expect(await invoke('intent-apps:install', { path: '/tmp/app' })).toMatchObject({
       ok: false,
       error: { code: 'lab-off' },
     });
@@ -234,7 +266,7 @@ describe('Intent apps library in main', () => {
     await invoke('intent-apps:get-state');
     await invoke('intent-apps:refresh');
     for (const [channel, payload] of [
-      ['intent-apps:install', { workspaceId: 'ws-1', path: '.' }],
+      ['intent-apps:install', { path: '/tmp/app' }],
       ['intent-apps:approve', { appId: 'a-b', bundleHash: 'sha256:x', level: 1, features: [] }],
       ['intent-apps:revoke', { appId: 'a-b' }],
       ['intent-apps:uninstall', { appId: 'a-b' }],
@@ -278,61 +310,60 @@ describe('Intent apps library in main', () => {
     expect(localRequests().map((request) => request.method)).not.toContain('app.list');
   });
 
-  it('sends app.install, app.approve, app.revoke and app.uninstall exactly as the contract names them', async () => {
+  it('uploads a package, checks it, and installs the same upload (the package wire)', async () => {
     mocks.prefs.set('intentAppsLabEnabled', true);
     await setup();
     await settle();
-    mocks.local.responses.set('app.install', (params) => ({
-      app: APP,
-      replaced: false,
-      approvalReset: false,
-      dryRun: (params as { dryRun?: boolean }).dryRun === true,
-    }));
-    mocks.local.responses.set('app.approve', () => ({
-      app: { ...APP, approval: { ...APP.approval, status: 'approved' } },
-    }));
-    mocks.local.responses.set('app.revoke', () => ({ app: APP, revoked: true }));
-    mocks.local.responses.set('app.uninstall', () => ({ removed: true }));
     mocks.local.requests.length = 0;
 
-    expect(
-      await invoke('intent-apps:install', {
-        workspaceId: 'ws-1',
-        path: 'apps/pomodoro',
-        dryRun: true,
-      }),
-    ).toMatchObject({ ok: true, result: { dryRun: true, app: { id: 'pomodoro-timer' } } });
-    expect(localRequests()[0]).toEqual({
-      method: 'app.install',
-      params: { workspaceId: 'ws-1', path: 'apps/pomodoro', dryRun: true },
+    const checked = await invoke('intent-apps:install', { path: '/tmp/pomodoro', dryRun: true });
+    expect(checked).toMatchObject({
+      ok: true,
+      result: { dryRun: true, app: { id: 'pomodoro-timer' }, uploadId: 'upload-local' },
     });
-
-    await invoke('intent-apps:approve', {
-      appId: 'pomodoro-timer',
-      bundleHash: 'sha256:9f2c',
-      level: 2,
-      features: ['models'],
-    });
-    expect(localRequests().find((request) => request.method === 'app.approve')).toEqual({
-      method: 'app.approve',
-      params: {
-        appId: 'pomodoro-timer',
-        bundleHash: 'sha256:9f2c',
-        level: 2,
-        features: ['models'],
+    const bytes = Buffer.from('PK-package-bytes');
+    expect(localRequests()).toEqual([
+      {
+        method: 'file.attachmentUpload.begin',
+        params: {
+          purpose: 'app-package',
+          fileName: 'pomodoro.intentapp',
+          sizeBytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        },
       },
-    });
-    await invoke('intent-apps:revoke', { appId: 'pomodoro-timer' });
-    await invoke('intent-apps:uninstall', { appId: 'pomodoro-timer' });
-    expect(
-      localRequests().filter((r) => r.method === 'app.revoke' || r.method === 'app.uninstall'),
-    ).toEqual([
-      { method: 'app.revoke', params: { appId: 'pomodoro-timer' } },
-      { method: 'app.uninstall', params: { appId: 'pomodoro-timer' } },
+      // maxChunkBytes 8: two chunks, seq from 0.
+      {
+        method: 'file.attachmentUpload.chunk',
+        params: { uploadId: 'upload-local', seq: 0, data: bytes.subarray(0, 8).toString('base64') },
+      },
+      {
+        method: 'file.attachmentUpload.chunk',
+        params: { uploadId: 'upload-local', seq: 1, data: bytes.subarray(8).toString('base64') },
+      },
+      {
+        method: 'app.install',
+        params: { uploadId: 'upload-local', replace: false, dryRun: true },
+      },
     ]);
+
+    mocks.local.requests.length = 0;
+    expect(
+      await invoke('intent-apps:install', { uploadId: 'upload-local', replace: true }),
+    ).toMatchObject({ ok: true, result: { dryRun: false } });
+    await settle();
+    expect(localRequests().slice(0, 2)).toEqual([
+      { method: 'app.install', params: { uploadId: 'upload-local', replace: true, dryRun: false } },
+      { method: 'file.attachmentUpload.abort', params: { uploadId: 'upload-local' } },
+    ]);
+    // The install ended the upload: it cannot be used again.
+    expect(await invoke('intent-apps:install', { uploadId: 'upload-local' })).toMatchObject({
+      ok: false,
+      error: { code: 'upload-invalid' },
+    });
   });
 
-  it('returns the daemon data.code of a refusal to the renderer', async () => {
+  it('keeps the upload of a failed check, and discards it on request', async () => {
     mocks.prefs.set('intentAppsLabEnabled', true);
     await setup();
     await settle();
@@ -342,10 +373,67 @@ describe('Intent apps library in main', () => {
         data: { code: 'app-exists' },
       });
     });
-    expect(await invoke('intent-apps:install', { workspaceId: 'ws-1', path: '.' })).toEqual({
+    expect(await invoke('intent-apps:install', { path: '/tmp/pomodoro', dryRun: true })).toEqual({
       ok: false,
-      error: { code: 'app-exists', message: 'App exists' },
+      error: { code: 'app-exists', message: 'App exists', uploadId: 'upload-local' },
     });
+    mocks.local.requests.length = 0;
+    expect(await invoke('intent-apps:discard-package', { uploadId: 'upload-local' })).toEqual({
+      ok: true,
+    });
+    expect(localRequests()).toEqual([
+      { method: 'file.attachmentUpload.abort', params: { uploadId: 'upload-local' } },
+    ]);
+  });
+
+  it('offers no package install on a daemon without intentAppPackages: 1', async () => {
+    mocks.local.hello = { server: { capabilities: { intentApps: 1 } } };
+    mocks.prefs.set('intentAppsLabEnabled', true);
+    await setup();
+    await settle();
+    expect(await invoke('intent-apps:get-state')).toMatchObject({
+      supported: true,
+      packages: false,
+    });
+    mocks.local.requests.length = 0;
+    expect(
+      await invoke('intent-apps:install', { path: '/tmp/pomodoro', dryRun: true }),
+    ).toMatchObject({ ok: false, error: { code: 'not-supported' } });
+    expect(localRequests()).toEqual([]);
+  });
+
+  it('sends app.approve, app.revoke and app.uninstall exactly as the contract names them', async () => {
+    mocks.prefs.set('intentAppsLabEnabled', true);
+    await setup();
+    await settle();
+    mocks.local.responses.set('app.approve', () => ({
+      app: { ...APP, approval: { ...APP.approval, status: 'approved' } },
+    }));
+    mocks.local.responses.set('app.revoke', () => ({ app: APP, revoked: true }));
+    mocks.local.responses.set('app.uninstall', () => ({ removed: true }));
+    mocks.local.requests.length = 0;
+
+    await invoke('intent-apps:approve', {
+      appId: 'pomodoro-timer',
+      bundleHash: 'sha256:9f2c',
+      level: 2,
+      features: ['models'],
+    });
+    await invoke('intent-apps:revoke', { appId: 'pomodoro-timer' });
+    await invoke('intent-apps:uninstall', { appId: 'pomodoro-timer' });
+    expect(localRequests().filter((r) => r.method !== 'app.list')).toEqual([
+      {
+        method: 'app.approve',
+        params: {
+          appId: 'pomodoro-timer',
+          bundleHash: 'sha256:9f2c',
+          level: 2,
+          features: ['models'],
+        },
+      },
+      { method: 'app.revoke', params: { appId: 'pomodoro-timer' } },
+      { method: 'app.uninstall', params: { appId: 'pomodoro-timer' } },
+    ]);
   });
 
   it('re-reads app.list on an app event of its subscription and ignores others', async () => {
@@ -413,17 +501,28 @@ describe('Intent apps library in main', () => {
         approvalReset: false,
         dryRun: (params as { dryRun?: boolean }).dryRun === true,
       }));
+      mocks.remote.responses.set('file.attachmentUpload.begin', () => ({
+        uploadId: 'upload-remote',
+        maxChunkBytes: 1024,
+      }));
       mocks.remote.responses.set('app.approve', () => ({ app: remoteApp }));
 
       const state = await invoke('intent-apps:get-state', {}, REMOTE);
       expect(state).toMatchObject({ labEnabled: true, supported: true, apps: [remoteApp] });
       expect(
-        await invoke(
-          'intent-apps:install',
-          { workspaceId: 'ws-remote', path: '.intent/apps/side-by-side' },
-          REMOTE,
-        ),
-      ).toMatchObject({ ok: true, result: { app: { id: 'side-by-side' } } });
+        await invoke('intent-apps:install', { path: '/tmp/side-by-side', dryRun: true }, REMOTE),
+      ).toMatchObject({
+        ok: true,
+        result: { app: { id: 'side-by-side' }, uploadId: 'upload-remote' },
+      });
+      // This computer cannot use the remote machine's upload.
+      expect(await invoke('intent-apps:install', { uploadId: 'upload-remote' })).toMatchObject({
+        ok: false,
+        error: { code: 'upload-invalid' },
+      });
+      expect(
+        await invoke('intent-apps:install', { uploadId: 'upload-remote' }, REMOTE),
+      ).toMatchObject({ ok: true, result: { dryRun: false } });
       await invoke(
         'intent-apps:approve',
         { appId: 'side-by-side', bundleHash: 'sha256:9f2c', level: 2, features: ['models'] },
@@ -438,16 +537,21 @@ describe('Intent apps library in main', () => {
       expect(mocks.remote.requests.map((request) => request.method)).toEqual([
         'events.subscribe',
         'app.list',
+        'file.attachmentUpload.begin',
+        'file.attachmentUpload.chunk',
         'app.install',
+        'app.install',
+        'file.attachmentUpload.abort',
         'app.list',
         'app.approve',
         'app.list',
       ]);
-      expect(mocks.remote.requests[2].params).toEqual({
-        workspaceId: 'ws-remote',
-        path: '.intent/apps/side-by-side',
+      expect(mocks.remote.requests[5].params).toEqual({
+        uploadId: 'upload-remote',
+        replace: false,
+        dryRun: false,
       });
-      expect(mocks.remote.requests[4].params).toEqual({
+      expect(mocks.remote.requests[8].params).toEqual({
         appId: 'side-by-side',
         bundleHash: 'sha256:9f2c',
         level: 2,
@@ -523,6 +627,7 @@ describe('Intent apps library in main', () => {
       expect(await invoke('intent-apps:get-state', {}, REMOTE)).toEqual({
         labEnabled: true,
         supported: false,
+        packages: false,
         apps: [],
         openAppIds: [],
         error: null,

@@ -21,12 +21,12 @@
   import type { IntentApp } from '$shared/intent-apps/intent-apps-types';
   import {
     intentAppIconReceived,
-    intentAppInstallPreviewReceived,
+    intentAppPackageChecked,
+    intentAppPackageDismissed,
     intentAppsStateReceived,
   } from '$store/renderer/slices/intent-apps/intent-apps-slice';
   import IntentAppsSettings from './IntentAppsSettings.svelte';
   import IntentAppApproveDialog from './IntentAppApproveDialog.svelte';
-  import IntentAppInstallDialog from './IntentAppInstallDialog.svelte';
 
   let { scene }: { scene: 'library' | 'empty' | 'unsupported' | 'approve' | 'install' } = $props();
 
@@ -106,32 +106,37 @@
     intentAppsStateReceived({
       labEnabled: true,
       supported: scene !== 'unsupported',
+      packages: true,
       apps,
       openAppIds: scene === 'library' ? [base.id] : [],
       error: null,
     }),
   );
   appStore.dispatch(intentAppIconReceived(`${base.id}@${base.bundleHash}`, ICON));
-  // After the dialog's own open reset has run.
+  // A checked package: the install review over the library. It replaces the installed copy.
   onMount(() => {
     if (scene !== 'install') return;
-    setTimeout(() =>
-      appStore.dispatch(
-        intentAppInstallPreviewReceived({
-          app: pending,
-          replaced: false,
-          approvalReset: false,
+    appStore.dispatch(
+      intentAppPackageChecked({
+        uploadId: 'upload-preview',
+        replace: true,
+        preview: {
+          app: { ...base, version: '1.3.0', open: false },
+          replaced: true,
+          approvalReset: true,
           dryRun: true,
-        }),
-      ),
+        },
+      }),
     );
   });
 
   onDestroy(() => {
+    appStore.dispatch(intentAppPackageDismissed(null));
     appStore.dispatch(
       intentAppsStateReceived({
         labEnabled: false,
         supported: false,
+        packages: false,
         apps: [],
         openAppIds: [],
         error: null,
@@ -143,8 +148,6 @@
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 bg-background px-6 py-6">
   {#if scene === 'approve'}
     <IntentAppApproveDialog app={base} open={true} onClose={() => {}} />
-  {:else if scene === 'install'}
-    <IntentAppInstallDialog open={true} />
   {:else}
     <IntentAppsSettings />
   {/if}

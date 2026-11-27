@@ -17,3 +17,8 @@ export const selectIntentAppsLibraryShown = store.createSelector(
 
 /** Loaded icon data URLs by `<appId>@<bundleHash>`. */
 export const selectIntentAppIcons = store.createSelector((state) => state.intentApps.icons);
+
+/** The checked package that the install review shows (null when none). */
+export const selectIntentAppPackageInstall = store.createSelector(
+  (state) => state.intentApps.packageInstall,
+);

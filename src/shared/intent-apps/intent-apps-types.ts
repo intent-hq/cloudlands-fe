@@ -106,6 +106,11 @@ export interface IntentAppInstallResult {
   dryRun: boolean;
 }
 
+/** Main → renderer: a package install result, with the upload it used (kept after a dry run). */
+export interface IntentAppPackageInstallResult extends IntentAppInstallResult {
+  uploadId: string;
+}
+
 /**
  * Main → renderer: the whole library state of the renderer's machine
  * (`intent-apps:changed`, `intent-apps:get-state`). Each window sees the
@@ -116,6 +121,8 @@ export interface IntentAppsState {
   labEnabled: boolean;
   /** The daemon of the renderer's machine advertises `intentApps: 1`. */
   supported: boolean;
+  /** It also advertises `intentAppPackages: 1`: it installs uploaded app packages. */
+  packages: boolean;
   /** Installed apps on the daemon of the renderer's machine, sorted like `app.list`. */
   apps: IntentApp[];
   /** Apps of that machine with a window open in this desktop app. */
@@ -127,6 +134,7 @@ export interface IntentAppsState {
 export const INTENT_APPS_OFF_STATE: IntentAppsState = {
   labEnabled: false,
   supported: false,
+  packages: false,
   apps: [],
   openAppIds: [],
   error: null,
@@ -136,6 +144,8 @@ export const INTENT_APPS_OFF_STATE: IntentAppsState = {
 export interface IntentAppsActionError {
   code: string;
   message: string;
+  /** A failed package check: the upload it kept, to check again or discard. */
+  uploadId?: string;
 }
 
 export type IntentAppsActionResult<T = undefined> =

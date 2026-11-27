@@ -1,10 +1,13 @@
 <script lang="ts">
   /**
    * Settings → Advanced → Apps (Labs): the app library of the daemon of this
-   * window's machine (this computer or a remote machine). Each row opens, reviews (approves), removes the approval of or
-   * uninstalls an app; "Install app…" installs one from a workspace folder.
-   * Main owns the library and the app windows; this view only shows the slice
-   * and dispatches requests.
+   * window's machine (this computer or a remote machine). Apps that need
+   * approval (an agent installed them) come first, with one Approve action.
+   * Each row opens, reviews, removes the approval of or uninstalls an app.
+   * "Install app…" picks a package file or folder, and the library takes the
+   * same by drag and drop; the checked package opens the install review. Main
+   * owns the library and the app windows; this view only shows the slice and
+   * dispatches requests.
    */
   import {
     SettingsFieldRow,
@@ -21,20 +24,28 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectIntentApps } from '$store/renderer/slices/intent-apps/intent-apps-selectors';
   import {
+    intentAppApproveRequested,
     intentAppOpenRequested,
+    intentAppPackageChosen,
+    intentAppPackageDismissed,
+    intentAppPackagePickRequested,
     intentAppRevokeRequested,
     intentAppUninstallRequested,
     intentAppsRefreshRequested,
   } from '$store/renderer/slices/intent-apps/intent-apps-slice';
   import IntentAppApproveDialog from './IntentAppApproveDialog.svelte';
-  import IntentAppInstallDialog from './IntentAppInstallDialog.svelte';
+  import { orderIntentApps, needsIntentAppApproval } from './intent-apps-order';
   import { onMount } from 'svelte';
+  import { droppedPath } from './utils/dropped-path';
 
   const intentApps$ = selectIntentApps();
   const library = $derived($intentApps$.library);
 
-  let installOpen = $state(false);
   let reviewAppId = $state<string | null>(null);
+  let dragging = $state(false);
+  const apps = $derived(orderIntentApps(library.apps));
+  const packageInstall = $derived($intentApps$.packageInstall);
+  const installBusy = $derived($intentApps$.busy?.kind === 'install');
   const reviewApp = $derived(library.apps.find((app) => app.id === reviewAppId) ?? null);
 
   onMount(() => {
@@ -47,7 +58,11 @@
     const failure = $intentApps$.failure;
     if (!failure || failure === reportedFailure) return;
     reportedFailure = failure;
-    if (failure.kind === 'open' || failure.kind === 'revoke' || failure.kind === 'uninstall') {
+    // A failed check (no install review yet) or a row's Approve has no dialog to show it.
+    const shownInDialog =
+      (failure.kind === 'install' && packageInstall !== null) ||
+      (failure.kind === 'approve' && (reviewAppId !== null || packageInstall !== null));
+    if (failure.kind !== 'lab' && !shownInDialog) {
       notify.error(m.settings_intentApps_actionFailed_error({ message: failure.error.message }));
     }
   });
@@ -61,10 +76,20 @@
 
   function actionsFor(app: IntentApp) {
     const openable = isIntentAppOpenable(app);
+    const approvable = needsIntentAppApproval(app) && app.permissions.level !== 3;
     return defineActions([
       openable
         ? { kind: 'action', id: 'open', label: m.settings_intentApps_open_label() }
-        : { kind: 'action', id: 'review', label: m.settings_intentApps_review_label() },
+        : approvable
+          ? {
+              kind: 'action',
+              id: 'approve',
+              label: m.settings_intentApps_approveDialog_approve_label(),
+            }
+          : { kind: 'action', id: 'review', label: m.settings_intentApps_review_label() },
+      ...(approvable
+        ? [{ kind: 'action' as const, id: 'review', label: m.settings_intentApps_review_label() }]
+        : []),
       ...(openable
         ? [
             { kind: 'action' as const, id: 'review', label: m.settings_intentApps_review_label() },
@@ -82,7 +107,17 @@
 
   async function runAction(app: IntentApp, id: string) {
     if (id === 'open') appStore.dispatch(intentAppOpenRequested(app.id));
-    else if (id === 'review') reviewAppId = app.id;
+    else if (id === 'approve') {
+      // One action: everything the app asks for, bound to the installed bundle.
+      appStore.dispatch(
+        intentAppApproveRequested({
+          appId: app.id,
+          bundleHash: app.bundleHash,
+          level: app.permissions.level,
+          features: [...app.permissions.features],
+        }),
+      );
+    } else if (id === 'review') reviewAppId = app.id;
     else if (id === 'revoke') appStore.dispatch(intentAppRevokeRequested(app.id));
     else if (id === 'uninstall') {
       const confirmed = await confirm({
@@ -93,6 +128,22 @@
       });
       if (confirmed) appStore.dispatch(intentAppUninstallRequested(app.id));
     }
+  }
+
+  /** The dropped file or folder: its path on this computer (Electron only). */
+  function onDrop(event: DragEvent) {
+    event.preventDefault();
+    dragging = false;
+    const file = event.dataTransfer?.files?.[0];
+    const path = file ? droppedPath(file) : '';
+    if (path) appStore.dispatch(intentAppPackageChosen(path));
+  }
+
+  function onDragOver(event: DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    dragging = true;
   }
 
   function iconUrl(app: IntentApp): string | null {
@@ -122,7 +173,16 @@
 </script>
 
 {#snippet libraryControl()}
-  <div class="min-w-0 space-y-1" data-intent-apps-library>
+  <div
+    class="min-w-0 space-y-1 rounded-(--radius-small) data-[dragging=true]:ring-2 data-[dragging=true]:ring-ring"
+    data-intent-apps-library
+    data-dragging={dragging}
+    role="group"
+    aria-label={m.settings_section_intentApps()}
+    ondragover={library.packages ? onDragOver : undefined}
+    ondragleave={() => (dragging = false)}
+    ondrop={library.packages ? onDrop : undefined}
+  >
     {#if !library.supported}
       <p class="type-body py-3 text-muted-foreground">
         {library.error
@@ -138,7 +198,7 @@
       {#if library.apps.length === 0}
         <p class="type-body py-3 text-muted-foreground">{m.settings_intentApps_empty()}</p>
       {/if}
-      {#each library.apps as app (app.id)}
+      {#each apps as app (app.id)}
         <SettingsFieldRow
           id={`intent-app-${app.id}`}
           label={app.name}
@@ -175,9 +235,16 @@
         </SettingsFieldRow>
       {/each}
       <div class="flex items-center gap-3 py-3">
-        <Button variant="secondary" size="sm" onclick={() => (installOpen = true)}>
-          {m.settings_intentApps_install_label()}
-        </Button>
+        {#if library.packages}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={installBusy}
+            onclick={() => appStore.dispatch(intentAppPackagePickRequested())}
+          >
+            {m.settings_intentApps_install_label()}
+          </Button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -189,7 +256,14 @@
   custom={defineSettingsCustomControls({ 'intent-apps-library': libraryControl })}
 />
 
-<IntentAppInstallDialog bind:open={installOpen} onInstalled={(appId) => (reviewAppId = appId)} />
+{#if packageInstall}
+  <IntentAppApproveDialog
+    app={packageInstall.preview.app}
+    install={{ replace: packageInstall.replace }}
+    open={true}
+    onClose={() => appStore.dispatch(intentAppPackageDismissed(packageInstall.uploadId))}
+  />
+{/if}
 {#if reviewApp}
   <IntentAppApproveDialog
     app={reviewApp}
