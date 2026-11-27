@@ -142,34 +142,61 @@ function requestParams(node) {
     : null;
 }
 
-// Same-file `const` names that hold the hello method: `HELLO` for `const HELLO =
-// 'client.hello'`, `METHODS.hello` for `const METHODS = { hello: 'client.hello' }`, and
-// the exported ones. An importing file need not spell the method, so an exported
-// constant is reported where it is declared.
+// Same-file variables that hold the hello method: `HELLO` for `const HELLO =
+// 'client.hello'`, `METHODS.hello` for an object literal member holding the literal or
+// such a variable (`{ hello: HELLO }`, `{ HELLO }`), and the declarations another module
+// can import (an `export` modifier, `export { HELLO as X }` or `export default HELLO`).
+// An importing file need not spell the method, so those are reported where declared.
 function helloConstants(source) {
   const names = new Set();
   const members = new Set();
-  const exported = [];
+  const declarations = new Map();
+  const exportedNames = new Set();
+  const holdsHello = (node) => {
+    const value = node && unwrapExpression(node);
+    if (!value) return false;
+    return stringValue(value) === HELLO_METHOD || (ts.isIdentifier(value) && names.has(value.text));
+  };
   walk(source, (node) => {
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.moduleSpecifier &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        exportedNames.add((element.propertyName ?? element.name).text);
+      }
+    }
+    if (ts.isExportAssignment(node)) {
+      const value = unwrapExpression(node.expression);
+      if (ts.isIdentifier(value)) exportedNames.add(value.text);
+    }
     if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || !node.initializer) {
       return;
     }
-    if (!(node.parent.flags & ts.NodeFlags.Const)) return;
+    const name = node.name.text;
     const value = unwrapExpression(node.initializer);
-    if (stringValue(value) === HELLO_METHOD) {
-      names.add(node.name.text);
-      if (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Export) exported.push(node);
-    } else if (ts.isObjectLiteralExpression(value)) {
+    let holds = holdsHello(value);
+    if (holds) names.add(name);
+    else if (ts.isObjectLiteralExpression(value)) {
       for (const property of value.properties) {
-        if (
-          ts.isPropertyAssignment(property) &&
-          stringValue(property.initializer) === HELLO_METHOD
-        ) {
-          members.add(`${node.name.text}.${propertyName(property)}`);
+        const member = ts.isShorthandPropertyAssignment(property)
+          ? property.name
+          : ts.isPropertyAssignment(property) && property.initializer;
+        if (member && holdsHello(member)) {
+          members.add(`${name}.${propertyName(property)}`);
+          holds = true;
         }
       }
     }
+    if (!holds) return;
+    declarations.set(name, node);
+    if (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Export) exportedNames.add(name);
   });
+  const exported = [...declarations]
+    .filter(([name]) => exportedNames.has(name))
+    .map(([, declaration]) => declaration);
   return { names, members, exported };
 }
 

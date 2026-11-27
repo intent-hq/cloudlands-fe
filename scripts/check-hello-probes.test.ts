@@ -81,6 +81,7 @@ describe('client.hello probe guard', () => {
     ['a saga fork of another function', "yield fork(track, 'client.hello');"],
     ['an apply of another function', "yield apply(log, log.info, ['client.hello', {}]);"],
     ['a local method constant', "const HELLO = 'client.hello';"],
+    ['an unrelated export', "const HELLO = 'client.hello'; export { OTHER };"],
     ['a string comparison', "if (method === 'client.hello') return snapshot;"],
     ['a line comment', "// backendRequest('client.hello', {}) renegotiates the connection"],
     ['a block comment', "/* transport.request('client.hello') */"],
@@ -150,6 +151,60 @@ describe('client.hello probe guard', () => {
       unreadable: [],
     });
   });
+
+  it.each([
+    [
+      'an exported object member',
+      ["export const METHODS = { hello: 'client.hello' } as const;"],
+      'await backendRequest(METHODS.hello, {});',
+      1,
+    ],
+    [
+      'an export statement',
+      ["const HELLO = 'client.hello';", 'export { HELLO };'],
+      'await backendRequest(HELLO, {});',
+      1,
+    ],
+    [
+      'a renamed export',
+      ["const HELLO = 'client.hello';", 'export { HELLO as HELLO_METHOD };'],
+      'await transport.request(HELLO_METHOD);',
+      1,
+    ],
+    [
+      'a default export',
+      ["const HELLO = 'client.hello';", 'export default HELLO;'],
+      'await backendRequest(HELLO, {});',
+      1,
+    ],
+    [
+      'an object holding a constant, exported by statement',
+      [
+        "const HELLO = 'client.hello';",
+        'const METHODS = { HELLO, other: HELLO };',
+        'export { METHODS };',
+      ],
+      'yield* call(backendRequest, METHODS.HELLO);',
+      2,
+    ],
+  ])(
+    'fails closed on a hello constant another module can import: %s',
+    (_name, declaration, request, line) => {
+      const files = [
+        file('src/features/backend/methods.ts', ...declaration),
+        file(
+          'src/features/backend/probe.ts',
+          "import { METHODS, HELLO } from './methods';",
+          request,
+        ),
+      ];
+      expect(checkHelloProbes(files, {})).toEqual({
+        hits: [{ path: 'src/features/backend/methods.ts', line, text: declaration[line - 1] }],
+        stale: [],
+        unreadable: [],
+      });
+    },
+  );
 
   it('accepts an allowlisted file and reports a stale allowlist entry', () => {
     const allowlist = {
