@@ -55,6 +55,7 @@ function context(
     unregisterShortcut: vi.fn((accelerator: string) => shortcuts.delete(accelerator)),
     unregisterAllShortcuts: vi.fn(() => shortcuts.clear()),
     shortcutCount: () => shortcuts.size,
+    ownsShortcut: (accelerator: string) => shortcuts.has(accelerator),
   };
   return ctx;
 }
@@ -223,15 +224,24 @@ describe('app bridge — host-local calls', () => {
     });
   });
 
-  it('limits shortcuts and reports a taken accelerator as shortcut-unavailable', async () => {
+  it('re-registers an owned accelerator as a no-op, refuses an 11th with invalid-params', async () => {
     const ctx = context({ features: ['globalShortcuts'] });
     for (let i = 0; i < MAX_SHORTCUTS_PER_APP; i += 1) {
       await handleBridgeCall(ctx, 'shortcuts.register', [`Ctrl+F${i + 1}`]);
     }
+    // At capacity, an accelerator the app already holds still resolves.
+    expect(await handleBridgeCall(ctx, 'shortcuts.register', ['Ctrl+F1'])).toEqual({
+      ok: true,
+      result: undefined,
+    });
+    expect(ctx.registerShortcut).toHaveBeenCalledTimes(MAX_SHORTCUTS_PER_APP);
     expect(await handleBridgeCall(ctx, 'shortcuts.register', ['Ctrl+X'])).toMatchObject({
       ok: false,
-      error: { code: 'shortcut-unavailable' },
+      error: { code: 'invalid-params' },
     });
+  });
+
+  it('reports an accelerator the OS or another app holds as shortcut-unavailable', async () => {
     const taken = context({ features: ['globalShortcuts'] });
     taken.registerShortcut = vi.fn(() => false);
     expect(await handleBridgeCall(taken, 'shortcuts.register', ['Ctrl+X'])).toMatchObject({

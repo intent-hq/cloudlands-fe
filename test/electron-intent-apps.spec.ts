@@ -317,7 +317,26 @@ test('install, approve, open and call a model through window.intent', async () =
     await app.evaluate(() => (globalThis as any).__intentAppsE2e.open('quick-call'));
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
 
-    // A revoke ends the session: the app hears session-ended, then the window closes.
+    // on() refuses synchronously: the grant has no globalShortcuts.
+    expect(
+      await page.evaluate(() => {
+        try {
+          (window as any).intent.on('shortcut', () => {});
+          return null;
+        } catch (error: any) {
+          return error?.code ?? String(error);
+        }
+      }),
+    ).toBe('forbidden');
+
+    // A revoke ends the session: the app hears session-ended, then the window closes,
+    // even when the app tries to keep it open with beforeunload.
+    await page.evaluate(() => {
+      window.addEventListener('beforeunload', (event) => {
+        event.preventDefault();
+        event.returnValue = '';
+      });
+    });
     await page.evaluate(() => {
       (window as any).intent.on('session-ended', (data: unknown) => {
         console.log(`session-ended ${JSON.stringify(data)}`);

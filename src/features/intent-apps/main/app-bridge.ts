@@ -84,6 +84,8 @@ export interface BridgeContext {
   unregisterAllShortcuts(): void;
   /** Accelerators this app holds now. */
   shortcutCount(): number;
+  /** Whether this app already holds `accelerator`. */
+  ownsShortcut(accelerator: string): boolean;
 }
 
 /** At most this many global shortcuts per app (contract). */
@@ -237,9 +239,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'shortcuts.register': async (ctx, [accelerator]) => {
     requireFeature(ctx.session, 'globalShortcuts');
     const value = requireString(accelerator, 'accelerator');
+    // Registering an accelerator the app already holds resolves (no-op).
+    if (ctx.ownsShortcut(value)) return undefined;
     if (ctx.shortcutCount() >= MAX_SHORTCUTS_PER_APP) {
       throw new BridgeCallError(
-        'shortcut-unavailable',
+        'invalid-params',
         `An app can hold at most ${MAX_SHORTCUTS_PER_APP} shortcuts`,
       );
     }

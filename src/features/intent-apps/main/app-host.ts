@@ -105,6 +105,11 @@ function errorCode(error: unknown): string | null {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** `--intent-app-level=<n>` and `--intent-app-features=<a,b>` for the app preload. */
+function grantArguments(session: Pick<IntentAppSession, 'level' | 'features'>): string[] {
+  return [`--intent-app-level=${session.level}`, `--intent-app-features=${session.features.join(',')}`];
+}
+
 function defaultPreloadPath(): string {
   return path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -119,6 +124,8 @@ export class IntentAppHost {
   /** Partitions whose scheme handler and rules are installed. */
   private readonly securedPartitions = new Set<string>();
   private ipcRegistered = false;
+  /** Bumped by closeAll: an open that started earlier is cancelled at its next step. */
+  private generation = 0;
 
   constructor(
     private readonly admin: AppHostAdmin,
@@ -157,8 +164,9 @@ export class IntentAppHost {
     return run;
   }
 
-  /** Close every app window (Labs switch off, quit). */
+  /** Close every app window and cancel every open in progress (Labs switch off, quit). */
   closeAll(reason: SessionEndReason = 'closed'): void {
+    this.generation += 1;
     for (const entry of [...this.open.values()]) this.endWindow(entry, reason, false);
   }
 
@@ -207,9 +215,24 @@ export class IntentAppHost {
   }
 
   private async openNew(appId: string): Promise<void> {
+    const generation = this.generation;
+    const cancelled = () => generation !== this.generation;
+    const cancelledError = () => new Error('The app open was cancelled');
     await this.admin.ready();
+    if (cancelled()) throw cancelledError();
     const { app } = await this.admin.request<{ app: IntentApp }>('app.get', { appId });
+    if (cancelled()) throw cancelledError();
     const { session, connection } = await this.openSession(appId);
+    const release = async () => {
+      connection.close();
+      await this.admin
+        .request('app.session.close', { sessionId: session.sessionId })
+        .catch(() => {});
+    };
+    if (cancelled()) {
+      await release();
+      throw cancelledError();
+    }
     if (this.open.has(appId)) {
       // Another open won the race; keep its window.
       connection.close();
@@ -221,6 +244,10 @@ export class IntentAppHost {
       return;
     }
     const icon = await this.loadIcon(app, session.bundleHash);
+    if (cancelled()) {
+      await release();
+      throw cancelledError();
+    }
     const window = this.createWindow(app, session, icon);
     const entry: OpenApp = {
       appId,
@@ -285,6 +312,8 @@ export class IntentAppHost {
       webPreferences: {
         partition,
         preload: this.preloadPath,
+        // The grant, so the preload can refuse `intent.on("shortcut")` synchronously.
+        additionalArguments: grantArguments(session),
         contextIsolation: true,
         nodeIntegration: false,
         nodeIntegrationInSubFrames: false,
@@ -437,10 +466,19 @@ export class IntentAppHost {
   /** Tell the app, close its window and session. `reopen`: open it again afterwards. */
   private endWindow(entry: OpenApp, reason: SessionEndReason, reopen: boolean): void {
     if (entry.ending) return;
+    // From here the bridge refuses every call and the grant is gone, so the app
+    // cannot keep shortcuts, always-on-top or a daemon session while it ends.
     entry.ending = true;
+    this.releaseHostGrants(entry);
+    entry.connection?.close();
+    entry.connection = null;
+    void this.admin
+      .request('app.session.close', { sessionId: entry.session.sessionId })
+      .catch(() => undefined);
     this.send(entry, 'session-ended', { reason });
+    // destroy(), not close(): an app's beforeunload handler must not keep the window.
     const close = () => {
-      if (!entry.window.isDestroyed()) entry.window.close();
+      if (!entry.window.isDestroyed()) entry.window.destroy();
     };
     setTimeout(close, SESSION_ENDED_CLOSE_DELAY_MS);
     if (reopen) {
@@ -460,10 +498,7 @@ export class IntentAppHost {
     this.byContents.delete(entry.contentsId);
     unmarkIntentAppWindow(entry.window.id, entry.contentsId);
     if (this.open.get(entry.appId) === entry) this.open.delete(entry.appId);
-    for (const accelerator of entry.shortcuts) globalShortcut.unregister(accelerator);
-    entry.shortcuts.clear();
-    for (const notification of entry.notifications.values()) notification.close();
-    entry.notifications.clear();
+    this.releaseHostGrants(entry);
     entry.connection?.close();
     entry.connection = null;
     void this.admin
@@ -471,6 +506,17 @@ export class IntentAppHost {
       .catch(() => undefined);
     this.onOpenChanged();
     logger.info('Closed app window', { appId: entry.appId });
+  }
+
+  /** Shortcuts, always-on-top and notifications that the host holds for the app. */
+  private releaseHostGrants(entry: OpenApp): void {
+    for (const accelerator of entry.shortcuts) globalShortcut.unregister(accelerator);
+    entry.shortcuts.clear();
+    for (const notification of entry.notifications.values()) notification.close();
+    entry.notifications.clear();
+    if (!entry.window.isDestroyed() && entry.window.isAlwaysOnTop()) {
+      entry.window.setAlwaysOnTop(false);
+    }
   }
 
   private send(entry: OpenApp, type: string, data: unknown): void {
@@ -491,6 +537,9 @@ export class IntentAppHost {
     const entry = this.entryForSender(event);
     if (!entry) {
       return { ok: false, error: { code: 'forbidden', message: 'Not an app window' } };
+    }
+    if (entry.ending) {
+      return { ok: false, error: { code: 'disconnected', message: 'The app session ended' } };
     }
     const { call, args } = (message ?? {}) as { call?: unknown; args?: unknown };
     return handleBridgeCall(this.bridgeContext(entry), call, args);
@@ -524,7 +573,7 @@ export class IntentAppHost {
         if (!entry.window.isDestroyed()) entry.window.close();
       },
       registerShortcut: (accelerator) => {
-        if (entry.shortcuts.has(accelerator)) return true;
+        if (entry.ending) return false;
         // Never take an accelerator that Intent or another app window holds.
         if (globalShortcut.isRegistered(accelerator)) return false;
         const registered = globalShortcut.register(accelerator, () =>
@@ -543,6 +592,7 @@ export class IntentAppHost {
         entry.shortcuts.clear();
       },
       shortcutCount: () => entry.shortcuts.size,
+      ownsShortcut: (accelerator) => entry.shortcuts.has(accelerator),
     };
   }
 
