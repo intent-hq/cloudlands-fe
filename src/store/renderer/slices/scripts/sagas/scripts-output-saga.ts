@@ -18,6 +18,8 @@ import {
 import {
   selectCanReadScriptDefinition,
   selectScriptById,
+  selectScriptOutput,
+  selectScriptOutputStreamEpoch,
   selectScriptOutputStreamReady,
   selectScriptRetainedOutput,
 } from '../scripts-selectors';
@@ -67,14 +69,14 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     yield* put(scriptReadFinished(workspaceId, context.requestId));
     return;
   }
-  // A machine run is read (and invalidated) by its own runtime, not the home run's.
+  // A read is invalidated by a new run (`script.start` clears `startedAt`), not
+  // by state updates of the same run. A machine run is keyed by its own runtime.
   const runtimeKey = (value: typeof script) =>
-    JSON.stringify(
-      remoteAgentId
-        ? scriptMachineRuns(value ?? {}).find((entry) => entry.remoteAgentId === remoteAgentId)
-            ?.runtime
-        : value?.runtime,
-    );
+    (remoteAgentId
+      ? scriptMachineRuns(value ?? {}).find((entry) => entry.remoteAgentId === remoteAgentId)
+          ?.runtime
+      : value?.runtime
+    )?.startedAt ?? null;
   const run = runtimeKey(script);
   const cleanup = (event: { type: string; payload?: unknown }) => {
     const payload = event.payload;
@@ -97,6 +99,13 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     );
   }
   function* readSnapshot(): SagaGenerator<void> {
+    // The daemon logs a chunk before it streams it, so every chunk buffered now
+    // is in the reply: the viewer joins the live stream here and never loses output.
+    const buffer = yield* selectScriptOutput.effect(workspaceId, scriptId);
+    const join = {
+      liveOffset: buffer.dropped + buffer.chunks.length,
+      streamEpoch: yield* selectScriptOutputStreamEpoch.effect(workspaceId),
+    };
     // Known IDs remain readable after archive retirement and partial-page refresh.
     const output = yield* call(
       [appClient.scripts, appClient.scripts.output],
@@ -106,7 +115,7 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       ...(remoteAgentId ? [{ remoteAgentId }] : []),
     );
     if (!(yield* isCurrent())) return;
-    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output));
+    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output, join));
     // Our own publication replaces the viewer entry; a later re-request or
     // release replaces it again and retires this read.
     viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);

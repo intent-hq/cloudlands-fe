@@ -5,8 +5,8 @@
    *
    * Header bar shows: script name, status badge, detected URL (clickable),
    * control buttons (restart/stop), and an editable command input.
-   * Output streams in real-time via store subscription.
-   * On re-open, loads buffered output from the store.
+   * The retained `script.output` snapshot and the live stream share one
+   * terminal: the snapshot first, then the live chunks that arrived after it.
    */
   import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -18,6 +18,12 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
+  import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
+  import {
+    retainedOutputIsComplete,
+    retainedOutputTerminalText,
+    snapshotRemainderAfterLive,
+  } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
@@ -26,6 +32,7 @@
     selectScriptOutput,
     selectScriptRetainedOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
+  import type { ScriptRetainedOutput } from '$store/renderer/slices/scripts/scripts-types';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectWorkspaceScriptReadContext,
@@ -66,7 +73,6 @@
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
   const viewerIdStore = writable('');
-  let retainedExpanded = $state(false);
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => scriptIdStore.set(scriptId));
 
@@ -104,25 +110,41 @@
       if (wsId) appStore.dispatch(scriptWorkflowReleased(wsId, fixAgentConsumerId));
     };
   });
-  // The request follows admitted connection, runtime and viewer lifetimes. It
+  // `script.start` clears `startedAt`, so it changes at each new run and not on
+  // URL, readiness or exit updates, which the live stream already shows.
+  const runStartedAt = $derived($runtime$.startedAt ?? null);
+  // The request follows admitted connection, run and viewer lifetimes. It
   // never starts/restores the script, and cleanup fences late snapshots.
   $effect(() => {
     const wsId = workspaceId;
     const id = scriptId;
     const authority = $outputAuthority;
-    const runtime = $runtime$;
+    void runStartedAt;
     if (!authority || !wsId || !id) return;
-    void runtime.status;
-    void runtime.startedAt;
     const viewerId = crypto.randomUUID();
     viewerIdStore.set(viewerId);
-    retainedExpanded = untrack(() => $output$.chunks.length === 0);
     appStore.dispatch(scriptOutputRequested(wsId, id, viewerId));
     return () => appStore.dispatch(scriptOutputReleased(wsId, id, viewerId));
   });
 
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
+  // The snapshot the terminal content starts with.
+  let shownSnapshot: ScriptRetainedOutput | null = null;
+  let shownRun: string | null = null;
+  let showsSnapshotText = $state(false);
+  let scrolledUp = $state(false);
+
+  const retainedAvailable = $derived($retainedOutput$?.status === 'available');
+  const hasLiveOutput = $derived($runtime$.status !== 'idle' || $output$.chunks.length > 0);
+  // A re-request keeps the shown snapshot until its answer replaces it.
+  const showTerminal = $derived(
+    hasLiveOutput ||
+      retainedAvailable ||
+      (showsSnapshotText && $retainedOutput$?.status === 'loading'),
+  );
+  // An idle script waits for its snapshot before offering Run, so it does not flash.
+  const showRunPrompt = $derived(!showTerminal && $retainedOutput$?.status !== 'loading');
 
   const isFailing = $derived(
     $runtime$.status === 'exited' &&
@@ -218,18 +240,60 @@
     });
     resizeObserver.observe(xtermContainer);
 
-    // Load buffered output
-    loadBufferedOutput();
+    const updateScrolledUp = () => {
+      const active = xterm?.buffer.active;
+      scrolledUp = !!active && active.viewportY < active.baseY;
+    };
+    xterm.onScroll(updateScrolledUp);
+    xterm.onWriteParsed(updateScrolledUp);
+
+    const snapshot = untrack(() => $retainedOutput$);
+    writeOutput(false, snapshot?.status === 'available' ? snapshot : undefined);
   }
 
-  function loadBufferedOutput(): void {
+  /**
+   * Write the retained snapshot, then the raw live stream verbatim from the
+   * position the snapshot covers. Without a snapshot, the whole buffered
+   * stream is written.
+   */
+  function writeOutput(replace: boolean, snapshot: ScriptRetainedOutput | undefined): void {
     if (!xterm) return;
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    if (buffer.chunks.length > 0) {
-      // Replay the raw stream verbatim — plain concatenation, no separators.
-      xterm.write(buffer.chunks.map((c) => c.text).join(''));
+    if (replace) xterm.reset();
+    if (snapshot) {
+      shownSnapshot = snapshot;
+      shownRun = untrack(() => runStartedAt);
     }
+    // A capped snapshot is only the newest tail: when live output already holds
+    // its start (another view kept the stream open), that output is the fuller
+    // history, and only the rest of the snapshot is written after it.
+    const text = snapshot?.text;
+    const joined = Math.max((snapshot?.liveOffset ?? 0) - buffer.dropped, 0);
+    const chunkText = (from: number, to?: number) =>
+      buffer.chunks
+        .slice(from, to)
+        .map((c) => c.text)
+        .join('');
+    const remainder =
+      text && !retainedOutputIsComplete(text)
+        ? snapshotRemainderAfterLive(chunkText(0, joined), text)
+        : undefined;
+    showsSnapshotText = !!snapshot && remainder === undefined && !!text;
+    let live: string;
+    if (!snapshot) {
+      live = chunkText(0);
+    } else if (remainder !== undefined) {
+      live = chunkText(0, joined) + remainder + chunkText(joined);
+    } else {
+      if (text) xterm.write(retainedOutputTerminalText(text));
+      live = chunkText(joined);
+    }
+    if (live) xterm.write(live);
     writtenChunkCount = buffer.dropped + buffer.chunks.length;
+  }
+
+  function scrollToEnd(): void {
+    xterm?.scrollToBottom();
   }
 
   function disposeXterm(): void {
@@ -249,6 +313,10 @@
     xterm = null;
     fitAddon = null;
     writtenChunkCount = 0;
+    shownSnapshot = null;
+    shownRun = null;
+    showsSnapshotText = false;
+    scrolledUp = false;
     if (terminalToDispose) {
       disposeXtermAfterViewportSync(terminalToDispose);
     }
@@ -272,6 +340,27 @@
         .join(''),
     );
     writtenChunkCount = total;
+  });
+
+  // A newly answered snapshot replaces the terminal content. An empty answer
+  // replaces only an earlier snapshot (a new run): before any snapshot, the live
+  // bytes may be output the daemon no longer has.
+  $effect(() => {
+    const snapshot = $retainedOutput$;
+    if (!xterm || snapshot?.liveOffset === undefined || snapshot === shownSnapshot) return;
+    if (snapshot.status !== 'available' && !shownSnapshot) return;
+    // A capped refresh of the shown run, joined to the same unbroken stream, is
+    // a shorter tail than the terminal already has. After a stream gap it may
+    // hold output that was never streamed, so it replaces the terminal.
+    const sameStream =
+      shownSnapshot?.streamEpoch !== undefined &&
+      snapshot.streamEpoch === shownSnapshot.streamEpoch &&
+      untrack(() => runStartedAt) === shownRun;
+    if (sameStream && snapshot.text && !retainedOutputIsComplete(snapshot.text)) {
+      shownSnapshot = snapshot;
+      return;
+    }
+    writeOutput(true, snapshot);
   });
 
   // Update font on the mounted xterm when the preference changes. Setting
@@ -311,18 +400,16 @@
 
   // ---- Lifecycle ----
 
-  // Reset xterm when transitioning back to empty state
+  // Reset xterm when there is nothing left to show
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
-    if (isEmptyState) {
+    if (!showTerminal) {
       disposeXterm();
     }
   });
 
-  // Initialize xterm when the container is visible (not during empty state)
+  // Initialize xterm when the container is visible
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
-    if (!isEmptyState && xtermContainer && !xterm) {
+    if (showTerminal && xtermContainer && !xterm) {
       // Container just became visible, initialize xterm
       // Use requestAnimationFrame to ensure DOM has updated
       if (initRafId !== null) {
@@ -368,34 +455,7 @@
     </div>
   {/if}
 
-  {#if $retainedOutput$}
-    <details class="retained-output border-b border-border" bind:open={retainedExpanded}>
-      <summary class="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
-        {m.terminal_scriptOutput_retained_label()}
-      </summary>
-      <p class="px-3 pb-2 text-xs text-muted-foreground">
-        {m.terminal_scriptOutput_retained_description()}
-      </p>
-      {#if $retainedOutput$.status === 'available'}
-        <pre
-          class="retained-text px-3 pb-3 text-xs"
-          style:font-family={$codeFontFamilyCSS}>{$retainedOutput$.text}</pre>
-      {:else}
-        <p class="px-3 pb-3 text-xs text-muted-foreground" role="status">
-          {$retainedOutput$.status === 'loading'
-            ? m.terminal_scriptOutput_retainedLoading_label()
-            : m.terminal_scriptOutput_retainedUnavailable_label()}
-        </p>
-      {/if}
-    </details>
-  {/if}
-  {#if $output$.chunks.length > 0 && $retainedOutput$}
-    <div class="px-3 py-1 text-xs text-muted-foreground">
-      {m.terminal_scriptOutput_live_label()}
-    </div>
-  {/if}
-
-  {#if $runtime$.status === 'idle' && $output$.chunks.length === 0}
+  {#if showRunPrompt}
     <!-- Empty state: script hasn't been run yet -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
       <div class="flex items-center gap-3 text-sm">
@@ -424,28 +484,17 @@
     </div>
   {/if}
 
-  <!-- xterm output (hidden when empty state is showing) -->
-  <div
-    class="flex-1 relative overflow-hidden"
-    class:hidden={$runtime$.status === 'idle' && $output$.chunks.length === 0}
-  >
+  <div class="flex-1 relative overflow-hidden" class:hidden={!showTerminal}>
     <div class="xterm-output" bind:this={xtermContainer}></div>
+    {#if scrolledUp}
+      <div class="absolute right-4 bottom-3">
+        <ScrollToBottomButton floating onclick={scrollToEnd} />
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
-  .retained-output {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow: auto;
-    max-height: 60%;
-  }
-  .retained-text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    margin: 0;
-  }
-
   .script-output-viewer {
     display: flex;
     flex-direction: column;

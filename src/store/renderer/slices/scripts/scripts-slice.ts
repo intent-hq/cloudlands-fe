@@ -287,7 +287,13 @@ export const scriptOutputRequested =
 export const scriptOutputReleased =
   createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
 export const scriptOutputSnapshotReceived = createAction<
-  [wsId: string, scriptId: string, viewerId: string, text: string]
+  [
+    wsId: string,
+    scriptId: string,
+    viewerId: string,
+    text: string,
+    join?: { liveOffset: number; streamEpoch?: number },
+  ]
 >('scripts/outputSnapshotReceived');
 
 /** Append one raw output chunk for a script */
@@ -665,11 +671,9 @@ scriptsReducer.with(scriptOutputReleased, (state, { payload: [wsId, scriptId, vi
 });
 scriptsReducer.with(
   scriptOutputSnapshotReceived,
-  (state, { payload: [wsId, scriptId, viewerId, text] }) => {
+  (state, { payload: [wsId, scriptId, viewerId, text, join] }) => {
     const ws = state.byWorkspaceId[wsId];
     if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
-    // This is a formatted, capped poll response, not raw PTY bytes. Even a
-    // successful read has no cursor with which to join delayed stream events.
     const available = !!text && text !== 'No output yet.'; // daemon wire sentinel
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -679,6 +683,10 @@ scriptsReducer.with(
           scriptId,
           status: available ? 'available' : 'unavailable',
           ...(available ? { text: text.slice(-MAX_OUTPUT_CHARS) } : {}),
+          ...(text && join ? { liveOffset: join.liveOffset } : {}),
+          ...(available && join?.streamEpoch !== undefined
+            ? { streamEpoch: join.streamEpoch }
+            : {}),
         },
       },
     });
@@ -710,7 +718,12 @@ scriptsReducer.with(scriptOutputStreamInterrupted, (state, { payload: [wsId] }) 
   const outputBuffers = Object.fromEntries(
     Object.entries(ws.outputBuffers).map(([id, buffer]) => [id, discardBufferedChunks(buffer)]),
   );
-  return setWorkspaceState(state, wsId, { ...ws, outputBuffers, outputStreamReady: false });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    outputBuffers,
+    outputStreamReady: false,
+    outputStreamEpoch: (ws.outputStreamEpoch ?? 0) + 1,
+  });
 });
 
 scriptsReducer.with(scriptOutputStreamReady, (state, { payload: [wsId] }) => {

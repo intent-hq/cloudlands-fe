@@ -17,6 +17,7 @@ import {
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   scriptOutputRequested,
+  scriptOutputSnapshotReceived,
   scriptOutputStreamInterrupted,
   clearScriptOperations,
   detectScriptDefinitionsRequested,
@@ -299,6 +300,7 @@ describe('scriptsReducer', () => {
 
     const ws = state.byWorkspaceId[WS];
     expect(ws.outputBuffers['script-1']).toEqual({ chunks: [], dropped: 2 });
+    expect(ws.outputStreamEpoch).toBe(1);
     expect(ws.retainedOutputs?.['viewer-1']).toEqual({ scriptId: 'script-1', status: 'loading' });
     expect(state.byWorkspaceId['other-ws'].outputBuffers.s.chunks).toHaveLength(1);
     // A viewer that already wrote 2 chunks resumes at the next chunk.
@@ -308,6 +310,43 @@ describe('scriptsReducer', () => {
       'c',
     ]);
     expect(scriptsReducer(state, scriptOutputStreamInterrupted('missing'))).toBe(state);
+  });
+
+  it('keeps the stream position of every answered read, never of a failed one', () => {
+    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
+    for (const viewer of ['viewer-1', 'viewer-2', 'viewer-3'])
+      state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', viewer));
+
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[2 lines]\na\nb', {
+        liveOffset: 7,
+        streamEpoch: 2,
+      }),
+    );
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.', { liveOffset: 7 }),
+    );
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', '', { liveOffset: 7 }),
+    );
+
+    const retained = state.byWorkspaceId[WS].retainedOutputs;
+    expect(retained?.['viewer-1']).toEqual({
+      scriptId: 'script-1',
+      status: 'available',
+      text: '[2 lines]\na\nb',
+      liveOffset: 7,
+      streamEpoch: 2,
+    });
+    expect(retained?.['viewer-2']).toEqual({
+      scriptId: 'script-1',
+      status: 'unavailable',
+      liveOffset: 7,
+    });
+    expect(retained?.['viewer-3']).toEqual({ scriptId: 'script-1', status: 'unavailable' });
   });
 
   it('evicts oldest chunks past the char cap but always keeps the newest chunk', () => {
