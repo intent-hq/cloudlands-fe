@@ -279,6 +279,8 @@
   import {
     formatFileSize,
     imageFilesToContextItems,
+    imageItemsBytes,
+    maxMegabytes,
     INLINE_IMAGE_MAX_BYTES,
     REFERENCE_IMAGE_MAX_BYTES,
   } from './image-context-items';
@@ -1182,13 +1184,18 @@
           result.error === 'permission'
             ? m.dock_composer_screenPermission_tooltip()
             : result.error === 'limit'
-              ? m.chat_richInput_filesTooLarge_error({ names: name })
+              ? m.chat_richInput_filesTooLarge_error({
+                  max: maxMegabytes(imageMaxBytes),
+                  names: name,
+                })
               : m.browser_embedded_screenshotFailed_error(),
         );
         return;
       }
       if (base64ByteSize(result.value.base64) > imageMaxBytes) {
-        notify.error(m.chat_richInput_filesTooLarge_error({ names: name }));
+        notify.error(
+          m.chat_richInput_filesTooLarge_error({ max: maxMegabytes(imageMaxBytes), names: name }),
+        );
         return;
       }
       screenshotRevision += 1;
@@ -1390,6 +1397,7 @@
     if (disposed) return;
     const items = await imageFilesToContextItems(imageFiles, {
       maxBytes: imageMaxBytes,
+      existingBytes: imageItemsBytes(contextItems),
       signal,
       announceSuccess: announceAddedImages,
     });
