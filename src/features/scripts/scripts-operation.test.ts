@@ -66,16 +66,11 @@ vi.mock('$lib/client', () => ({
     files: { read: filesRead },
   },
 }));
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: backendRequestMock,
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 
 import { scriptsClient } from './scripts.test-helpers';
 import { store } from '$store/renderer/store';

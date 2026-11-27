@@ -48,16 +48,11 @@ const mocks = vi.hoisted(() => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: mocks.backendRequest,
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 
 vi.mock('$lib/client', () => ({
   appClient: {

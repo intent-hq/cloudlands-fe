@@ -42,20 +42,15 @@ import MonitoredScriptsRow from '../MonitoredScriptsRow.svelte';
 import type { ScriptMonitor } from '$features/script-monitor/types';
 import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: vi.fn(),
     backendSubscribe: vi.fn(),
     backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
     onBackendNotification: vi.fn(),
     onBackendReconnected: vi.fn(),
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/MockAgentEventSection.svelte')).default,

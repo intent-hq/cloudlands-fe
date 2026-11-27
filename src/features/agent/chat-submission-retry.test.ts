@@ -7,23 +7,12 @@ const wire = vi.hoisted(() => ({ request: vi.fn(), warning: vi.fn() }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { warning: wire.warning, info: vi.fn(), error: vi.fn() },
 }));
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: wire.request,
     backendSubscribe: vi.fn(async () => ({})),
-    backendUnsubscribe: vi.fn(async () => {}),
-    onBackendNotification: () => () => {},
-    onBackendReconnected: () => () => {},
-    detectLiveStateCapability: async () => false,
-    isBackendAvailable: () => true,
-    BackendError: class BackendError extends Error {},
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 vi.mock('svelte', async (original) => ({
   ...(await original<typeof import('svelte')>()),
   getContext: () => undefined,

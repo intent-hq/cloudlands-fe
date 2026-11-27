@@ -51,6 +51,7 @@ import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-
 import noUnguardedFocusInWindowFocusHandlerRule from './eslint-rules/no-unguarded-focus-in-window-focus-handler.js';
 import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
 import noModuleLevelSvelteStoreRule from './eslint-rules/no-module-level-svelte-store.js';
+import noHandRolledBackendTransportMockRule from './eslint-rules/no-hand-rolled-backend-transport-mock.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -68,6 +69,8 @@ const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-time
 const hoverThenClickInCtBaseline = baselineCounts(lintBaseline['no-hover-then-click-in-ct']) ?? {};
 const moduleLevelSvelteStoreBaseline =
   baselineCounts(lintBaseline['no-module-level-svelte-store']) ?? {};
+const handRolledBackendTransportMockBaseline =
+  baselineCounts(lintBaseline['no-hand-rolled-backend-transport-mock']) ?? {};
 // The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
 const componentTestReasonedDisableRules = [
   'intent/no-one-shot-animation-count',
@@ -107,6 +110,7 @@ const intentPlugin = {
     'no-unguarded-focus-in-window-focus-handler': noUnguardedFocusInWindowFocusHandlerRule,
     'require-disable-reason': requireDisableReasonRule,
     'no-module-level-svelte-store': noModuleLevelSvelteStoreRule,
+    'no-hand-rolled-backend-transport-mock': noHandRolledBackendTransportMockRule,
   },
 };
 
@@ -852,6 +856,27 @@ export default [
             'intent/no-class-name-assertions-in-tests',
           ],
         },
+      ],
+    },
+  },
+  // A hand-written backend-transport vi.mock factory lists only the exports its test
+  // needed; adding readBackendHello broke 19 of them (cloudlands-fe#5090). Tests build
+  // the module with createBackendTransportFake (src/test/mocks/backend-transport-fake.ts).
+  // The baseline maps today's files to their factory counts and may only shrink.
+  {
+    files: [
+      'src/**/*.{test,spec}.{js,ts}',
+      'src/**/__tests__/**/*.{js,ts}',
+      'src/test/**/*.{js,ts}',
+      'tests/**/*.{test,spec}.{js,ts}',
+    ],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-hand-rolled-backend-transport-mock': [
+        'error',
+        { baseline: handRolledBackendTransportMockBaseline },
       ],
     },
   },

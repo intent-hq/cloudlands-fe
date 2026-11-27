@@ -13,7 +13,11 @@ const { backendRequestMock, createAgentMock } = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: backendRequestMock }));
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../src/test/mocks/backend-transport-fake')).createBackendTransportFake({
+    backendRequest: backendRequestMock,
+  }),
+);
 vi.mock('$lib/client', () => ({ appClient: { agents: { create: createAgentMock } } }));
 
 describe('Agent creation with context references', () => {

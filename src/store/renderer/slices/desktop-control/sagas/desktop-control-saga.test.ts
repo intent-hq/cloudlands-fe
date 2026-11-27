@@ -10,20 +10,15 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
   permissions: vi.fn(),
 }));
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     electronAPI: () => ({ invoke: mocks.permissions }),
     backendRequest: (method: string, params: unknown) =>
       method === 'client.hello'
         ? Promise.resolve({ server: { capabilities: { desktopControl: 1 } } })
         : mocks.request(method, params),
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 vi.mock('$features/desktop/renderer/desktop-notifications', () => ({
   showDesktopPrompt: mocks.prompt,
   dismissDesktopPrompt: mocks.dismiss,

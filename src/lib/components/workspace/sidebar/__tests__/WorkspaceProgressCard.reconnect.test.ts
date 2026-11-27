@@ -16,8 +16,8 @@ const wire = vi.hoisted(() => ({
   reconnect: new Set<() => void>(),
   notifications: new Set<(event: BackendNotification) => void>(),
 }));
-vi.mock('$lib/client/live/backend-transport', () => {
-  const fake = {
+vi.mock('$lib/client/live/backend-transport', async () =>
+  (await import('../../../../../test/mocks/backend-transport-fake')).createBackendTransportFake({
     backendRequest: async (method: string, ...args: unknown[]) => {
       if (method !== 'client.hello') return wire.request(method, ...args);
       const generation = ++wire.helloGeneration;
@@ -44,14 +44,8 @@ vi.mock('$lib/client/live/backend-transport', () => {
       return () => wire.notifications.delete(handler);
     },
     backendSubscribe: wire.subscribe,
-    backendUnsubscribe: async () => {},
-  };
-  // Capability reads answer from each test's scripted client.hello reply.
-  return {
-    ...fake,
-    readBackendHello: () => fake.backendRequest('client.hello', {}),
-  };
-});
+  }),
+);
 vi.mock('$lib/components/workspace/TaskStatusIndicator.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
