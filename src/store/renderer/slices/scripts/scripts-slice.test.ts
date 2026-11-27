@@ -17,6 +17,7 @@ import {
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   scriptOutputRequested,
+  scriptOutputSnapshotReceived,
   scriptOutputStreamInterrupted,
   clearScriptOperations,
   detectScriptDefinitionsRequested,
@@ -308,6 +309,38 @@ describe('scriptsReducer', () => {
       'c',
     ]);
     expect(scriptsReducer(state, scriptOutputStreamInterrupted('missing'))).toBe(state);
+  });
+
+  it('records the live stream position only a snapshot with output covers', () => {
+    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(1, 'a')));
+    state = scriptsReducer(state, scriptOutputStreamInterrupted(WS));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(2, 'b')));
+    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-1'));
+    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-2'));
+    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-3'));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(3, 'c')));
+
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-1', '[3 lines]\na\nb\nc'),
+    );
+    state = scriptsReducer(
+      state,
+      scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-2', 'No output yet.'),
+    );
+    state = scriptsReducer(state, scriptOutputSnapshotReceived(WS, 'script-1', 'viewer-3', ''));
+
+    const retained = state.byWorkspaceId[WS].retainedOutputs;
+    expect(retained?.['viewer-1']).toEqual({
+      scriptId: 'script-1',
+      status: 'available',
+      text: '[3 lines]\na\nb\nc',
+      liveOffset: 3,
+    });
+    // Expired or failed reads cover nothing, so the viewer keeps every live chunk.
+    expect(retained?.['viewer-2']).toEqual({ scriptId: 'script-1', status: 'unavailable' });
+    expect(retained?.['viewer-3']).toEqual({ scriptId: 'script-1', status: 'unavailable' });
   });
 
   it('evicts oldest chunks past the char cap but always keeps the newest chunk', () => {

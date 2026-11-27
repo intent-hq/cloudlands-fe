@@ -46,6 +46,12 @@ type ScriptRetainedOutput = {
   scriptId: string;
   status: 'loading' | 'available' | 'unavailable';
   text?: string;
+  /**
+   * Live stream position (`dropped` + chunk index) when the snapshot arrived:
+   * chunks before it are in the snapshot. Set only with `text`, so an expired or
+   * failed read never hides live bytes.
+   */
+  liveOffset?: number;
 };
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';

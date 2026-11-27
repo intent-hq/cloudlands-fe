@@ -94,6 +94,21 @@ vi.mock('@xterm/xterm', () => {
     write = vi.fn();
     reset = vi.fn();
     dispose = vi.fn();
+    buffer = { active: { viewportY: 0, baseY: 0 } };
+    viewportListeners: Array<() => void> = [];
+    onScroll = vi.fn((fn: () => void) => this.listen(fn));
+    onWriteParsed = vi.fn((fn: () => void) => this.listen(fn));
+    scrollToBottom = vi.fn(() => {
+      this.buffer.active.viewportY = this.buffer.active.baseY;
+      this.emitViewport();
+    });
+    listen(fn: () => void) {
+      this.viewportListeners.push(fn);
+      return { dispose: vi.fn() };
+    }
+    emitViewport() {
+      for (const fn of this.viewportListeners) fn();
+    }
     constructor(options: any) {
       this.options = { ...options };
       xtermMock.constructorOptions.push(options);
@@ -247,6 +262,15 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => ({
 }));
 
 import ScriptOutputViewer from '../ScriptOutputViewer.svelte';
+
+/** Text the terminal shows now: every write since its last reset. */
+function textSinceLastReset(terminal: any): string {
+  const resetAt = terminal.reset.mock.invocationCallOrder.at(-1) ?? 0;
+  return terminal.write.mock.calls
+    .filter((_: unknown, i: number) => terminal.write.mock.invocationCallOrder[i] > resetAt)
+    .map(([text]: [string]) => text)
+    .join('');
+}
 
 async function waitForXTermInit() {
   // The init `$effect` schedules `initXterm()` via requestAnimationFrame;
@@ -510,57 +534,103 @@ describe('retained output viewer lifecycle', () => {
       payload: requests[1][0].payload,
     });
   });
-  it('shows available history directly without writing it into the mounted live terminal', async () => {
-    outputReadableRef.value = createControllableReadable({ chunks: [], dropped: 0 });
+  it('joins retained output and the live output after it in one terminal', async () => {
+    const before = { text: 'before snapshot\n', timestamp: 'a' };
+    const after = { text: 'after snapshot\n', timestamp: 'b' };
+    outputReadableRef.value = createControllableReadable({ chunks: [before], dropped: 0 });
     render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
     await waitForXTermInit();
     const terminal = xtermMock.instances[0];
+    expect(textSinceLastReset(terminal)).toBe('before snapshot\n');
+
     retainedReadableRef.value.set({
       scriptId: 's-1',
       status: 'available',
-      text: '[2 lines]\nretained-failure\n',
+      text: '[2 lines]\n\x1b[31mfirst\x1b[0m\nbefore snapshot\n',
+      liveOffset: 1,
     });
     await tick();
-    expect(screen.getByText(/retained-failure/)).toBeTruthy();
-    expect(screen.getByText('Retained output').closest('details')?.open).toBe(true);
-    expect(terminal.write).not.toHaveBeenCalledWith(expect.stringContaining('retained-failure'));
-    outputReadableRef.value.set({
-      chunks: [{ text: 'retained-failure\n', timestamp: 'late' }],
-      dropped: 0,
+    outputReadableRef.value.set({ chunks: [before, after], dropped: 0 });
+    await tick();
+    expect(textSinceLastReset(terminal)).toBe(
+      '\x1b[31mfirst\x1b[0m\nbefore snapshot\nafter snapshot\n',
+    );
+
+    // A refreshed snapshot already holds every chunk it covers.
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[3 lines]\nfirst\nbefore snapshot\nafter snapshot\n',
+      liveOffset: 2,
     });
     await tick();
-    expect(terminal.write.mock.calls).toEqual([['retained-failure\n']]);
-    expect(screen.getByText('Live output')).toBeTruthy();
+    expect(textSinceLastReset(terminal)).toBe('first\nbefore snapshot\nafter snapshot\n');
     expect(xtermMock.instances).toHaveLength(1);
-    expect(terminal.reset).not.toHaveBeenCalled();
     expect(terminal.dispose).not.toHaveBeenCalled();
   });
-  it('keeps a richer mounted terminal visible while the separate snapshot is collapsed', async () => {
+
+  it('keeps every live chunk when the snapshot read failed', async () => {
     outputReadableRef.value = createControllableReadable({
-      chunks: [{ text: 'richer live bytes', timestamp: 'now' }],
+      chunks: [{ text: 'live bytes', timestamp: 'now' }],
       dropped: 0,
     });
     render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
     await waitForXTermInit();
     const terminal = xtermMock.instances[0];
-    retainedReadableRef.value.set({
-      scriptId: 's-1',
-      status: 'available',
-      text: '[1 lines]\ntail',
-    });
-    await tick();
-    expect(screen.getByText('Retained output').closest('details')?.open).toBe(false);
-    expect(terminal.write.mock.calls).toEqual([['richer live bytes']]);
-    expect(terminal.reset).not.toHaveBeenCalled();
-    expect(terminal.dispose).not.toHaveBeenCalled();
-  });
-  it('distinguishes retained output loading and unavailability', async () => {
-    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
-    retainedReadableRef.value.set({ scriptId: 's-1', status: 'loading' });
-    await tick();
-    expect(screen.getByRole('status').textContent).toBe('Loading retained output…');
     retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
     await tick();
-    expect(screen.getByRole('status').textContent).toBe('Retained output is unavailable.');
+    expect(textSinceLastReset(terminal)).toBe('live bytes');
+    expect(terminal.reset).not.toHaveBeenCalled();
+  });
+
+  it('shows retained output of an idle script instead of the run prompt', async () => {
+    scriptState.byWorkspaceId['ws-failed']['s-1'].runtime = { status: 'idle' };
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await tick();
+    expect(screen.queryByRole('button', { name: /run/i })).toBeTruthy();
+
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'loading' });
+    await tick();
+    expect(screen.queryByRole('button', { name: /run/i })).toBeNull();
+
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[1 lines]\nprevious run\n',
+      liveOffset: 0,
+    });
+    await tick();
+    await waitForXTermInit();
+    expect(screen.queryByRole('button', { name: /run/i })).toBeNull();
+    expect(textSinceLastReset(xtermMock.instances[0])).toBe('previous run\n');
+
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
+    await tick();
+    expect(screen.queryByRole('button', { name: /run/i })).toBeTruthy();
+  });
+
+  it('offers a jump to the end only while scrolled away from it', async () => {
+    outputReadableRef.value = createControllableReadable({
+      chunks: [{ text: 'line\n', timestamp: 'now' }],
+      dropped: 0,
+    });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    const jump = () => screen.queryByTestId('chat-floating-scroll-to-bottom-button');
+
+    terminal.buffer.active = { viewportY: 40, baseY: 40 };
+    terminal.emitViewport();
+    await tick();
+    expect(jump()).toBeNull();
+
+    terminal.buffer.active.viewportY = 12;
+    terminal.emitViewport();
+    await tick();
+    expect(jump()).toBeTruthy();
+
+    await fireEvent.click(jump()!);
+    expect(terminal.scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(jump()).toBeNull();
   });
 });

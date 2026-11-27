@@ -668,9 +668,10 @@ scriptsReducer.with(
   (state, { payload: [wsId, scriptId, viewerId, text] }) => {
     const ws = state.byWorkspaceId[wsId];
     if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
-    // This is a formatted, capped poll response, not raw PTY bytes. Even a
-    // successful read has no cursor with which to join delayed stream events.
+    // The read has no stream cursor, so the viewer joins it to the live stream at
+    // the chunks buffered when the reply arrived (the read starts after the lease).
     const available = !!text && text !== 'No output yet.'; // daemon wire sentinel
+    const buffer = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
     return setWorkspaceState(state, wsId, {
       ...ws,
       retainedOutputs: {
@@ -678,7 +679,12 @@ scriptsReducer.with(
         [viewerId]: {
           scriptId,
           status: available ? 'available' : 'unavailable',
-          ...(available ? { text: text.slice(-MAX_OUTPUT_CHARS) } : {}),
+          ...(available
+            ? {
+                text: text.slice(-MAX_OUTPUT_CHARS),
+                liveOffset: buffer.dropped + buffer.chunks.length,
+              }
+            : {}),
         },
       },
     });
