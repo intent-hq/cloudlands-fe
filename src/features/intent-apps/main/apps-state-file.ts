@@ -100,6 +100,22 @@ export class AppsStateFileWriter {
     return path.join(this.dir, 'app-icons', `${appId}.png`);
   }
 
+  /**
+   * The feature is off: empty an existing file (so the top bar drops apps from
+   * an earlier session) and never create one.
+   */
+  clear(): Promise<void> {
+    const run = this.chain.then(async () => {
+      const exists = await fs
+        .access(this.filePath)
+        .then(() => true)
+        .catch(() => false);
+      if (exists) await this.writeNow([]);
+    });
+    this.chain = run.catch(() => {});
+    return run;
+  }
+
   write(apps: readonly IntentApp[]): Promise<void> {
     const run = this.chain.then(() => this.writeNow(apps));
     this.chain = run.catch(() => {});

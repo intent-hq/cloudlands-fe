@@ -118,6 +118,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('Intent apps library in main', () => {
   beforeEach(() => {
     mocks.prefs.clear();
+    mocks.openApp.mockClear();
     mocks.hello = { server: { capabilities: { intentApps: 1 } } };
     mocks.responses.clear();
     mocks.responses.set('events.subscribe', () => ({ subscriptionId: 'sub-1' }));
@@ -137,6 +138,34 @@ describe('Intent apps library in main', () => {
       ok: false,
       error: { code: 'lab-off' },
     });
+  });
+
+  it('with the Labs switch off: no daemon call, no window, no push, on every entry point', async () => {
+    const module = await setup();
+    await settle();
+    // Open entry (argv, second instance, intent://app link).
+    module.requestOpenApp('pomodoro-timer');
+    // App events and reconnects from the daemon.
+    mocks.notificationListeners[0]({
+      method: 'events.event',
+      params: { subscriptionId: 'sub-1', event: { type: 'app:installed', data: { appId: 'x' } } },
+    });
+    // Renderer requests that a Settings page could send.
+    await invoke('intent-apps:get-state');
+    await invoke('intent-apps:refresh');
+    for (const [channel, payload] of [
+      ['intent-apps:install', { workspaceId: 'ws-1', path: '.' }],
+      ['intent-apps:approve', { appId: 'a-b', bundleHash: 'sha256:x', level: 1, features: [] }],
+      ['intent-apps:revoke', { appId: 'a-b' }],
+      ['intent-apps:uninstall', { appId: 'a-b' }],
+      ['intent-apps:open', { appId: 'a-b' }],
+    ] as const) {
+      expect(await invoke(channel, payload)).toMatchObject({ ok: false, error: { code: 'lab-off' } });
+    }
+    await settle();
+    expect(mocks.requests).toEqual([]);
+    expect(mocks.openApp).not.toHaveBeenCalled();
+    expect(mocks.sent).toEqual([]);
   });
 
   it('turns on, subscribes to the three app events and reads app.list', async () => {

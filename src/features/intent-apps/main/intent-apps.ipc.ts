@@ -134,15 +134,16 @@ function broadcast(): void {
 }
 
 function setState(next: IntentAppsState): void {
+  // Pushes and state-file writes only on a real change: with the Labs switch
+  // off every refresh yields the same off state, so nothing happens.
+  if (JSON.stringify(next) === JSON.stringify(state)) return;
   state = next;
   broadcast();
-  if (stateFile) {
-    stateFile
-      .write(labEnabled && next.supported ? next.apps : [])
-      .catch((error: Error) =>
-        logger.warn('Could not write the Intent OS apps state file', { error: error.message }),
-      );
-  }
+  if (!stateFile) return;
+  const write = labEnabled && next.supported ? stateFile.write(next.apps) : stateFile.clear();
+  write.catch((error: Error) =>
+    logger.warn('Could not write the Intent OS apps state file', { error: error.message }),
+  );
 }
 
 function isSupported(hello: unknown): boolean {
@@ -449,6 +450,8 @@ export function setupIntentAppsIPC(): void {
   });
 
   void labLoaded.then(async () => {
+    // Off on Intent OS: drop apps an earlier session left in the bar's file.
+    if (!labEnabled) void stateFile?.clear().catch(() => {});
     await refresh();
     for (const appId of pendingOpens.splice(0)) requestOpenApp(appId);
   });

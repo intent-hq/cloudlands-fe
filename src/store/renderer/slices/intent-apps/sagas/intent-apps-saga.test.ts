@@ -88,6 +88,23 @@ describe('intentAppsSaga', () => {
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
 
+  it('with the Labs switch off, reads the state once and sends nothing else', async () => {
+    const main = installMain({
+      'intent-apps:get-state': () => ({
+        labEnabled: false,
+        supported: false,
+        apps: [],
+        openAppIds: [],
+        error: null,
+      }),
+    });
+    const { task, getState } = createHarness();
+    await settle();
+    expect(main.invoke.mock.calls).toEqual([['intent-apps:get-state', {}]]);
+    expect(getState().intentApps.library.labEnabled).toBe(false);
+    task.cancel();
+  });
+
   it('reads the library from main, follows its pushes and loads icons', async () => {
     const main = installMain({
       'intent-apps:get-state': () => libraryState(),

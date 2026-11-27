@@ -105,4 +105,14 @@ describe('Intent OS apps state file', () => {
     const doc = JSON.parse(await fs.readFile(path.join(dir, 'apps.json'), 'utf8'));
     expect(doc.apps[0].icon).toBeNull();
   });
+
+  it('clear() never creates the file and empties an existing one', async () => {
+    const writer = new AppsStateFileWriter(dir, async () => null);
+    await writer.clear();
+    expect(await fs.readdir(dir)).toEqual([]);
+    await writer.write([app('notes', 'Notes', true)]);
+    await writer.clear();
+    const doc = JSON.parse(await fs.readFile(path.join(dir, 'apps.json'), 'utf8'));
+    expect(doc).toEqual({ version: 1, apps: [] });
+  });
 });
