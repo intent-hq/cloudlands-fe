@@ -820,6 +820,31 @@ describe('retained output viewer lifecycle', () => {
       expect(textSinceLastReset(terminal)).toBe('one\nthree\n');
     });
 
+    it('completes a character when the first snapshot holds only its first byte', async () => {
+      const terminal = await mount([]);
+      retainedReadableRef.value.set({
+        scriptId: 's-1',
+        status: 'unavailable',
+        liveOffset: 0,
+        cursor: { runId: 'run-1', bootId: 'boot-1', start: 0, end: 1, logStart: 0 },
+        data: bytesB64(Uint8Array.of(0xe2)),
+      });
+      await tick();
+      outputReadableRef.value.set({
+        chunks: [
+          {
+            text: '\ufffd',
+            timestamp: 't',
+            data: bytesB64(Uint8Array.of(0x82, 0xac)),
+            position: { runId: 'run-1', bootId: 'boot-1', start: 1, end: 3 },
+          },
+        ],
+        dropped: 0,
+      });
+      await tick();
+      expect(textSinceLastReset(terminal)).toBe('€');
+    });
+
     it('writes daemon notices that arrive after the read but not those before it', async () => {
       const early = notice('--- Restarting ---\r\n');
       const terminal = await mount([early]);

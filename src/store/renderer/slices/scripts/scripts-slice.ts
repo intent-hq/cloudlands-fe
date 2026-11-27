@@ -695,7 +695,7 @@ scriptsReducer.with(
             ? { streamEpoch: join.streamEpoch }
             : {}),
           ...(join?.cursor ? { cursor: join.cursor } : {}),
-          ...(available && join?.cursor && join.data !== undefined ? { data: join.data } : {}),
+          ...(join?.cursor && join.data !== undefined ? { data: join.data } : {}),
         },
       },
     });

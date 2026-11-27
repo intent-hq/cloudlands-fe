@@ -496,7 +496,17 @@
       // Keep the live bytes on screen, and join later output by position.
       if (snapshot.cursor) {
         const { runId, bootId, end } = snapshot.cursor;
-        streamJoin = { runId, bootId, next: end, decoder: new TextDecoder() };
+        const decoder = new TextDecoder();
+        // Carry a character the snapshot ends inside into the next chunk.
+        if (snapshot.data) {
+          decoder.decode(
+            Uint8Array.from(atob(snapshot.data), (c) => c.charCodeAt(0)),
+            {
+              stream: true,
+            },
+          );
+        }
+        streamJoin = { runId, bootId, next: end, decoder };
       }
       return;
     }

@@ -191,6 +191,24 @@ describe('script output cursor reads (scriptOutputCursor: 1)', () => {
     expect(run.retained()).toMatchObject({ status: 'available', text: '[2 lines]\n\n' });
   });
 
+  it('keeps the raw bytes of a snapshot that ends inside its first character', async () => {
+    cursorDaemon();
+    const cut = btoa(String.fromCharCode(0xe2));
+    transport.request.mockResolvedValue({
+      runId: 'run-1',
+      daemonBootId: 'boot-1',
+      data: cut,
+      startOffset: '0',
+      endOffset: '1',
+      logStartOffset: '0',
+      totalLines: 1,
+    });
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({ data: cut, cursor: { end: 1 } });
+  });
+
   it('reports a failed positioned read as failed, not as empty output', async () => {
     cursorDaemon();
     transport.request.mockRejectedValue(new Error('connection lost'));
