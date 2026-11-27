@@ -1,8 +1,8 @@
 /**
  * Intent Apps Slice (Labs)
  *
- * A read-through view of the app library that main owns (local daemon,
- * `docs/protocol/methods/apps.md`). Main's reply or `intent-apps:changed`
+ * A read-through view of the app library that main owns: the library of the
+ * daemon of this window's machine (`docs/protocol/methods/apps.md`). Main's reply or `intent-apps:changed`
  * push is the only thing that changes `library`; the renderer sends user
  * requests (install, approve, revoke, uninstall, open), and the saga carries
  * them and records their outcome here so the Settings dialogs can show it.

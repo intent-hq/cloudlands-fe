@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Settings → Advanced → Apps (Labs): the app library of this computer's
-   * daemon. Each row opens, reviews (approves), removes the approval of or
+   * Settings → Advanced → Apps (Labs): the app library of the daemon of this
+   * window's machine (this computer or a remote machine). Each row opens, reviews (approves), removes the approval of or
    * uninstalls an app; "Install app…" installs one from a workspace folder.
    * Main owns the library and the app windows; this view only shows the slice
    * and dispatches requests.
@@ -19,10 +19,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isIntentAppOpenable, type IntentApp } from '$shared/intent-apps/intent-apps-types';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    selectIntentApps,
-    selectIntentAppsCanInstallHere,
-  } from '$store/renderer/slices/intent-apps/intent-apps-selectors';
+  import { selectIntentApps } from '$store/renderer/slices/intent-apps/intent-apps-selectors';
   import {
     intentAppOpenRequested,
     intentAppRevokeRequested,
@@ -34,7 +31,6 @@
   import { onMount } from 'svelte';
 
   const intentApps$ = selectIntentApps();
-  const canInstallHere$ = selectIntentAppsCanInstallHere();
   const library = $derived($intentApps$.library);
 
   let installOpen = $state(false);
@@ -179,15 +175,9 @@
         </SettingsFieldRow>
       {/each}
       <div class="flex items-center gap-3 py-3">
-        {#if $canInstallHere$}
-          <Button variant="secondary" size="sm" onclick={() => (installOpen = true)}>
-            {m.settings_intentApps_install_label()}
-          </Button>
-        {:else}
-          <p class="type-caption text-muted-foreground">
-            {m.settings_intentApps_installElsewhere()}
-          </p>
-        {/if}
+        <Button variant="secondary" size="sm" onclick={() => (installOpen = true)}>
+          {m.settings_intentApps_install_label()}
+        </Button>
       </div>
     {/if}
   </div>

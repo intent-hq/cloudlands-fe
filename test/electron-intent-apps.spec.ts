@@ -4,6 +4,9 @@
  * sample app from a workspace, approve it, open it in its own window, make a
  * model call through `window.intent`, and see the answer. Then check one
  * window per app, the app's isolation, and that a revoke ends the window.
+ * A second intentd stands in for a remote machine: the host reaches it over
+ * pinned WSS with its owner token, installs, approves and opens the app there,
+ * and the model call goes to that daemon.
  *
  * Manual (playwright.manual.config.ts); needs a display (xvfb-run on Linux):
  *
@@ -16,10 +19,11 @@
  */
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createWriteStream, existsSync } from 'node:fs';
+import { randomBytes, X509Certificate } from 'node:crypto';
+import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
@@ -33,6 +37,10 @@ const PROMPT = 'Reply with exactly one word, in lower case: pineapple';
 let root: string;
 let daemon: ChildProcess | undefined;
 let socketPath: string;
+let remoteDaemon: ChildProcess | undefined;
+let remoteSocketPath: string;
+let remoteLogPath: string;
+let remoteConfig: { host: string; port: number; token: string; fingerprint: string };
 let mainBundle: string;
 let preloadBundle: string;
 let repo: string;
@@ -72,6 +80,44 @@ async function bundle(entry: string, outDir: string, fileName: string) {
   });
 }
 
+/** One request on a fresh local socket of a daemon (setup only). */
+function udsRequest(path: string, method: string, params: unknown): Promise<any> {
+  return new Promise((done, fail) => {
+    const socket = connect(path);
+    let buffer = '';
+    socket.on('error', fail);
+    socket.on('connect', () =>
+      socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })}\n`),
+    );
+    socket.on('data', (chunk) => {
+      buffer += String(chunk);
+      const line = buffer.split('\n').find((candidate) => candidate.includes('"id":1'));
+      if (!line) return;
+      socket.destroy();
+      done(JSON.parse(line));
+    });
+  });
+}
+
+function spawnDaemon(dataDir: string, port: number, logPath: string, env: Record<string, string>) {
+  const log = createWriteStream(logPath);
+  const child = spawn(intentdBin!, ['serve'], {
+    env: {
+      ...process.env,
+      INTENTD_DATA_DIR: dataDir,
+      INTENTD_WORKSPACES_DIR: join(dataDir, 'workspaces'),
+      INTENTD_TCP_PORT: String(port),
+      INTENTD_LEGACY_IMPORT_ROOTS: '',
+      RUST_LOG: process.env.RUST_LOG ?? 'info',
+      ...env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.pipe(log);
+  child.stderr?.pipe(log);
+  return child;
+}
+
 test.describe.configure({ mode: 'serial' });
 test.skip(!intentdBin || !bundleSource, 'Set INTENT_APPS_E2E_INTENTD and INTENT_APPS_E2E_BUNDLE');
 
@@ -104,25 +150,51 @@ test.beforeAll(async () => {
   const dataDir = join(root, 'intentd');
   await mkdir(dataDir, { recursive: true });
   socketPath = join(dataDir, 'intentd.sock');
-  const log = createWriteStream(join(artifacts, 'intentd.log'));
-  daemon = spawn(intentdBin!, ['serve'], {
-    env: {
-      ...process.env,
-      INTENTD_DATA_DIR: dataDir,
-      INTENTD_WORKSPACES_DIR: join(dataDir, 'workspaces'),
-      INTENTD_TCP_PORT: String(await freePort()),
-      INTENTD_LEGACY_IMPORT_ROOTS: '',
-      RUST_LOG: process.env.RUST_LOG ?? 'info',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+  daemon = spawnDaemon(dataDir, await freePort(), join(artifacts, 'intentd.log'), {});
+
+  // The "remote machine": its own data, a WSS listener with TLS and a known owner token.
+  const remoteDir = join(root, 'intentd-remote');
+  await mkdir(remoteDir, { recursive: true });
+  remoteSocketPath = join(remoteDir, 'intentd.sock');
+  remoteLogPath = join(artifacts, 'intentd-remote.log');
+  const remotePort = await freePort();
+  const token = randomBytes(32).toString('hex');
+  remoteDaemon = spawnDaemon(remoteDir, remotePort, remoteLogPath, {
+    INTENTD_AUTH_TOKEN: token,
   });
-  daemon.stdout?.pipe(log);
-  daemon.stderr?.pipe(log);
   await expect.poll(() => existsSync(socketPath), { timeout: 60_000 }).toBe(true);
+  await expect.poll(() => existsSync(remoteSocketPath), { timeout: 60_000 }).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        (
+          await udsRequest(remoteSocketPath, 'settings.update', {
+            changes: [
+              { path: 'server.tls.enabled', value: true },
+              { path: 'server.wsApi.enabled', value: true },
+            ],
+          }).catch(() => null)
+        )?.result?.applied?.length ?? 0,
+      { timeout: 90_000 },
+    )
+    .toBe(2);
+  await expect
+    .poll(() => readFileSync(remoteLogPath, 'utf8').includes('intentd WSS listening'), {
+      timeout: 30_000,
+    })
+    .toBe(true);
+  const certificate = new X509Certificate(readFileSync(join(remoteDir, 'ws-cert.pem')));
+  remoteConfig = {
+    host: '127.0.0.1',
+    port: remotePort,
+    token,
+    fingerprint: certificate.fingerprint256,
+  };
 });
 
 test.afterAll(async () => {
   daemon?.kill('SIGTERM');
+  remoteDaemon?.kill('SIGTERM');
   if (root) await rm(root, { recursive: true, force: true });
 });
 
@@ -140,6 +212,7 @@ async function launch(): Promise<{ app: ElectronApplication; log: string[] }> {
       INTENTD_SOCKET: socketPath,
       INTENT_APP_PRELOAD: preloadBundle,
       INTENT_APPS_E2E_PROFILE: join(root, 'profile'),
+      INTENT_APPS_E2E_REMOTE: JSON.stringify(remoteConfig),
     },
   });
   const log: string[] = [];
@@ -164,18 +237,24 @@ function rpc<T = any>(
   method: string,
   params?: unknown,
   timeoutMs?: number,
+  machine: 'local' | 'remote' = 'local',
 ): Promise<T> {
   return app.evaluate(
-    async (_electron, [m, p, t]) => {
+    async (_electron, [m, p, t, which]) => {
+      const e2e = (globalThis as any).__intentAppsE2e;
+      const target = which === 'remote' ? e2e.remote : e2e;
       try {
-        return { ok: true, result: await (globalThis as any).__intentAppsE2e.request(m, p, t) };
+        return { ok: true, result: await target.request(m, p, t) };
       } catch (error: any) {
         return { ok: false, error: { message: String(error?.message), data: error?.data } };
       }
     },
-    [method, params, timeoutMs] as const,
+    [method, params, timeoutMs, machine] as const,
   ) as Promise<T>;
 }
+
+const remoteRpc = <T = any>(app: ElectronApplication, method: string, params?: unknown) =>
+  rpc<T>(app, method, params, undefined, 'remote');
 
 test('install, approve, open and call a model through window.intent', async () => {
   test.setTimeout(420_000);
@@ -390,6 +469,112 @@ test('install, approve, open and call a model through window.intent', async () =
     expect(await app.evaluate(() => (globalThis as any).__intentAppsE2e.openAppIds())).toEqual([]);
   } finally {
     await writeFile(join(artifacts, 'electron-main.log'), log.join(''));
+    await closeElectronApp(app);
+  }
+});
+
+test('a remote machine: install, approve, open there, and the model call goes to it', async () => {
+  test.setTimeout(420_000);
+  const { app, log } = await launch();
+  try {
+    let hello: any = null;
+    await expect
+      .poll(
+        async () => {
+          hello = await app
+            .evaluate(() => (globalThis as any).__intentAppsE2e.remote.hello())
+            .catch(() => null);
+          return hello !== null;
+        },
+        { timeout: 90_000 },
+      )
+      .toBe(true);
+    expect(hello?.server?.capabilities?.intentApps).toBe(1);
+    // This computer has no copy, so only the remote daemon can serve the app.
+    await rpc(app, 'app.uninstall', { appId: 'quick-call' });
+    expect(await rpc(app, 'app.list', {})).toMatchObject({ ok: true, result: { apps: [] } });
+
+    const created = await remoteRpc(app, 'workspace.create', {
+      title: 'Intent apps remote E2E',
+      repositoryPath: repo,
+      skipIsolation: true,
+    });
+    expect(created.ok, JSON.stringify(created)).toBe(true);
+    const workspaceId: string = created.result.workspace?.id ?? created.result.id;
+    const installed = await remoteRpc(app, 'app.install', { workspaceId, path: 'apps/quick-call' });
+    expect(installed).toMatchObject({ ok: true, result: { app: { id: 'quick-call' } } });
+    const bundleHash: string = installed.result.app.bundleHash;
+    expect(
+      await remoteRpc(app, 'app.approve', {
+        appId: 'quick-call',
+        bundleHash,
+        level: 2,
+        features: ['models'],
+      }),
+    ).toMatchObject({ ok: true, result: { app: { approval: { status: 'approved' } } } });
+
+    const windowPromise = app.waitForEvent('window');
+    await app.evaluate(() => (globalThis as any).__intentAppsE2e.remote.open('quick-call'));
+    const page = await windowPromise;
+    page.on('console', (message) => log.push(`[remote app console] ${message.text()}`));
+    await page.waitForLoadState('domcontentloaded');
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getTitle())),
+      )
+      .toEqual(['Intent App: Quick Call (E2E remote)']);
+    expect(page.url()).toBe('intent-app://quick-call/index.html');
+    // The remote machine's copy keeps its own storage partition.
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].webContents.session.getStoragePath(),
+      ),
+    ).toContain('intent-app-quick-call-on-e2e-remote');
+    expect(
+      await page.evaluate(async () => {
+        await (window as any).intent.storage.set('e2e', { machine: 'remote' });
+        return (window as any).intent.storage.get('e2e');
+      }),
+    ).toEqual({ machine: 'remote' });
+
+    await expect
+      .poll(() => page.locator('#provider option:not([disabled])').count(), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    const models = await page.evaluate(() => (window as any).intent.models.list());
+    const wanted = process.env.INTENT_APPS_E2E_PROVIDER ?? 'claude-code';
+    if (models.providers.some((p: any) => p.providerId === wanted && p.available)) {
+      await page.selectOption('#provider', wanted);
+    }
+    const remoteLogBefore = readFileSync(remoteLogPath, 'utf8').length;
+    const localLogBefore = readFileSync(join(artifacts, 'intentd.log'), 'utf8').length;
+    await page.fill('#prompt', PROMPT);
+    await page.click('#ask');
+    try {
+      await expect(page.locator('#answer')).not.toBeEmpty({ timeout: 240_000 });
+    } catch (error) {
+      log.push(`[e2e] status=${JSON.stringify(await page.locator('#status').textContent())}\n`);
+      await page.screenshot({ path: join(artifacts, 'remote-quick-call-no-answer.png') });
+      throw error;
+    }
+    const answer = (await page.locator('#answer').textContent())?.trim() ?? '';
+    await page.screenshot({ path: join(artifacts, 'remote-quick-call-answer.png') });
+    log.push(`[e2e] remote answer=${JSON.stringify(answer)}\n`);
+    expect(answer.toLowerCase()).toContain('pineapple');
+    // The call ran on the remote daemon: its log has the app's model call, this computer's has none.
+    const remoteLog = readFileSync(remoteLogPath, 'utf8').slice(remoteLogBefore);
+    const localLog = readFileSync(join(artifacts, 'intentd.log'), 'utf8').slice(localLogBefore);
+    await writeFile(join(artifacts, 'intentd-remote-model-call.log'), remoteLog);
+    expect(remoteLog).toContain('quick-call');
+    expect(localLog).not.toContain('quick-call');
+
+    const closed = page.waitForEvent('close', { timeout: 60_000 });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
+    await closed;
+    expect(
+      await app.evaluate(() => (globalThis as any).__intentAppsE2e.remote.openAppIds()),
+    ).toEqual([]);
+  } finally {
+    await writeFile(join(artifacts, 'electron-main-remote.log'), log.join(''));
     await closeElectronApp(app);
   }
 });

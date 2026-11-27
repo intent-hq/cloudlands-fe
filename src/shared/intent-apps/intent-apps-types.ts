@@ -106,15 +106,19 @@ export interface IntentAppInstallResult {
   dryRun: boolean;
 }
 
-/** Main → renderer: the whole library state (`intent-apps:changed`, `intent-apps:get-state`). */
+/**
+ * Main → renderer: the whole library state of the renderer's machine
+ * (`intent-apps:changed`, `intent-apps:get-state`). Each window sees the
+ * library of the machine it is connected to.
+ */
 export interface IntentAppsState {
   /** The Labs switch (main owns it). */
   labEnabled: boolean;
-  /** The local daemon advertises `intentApps: 1`. */
+  /** The daemon of the renderer's machine advertises `intentApps: 1`. */
   supported: boolean;
-  /** Installed apps on this computer's daemon, sorted like `app.list`. */
+  /** Installed apps on the daemon of the renderer's machine, sorted like `app.list`. */
   apps: IntentApp[];
-  /** Apps with a window open in this desktop app. */
+  /** Apps of that machine with a window open in this desktop app. */
   openAppIds: string[];
   /** The last library read failed (display only). */
   error: string | null;
@@ -141,14 +145,27 @@ export type IntentAppsActionResult<T = undefined> =
 /** Platform name that `intent.app.info()` reports. */
 export type IntentAppPlatform = 'mac' | 'windows' | 'linux' | 'intent-os';
 
-/** Window title of an app window (spec 3.4; Intent OS finds the window by it). */
-export function intentAppWindowTitle(name: string): string {
-  return `Intent App: ${name}`;
+/**
+ * Window title of an app window (spec 3.4; Intent OS finds the window by it).
+ * An app of another machine names that machine, so two machines' copies of
+ * one app never share a title; Intent OS matches local apps by the exact
+ * `Intent App: <name>` title and gives every `Intent App: ` window its own
+ * workspace.
+ */
+export function intentAppWindowTitle(name: string, machineLabel?: string | null): string {
+  return machineLabel ? `Intent App: ${name} (${machineLabel})` : `Intent App: ${name}`;
 }
 
-/** Session partition of an app (browser storage, IndexedDB). Uninstall clears it. */
-export function intentAppPartition(appId: string): string {
-  return `persist:intent-app-${appId}`;
+/**
+ * Session partition of an app (browser storage, IndexedDB). Uninstall clears
+ * it. The local machine keeps the contract name `persist:intent-app-<appId>`;
+ * an app of another machine adds that machine's key, so each machine's copy
+ * keeps its own storage.
+ */
+export function intentAppPartition(appId: string, machineKey?: string | null): string {
+  return machineKey
+    ? `persist:intent-app-${appId}-on-${machineKey}`
+    : `persist:intent-app-${appId}`;
 }
 
 /** Whether an app can be opened: approved for the installed hash. */

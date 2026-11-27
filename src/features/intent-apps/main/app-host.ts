@@ -15,6 +15,12 @@
  * One window per app: a second open focuses it. Closing the window closes the
  * session. When the session ends without the host asking, the host reads the
  * app again and keeps or closes the window (see `session-recovery.ts`).
+ *
+ * One host per machine: the host of a remote machine talks to that machine's
+ * daemon (its administrator connection, and app connections on the same WSS
+ * transport), and gives its windows that machine's partition and title (see
+ * `AppHostMachine`). All hosts share one `intent-app:invoke` handler, which
+ * finds the host of the calling window.
  */
 import {
   app as electronApp,
@@ -68,6 +74,39 @@ const SESSION_ENDED_CLOSE_DELAY_MS = 500;
 /** How long the host keeps trying to get the app back after a lost session. */
 const RECOVERY_BUDGET_MS = 60_000;
 const RECOVERY_RETRY_MS = 1_000;
+
+/** The machine of a host: the local one has no key and no label. */
+export interface AppHostMachine {
+  /** Partition key of the machine (`intentAppPartition`); null for this computer. */
+  key: string | null;
+  /** The machine's name for window titles; null for this computer. */
+  label(): string | null;
+}
+
+export const LOCAL_APP_HOST_MACHINE: AppHostMachine = { key: null, label: () => null };
+
+/** Every host whose windows the shared `intent-app:invoke` handler serves. */
+const hosts = new Set<IntentAppHost>();
+let ipcRegistered = false;
+/** A quit that nothing cancelled is under way: windows close normally (a cancelled close would cancel the quit). */
+let quitting = false;
+
+function registerSharedIpc(): void {
+  if (ipcRegistered) return;
+  ipcRegistered = true;
+  ipcMain.handle(CHANNELS.INVOKE, (event, message) => {
+    for (const host of hosts) {
+      if (host.ownsSender(event)) return host.handleInvoke(event, message);
+    }
+    return { ok: false, error: { code: 'forbidden', message: 'Not an app window' } };
+  });
+  // Main's own before-quit handler (registered first) cancels the event while it
+  // asks about running agents and shuts down, then quits again. Only a quit that
+  // nothing cancelled closes app windows directly; a cancelled one changes nothing.
+  electronApp.on('before-quit', (event) => {
+    quitting = !event.defaultPrevented;
+  });
+}
 
 /** What the host needs from the administrator connection. */
 export interface AppHostAdmin {
@@ -127,11 +166,8 @@ export class IntentAppHost {
   private readonly byContents = new Map<number, OpenApp>();
   /** Partitions whose scheme handler and rules are installed. */
   private readonly securedPartitions = new Set<string>();
-  private ipcRegistered = false;
   /** Bumped by closeAll: an open that started earlier is cancelled at its next step. */
   private generation = 0;
-  /** A quit that nothing cancelled is under way: windows close normally (a cancelled close would cancel the quit). */
-  private quitting = false;
 
   constructor(
     private readonly admin: AppHostAdmin,
@@ -139,6 +175,8 @@ export class IntentAppHost {
     private readonly onOpenChanged: () => void,
     /** The compiled `src/preload/intent-app.ts` (an Electron test passes its own bundle). */
     private readonly preloadPath: string = defaultPreloadPath(),
+    /** The machine whose daemon `admin` talks to. */
+    private readonly machine: AppHostMachine = LOCAL_APP_HOST_MACHINE,
   ) {}
 
   openAppIds(): string[] {
@@ -149,17 +187,15 @@ export class IntentAppHost {
     return this.open.has(appId);
   }
 
-  /** Answer `intent-app:invoke`. Call once at startup. */
+  /** Answer `intent-app:invoke` for this host's windows. Call once per host. */
   registerIpc(): void {
-    if (this.ipcRegistered) return;
-    this.ipcRegistered = true;
-    ipcMain.handle(CHANNELS.INVOKE, (event, message) => this.handleInvoke(event, message));
-    // Main's own before-quit handler (registered first) cancels the event while it
-    // asks about running agents and shuts down, then quits again. Only a quit that
-    // nothing cancelled closes app windows directly; a cancelled one changes nothing.
-    electronApp.on('before-quit', (event) => {
-      this.quitting = !event.defaultPrevented;
-    });
+    hosts.add(this);
+    registerSharedIpc();
+  }
+
+  /** Whether the IPC sender is one of this host's app windows. */
+  ownsSender(event: IpcMainInvokeEvent): boolean {
+    return this.byContents.has(event.sender.id);
   }
 
   /** Open `appId`, or focus its window. Rejects with the daemon error when it cannot open. */
@@ -185,7 +221,9 @@ export class IntentAppHost {
   /** An `app:removed` event: clear the app's browser storage. */
   async clearAppStorage(appId: string): Promise<void> {
     try {
-      await electronSession.fromPartition(intentAppPartition(appId)).clearStorageData();
+      await electronSession
+        .fromPartition(intentAppPartition(appId, this.machine.key))
+        .clearStorageData();
     } catch (error) {
       logger.warn('Could not clear the storage of a removed app', { appId, error: String(error) });
     }
@@ -280,7 +318,7 @@ export class IntentAppHost {
     // A user close (or `intent.window.close()`) is reason `closed`: the app hears
     // session-ended first, then endWindow destroys the window after the grace period.
     window.on('close', (event) => {
-      if (entry.ending || this.quitting) return;
+      if (entry.ending || quitting) return;
       event.preventDefault();
       this.endWindow(entry, 'closed', false);
     });
@@ -311,12 +349,12 @@ export class IntentAppHost {
     session: IntentAppSession,
     icon: Electron.NativeImage | undefined,
   ): BrowserWindow {
-    const partition = intentAppPartition(app.id);
+    const partition = intentAppPartition(app.id, this.machine.key);
     this.secureSession(app.id, partition);
     const spec = session.window;
     const alwaysOnTop =
       spec.alwaysOnTop && session.level >= 2 && session.features.includes('alwaysOnTop');
-    const title = intentAppWindowTitle(app.name);
+    const title = intentAppWindowTitle(app.name, this.machine.label());
     const window = new BrowserWindow({
       title,
       width: spec.width,
@@ -555,7 +593,7 @@ export class IntentAppHost {
     return this.isOwnUrl(entry.appId, frame.url) ? entry : null;
   }
 
-  private async handleInvoke(event: IpcMainInvokeEvent, message: unknown): Promise<BridgeResponse> {
+  async handleInvoke(event: IpcMainInvokeEvent, message: unknown): Promise<BridgeResponse> {
     const entry = this.entryForSender(event);
     if (!entry) {
       return { ok: false, error: { code: 'forbidden', message: 'Not an app window' } };
