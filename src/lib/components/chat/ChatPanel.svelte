@@ -3946,8 +3946,8 @@
   });
 
   // No-jump prepends/refills: history rows landing above the viewport would
-  // shift the reading position (native scroll anchoring is disabled on the
-  // container). Capture an element anchor BEFORE the DOM updates and restore
+  // shift the reading position (native scroll anchoring does not reliably
+  // absorb them). Capture an element anchor BEFORE the DOM updates and restore
   // it after — this composes with the LazyTurn height ledger, which only
   // compensates height CHANGES of existing turns, never new siblings.
   let anchoredHistoryLength = -1;

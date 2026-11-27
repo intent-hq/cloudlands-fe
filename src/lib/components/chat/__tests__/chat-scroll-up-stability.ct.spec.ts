@@ -18,7 +18,10 @@ const SLOW_WHEEL_DELTA = -60;
 const FLICKER_MIN_PX = 150;
 const SNAP_BACK_WINDOW_FRAMES = 3;
 
-/** Median on-screen movement of the rows painted in both frames. */
+/**
+ * Median movement of the rows rendered in both frames. Rows outside the
+ * viewport count too, so a jump taller than the viewport still overlaps.
+ */
 function frameShift(prev: FrameSample, cur: FrameSample): number | null {
   const shifts: number[] = [];
   for (const [id, top] of Object.entries(cur.rows)) {
@@ -53,8 +56,7 @@ test('slow scroll up through older history never paints a jump that snaps back',
       const rows: Record<string, number> = {};
       for (const row of node.querySelectorAll<HTMLElement>('[data-message-id]')) {
         const rect = row.getBoundingClientRect();
-        if (rect.height <= 0 || rect.bottom < box.top || rect.top > box.bottom) continue;
-        rows[row.dataset.messageId!] = rect.top - box.top;
+        if (rect.height > 0) rows[row.dataset.messageId!] = rect.top - box.top;
       }
       samples.push({ rows });
       requestAnimationFrame(next);
@@ -84,7 +86,12 @@ test('slow scroll up through older history never paints a jump that snaps back',
   const shifts = frames.slice(1).map((frame, i) => frameShift(frames[i], frame));
   const flickers: string[] = [];
   shifts.forEach((shift, i) => {
-    if (shift === null || Math.abs(shift) < FLICKER_MIN_PX) return;
+    // Every rendered row was replaced in one frame: the oracle lost track.
+    if (shift === null) {
+      flickers.push(`frame ${i + 1} shares no rendered row with frame ${i}`);
+      return;
+    }
+    if (Math.abs(shift) < FLICKER_MIN_PX) return;
     for (let k = i + 1; k <= i + SNAP_BACK_WINDOW_FRAMES && k < shifts.length; k++) {
       const back = shifts[k];
       if (back === null || Math.sign(back) === Math.sign(shift)) continue;
