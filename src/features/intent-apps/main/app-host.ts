@@ -17,6 +17,7 @@
  * app again and keeps or closes the window (see `session-recovery.ts`).
  */
 import {
+  app as electronApp,
   BrowserWindow,
   globalShortcut,
   ipcMain,
@@ -129,6 +130,8 @@ export class IntentAppHost {
   private ipcRegistered = false;
   /** Bumped by closeAll: an open that started earlier is cancelled at its next step. */
   private generation = 0;
+  /** The app quits: windows close normally (a cancelled close would cancel the quit). */
+  private quitting = false;
 
   constructor(
     private readonly admin: AppHostAdmin,
@@ -151,6 +154,9 @@ export class IntentAppHost {
     if (this.ipcRegistered) return;
     this.ipcRegistered = true;
     ipcMain.handle(CHANNELS.INVOKE, (event, message) => this.handleInvoke(event, message));
+    electronApp.on('before-quit', () => {
+      this.quitting = true;
+    });
   }
 
   /** Open `appId`, or focus its window. Rejects with the daemon error when it cannot open. */
@@ -268,6 +274,13 @@ export class IntentAppHost {
     this.open.set(appId, entry);
     this.byContents.set(entry.contentsId, entry);
     this.attachConnection(entry, connection);
+    // A user close (or `intent.window.close()`) is reason `closed`: the app hears
+    // session-ended first, then endWindow destroys the window after the grace period.
+    window.on('close', (event) => {
+      if (entry.ending || this.quitting) return;
+      event.preventDefault();
+      this.endWindow(entry, 'closed', false);
+    });
     window.on('closed', () => this.onWindowClosed(entry));
     this.onOpenChanged();
     logger.info('Opened app window', { appId, level: session.level, features: session.features });
@@ -575,9 +588,7 @@ export class IntentAppHost {
       setAlwaysOnTop: (on) => {
         if (!entry.window.isDestroyed()) entry.window.setAlwaysOnTop(on);
       },
-      close: () => {
-        if (!entry.window.isDestroyed()) entry.window.close();
-      },
+      close: () => this.endWindow(entry, 'closed', false),
       registerShortcut: (accelerator) => {
         if (entry.ending) return false;
         // Never take an accelerator that Intent or another app window holds.

@@ -349,6 +349,31 @@ test('install, approve, open and call a model through window.intent', async () =
     });
     await closed;
     expect(log.join('')).toContain('[app console] session-ended {"reason":"revoked"}');
+
+    // A close by the app (or the user) is reason "closed": the app hears it before the window goes.
+    expect(
+      await rpc(app, 'app.approve', {
+        appId: 'quick-call',
+        bundleHash,
+        level: 2,
+        features: ['models', 'notifications'],
+      }),
+    ).toMatchObject({ ok: true });
+    const reopened = app.waitForEvent('window');
+    await app.evaluate(() => (globalThis as any).__intentAppsE2e.open('quick-call'));
+    const second = await reopened;
+    second.on('console', (message) => log.push(`[app console] ${message.text()}`));
+    await second.waitForLoadState('domcontentloaded');
+    await expect.poll(() => second.evaluate(() => typeof (window as any).intent)).toBe('object');
+    await second.evaluate(() => {
+      (window as any).intent.on('session-ended', (data: unknown) => {
+        console.log(`session-ended ${JSON.stringify(data)}`);
+      });
+    });
+    const secondClosed = second.waitForEvent('close', { timeout: 30_000 });
+    await second.evaluate(() => (window as any).intent.window.close());
+    await secondClosed;
+    expect(log.join('')).toContain('[app console] session-ended {"reason":"closed"}');
     expect(await app.evaluate(() => (globalThis as any).__intentAppsE2e.openAppIds())).toEqual([]);
   } finally {
     await writeFile(join(artifacts, 'electron-main.log'), log.join(''));
