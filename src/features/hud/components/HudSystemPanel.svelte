@@ -60,9 +60,9 @@
       {#if $workspaceListLoaded$}
         {workspaceTotal}
       {:else}
-        <!-- i18n-ignore (placeholder glyph; the label carries the text) -->
-        <span class="hud-system-pending" aria-label={m.hud_system_workspacesLoading_label()}>—</span
-        >
+        <!-- i18n-ignore (decorative placeholder glyph) -->
+        <span class="hud-system-pending" aria-hidden="true">—</span>
+        <span class="sr-only">{m.hud_system_workspacesLoading_label()}</span>
       {/if}
     </span>
   </div>
