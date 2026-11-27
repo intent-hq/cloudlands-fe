@@ -1005,6 +1005,27 @@ jobs:
           node .cache/turn-start-contract/scripts/turn-start-contract.mjs verify
           --source-root .cache/turn-start-contract --source-commit "$SOURCE_COMMIT"
           --component cloudlands-fe --component-root .
+      - name: Read hello capabilities pin
+        id: hello-capabilities
+        # bash implies pipefail, so a loader error is not hidden by tee.
+        shell: bash
+        run: node scripts/hello-capabilities-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned hello capabilities
+        uses: ./.github/actions/checkout-pinned
+        with:
+          ref: ${{ steps.hello-capabilities.outputs.sourceCommit }}
+          path: .cache/hello-capabilities-contract
+          sparse-checkout: |
+            /docs/protocol/fixtures/hello/capabilities.json
+            /scripts/hello-capabilities-contract.mjs
+            /scripts/lib/fixture-copy.mjs
+      - name: Verify hello capabilities provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.hello-capabilities.outputs.sourceCommit }}
+        run: >-
+          node .cache/hello-capabilities-contract/scripts/hello-capabilities-contract.mjs verify
+          --source-root .cache/hello-capabilities-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate IPC channels

@@ -1,3 +1,4 @@
+// @verify-changed-triggers: tests/fixtures/hello-capabilities.json
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeDaemon } from '../../../test/fake-daemon-socket';
 import {
