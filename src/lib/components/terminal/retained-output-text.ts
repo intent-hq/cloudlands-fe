@@ -20,24 +20,32 @@ export function retainedOutputIsComplete(text: string): boolean {
   return /^\[\d+ lines\]/.test(text);
 }
 
-const COVER_PROBE_CHARS = 1024;
-const COVER_MAX_CANDIDATES = 256;
+const OVERLAP_PROBE_CHARS = 1024;
+const OVERLAP_MAX_CANDIDATES = 256;
 
 /**
- * Whether live output already holds everything a capped snapshot shows up to
- * the live position. The log and the stream carry the same PTY bytes, so the
- * live tail must match the start of the snapshot body exactly.
+ * Joins a capped snapshot to live output that may already hold its start. The
+ * log and the stream carry the same PTY bytes, so a live tail that matches the
+ * snapshot head exactly is the same output. Returns the snapshot part to write
+ * after the live output (empty when live output holds all of it), or undefined
+ * when no live tail matches. Of the nearest candidates the longest overlap
+ * wins; a wrong match on a repeated line can repeat output but never hide it.
  */
-export function liveOutputCoversSnapshot(live: string, snapshotText: string): boolean {
+export function snapshotRemainderAfterLive(live: string, snapshotText: string): string | undefined {
   const body = snapshotText.replace(HEADER, '');
-  if (!live || !body) return false;
+  if (!live || !body) return undefined;
   const lineEnd = body.indexOf('\n');
-  const probe = body.slice(0, Math.min(lineEnd < 0 ? body.length : lineEnd + 1, COVER_PROBE_CHARS));
+  const probe = body.slice(
+    0,
+    Math.min(lineEnd < 0 ? body.length : lineEnd + 1, OVERLAP_PROBE_CHARS),
+  );
+  let remainder: string | undefined;
   let at = live.lastIndexOf(probe);
-  for (let tries = 0; at >= 0 && tries < COVER_MAX_CANDIDATES; tries++) {
+  for (let tries = 0; at >= 0 && tries < OVERLAP_MAX_CANDIDATES; tries++) {
     const tail = live.slice(at);
-    if (tail.startsWith(body) || body.startsWith(tail)) return true;
+    if (tail.startsWith(body)) return '';
+    if (body.startsWith(tail)) remainder = body.slice(tail.length);
     at = at > 0 ? live.lastIndexOf(probe, at - 1) : -1;
   }
-  return false;
+  return remainder;
 }

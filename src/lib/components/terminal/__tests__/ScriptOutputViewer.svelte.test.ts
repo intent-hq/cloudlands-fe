@@ -726,6 +726,25 @@ describe('retained output viewer lifecycle', () => {
     expect(textSinceLastReset(terminal)).toBe('line 1\nline 2\nline 3\nline 4\n');
   });
 
+  it('keeps snapshot-only output after a repeated line that live output also holds', async () => {
+    outputReadableRef.value = createControllableReadable({
+      chunks: [{ text: 'heartbeat\n', timestamp: 'late' }],
+      dropped: 0,
+    });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[showing last 3 of 9 lines]\nheartbeat\ndiagnostic\nheartbeat\n',
+      liveOffset: 1,
+      streamEpoch: 0,
+    });
+    await tick();
+    expect(textSinceLastReset(terminal)).toContain('diagnostic\n');
+  });
+
   it('requests a new snapshot only when a new run starts', async () => {
     const { store } = await import('$store/renderer/store');
     runtimeReadableRef.value = createControllableReadable<any>({

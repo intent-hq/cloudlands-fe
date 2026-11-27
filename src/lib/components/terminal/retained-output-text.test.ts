@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  liveOutputCoversSnapshot,
   retainedOutputIsComplete,
+  snapshotRemainderAfterLive,
   retainedOutputTerminalText,
 } from './retained-output-text';
 
@@ -51,19 +51,31 @@ describe('retainedOutputIsComplete', () => {
   });
 });
 
-describe('liveOutputCoversSnapshot', () => {
+describe('snapshotRemainderAfterLive', () => {
   const capped = (body: string) => `[showing last 2 of 9 lines]\n${body}`;
 
-  it('accepts live output that already holds the start of the snapshot', () => {
+  it('returns nothing more when live output already holds the whole snapshot', () => {
     const live = 'line 1\n\x1b[32mline 2\x1b[0m\nline 3\n';
-    expect(liveOutputCoversSnapshot(live, capped('\x1b[32mline 2\x1b[0m\nline 3\n'))).toBe(true);
-    // The read can also hold output logged after the live position.
-    expect(liveOutputCoversSnapshot(live, capped('line 3\nline 4\n'))).toBe(true);
+    expect(snapshotRemainderAfterLive(live, capped('\x1b[32mline 2\x1b[0m\nline 3\n'))).toBe('');
   });
 
-  it('rejects live output that misses part of the snapshot', () => {
-    expect(liveOutputCoversSnapshot('', capped('line 2\n'))).toBe(false);
-    expect(liveOutputCoversSnapshot('line 3\n', capped('line 2\nline 3\n'))).toBe(false);
-    expect(liveOutputCoversSnapshot('line 2\nother\n', capped('line 2\nline 3\n'))).toBe(false);
+  it('returns the snapshot part that live output does not hold', () => {
+    expect(snapshotRemainderAfterLive('line 2\nline 3\n', capped('line 3\nline 4\n'))).toBe(
+      'line 4\n',
+    );
+    // A repeated line must not hide output that only the snapshot holds.
+    expect(
+      snapshotRemainderAfterLive('heartbeat\n', capped('heartbeat\ndiagnostic\nheartbeat\n')),
+    ).toBe('diagnostic\nheartbeat\n');
+    // The longest overlap wins, so less output repeats.
+    expect(snapshotRemainderAfterLive('A\nB\nA\n', capped('A\nB\nA\nC\n'))).toBe('C\n');
+  });
+
+  it('returns undefined when live output does not reach the snapshot start', () => {
+    expect(snapshotRemainderAfterLive('', capped('line 2\n'))).toBeUndefined();
+    expect(snapshotRemainderAfterLive('line 3\n', capped('line 2\nline 3\n'))).toBeUndefined();
+    expect(
+      snapshotRemainderAfterLive('line 2\nother\n', capped('line 2\nline 3\n')),
+    ).toBeUndefined();
   });
 });

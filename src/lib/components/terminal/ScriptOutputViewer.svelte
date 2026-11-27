@@ -20,9 +20,9 @@
   import { notify } from '$lib/components/patterns/notify';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import {
-    liveOutputCoversSnapshot,
     retainedOutputIsComplete,
     retainedOutputTerminalText,
+    snapshotRemainderAfterLive,
   } from './retained-output-text';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
@@ -264,29 +264,30 @@
       shownSnapshot = snapshot;
       shownRun = untrack(() => runStartedAt);
     }
-    // A capped snapshot is only the newest tail: live output that already holds
-    // it is the fuller history, as when another view kept the stream open.
+    // A capped snapshot is only the newest tail: when live output already holds
+    // its start (another view kept the stream open), that output is the fuller
+    // history, and only the rest of the snapshot is written after it.
     const text = snapshot?.text;
-    const before = (snapshot?.liveOffset ?? 0) - buffer.dropped;
-    const useSnapshot =
-      !!snapshot &&
-      !(
-        text &&
-        !retainedOutputIsComplete(text) &&
-        liveOutputCoversSnapshot(
-          buffer.chunks
-            .slice(0, Math.max(before, 0))
-            .map((c) => c.text)
-            .join(''),
-          text,
-        )
-      );
-    showsSnapshotText = useSnapshot && !!text;
-    if (useSnapshot && text) xterm.write(retainedOutputTerminalText(text));
-    const live = buffer.chunks
-      .slice(useSnapshot ? Math.max(before, 0) : 0)
-      .map((c) => c.text)
-      .join('');
+    const joined = Math.max((snapshot?.liveOffset ?? 0) - buffer.dropped, 0);
+    const chunkText = (from: number, to?: number) =>
+      buffer.chunks
+        .slice(from, to)
+        .map((c) => c.text)
+        .join('');
+    const remainder =
+      text && !retainedOutputIsComplete(text)
+        ? snapshotRemainderAfterLive(chunkText(0, joined), text)
+        : undefined;
+    showsSnapshotText = !!snapshot && remainder === undefined && !!text;
+    let live: string;
+    if (!snapshot) {
+      live = chunkText(0);
+    } else if (remainder !== undefined) {
+      live = chunkText(0, joined) + remainder + chunkText(joined);
+    } else {
+      if (text) xterm.write(retainedOutputTerminalText(text));
+      live = chunkText(joined);
+    }
     if (live) xterm.write(live);
     writtenChunkCount = buffer.dropped + buffer.chunks.length;
   }
