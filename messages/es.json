@@ -3091,6 +3091,7 @@
   "hud_system_title": "SISTEMA",
   "hud_system_uptime_label": "ACTIVIDAD",
   "hud_system_workspaces_label": "ESPACIOS",
+  "hud_system_workspacesLoading_label": "Cargando espacios",
   "hud_takeover_activeAgents_title": "AGENTES ACTIVOS",
   "hud_takeover_dismiss_label": "DESCARTAR",
   "hud_takeover_footerMap_label": "MAPA · SEMÁNTICO",

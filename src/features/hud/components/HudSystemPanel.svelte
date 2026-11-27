@@ -7,7 +7,10 @@
    * so it ticks between polls; it freezes while the daemon is offline.
    */
   import { m } from '$shared/paraglide/messages.js';
-  import { selectHudSystem } from '$store/renderer/slices/hud/hud-selectors';
+  import {
+    selectHudSystem,
+    selectHudWorkspaceListLoaded,
+  } from '$store/renderer/slices/hud/hud-selectors';
   import { formatHudTimer } from '../utils/hud-format';
 
   let {
@@ -17,6 +20,7 @@
   }: { agentTotal: number; workspaceTotal: number; nowMs: number } = $props();
 
   const system$ = selectHudSystem();
+  const workspaceListLoaded$ = selectHudWorkspaceListLoaded();
 
   const online = $derived($system$.online);
   const uptimeText = $derived.by(() => {
@@ -52,7 +56,15 @@
   <div class="hud-system-row">
     <span class="hud-system-key">{m.hud_system_workspaces_label()}</span>
     <span class="hud-system-spacer"></span>
-    <span>{workspaceTotal}</span>
+    <span data-testid="hud-system-workspaces" aria-busy={!$workspaceListLoaded$}>
+      {#if $workspaceListLoaded$}
+        {workspaceTotal}
+      {:else}
+        <!-- i18n-ignore (placeholder glyph; the label carries the text) -->
+        <span class="hud-system-pending" aria-label={m.hud_system_workspacesLoading_label()}>—</span
+        >
+      {/if}
+    </span>
   </div>
 </div>
 
@@ -94,8 +106,13 @@
     color: hsl(var(--danger));
     animation: hudblink 1.6s step-end infinite;
   }
+  .hud-system-pending {
+    color: hsl(var(--muted-foreground));
+    animation: hudpulse 2.2s ease-in-out infinite;
+  }
   @container style(--motion-reduced: 1) {
     .hud-system-dot-online,
+    .hud-system-pending,
     .hud-system-offline {
       animation: none;
     }

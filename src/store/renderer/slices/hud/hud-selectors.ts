@@ -66,6 +66,7 @@ import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-cons
 
 import { ownedDockRecording } from '$features/hud/utils/dock-recording-indicator';
 import { getPrincipalActionContext } from '../principal/principal-context';
+import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 
 /** A live native recording owned by this dock's selected draft and principal. */
 export const selectDockRecordingIndicator = store.createSelector((state) => {
@@ -97,6 +98,15 @@ export const selectHudRateHistory = store.createSelector((state) => state.hud.ra
 /** Raw workspace entities observed by the root-owned HUD hydration lifetime. */
 export const selectHudWorkspaceEntities = store.createSelector((state): Workspace[] =>
   getItems(state.workspace.workspaces),
+);
+
+/**
+ * The full workspace list has been read for this window's backend. Until then
+ * the store holds only rows seeded by live events, so counts are partial.
+ */
+export const selectHudWorkspaceListLoaded = store.createSelector(
+  (state) =>
+    state.workspace.hasLoaded && state.workspace.loadedBackendId === getActiveBackendId(state),
 );
 
 /**

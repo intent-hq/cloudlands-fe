@@ -3091,6 +3091,7 @@
   "hud_system_title": "システム",
   "hud_system_uptime_label": "稼働時間",
   "hud_system_workspaces_label": "ワークスペース",
+  "hud_system_workspacesLoading_label": "ワークスペースを読み込み中",
   "hud_takeover_activeAgents_title": "稼働中エージェント",
   "hud_takeover_dismiss_label": "閉じる",
   "hud_takeover_footerMap_label": "マップ · セマンティック",

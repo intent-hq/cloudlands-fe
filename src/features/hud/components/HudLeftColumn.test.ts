@@ -13,6 +13,7 @@ import { store as appStore } from '$store/renderer/store';
 import {
   resetWorkspaceState,
   setWorkspaceEntity,
+  setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { hudActivated } from '$store/renderer/slices/hud/hud-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -20,6 +21,7 @@ import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/wor
 import type { AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 
 import HudLeftColumn from './HudLeftColumn.svelte';
 
@@ -212,6 +214,29 @@ describe('HudLeftColumn SYSTEM panel header', () => {
     const title = m.hud_system_title();
     const header = screen.getByText(title).closest('header') as HTMLElement;
     expect(header.textContent?.trim()).toBe(title);
+  });
+});
+
+describe('HudLeftColumn SYSTEM workspace count', () => {
+  it('shows the count as loading until the full workspace list has loaded', async () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    // A live event can seed one row before the paged list read finishes.
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'active' }])),
+    );
+    flushSync();
+
+    const count = screen.getByTestId('hud-system-workspaces');
+    expect(count.getAttribute('aria-busy')).toBe('true');
+    expect(count.textContent).not.toContain('1');
+
+    appStore.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(appStore.state)));
+    await waitFor(() => {
+      flushSync();
+      expect(count.getAttribute('aria-busy')).toBe('false');
+    });
+    expect(count.textContent?.trim()).toBe('1');
   });
 });
 

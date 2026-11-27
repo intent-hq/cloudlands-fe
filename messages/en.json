@@ -3091,6 +3091,7 @@
   "hud_system_title": "System",
   "hud_system_uptime_label": "Uptime",
   "hud_system_workspaces_label": "Workspaces",
+  "hud_system_workspacesLoading_label": "Loading workspaces",
   "hud_takeover_activeAgents_title": "Active agents",
   "hud_takeover_dismiss_label": "Dismiss",
   "hud_takeover_footerMap_label": "Map · semantic",
