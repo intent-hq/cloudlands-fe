@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.396.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.4...v2.396.5) (2026-11-27)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** check total image size when attaching, not on send ([#5127](https://github.com/intent-hq/cloudlands-fe/issues/5127)) ([0d1d1d5](https://github.com/intent-hq/cloudlands-fe/commit/0d1d1d54c93bdcc5131585ceac5bd8b63a8dd17f))
+
 ## [2.396.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.3...v2.396.4) (2026-11-27)
 
 
