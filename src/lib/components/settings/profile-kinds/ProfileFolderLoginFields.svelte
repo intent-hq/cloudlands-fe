@@ -105,7 +105,7 @@
       <Fa icon={faChevronRight} class="size-2.5 transition-transform group-open:rotate-90" />
       {m.settings_providerProfileKinds_advanced_label()}
     </summary>
-    <div class="mt-2 space-y-3 pl-[18px]">
+    <div class="mt-2 space-y-3 pl-4.5">
       {#if mode === 'add'}
         <p
           class="flex items-start gap-2 type-caption text-muted-foreground"
