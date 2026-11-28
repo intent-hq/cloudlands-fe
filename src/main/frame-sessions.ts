@@ -214,14 +214,15 @@ export function orderFramesForRestore(frames: FrameSession[], activeId: string):
 
 /**
  * What to save: the live frames, then the saved frames not restored this run
- * (none of their machines could connect) unless a live frame now holds one of
- * their machines, which replaces them.
+ * (none of their machines could connect). A saved frame is replaced only once
+ * live frames hold every one of its machines, so a machine opened elsewhere
+ * never takes the frame's other machines with it.
  */
 export function mergeParkedFrames(live: FrameSession[], parked: FrameSession[]): FrameSession[] {
   const liveMachines = new Set(live.flatMap((frame) => frame.machines.map((m) => m.id)));
   return [
     ...live,
-    ...parked.filter((frame) => !frame.machines.some((machine) => liveMachines.has(machine.id))),
+    ...parked.filter((frame) => !frame.machines.every((machine) => liveMachines.has(machine.id))),
   ];
 }
 

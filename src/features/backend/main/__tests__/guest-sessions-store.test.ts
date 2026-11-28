@@ -749,6 +749,22 @@ describe('guest-sessions-store', () => {
     expect(await fs.readdir(tmpDir)).toEqual(['guest-sessions.json']);
   });
 
+  it('listIdsStrict() lists joined hosts but refuses a registry it cannot read in full', async () => {
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    const store = await import('../guest-sessions-store');
+    expect(await store.listIdsStrict()).toEqual([]);
+    const joined = await store.add(sample);
+    expect(await store.listIdsStrict()).toEqual([joined.id]);
+
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.sessions.push({ id: 'half-written' });
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+    await expect(store.listIdsStrict()).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+
+    await fs.writeFile(file, '{"sessions": [ this is not json', 'utf8');
+    await expect(store.listIdsStrict()).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+  });
+
   it('a registry whose top level is not an object is corrupt too', async () => {
     const file = path.join(tmpDir, 'guest-sessions.json');
     await fs.writeFile(file, '[1, 2, 3]', 'utf8');

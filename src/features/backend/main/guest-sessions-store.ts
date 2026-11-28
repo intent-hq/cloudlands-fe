@@ -602,6 +602,17 @@ export async function list(): Promise<GuestSessionRecord[]> {
   return state.sessions.map(toRecord);
 }
 
+/**
+ * Ids of every guest session. Unlike `list()`, a registry that cannot be read
+ * or is not intact throws: callers that drop unlisted machines must not read
+ * it as empty.
+ */
+export async function listIdsStrict(): Promise<string[]> {
+  const loaded = await loadState();
+  if (!loaded?.intact) throw new GuestStoreCorruptError();
+  return loaded.state.sessions.map((session) => session.id);
+}
+
 /** The token-free record for a session id, or null when unknown. */
 export async function findById(id: string): Promise<GuestSessionRecord | null> {
   const state = await readState();

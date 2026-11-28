@@ -1458,6 +1458,23 @@ describe('connections-store', () => {
     expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
   });
 
+  it('listIdsStrict() lists saved ids but refuses a registry it cannot read in full', async () => {
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const store = await import('../desktop-connections-store');
+    expect(await store.listIdsStrict()).toEqual([store.LOCAL_CONNECTION_ID]);
+    const rec = await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+    expect(await store.listIdsStrict()).toEqual([store.LOCAL_CONNECTION_ID, rec.id]);
+
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+    parsed.connections.push({ id: 'half-written' });
+    await fs.writeFile(file, JSON.stringify(parsed), 'utf8');
+    await expect(store.listIdsStrict()).rejects.toThrow();
+
+    await fs.writeFile(file, 'not json', 'utf8');
+    await expect(store.listIdsStrict()).rejects.toThrow();
+  });
+
   it('new records default to a single-host candidate list and detectHosts enabled (#1746)', async () => {
     const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);

@@ -147,6 +147,36 @@ describe('machine rail selectors', () => {
     expect(b.offline).toBe(true);
   });
 
+  it('undims the same rail entry, in place, once its host connects', () => {
+    const railWithGuest = { ...rail, machineIds: ['local', 'b', 'g1'] };
+    const guests = (connectedIds: string[]) => ({ sessions: [guest('g1')], connectedIds });
+    const view = (items: ReturnType<typeof selectMachineRailItems.select>) =>
+      items.map(({ id, offline }) => ({ id, offline }));
+
+    const unavailable = selectMachineRailItems.select(
+      stateWith(
+        railWithGuest,
+        [record('local'), record('b', { status: 'not-open' })],
+        'local',
+        guests([]),
+      ),
+    );
+    expect(view(unavailable)).toEqual([
+      { id: 'local', offline: false },
+      { id: 'b', offline: true },
+      { id: 'g1', offline: true },
+    ]);
+
+    const connected = selectMachineRailItems.select(
+      stateWith(railWithGuest, [record('local'), record('b')], 'local', guests(['g1'])),
+    );
+    expect(view(connected)).toEqual([
+      { id: 'local', offline: false },
+      { id: 'b', offline: false },
+      { id: 'g1', offline: false },
+    ]);
+  });
+
   it('offers saved machines that are not in the rail and never nodes', () => {
     const candidates = selectMachineRailCandidates.select(
       stateWith({ ...rail, machineIds: ['local', 'b'] }, [
