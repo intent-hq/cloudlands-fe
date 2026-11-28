@@ -8696,6 +8696,7 @@
   "remoteMachines_state_revoked_label": "Access revoked",
   "remoteMachines_state_unreachable_description": "{backend} could not reach {machine} the last time it tried. It tries again when it needs the runner.",
   "remoteMachines_state_unreachable_label": "Unreachable",
+  "remoteMachines_state_idle_label": "Idle",
   "remoteMachines_state_updateRequired_label": "Update required",
   "remoteMachines_unexposeAction_label": "Stop letting {backend} run agents on this computer",
   "remoteMachines_unexpose_confirmTitle": "Stop letting {backend} run agents on {machine}?",

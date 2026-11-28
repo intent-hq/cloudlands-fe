@@ -1,8 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Settings → "Where <backend> runs agents": rows that can run agents show no
- * status pill (the section title already says it); rows that can't keep theirs.
+ * Settings runner rows expose connection failures with accessible warning icons.
  */
 import { render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -51,10 +50,14 @@ describe('machine status pills in the ordered list', () => {
     ).toBeNull();
   });
 
-  it('keeps every exception pill', () => {
+  it('identifies runner connection problems and cloud failures', () => {
     const section = renderOrdered('exceptions');
-    expect(within(row(section, 'Studio Mac')).getByText('Update required')).toBeTruthy();
-    expect(within(row(section, 'Garage node')).getByText('Unreachable')).toBeTruthy();
+    expect(
+      within(row(section, 'Studio Mac')).getByRole('img', { name: 'Update required' }),
+    ).toBeTruthy();
+    expect(
+      within(row(section, 'Garage node')).getByRole('img', { name: 'Unreachable' }),
+    ).toBeTruthy();
     expect(within(row(section, 'Team project')).getByText('Key rejected')).toBeTruthy();
   });
 });

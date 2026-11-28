@@ -83,6 +83,7 @@
     machineLoadFacts,
     needsNodeFact,
     remoteMachineFailureMessage,
+    runnerConnectionStatus,
     type MachineFact,
   } from '$features/remote-machines/remote-machines-messages';
   import { getActiveLocale } from '$lib/i18n/locale';
@@ -348,6 +349,11 @@
   });
   // A node, or a row in the ordered runner list.
   const runnerRow = $derived(isNode || !!order);
+  const runnerStatus = $derived(
+    runnerRow && exposedMachine
+      ? runnerConnectionStatus(exposedMachine, { machine: displayName, backend: $backendLabel$ })
+      : undefined,
+  );
   const showLoad = $derived(!!exposedMachine && runnerRow);
   // Hosts that may run agents on the host this window shows: a fact and a Revoke item on its row.
   const executorBackends$ = selectExecutorBackends();
@@ -366,7 +372,9 @@
         : null;
     const version = (device.intentdVersion ?? device.daemonVersion)?.replace(/^v/, '');
     return [
-      { label: m.settings_devices_status_label(), value: statusLabel(openStatus) },
+      ...(runnerStatus
+        ? []
+        : [{ label: m.settings_devices_status_label(), value: statusLabel(openStatus) }]),
       ...(versionWarning && device.daemonVersion && pinnedVersion
         ? [
             {
@@ -777,6 +785,7 @@
         {providers}
         hostOnly={isOrchestrator}
         {versionWarning}
+        {runnerStatus}
         facts={nameFacts}
       />
     {/snippet}
@@ -786,16 +795,12 @@
         class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
       >
         {#if exposedMachine}
-          <RemoteMachineBadge
-            machine={exposedMachine}
-            backendLabel={$backendLabel$}
-            showDisconnected={runnerRow}
-          />
+          {#if !runnerRow}<RemoteMachineBadge machine={exposedMachine} />{/if}
           {#if showLoad}<MachineLoad machine={exposedMachine} />{/if}
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
         {/if}
-        {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine)}
+        {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine) && (!runnerRow || needsNode.length > 0)}
           <MachineProviderAvailability {needsNode} />
         {/if}
       </span>
@@ -850,6 +855,7 @@
       machineLabel={displayName}
       backendLabel={$backendLabel$}
       busy={exposing || unexposing}
+      showStateMessage={!runnerRow}
       onUpdateMachine={canUpdateDaemon ? requestDaemonUpdate : undefined}
     />
   {/if}

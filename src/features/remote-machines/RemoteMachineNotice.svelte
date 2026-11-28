@@ -25,6 +25,7 @@
     machineLabel: string;
     backendLabel: string;
     busy?: boolean;
+    showStateMessage?: boolean;
     /** Offered on a machine update-required failure when the row can update that machine. */
     onUpdateMachine?: () => void;
   }
@@ -37,11 +38,14 @@
     machineLabel,
     backendLabel,
     busy = false,
+    showStateMessage = true,
     onUpdateMachine,
   }: Props = $props();
 
   const labels = $derived({ machine: machineLabel, backend: backendLabel });
-  const stateMessage = $derived(machine ? remoteMachineStateMessage(machine, labels) : null);
+  const stateMessage = $derived(
+    machine && showStateMessage ? remoteMachineStateMessage(machine, labels) : null,
+  );
   const retry = $derived(failure ? remoteMachineFailureRetry(failure) : null);
 
   function exposeWith(listener: 'wss' | 'tailcat') {

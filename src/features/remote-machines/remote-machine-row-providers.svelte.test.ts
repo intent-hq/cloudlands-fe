@@ -2,11 +2,12 @@
  * @vitest-environment jsdom
  *
  * Settings → "Where <backend> runs agents": a remote machine row shows
- * connection status and reports when no providers can run.
+ * connection failures and actionable provider requirements.
  */
 import { render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { store } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { setupMachineOrderFixture } from '../../test/machine-order-preview';
 import { machineRowNeedsNode } from './machine-facts';
@@ -40,17 +41,10 @@ describe('remote machine rows while disconnected', () => {
     expect(within(cache).queryByText('No providers ready')).toBeNull();
   });
 
-  it('says so on the runner row of a saved host too', () => {
+  it('omits the generic availability label on the runner row of a saved host', () => {
     const studio = row(renderDisconnected(), 'Studio Mac');
     expect(studio.hasAttribute('data-remote-machine-row')).toBe(true);
-    expect(within(studio).getByText('No providers ready')).toBeTruthy();
-  });
-
-  it('says Disconnected as plain text, not a pill', () => {
-    const garage = row(renderDisconnected(), 'Garage node');
-    const label = garage.querySelector('[data-runner-disconnected]') as HTMLElement;
-    expect(label.textContent).toBe('Disconnected');
-    expect(label.closest('[data-slot="badge"]')).toBeNull();
+    expect(within(studio).queryByText(m.remoteMachines_noProviders_label())).toBeNull();
   });
 
   it('omits the provider availability warning on cloud rows', () => {
@@ -69,16 +63,17 @@ describe('runner status and platforms in the ordered list', () => {
   const dot = (element: HTMLElement) =>
     element.querySelector('[data-remote-machine-dot]') as HTMLElement;
 
-  it('names a runner without a live link in its meta, with no dot', () => {
+  it('omits the disconnected status for an idle runner', () => {
     const garage = row(renderState('disconnected'), 'Garage node');
-    expect(dot(garage)).toBeNull();
-    expect(within(garage).getByText('Disconnected')).toBeTruthy();
+    expect(within(garage).queryByText(m.settings_devices_statusDisconnected_label())).toBeNull();
   });
 
-  it('leaves a problem to its badge, with no dot', () => {
+  it('shows the failure status when a runner is unreachable', () => {
     const garage = row(renderState('exceptions'), 'Garage node');
     expect(dot(garage)).toBeNull();
-    expect(within(garage).getByText('Unreachable')).toBeTruthy();
+    expect(
+      within(garage).getByRole('img', { name: m.remoteMachines_state_unreachable_label() }),
+    ).toBeTruthy();
   });
 
   it('shows the Linux platform on a cloud entry', () => {

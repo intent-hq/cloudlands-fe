@@ -13,7 +13,6 @@
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import { selectRemoteScriptsSupported } from '$store/renderer/slices/scripts/scripts-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import RemoteMachineBadge from './RemoteMachineBadge.svelte';
   import RemoteMachineNotice from './RemoteMachineNotice.svelte';
   import {
     selectCurrentBackendLabel,
@@ -23,7 +22,11 @@
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { machineLoadFacts, needsNodeFact } from './remote-machines-messages';
+  import {
+    machineLoadFacts,
+    needsNodeFact,
+    runnerConnectionStatus,
+  } from './remote-machines-messages';
   import MachineLoad from './MachineLoad.svelte';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
@@ -76,6 +79,9 @@
     );
   });
   const report = $derived(machineRowReport(machine));
+  const runnerStatus = $derived(
+    runnerConnectionStatus(machine, { machine: machine.name, backend: $backendLabel$ }),
+  );
   const needsNode = $derived.by(() => {
     const entries = $catalogEntries$;
     return machineRowNeedsNode(
@@ -127,21 +133,27 @@
       </span>
     {/snippet}
     {#snippet title()}
-      <MachineName name={machine.name} {platform} {platformFallback} {providers} {facts} />
+      <MachineName
+        name={machine.name}
+        {platform}
+        {platformFallback}
+        {providers}
+        {facts}
+        {runnerStatus}
+      />
     {/snippet}
     {#snippet meta()}
       <span
         data-slot="machine-row-meta"
         class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
       >
-        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} showDisconnected />
         <MachineLoad {machine} />
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
             >{m.remoteMachines_scriptsUpdate_label()}</span
           >
         {/if}
-        {#if providers.length === 0 && report}
+        {#if providers.length === 0 && needsNode.length > 0}
           <MachineProviderAvailability {needsNode} />
         {/if}
       </span>
@@ -164,5 +176,6 @@
     machineLabel={machine.name}
     backendLabel={$backendLabel$}
     busy={removing}
+    showStateMessage={false}
   />
 </article>
