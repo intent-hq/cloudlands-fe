@@ -786,16 +786,12 @@
         class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
       >
         {#if exposedMachine}
-          <RemoteMachineBadge
-            machine={exposedMachine}
-            backendLabel={$backendLabel$}
-            showDisconnected={runnerRow}
-          />
+          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
           {#if showLoad}<MachineLoad machine={exposedMachine} />{/if}
         {:else if isNode && exposing}
           <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
         {/if}
-        {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine)}
+        {#if providers.length === 0 && !device.providers && machineRowReport(exposedMachine) && (!runnerRow || needsNode.length > 0)}
           <MachineProviderAvailability {needsNode} />
         {/if}
       </span>

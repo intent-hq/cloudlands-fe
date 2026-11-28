@@ -8696,7 +8696,6 @@
   "remoteMachines_state_revoked_label": "Acceso revocado",
   "remoteMachines_state_unreachable_description": "{backend} no pudo llegar a {machine} la última vez que lo intentó. Lo volverá a intentar cuando necesite el runner.",
   "remoteMachines_state_unreachable_label": "Inaccesible",
-  "remoteMachines_state_connectsOnDemand_label": "Se conecta cuando es necesario",
   "remoteMachines_state_updateRequired_label": "Actualización necesaria",
   "remoteMachines_unexposeAction_label": "Dejar de permitir que {backend} ejecute agentes en este ordenador",
   "remoteMachines_unexpose_confirmTitle": "¿Dejar de permitir que {backend} ejecute agentes en {machine}?",

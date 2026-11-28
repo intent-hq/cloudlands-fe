@@ -134,14 +134,14 @@
         data-slot="machine-row-meta"
         class="inline-flex h-[1lh] items-center gap-1 align-top [&>*+*]:before:mr-1 [&>*+*]:before:content-['·']"
       >
-        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} showDisconnected />
+        <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
         <MachineLoad {machine} />
         {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
           <span class="text-warning-ink" data-machine-scripts-update
             >{m.remoteMachines_scriptsUpdate_label()}</span
           >
         {/if}
-        {#if providers.length === 0 && report}
+        {#if providers.length === 0 && needsNode.length > 0}
           <MachineProviderAvailability {needsNode} />
         {/if}
       </span>

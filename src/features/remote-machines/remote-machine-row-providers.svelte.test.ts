@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Settings → "Where <backend> runs agents": a remote machine row shows
- * connection status and reports when no providers can run.
+ * connection failures and actionable provider requirements.
  */
 import { render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,10 +41,10 @@ describe('remote machine rows while disconnected', () => {
     expect(within(cache).queryByText('No providers ready')).toBeNull();
   });
 
-  it('says so on the runner row of a saved host too', () => {
+  it('omits the generic availability label on the runner row of a saved host', () => {
     const studio = row(renderDisconnected(), 'Studio Mac');
     expect(studio.hasAttribute('data-remote-machine-row')).toBe(true);
-    expect(within(studio).getByText('No providers ready')).toBeTruthy();
+    expect(within(studio).queryByText(m.remoteMachines_noProviders_label())).toBeNull();
   });
 
   it('omits the provider availability warning on cloud rows', () => {
@@ -63,9 +63,8 @@ describe('runner status and platforms in the ordered list', () => {
   const dot = (element: HTMLElement) =>
     element.querySelector('[data-remote-machine-dot]') as HTMLElement;
 
-  it('shows the on-demand status for an idle runner', () => {
+  it('omits the disconnected status for an idle runner', () => {
     const garage = row(renderState('disconnected'), 'Garage node');
-    expect(within(garage).getByText(m.remoteMachines_state_connectsOnDemand_label())).toBeTruthy();
     expect(within(garage).queryByText(m.settings_devices_statusDisconnected_label())).toBeNull();
   });
 
@@ -73,7 +72,6 @@ describe('runner status and platforms in the ordered list', () => {
     const garage = row(renderState('exceptions'), 'Garage node');
     expect(dot(garage)).toBeNull();
     expect(within(garage).getByText(m.remoteMachines_state_unreachable_label())).toBeTruthy();
-    expect(within(garage).queryByText(m.remoteMachines_state_connectsOnDemand_label())).toBeNull();
   });
 
   it('shows the Linux platform on a cloud entry', () => {

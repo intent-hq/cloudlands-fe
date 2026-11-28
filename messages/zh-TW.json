@@ -8696,7 +8696,6 @@
   "remoteMachines_state_revoked_label": "存取權限已撤銷",
   "remoteMachines_state_unreachable_description": "{backend} 上次嘗試時無法連到 {machine}。需要該執行器時會再次嘗試。",
   "remoteMachines_state_unreachable_label": "無法連線",
-  "remoteMachines_state_connectsOnDemand_label": "按需連線",
   "remoteMachines_state_updateRequired_label": "需要更新",
   "remoteMachines_unexposeAction_label": "不再允許 {backend} 在這台電腦上執行代理程式",
   "remoteMachines_unexpose_confirmTitle": "要停止允許 {backend} 在 {machine} 上執行代理程式嗎？",

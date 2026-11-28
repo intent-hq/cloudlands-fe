@@ -8696,7 +8696,6 @@
   "remoteMachines_state_revoked_label": "접근 권한 취소됨",
   "remoteMachines_state_unreachable_description": "{backend}이(가) 마지막 시도에서 {machine}에 연결하지 못했습니다. 러너가 필요할 때 다시 시도합니다.",
   "remoteMachines_state_unreachable_label": "연결할 수 없음",
-  "remoteMachines_state_connectsOnDemand_label": "필요할 때 연결",
   "remoteMachines_state_updateRequired_label": "업데이트 필요",
   "remoteMachines_unexposeAction_label": "{backend}이(가) 이 컴퓨터에서 에이전트를 실행하지 못하게 하기",
   "remoteMachines_unexpose_confirmTitle": "{backend}이(가) {machine}에서 에이전트를 실행하도록 허용하는 것을 중지할까요?",
