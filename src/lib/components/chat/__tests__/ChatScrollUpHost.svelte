@@ -50,9 +50,12 @@
     ).join('\n\n');
   }
 
+  // Rows carry the daemon's transcript `seq`, as current daemons send it, so
+  // ordering follows seq instead of the seq-less timestamp fallback.
   const message = (index: number): AgentMessage =>
     ({
       id: `m-${index}`,
+      seq: index,
       role: index % 2 ? 'assistant' : 'user',
       timestamp: new Date(Date.parse(timestamp) + index * 1000).toISOString(),
       contentBlocks: [{ type: 'text', text: text(index) }],
