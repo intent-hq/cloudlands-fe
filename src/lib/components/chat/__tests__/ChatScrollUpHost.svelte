@@ -51,7 +51,8 @@
   }
 
   // Rows carry the daemon's transcript `seq`, as current daemons send it, so
-  // ordering follows seq instead of the seq-less timestamp fallback.
+  // ordering follows seq. Without it the store takes the old-daemon timestamp
+  // fallback, whose reply-order repair regroups turns at each page start.
   const message = (index: number): AgentMessage =>
     ({
       id: `m-${index}`,
