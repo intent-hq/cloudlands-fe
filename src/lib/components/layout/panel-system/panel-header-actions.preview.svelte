@@ -300,7 +300,6 @@
 {#snippet metadata()}
   <Menu.Footer>
     <Menu.CommandItem
-      class="min-h-0 px-0 py-0"
       label={`Lead specialist · Harness v${harnessVersion}`}
       onclick={() => (lastAction = 'harness')}
     />

@@ -410,7 +410,6 @@
   <Menu.Footer>
     {#if harnessVersion}
       <Menu.CommandItem
-        class="min-h-0 px-0 py-0"
         label={[
           agentSpecialistName,
           m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
