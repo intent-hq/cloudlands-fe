@@ -46,7 +46,16 @@ import {
   hudSaga,
 } from './hud-saga';
 import { HUD_FEED_EVENT_TYPES } from '$features/hud/hud-feed-mapper';
-import { hudActivated, hudDeactivated } from '../hud-slice';
+import { HUD_FEED_LIMIT, hudActivated, hudDeactivated } from '../hud-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import {
+  hydrateHomeWorkspaceSettings,
+  setHomeWorkspaceAside,
+} from '$features/home/home-workspaces-slice';
+import { readHomePersistence } from '$features/home/home-workspaces-persistence';
+import { selectHomePersistenceScope } from '$features/home/home-workspaces-selectors';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import {
   connectionStatusChanged,
   heartbeatFailed,
@@ -494,6 +503,46 @@ describe('HUD subscription (mock backend, real store)', () => {
       agentId: 'agent-1',
     });
     expect(feed[1]).toMatchObject({ colorClass: 'info', agentName: 'Implementor' });
+  });
+
+  it('keeps a visible feed row while a set-aside workspace floods the feed', async () => {
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+    const { connections } = appStore.state;
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: getItems(connections.connections),
+        activeId: connections.activeId,
+        windowBackendId: connections.windowBackendId ?? 'local',
+      }),
+    );
+    admitLegacyPrincipal();
+    const scope = selectHomePersistenceScope.select(appStore.state);
+    expect(scope).not.toBeNull();
+    appStore.dispatch(hydrateHomeWorkspaceSettings(scope, readHomePersistence(undefined)));
+    appStore.dispatch(setHomeWorkspaceAside('ws-aside', 1));
+    await flush();
+
+    backend.pushEvent({
+      type: 'agent:started',
+      workspaceId: WS_ID,
+      id: 'evt-visible',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-1', agentName: 'Implementor' },
+    });
+    for (let i = 0; i < HUD_FEED_LIMIT * 2; i++) {
+      backend.pushEvent({
+        type: 'agent:started',
+        workspaceId: 'ws-aside',
+        id: `evt-aside-${i}`,
+        subscriptionId: SUB_ID,
+        data: { agentId: `aside-agent-${i}`, agentName: 'Coordinator' },
+      });
+    }
+    await flush();
+
+    expect(selectHudFeed.select(appStore.state).map((entry) => entry.id)).toContain('evt-visible');
   });
 
   it('suppresses agent:created and emits ONE AGENT DELEGATED row on the first running transition', async () => {

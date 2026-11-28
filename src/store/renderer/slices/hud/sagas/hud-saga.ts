@@ -71,7 +71,11 @@ import {
   setWorkspaceEntity,
 } from '../../workspace/workspace-slice';
 import { hydrateAgentsRequested, setAgents } from '../../workspace-agents/workspace-agents-slice';
-import { selectHudGridFilter, selectHudWorkspaceEntities } from '../hud-selectors';
+import {
+  selectHudGridFilter,
+  selectHudHiddenSetAsideIds,
+  selectHudWorkspaceEntities,
+} from '../hud-selectors';
 import {
   hudActivated,
   dockActivated,
@@ -508,7 +512,10 @@ function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator
   }
 
   const entry = mapEventToFeedEntry(event);
-  if (entry) yield* put(hudFeedEntryReceived(withFirstStartRewrite(runtime, entry)));
+  if (entry) {
+    const hidden = yield* selectHudHiddenSetAsideIds.effect();
+    yield* put(hudFeedEntryReceived(withFirstStartRewrite(runtime, entry), [...hidden]));
+  }
 
   const agentId = typeof data.agentId === 'string' ? data.agentId : undefined;
   if (

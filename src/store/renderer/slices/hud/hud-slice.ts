@@ -167,7 +167,7 @@ export interface HudCapturedQuestion {
 export interface HudState {
   /** Whether the HUD subscription is running (feed only accumulates then). */
   active: boolean;
-  /** Live feed ring buffer, newest first, capped at HUD_FEED_BUFFER_LIMIT. */
+  /** Live feed, newest first: up to HUD_FEED_LIMIT visible plus HUD_FEED_LIMIT hidden entries. */
   feed: HudFeedEntry[];
   /** Live attention flags from `workspace:attention-changed`; "none" clears. */
   attentionByWorkspaceId: Record<string, HudAttentionFlag>;
@@ -213,13 +213,7 @@ export interface HudState {
   dockMachineSwitchError: boolean;
 }
 
-/** Feed rows the HUD shows. */
 export const HUD_FEED_LIMIT = 50;
-/**
- * Rows kept so hidden set-aside workspaces cannot push visible events out of the feed.
- * @internal
- */
-export const HUD_FEED_BUFFER_LIMIT = 200;
 
 export const initialState: HudState = {
   active: false,
@@ -297,7 +291,9 @@ export const dockConversationsLoaded = createAction<
   [latestByWorkspaceId: Record<string, number>, now: number]
 >('hud/dockConversationsLoaded');
 export const hudDeactivated = createAction('hud/deactivated');
-export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
+/** `hiddenSources`: workspaces the HUD hides now, trimmed separately so they cannot evict visible rows. */
+export const hudFeedEntryReceived =
+  createAction<[entry: HudFeedEntry, hiddenSources?: readonly string[]]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
   createAction<[workspaceId: string, attention: string, raisedAtTs: string]>(
     'hud/attentionChanged',
@@ -426,10 +422,16 @@ hudReducer.with(dockConversationsLoaded, (state, { payload: [latestByWorkspaceId
   dockConversationAtByWorkspaceId: latestByWorkspaceId,
   dockRecencyNow: now,
 }));
-hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
+hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry, hiddenSources = []] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;
-  return { ...state, feed: [entry, ...state.feed].slice(0, HUD_FEED_BUFFER_LIMIT) };
+  const hidden = new Set(hiddenSources);
+  let visibleKept = 0;
+  let hiddenKept = 0;
+  const feed = [entry, ...state.feed].filter((row) =>
+    hidden.has(row.source) ? hiddenKept++ < HUD_FEED_LIMIT : visibleKept++ < HUD_FEED_LIMIT,
+  );
+  return { ...state, feed };
 });
 hudReducer.with(hudAttentionChanged, (state, { payload: [workspaceId, attention, raisedAtTs] }) => {
   // The wire field is single-valued, so any untracked value ("none" —

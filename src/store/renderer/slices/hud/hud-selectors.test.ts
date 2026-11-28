@@ -4243,16 +4243,15 @@ describe('set-aside workspaces stay off the HUD by default', () => {
   });
 
   it('keeps visible events in the feed when a busy set-aside workspace floods it', () => {
-    const busy = Array.from({ length: HUD_FEED_LIMIT + 10 }, (_, i) =>
-      makeEntry(`evt-aside-${i}`, 'ws-aside'),
-    );
-    // mockState prepends each entry, so the active events end up oldest.
-    const base = mockState(
-      [makeWorkspace('ws-active'), makeWorkspace('ws-aside')],
-      [],
-      [makeEntry('evt-active', 'ws-active'), ...busy],
-    );
-    const hidden = withSetAside(base, ['ws-aside']);
+    const base = mockState([makeWorkspace('ws-active'), makeWorkspace('ws-aside')]);
+    let hud = hudReducer(base.hud, hudFeedEntryReceived(makeEntry('evt-active', 'ws-active')));
+    for (let i = 0; i < HUD_FEED_LIMIT * 5; i++) {
+      hud = hudReducer(
+        hud,
+        hudFeedEntryReceived(makeEntry(`evt-aside-${i}`, 'ws-aside'), ['ws-aside']),
+      );
+    }
+    const hidden = withSetAside({ ...base, hud }, ['ws-aside']);
     expect(selectHudFeedItems.select(hidden).map((item) => item.id)).toEqual(['evt-active']);
     const shown = { ...hidden, hud: hudReducer(hidden.hud, hudGridFilterSetAsideToggled()) };
     expect(selectHudFeedItems.select(shown)).toHaveLength(HUD_FEED_LIMIT);

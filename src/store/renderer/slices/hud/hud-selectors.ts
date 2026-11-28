@@ -222,7 +222,7 @@ const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
 const NO_HIDDEN_WORKSPACES: ReadonlySet<string> = new Set();
 
 /** Workspaces set aside on Home that the HUD hides unless its filter shows them. */
-const selectHudHiddenSetAsideIds = store.createSelector((state): ReadonlySet<string> => {
+export const selectHudHiddenSetAsideIds = store.createSelector((state): ReadonlySet<string> => {
   if (state.hud.gridFilter.showSetAside) return NO_HIDDEN_WORKSPACES;
   const records = selectHomeSetAsideRecords.select(state);
   return Object.keys(records).length === 0 ? NO_HIDDEN_WORKSPACES : new Set(Object.keys(records));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeBurnRatePerMin,
-  HUD_FEED_BUFFER_LIMIT,
+  HUD_FEED_LIMIT,
   hudActivated,
   hudAttentionChanged,
   hudDeactivated,
@@ -84,14 +84,48 @@ describe('hud-slice reducer', () => {
     expect(state.feed).toHaveLength(1);
   });
 
-  it('caps the ring buffer at HUD_FEED_BUFFER_LIMIT, dropping the oldest', () => {
+  it('caps the ring buffer at HUD_FEED_LIMIT, dropping the oldest', () => {
     let state = activeState();
-    for (let i = 0; i < HUD_FEED_BUFFER_LIMIT + 5; i++) {
+    for (let i = 0; i < HUD_FEED_LIMIT + 5; i++) {
       state = hudReducer(state, hudFeedEntryReceived(makeEntry(`evt-${i}`)));
     }
-    expect(state.feed).toHaveLength(HUD_FEED_BUFFER_LIMIT);
-    expect(state.feed[0].id).toBe(`evt-${HUD_FEED_BUFFER_LIMIT + 4}`);
+    expect(state.feed).toHaveLength(HUD_FEED_LIMIT);
+    expect(state.feed[0].id).toBe(`evt-${HUD_FEED_LIMIT + 4}`);
     expect(state.feed[state.feed.length - 1].id).toBe('evt-5');
+  });
+
+  it('keeps visible entries however many entries arrive from hidden workspaces', () => {
+    // Failure mode: hidden set-aside traffic evicts every visible entry and empties the feed.
+    let state = activeState();
+    state = hudReducer(state, hudFeedEntryReceived(makeEntry('evt-visible')));
+    for (let i = 0; i < HUD_FEED_LIMIT * 5; i++) {
+      state = hudReducer(
+        state,
+        hudFeedEntryReceived(makeEntry(`evt-hidden-${i}`, { source: 'ws-aside' }), ['ws-aside']),
+      );
+    }
+    expect(state.feed.map((entry) => entry.id)).toContain('evt-visible');
+    expect(state.feed.filter((entry) => entry.source === 'ws-aside')).toHaveLength(HUD_FEED_LIMIT);
+    expect(state.feed[0].id).toBe(`evt-hidden-${HUD_FEED_LIMIT * 5 - 1}`);
+  });
+
+  it('trims visible and hidden entries separately against the current hidden set', () => {
+    let state = activeState();
+    for (let i = 0; i < HUD_FEED_LIMIT; i++) {
+      state = hudReducer(state, hudFeedEntryReceived(makeEntry(`evt-a-${i}`, { source: 'ws-a' })));
+    }
+    // ws-a is now set aside, so its entries stop counting against the visible limit.
+    for (let i = 0; i < HUD_FEED_LIMIT; i++) {
+      state = hudReducer(
+        state,
+        hudFeedEntryReceived(makeEntry(`evt-b-${i}`, { source: 'ws-b' }), ['ws-a']),
+      );
+    }
+    expect(state.feed).toHaveLength(HUD_FEED_LIMIT * 2);
+    // Showing everything again trims back to one limit, newest first.
+    state = hudReducer(state, hudFeedEntryReceived(makeEntry('evt-b-last', { source: 'ws-b' })));
+    expect(state.feed).toHaveLength(HUD_FEED_LIMIT);
+    expect(state.feed.every((entry) => entry.source === 'ws-b')).toBe(true);
   });
 
   it("raises and clears attention flags ('none' removes the key)", () => {
