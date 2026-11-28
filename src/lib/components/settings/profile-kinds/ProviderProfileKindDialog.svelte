@@ -60,6 +60,7 @@
   } from '$lib/provider-profile-kinds';
   import { secretDialogDescription, secretShapeError } from './profile-kind-copy';
   import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
+  import type { ProviderProfileStatus } from '$store/renderer/slices/provider-settings/provider-settings-types';
 
   interface Props {
     open?: boolean;
@@ -72,6 +73,7 @@
     step?: ProfileKindStep;
     kind?: ProfileKindChoice;
     name?: string;
+    /** Defaults on when adding, off when editing (edit passes the saved value). */
     backup?: boolean;
     /** Edit: the profile's saved name (for the title). */
     savedName?: string;
@@ -79,6 +81,10 @@
     folderSuffix?: string;
     /** Edit: the folder saved on the profile. */
     savedFolderPath?: string;
+    /** Edit Different login: the profile's last sign-in check. */
+    signInStatus?: ProviderProfileStatus;
+    /** Edit Different login: the signed-in account, when known. */
+    signInEmail?: string;
     /** The daemon is not the app's own sidecar (restart wording). */
     remoteDaemon?: boolean;
     signIn?: ProfileSignInState;
@@ -103,6 +109,8 @@
     baseUrlSaved?: boolean;
     baseUrlAction?: BaseUrlAction;
     customEndpointOpen?: boolean;
+    /** Different login: the Sign-in folder details are expanded. */
+    detailsOpen?: boolean;
     /** Edit: the profile's saved env (Advanced rows and its change warning). */
     savedEnv?: EnvEntryRead[];
     envRows?: EnvRow[];
@@ -141,10 +149,12 @@
     differentLogin = true,
     keyCheck = true,
     name = $bindable(''),
-    backup = $bindable(false),
+    backup = $bindable(mode === 'add'),
     savedName = '',
     folderSuffix = randomSuffix(),
     savedFolderPath = '',
+    signInStatus,
+    signInEmail,
     remoteDaemon = false,
     signIn = $bindable({ status: 'idle' }),
     nameError,
@@ -159,6 +169,7 @@
     baseUrlSaved = false,
     baseUrlAction = $bindable('keep'),
     customEndpointOpen = $bindable(false),
+    detailsOpen = $bindable(false),
     savedEnv,
     envRows = $bindable(
       savedEnv
@@ -217,7 +228,7 @@
   );
   const description = $derived.by(() => {
     if (picking) return m.settings_providerProfileKinds_pick_description();
-    if (folderKind) return m.settings_providerProfileKinds_differentLoginDialog_description();
+    if (folderKind) return undefined;
     if (secretKind) return secretDialogDescription(provider, secretKind);
     return m.settings_providerProfiles_dialog_description();
   });
@@ -361,7 +372,6 @@
     <div class="space-y-5" data-testid="provider-profile-kind-details" data-kind={kind}>
       <FormField
         label={m.settings_providerProfiles_name_label()}
-        description={m.settings_providerProfiles_name_description()}
         error={nameError}
         required
       >
@@ -379,7 +389,7 @@
             id="provider-profile-kind-backup-description"
             class="type-caption text-muted-foreground"
           >
-            {m.settings_providerProfiles_backup_description()}
+            {m.settings_providerProfiles_backupQuota_description()}
           </p>
         </div>
         <Switch
@@ -400,6 +410,9 @@
           {command}
           disabled={fieldsDisabled}
           {started}
+          {signInStatus}
+          email={signInEmail}
+          bind:detailsOpen
           onSignIn={signInFromEdit}
         />
       {:else if secretKind}

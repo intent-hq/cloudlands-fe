@@ -50,7 +50,10 @@
     selectProviderProfileMutations,
     selectProviderProfileSetups,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
+  import type {
+    ProviderProfileSetup,
+    ProviderProfileStatus,
+  } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
@@ -68,6 +71,9 @@
     static?: boolean;
     /** Different login: the row's ⋯ → Log In (terminal sign-in tracked on the row). */
     onLogIn?: () => void;
+    /** Different login: the row's last sign-in check and account. */
+    signInStatus?: ProviderProfileStatus;
+    signInEmail?: string;
   }
 
   let {
@@ -77,6 +83,8 @@
     profile,
     static: staticPosition = false,
     onLogIn,
+    signInStatus,
+    signInEmail,
   }: Props = $props();
 
   const setups$ = selectProviderProfileSetups();
@@ -366,6 +374,8 @@
   bind:backup
   savedName={profile.name}
   savedFolderPath={facts.folder}
+  {signInStatus}
+  {signInEmail}
   remoteDaemon={!$appOwned$}
   {signIn}
   nameError={errors.name}

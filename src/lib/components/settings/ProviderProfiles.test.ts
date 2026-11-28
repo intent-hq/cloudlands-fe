@@ -600,7 +600,7 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
     render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
   }
 
-  it('offers the backup switch when creating the first profile', async () => {
+  async function createNamed(turnBackupOff: boolean) {
     await seed({ profiles: [] });
     await openCreateDialog();
     const dialog = await screen.findByRole('dialog');
@@ -610,17 +610,29 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
       }),
       { target: { value: 'Main' } },
     );
-    await fireEvent.click(
-      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
-    );
+    const backupSwitch = within(dialog).getByRole('switch', {
+      name: m.settings_providerProfiles_backup_label(),
+    });
+    expect(backupSwitch.getAttribute('aria-checked')).toBe('true');
+    if (turnBackupOff) await fireEvent.click(backupSwitch);
     await fireEvent.click(
       within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
     );
-    expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
+    return lastOf('providerProfiles/createRequested')?.payload as Record<string, unknown>;
+  }
+
+  it('creates a new profile as a backup by default', async () => {
+    expect(await createNamed(false)).toMatchObject({
       baseProviderId: 'codex',
       name: 'Main',
       backup: true,
     });
+  });
+
+  it('creates a profile that is not a backup when the switch is turned off', async () => {
+    const payload = await createNamed(true);
+    expect(payload).toMatchObject({ baseProviderId: 'codex', name: 'Main' });
+    expect(payload.backup).toBeUndefined();
   });
 
   it('treats a profile without backup as not a backup and still offers reorder', async () => {

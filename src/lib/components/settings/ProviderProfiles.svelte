@@ -815,6 +815,10 @@
       provider={kindProvider}
       profile={editedProfile}
       onLogIn={() => logIn(editedProfile)}
+      signInStatus={$orchestrator$ ? undefined : ($status$[editedProfile.id] ?? 'configured')}
+      signInEmail={kindProvider === 'claude' && $status$[editedProfile.id] === 'ready'
+        ? $identity$[editedProfile.id]
+        : undefined}
     />
   {/key}
 {:else}

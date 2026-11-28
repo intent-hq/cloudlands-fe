@@ -113,7 +113,7 @@ describe('ProviderProfileKindDialog (mock-up)', () => {
         onSignIn,
       },
     });
-    expect((screen.getByTestId('provider-profile-folder-path') as HTMLInputElement).value).toBe(
+    expect(screen.getByTestId('provider-profile-folder-path').textContent?.trim()).toBe(
       '~/intent/profiles/codex/personal-7h2m',
     );
     const actions = screen.getByTestId('provider-profile-sign-in-actions');
