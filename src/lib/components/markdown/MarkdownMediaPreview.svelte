@@ -1,6 +1,7 @@
 <script lang="ts">
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
+  import { getWorkspaceVideoSource } from '$shared/types/content-block';
   import {
     workspaceAssetImageSource,
     workspaceAssetVideoSource,
@@ -16,12 +17,19 @@
     opener: HTMLElement;
     mimeType?: string;
     assetLink?: boolean;
+    href?: string;
   }
   let { workspaceId, canUseMedia }: Props = $props();
   let image = $state<Selection | null>(null);
   let video = $state<Selection | null>(null);
   let imageOpen = $state(false);
   let videoOpen = $state(false);
+
+  function linkVideoSource(href: string) {
+    return (
+      workspaceAssetVideoSource(href, workspaceId) ?? getWorkspaceVideoSource(href, workspaceId)
+    );
+  }
 
   export function openImage(element: HTMLImageElement) {
     image = {
@@ -49,9 +57,11 @@
 
   function openVideo(anchor: HTMLAnchorElement): boolean {
     // Validate the raw href: URL normalization must not hide invalid paths/hints.
-    const source = workspaceAssetVideoSource(anchor.getAttribute('href') || '', workspaceId);
+    const href = anchor.getAttribute('href') || '';
+    const source = linkVideoSource(href);
     if (!source || !canUseMedia(source.url)) return false;
     video = {
+      href,
       url: source.url,
       mimeType: source.mimeType,
       name: anchor.textContent?.trim() || undefined,
@@ -63,7 +73,7 @@
 
   $effect(() => {
     // A reused Markdown view must not retain another workspace's preview.
-    if (video && !workspaceAssetVideoSource(video.url, workspaceId)) {
+    if (video && !linkVideoSource(video.href ?? '')) {
       videoOpen = false;
       video = null;
     }
@@ -84,7 +94,7 @@
   />
 {/if}
 
-{#if video && workspaceAssetVideoSource(video.url, workspaceId) && canUseMedia(video.url)}
+{#if video && linkVideoSource(video.href ?? '') && canUseMedia(video.url)}
   <VideoLightbox
     bind:open={videoOpen}
     videoUrl={video.url}
