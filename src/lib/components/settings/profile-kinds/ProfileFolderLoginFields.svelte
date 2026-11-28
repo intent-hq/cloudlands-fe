@@ -1,8 +1,9 @@
 <script lang="ts">
   /**
    * Body of the Different-login screens (add + edit, both providers). Edit
-   * groups the sign-in status with its action; the folder path (and, on add,
-   * the login command) sit in a collapsed details section. Presentational only.
+   * groups the sign-in status with its action; the folder path and, on add,
+   * the starts-fresh warning and login command sit in a collapsed Advanced
+   * section. Presentational only.
    */
   import {
     faCheck,
@@ -95,18 +96,6 @@
           : m.settings_providerProfileKinds_logIn_label()}
       </Button>
     </section>
-  {:else}
-    <p
-      class="flex items-start gap-2 type-caption text-muted-foreground"
-      data-testid="provider-profile-starts-fresh"
-    >
-      <Fa icon={faTriangleExclamation} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
-      <span>
-        {provider === 'codex'
-          ? m.settings_providerProfileKinds_startsFreshCodex_description()
-          : m.settings_providerProfileKinds_startsFreshClaude_description()}
-      </span>
-    </p>
   {/if}
 
   <details class="group" bind:open={detailsOpen} data-testid="provider-profile-folder">
@@ -114,17 +103,35 @@
       class="inline-flex cursor-pointer list-none items-center gap-2 type-caption text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden"
     >
       <Fa icon={faChevronRight} class="size-2.5 transition-transform group-open:rotate-90" />
-      {m.settings_providerProfileKinds_folder_label()}
+      {m.settings_providerProfileKinds_advanced_label()}
     </summary>
-    <div class="mt-2 space-y-1.5 pl-[18px]">
-      <div class="flex min-w-0 items-center gap-1">
-        <code
-          class="min-w-0 break-all font-mono type-caption text-foreground"
-          data-testid="provider-profile-folder-path">{folderPath}</code
+    <div class="mt-2 space-y-3 pl-[18px]">
+      {#if mode === 'add'}
+        <p
+          class="flex items-start gap-2 type-caption text-muted-foreground"
+          data-testid="provider-profile-starts-fresh"
         >
-        {#if mode === 'edit'}
-          <CopyButton text={folderPath} size="sm" />
-        {/if}
+          <Fa icon={faTriangleExclamation} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
+          <span>
+            {provider === 'codex'
+              ? m.settings_providerProfileKinds_startsFreshCodex_description()
+              : m.settings_providerProfileKinds_startsFreshClaude_description()}
+          </span>
+        </p>
+      {/if}
+      <div class="space-y-1">
+        <p class="type-caption text-muted-foreground">
+          {m.settings_providerProfileKinds_folder_label()}
+        </p>
+        <div class="flex min-w-0 items-center gap-1">
+          <code
+            class="min-w-0 break-all font-mono type-caption text-foreground"
+            data-testid="provider-profile-folder-path">{folderPath}</code
+          >
+          {#if mode === 'edit'}
+            <CopyButton text={folderPath} size="sm" />
+          {/if}
+        </div>
       </div>
       {#if mode === 'add' && !started}
         <p class="type-caption text-muted-foreground">
