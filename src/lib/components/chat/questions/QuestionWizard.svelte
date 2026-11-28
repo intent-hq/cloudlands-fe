@@ -20,7 +20,7 @@
   import type { ContextItem } from '../input/context-api';
   import {
     imageFilesToContextItems,
-    imageItemsBytes,
+    admitImageItems,
     INLINE_IMAGE_MAX_BYTES,
     REFERENCE_IMAGE_MAX_BYTES,
   } from '../input/image-context-items';
@@ -193,11 +193,10 @@
     try {
       const maxBytes =
         workspaceId === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES;
-      const images = await imageFilesToContextItems(files, {
-        maxBytes,
-        existingBytes: imageItemsBytes(Object.values(answerImages).flat()),
-      });
-      if (destroyed || completed || draftResolved || images.length === 0) return;
+      const read = await imageFilesToContextItems(files, { maxBytes });
+      if (destroyed || completed || draftResolved) return;
+      const images = admitImageItems(Object.values(answerImages).flat(), read, maxBytes);
+      if (images.length === 0) return;
       answerImages[questionId] = [...(answerImages[questionId] ?? []), ...images];
       updateDraft({
         idx,

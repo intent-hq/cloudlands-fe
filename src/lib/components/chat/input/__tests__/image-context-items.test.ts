@@ -5,7 +5,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { notify } from '$lib/components/patterns/notify';
-import { imageFilesToContextItems, imageItemsBytes } from '../image-context-items';
+import type { ContextItem } from '../context-api';
+import { admitImageItems, imageFilesToContextItems } from '../image-context-items';
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn() },
@@ -72,41 +73,69 @@ describe('imageFilesToContextItems', () => {
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('big.png');
   });
 
-  it('rejects images that would push the message total over maxBytes', async () => {
-    const readFile = vi.fn(readAsPngDataUrl);
-    const items = await imageFilesToContextItems(
+  it('admits images until the message total reaches maxBytes', async () => {
+    const [existing] = await imageFilesToContextItems([makeImageFile('old.png', 3)], {
+      maxBytes: 10,
+      readFile: readAsPngDataUrl,
+    });
+    const added = await imageFilesToContextItems(
       [makeImageFile('a.png', 4), makeImageFile('b.png', 4), makeImageFile('c.png', 2)],
-      { maxBytes: 10, existingBytes: 3, readFile },
+      { maxBytes: 10, readFile: readAsPngDataUrl },
     );
 
-    expect(items.map((i) => i.label)).toEqual(['a.png', 'c.png']);
-    expect(readFile).toHaveBeenCalledTimes(2);
+    const admitted = admitImageItems([existing], added, 10);
+
+    expect(admitted.map((i) => i.label)).toEqual(['a.png', 'c.png']);
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('b.png');
   });
 
-  it('does not count unsupported formats toward the total in a batch', async () => {
-    const items = await imageFilesToContextItems(
+  it('counts unsupported formats, which are still sent as image references', async () => {
+    const added = await imageFilesToContextItems(
       [makeImageFile('scan.tiff', 8, 'image/tiff'), makeImageFile('shot.png', 8)],
-      {
-        maxBytes: 10,
-        readFile: async (file) => `data:${file.type};base64,${PNG_B64}`,
-      },
+      { maxBytes: 10, readFile: async (file) => `data:${file.type};base64,${PNG_B64}` },
     );
 
-    expect(items.map((i) => i.label)).toEqual(['scan.tiff', 'shot.png']);
-    expect(notify.error).not.toHaveBeenCalled();
+    expect(added[0].placementFileName).toBe('scan.tiff');
+    expect(admitImageItems([], added, 10).map((i) => i.label)).toEqual(['scan.tiff']);
   });
 
-  it('counts only images sent as image attachments toward the total', async () => {
-    const [png] = await imageFilesToContextItems([makeImageFile('a.png', 6)], {
+  it('rejects the later of two overlapping reads that together exceed the total', async () => {
+    let composer: ContextItem[] = [];
+    const deferred: Array<() => void> = [];
+    const readFile = () =>
+      new Promise<string>((resolve) =>
+        deferred.push(() => resolve(`data:image/png;base64,${PNG_B64}`)),
+      );
+    const drop = async (name: string) => {
+      const read = await imageFilesToContextItems([makeImageFile(name, 6)], {
+        maxBytes: 10,
+        readFile,
+      });
+      composer = [...composer, ...admitImageItems(composer, read, 10)];
+    };
+
+    const first = drop('first.png');
+    const second = drop('second.png');
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    deferred[1]();
+    await second;
+    deferred[0]();
+    await first;
+
+    expect(composer.map((i) => i.label)).toEqual(['second.png']);
+    expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('first.png');
+  });
+
+  it('counts pasted images by their decoded base64 size', async () => {
+    const pasted: ContextItem = { id: 'p', type: 'file', label: 'p', imageData: PNG_B64 };
+    const added = await imageFilesToContextItems([makeImageFile('a.png', 6)], {
       maxBytes: 100,
       readFile: readAsPngDataUrl,
     });
-    const pasted = { id: 'p', type: 'file' as const, label: 'p', imageData: PNG_B64 };
-    const asFile = { ...pasted, id: 'f', placementFileName: 'scan.heic' };
 
-    expect(imageItemsBytes([png, pasted, asFile])).toBe(6 + 16);
+    expect(admitImageItems([pasted], added, 21)).toHaveLength(0);
+    expect(admitImageItems([pasted], added, 22)).toHaveLength(1);
   });
 
   it('falls back to a generated file name derived from the mime type', async () => {

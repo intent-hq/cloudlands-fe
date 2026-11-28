@@ -279,7 +279,7 @@
   import {
     formatFileSize,
     imageFilesToContextItems,
-    imageItemsBytes,
+    admitImageItems,
     maxMegabytes,
     INLINE_IMAGE_MAX_BYTES,
     REFERENCE_IMAGE_MAX_BYTES,
@@ -1397,17 +1397,17 @@
     if (disposed) return;
     const items = await imageFilesToContextItems(imageFiles, {
       maxBytes: imageMaxBytes,
-      existingBytes: imageItemsBytes(contextItems),
       signal,
       announceSuccess: announceAddedImages,
     });
     if (disposed || signal.aborted) return;
-    for (const item of items) {
+    const admitted = admitImageItems(contextItems, items, imageMaxBytes);
+    for (const item of admitted) {
       if (disposed) return;
       contextItems = [...contextItems, item];
       oncontextAdd?.(item);
     }
-    return items.length > 0;
+    return admitted.length > 0;
   }
 
   /**
