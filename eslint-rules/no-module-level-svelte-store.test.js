@@ -61,8 +61,15 @@ describe('no-module-level-svelte-store guidance', () => {
 });
 
 describe('no-module-level-svelte-store in the repo config', () => {
+  // The rule is syntactic, but eslint.config.js lints main-process files type-aware,
+  // so each such sample built two TypeScript programs: ~8 s idle, 254 s at load ~119.
+  // Turning type information off leaves file scope and rule options from the repo config.
   const eslint = new ESLint({
     cwd: root,
+    overrideConfig: {
+      files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
+      languageOptions: { parserOptions: { project: false, projectService: false } },
+    },
     ruleFilter: ({ ruleId: id }) => id === ruleId,
     cache: false,
   });
@@ -94,6 +101,19 @@ describe('no-module-level-svelte-store in the repo config', () => {
 `;
     const messages = await lint('src/lib/components/FixtureDialog.svelte', component);
     expect(messages.map((message) => message.line)).toEqual([3]);
+  });
+
+  it('lints its samples without TypeScript type information', async () => {
+    for (const file of [
+      'src/main/fixture-dialog-state.ts',
+      'src/features/agent/fixture-dialog-state.ts',
+    ]) {
+      const config = await eslint.calculateConfigForFile(path.join(root, file));
+      expect(config.languageOptions.parserOptions, file).toMatchObject({
+        project: false,
+        projectService: false,
+      });
+    }
   });
 
   it('leaves tests, test helpers and main-process code alone', async () => {
