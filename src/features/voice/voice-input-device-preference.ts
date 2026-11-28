@@ -10,9 +10,9 @@
  * site (never by components or reducers).
  *
  * `null` means "system default" — the recorder omits the device constraint.
- *
- * Dependency-light utility per src/lib AGENTS.md — no stores or services.
+ * Every host view of this app shares the choice.
  */
+import { sharedPreference } from '$lib/utils/shared-preference';
 
 export const VOICE_INPUT_DEVICE_STORAGE_KEY = 'intent.voice.inputDevice';
 
@@ -25,32 +25,40 @@ export const VOICE_INPUT_DEVICE_STORAGE_KEY = 'intent.voice.inputDevice';
  */
 let sessionDeviceId: string | null | undefined;
 
+const storage = sharedPreference<string>({
+  key: VOICE_INPUT_DEVICE_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (typeof stored === 'string' && stored !== '' ? stored : undefined),
+});
+
 /**
  * Read the preferred device id: the in-session selection when one was made,
  * else the persisted value. Absent/blank values fold to the system default.
  */
 export function loadVoiceInputDevicePreference(): string | null {
   if (sessionDeviceId !== undefined) return sessionDeviceId;
-  try {
-    const stored = localStorage.getItem(VOICE_INPUT_DEVICE_STORAGE_KEY);
-    return typeof stored === 'string' && stored !== '' ? stored : null;
-  } catch {
-    return null;
-  }
+  return storage.read() ?? null;
 }
 
 /** Persist the device id (`null` clears back to the system default). */
 export function saveVoiceInputDevicePreference(deviceId: string | null): void {
   sessionDeviceId = deviceId;
-  try {
-    if (deviceId === null) {
-      localStorage.removeItem(VOICE_INPUT_DEVICE_STORAGE_KEY);
-    } else {
-      localStorage.setItem(VOICE_INPUT_DEVICE_STORAGE_KEY, deviceId);
-    }
-  } catch {
-    // Quota/privacy-mode failures degrade to a session-scoped preference.
-  }
+  if (deviceId === null) storage.remove();
+  else storage.write(deviceId);
+}
+
+/**
+ * Calls `listener` with the device id each time another view of this app
+ * changes it. That choice is newer than this view's in-session one.
+ */
+export function onVoiceInputDevicePreferenceChange(
+  listener: (deviceId: string | null) => void,
+): () => void {
+  return storage.subscribe((stored) => {
+    sessionDeviceId = stored ?? null;
+    listener(sessionDeviceId);
+  });
 }
 
 /** Test-only: forget the in-session selection so loads hit localStorage. */

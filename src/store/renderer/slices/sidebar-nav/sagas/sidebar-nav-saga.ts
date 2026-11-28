@@ -1,4 +1,3 @@
-import { buffers, eventChannel } from 'redux-saga';
 import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -6,6 +5,12 @@ import {
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import {
+  persistSharedPreference,
+  sharedPreferenceSaga,
+  watchSharedPreference,
+  type SharedPreferenceSagaOptions,
+} from '../../../utils/shared-preference-saga';
 import { sidebarSectionNavigationSaga } from './sidebar-section-navigation-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -90,6 +95,31 @@ function stringArray(value: unknown): string[] | undefined {
     : undefined;
 }
 
+/** A display choice, not host data: one list for every host view of this app. */
+const hiddenSidebarTabsPreference: SharedPreferenceSagaOptions<string[]> = {
+  key: HIDDEN_SIDEBAR_TABS_KEY,
+  scope: 'app',
+  parse: stringArray,
+  hydrate: (hidden, source) =>
+    hidden !== undefined || source === 'storage'
+      ? hydrateSidebarNav({ hiddenSidebarTabIds: hidden ?? [] })
+      : null,
+  persistOn: setSidebarTabHidden,
+  select: selectHiddenSidebarTabIds.effect,
+};
+
+/** Pins belong to one host; that host's other views follow a change. */
+const pinnedWorkspacesPreference: SharedPreferenceSagaOptions<string[]> = {
+  *key() {
+    return pinnedWorkspacesKey(yield* selectActiveBackendId());
+  },
+  scope: 'host',
+  parse: stringArray,
+  hydrate: (pinned, source) =>
+    source === 'storage' ? hydrateSidebarNav({ pinnedWorkspaceIds: pinned ?? [] }) : null,
+  select: selectLocalPinnedWorkspaceIds.effect,
+};
+
 function* hydrateSidebarNavState(): SagaGenerator<void> {
   try {
     const backendId = yield* selectActiveBackendId();
@@ -112,39 +142,9 @@ function* hydrateSidebarNavState(): SagaGenerator<void> {
     );
     if (tabOrder !== undefined) data.multiSelectTabOrder = tabOrder;
 
-    // A display choice, not host data: one list for every host.
-    const hiddenTabs = stringArray(
-      yield* call(getLocalStorageJSON<unknown>, HIDDEN_SIDEBAR_TABS_KEY),
-    );
-    if (hiddenTabs !== undefined) data.hiddenSidebarTabIds = hiddenTabs;
-
     if (Object.keys(data).length > 0) yield* put(hydrateSidebarNav(data));
   } catch {
     // Hydration is best-effort; malformed or unavailable storage is ignored.
-  }
-}
-
-function* persistHiddenSidebarTabs(): SagaGenerator<void> {
-  try {
-    yield* call(
-      setLocalStorageJSON,
-      HIDDEN_SIDEBAR_TABS_KEY,
-      yield* selectHiddenSidebarTabIds.effect(),
-    );
-  } catch {
-    // Storage failures are non-fatal and must not terminate the watcher.
-  }
-}
-
-function* persistPinnedWorkspaces(): SagaGenerator<void> {
-  try {
-    yield* call(
-      setLocalStorageJSON,
-      pinnedWorkspacesKey(yield* selectActiveBackendId()),
-      yield* selectLocalPinnedWorkspaceIds.effect(),
-    );
-  } catch {
-    // Storage failures are non-fatal and must not terminate the watcher.
   }
 }
 
@@ -156,7 +156,7 @@ function* handleTogglePinWorkspace(
   } catch {
     // A label write failure is surfaced by its own worker; keep persisting local pins.
   }
-  yield* call(persistPinnedWorkspaces);
+  yield* persistSharedPreference(pinnedWorkspacesPreference);
 }
 
 function* persistChiefActiveAgentId(): SagaGenerator<void> {
@@ -295,38 +295,12 @@ function* watchBackendSwitch(): SagaGenerator<void> {
   }
 }
 
-/**
- * Every host's view in this app shares the hidden-icon list (same origin), but
- * each view read it at boot: follow another view's change, so hiding an icon
- * once applies to every host and a later change here does not save a stale list.
- */
-function* watchHiddenSidebarTabsStorage(): SagaGenerator<void> {
-  if (typeof window === 'undefined') return;
-  const changes = eventChannel<string>((emit) => {
-    const onStorage = (event: StorageEvent) => emit(event.key ?? '');
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, buffers.expanding<string>(8));
-  try {
-    while (true) {
-      const key = yield* take(changes);
-      // '' means storage was cleared.
-      if (key !== HIDDEN_SIDEBAR_TABS_KEY && key !== '') continue;
-      const hidden = stringArray(
-        yield* call(getLocalStorageJSON<unknown>, HIDDEN_SIDEBAR_TABS_KEY),
-      );
-      yield* put(hydrateSidebarNav({ hiddenSidebarTabIds: hidden ?? [] }));
-    }
-  } finally {
-    changes.close();
-  }
-}
-
 export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* fork(sidebarSectionNavigationSaga);
   yield* call(hydrateSidebarNavState);
+  yield* sharedPreferenceSaga(hiddenSidebarTabsPreference);
+  yield* watchSharedPreference(pinnedWorkspacesPreference);
   yield* fork(watchBackendSwitch);
-  yield* fork(watchHiddenSidebarTabsStorage);
   yield* fork(watchPinLabelMigration);
   yield* fork(watchAuthoritativeWorkspaceLabels);
   yield* fork(watchAuthoritativeAutoArchiveDisabled);
@@ -334,7 +308,6 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
   yield* takeEvery(setWorkspaceAutoArchiveDisabled, setWorkspaceAutoArchiveDisabledWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
-  yield* takeEvery(setSidebarTabHidden, persistHiddenSidebarTabs);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
   yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
   yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);

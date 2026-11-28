@@ -134,4 +134,19 @@ describe('hud-sound-state master volume', () => {
     state.setHudSoundVolume(Number.NaN);
     expect(state.getHudSoundVolume()).toBe(0.3);
   });
+
+  it("follows another view's change without saving it back", async () => {
+    const state = await loadState();
+    getItemMock.mockImplementation((key) =>
+      key === state.HUD_SOUND_ENABLED_STORAGE_KEY ? 'true' : '0.8',
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: state.HUD_SOUND_ENABLED_STORAGE_KEY }));
+    expect(state.isHudSoundEnabled()).toBe(true);
+    expect(get(state.hudSoundEnabled)).toBe(true);
+    expect(state.getHudSoundVolume()).toBe(0.3);
+
+    window.dispatchEvent(new StorageEvent('storage', { key: state.HUD_SOUND_VOLUME_STORAGE_KEY }));
+    expect(state.getHudSoundVolume()).toBe(0.8);
+    expect(setItemMock).not.toHaveBeenCalled();
+  });
 });

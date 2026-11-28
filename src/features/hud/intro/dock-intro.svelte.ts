@@ -1,4 +1,4 @@
-import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { sharedPreference } from '$lib/utils/shared-preference';
 
 /**
  * "Meet the notch": an intro card the dock shows until the user dismisses it,
@@ -12,10 +12,18 @@ import { safeLocalStorage } from '$lib/utils/safe-storage';
  */
 const STORAGE_KEY = 'intent:dock-intro-seen:v1';
 
+const seenStorage = sharedPreference<true>({
+  key: STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (stored === '1' ? true : undefined),
+  serialize: () => '1',
+});
+
 export const dockIntro = $state({ open: false, hold: false });
 
 export function initDockIntro(): void {
-  dockIntro.open = safeLocalStorage.getItem(STORAGE_KEY) !== '1';
+  dockIntro.open = seenStorage.read() !== true;
   dockIntro.hold = dockIntro.open;
 }
 
@@ -26,7 +34,7 @@ export function releaseDockIntroHold(): void {
 export function dismissDockIntro(): void {
   dockIntro.open = false;
   dockIntro.hold = false;
-  safeLocalStorage.setItem(STORAGE_KEY, '1');
+  seenStorage.write(true);
 }
 
 /**
@@ -35,6 +43,6 @@ export function dismissDockIntro(): void {
  * when the save fails, keeping the card for a retry.
  */
 export function markDockIntroSeen(seen: boolean): void {
-  if (seen) safeLocalStorage.setItem(STORAGE_KEY, '1');
-  else safeLocalStorage.removeItem(STORAGE_KEY);
+  if (seen) seenStorage.write(true);
+  else seenStorage.remove();
 }

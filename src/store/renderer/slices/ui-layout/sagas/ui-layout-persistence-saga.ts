@@ -1,3 +1,4 @@
+import type { Action } from '@redux-saga/types';
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -6,6 +7,11 @@ import {
   setLocalStorageItem,
   setLocalStorageJSON,
 } from '../../../utils/safe-local-storage-saga';
+import {
+  hydrateSharedPreference,
+  watchSharedPreference,
+  type SharedPreferenceSagaOptions,
+} from '../../../utils/shared-preference-saga';
 import {
   hydrateCollapsiblePanelCollapsed,
   hydrateResizablePanelGroupLayout,
@@ -52,30 +58,41 @@ function isSettingsObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function* hydrateEditorSettings(): SagaGenerator<void> {
-  try {
-    const settings = yield* call(getLocalStorageJSON<unknown>, EDITOR_SETTINGS_KEY);
-    if (!isSettingsObject(settings)) return;
+type StoredSettings = Record<string, unknown>;
 
-    if (typeof settings.lineWrapping === 'boolean') {
-      yield* put(setLineWrapping(settings.lineWrapping));
-    }
-    if (typeof settings.foldUnchanged === 'boolean') {
-      yield* put(setFoldUnchanged(settings.foldUnchanged));
-    }
-    if (typeof settings.diffSideBySide === 'boolean') {
-      yield* put(setDiffSideBySide(settings.diffSideBySide));
-    }
-    if (typeof settings.diffIndicators === 'boolean') {
-      yield* put(setDiffIndicators(settings.diffIndicators));
-    }
-  } catch {
-    // Layout persistence is best-effort and must never prevent watcher registration.
-  }
+const parseSettings = (stored: unknown): StoredSettings | undefined =>
+  isSettingsObject(stored) ? stored : undefined;
+
+/** The stored object with `changes` on top: other fields in it belong to other owners. */
+function* mergeIntoStored(key: string, changes: StoredSettings): SagaGenerator<StoredSettings> {
+  const stored = yield* call(getLocalStorageJSON<unknown>, key);
+  return { ...(isSettingsObject(stored) ? stored : {}), ...changes };
 }
 
-function* persistEditorSettings(): SagaGenerator<void> {
-  try {
+const storedFlag = (value: unknown, set: (value: boolean) => Action): Action[] =>
+  typeof value === 'boolean' ? [set(value)] : [];
+
+const editorSettingsPreference: SharedPreferenceSagaOptions<StoredSettings> = {
+  key: EDITOR_SETTINGS_KEY,
+  scope: 'app',
+  parse: parseSettings,
+  hydrate: (settings) => [
+    ...storedFlag(settings?.lineWrapping, setLineWrapping),
+    ...storedFlag(settings?.foldUnchanged, setFoldUnchanged),
+    ...storedFlag(settings?.diffSideBySide, setDiffSideBySide),
+    ...storedFlag(settings?.diffIndicators, setDiffIndicators),
+  ],
+  persistOn: [
+    setLineWrapping,
+    toggleLineWrapping,
+    setFoldUnchanged,
+    toggleFoldUnchanged,
+    setDiffSideBySide,
+    toggleDiffSideBySide,
+    setDiffIndicators,
+    toggleDiffIndicators,
+  ],
+  *select() {
     const lineWrapping = yield* selectLineWrapping.effect();
     const foldUnchanged = yield* selectFoldUnchanged.effect();
     const diffSideBySide = yield* selectDiffSideBySide.effect();
@@ -86,44 +103,45 @@ function* persistEditorSettings(): SagaGenerator<void> {
       typeof diffSideBySide !== 'boolean' ||
       typeof diffIndicators !== 'boolean'
     ) {
-      return;
+      return undefined;
     }
-
-    const stored = yield* call(getLocalStorageJSON<unknown>, EDITOR_SETTINGS_KEY);
-    const settings = isSettingsObject(stored) ? stored : {};
-    yield* call(setLocalStorageJSON, EDITOR_SETTINGS_KEY, {
-      ...settings,
+    return yield* mergeIntoStored(EDITOR_SETTINGS_KEY, {
       lineWrapping,
       foldUnchanged,
       diffSideBySide,
       diffIndicators,
     });
-  } catch {
-    // Layout persistence is best-effort and must never terminate its watcher.
-  }
-}
+  },
+};
 
-function* hydrateSidebarCollapsed(): SagaGenerator<void> {
-  try {
-    const stored = yield* call(getLocalStorageItem, WORKSPACE_LEFT_PANEL_COLLAPSED_KEY);
-    if (stored === 'true' || stored === 'false') {
-      yield* put(setCollapsed(stored === 'true'));
-    }
-  } catch {
-    // Layout persistence is best-effort and must never prevent watcher registration.
-  }
-}
-
-function* persistSidebarCollapsed(): SagaGenerator<void> {
-  try {
+const sidebarCollapsedPreference: SharedPreferenceSagaOptions<boolean> = {
+  key: WORKSPACE_LEFT_PANEL_COLLAPSED_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (stored === 'true' ? true : stored === 'false' ? false : undefined),
+  hydrate: (collapsed) => (collapsed === undefined ? null : setCollapsed(collapsed)),
+  persistOn: [setCollapsed, toggleSidebar],
+  *select() {
     const collapsed = yield* selectIsCollapsed.effect();
-    if (typeof collapsed === 'boolean') {
-      yield* call(setLocalStorageItem, WORKSPACE_LEFT_PANEL_COLLAPSED_KEY, String(collapsed));
-    }
-  } catch {
-    // Layout persistence is best-effort and must never terminate its watcher.
-  }
-}
+    return typeof collapsed === 'boolean' ? collapsed : undefined;
+  },
+};
+
+const sidebarSidePreference: SharedPreferenceSagaOptions<StoredSettings> = {
+  key: LAYOUT_SETTINGS_KEY,
+  scope: 'app',
+  parse: parseSettings,
+  hydrate: (settings) => {
+    const sidebarSide = settings?.sidebarSide;
+    return isSidebarSide(sidebarSide) ? setSidebarSide(sidebarSide) : null;
+  },
+  persistOn: [setSidebarSide, toggleSidebarSide],
+  *select() {
+    const sidebarSide = yield* selectSidebarSide.effect();
+    if (!isSidebarSide(sidebarSide)) return undefined;
+    return yield* mergeIntoStored(LAYOUT_SETTINGS_KEY, { sidebarSide });
+  },
+};
 
 function parseStoredNumber(value: string | null): number | null {
   if (!value) return null;
@@ -217,49 +235,13 @@ function* persistPanelCollapsed(
   }
 }
 
-function* hydrateSidebarSide(): SagaGenerator<void> {
-  try {
-    const settings = yield* call(getLocalStorageJSON<unknown>, LAYOUT_SETTINGS_KEY);
-    if (isSettingsObject(settings) && isSidebarSide(settings.sidebarSide)) {
-      yield* put(setSidebarSide(settings.sidebarSide));
-    }
-  } catch {
-    // Layout persistence is best-effort and must never prevent watcher registration.
-  }
-}
-
-function* persistSidebarSide(): SagaGenerator<void> {
-  try {
-    const sidebarSide = yield* selectSidebarSide.effect();
-    if (!isSidebarSide(sidebarSide)) return;
-
-    const stored = yield* call(getLocalStorageJSON<unknown>, LAYOUT_SETTINGS_KEY);
-    const settings = isSettingsObject(stored) ? stored : {};
-    yield* call(setLocalStorageJSON, LAYOUT_SETTINGS_KEY, { ...settings, sidebarSide });
-  } catch {
-    // Layout persistence is best-effort and must never terminate its watcher.
-  }
-}
-
 export function* uiLayoutPersistenceSaga(): SagaGenerator<void> {
-  yield* call(hydrateSidebarSide);
-  yield* call(hydrateEditorSettings);
-  yield* call(hydrateSidebarCollapsed);
-  yield* takeEvery([setSidebarSide, toggleSidebarSide], persistSidebarSide);
-  yield* takeEvery(
-    [
-      setLineWrapping,
-      toggleLineWrapping,
-      setFoldUnchanged,
-      toggleFoldUnchanged,
-      setDiffSideBySide,
-      toggleDiffSideBySide,
-      setDiffIndicators,
-      toggleDiffIndicators,
-    ],
-    persistEditorSettings,
-  );
-  yield* takeEvery([setCollapsed, toggleSidebar], persistSidebarCollapsed);
+  yield* hydrateSharedPreference(sidebarSidePreference);
+  yield* hydrateSharedPreference(editorSettingsPreference);
+  yield* hydrateSharedPreference(sidebarCollapsedPreference);
+  yield* watchSharedPreference(sidebarSidePreference);
+  yield* watchSharedPreference(editorSettingsPreference);
+  yield* watchSharedPreference(sidebarCollapsedPreference);
   yield* takeEvery(requestResizablePanelSize, hydratePanelSize);
   yield* takeEvery(setResizablePanelSize, persistPanelSize);
   yield* takeEvery(requestResizablePanelGroupLayout, hydratePanelGroupLayout);

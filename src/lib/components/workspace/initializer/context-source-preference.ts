@@ -3,8 +3,10 @@
  * source to localStorage and ordering providers for display.
  *
  * Dependency-light by design — no stores, services, or side effects beyond
- * guarded localStorage access.
+ * guarded localStorage access. The picker reads the saved source each time it
+ * opens, so every host view of this app sees the last one used.
  */
+import { sharedPreference } from '$lib/utils/shared-preference';
 
 export type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
 
@@ -38,25 +40,21 @@ function isContextSource(value: unknown): value is ContextSource {
   return typeof value === 'string' && (ALL_SOURCES as readonly string[]).includes(value);
 }
 
+const lastSourceStorage = sharedPreference<ContextSource>({
+  key: LAST_SOURCE_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (isContextSource(stored) ? stored : undefined),
+});
+
 /** Load the persisted last-used source; null when missing, invalid, or unavailable. */
 export function loadLastUsedSource(): ContextSource | null {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(LAST_SOURCE_STORAGE_KEY);
-    return isContextSource(raw) ? raw : null;
-  } catch {
-    return null;
-  }
+  return lastSourceStorage.read() ?? null;
 }
 
 /** Persist the last-used source; silently no-ops when localStorage is unavailable. */
 export function saveLastUsedSource(source: ContextSource): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LAST_SOURCE_STORAGE_KEY, source);
-  } catch {
-    // localStorage unavailable (e.g., disabled or non-browser environment)
-  }
+  lastSourceStorage.write(source);
 }
 
 /**

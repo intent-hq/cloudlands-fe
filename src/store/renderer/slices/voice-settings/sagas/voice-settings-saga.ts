@@ -1,5 +1,14 @@
 import { buffers, END, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, join, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  fork,
+  join,
+  put,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   isOsTranscriptionAvailable,
@@ -7,12 +16,15 @@ import {
 } from '$features/voice/os-transcription-service';
 import {
   loadVoiceEnginePreference,
+  onVoiceEnginePreferenceChange,
   saveVoiceEnginePreference,
 } from '$features/voice/voice-engine-preference';
 import {
   loadVoiceInputDevicePreference,
+  onVoiceInputDevicePreferenceChange,
   saveVoiceInputDevicePreference,
 } from '$features/voice/voice-input-device-preference';
+import { followSharedPreference } from '$store/renderer/utils/shared-preference-saga';
 import {
   clearVoiceApiKey,
   loadVoiceSettings,
@@ -305,6 +317,16 @@ function* persistWorkspaceVocabularyMaxTerms(
   }
 }
 
+/** Another host view of this app changed the engine or the microphone. */
+function* followVoicePreferences(): SagaGenerator<void> {
+  yield* fork(function* () {
+    yield* followSharedPreference(onVoiceEnginePreferenceChange, setVoiceEngineValue);
+  });
+  yield* fork(function* () {
+    yield* followSharedPreference(onVoiceInputDevicePreferenceChange, setVoiceInputDeviceValue);
+  });
+}
+
 export function* voiceSettingsSaga(): SagaGenerator<void> {
   const vocabularySnapshot: VocabularySnapshot = {
     previous: yield* selectVoiceVocabulary.effect(),
@@ -331,5 +353,6 @@ export function* voiceSettingsSaga(): SagaGenerator<void> {
     ),
     takeLatest(changeVoiceWorkspaceVocabularyMaxTerms, persistWorkspaceVocabularyMaxTerms),
     call(watchVoiceDeviceChanges),
+    call(followVoicePreferences),
   ]);
 }

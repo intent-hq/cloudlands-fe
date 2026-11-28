@@ -7,9 +7,9 @@
  * the daemon's settings would let one client turn on an engine another host
  * cannot run. It therefore lives in renderer localStorage, read/written only
  * by the voice-settings store-service (never by components or reducers).
- *
- * Dependency-light utility per src/lib AGENTS.md — no stores or services.
+ * Every host view of this app shares the choice.
  */
+import { sharedPreference } from '$lib/utils/shared-preference';
 
 /** Transcription engines: the daemon's cloud providers or local OS dictation. */
 export type VoiceEngine = 'daemon' | 'os';
@@ -20,21 +20,24 @@ export function isVoiceEngine(value: unknown): value is VoiceEngine {
   return value === 'daemon' || value === 'os';
 }
 
+const storage = sharedPreference<VoiceEngine>({
+  key: VOICE_ENGINE_STORAGE_KEY,
+  scope: 'app',
+  format: 'text',
+  parse: (stored) => (isVoiceEngine(stored) ? stored : undefined),
+});
+
 /** Read the persisted engine; malformed/absent values fold to `daemon`. */
 export function loadVoiceEnginePreference(): VoiceEngine {
-  try {
-    const stored = localStorage.getItem(VOICE_ENGINE_STORAGE_KEY);
-    return isVoiceEngine(stored) ? stored : 'daemon';
-  } catch {
-    return 'daemon';
-  }
+  return storage.read() ?? 'daemon';
 }
 
 /** Persist the engine choice; storage failures are non-fatal (session-only). */
 export function saveVoiceEnginePreference(engine: VoiceEngine): void {
-  try {
-    localStorage.setItem(VOICE_ENGINE_STORAGE_KEY, engine);
-  } catch {
-    // Quota/privacy-mode failures degrade to a session-scoped preference.
-  }
+  storage.write(engine);
+}
+
+/** Calls `listener` with the engine each time another view of this app changes it. */
+export function onVoiceEnginePreferenceChange(listener: (engine: VoiceEngine) => void): () => void {
+  return storage.subscribe((engine) => listener(engine ?? 'daemon'));
 }

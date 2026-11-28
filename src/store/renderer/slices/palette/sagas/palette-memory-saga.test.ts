@@ -218,4 +218,25 @@ describe('paletteMemorySaga', () => {
     expect(picks[0].query).toBe('q0');
     expect(picks.at(-1)?.query).toBe(`q${MAX_PALETTE_PICKS - 1}`);
   });
+
+  it('merges what another view of the same daemon saved', async () => {
+    const view = startApp();
+    view.dispatch(recordPalettePick('ag', 'agent:this-view', NOW));
+    const other = startApp();
+    other.dispatch(recordPalettePick('zz', 'agent:other-view', NOW));
+    await other.stop();
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    expect(getPalettePicks(view.palette()).map((pick) => pick.itemKey)).toEqual([
+      'agent:this-view',
+    ]);
+    window.dispatchEvent(new StorageEvent('storage', { key: PALETTE_MEMORY_STORAGE_KEY }));
+    await Promise.resolve();
+
+    expect(
+      getPalettePicks(view.palette())
+        .map((pick) => pick.itemKey)
+        .sort(),
+    ).toEqual(['agent:other-view', 'agent:this-view']);
+  });
 });

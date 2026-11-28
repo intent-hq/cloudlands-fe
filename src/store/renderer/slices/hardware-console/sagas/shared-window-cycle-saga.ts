@@ -15,6 +15,7 @@ import {
   type WindowCyclePreference,
 } from '$features/hardware-console/actions/window-cycle-preference';
 import { createLogger } from '$lib/utils/client-logger';
+import { onSharedStorageChange, sharedStorageChangeAffects } from '$lib/utils/shared-preference';
 import { getLocalStorageJSON, setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
 import {
   selectSharedWindowCycleActive,
@@ -51,12 +52,11 @@ function* sharedWindowCycle() {
   });
   const changes = eventChannel<boolean>((emit) => {
     refreshPreference = () => emit(true);
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === WINDOW_CYCLE_STORAGE_KEY || event.key === null) emit(true);
-    };
-    window.addEventListener('storage', onStorage);
+    const stop = onSharedStorageChange((key) => {
+      if (sharedStorageChangeAffects(key, WINDOW_CYCLE_STORAGE_KEY)) emit(true);
+    });
     emit(true);
-    return () => window.removeEventListener('storage', onStorage);
+    return stop;
   }, buffers.sliding(1));
   // With the machine rail on, the key shows the window's next own machine instead.
   let nextMachine: string | null = null;

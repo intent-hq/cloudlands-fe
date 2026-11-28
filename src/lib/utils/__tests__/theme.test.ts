@@ -344,6 +344,28 @@ describe('ThemeManager custom theme support', () => {
     expect(manager.getCustomThemeName()).toBe('Solarized Light');
     expect(manager.isDark()).toBe(false);
   });
+
+  it('follows a theme another host view saved, without saving it back', () => {
+    const ls = getLocalStorageMock();
+    expect(manager.getTheme()).toBe('system');
+    ls.getItem.mockImplementation((key: string) => {
+      if (key === 'theme') return 'dark';
+      if (key === 'custom-vscode-theme') return JSON.stringify(SOLARIZED_LIGHT);
+      return null;
+    });
+    window.dispatchEvent(new StorageEvent('storage', { key: 'chat:auroraEnabled' }));
+    expect(manager.getTheme()).toBe('system');
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'theme' }));
+    expect(manager.getTheme()).toBe('dark');
+    expect(manager.getCustomThemeName()).toBe('Solarized Light');
+
+    ls.getItem.mockImplementation((key: string) => (key === 'theme' ? 'dark' : null));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'custom-vscode-theme' }));
+    expect(manager.hasCustomTheme()).toBe(false);
+    expect(ls.setItem).not.toHaveBeenCalled();
+    expect(ls.removeItem).not.toHaveBeenCalled();
+  });
 });
 
 describe.each(['dock', 'dock-annotation'])('%s window appearance', (windowKind) => {

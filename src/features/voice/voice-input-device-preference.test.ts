@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   loadVoiceInputDevicePreference,
+  onVoiceInputDevicePreferenceChange,
   resetVoiceInputDevicePreferenceSession,
   saveVoiceInputDevicePreference,
   VOICE_INPUT_DEVICE_STORAGE_KEY,
@@ -79,5 +80,20 @@ describe('load/saveVoiceInputDevicePreference', () => {
     getItemMock.mockReturnValue('mic-stale');
     saveVoiceInputDevicePreference(null);
     expect(loadVoiceInputDevicePreference()).toBeNull();
+  });
+
+  it("takes another view's selection over this view's in-session one", () => {
+    saveVoiceInputDevicePreference('mic-here');
+    const seen: Array<string | null> = [];
+    const stop = onVoiceInputDevicePreferenceChange((deviceId) => seen.push(deviceId));
+
+    getItemMock.mockReturnValue('mic-there');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    expect(loadVoiceInputDevicePreference()).toBe('mic-here');
+    window.dispatchEvent(new StorageEvent('storage', { key: VOICE_INPUT_DEVICE_STORAGE_KEY }));
+    stop();
+
+    expect(seen).toEqual(['mic-there']);
+    expect(loadVoiceInputDevicePreference()).toBe('mic-there');
   });
 });

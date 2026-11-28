@@ -23,6 +23,7 @@ import {
   homeHiddenReposSynced,
 } from './home-workspaces-slice';
 import { homeSetAsideSaga } from './home-set-aside-saga';
+import { onSharedStorageChange } from '$lib/utils/shared-preference';
 
 import {
   getLocalStorageJSON,
@@ -140,14 +141,13 @@ export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
   }
 }
 
-/** Keeps set-aside and hidden-repository records in step across app windows. */
+/** Keeps set-aside and hidden-repository records in step across app windows and host views. */
 function* homeSetAsideStorageSyncSaga(): SagaGenerator<void> {
   if (typeof window === 'undefined') return;
-  const changes = eventChannel<string>((emit) => {
-    const onStorage = (event: StorageEvent) => emit(event.key ?? '');
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, buffers.expanding<string>(8));
+  const changes = eventChannel<string>(
+    (emit) => onSharedStorageChange((key) => emit(key ?? '')),
+    buffers.expanding<string>(8),
+  );
   try {
     while (true) {
       const key = yield* take(changes);
