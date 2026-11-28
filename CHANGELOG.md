@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.398.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.398.1...v2.398.2) (2026-11-28)
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** keep hosts in the rail when their client cannot be built ([#5143](https://github.com/intent-hq/cloudlands-fe/issues/5143)) ([1c271bd](https://github.com/intent-hq/cloudlands-fe/commit/1c271bd8d5e3da49eca462a63447c04f0ab6f5c5))
+* **menu:** give menu footer items the standard row hover ([#5145](https://github.com/intent-hq/cloudlands-fe/issues/5145)) ([da5bf8b](https://github.com/intent-hq/cloudlands-fe/commit/da5bf8bb4cd6ca1a69078407c3221924ee7b1c47))
+* show runner connection status in tooltips ([#5144](https://github.com/intent-hq/cloudlands-fe/issues/5144)) ([d3755ff](https://github.com/intent-hq/cloudlands-fe/commit/d3755ff2140adc3f2bdd85bc74e998e023e832d6))
+
 ## [2.398.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.398.0...v2.398.1) (2026-11-28)
 
 
