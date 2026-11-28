@@ -85,11 +85,12 @@ export function remoteMachineStateMessage(machine: RemoteMachine, labels: Labels
   }
 }
 
-/** Short status badge text and colour for an exposed machine. */
-export function remoteMachineBadge(
-  machine: RemoteMachine,
-  backend: string,
-): { label: string; color: 'green' | 'amber' | 'red' } {
+interface MachineProblem {
+  label: string;
+  color: 'amber' | 'red';
+}
+
+export function remoteMachineProblem(machine: RemoteMachine): MachineProblem | null {
   switch (machine.state) {
     case 'revoked':
       return { label: m.remoteMachines_state_revoked_label(), color: 'red' };
@@ -98,8 +99,30 @@ export function remoteMachineBadge(
     case 'update-required':
       return { label: m.remoteMachines_state_updateRequired_label(), color: 'amber' };
     default:
-      return { label: m.remoteMachines_state_available_label({ backend }), color: 'green' };
+      return null;
   }
+}
+
+export interface RunnerConnectionStatus {
+  label: string;
+  color?: MachineProblem['color'];
+  description?: string | null;
+}
+
+export function runnerConnectionStatus(
+  machine: RemoteMachine,
+  labels: Labels,
+): RunnerConnectionStatus {
+  const problem = remoteMachineProblem(machine);
+  if (problem) {
+    return { ...problem, description: remoteMachineStateMessage(machine, labels) };
+  }
+  return {
+    label:
+      machine.state === 'connected'
+        ? m.settings_devices_statusConnected_label()
+        : m.remoteMachines_state_idle_label(),
+  };
 }
 
 export function runningAgentsLabel(count: number): string {

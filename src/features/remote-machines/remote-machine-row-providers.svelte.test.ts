@@ -71,7 +71,9 @@ describe('runner status and platforms in the ordered list', () => {
   it('shows the failure status when a runner is unreachable', () => {
     const garage = row(renderState('exceptions'), 'Garage node');
     expect(dot(garage)).toBeNull();
-    expect(within(garage).getByText(m.remoteMachines_state_unreachable_label())).toBeTruthy();
+    expect(
+      within(garage).getByRole('img', { name: m.remoteMachines_state_unreachable_label() }),
+    ).toBeTruthy();
   });
 
   it('shows the Linux platform on a cloud entry', () => {

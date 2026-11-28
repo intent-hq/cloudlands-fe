@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import GraphIcon from 'phosphor-svelte/lib/GraphIcon';
+  import WarningIcon from 'phosphor-svelte/lib/WarningIcon';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -13,7 +14,7 @@
     type MachinePlatform,
     type MachineRowProvider,
   } from './machine-facts';
-  import type { MachineFact } from './remote-machines-messages';
+  import type { MachineFact, RunnerConnectionStatus } from './remote-machines-messages';
 
   let {
     name,
@@ -23,6 +24,7 @@
     providers,
     hostOnly = false,
     versionWarning = null,
+    runnerStatus,
     facts = [],
     tooltipOpen = false,
   }: {
@@ -35,6 +37,7 @@
     hostOnly?: boolean;
     /** Its intentd is older than this app's: an orange dot after the name (its accessible name). */
     versionWarning?: string | null;
+    runnerStatus?: RunnerConnectionStatus;
     /** Short facts such as version, agents, CPU and memory, listed before the OS. */
     facts?: MachineFact[];
     /** Previews and tests: show the tooltip without hovering. */
@@ -43,7 +46,13 @@
 
   const providersLabelId = $props.id();
   const hasPlatform = $derived(!!(platform || platformFallback));
-  const hasTooltip = $derived(hostOnly || facts.length > 0 || hasPlatform || providers.length > 0);
+  const hasFacts = $derived(
+    !!runnerStatus || facts.length > 0 || hasPlatform || providers.length > 0,
+  );
+  const hasTooltip = $derived(hostOnly || hasFacts);
+  const statusClass = $derived(
+    runnerStatus?.color === 'red' ? 'text-danger' : runnerStatus?.color ? 'text-warning-ink' : '',
+  );
 </script>
 
 {#snippet dot()}
@@ -73,6 +82,15 @@
         {@render dot()}
       </span>
     {/if}
+    {#if runnerStatus?.color}
+      <span
+        role="img"
+        aria-label={runnerStatus.label}
+        class={cn('inline-flex shrink-0', statusClass)}
+      >
+        <WarningIcon size={15} aria-hidden="true" />
+      </span>
+    {/if}
   </span>
 {/snippet}
 
@@ -88,13 +106,17 @@
         {#if hostOnly}
           <span>{m.settings_devices_hostOnly_tooltip()}</span>
         {/if}
-        {#if facts.length > 0 || hasPlatform || providers.length > 0}
+        {#if hasFacts}
           <dl
             class={cn(
               'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3',
               hostOnly && 'border-t border-border pt-3',
             )}
           >
+            {#if runnerStatus}
+              <dt class="text-muted-foreground">{m.settings_devices_status_label()}</dt>
+              <dd class={statusClass}>{runnerStatus.label}</dd>
+            {/if}
             {#each facts as fact (fact.label)}
               <dt class="text-muted-foreground">{fact.label}</dt>
               <dd
@@ -123,6 +145,9 @@
               </dd>
             {/if}
           </dl>
+        {/if}
+        {#if runnerStatus?.description}
+          <p class="max-w-64 text-muted-foreground">{runnerStatus.description}</p>
         {/if}
       </div>
     {/snippet}
