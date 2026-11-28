@@ -12,7 +12,7 @@
   }: {
     machine: RemoteMachine;
     backendLabel: string;
-    /** Runner rows have no status dot, so a disconnected runner says so. */
+    /** Show the on-demand connection label for idle runner rows. */
     showDisconnected?: boolean;
   } = $props();
   const badge = $derived(remoteMachineBadge(machine, backendLabel));
@@ -21,5 +21,5 @@
 {#if badge.color !== 'green'}
   <Badge variant="dot" color={badge.color}>{badge.label}</Badge>
 {:else if showDisconnected && machine.state === 'disconnected'}
-  <span data-runner-disconnected>{m.settings_devices_statusDisconnected_label()}</span>
+  <span>{m.remoteMachines_state_connectsOnDemand_label()}</span>
 {/if}

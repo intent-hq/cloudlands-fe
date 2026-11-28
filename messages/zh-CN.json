@@ -8696,6 +8696,7 @@
   "remoteMachines_state_revoked_label": "访问权限已撤销",
   "remoteMachines_state_unreachable_description": "{backend} 上次尝试时无法访问 {machine}。需要该运行器时会再次尝试。",
   "remoteMachines_state_unreachable_label": "无法连接",
+  "remoteMachines_state_connectsOnDemand_label": "按需连接",
   "remoteMachines_state_updateRequired_label": "需要更新",
   "remoteMachines_unexposeAction_label": "不再允许 {backend} 在这台电脑上运行智能体",
   "remoteMachines_unexpose_confirmTitle": "要停止允许 {backend} 在 {machine} 上运行智能体吗？",
