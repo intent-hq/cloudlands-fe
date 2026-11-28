@@ -170,6 +170,7 @@ export function createHudLeftColumnPreview() {
   const previousWorkspaces = getItems(before.workspaces);
   const previousHasLoaded = before.hasLoaded;
   const previousBackendId = before.loadedBackendId ?? undefined;
+  const previousCapabilityContext = before.capabilityContext;
   let seededSessions: AgentSession[] = [];
 
   function clearSessions() {
@@ -200,7 +201,11 @@ export function createHudLeftColumnPreview() {
       );
       appStore.dispatch(replaceWorkspaceList(workspaces));
       appStore.dispatch(
-        setWorkspaceHasLoaded(fleet !== 'loading', getActiveBackendId(appStore.state)),
+        setWorkspaceHasLoaded(
+          fleet !== 'loading',
+          getActiveBackendId(appStore.state),
+          previousCapabilityContext,
+        ),
       );
       if (sessions.length > 0) {
         appStore.dispatch(bulkUpsertSessions(sessions, { preserveExplicitRuntimeFlags: false }));
@@ -211,7 +216,9 @@ export function createHudLeftColumnPreview() {
     dispose() {
       clearSessions();
       appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
-      appStore.dispatch(setWorkspaceHasLoaded(previousHasLoaded, previousBackendId));
+      appStore.dispatch(
+        setWorkspaceHasLoaded(previousHasLoaded, previousBackendId, previousCapabilityContext),
+      );
     },
   };
 }

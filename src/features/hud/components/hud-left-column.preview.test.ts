@@ -75,7 +75,7 @@ describe('hud-left-column preview states', () => {
 });
 
 describe('hud-left-column preview teardown', () => {
-  it('restores the workspace list and loaded flag it replaced', async () => {
+  it('restores the workspace list, loaded flag and capability context it replaced', async () => {
     const own = {
       id: 'app-workspace' as WorkspaceId,
       title: 'App workspace',
@@ -88,7 +88,7 @@ describe('hud-left-column preview teardown', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     } as Workspace;
     appStore.dispatch(setWorkspaceEntity(own));
-    appStore.dispatch(setWorkspaceHasLoaded(false));
+    appStore.dispatch(setWorkspaceHasLoaded(false, undefined, 'guest-session-context'));
 
     const view = render(Preview, { props: states.loaded.props });
     await waitFor(() => expect(appStore.state.workspace.hasLoaded).toBe(true));
@@ -98,5 +98,6 @@ describe('hud-left-column preview teardown', () => {
       'app-workspace',
     ]);
     expect(appStore.state.workspace.hasLoaded).toBe(false);
+    expect(appStore.state.workspace.capabilityContext).toBe('guest-session-context');
   });
 });
