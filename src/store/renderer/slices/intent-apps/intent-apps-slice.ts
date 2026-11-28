@@ -1,10 +1,10 @@
 /**
  * Intent Apps Slice (Labs)
  *
- * A read-through view of the app library that main owns (local daemon,
- * `docs/protocol/methods/apps.md`). Main's reply or `intent-apps:changed`
+ * A read-through view of the app library that main owns: the library of the
+ * daemon of this window's machine (`docs/protocol/methods/apps.md`). Main's reply or `intent-apps:changed`
  * push is the only thing that changes `library`; the renderer sends user
- * requests (install, approve, revoke, uninstall, open), and the saga carries
+ * requests (install a package, approve, revoke, uninstall, open), and the saga carries
  * them and records their outcome here so the Settings dialogs can show it.
  */
 
@@ -19,11 +19,17 @@ import {
 
 export type IntentAppsActionKind = 'install' | 'approve' | 'revoke' | 'uninstall' | 'open' | 'lab';
 
-export interface IntentAppsInstallRequest {
-  workspaceId: string;
-  path: string;
-  replace?: boolean;
-  dryRun?: boolean;
+/**
+ * A package the user picked or dropped, uploaded to the window's machine and
+ * checked with a dry run: the upload the install uses, the app it holds, and
+ * whether installing it replaces an installed app of the same id.
+ */
+export interface IntentAppsPackageInstall {
+  uploadId: string;
+  replace: boolean;
+  preview: IntentAppInstallResult;
+  /** The install succeeded and ended the upload; only the approval is left. */
+  installed: boolean;
 }
 
 export interface IntentAppsApproveRequest {
@@ -45,10 +51,8 @@ export interface IntentAppsSliceState {
     appId: string | null;
     error: IntentAppsActionError;
   } | null;
-  /** The last dry-run install result, for the install dialog's preview. */
-  installPreview: IntentAppInstallResult | null;
-  /** The last completed install, so the dialog can close and offer approval. */
-  installed: IntentAppInstallResult | null;
+  /** The checked package the install dialog shows; null when no install is under way. */
+  packageInstall: IntentAppsPackageInstall | null;
   /** Icon data URLs by `<appId>@<bundleHash>` (null: the app has none or it did not load). */
   icons: Record<string, string | null>;
 }
@@ -58,8 +62,7 @@ const initialState: IntentAppsSliceState = {
   loaded: false,
   busy: null,
   failure: null,
-  installPreview: null,
-  installed: null,
+  packageInstall: null,
   icons: {},
 };
 
@@ -68,10 +71,22 @@ export const intentAppsStateReceived = createAction<[state: IntentAppsState]>(
 );
 export const intentAppsLabRequested = createAction<[enabled: boolean]>('intentApps/labRequested');
 export const intentAppsRefreshRequested = createAction('intentApps/refreshRequested');
-export const intentAppInstallRequested = createAction<[request: IntentAppsInstallRequest]>(
-  'intentApps/installRequested',
+/** "Install app…": the native picker for a package file or a folder. */
+export const intentAppPackagePickRequested = createAction('intentApps/packagePickRequested');
+/** A package path from the picker or a drop: check it with a dry run. */
+export const intentAppPackageChosen = createAction<[path: string]>('intentApps/packageChosen');
+/** Install the checked package and approve it with these features. */
+export const intentAppPackageInstallRequested = createAction<[features: string[]]>(
+  'intentApps/packageInstallRequested',
 );
-export const intentAppInstallDialogReset = createAction('intentApps/installDialogReset');
+/** The checked package is installed (its upload is used up); the review keeps the approval. */
+export const intentAppPackageInstalled = createAction<[uploadId: string]>(
+  'intentApps/packageInstalled',
+);
+/** Close the install review; a package that was not installed is discarded. */
+export const intentAppPackageDismissed = createAction<[uploadId: string | null]>(
+  'intentApps/packageDismissed',
+);
 export const intentAppApproveRequested = createAction<[request: IntentAppsApproveRequest]>(
   'intentApps/approveRequested',
 );
@@ -90,11 +105,9 @@ export const intentAppsActionFailed =
   createAction<[kind: IntentAppsActionKind, appId: string | null, error: IntentAppsActionError]>(
     'intentApps/actionFailed',
   );
-export const intentAppInstallPreviewReceived = createAction<[result: IntentAppInstallResult]>(
-  'intentApps/installPreviewReceived',
+export const intentAppPackageChecked = createAction<[packageInstall: IntentAppsPackageInstall]>(
+  'intentApps/packageChecked',
 );
-export const intentAppInstalled =
-  createAction<[result: IntentAppInstallResult]>('intentApps/installed');
 export const intentAppIconReceived =
   createAction<[key: string, url: string | null]>('intentApps/iconReceived');
 
@@ -115,20 +128,20 @@ intentAppsReducer.with(intentAppsActionFailed, (state, { payload: [kind, appId, 
   busy: null,
   failure: { kind, appId, error },
 }));
-intentAppsReducer.with(intentAppInstallPreviewReceived, (state, { payload: [result] }) => ({
+intentAppsReducer.with(intentAppPackageChecked, (state, { payload: [packageInstall] }) => ({
   ...state,
-  installPreview: result,
+  packageInstall,
 }));
-intentAppsReducer.with(intentAppInstalled, (state, { payload: [result] }) => ({
+intentAppsReducer.with(intentAppPackageInstalled, (state, { payload: [uploadId] }) =>
+  state.packageInstall?.uploadId === uploadId
+    ? { ...state, packageInstall: { ...state.packageInstall, installed: true } }
+    : state,
+);
+intentAppsReducer.with(intentAppPackageDismissed, (state) => ({
   ...state,
-  installPreview: null,
-  installed: result,
-}));
-intentAppsReducer.with(intentAppInstallDialogReset, (state) => ({
-  ...state,
-  installPreview: null,
-  installed: null,
-  failure: state.failure?.kind === 'install' ? null : state.failure,
+  packageInstall: null,
+  failure:
+    state.failure?.kind === 'install' || state.failure?.kind === 'approve' ? null : state.failure,
 }));
 intentAppsReducer.with(intentAppIconReceived, (state, { payload: [key, url] }) => ({
   ...state,

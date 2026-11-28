@@ -8,23 +8,35 @@
  */
 
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { all, call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  fork,
+  put,
+  take,
+  takeEvery,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
-  IntentAppInstallResult,
+  IntentAppPackageInstallResult,
   IntentAppsActionResult,
   IntentAppsState,
 } from '$shared/intent-apps/intent-apps-types';
-import { selectIntentAppIcons } from '../intent-apps-selectors';
+import { selectIntentAppIcons, selectIntentAppPackageInstall } from '../intent-apps-selectors';
 import {
   intentAppApproveRequested,
   intentAppIconReceived,
-  intentAppInstalled,
-  intentAppInstallPreviewReceived,
-  intentAppInstallRequested,
   intentAppOpenRequested,
+  intentAppPackageChecked,
+  intentAppPackageChosen,
+  intentAppPackageDismissed,
+  intentAppPackageInstalled,
+  intentAppPackageInstallRequested,
+  intentAppPackagePickRequested,
   intentAppRevokeRequested,
   intentAppsActionFailed,
   intentAppsActionFinished,
@@ -35,8 +47,13 @@ import {
   intentAppUninstallRequested,
   type IntentAppsActionKind,
   type IntentAppsApproveRequest,
-  type IntentAppsInstallRequest,
 } from '../intent-apps-slice';
+
+/** A package install request: a package file or folder on this computer, or an earlier upload. */
+type PackageInstallRequest = ({ path: string } | { uploadId: string }) & {
+  replace?: boolean;
+  dryRun?: boolean;
+};
 
 const logger = createLogger('IntentAppsSaga');
 const INTENT_APPS = IPC_CHANNELS.INTENT_APPS;
@@ -57,13 +74,18 @@ const intentAppsRequests = {
   setLab: async (enabled: boolean): Promise<IntentAppsState | null> =>
     ((await getApi()?.invoke(INTENT_APPS.SET_LAB, { enabled })) as IntentAppsState | undefined) ??
     null,
+  pickPackage: async (): Promise<{ path: string } | null> =>
+    ((await getApi()?.invoke(INTENT_APPS.PICK_PACKAGE, {})) as { path: string } | null) ?? null,
+  discardPackage: async (uploadId: string): Promise<void> => {
+    await getApi()?.invoke(INTENT_APPS.DISCARD_PACKAGE, { uploadId });
+  },
   install: async (
-    request: IntentAppsInstallRequest,
-  ): Promise<IntentAppsActionResult<IntentAppInstallResult>> =>
+    request: PackageInstallRequest,
+  ): Promise<IntentAppsActionResult<IntentAppPackageInstallResult>> =>
     (await getApi()?.invoke(
       INTENT_APPS.INSTALL,
       request,
-    )) as IntentAppsActionResult<IntentAppInstallResult>,
+    )) as IntentAppsActionResult<IntentAppPackageInstallResult>,
   approve: async (request: IntentAppsApproveRequest): Promise<IntentAppsActionResult<unknown>> =>
     (await getApi()?.invoke(INTENT_APPS.APPROVE, request)) as IntentAppsActionResult<unknown>,
   revoke: async (appId: string): Promise<IntentAppsActionResult<unknown>> =>
@@ -172,12 +194,113 @@ function* handleRefresh() {
   }
 }
 
-function* handleInstall({ payload: [request] }: ReturnType<typeof intentAppInstallRequested>) {
-  const result = yield* runAction<IntentAppInstallResult>('install', null, () =>
-    intentAppsRequests.install(request),
-  );
-  if (!result) return;
-  yield* put(request.dryRun ? intentAppInstallPreviewReceived(result) : intentAppInstalled(result));
+function* handlePick() {
+  try {
+    const picked = yield* call(intentAppsRequests.pickPackage);
+    if (picked?.path) yield* put(intentAppPackageChosen(picked.path));
+  } catch (error) {
+    logger.warn('The package picker failed', error);
+  }
+}
+
+/**
+ * Upload a chosen package to the window's machine and check it with a dry run;
+ * an installed app of the same id makes it a replace check of the same upload.
+ * One check at a time (`takeLeading`, and the library takes no pick or drop
+ * meanwhile), so every upload that main begins ends in the review or is
+ * discarded here.
+ */
+function* handleChosen({ payload: [path] }: ReturnType<typeof intentAppPackageChosen>) {
+  const previous = yield* selectIntentAppPackageInstall.effect();
+  if (previous)
+    yield* put(intentAppPackageDismissed(previous.installed ? null : previous.uploadId));
+  yield* put(intentAppsActionStarted('install', null));
+  try {
+    let replace = false;
+    let result = yield* call(intentAppsRequests.install, { path, dryRun: true });
+    if (result && !result.ok && result.error.code === 'app-exists' && result.error.uploadId) {
+      replace = true;
+      result = yield* call(intentAppsRequests.install, {
+        uploadId: result.error.uploadId,
+        dryRun: true,
+        replace,
+      });
+    }
+    if (!result || !result.ok) {
+      const error = result?.ok === false ? result.error : { code: 'internal', message: '' };
+      if (error.uploadId) yield* call(intentAppsRequests.discardPackage, error.uploadId);
+      yield* put(intentAppsActionFailed('install', null, error));
+      return;
+    }
+    yield* put(intentAppsActionFinished());
+    const { uploadId, ...preview } = result.result;
+    yield* put(intentAppPackageChecked({ uploadId, replace, preview, installed: false }));
+  } catch (error) {
+    yield* put(
+      intentAppsActionFailed('install', null, {
+        code: 'internal',
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+}
+
+/** Whether the review of `uploadId` is still the one on screen (not dismissed or replaced). */
+function* isCurrentReview(uploadId: string): SagaGenerator<boolean> {
+  const current = yield* selectIntentAppPackageInstall.effect();
+  return current?.uploadId === uploadId;
+}
+
+/**
+ * Install the checked upload, then approve it with the features the user
+ * kept. The approval binds to the hash the user saw in the check. The install
+ * ends the upload, so once it succeeds the review only retries the approval.
+ * A review that was dismissed or replaced while its install ran is left alone:
+ * the app is installed and waits for approval in the library.
+ */
+function* handlePackageInstall({
+  payload: [features],
+}: ReturnType<typeof intentAppPackageInstallRequested>) {
+  const pending = yield* selectIntentAppPackageInstall.effect();
+  if (!pending) return;
+  const checked = pending.preview.app;
+  if (!pending.installed) {
+    const installed = yield* runAction<IntentAppPackageInstallResult>('install', null, () =>
+      intentAppsRequests.install({ uploadId: pending.uploadId, replace: pending.replace }),
+    );
+    if (!installed || !(yield* call(isCurrentReview, pending.uploadId))) return;
+    yield* put(intentAppPackageInstalled(pending.uploadId));
+    if (installed.app.bundleHash !== checked.bundleHash) {
+      yield* put(
+        intentAppsActionFailed('install', null, {
+          code: 'hash-mismatch',
+          message: 'The installed app is not the one that was checked',
+        }),
+      );
+      return;
+    }
+  }
+  if (checked.permissions.level !== 3) {
+    const approved = yield* runAction<unknown>('approve', checked.id, () =>
+      intentAppsRequests.approve({
+        appId: checked.id,
+        bundleHash: checked.bundleHash,
+        level: checked.permissions.level,
+        features,
+      }),
+    );
+    if (approved === undefined) return;
+  }
+  if (yield* call(isCurrentReview, pending.uploadId)) yield* put(intentAppPackageDismissed(null));
+}
+
+function* handleDismissed({ payload: [uploadId] }: ReturnType<typeof intentAppPackageDismissed>) {
+  if (!uploadId) return;
+  try {
+    yield* call(intentAppsRequests.discardPackage, uploadId);
+  } catch (error) {
+    logger.debug('Could not discard an app package upload', error);
+  }
 }
 
 function* handleApprove({ payload: [request] }: ReturnType<typeof intentAppApproveRequested>) {
@@ -201,7 +324,10 @@ export function* intentAppsSaga(): SagaGenerator<void> {
     fork(watchChanges),
     takeEvery(intentAppsLabRequested, handleLab),
     takeEvery(intentAppsRefreshRequested, handleRefresh),
-    takeEvery(intentAppInstallRequested, handleInstall),
+    takeEvery(intentAppPackagePickRequested, handlePick),
+    takeLeading(intentAppPackageChosen, handleChosen),
+    takeEvery(intentAppPackageInstallRequested, handlePackageInstall),
+    takeEvery(intentAppPackageDismissed, handleDismissed),
     takeEvery(intentAppApproveRequested, handleApprove),
     takeEvery(intentAppRevokeRequested, handleRevoke),
     takeEvery(intentAppUninstallRequested, handleUninstall),

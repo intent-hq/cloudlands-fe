@@ -8,17 +8,17 @@ export const selectIntentAppsLabEnabled = store.createSelector(
 );
 
 /**
- * The library section shows: the Labs switch is on and this computer's daemon
- * advertises `intentApps: 1` (other or missing values hide it).
+ * The library section shows: the Labs switch is on and the daemon of this
+ * window's machine advertises `intentApps: 1` (other or missing values hide it).
  */
 export const selectIntentAppsLibraryShown = store.createSelector(
   (state) => state.intentApps.library.labEnabled && state.intentApps.library.supported,
 );
 
-/** Install works from this window: its machine is this computer, where the library is. */
-export const selectIntentAppsCanInstallHere = store.createSelector(
-  (state) => state.connections.windowBackendId === 'local',
-);
-
 /** Loaded icon data URLs by `<appId>@<bundleHash>`. */
 export const selectIntentAppIcons = store.createSelector((state) => state.intentApps.icons);
+
+/** The checked package that the install review shows (null when none). */
+export const selectIntentAppPackageInstall = store.createSelector(
+  (state) => state.intentApps.packageInstall,
+);

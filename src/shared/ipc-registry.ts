@@ -55,6 +55,7 @@ const machineRailOff = (): MachineRailState => ({
 const intentAppsOff = () => ({
   labEnabled: false,
   supported: false,
+  packages: false,
   apps: [],
   openAppIds: [],
   error: null,
@@ -1340,7 +1341,9 @@ export const IPC_CHANNELS = {
     GET_STATE: forwarded('intent-apps:get-state', intentAppsOff),
     SET_LAB: forwarded('intent-apps:set-lab', intentAppsOff),
     REFRESH: forwarded('intent-apps:refresh', intentAppsOff),
+    PICK_PACKAGE: forwarded('intent-apps:pick-package', () => null),
     INSTALL: forwarded('intent-apps:install', intentAppsUnavailable),
+    DISCARD_PACKAGE: forwarded('intent-apps:discard-package', ok),
     APPROVE: forwarded('intent-apps:approve', intentAppsUnavailable),
     REVOKE: forwarded('intent-apps:revoke', intentAppsUnavailable),
     UNINSTALL: forwarded('intent-apps:uninstall', intentAppsUnavailable),
