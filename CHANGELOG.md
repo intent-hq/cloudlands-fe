@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.397.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.6...v2.397.0) (2026-11-28)
+
+
+### 🚀 Features
+
+* **hud:** hide set-aside workspaces from the HUD and Dock by default ([#5132](https://github.com/intent-hq/cloudlands-fe/issues/5132)) ([6a05a10](https://github.com/intent-hq/cloudlands-fe/commit/6a05a109c113c81a27e6757c7dbdd300051fbb86))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.318 ([#5136](https://github.com/intent-hq/cloudlands-fe/issues/5136)) ([725e423](https://github.com/intent-hq/cloudlands-fe/commit/725e42396a3d3a4d2dbb7fd8ede39904da9f1e28))
+* **chat:** count every image and admit images atomically ([#5131](https://github.com/intent-hq/cloudlands-fe/issues/5131)) ([9de9582](https://github.com/intent-hq/cloudlands-fe/commit/9de95822af187d93b5edf8706034bbec66c3a300))
+
 ## [2.396.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.5...v2.396.6) (2026-11-28)
 
 
