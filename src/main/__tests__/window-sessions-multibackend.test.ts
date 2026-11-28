@@ -1986,7 +1986,10 @@ describe('multi-backend window sessions', () => {
       writeFrames([railFrame]);
       await restoreAllBackendWindowSessions('local', failing('remote-2'));
       const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
-      writeWindowRail(window as never, removeRailMachine(readWindowRail(window as never), 'remote-2'));
+      writeWindowRail(
+        window as never,
+        removeRailMachine(readWindowRail(window as never), 'remote-2'),
+      );
       await saveAllWindowSessions();
 
       restart();
