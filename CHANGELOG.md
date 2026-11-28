@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.396.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.5...v2.396.6) (2026-11-28)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.317 ([#5134](https://github.com/intent-hq/cloudlands-fe/issues/5134)) ([7a2d5e2](https://github.com/intent-hq/cloudlands-fe/commit/7a2d5e2fe02492b0d7434daa963fb2cf7ba13449))
+* **chat:** stop the transcript jumping when older history loads on scroll-up ([#5119](https://github.com/intent-hq/cloudlands-fe/issues/5119)) ([46baf55](https://github.com/intent-hq/cloudlands-fe/commit/46baf55c17602508bc7c2e284467495178ee3671))
+* **hud:** stop slow workspace list pages from hiding workspaces in the HUD ([#5118](https://github.com/intent-hq/cloudlands-fe/issues/5118)) ([92b2ff7](https://github.com/intent-hq/cloudlands-fe/commit/92b2ff73e69c44d4cd1cfbf5a0e01b56f0937d14))
+
 ## [2.396.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.396.4...v2.396.5) (2026-11-27)
 
 
